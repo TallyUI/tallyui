@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pnpm --filter @tallyui/web run build",
+  "outputDirectory": "apps/web/.next",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": "nextjs"
+}
