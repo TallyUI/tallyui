@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@tallyui/core": ["packages/core/src/index.ts"],
+      "@tallyui/core/*": ["packages/core/src/*"],
+      "@tallyui/database": ["packages/database/src/index.ts"],
+      "@tallyui/database/*": ["packages/database/src/*"],
+      "@tallyui/components": ["packages/components/src/index.ts"],
+      "@tallyui/components/*": ["packages/components/src/*"],
+      "@tallyui/connector-woocommerce": ["connectors/woocommerce/src/index.ts"],
+      "@tallyui/connector-woocommerce/*": ["connectors/woocommerce/src/*"],
+      "@tallyui/connector-medusa": ["connectors/medusa/src/index.ts"],
+      "@tallyui/connector-medusa/*": ["connectors/medusa/src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}

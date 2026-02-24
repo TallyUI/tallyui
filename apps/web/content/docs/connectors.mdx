@@ -1,0 +1,54 @@
+---
+title: Connectors
+description: Available backend connectors for Tally UI
+---
+
+## Available Connectors
+
+### WooCommerce
+
+```bash
+pnpm add @tallyui/connector-woocommerce
+```
+
+Connects to WooCommerce stores via the REST API. Supports WooCommerce v3 API and the WCPOS API extension.
+
+**Auth:** Consumer Key + Consumer Secret (Basic Auth)
+
+### MedusaJS
+
+```bash
+pnpm add @tallyui/connector-medusa
+```
+
+Connects to MedusaJS v2 backends via the Admin API. Fetches products with variants, pricing, categories, and images.
+
+**Auth:** Admin API Token (Bearer)
+
+### Coming Soon
+
+- **Vendure** — GraphQL-based headless commerce
+- **Shopify** — Shopify Admin API
+- **Square** — Square APIs for retail
+- **Vend/Lightspeed** — Lightspeed Retail
+
+## Building a Custom Connector
+
+Implement the `TallyConnector` interface from `@tallyui/core`:
+
+```typescript
+import type { TallyConnector } from '@tallyui/core';
+
+export const myConnector: TallyConnector = {
+  id: 'my-backend',
+  name: 'My Backend',
+  description: 'Custom connector for My Backend API',
+
+  auth: { /* ... */ },
+  schemas: { products: myProductSchema },
+  traits: { product: myProductTraits },
+  sync: { products: myProductSync },
+};
+```
+
+See the WooCommerce and Medusa connectors for complete examples.

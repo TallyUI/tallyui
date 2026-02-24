@@ -1,0 +1,45 @@
+---
+title: Architecture
+description: How Tally UI's connector and trait system works
+---
+
+## The Connector Pattern
+
+Every POS backend has a different API shape. WooCommerce calls it `name`, Medusa calls it `title`. WooCommerce puts price on the product, Medusa puts it on variants. Rather than forcing everything into one schema, Tally UI uses a **trait layer** to bridge the gap.
+
+### Connectors
+
+A connector is a package that knows how to talk to a specific backend. It provides:
+
+- **Schemas** — RxDB collection schemas that mirror the API's data shape
+- **Traits** — Accessor functions that extract standard data from the connector's documents
+- **Sync** — Logic to fetch and push data to/from the API
+- **Auth** — How to authenticate with the backend
+
+### Traits
+
+Traits are simple accessor functions. Instead of components reaching into `doc.name` or `doc.title`, they call `getName(doc)` through the trait layer. The active connector determines which implementation runs.
+
+```typescript
+// WooCommerce trait
+getName: (doc) => doc.name
+
+// Medusa trait
+getName: (doc) => doc.title
+```
+
+Components never import connector-specific code. They use the `useProductTraits()` hook which reads from the nearest `ConnectorProvider` in the tree.
+
+### Per-Connector Schemas
+
+Each connector stores data in its own RxDB schema shape — faithful to the source API. No data is lost or flattened. When you need connector-specific fields, you can always access the raw document.
+
+## Packages
+
+| Package | Purpose |
+|---------|---------|
+| `@tallyui/core` | Connector interfaces, trait types, React context |
+| `@tallyui/database` | RxDB factory — creates databases from connector schemas |
+| `@tallyui/components` | UI primitives (ProductTitle, ProductPrice, etc.) |
+| `@tallyui/connector-woocommerce` | WooCommerce connector |
+| `@tallyui/connector-medusa` | MedusaJS v2 connector |

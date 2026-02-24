@@ -1,0 +1,56 @@
+---
+title: Components
+description: UI primitives for point-of-sale interfaces
+---
+
+## Product Components
+
+### ProductTitle
+
+Displays the product name. Uses `getName()` from the active connector's traits.
+
+```tsx
+import { ProductTitle } from '@tallyui/components';
+
+<ProductTitle doc={productDocument} style={{ fontSize: 18 }} />
+```
+
+- WooCommerce: reads `doc.name`
+- Medusa: reads `doc.title`
+
+### ProductPrice
+
+Displays the product price with optional currency symbol.
+
+```tsx
+import { ProductPrice } from '@tallyui/components';
+
+<ProductPrice doc={productDocument} currencySymbol="$" />
+```
+
+Handles sale prices automatically — shows the sale price with a "was" indicator when the product is on sale.
+
+### ProductImage
+
+Displays the product's primary image.
+
+```tsx
+import { ProductImage } from '@tallyui/components';
+
+<ProductImage doc={productDocument} size={80} />
+```
+
+- WooCommerce: reads from `doc.images[0].src`
+- Medusa: reads from `doc.thumbnail` or `doc.images[0].url`
+
+## More Components Coming
+
+- `ProductSku`
+- `ProductStockBadge`
+- `ProductCategoryTags`
+- `CartLine`
+- `CartTotal`
+- `OrderSummary`
+- `CustomerCard`
+- `PaymentSelector`
+- `BarcodeScanner`

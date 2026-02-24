@@ -1,0 +1,19 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@tallyui/core": ["../../packages/core/src/index.ts"],
+      "@tallyui/core/*": ["../../packages/core/src/*"],
+      "@tallyui/database": ["../../packages/database/src/index.ts"],
+      "@tallyui/database/*": ["../../packages/database/src/*"],
+      "@tallyui/components": ["../../packages/components/src/index.ts"],
+      "@tallyui/components/*": ["../../packages/components/src/*"],
+      "@tallyui/connector-woocommerce": ["../../connectors/woocommerce/src/index.ts"],
+      "@tallyui/connector-woocommerce/*": ["../../connectors/woocommerce/src/*"],
+      "@tallyui/connector-medusa": ["../../connectors/medusa/src/index.ts"],
+      "@tallyui/connector-medusa/*": ["../../connectors/medusa/src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+}

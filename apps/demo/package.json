@@ -1,0 +1,37 @@
+{
+  "name": "@tallyui/demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tally UI demo app — proves the connector abstraction with RxDB",
+  "main": "expo-router/entry",
+  "scripts": {
+    "dev": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tallyui/components": "workspace:*",
+    "@tallyui/connector-medusa": "workspace:*",
+    "@tallyui/connector-woocommerce": "workspace:*",
+    "@tallyui/core": "workspace:*",
+    "@tallyui/database": "workspace:*",
+    "expo": "~52.0.0",
+    "expo-router": "~4.0.0",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-native": "0.76.6",
+    "react-native-safe-area-context": "~5.0.0",
+    "react-native-screens": "~4.4.0",
+    "react-native-web": "~0.19.13",
+    "rxdb": "16.21.1",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@types/react": "~18.3.0",
+    "typescript": "~5.8.3"
+  }
+}

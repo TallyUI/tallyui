@@ -1,0 +1,78 @@
+---
+title: Getting Started
+description: Build point-of-sale systems with composable UI primitives
+---
+
+Tally UI is an open-source library of composable UI components designed for building point-of-sale systems. It works with any backend through a pluggable connector system.
+
+## How It Works
+
+Tally UI sits between your backend API and your UI. A **connector** maps each backend's data shape into a standard **trait interface** that components consume.
+
+```
+┌─────────────────────────────────────┐
+│  UI Components                      │
+│  <ProductTitle> <ProductPrice> ...  │
+└──────────────┬──────────────────────┘
+               │ uses traits
+┌──────────────▼──────────────────────┐
+│  Trait Layer                        │
+│  getName() getPrice() getSku() ... │
+└──────────────┬──────────────────────┘
+               │ implemented by
+┌──────────────▼──────────────────────┐
+│  Connector                          │
+│  WooCommerce │ Medusa │ Vendure ... │
+└──────────────┬──────────────────────┘
+               │ syncs with
+┌──────────────▼──────────────────────┐
+│  RxDB (Local Database)              │
+│  Offline-first, reactive            │
+└─────────────────────────────────────┘
+```
+
+## Quick Start
+
+Install the core packages and a connector:
+
+```bash
+pnpm add @tallyui/core @tallyui/database @tallyui/components @tallyui/connector-woocommerce
+```
+
+Wrap your app with the connector provider:
+
+```tsx
+import { ConnectorProvider } from '@tallyui/core';
+import { woocommerceConnector } from '@tallyui/connector-woocommerce';
+
+function App() {
+  return (
+    <ConnectorProvider connector={woocommerceConnector}>
+      <YourPOSApp />
+    </ConnectorProvider>
+  );
+}
+```
+
+Use components that work with any backend:
+
+```tsx
+import { ProductTitle, ProductPrice } from '@tallyui/components';
+
+function ProductCard({ doc }) {
+  return (
+    <View>
+      <ProductTitle doc={doc} />
+      <ProductPrice doc={doc} currencySymbol="$" />
+    </View>
+  );
+}
+```
+
+## What's Next?
+
+<Cards>
+  <Card title="Architecture" href="/docs/architecture" />
+  <Card title="Connectors" href="/docs/connectors" />
+  <Card title="Components" href="/docs/components" />
+</Cards>
