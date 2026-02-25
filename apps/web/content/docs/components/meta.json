@@ -1,0 +1,14 @@
+{
+  "title": "Components",
+  "pages": [
+    "---Product---",
+    "product-title",
+    "product-price",
+    "product-image",
+    "product-sku",
+    "product-stock-badge",
+    "---Cart---",
+    "cart-line",
+    "cart-total"
+  ]
+}

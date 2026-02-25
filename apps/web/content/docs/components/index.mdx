@@ -1,0 +1,23 @@
+---
+title: Components
+description: UI primitives for point-of-sale interfaces
+---
+
+## Overview
+
+Tally UI components are React Native primitives that work on iOS, Android, and Web via Expo. They use the [trait layer](/docs/architecture) to read data from any connector and [Uniwind](https://uniwind.dev) for className-based styling.
+
+Every component accepts a `className` prop for style overrides. Defaults are merged using `cn()` from `@tallyui/theme`, so your classes cleanly override the built-in styles. See [Design System](/docs/design-system) for details.
+
+## Product Components
+
+- [ProductTitle](/docs/components/product-title) — Displays product name
+- [ProductPrice](/docs/components/product-price) — Price with sale price support
+- [ProductImage](/docs/components/product-image) — Primary product image
+- [ProductSku](/docs/components/product-sku) — SKU with fallback
+- [ProductStockBadge](/docs/components/product-stock-badge) — Stock status indicator
+
+## Cart Components
+
+- [CartLine](/docs/components/cart-line) — Single cart line item
+- [CartTotal](/docs/components/cart-total) — Cart summary with subtotal, tax, total
