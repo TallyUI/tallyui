@@ -49,7 +49,10 @@ export {
 // Checkout components
 export {
   PaymentMethodCard,
+  PaymentSelector,
   type PaymentMethodCardProps,
+  type PaymentSelectorProps,
+  type PaymentMethod,
   OrderSummaryLine,
   type OrderSummaryLineProps,
 } from './checkout';
