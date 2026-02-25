@@ -30,6 +30,9 @@ export interface AuthField {
 /**
  * Sync configuration for a collection.
  * Defines how to fetch data from the remote API and push changes back.
+ *
+ * @deprecated Use ReplicationAdapter instead. This interface will be removed
+ * once all connectors have migrated to the RxDB replication protocol.
  */
 export interface CollectionSync<T = any> {
   /** Fetch all remote IDs (for diffing against local) */
@@ -104,7 +107,10 @@ export interface TallyConnector {
   /** Trait implementations — how to extract standard data from connector-specific docs */
   traits: ConnectorTraits;
 
-  /** Sync configuration for each collection (legacy — use replication instead) */
+  /**
+   * @deprecated Use `replication` instead.
+   * Sync configuration for each collection (legacy pull-based sync).
+   */
   sync: {
     products: CollectionSync;
     [key: string]: CollectionSync;
