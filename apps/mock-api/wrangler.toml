@@ -2,9 +2,10 @@ name = "tallyui-mock-api"
 main = "src/index.ts"
 compatibility_date = "2025-02-01"
 
-routes = [
-  { pattern = "mock.tallyui.com/*", zone_name = "tallyui.com" }
-]
+# Custom Domains automatically create DNS records
+[[routes]]
+pattern = "mock.tallyui.com"
+custom_domain = true
 
 [observability]
 enabled = true
