@@ -13,3 +13,4 @@ export * as Select from './select';
 export * as Tabs from './tabs';
 export * as DropdownMenu from './dropdown-menu';
 export * as List from './list';
+export * as Image from './image';
