@@ -69,6 +69,9 @@ importers:
       '@tallyui/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@tallyui/mock-api':
+        specifier: workspace:*
+        version: link:../mock-api
       '@tallyui/theme':
         specifier: workspace:*
         version: link:../../packages/theme
@@ -253,6 +256,10 @@ importers:
       react-native:
         specifier: '>=0.74'
         version: 0.76.6(@babel/core@7.29.0)(@babel/preset-env@7.29.0(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.3.1)
+    devDependencies:
+      '@tallyui/mock-api':
+        specifier: workspace:*
+        version: link:../../apps/mock-api
 
   packages/core:
     dependencies:

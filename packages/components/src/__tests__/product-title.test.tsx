@@ -22,7 +22,7 @@ describe('ProductTitle', () => {
         <ProductTitle doc={medusaDoc} />
       </ConnectorProvider>
     );
-    expect(screen.getByText('Commercial Espresso Machine')).toBeDefined();
+    expect(screen.getByText('Espresso Machine Pro')).toBeDefined();
   });
 
   it('renders empty string gracefully for missing name', () => {

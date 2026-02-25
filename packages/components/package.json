@@ -9,6 +9,9 @@
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet\""
   },
+  "devDependencies": {
+    "@tallyui/mock-api": "workspace:*"
+  },
   "peerDependencies": {
     "@tallyui/core": "workspace:*",
     "@tallyui/theme": "workspace:*",

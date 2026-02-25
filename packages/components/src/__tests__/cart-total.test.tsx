@@ -19,8 +19,8 @@ describe('CartTotal', () => {
     );
     expect(screen.getByText('Subtotal')).toBeDefined();
     expect(screen.getByText('Total')).toBeDefined();
-    // subtotal and total both $1249.97 (no tax), so 2 elements
-    expect(screen.getAllByText('$1249.97')).toHaveLength(2);
+    // subtotal and total both $2647.99 (no tax), so 2 elements
+    expect(screen.getAllByText('$2647.99')).toHaveLength(2);
   });
 
   it('renders tax when taxRate is provided', () => {
@@ -31,8 +31,8 @@ describe('CartTotal', () => {
       </ConnectorProvider>
     );
     expect(screen.getByText('Tax')).toBeDefined();
-    expect(screen.getByText('$125.00')).toBeDefined();
-    expect(screen.getByText('$1374.97')).toBeDefined();
+    expect(screen.getByText('$264.80')).toBeDefined();
+    expect(screen.getByText('$2912.79')).toBeDefined();
   });
 
   it('uses custom currency symbol and tax label', () => {

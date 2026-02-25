@@ -1,49 +1,20 @@
 import type { TallyConnector } from '@tallyui/core';
 import { wooProductTraits } from '@tallyui/connector-woocommerce';
 import { medusaProductTraits } from '@tallyui/connector-medusa';
+import { products } from '@tallyui/mock-api/data';
+import { toWooProduct, toMedusaProduct } from '@tallyui/mock-api/transforms';
 
 /**
  * Sample WooCommerce product document for component tests.
+ * Generated from the shared mock catalog.
  */
-export const wooDoc = {
-  id: 42,
-  name: 'Espresso Machine Pro',
-  sku: 'ESP-001',
-  price: '599.99',
-  regular_price: '599.99',
-  sale_price: '',
-  on_sale: false,
-  stock_status: 'instock',
-  stock_quantity: 15,
-  barcode: '1234567890123',
-  images: [{ id: 1, src: 'https://store.example/espresso.jpg', alt: '' }],
-  categories: [{ id: 1, name: 'Equipment', slug: 'equipment' }],
-};
+export const wooDoc = toWooProduct(products[0], 1);
 
 /**
  * Sample MedusaJS product document for component tests.
+ * Generated from the shared mock catalog.
  */
-export const medusaDoc = {
-  id: 'prod_01H',
-  title: 'Commercial Espresso Machine',
-  handle: 'commercial-espresso-machine',
-  status: 'published',
-  thumbnail: 'https://cdn.example/thumb-espresso.jpg',
-  description: 'High-end commercial espresso machine.',
-  images: [{ id: 'img_01', url: 'https://cdn.example/espresso-full.jpg' }],
-  categories: [{ id: 'pcat_01', name: 'Equipment' }],
-  variants: [
-    {
-      id: 'var_01',
-      sku: 'MED-ESP-001',
-      barcode: '9876543210001',
-      inventory_quantity: 8,
-      manage_inventory: true,
-      allow_backorder: false,
-      prices: [{ currency_code: 'usd', amount: 89900 }],
-    },
-  ],
-};
+export const medusaDoc = toMedusaProduct(products[0]);
 
 /**
  * Builds a minimal TallyConnector with real product traits
