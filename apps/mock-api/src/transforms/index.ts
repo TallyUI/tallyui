@@ -1,0 +1,1 @@
+export { toWooProduct } from './woocommerce';
