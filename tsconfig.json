@@ -29,7 +29,9 @@
       "@tallyui/connector-shopify": ["connectors/shopify/src/index.ts"],
       "@tallyui/connector-shopify/*": ["connectors/shopify/src/*"],
       "@tallyui/connector-vendure": ["connectors/vendure/src/index.ts"],
-      "@tallyui/connector-vendure/*": ["connectors/vendure/src/*"]
+      "@tallyui/connector-vendure/*": ["connectors/vendure/src/*"],
+      "@tallyui/theme": ["packages/theme/src/index.ts"],
+      "@tallyui/theme/*": ["packages/theme/src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],

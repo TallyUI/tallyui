@@ -1,6 +1,7 @@
-import { Text, View, StyleSheet, type ViewProps } from 'react-native';
+import { Text, View, type ViewProps } from 'react-native';
 
 import { useProductTraits } from '@tallyui/core';
+import { cn } from '@tallyui/theme';
 
 export interface CartLineItem {
   /** The raw product document (connector-specific shape) */
@@ -14,6 +15,7 @@ export interface CartLineProps extends Omit<ViewProps, 'children'> {
   item: CartLineItem;
   /** Currency symbol (defaults to '$') */
   currencySymbol?: string;
+  className?: string;
 }
 
 /**
@@ -23,7 +25,7 @@ export interface CartLineProps extends Omit<ViewProps, 'children'> {
  * <CartLine item={{ doc: productDocument, quantity: 2 }} />
  * ```
  */
-export function CartLine({ item, currencySymbol = '$', style, ...viewProps }: CartLineProps) {
+export function CartLine({ item, currencySymbol = '$', className, ...viewProps }: CartLineProps) {
   const { getName, getPrice } = useProductTraits();
   const name = getName(item.doc);
   const unitPrice = getPrice(item.doc);
@@ -32,44 +34,16 @@ export function CartLine({ item, currencySymbol = '$', style, ...viewProps }: Ca
     : null;
 
   return (
-    <View style={[styles.container, style]} {...viewProps}>
-      <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>{name}</Text>
-        <Text style={styles.meta}>
+    <View className={cn('flex-row items-center gap-3 px-3 py-2.5', className)} {...viewProps}>
+      <View className="flex-1 gap-0.5">
+        <Text className="text-sm font-medium text-foreground" numberOfLines={1}>{name}</Text>
+        <Text className="text-xs text-muted">
           {unitPrice ? `${currencySymbol}${unitPrice} × ${item.quantity}` : `× ${item.quantity}`}
         </Text>
       </View>
-      <Text style={styles.total}>
+      <Text className="text-sm font-semibold text-foreground">
         {lineTotal ? `${currencySymbol}${lineTotal}` : '—'}
       </Text>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 12,
-  },
-  info: {
-    flex: 1,
-    gap: 2,
-  },
-  name: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#111827',
-  },
-  meta: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  total: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-});

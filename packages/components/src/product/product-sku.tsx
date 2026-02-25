@@ -1,12 +1,14 @@
 import { Text, type TextProps } from 'react-native';
 
 import { useProductTraits } from '@tallyui/core';
+import { cn } from '@tallyui/theme';
 
 export interface ProductSkuProps extends Omit<TextProps, 'children'> {
   /** The raw RxDB product document (connector-specific shape) */
   doc: any;
   /** Text to show when SKU is missing (defaults to '—') */
   fallback?: string;
+  className?: string;
 }
 
 /**
@@ -19,9 +21,13 @@ export interface ProductSkuProps extends Omit<TextProps, 'children'> {
  * <ProductSku doc={productDocument} />
  * ```
  */
-export function ProductSku({ doc, fallback = '—', ...textProps }: ProductSkuProps) {
+export function ProductSku({ doc, fallback = '—', className, ...textProps }: ProductSkuProps) {
   const { getSku } = useProductTraits();
   const sku = getSku(doc);
 
-  return <Text {...textProps}>{sku ?? fallback}</Text>;
+  return (
+    <Text className={cn('text-xs text-muted', className)} {...textProps}>
+      {sku ?? fallback}
+    </Text>
+  );
 }

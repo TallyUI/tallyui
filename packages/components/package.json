@@ -11,6 +11,7 @@
   },
   "peerDependencies": {
     "@tallyui/core": "workspace:*",
+    "@tallyui/theme": "workspace:*",
     "react": ">=18",
     "react-native": ">=0.74"
   }

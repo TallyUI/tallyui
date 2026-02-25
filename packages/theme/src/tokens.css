@@ -1,0 +1,55 @@
+@theme {
+  /* Background hierarchy */
+  --color-bg: #f8f9fa;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f3f4f6;
+
+  /* Text hierarchy */
+  --color-foreground: #111827;
+  --color-muted: #6b7280;
+  --color-bright: #f9fafb;
+
+  /* Border */
+  --color-border: #e5e7eb;
+
+  /* Brand / Primary */
+  --color-primary: #6366f1;
+  --color-primary-foreground: #ffffff;
+
+  /* Status */
+  --color-success: #059669;
+  --color-danger: #dc2626;
+  --color-warning: #d97706;
+  --color-info: #3b82f6;
+
+  /* Commerce */
+  --color-price: #059669;
+  --color-sale: #dc2626;
+}
+
+@layer theme {
+  :root {
+    @variant dark {
+      --color-bg: #0d1117;
+      --color-surface: #161b22;
+      --color-surface-alt: #1c2128;
+
+      --color-foreground: #c9d1d9;
+      --color-muted: #8b949e;
+      --color-bright: #f0f6fc;
+
+      --color-border: #30363d;
+
+      --color-primary: #818cf8;
+      --color-primary-foreground: #1e1b4b;
+
+      --color-success: #3fb950;
+      --color-danger: #f85149;
+      --color-warning: #d29922;
+      --color-info: #58a6ff;
+
+      --color-price: #3fb950;
+      --color-sale: #f85149;
+    }
+  }
+}

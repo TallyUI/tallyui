@@ -1,6 +1,7 @@
-import { Text, View, StyleSheet, type ViewProps } from 'react-native';
+import { Text, View, type ViewProps } from 'react-native';
 
 import { useProductTraits } from '@tallyui/core';
+import { cn } from '@tallyui/theme';
 import type { CartLineItem } from './cart-line';
 
 export interface CartTotalProps extends Omit<ViewProps, 'children'> {
@@ -12,6 +13,7 @@ export interface CartTotalProps extends Omit<ViewProps, 'children'> {
   taxRate?: number;
   /** Label for the tax line (defaults to 'Tax') */
   taxLabel?: string;
+  className?: string;
 }
 
 /**
@@ -26,7 +28,7 @@ export function CartTotal({
   currencySymbol = '$',
   taxRate = 0,
   taxLabel = 'Tax',
-  style,
+  className,
   ...viewProps
 }: CartTotalProps) {
   const { getPrice } = useProductTraits();
@@ -40,60 +42,23 @@ export function CartTotal({
   const total = subtotal + tax;
 
   return (
-    <View style={[styles.container, style]} {...viewProps}>
-      <View style={styles.row}>
-        <Text style={styles.label}>Subtotal</Text>
-        <Text style={styles.value}>{currencySymbol}{subtotal.toFixed(2)}</Text>
+    <View className={cn('gap-1.5 px-3 py-3', className)} {...viewProps}>
+      <View className="flex-row items-center justify-between">
+        <Text className="text-sm text-muted">Subtotal</Text>
+        <Text className="text-sm text-foreground">{currencySymbol}{subtotal.toFixed(2)}</Text>
       </View>
 
       {taxRate > 0 && (
-        <View style={styles.row}>
-          <Text style={styles.label}>{taxLabel}</Text>
-          <Text style={styles.value}>{currencySymbol}{tax.toFixed(2)}</Text>
+        <View className="flex-row items-center justify-between">
+          <Text className="text-sm text-muted">{taxLabel}</Text>
+          <Text className="text-sm text-foreground">{currencySymbol}{tax.toFixed(2)}</Text>
         </View>
       )}
 
-      <View style={[styles.row, styles.totalRow]}>
-        <Text style={styles.totalLabel}>Total</Text>
-        <Text style={styles.totalValue}>{currencySymbol}{total.toFixed(2)}</Text>
+      <View className="mt-1.5 flex-row items-center justify-between border-t border-border pt-2">
+        <Text className="text-base font-bold text-foreground">Total</Text>
+        <Text className="text-base font-bold text-foreground">{currencySymbol}{total.toFixed(2)}</Text>
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    gap: 6,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  label: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  value: {
-    fontSize: 14,
-    color: '#374151',
-  },
-  totalRow: {
-    marginTop: 6,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  totalValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-});

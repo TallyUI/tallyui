@@ -1,12 +1,14 @@
-import { Text, View, type ViewProps, StyleSheet } from 'react-native';
+import { Text, View, type ViewProps } from 'react-native';
 
 import { useProductTraits } from '@tallyui/core';
+import { cn } from '@tallyui/theme';
 
 export interface ProductStockBadgeProps extends Omit<ViewProps, 'children'> {
   /** The raw RxDB product document (connector-specific shape) */
   doc: any;
   /** Whether to show the quantity alongside the status */
   showQuantity?: boolean;
+  className?: string;
 }
 
 const statusLabels: Record<string, string> = {
@@ -16,11 +18,27 @@ const statusLabels: Record<string, string> = {
   unknown: 'Unknown',
 };
 
-const statusColors: Record<string, string> = {
-  instock: '#059669',
-  outofstock: '#dc2626',
-  onbackorder: '#d97706',
-  unknown: '#6b7280',
+const STATUS_STYLES: Record<string, { badge: string; dot: string; text: string }> = {
+  instock: {
+    badge: 'bg-success/15',
+    dot: 'bg-success',
+    text: 'text-success',
+  },
+  outofstock: {
+    badge: 'bg-danger/15',
+    dot: 'bg-danger',
+    text: 'text-danger',
+  },
+  onbackorder: {
+    badge: 'bg-warning/15',
+    dot: 'bg-warning',
+    text: 'text-warning',
+  },
+  unknown: {
+    badge: 'bg-muted/15',
+    dot: 'bg-muted',
+    text: 'text-muted',
+  },
 };
 
 /**
@@ -33,41 +51,23 @@ const statusColors: Record<string, string> = {
  * <ProductStockBadge doc={productDocument} showQuantity />
  * ```
  */
-export function ProductStockBadge({ doc, showQuantity = false, style, ...viewProps }: ProductStockBadgeProps) {
+export function ProductStockBadge({ doc, showQuantity = false, className, ...viewProps }: ProductStockBadgeProps) {
   const { getStockStatus, getStockQuantity } = useProductTraits();
   const status = getStockStatus(doc);
   const quantity = getStockQuantity(doc);
-  const color = statusColors[status] ?? statusColors.unknown;
   const label = statusLabels[status] ?? statusLabels.unknown;
+  const styles = STATUS_STYLES[status] ?? STATUS_STYLES.unknown;
 
   return (
-    <View style={[styles.badge, { backgroundColor: color + '1a' }, style]} {...viewProps}>
-      <View style={[styles.dot, { backgroundColor: color }]} />
-      <Text style={[styles.label, { color }]}>
+    <View
+      className={cn('flex-row items-center self-start gap-1.5 rounded-xl px-2 py-1', styles.badge, className)}
+      {...viewProps}
+    >
+      <View className={cn('h-1.5 w-1.5 rounded-full', styles.dot)} />
+      <Text className={cn('text-xs font-semibold', styles.text)}>
         {label}
         {showQuantity && quantity != null ? ` (${quantity})` : ''}
       </Text>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    gap: 6,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-});

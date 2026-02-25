@@ -12,27 +12,30 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@babel/runtime": "^7.28.6",
+    "@expo/metro-runtime": "~6.1.2",
     "@tallyui/components": "workspace:*",
     "@tallyui/connector-medusa": "workspace:*",
     "@tallyui/connector-woocommerce": "workspace:*",
     "@tallyui/core": "workspace:*",
     "@tallyui/database": "workspace:*",
-    "expo": "~52.0.0",
-    "expo-router": "~4.0.0",
-    "expo-status-bar": "~2.0.0",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "react-native": "0.76.6",
-    "react-native-safe-area-context": "~5.0.0",
-    "react-native-screens": "~4.4.0",
-    "react-native-web": "~0.19.13",
+    "@tallyui/theme": "workspace:*",
+    "expo": "~54.0.0",
+    "expo-linking": "~8.0.11",
+    "expo-router": "~6.0.0",
+    "expo-status-bar": "~3.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-native": "~0.81.0",
+    "react-native-safe-area-context": "~5.4.0",
+    "react-native-screens": "~4.11.0",
+    "react-native-web": "~0.21.2",
     "rxdb": "16.21.1",
-    "rxjs": "7.8.2"
+    "rxjs": "7.8.2",
+    "tailwindcss": "^4.1.18",
+    "uniwind": "^1.2.2"
   },
   "devDependencies": {
-    "@babel/core": "^7.26.0",
-    "@types/react": "~18.3.0",
+    "@types/react": "^19.1.0",
     "typescript": "~5.8.3"
   }
 }

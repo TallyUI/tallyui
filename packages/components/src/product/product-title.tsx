@@ -1,10 +1,12 @@
 import { Text, type TextProps } from 'react-native';
 
 import { useProductTraits } from '@tallyui/core';
+import { cn } from '@tallyui/theme';
 
 export interface ProductTitleProps extends Omit<TextProps, 'children'> {
   /** The raw RxDB product document (connector-specific shape) */
   doc: any;
+  className?: string;
 }
 
 /**
@@ -15,10 +17,14 @@ export interface ProductTitleProps extends Omit<TextProps, 'children'> {
  * field is called `name` (WooCommerce) or `title` (Medusa).
  *
  * ```tsx
- * <ProductTitle doc={productDocument} style={{ fontSize: 18 }} />
+ * <ProductTitle doc={productDocument} className="text-lg font-bold" />
  * ```
  */
-export function ProductTitle({ doc, ...textProps }: ProductTitleProps) {
+export function ProductTitle({ doc, className, ...textProps }: ProductTitleProps) {
   const { getName } = useProductTraits();
-  return <Text {...textProps}>{getName(doc)}</Text>;
+  return (
+    <Text className={cn('text-base font-semibold text-foreground', className)} {...textProps}>
+      {getName(doc)}
+    </Text>
+  );
 }

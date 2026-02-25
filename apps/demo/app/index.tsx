@@ -4,11 +4,11 @@ import {
   Text,
   FlatList,
   Pressable,
-  StyleSheet,
   ActivityIndicator,
 } from 'react-native';
 import { Stack } from 'expo-router';
 
+import { cn } from '@tallyui/theme';
 import { ConnectorProvider, useProductTraits } from '@tallyui/core';
 import { ProductTitle, ProductPrice, ProductImage } from '@tallyui/components';
 import { woocommerceConnector } from '@tallyui/connector-woocommerce';
@@ -29,17 +29,17 @@ function ProductList({ connector }: { connector: TallyConnector }) {
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View className="flex-1 items-center justify-center p-5">
         <ActivityIndicator size="large" color="#6366f1" />
-        <Text style={styles.loadingText}>Setting up {connector.name} database...</Text>
+        <Text className="mt-3 text-sm text-muted">Setting up {connector.name} database...</Text>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>Error: {error}</Text>
+      <View className="flex-1 items-center justify-center p-5">
+        <Text className="text-sm text-danger">Error: {error}</Text>
       </View>
     );
   }
@@ -49,21 +49,21 @@ function ProductList({ connector }: { connector: TallyConnector }) {
       <FlatList
         data={products}
         keyExtractor={(item) => traits.getId(item)}
-        contentContainerStyle={styles.list}
+        contentContainerClassName="gap-2 p-4"
         renderItem={({ item }) => (
-          <View style={styles.productCard}>
+          <View className="flex-row gap-3 rounded-lg bg-surface p-3 shadow-sm">
             <ProductImage doc={item} size={60} />
-            <View style={styles.productInfo}>
-              <ProductTitle doc={item} style={styles.productName} numberOfLines={1} />
-              <ProductPrice doc={item} style={styles.productPrice} />
-              <Text style={styles.productMeta}>
+            <View className="flex-1 justify-center gap-0.5">
+              <ProductTitle doc={item} className="text-base font-semibold" numberOfLines={1} />
+              <ProductPrice doc={item} className="text-[15px] font-medium" />
+              <Text className="mt-0.5 text-xs text-muted">
                 SKU: {traits.getSku(item) ?? '—'} · {traits.getStockStatus(item)}
               </Text>
             </View>
           </View>
         )}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No products found.</Text>
+          <Text className="mt-10 text-center text-sm text-muted">No products found.</Text>
         }
       />
     </ConnectorProvider>
@@ -83,25 +83,27 @@ export default function DemoScreen() {
     <>
       <Stack.Screen options={{ title: 'Tally UI Demo' }} />
 
-      <View style={styles.container}>
+      <View className="flex-1 bg-bg">
         {/* Connector picker */}
-        <View style={styles.pickerContainer}>
-          <Text style={styles.pickerLabel}>Active Connector:</Text>
-          <View style={styles.pickerRow}>
+        <View className="px-4 pb-2 pt-4">
+          <Text className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-muted">
+            Active Connector:
+          </Text>
+          <View className="flex-row gap-2">
             {connectors.map((c, i) => (
               <Pressable
                 key={c.id}
-                style={[
-                  styles.pickerButton,
-                  i === activeIndex && styles.pickerButtonActive,
-                ]}
+                className={cn(
+                  'rounded-lg px-4 py-2.5',
+                  i === activeIndex ? 'bg-primary' : 'bg-border'
+                )}
                 onPress={() => setActiveIndex(i)}
               >
                 <Text
-                  style={[
-                    styles.pickerButtonText,
-                    i === activeIndex && styles.pickerButtonTextActive,
-                  ]}
+                  className={cn(
+                    'text-[15px] font-semibold',
+                    i === activeIndex ? 'text-primary-foreground' : 'text-foreground'
+                  )}
                 >
                   {c.name}
                 </Text>
@@ -111,11 +113,11 @@ export default function DemoScreen() {
         </View>
 
         {/* Info box */}
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>
+        <View className="mx-4 my-2 rounded-lg border border-info/30 bg-info/10 p-3">
+          <Text className="text-[13px] leading-5 text-info">
             Same {'<ProductTitle>'}, {'<ProductPrice>'}, and {'<ProductImage>'} components.{'\n'}
             Different data shape underneath.{'\n'}
-            WooCommerce uses <Text style={styles.code}>name</Text>, Medusa uses <Text style={styles.code}>title</Text>.{'\n'}
+            WooCommerce uses <Text className="font-mono text-xs font-bold bg-info/20">name</Text>, Medusa uses <Text className="font-mono text-xs font-bold bg-info/20">title</Text>.{'\n'}
             The trait layer handles the mapping.
           </Text>
         </View>
@@ -126,121 +128,3 @@ export default function DemoScreen() {
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  pickerContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  pickerLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6b7280',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  pickerRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  pickerButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#e5e7eb',
-  },
-  pickerButtonActive: {
-    backgroundColor: '#6366f1',
-  },
-  pickerButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  pickerButtonTextActive: {
-    color: '#ffffff',
-  },
-  infoBox: {
-    marginHorizontal: 16,
-    marginVertical: 8,
-    padding: 12,
-    backgroundColor: '#eff6ff',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
-  },
-  infoText: {
-    fontSize: 13,
-    color: '#1e40af',
-    lineHeight: 20,
-  },
-  code: {
-    fontFamily: 'monospace',
-    fontWeight: '700',
-    backgroundColor: '#dbeafe',
-    fontSize: 12,
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#dc2626',
-  },
-  list: {
-    padding: 16,
-    gap: 8,
-  },
-  productCard: {
-    flexDirection: 'row',
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    padding: 12,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  productInfo: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 2,
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  productPrice: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#059669',
-  },
-  productMeta: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginTop: 2,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#9ca3af',
-    fontSize: 14,
-    marginTop: 40,
-  },
-});
