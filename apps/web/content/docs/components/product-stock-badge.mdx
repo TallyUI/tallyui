@@ -30,6 +30,15 @@ Renders a pill-shaped badge with status-appropriate colors:
 | `showQuantity` | `boolean` | `false` | Show quantity alongside status |
 | `className` | `string` | — | Override badge container styles |
 
+## Trait mapping
+
+| Connector | Stock status source | Quantity source |
+|-----------|-------------------|-----------------|
+| WooCommerce | `doc.stock_status` | `doc.stock_quantity` |
+| Medusa | Derived from `variant.manage_inventory` / `inventory_quantity` | `doc.variants[0].inventory_quantity` |
+| Shopify | Derived from `variant.inventory_management` / `inventory_policy` / `inventory_quantity` | `doc.variants[0].inventory_quantity` |
+| Vendure | `variant.stockLevel` string (`IN_STOCK`, `OUT_OF_STOCK`, `LOW_STOCK`) | `doc.variants[0].stockOnHand` (Admin API only) |
+
 ## Live demo
 
 <ProductStockBadgeDemo />

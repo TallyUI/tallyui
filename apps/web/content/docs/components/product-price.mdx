@@ -33,6 +33,8 @@ Handles sale prices automatically — regular prices use `text-price`, sale pric
 |-----------|-------------|----------------|
 | WooCommerce | `doc.price` (string) | `doc.on_sale` boolean |
 | Medusa | `doc.variants[0].prices[0].amount` (cents) | Price lists (not on product) |
+| Shopify | `doc.variants[0].price` (string) | `compare_at_price > price` |
+| Vendure | `doc.variants[0].priceWithTax` (cents) | Promotions (not on product) |
 
 ## Live demo
 
