@@ -6,7 +6,7 @@
     "dev:demo": "turbo dev --filter=@tallyui/demo",
     "dev:web": "turbo dev --filter=@tallyui/web",
     "build": "turbo build",
-    "test": "turbo test",
+    "test": "vitest run",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "clean": "turbo clean"
@@ -24,6 +24,13 @@
     ]
   },
   "devDependencies": {
-    "@types/node": "^25.3.0"
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.3.0",
+    "jsdom": "^28.1.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-native-web": "~0.19.13",
+    "vitest": "^4.0.18"
   }
 }

@@ -5,6 +5,8 @@ description: UI primitives for point-of-sale interfaces
 
 ## Product Components
 
+Tally UI components are React Native primitives that work on iOS, Android, and Web via Expo. They use the trait layer to read data from any connector.
+
 ### ProductTitle
 
 Displays the product name. Uses `getName()` from the active connector's traits.
@@ -15,12 +17,15 @@ import { ProductTitle } from '@tallyui/components';
 <ProductTitle doc={productDocument} style={{ fontSize: 18 }} />
 ```
 
-- WooCommerce: reads `doc.name`
-- Medusa: reads `doc.title`
+The same component reads `doc.name` for WooCommerce and `doc.title` for Medusa — the trait layer handles the mapping.
+
+**Try it live — toggle between connectors:**
+
+<ProductTitleSnack />
 
 ### ProductPrice
 
-Displays the product price with optional currency symbol.
+Displays the product price with optional currency symbol. Handles sale prices automatically.
 
 ```tsx
 import { ProductPrice } from '@tallyui/components';
@@ -28,7 +33,8 @@ import { ProductPrice } from '@tallyui/components';
 <ProductPrice doc={productDocument} currencySymbol="$" />
 ```
 
-Handles sale prices automatically — shows the sale price with a "was" indicator when the product is on sale.
+- WooCommerce: reads `doc.price` (string like `"599.99"`)
+- Medusa: derives from `doc.variants[0].prices[0].amount` (integer in cents)
 
 ### ProductImage
 
@@ -40,17 +46,17 @@ import { ProductImage } from '@tallyui/components';
 <ProductImage doc={productDocument} size={80} />
 ```
 
-- WooCommerce: reads from `doc.images[0].src`
-- Medusa: reads from `doc.thumbnail` or `doc.images[0].url`
+- WooCommerce: reads `doc.images[0].src`
+- Medusa: reads `doc.thumbnail` or `doc.images[0].url`
 
-## More Components Coming
+## Coming Soon
 
-- `ProductSku`
-- `ProductStockBadge`
-- `ProductCategoryTags`
-- `CartLine`
-- `CartTotal`
-- `OrderSummary`
-- `CustomerCard`
-- `PaymentSelector`
-- `BarcodeScanner`
+- `ProductSku` — SKU display with copy-to-clipboard
+- `ProductStockBadge` — Visual stock status indicator
+- `ProductCategoryTags` — Category/tag pills
+- `CartLine` — Single cart line item
+- `CartTotal` — Cart summary with tax
+- `OrderSummary` — Order receipt layout
+- `CustomerCard` — Customer info display
+- `PaymentSelector` — Payment method picker
+- `BarcodeScanner` — Camera-based barcode input

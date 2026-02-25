@@ -3,36 +3,99 @@ title: Architecture
 description: How Tally UI's connector and trait system works
 ---
 
-## The Connector Pattern
+## The Problem
 
-Every POS backend has a different API shape. WooCommerce calls it `name`, Medusa calls it `title`. WooCommerce puts price on the product, Medusa puts it on variants. Rather than forcing everything into one schema, Tally UI uses a **trait layer** to bridge the gap.
+Every POS backend shapes its product data differently. Look at how WooCommerce and Medusa represent the same espresso machine:
 
-### Connectors
+<SchemaComparison />
 
-A connector is a package that knows how to talk to a specific backend. It provides:
+WooCommerce calls it `name`, Medusa calls it `title`. WooCommerce puts price as a string on the product, Medusa stores it as an integer (in cents) nested inside variants. Images use `src` in one and `url` in the other.
 
-- **Schemas** — RxDB collection schemas that mirror the API's data shape
-- **Traits** — Accessor functions that extract standard data from the connector's documents
-- **Sync** — Logic to fetch and push data to/from the API
-- **Auth** — How to authenticate with the backend
+Forcing all this into one universal schema would lose data. Leaving it raw would mean every component needs `if (connector === 'woocommerce')` branches everywhere. Neither works.
 
-### Traits
+## The Trait Layer
 
-Traits are simple accessor functions. Instead of components reaching into `doc.name` or `doc.title`, they call `getName(doc)` through the trait layer. The active connector determines which implementation runs.
+Tally UI solves this with a **trait layer** — a thin set of accessor functions that each connector implements. Components program against traits, not raw data.
 
-```typescript
-// WooCommerce trait
-getName: (doc) => doc.name
-
-// Medusa trait
-getName: (doc) => doc.title
+```
+UI Component          →  calls getName(doc)
+                          ↓
+Trait Layer            →  WooCommerce: doc.name
+                          Medusa:      doc.title
+                          Vendure:     doc.name
+                          ↓
+RxDB Document          →  stored in connector-specific schema
 ```
 
-Components never import connector-specific code. They use the `useProductTraits()` hook which reads from the nearest `ConnectorProvider` in the tree.
+The active connector determines which implementation runs. Components never import connector-specific code — they use the `useProductTraits()` hook which reads from the nearest `ConnectorProvider`.
+
+```tsx
+// This component works identically with WooCommerce, Medusa, or any connector
+function ProductCard({ doc }) {
+  const { getName, getPrice, getImageUrl } = useProductTraits();
+
+  return (
+    <View>
+      <Image source={{ uri: getImageUrl(doc) }} />
+      <Text>{getName(doc)}</Text>
+      <Text>${getPrice(doc)}</Text>
+    </View>
+  );
+}
+```
+
+## Connectors
+
+A connector is a package that knows how to talk to a specific backend. It implements the `TallyConnector` interface:
+
+```typescript
+interface TallyConnector {
+  id: string;           // 'woocommerce', 'medusa', etc.
+  name: string;         // Human-readable name
+  auth: ConnectorAuth;  // How to authenticate
+  schemas: {            // RxDB schemas (per-connector shape)
+    products: RxJsonSchema;
+  };
+  traits: {             // Accessor functions
+    product: ProductTraits;
+  };
+  sync: {               // How to fetch/push data
+    products: CollectionSync;
+  };
+}
+```
 
 ### Per-Connector Schemas
 
-Each connector stores data in its own RxDB schema shape — faithful to the source API. No data is lost or flattened. When you need connector-specific fields, you can always access the raw document.
+Each connector stores data in its own RxDB schema — faithful to the source API. No data is lost or flattened. The WooCommerce schema has `meta_data`, `attributes`, and `variations` arrays. The Medusa schema has nested `variants` with `prices` and `options`. Both are preserved exactly as the API returns them.
+
+When you need connector-specific fields that aren't covered by traits, you can always access the raw document directly.
+
+## Data Flow
+
+```
+┌─────────────────────────────────────────┐
+│  Backend API                            │
+│  WooCommerce REST / Medusa Admin / ...  │
+└──────────────────┬──────────────────────┘
+                   │ sync (fetch/push)
+┌──────────────────▼──────────────────────┐
+│  RxDB (Local Database)                  │
+│  Connector-specific schemas             │
+│  Offline-first, reactive queries        │
+└──────────────────┬──────────────────────┘
+                   │ documents
+┌──────────────────▼──────────────────────┐
+│  Trait Layer                            │
+│  getName() getPrice() getSku() ...      │
+└──────────────────┬──────────────────────┘
+                   │ hooks
+┌──────────────────▼──────────────────────┐
+│  UI Components                          │
+│  <ProductTitle> <ProductPrice> ...      │
+│  Same component, any backend            │
+└─────────────────────────────────────────┘
+```
 
 ## Packages
 
