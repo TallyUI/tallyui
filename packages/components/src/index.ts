@@ -20,9 +20,11 @@ export {
 export {
   CartLine,
   CartTotal,
+  CartPanel,
   type CartLineProps,
   type CartLineItem,
   type CartTotalProps,
+  type CartPanelProps,
 } from './cart';
 
 // Input components
