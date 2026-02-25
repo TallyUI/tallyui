@@ -9,6 +9,8 @@ import { ProductSkuDemo } from '@/components/snacks/product-sku-snack';
 import { ProductStockBadgeDemo } from '@/components/snacks/product-stock-badge-snack';
 import { CartLineDemo } from '@/components/snacks/cart-line-snack';
 import { CartTotalDemo } from '@/components/snacks/cart-total-snack';
+import { SearchInputDemo } from '@/components/snacks/search-input-snack';
+import { FilterChipGroupDemo } from '@/components/snacks/filter-chip-group-snack';
 
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
   return {
@@ -22,6 +24,8 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     ProductStockBadgeDemo,
     CartLineDemo,
     CartTotalDemo,
+    SearchInputDemo,
+    FilterChipGroupDemo,
     ...components,
   };
 }
