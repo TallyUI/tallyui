@@ -41,7 +41,9 @@ export {
 // Customer components
 export {
   CustomerCard,
+  CustomerSelect,
   type CustomerCardProps,
+  type CustomerSelectProps,
 } from './customer';
 
 // Checkout components
