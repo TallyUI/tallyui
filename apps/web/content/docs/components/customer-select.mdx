@@ -1,0 +1,40 @@
+---
+title: CustomerSelect
+description: Customer picker with search and selectable customer cards
+---
+
+## Import
+
+```tsx
+import { CustomerSelect } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CustomerSelect
+  customers={filteredCustomers}
+  selected={selectedCustomer}
+  onSelect={setSelectedCustomer}
+  onSearch={setSearchQuery}
+/>
+```
+
+A customer picker that renders a scrollable list of CustomerCard items. When a customer is selected, their card is highlighted at the top. The parent component owns the filtering logic -- this component simply calls `onSearch` with the query text and renders the `customers` array it receives.
+
+Requires a `ConnectorProvider` ancestor in the component tree.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `customers` | `any[]` | required | Customer documents to display |
+| `selected` | `any` | --- | Currently selected customer |
+| `onSelect` | `(customer) => void` | required | Called when a customer is tapped |
+| `onSearch` | `(query: string) => void` | required | Called when search text changes |
+| `placeholder` | `string` | `'Search customers...'` | Search input placeholder |
+| `className` | `string` | --- | Override container styles |
+
+## Live demo
+
+<CustomerSelectDemo />

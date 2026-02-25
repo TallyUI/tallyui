@@ -1,0 +1,39 @@
+---
+title: PaymentMethodCard
+description: Selectable payment method card with label and optional icon
+---
+
+## Import
+
+```tsx
+import { PaymentMethodCard } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<PaymentMethodCard
+  label="Credit Card"
+  selected={isSelected}
+  onPress={() => selectMethod('card')}
+/>
+```
+
+A pressable card that represents a single payment method. When selected, it shows a primary border, highlighted text, and a check mark indicator. Typically used inside a PaymentSelector, but works fine standalone.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `label` | `string` | required | Payment method name |
+| `selected` | `boolean` | required | Whether this method is selected |
+| `onPress` | `() => void` | required | Called on tap |
+| `icon` | `ReactNode` | --- | Optional icon rendered before the label |
+| `className` | `string` | --- | Override card styles |
+
+**Selected classes:** `border-primary bg-primary/5` with `text-primary`
+**Unselected classes:** `border-border bg-surface` with `text-foreground`
+
+## Live demo
+
+<PaymentMethodCardDemo />

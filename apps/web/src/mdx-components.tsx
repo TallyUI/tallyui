@@ -14,6 +14,12 @@ import { FilterChipGroupDemo } from '@/components/snacks/filter-chip-group-snack
 import { ProductCardDemo } from '@/components/snacks/product-card-snack';
 import { ProductGridDemo } from '@/components/snacks/product-grid-snack';
 import { CartPanelDemo } from '@/components/snacks/cart-panel-snack';
+import { CustomerCardDemo } from '@/components/snacks/customer-card-snack';
+import { CustomerSelectDemo } from '@/components/snacks/customer-select-snack';
+import { PaymentMethodCardDemo } from '@/components/snacks/payment-method-card-snack';
+import { PaymentSelectorDemo } from '@/components/snacks/payment-selector-snack';
+import { OrderSummaryLineDemo } from '@/components/snacks/order-summary-line-snack';
+import { OrderSummaryDemo } from '@/components/snacks/order-summary-snack';
 
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
   return {
@@ -32,6 +38,12 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     ProductCardDemo,
     ProductGridDemo,
     CartPanelDemo,
+    CustomerCardDemo,
+    CustomerSelectDemo,
+    PaymentMethodCardDemo,
+    PaymentSelectorDemo,
+    OrderSummaryLineDemo,
+    OrderSummaryDemo,
     ...components,
   };
 }

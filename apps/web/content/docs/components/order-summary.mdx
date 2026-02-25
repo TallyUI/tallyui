@@ -1,0 +1,55 @@
+---
+title: OrderSummary
+description: Full order receipt with subtotal, tax, total, and payment breakdown
+---
+
+## Import
+
+```tsx
+import { OrderSummary } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OrderSummary
+  subtotal="$1,199.98"
+  tax="$120.00"
+  taxLabel="GST"
+  total="$1,319.98"
+  payments={[
+    { label: 'Cash tendered', amount: '$1,400.00' },
+    { label: 'Change due', amount: '$80.02' },
+  ]}
+/>
+```
+
+Displays a complete order summary with subtotal, optional tax, and total lines. When payments are provided, they appear in a separate section below the total. Accepts header and footer slots for additional context like customer info or action buttons.
+
+Uses OrderSummaryLine internally for each row.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `subtotal` | `string` | required | Formatted subtotal (e.g. "$1,199.98") |
+| `tax` | `string` | --- | Formatted tax amount (omits tax line if not set) |
+| `taxLabel` | `string` | `'Tax'` | Label for the tax line |
+| `total` | `string` | required | Formatted total |
+| `payments` | `OrderSummaryPayment[]` | --- | Payment breakdown lines |
+| `header` | `ReactNode` | --- | Header slot (e.g. customer info) |
+| `footer` | `ReactNode` | --- | Footer slot (e.g. action buttons) |
+| `className` | `string` | --- | Override container styles |
+
+### OrderSummaryPayment
+
+```ts
+interface OrderSummaryPayment {
+  label: string;
+  amount: string;
+}
+```
+
+## Live demo
+
+<OrderSummaryDemo />
