@@ -2,8 +2,12 @@
 
 import { ExpoSnack } from './expo-snack';
 
-const snackCode = `import React, { createContext, useContext } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+const MOCK_API = 'https://mock.tallyui.com';
+
+const snackCode = `import React, { createContext, useContext, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+
+const MOCK_API = '${MOCK_API}';
 
 // Simplified trait system (in real usage, this comes from @tallyui/core)
 const ConnectorContext = createContext(null);
@@ -22,53 +26,82 @@ function ProductPrice({ doc, style }) {
 
 // WooCommerce connector traits
 const wooConnector = {
+  key: 'woo',
+  label: 'WooCommerce',
   traits: {
     product: {
       getName: (doc) => doc.name,
       getPrice: (doc) => doc.price,
     },
   },
+  fetchProducts: () =>
+    fetch(MOCK_API + '/woocommerce/wp-json/wc/v3/products?per_page=3')
+      .then((r) => r.json()),
 };
 
 // Medusa connector traits
 const medusaConnector = {
+  key: 'medusa',
+  label: 'Medusa',
   traits: {
     product: {
       getName: (doc) => doc.title,
       getPrice: (doc) => (doc.variants[0].prices[0].amount / 100).toFixed(2),
     },
   },
+  fetchProducts: () =>
+    fetch(MOCK_API + '/medusa/admin/products?limit=3')
+      .then((r) => r.json())
+      .then((data) => data.products),
 };
 
-// Same product, different API shapes
-const wooProduct = { name: 'Espresso Machine Pro', price: '599.99' };
-const medusaProduct = { title: 'Espresso Machine Pro', variants: [{ prices: [{ amount: 59999 }] }] };
+const connectors = [wooConnector, medusaConnector];
 
 export default function App() {
-  const [isWoo, setIsWoo] = React.useState(true);
-  const connector = isWoo ? wooConnector : medusaConnector;
-  const product = isWoo ? wooProduct : medusaProduct;
+  const [active, setActive] = useState(0);
+  const [cache, setCache] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  const connector = connectors[active];
+
+  useEffect(() => {
+    if (cache[connector.key]) { setLoading(false); return; }
+    setLoading(true);
+    connector.fetchProducts()
+      .then((items) => setCache((prev) => ({ ...prev, [connector.key]: items })))
+      .finally(() => setLoading(false));
+  }, [active]);
+
+  const products = cache[connector.key] || [];
 
   return (
     <ConnectorContext.Provider value={connector}>
       <View style={styles.container}>
         <Text style={styles.label}>Active Connector:</Text>
         <View style={styles.row}>
-          <Pressable style={[styles.btn, isWoo && styles.active]} onPress={() => setIsWoo(true)}>
-            <Text style={[styles.btnText, isWoo && styles.activeText]}>WooCommerce</Text>
-          </Pressable>
-          <Pressable style={[styles.btn, !isWoo && styles.active]} onPress={() => setIsWoo(false)}>
-            <Text style={[styles.btnText, !isWoo && styles.activeText]}>Medusa</Text>
-          </Pressable>
+          {connectors.map((c, i) => (
+            <Pressable key={c.key} style={[styles.btn, active === i && styles.active]} onPress={() => setActive(i)}>
+              <Text style={[styles.btnText, active === i && styles.activeText]}>{c.label}</Text>
+            </Pressable>
+          ))}
         </View>
 
-        <View style={styles.card}>
-          <ProductTitle doc={product} />
-          <ProductPrice doc={product} />
-        </View>
+        {loading ? (
+          <ActivityIndicator color="#6366f1" size="large" />
+        ) : (
+          <View style={{ gap: 12 }}>
+            {products.map((product, i) => (
+              <View key={i} style={styles.card}>
+                <ProductTitle doc={product} />
+                <ProductPrice doc={product} />
+              </View>
+            ))}
+          </View>
+        )}
 
         <Text style={styles.hint}>
-          Same components. {isWoo ? 'Reading doc.name + doc.price' : 'Reading doc.title + doc.variants[0].prices[0].amount'}
+          Same components, different API shapes.{String.fromCharCode(10)}
+          Fetched live from mock.tallyui.com
         </Text>
       </View>
     </ConnectorContext.Provider>
