@@ -1,6 +1,7 @@
 import type { RxJsonSchema } from 'rxdb';
 
 import type { ProductTraits } from './traits/product';
+import type { ReplicationAdapter } from './replication';
 
 /**
  * Authentication configuration for a connector.
@@ -29,6 +30,9 @@ export interface AuthField {
 /**
  * Sync configuration for a collection.
  * Defines how to fetch data from the remote API and push changes back.
+ *
+ * @deprecated Use ReplicationAdapter instead. This interface will be removed
+ * once all connectors have migrated to the RxDB replication protocol.
  */
 export interface CollectionSync<T = any> {
   /** Fetch all remote IDs (for diffing against local) */
@@ -51,6 +55,8 @@ export interface RemoteIdEntry {
 }
 
 export interface SyncContext {
+  /** Unique connector identifier (used as replication namespace) */
+  connectorId: string;
   /** Base URL for the API */
   baseUrl: string;
   /** Authenticated headers */
@@ -101,9 +107,18 @@ export interface TallyConnector {
   /** Trait implementations — how to extract standard data from connector-specific docs */
   traits: ConnectorTraits;
 
-  /** Sync configuration for each collection */
+  /**
+   * @deprecated Use `replication` instead.
+   * Sync configuration for each collection (legacy pull-based sync).
+   */
   sync: {
     products: CollectionSync;
     [key: string]: CollectionSync;
+  };
+
+  /** Replication adapters for each collection (RxDB replication protocol) */
+  replication?: {
+    products?: ReplicationAdapter<any>;
+    [key: string]: ReplicationAdapter<any> | undefined;
   };
 }

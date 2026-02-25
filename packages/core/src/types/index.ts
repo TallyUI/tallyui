@@ -9,4 +9,6 @@ export type {
   SyncContext,
 } from './connector';
 
+export type { ReplicationAdapter } from './replication';
+
 export type { ProductTraits } from './traits/product';
