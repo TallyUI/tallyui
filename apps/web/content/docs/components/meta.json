@@ -7,8 +7,22 @@
     "product-image",
     "product-sku",
     "product-stock-badge",
+    "product-card",
+    "---Grid---",
+    "search-input",
+    "filter-chip-group",
+    "product-grid",
     "---Cart---",
     "cart-line",
-    "cart-total"
+    "cart-total",
+    "cart-panel",
+    "---Customer---",
+    "customer-card",
+    "customer-select",
+    "---Checkout---",
+    "payment-method-card",
+    "payment-selector",
+    "order-summary-line",
+    "order-summary"
   ]
 }
