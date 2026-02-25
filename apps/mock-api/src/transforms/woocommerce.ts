@@ -68,6 +68,8 @@ export function toWooProduct(product: NeutralProduct, wooId: number) {
     weight: primaryVariant.weight ? String(primaryVariant.weight) : '',
     barcode: primaryVariant.barcode,
     date_created: product.createdAt,
+    date_created_gmt: product.createdAt,
     date_modified: product.updatedAt,
+    date_modified_gmt: product.updatedAt,
   };
 }

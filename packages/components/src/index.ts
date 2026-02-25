@@ -1,3 +1,6 @@
+// Uniwind className type augmentations for React Native
+import './uniwind-env';
+
 // Product components
 export {
   ProductTitle,
