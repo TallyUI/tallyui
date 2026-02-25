@@ -20,3 +20,5 @@ export * as Checkbox from './checkbox';
 export * as Switch from './switch';
 export * as Progress from './progress';
 export * as Toggle from './toggle';
+export * as RadioGroup from './radio-group';
+export * as ToggleGroup from './toggle-group';
