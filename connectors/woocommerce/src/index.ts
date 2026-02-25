@@ -3,6 +3,7 @@ import type { TallyConnector } from '@tallyui/core';
 import { wooProductSchema } from './schemas/products';
 import { wooProductTraits } from './traits/product';
 import { wooProductSync } from './sync/products';
+import { wooProductReplication } from './replication/products';
 
 /**
  * WooCommerce connector for Tally UI.
@@ -69,9 +70,14 @@ export const woocommerceConnector: TallyConnector = {
   sync: {
     products: wooProductSync,
   },
+
+  replication: {
+    products: wooProductReplication,
+  },
 };
 
 // Re-export pieces for advanced usage
 export { wooProductSchema } from './schemas/products';
 export { wooProductTraits } from './traits/product';
 export { wooProductSync } from './sync/products';
+export { wooProductReplication } from './replication/products';
