@@ -2,13 +2,29 @@ import { View, Text, Pressable, ScrollView } from 'react-native';
 import { Link, Stack } from 'expo-router';
 
 const screens = [
+  { href: '/primitives/accordion', label: 'Accordion' },
+  { href: '/primitives/alert-dialog', label: 'Alert Dialog' },
+  { href: '/primitives/checkbox', label: 'Checkbox' },
+  { href: '/primitives/collapsible', label: 'Collapsible' },
+  { href: '/primitives/context-menu', label: 'Context Menu' },
   { href: '/primitives/dialog', label: 'Dialog' },
-  { href: '/primitives/select', label: 'Select' },
-  { href: '/primitives/popover', label: 'Popover' },
-  { href: '/primitives/tabs', label: 'Tabs' },
   { href: '/primitives/dropdown-menu', label: 'Dropdown Menu' },
-  { href: '/primitives/list', label: 'List' },
+  { href: '/primitives/hover-card', label: 'Hover Card' },
   { href: '/primitives/image', label: 'Image' },
+  { href: '/primitives/label', label: 'Label' },
+  { href: '/primitives/list', label: 'List' },
+  { href: '/primitives/popover', label: 'Popover' },
+  { href: '/primitives/progress', label: 'Progress' },
+  { href: '/primitives/radio-group', label: 'Radio Group' },
+  { href: '/primitives/select', label: 'Select' },
+  { href: '/primitives/separator', label: 'Separator' },
+  { href: '/primitives/slider', label: 'Slider' },
+  { href: '/primitives/switch', label: 'Switch' },
+  { href: '/primitives/tabs', label: 'Tabs' },
+  { href: '/primitives/toast', label: 'Toast' },
+  { href: '/primitives/toggle', label: 'Toggle' },
+  { href: '/primitives/toggle-group', label: 'Toggle Group' },
+  { href: '/primitives/tooltip', label: 'Tooltip' },
 ] as const;
 
 export default function PrimitivesIndex() {
