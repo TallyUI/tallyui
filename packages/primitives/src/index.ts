@@ -7,6 +7,7 @@ export { useControllableState, useAugmentedRef, useRelativePosition } from './ho
 export type { LayoutPosition } from './hooks';
 export { Portal, PortalHost } from './portal';
 export { toggleGroupUtils, EmptyGestureResponderEvent } from './utils';
+export * as Animated from './animated';
 export * as AlertDialog from './alert-dialog';
 export * as Dialog from './dialog';
 export * as Popover from './popover';
