@@ -265,6 +265,9 @@ importers:
       '@tallyui/core':
         specifier: workspace:*
         version: link:../core
+      '@tallyui/primitives':
+        specifier: workspace:*
+        version: link:../primitives
       '@tallyui/theme':
         specifier: workspace:*
         version: link:../theme
