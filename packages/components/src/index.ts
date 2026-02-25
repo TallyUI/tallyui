@@ -31,3 +31,9 @@ export {
   type FilterChipGroupProps,
   type ChipItem,
 } from './input';
+
+// Customer components
+export {
+  CustomerCard,
+  type CustomerCardProps,
+} from './customer';
