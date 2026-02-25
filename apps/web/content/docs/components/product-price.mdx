@@ -1,0 +1,39 @@
+---
+title: ProductPrice
+description: Displays product price with sale price support
+---
+
+## Import
+
+```tsx
+import { ProductPrice } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ProductPrice doc={productDocument} currencySymbol="$" />
+```
+
+Handles sale prices automatically — regular prices use `text-price`, sale prices use `text-sale` with a "was" indicator.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `doc` | `any` | required | RxDB product document |
+| `currencySymbol` | `string` | `'$'` | Currency symbol to prepend |
+| `className` | `string` | — | Override default styles |
+
+**Default classes:** `text-sm font-medium text-price` (or `text-sale` when on sale)
+
+## Trait mapping
+
+| Connector | Price source | Sale detection |
+|-----------|-------------|----------------|
+| WooCommerce | `doc.price` (string) | `doc.on_sale` boolean |
+| Medusa | `doc.variants[0].prices[0].amount` (cents) | Price lists (not on product) |
+
+## Live demo
+
+<ProductPriceDemo />

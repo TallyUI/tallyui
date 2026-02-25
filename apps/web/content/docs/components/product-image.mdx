@@ -1,0 +1,39 @@
+---
+title: ProductImage
+description: Displays the product's primary image
+---
+
+## Import
+
+```tsx
+import { ProductImage } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ProductImage doc={productDocument} size={80} className="rounded-lg" />
+```
+
+Returns `null` if no image is available. The `size` prop controls width and height via the `style` prop (dynamic values can't be Tailwind classes).
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `doc` | `any` | required | RxDB product document |
+| `size` | `number` | `60` | Image width and height in pixels |
+| `className` | `string` | — | Override default styles |
+
+**Default classes:** `rounded`
+
+## Trait mapping
+
+| Connector | Image source |
+|-----------|-------------|
+| WooCommerce | `doc.images[0].src` |
+| Medusa | `doc.thumbnail` or `doc.images[0].url` |
+
+## Live demo
+
+<ProductImageDemo />
