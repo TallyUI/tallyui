@@ -8,3 +8,4 @@ export type { LayoutPosition } from './hooks';
 export { Portal, PortalHost } from './portal';
 export { toggleGroupUtils, EmptyGestureResponderEvent } from './utils';
 export * as Dialog from './dialog';
+export * as Tabs from './tabs';
