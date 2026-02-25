@@ -16,3 +16,5 @@ export * as List from './list';
 export * as Image from './image';
 export * as Label from './label';
 export * as Separator from './separator';
+export * as Checkbox from './checkbox';
+export * as Switch from './switch';
