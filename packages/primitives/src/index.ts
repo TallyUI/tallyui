@@ -3,3 +3,5 @@
 
 export * from './types';
 export { Slot, composeRefs, mergeProps } from './slot';
+export { useControllableState, useAugmentedRef, useRelativePosition } from './hooks';
+export type { LayoutPosition } from './hooks';
