@@ -43,3 +43,12 @@ export function useProductTraits() {
   const connector = useConnector();
   return connector.traits.product;
 }
+
+/**
+ * Convenience hook: grab just the customer traits from the active connector.
+ * Returns undefined if the connector doesn't implement customer traits.
+ */
+export function useCustomerTraits() {
+  const connector = useConnector();
+  return connector.traits.customer;
+}
