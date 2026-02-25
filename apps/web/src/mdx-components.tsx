@@ -8,6 +8,8 @@ import { ProductPriceDemo } from '@/components/snacks/product-price-snack';
 import { ProductImageDemo } from '@/components/snacks/product-image-snack';
 import { ProductSkuDemo } from '@/components/snacks/product-sku-snack';
 import { ProductStockBadgeDemo } from '@/components/snacks/product-stock-badge-snack';
+import { CartLineDemo } from '@/components/snacks/cart-line-snack';
+import { CartTotalDemo } from '@/components/snacks/cart-total-snack';
 
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
   return {
@@ -20,6 +22,8 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     ProductImageDemo,
     ProductSkuDemo,
     ProductStockBadgeDemo,
+    CartLineDemo,
+    CartTotalDemo,
     ...components,
   };
 }

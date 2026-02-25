@@ -1,0 +1,32 @@
+---
+title: CartTotal
+description: Cart summary with subtotal, optional tax, and total
+---
+
+## Import
+
+```tsx
+import { CartTotal } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CartTotal items={cartItems} taxRate={0.1} taxLabel="GST" />
+```
+
+Renders rows for subtotal and total, with an optional tax line when `taxRate > 0`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `items` | `CartLineItem[]` | required | All cart line items |
+| `currencySymbol` | `string` | `'$'` | Currency symbol |
+| `taxRate` | `number` | `0` | Tax rate as decimal (0.1 = 10%) |
+| `taxLabel` | `string` | `'Tax'` | Label for tax line |
+| `className` | `string` | — | Override container styles |
+
+## Live demo
+
+<CartTotalDemo />
