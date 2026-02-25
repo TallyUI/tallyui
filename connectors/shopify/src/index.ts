@@ -3,6 +3,7 @@ import type { TallyConnector } from '@tallyui/core';
 import { shopifyProductSchema } from './schemas/products';
 import { shopifyProductTraits } from './traits/product';
 import { shopifyProductSync } from './sync/products';
+import { shopifyProductReplication } from './replication/products';
 
 /**
  * Shopify connector for Tally UI.
@@ -60,9 +61,14 @@ export const shopifyConnector: TallyConnector = {
   sync: {
     products: shopifyProductSync,
   },
+
+  replication: {
+    products: shopifyProductReplication,
+  },
 };
 
 // Re-export pieces for advanced usage
 export { shopifyProductSchema } from './schemas/products';
 export { shopifyProductTraits } from './traits/product';
 export { shopifyProductSync } from './sync/products';
+export { shopifyProductReplication } from './replication/products';
