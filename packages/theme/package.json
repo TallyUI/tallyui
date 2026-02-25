@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/theme",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Shared design tokens and utilities for Tally UI",
   "main": "./dist/index.js",
@@ -14,7 +14,10 @@
     },
     "./tokens.css": "./src/tokens.css"
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "license": "MIT",
   "scripts": {
     "build": "tsup",

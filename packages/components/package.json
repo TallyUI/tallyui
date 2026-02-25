@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/components",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "Universal POS UI components for Tally UI",
   "main": "./dist/index.js",
@@ -13,7 +13,10 @@
       "source": "./src/index.ts"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "license": "MIT",
   "scripts": {
     "build": "tsup",
@@ -21,15 +24,12 @@
     "test": "echo \"no tests yet\""
   },
   "devDependencies": {
-    "@tallyui/mock-api": "workspace:*"
+    "@types/react": ">=18"
   },
   "peerDependencies": {
     "@tallyui/core": "workspace:*",
     "@tallyui/theme": "workspace:*",
     "react": ">=18",
     "react-native": ">=0.74"
-  },
-  "devDependencies": {
-    "@types/react": ">=18"
   }
 }
