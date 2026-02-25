@@ -1,0 +1,92 @@
+---
+title: RadioGroup
+description: A set of mutually exclusive options where only one can be selected at a time.
+---
+
+## Import
+
+```tsx
+import { RadioGroup } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<RadioGroup.Root value={value} onValueChange={setValue}>
+  <RadioGroup.Item value="small">
+    <RadioGroup.Indicator />
+  </RadioGroup.Item>
+  <RadioGroup.Item value="medium">
+    <RadioGroup.Indicator />
+  </RadioGroup.Item>
+  <RadioGroup.Item value="large">
+    <RadioGroup.Indicator />
+  </RadioGroup.Item>
+</RadioGroup.Root>
+```
+
+## Components
+
+### RadioGroup.Root
+
+Container that manages the selected value.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | — | Controlled selected value |
+| `defaultValue` | `string` | — | Initial value (uncontrolled) |
+| `onValueChange` | `(value: string) => void` | — | Called when selection changes |
+| `disabled` | `boolean` | `false` | Disables all items |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### RadioGroup.Item
+
+A pressable option within the group.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The value this item represents |
+| `disabled` | `boolean` | `false` | Disables this item |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### RadioGroup.Indicator
+
+Renders inside an Item when that item is selected. Supports `forceMount`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render regardless of selection |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `radiogroup` on Root, `radio` on each Item
+- ARIA: `aria-checked` on each item, `aria-disabled`
+- Only one item can be selected at a time
+
+## Examples
+
+### Controlled
+
+```tsx
+function SizeSelector() {
+  const [size, setSize] = React.useState('medium');
+
+  return (
+    <RadioGroup.Root value={size} onValueChange={setSize}>
+      {['small', 'medium', 'large'].map((s) => (
+        <RadioGroup.Item key={s} value={s}>
+          <RadioGroup.Indicator />
+          <Text>{s}</Text>
+        </RadioGroup.Item>
+      ))}
+    </RadioGroup.Root>
+  );
+}
+```

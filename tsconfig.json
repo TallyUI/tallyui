@@ -34,6 +34,8 @@
       "@tallyui/theme/*": ["packages/theme/src/*"],
       "@tallyui/storage-sqlite": ["packages/storage-sqlite/src/index.ts"],
       "@tallyui/storage-sqlite/*": ["packages/storage-sqlite/src/*"],
+      "@tallyui/primitives": ["packages/primitives/src/index.ts"],
+      "@tallyui/primitives/*": ["packages/primitives/src/*"],
       "@tallyui/mock-api": ["apps/mock-api/src/index.ts"],
       "@tallyui/mock-api/*": ["apps/mock-api/src/*"]
     }

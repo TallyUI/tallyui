@@ -1,0 +1,95 @@
+---
+title: Slider
+description: A control for selecting a numeric value within a range by dragging a thumb.
+---
+
+## Import
+
+```tsx
+import { Slider } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Slider.Root value={volume} onValueChange={setVolume} min={0} max={100}>
+  <Slider.Track>
+    <Slider.Range />
+  </Slider.Track>
+  <Slider.Thumb />
+</Slider.Root>
+```
+
+## Components
+
+### Slider.Root
+
+Container that manages the slider value and constraints.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `number` | — | Controlled value |
+| `defaultValue` | `number` | `0` | Initial value (uncontrolled) |
+| `onValueChange` | `(value: number) => void` | — | Called when value changes |
+| `min` | `number` | `0` | Minimum value |
+| `max` | `number` | `100` | Maximum value |
+| `step` | `number` | `1` | Step increment |
+| `disabled` | `boolean` | `false` | Prevents interaction |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Slider.Track
+
+The background track element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Slider.Range
+
+The filled portion of the track representing the current value. Style its width based on the value context.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Slider.Thumb
+
+The draggable handle.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+## Accessibility
+
+- Role: `slider`
+- ARIA: `aria-valuenow`, `aria-valuemin`, `aria-valuemax`, `aria-disabled`
+- Keyboard: arrow keys to increment/decrement
+
+## Examples
+
+### Controlled
+
+```tsx
+function VolumeSlider() {
+  const [volume, setVolume] = React.useState(50);
+
+  return (
+    <Slider.Root value={volume} onValueChange={setVolume} min={0} max={100} step={5}>
+      <Slider.Track>
+        <Slider.Range />
+      </Slider.Track>
+      <Slider.Thumb />
+    </Slider.Root>
+  );
+}
+```

@@ -1,0 +1,40 @@
+---
+title: Toggle
+description: A button that toggles between pressed and unpressed states.
+---
+
+## Import
+
+```tsx
+import { Toggle } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Toggle.Root pressed={bold} onPressedChange={setBold}>
+  <BoldIcon />
+</Toggle.Root>
+```
+
+## Components
+
+### Toggle.Root
+
+A pressable button that maintains a pressed/unpressed state.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `pressed` | `boolean` | — | Controlled pressed state |
+| `defaultPressed` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onPressedChange` | `(pressed: boolean) => void` | — | Called when pressed state changes |
+| `disabled` | `boolean` | `false` | Prevents interaction |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+## Accessibility
+
+- Role: `button`
+- ARIA: `aria-pressed`, `aria-disabled`
+- Toggles on press

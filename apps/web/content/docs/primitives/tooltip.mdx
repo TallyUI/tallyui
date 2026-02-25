@@ -1,0 +1,91 @@
+---
+title: Tooltip
+description: A floating label that appears on hover or focus to describe an element.
+---
+
+## Import
+
+```tsx
+import { Tooltip } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Tooltip.Root delayDuration={300}>
+  <Tooltip.Trigger>
+    <InfoIcon />
+  </Tooltip.Trigger>
+  <Tooltip.Portal>
+    <Tooltip.Overlay />
+    <Tooltip.Content sideOffset={4}>
+      <Text>Helpful hint</Text>
+    </Tooltip.Content>
+  </Tooltip.Portal>
+</Tooltip.Root>
+```
+
+## Components
+
+### Tooltip.Root
+
+Manages the open/closed state with an optional delay. Does not render a DOM element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+| `delayDuration` | `number` | `0` | Delay in ms before the tooltip appears |
+
+### Tooltip.Trigger
+
+The element that activates the tooltip on hover or focus.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Tooltip.Portal
+
+Renders children into a portal.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always mount portal content |
+| `hostName` | `string` | — | Target portal host name |
+
+### Tooltip.Overlay
+
+An optional overlay behind the tooltip content.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `closeOnPress` | `boolean` | `true` | Whether pressing the overlay closes the tooltip |
+| `forceMount` | `true` | — | Always render the overlay |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Tooltip.Content
+
+The positioned tooltip panel. Accepts all `PositionedContentProps`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `side` | `'top' \| 'bottom'` | `'bottom'` | Preferred side relative to the trigger |
+| `sideOffset` | `number` | `0` | Distance from the trigger |
+| `align` | `'start' \| 'center' \| 'end'` | `'center'` | Alignment along the trigger |
+| `avoidCollisions` | `boolean` | `true` | Shift to stay within the viewport |
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `tooltip`
+- ARIA: `aria-describedby` links the trigger to the tooltip content
+- Appears on hover and focus, dismisses on blur and pointer leave on web

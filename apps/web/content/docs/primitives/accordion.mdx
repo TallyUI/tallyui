@@ -1,0 +1,133 @@
+---
+title: Accordion
+description: A vertically stacked set of collapsible sections, allowing one or multiple to be expanded.
+---
+
+## Import
+
+```tsx
+import { Accordion } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Accordion.Root type="single" collapsible>
+  <Accordion.Item value="faq-1">
+    <Accordion.Header>
+      <Accordion.Trigger>
+        <Text>What are primitives?</Text>
+      </Accordion.Trigger>
+    </Accordion.Header>
+    <Accordion.Content>
+      <Text>Headless, accessible UI building blocks.</Text>
+    </Accordion.Content>
+  </Accordion.Item>
+</Accordion.Root>
+```
+
+## Components
+
+### Accordion.Root
+
+Container that manages which items are expanded. The `type` prop determines single or multiple expansion.
+
+**Single mode:**
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `type` | `'single'` | required | Only one item open at a time |
+| `value` | `string` | — | Controlled expanded value |
+| `defaultValue` | `string` | — | Initial value (uncontrolled) |
+| `onValueChange` | `(value: string) => void` | — | Called when value changes |
+| `collapsible` | `boolean` | `false` | Allow closing all items |
+| `disabled` | `boolean` | `false` | Disables all items |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+**Multiple mode:**
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `type` | `'multiple'` | required | Multiple items can be open |
+| `value` | `string[]` | — | Controlled expanded values |
+| `defaultValue` | `string[]` | — | Initial values (uncontrolled) |
+| `onValueChange` | `(value: string[]) => void` | — | Called when values change |
+| `disabled` | `boolean` | `false` | Disables all items |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Accordion.Item
+
+A single collapsible section.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | Unique identifier for this item |
+| `disabled` | `boolean` | `false` | Disables this item |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Accordion.Header
+
+Wraps the trigger, providing heading semantics.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Accordion.Trigger
+
+A pressable that toggles the parent Item.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Accordion.Content
+
+The collapsible content area. Hidden when the parent Item is collapsed.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render regardless of expanded state |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- ARIA: `aria-expanded` on Trigger, `aria-controls` linking Trigger to Content
+- Keyboard: Space/Enter to toggle, arrow keys to navigate between items on web
+
+## Examples
+
+### Multiple expansion
+
+```tsx
+function FAQ() {
+  const [expanded, setExpanded] = React.useState<string[]>([]);
+
+  return (
+    <Accordion.Root type="multiple" value={expanded} onValueChange={setExpanded}>
+      <Accordion.Item value="q1">
+        <Accordion.Header>
+          <Accordion.Trigger><Text>Question 1</Text></Accordion.Trigger>
+        </Accordion.Header>
+        <Accordion.Content><Text>Answer 1</Text></Accordion.Content>
+      </Accordion.Item>
+      <Accordion.Item value="q2">
+        <Accordion.Header>
+          <Accordion.Trigger><Text>Question 2</Text></Accordion.Trigger>
+        </Accordion.Header>
+        <Accordion.Content><Text>Answer 2</Text></Accordion.Content>
+      </Accordion.Item>
+    </Accordion.Root>
+  );
+}
+```

@@ -1,0 +1,86 @@
+---
+title: Collapsible
+description: A component that expands and collapses a content section.
+---
+
+## Import
+
+```tsx
+import { Collapsible } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Collapsible.Root open={open} onOpenChange={setOpen}>
+  <Collapsible.Trigger>
+    <Text>{open ? 'Hide' : 'Show'} details</Text>
+  </Collapsible.Trigger>
+  <Collapsible.Content>
+    <Text>Collapsible content here</Text>
+  </Collapsible.Content>
+</Collapsible.Root>
+```
+
+## Components
+
+### Collapsible.Root
+
+Container that manages the expanded/collapsed state.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+| `disabled` | `boolean` | `false` | Prevents interaction |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Collapsible.Trigger
+
+A pressable that toggles the content visibility.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Collapsible.Content
+
+The content area that can be shown or hidden.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render regardless of open state |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- ARIA: `aria-expanded` on Trigger, `aria-controls` linking Trigger to Content
+- Keyboard: Space/Enter to toggle on web
+
+## Examples
+
+### Controlled
+
+```tsx
+function ExpandableSection() {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <Collapsible.Root open={open} onOpenChange={setOpen}>
+      <Collapsible.Trigger>
+        <Text>{open ? 'Collapse' : 'Expand'}</Text>
+      </Collapsible.Trigger>
+      <Collapsible.Content>
+        <Text>Extra details that are hidden by default.</Text>
+      </Collapsible.Content>
+    </Collapsible.Root>
+  );
+}
+```

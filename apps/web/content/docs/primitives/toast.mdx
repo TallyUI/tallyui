@@ -1,0 +1,88 @@
+---
+title: Toast
+description: A brief, non-blocking notification that appears temporarily.
+---
+
+## Import
+
+```tsx
+import { Toast } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Toast.Root open={open} onOpenChange={setOpen} type="foreground">
+  <Toast.Title>Item saved</Toast.Title>
+  <Toast.Description>Your changes have been saved.</Toast.Description>
+  <Toast.Action altText="Undo save">
+    <Text>Undo</Text>
+  </Toast.Action>
+  <Toast.Close>
+    <Text>Dismiss</Text>
+  </Toast.Close>
+</Toast.Root>
+```
+
+## Components
+
+### Toast.Root
+
+Container for a single toast notification.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `true` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+| `type` | `'foreground' \| 'background'` | `'foreground'` | Urgency level for screen readers |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Toast.Title
+
+The toast heading.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### Toast.Description
+
+The toast body text.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### Toast.Action
+
+A pressable action inside the toast. Must include `altText` for accessibility.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `altText` | `string` | required | Accessible label describing what the action does |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Toast.Close
+
+A pressable that dismisses the toast.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+## Accessibility
+
+- Toasts are announced via a live region
+- `type="foreground"` maps to `aria-live="assertive"`, `type="background"` maps to `aria-live="polite"`
+- The `altText` on Action provides a screen-reader-friendly description of the action

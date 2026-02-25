@@ -1,0 +1,107 @@
+---
+title: Tabs
+description: A set of tabbed panels where only one panel is visible at a time.
+---
+
+## Import
+
+```tsx
+import { Tabs } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Tabs.Root value={tab} onValueChange={setTab}>
+  <Tabs.List>
+    <Tabs.Trigger value="overview"><Text>Overview</Text></Tabs.Trigger>
+    <Tabs.Trigger value="details"><Text>Details</Text></Tabs.Trigger>
+  </Tabs.List>
+  <Tabs.Content value="overview">
+    <Text>Overview content</Text>
+  </Tabs.Content>
+  <Tabs.Content value="details">
+    <Text>Details content</Text>
+  </Tabs.Content>
+</Tabs.Root>
+```
+
+## Components
+
+### Tabs.Root
+
+Manages the active tab. Does not render a DOM element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | — | Controlled active tab |
+| `defaultValue` | `string` | — | Initial active tab (uncontrolled) |
+| `onValueChange` | `(value: string) => void` | — | Called when active tab changes |
+
+### Tabs.List
+
+Container for the tab triggers. Provides a `tablist` role.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Tabs.Trigger
+
+A pressable tab button. Associates with a Content via matching `value`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The tab value this trigger activates |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Tabs.Content
+
+The panel shown when its `value` matches the active tab.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The tab value this content corresponds to |
+| `forceMount` | `true` | — | Always render regardless of active tab |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `tablist` on List, `tab` on each Trigger, `tabpanel` on each Content
+- ARIA: `aria-selected` on Trigger, `aria-controls` linking Trigger to Content
+- Keyboard: arrow keys to navigate between tabs, Home/End to jump to first/last on web
+
+## Examples
+
+### Controlled
+
+```tsx
+function ProductTabs() {
+  const [tab, setTab] = React.useState('description');
+
+  return (
+    <Tabs.Root value={tab} onValueChange={setTab}>
+      <Tabs.List>
+        <Tabs.Trigger value="description"><Text>Description</Text></Tabs.Trigger>
+        <Tabs.Trigger value="reviews"><Text>Reviews</Text></Tabs.Trigger>
+        <Tabs.Trigger value="specs"><Text>Specs</Text></Tabs.Trigger>
+      </Tabs.List>
+      <Tabs.Content value="description">
+        <Text>Product description goes here.</Text>
+      </Tabs.Content>
+      <Tabs.Content value="reviews">
+        <Text>Customer reviews go here.</Text>
+      </Tabs.Content>
+      <Tabs.Content value="specs">
+        <Text>Technical specs go here.</Text>
+      </Tabs.Content>
+    </Tabs.Root>
+  );
+}
+```

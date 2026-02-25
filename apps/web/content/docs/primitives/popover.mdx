@@ -1,0 +1,105 @@
+---
+title: Popover
+description: A floating panel anchored to a trigger element for displaying rich content.
+---
+
+## Import
+
+```tsx
+import { Popover } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Popover.Root open={open} onOpenChange={setOpen}>
+  <Popover.Trigger>
+    <Text>Show Info</Text>
+  </Popover.Trigger>
+  <Popover.Portal>
+    <Popover.Overlay />
+    <Popover.Content sideOffset={4}>
+      <Text>Popover content here</Text>
+      <Popover.Close>
+        <Text>Dismiss</Text>
+      </Popover.Close>
+    </Popover.Content>
+  </Popover.Portal>
+</Popover.Root>
+```
+
+## Components
+
+### Popover.Root
+
+Manages the open/closed state and trigger positioning. Does not render a DOM element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+
+### Popover.Trigger
+
+A pressable that toggles the popover.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Popover.Portal
+
+Renders children into a portal.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always mount portal content |
+| `hostName` | `string` | — | Target portal host name |
+
+### Popover.Overlay
+
+An optional backdrop. Pressing it closes the popover by default.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `closeOnPress` | `boolean` | `true` | Whether pressing the overlay closes the popover |
+| `forceMount` | `true` | — | Always render the overlay |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Popover.Content
+
+The positioned floating panel. Accepts all `PositionedContentProps` for anchoring.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `side` | `'top' \| 'bottom'` | `'bottom'` | Preferred side relative to the trigger |
+| `sideOffset` | `number` | `0` | Distance from the trigger |
+| `align` | `'start' \| 'center' \| 'end'` | `'center'` | Alignment along the trigger |
+| `alignOffset` | `number` | `0` | Offset from the aligned edge |
+| `avoidCollisions` | `boolean` | `true` | Shift to stay within the viewport |
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`. See the [overview](/docs/primitives#shared-types) for the full `PositionedContentProps` reference.
+
+### Popover.Close
+
+A pressable that closes the popover.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+## Accessibility
+
+- Role: `dialog` on Content
+- ARIA: `aria-expanded` on Trigger
+- Focus is managed when the popover opens and closes on web
+- Escape key closes the popover on web

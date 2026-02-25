@@ -6,7 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
 } from 'react-native';
-import { Stack } from 'expo-router';
+import { Link, Stack } from 'expo-router';
 
 import { cn } from '@tallyui/theme';
 import { ConnectorProvider, useProductTraits } from '@tallyui/core';
@@ -84,6 +84,15 @@ export default function DemoScreen() {
       <Stack.Screen options={{ title: 'Tally UI Demo' }} />
 
       <View className="flex-1 bg-bg">
+        {/* Primitives test screens link */}
+        <Link href="/primitives" asChild>
+          <Pressable className="mx-4 mt-4 rounded-lg bg-primary px-4 py-3">
+            <Text className="text-center text-[15px] font-semibold text-primary-foreground">
+              Primitives Test Screens
+            </Text>
+          </Pressable>
+        </Link>
+
         {/* Connector picker */}
         <View className="px-4 pb-2 pt-4">
           <Text className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-muted">

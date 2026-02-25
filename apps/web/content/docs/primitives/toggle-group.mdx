@@ -1,0 +1,85 @@
+---
+title: ToggleGroup
+description: A group of toggle buttons where one or multiple can be active.
+---
+
+## Import
+
+```tsx
+import { ToggleGroup } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<ToggleGroup.Root type="single" value={alignment} onValueChange={setAlignment}>
+  <ToggleGroup.Item value="left"><AlignLeftIcon /></ToggleGroup.Item>
+  <ToggleGroup.Item value="center"><AlignCenterIcon /></ToggleGroup.Item>
+  <ToggleGroup.Item value="right"><AlignRightIcon /></ToggleGroup.Item>
+</ToggleGroup.Root>
+```
+
+## Components
+
+### ToggleGroup.Root
+
+Container that manages which items are active. The `type` prop determines single or multiple selection.
+
+**Single mode:**
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `type` | `'single'` | required | Only one item active at a time |
+| `value` | `string` | — | Controlled active value |
+| `defaultValue` | `string` | — | Initial value (uncontrolled) |
+| `onValueChange` | `(value: string) => void` | — | Called when value changes |
+| `disabled` | `boolean` | `false` | Disables all items |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+**Multiple mode:**
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `type` | `'multiple'` | required | Multiple items can be active |
+| `value` | `string[]` | — | Controlled active values |
+| `defaultValue` | `string[]` | — | Initial values (uncontrolled) |
+| `onValueChange` | `(value: string[]) => void` | — | Called when values change |
+| `disabled` | `boolean` | `false` | Disables all items |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### ToggleGroup.Item
+
+A pressable toggle within the group.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The value this item represents |
+| `disabled` | `boolean` | `false` | Disables this item |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+## Accessibility
+
+- Role: `group` on Root, `button` on each Item
+- ARIA: `aria-pressed` on each item, `aria-disabled`
+
+## Examples
+
+### Multiple selection
+
+```tsx
+function TextFormatting() {
+  const [formats, setFormats] = React.useState<string[]>([]);
+
+  return (
+    <ToggleGroup.Root type="multiple" value={formats} onValueChange={setFormats}>
+      <ToggleGroup.Item value="bold"><BoldIcon /></ToggleGroup.Item>
+      <ToggleGroup.Item value="italic"><ItalicIcon /></ToggleGroup.Item>
+      <ToggleGroup.Item value="underline"><UnderlineIcon /></ToggleGroup.Item>
+    </ToggleGroup.Root>
+  );
+}
+```

@@ -1,0 +1,36 @@
+---
+title: Separator
+description: A visual or semantic divider between content sections.
+---
+
+## Import
+
+```tsx
+import { Separator } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Separator.Root orientation="horizontal" />
+```
+
+## Components
+
+### Separator.Root
+
+Renders a view element with the appropriate separator role.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `orientation` | `'horizontal' \| 'vertical'` | `'horizontal'` | Direction of the separator |
+| `decorative` | `boolean` | `false` | When `true`, removes the separator from the accessibility tree |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `separator`
+- When `decorative` is `true`, `role` is set to `none` so screen readers skip it
+- `aria-orientation` is set based on the `orientation` prop

@@ -12,7 +12,9 @@
       "@tallyui/connector-woocommerce": ["../../connectors/woocommerce/src/index.ts"],
       "@tallyui/connector-woocommerce/*": ["../../connectors/woocommerce/src/*"],
       "@tallyui/connector-medusa": ["../../connectors/medusa/src/index.ts"],
-      "@tallyui/connector-medusa/*": ["../../connectors/medusa/src/*"]
+      "@tallyui/connector-medusa/*": ["../../connectors/medusa/src/*"],
+      "@tallyui/primitives": ["../../packages/primitives/src/index.ts"],
+      "@tallyui/primitives/*": ["../../packages/primitives/src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "uniwind-env.d.ts"]

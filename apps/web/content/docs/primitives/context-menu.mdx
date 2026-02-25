@@ -1,0 +1,222 @@
+---
+title: ContextMenu
+description: A menu triggered by right-click or long-press, supporting items, checkboxes, radio groups, and submenus.
+---
+
+## Import
+
+```tsx
+import { ContextMenu } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<ContextMenu.Root>
+  <ContextMenu.Trigger>
+    <View style={{ padding: 40 }}>
+      <Text>Right-click or long-press here</Text>
+    </View>
+  </ContextMenu.Trigger>
+  <ContextMenu.Portal>
+    <ContextMenu.Overlay />
+    <ContextMenu.Content>
+      <ContextMenu.Item>
+        <Text>Copy</Text>
+      </ContextMenu.Item>
+      <ContextMenu.Item>
+        <Text>Paste</Text>
+      </ContextMenu.Item>
+    </ContextMenu.Content>
+  </ContextMenu.Portal>
+</ContextMenu.Root>
+```
+
+## Components
+
+### ContextMenu.Root
+
+Manages the open/closed state. Does not render a DOM element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+
+### ContextMenu.Trigger
+
+The area that responds to right-click (web) or long-press (native).
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### ContextMenu.Portal
+
+Renders children into a portal.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always mount portal content |
+| `hostName` | `string` | — | Target portal host name |
+
+### ContextMenu.Overlay
+
+An optional backdrop behind the menu.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `closeOnPress` | `boolean` | `true` | Whether pressing the overlay closes the menu |
+| `forceMount` | `true` | — | Always render the overlay |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### ContextMenu.Content
+
+The positioned menu panel. Accepts all `PositionedContentProps`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `side` | `'top' \| 'bottom'` | `'bottom'` | Preferred side relative to the trigger |
+| `sideOffset` | `number` | `0` | Distance from the trigger |
+| `align` | `'start' \| 'center' \| 'end'` | `'center'` | Alignment along the trigger |
+| `avoidCollisions` | `boolean` | `true` | Shift to stay within the viewport |
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### ContextMenu.Item
+
+A menu action item.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `textValue` | `string` | — | Text for typeahead search |
+| `closeOnPress` | `boolean` | `true` | Whether selecting closes the menu |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### ContextMenu.CheckboxItem
+
+A menu item that toggles a boolean value.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `checked` | `boolean` | required | Whether the item is checked |
+| `onCheckedChange` | `(checked: boolean) => void` | required | Called when checked state changes |
+| `textValue` | `string` | — | Text for typeahead search |
+| `closeOnPress` | `boolean` | `true` | Whether selecting closes the menu |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### ContextMenu.RadioGroup
+
+Groups radio items for mutually exclusive selection.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string \| undefined` | required | The currently selected value |
+| `onValueChange` | `(value: string) => void` | required | Called when selection changes |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### ContextMenu.RadioItem
+
+A radio option inside a RadioGroup.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The value for this option |
+| `textValue` | `string` | — | Text for typeahead search |
+| `closeOnPress` | `boolean` | `true` | Whether selecting closes the menu |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### ContextMenu.ItemIndicator
+
+Renders when the parent CheckboxItem or RadioItem is selected.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render regardless of selection |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### ContextMenu.Group
+
+Groups related items together.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### ContextMenu.Label
+
+A label for a Group.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### ContextMenu.Separator
+
+A visual divider between items or groups.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `decorative` | `boolean` | `false` | Removes from accessibility tree |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### ContextMenu.Sub
+
+A nested submenu root.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+
+### ContextMenu.SubTrigger
+
+A menu item that opens a submenu.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `textValue` | `string` | — | Text for typeahead search |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### ContextMenu.SubContent
+
+The content of a submenu.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `menu` on Content, `menuitem` on Item
+- Triggered by right-click on web, long-press on native
+- Arrow key navigation, typeahead search, and Escape to close on web

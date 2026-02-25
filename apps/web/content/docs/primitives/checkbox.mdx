@@ -1,0 +1,71 @@
+---
+title: Checkbox
+description: A control that toggles between checked and unchecked states.
+---
+
+## Import
+
+```tsx
+import { Checkbox } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Checkbox.Root checked={checked} onCheckedChange={setChecked}>
+  <Checkbox.Indicator>
+    {checked && <CheckIcon />}
+  </Checkbox.Indicator>
+</Checkbox.Root>
+```
+
+## Components
+
+### Checkbox.Root
+
+The pressable container that manages the checked state.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `checked` | `boolean` | — | Controlled checked state |
+| `defaultChecked` | `boolean` | `false` | Initial checked state (uncontrolled) |
+| `onCheckedChange` | `(checked: boolean) => void` | — | Called when the checked state changes |
+| `disabled` | `boolean` | `false` | Prevents interaction |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Checkbox.Indicator
+
+Renders inside Root when the checkbox is checked. Use `forceMount` to always render it (useful for animations).
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render regardless of checked state |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `checkbox`
+- ARIA: `aria-checked`, `aria-disabled`
+- Toggles on press
+
+## Examples
+
+### Controlled
+
+```tsx
+function ControlledCheckbox() {
+  const [checked, setChecked] = React.useState(false);
+
+  return (
+    <Checkbox.Root checked={checked} onCheckedChange={setChecked}>
+      <Checkbox.Indicator forceMount>
+        {checked ? <CheckIcon /> : null}
+      </Checkbox.Indicator>
+    </Checkbox.Root>
+  );
+}
+```

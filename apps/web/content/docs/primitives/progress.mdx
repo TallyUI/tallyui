@@ -1,0 +1,49 @@
+---
+title: Progress
+description: Displays a progress bar indicating completion of a task.
+---
+
+## Import
+
+```tsx
+import { Progress } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Progress.Root value={75} max={100}>
+  <Progress.Indicator />
+</Progress.Root>
+```
+
+## Components
+
+### Progress.Root
+
+Container that holds the progress value and max.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `number \| null` | — | Current progress value, or `null` for indeterminate |
+| `max` | `number` | `100` | Maximum value |
+| `getValueLabel` | `(value: number, max: number) => string` | — | Custom accessible label for the current value |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Progress.Indicator
+
+The filled portion of the bar. Style its width as a percentage of `value / max`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `progressbar`
+- ARIA: `aria-valuenow`, `aria-valuemin`, `aria-valuemax`, `aria-valuetext`
+- When `value` is `null`, the bar is treated as indeterminate

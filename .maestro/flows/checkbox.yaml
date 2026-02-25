@@ -1,0 +1,10 @@
+appId: host.exp.Exponent
+---
+# Checkbox primitive — toggle controlled checkbox and verify state
+- launchApp
+- tapOn: "Checkbox"
+- assertVisible: "State: UNCHECKED"
+- tapOn: "Enable notifications"
+- assertVisible: "State: CHECKED"
+- tapOn: "Enable notifications"
+- assertVisible: "State: UNCHECKED"

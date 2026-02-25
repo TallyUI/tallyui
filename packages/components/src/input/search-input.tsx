@@ -1,5 +1,6 @@
-import { TextInput, View, Text, type TextInputProps } from 'react-native';
-
+import { useId } from 'react';
+import { Text, TextInput, View, type TextInputProps } from 'react-native';
+import { Label } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 
 export interface SearchInputProps extends Omit<TextInputProps, 'value' | 'onChangeText'> {
@@ -9,11 +10,16 @@ export interface SearchInputProps extends Omit<TextInputProps, 'value' | 'onChan
 }
 
 export function SearchInput({ value, onChangeText, className, placeholder = 'Search...', ...props }: SearchInputProps) {
+  const labelId = useId();
+
   return (
     <View className={cn('flex-row items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2', className)}>
-      <Text className="text-muted">{'\u2315'}</Text>
+      <Label.Root nativeID={labelId} asChild>
+        <Text className="text-muted">{'\u2315'}</Text>
+      </Label.Root>
       <TextInput
         role="searchbox"
+        aria-labelledby={labelId}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}

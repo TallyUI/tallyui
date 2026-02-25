@@ -22,6 +22,7 @@ export default defineConfig({
       '@tallyui/connector-vendure': path.resolve(__dirname, 'connectors/vendure/src'),
       '@tallyui/theme': path.resolve(__dirname, 'packages/theme/src'),
       '@tallyui/storage-sqlite': path.resolve(__dirname, 'packages/storage-sqlite/src'),
+      '@tallyui/primitives': path.resolve(__dirname, 'packages/primitives/src'),
       '@tallyui/mock-api': path.resolve(__dirname, 'apps/mock-api/src'),
       // React Native → Web for component rendering in tests
       'react-native': 'react-native-web',

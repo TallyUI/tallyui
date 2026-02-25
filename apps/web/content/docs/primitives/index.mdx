@@ -1,0 +1,74 @@
+---
+title: Primitives
+description: Headless, accessible, cross-platform UI primitives for React Native and Web
+---
+
+`@tallyui/primitives` provides a set of unstyled, accessible UI components that work across React Native and Web. They handle behavior, state management, and accessibility out of the box while leaving visual presentation entirely up to you.
+
+## How primitives fit in
+
+The primitives layer sits beneath `@tallyui/components`. Components apply TallyUI's design tokens and styling on top of these headless building blocks. If you need full control over appearance, use primitives directly. If you want ready-made styled components, reach for `@tallyui/components` instead.
+
+```
+@tallyui/components   ← styled, opinionated
+  └─ @tallyui/primitives  ← headless, accessible
+       └─ React Native
+```
+
+## Installation
+
+```bash
+pnpm add @tallyui/primitives
+```
+
+Peer dependencies: `react >=18.0.0` and `react-native >=0.76.0`.
+
+## Basic usage
+
+Every primitive exports a namespace of compound components:
+
+```tsx
+import { Checkbox } from '@tallyui/primitives';
+
+function MyCheckbox() {
+  const [checked, setChecked] = React.useState(false);
+
+  return (
+    <Checkbox.Root checked={checked} onCheckedChange={setChecked}>
+      <Checkbox.Indicator forceMount>
+        {checked && <CheckIcon />}
+      </Checkbox.Indicator>
+    </Checkbox.Root>
+  );
+}
+```
+
+## The asChild pattern
+
+Most primitive components accept an `asChild` prop. When set to `true`, the primitive does not render its own element. Instead, it merges its props (event handlers, accessibility attributes, refs) onto the single child element you provide. This gives you full control over the rendered DOM/native element without wrapping.
+
+```tsx
+import { Dialog } from '@tallyui/primitives';
+
+// Without asChild — renders a Pressable
+<Dialog.Trigger>
+  <Text>Open</Text>
+</Dialog.Trigger>
+
+// With asChild — merges onto your custom component
+<Dialog.Trigger asChild>
+  <MyCustomButton label="Open" />
+</Dialog.Trigger>
+```
+
+Under the hood, `asChild` uses a `Slot` component that clones the child element and merges props. Event handlers are composed so both fire, styles are flattened together, and refs are combined.
+
+## Shared types
+
+Several types appear across multiple primitives:
+
+- **`SlottableViewProps`** — extends React Native `ViewProps` with `asChild`
+- **`SlottablePressableProps`** — extends `PressableProps` with `asChild`, plus `onKeyDown`/`onKeyUp` on web
+- **`SlottableTextProps`** — extends `TextProps` with `asChild`
+- **`ForceMountable`** — adds `forceMount?: true` to keep content in the DOM even when hidden
+- **`PositionedContentProps`** — shared positioning options for overlays (`side`, `align`, `sideOffset`, `alignOffset`, `avoidCollisions`, etc.)

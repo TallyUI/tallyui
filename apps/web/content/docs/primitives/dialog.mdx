@@ -1,0 +1,148 @@
+---
+title: Dialog
+description: A modal window that overlays the main content and requires user interaction.
+---
+
+## Import
+
+```tsx
+import { Dialog } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Dialog.Root open={open} onOpenChange={setOpen}>
+  <Dialog.Trigger>
+    <Text>Open Dialog</Text>
+  </Dialog.Trigger>
+  <Dialog.Portal>
+    <Dialog.Overlay />
+    <Dialog.Content>
+      <Dialog.Title>Edit Profile</Dialog.Title>
+      <Dialog.Description>Make changes to your profile.</Dialog.Description>
+      <Dialog.Close>
+        <Text>Close</Text>
+      </Dialog.Close>
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
+```
+
+## Components
+
+### Dialog.Root
+
+Manages the open/closed state. Does not render a DOM element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+
+### Dialog.Trigger
+
+A pressable that opens the dialog.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Dialog.Portal
+
+Renders children into a portal. On native, this uses `PortalHost`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always mount portal content |
+| `hostName` | `string` | — | Target portal host name |
+
+### Dialog.Overlay
+
+A backdrop layer behind the content. Typically used for dimming.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render the overlay |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Dialog.Content
+
+The dialog panel that contains the main content.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Dialog.Title
+
+An accessible title for the dialog.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### Dialog.Description
+
+An accessible description for the dialog.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### Dialog.Close
+
+A pressable that closes the dialog.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+## Accessibility
+
+- Role: `dialog`
+- ARIA: `aria-modal`, `aria-labelledby` (linked to Title), `aria-describedby` (linked to Description)
+- Focus is trapped inside the dialog on web
+- Escape key closes the dialog on web
+
+## Examples
+
+### Controlled
+
+```tsx
+function ConfirmDialog() {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Trigger>
+        <Text>Delete Item</Text>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay />
+        <Dialog.Content>
+          <Dialog.Title>Confirm deletion</Dialog.Title>
+          <Dialog.Description>This action cannot be undone.</Dialog.Description>
+          <Dialog.Close>
+            <Text>Cancel</Text>
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+```
