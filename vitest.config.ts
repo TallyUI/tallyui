@@ -21,6 +21,7 @@ export default defineConfig({
       '@tallyui/connector-shopify': path.resolve(__dirname, 'connectors/shopify/src'),
       '@tallyui/connector-vendure': path.resolve(__dirname, 'connectors/vendure/src'),
       '@tallyui/theme': path.resolve(__dirname, 'packages/theme/src'),
+      '@tallyui/storage-sqlite': path.resolve(__dirname, 'packages/storage-sqlite/src'),
       // React Native → Web for component rendering in tests
       'react-native': 'react-native-web',
       // Deduplicate React to a single copy (prevents "multiple copies" errors)

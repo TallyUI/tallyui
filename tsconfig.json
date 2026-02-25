@@ -31,7 +31,9 @@
       "@tallyui/connector-vendure": ["connectors/vendure/src/index.ts"],
       "@tallyui/connector-vendure/*": ["connectors/vendure/src/*"],
       "@tallyui/theme": ["packages/theme/src/index.ts"],
-      "@tallyui/theme/*": ["packages/theme/src/*"]
+      "@tallyui/theme/*": ["packages/theme/src/*"],
+      "@tallyui/storage-sqlite": ["packages/storage-sqlite/src/index.ts"],
+      "@tallyui/storage-sqlite/*": ["packages/storage-sqlite/src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],
