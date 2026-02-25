@@ -42,4 +42,6 @@ export {
 export {
   PaymentMethodCard,
   type PaymentMethodCardProps,
+  OrderSummaryLine,
+  type OrderSummaryLineProps,
 } from './checkout';
