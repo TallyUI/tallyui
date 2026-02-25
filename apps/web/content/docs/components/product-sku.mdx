@@ -1,0 +1,38 @@
+---
+title: ProductSku
+description: Displays a product's SKU with configurable fallback
+---
+
+## Import
+
+```tsx
+import { ProductSku } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ProductSku doc={productDocument} />
+<ProductSku doc={productDocument} fallback="N/A" />
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `doc` | `any` | required | RxDB product document |
+| `fallback` | `string` | `'—'` | Text when SKU is missing |
+| `className` | `string` | — | Override default styles |
+
+**Default classes:** `text-xs text-muted`
+
+## Trait mapping
+
+| Connector | SKU source |
+|-----------|-----------|
+| WooCommerce | `doc.sku` |
+| Medusa | `doc.variants[0].sku` |
+
+## Live demo
+
+<ProductSkuDemo />

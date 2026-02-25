@@ -1,0 +1,35 @@
+---
+title: ProductStockBadge
+description: Visual stock status indicator with colored dot and label
+---
+
+## Import
+
+```tsx
+import { ProductStockBadge } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ProductStockBadge doc={productDocument} />
+<ProductStockBadge doc={productDocument} showQuantity />
+```
+
+Renders a pill-shaped badge with status-appropriate colors:
+- **In Stock** — `bg-success/15 text-success`
+- **Out of Stock** — `bg-danger/15 text-danger`
+- **On Backorder** — `bg-warning/15 text-warning`
+- **Unknown** — `bg-muted/15 text-muted`
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `doc` | `any` | required | RxDB product document |
+| `showQuantity` | `boolean` | `false` | Show quantity alongside status |
+| `className` | `string` | — | Override badge container styles |
+
+## Live demo
+
+<ProductStockBadgeDemo />

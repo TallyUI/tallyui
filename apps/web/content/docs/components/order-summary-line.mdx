@@ -1,0 +1,35 @@
+---
+title: OrderSummaryLine
+description: A single label-amount row for order summaries and receipts
+---
+
+## Import
+
+```tsx
+import { OrderSummaryLine } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OrderSummaryLine label="Subtotal" amount="$599.99" />
+<OrderSummaryLine label="Total" amount="$659.99" bold />
+```
+
+Renders a horizontal row with a label on the left and an amount on the right. When `bold` is true, both label and amount use heavier font weight -- useful for the total line.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `label` | `string` | required | Left-side label text |
+| `amount` | `string` | required | Right-side formatted amount |
+| `bold` | `boolean` | `false` | Bold styling for emphasis (e.g. total row) |
+| `className` | `string` | --- | Override row styles |
+
+**Regular styles:** label uses `text-muted`, amount uses `text-foreground`
+**Bold styles:** both use `font-bold text-foreground`
+
+## Live demo
+
+<OrderSummaryLineDemo />

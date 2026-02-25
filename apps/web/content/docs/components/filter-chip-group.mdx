@@ -1,0 +1,70 @@
+---
+title: FilterChipGroup
+description: Horizontally scrollable group of toggle chips for category filtering
+---
+
+## Import
+
+```tsx
+import { FilterChip, FilterChipGroup } from '@tallyui/components';
+```
+
+## Usage
+
+### FilterChipGroup (recommended)
+
+```tsx
+const [chips, setChips] = React.useState([
+  { label: 'All', active: true },
+  { label: 'Equipment', active: false },
+  { label: 'Accessories', active: false },
+]);
+
+<FilterChipGroup
+  chips={chips}
+  onChipPress={(index) =>
+    setChips((prev) => prev.map((c, i) => ({ ...c, active: i === index })))
+  }
+/>
+```
+
+### Standalone FilterChip
+
+```tsx
+<FilterChip label="Equipment" active={isActive} onPress={toggle} />
+```
+
+## Props
+
+### FilterChipGroup
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `chips` | `ChipItem[]` | required | Array of chip data |
+| `onChipPress` | `(index: number) => void` | required | Called with chip index on press |
+| `className` | `string` | — | Override scroll content styles |
+
+### ChipItem
+
+```ts
+interface ChipItem {
+  label: string;
+  active: boolean;
+}
+```
+
+### FilterChip
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `label` | `string` | required | Chip label text |
+| `active` | `boolean` | required | Whether chip is selected |
+| `onPress` | `() => void` | required | Called on press |
+| `className` | `string` | — | Override chip styles |
+
+**Active classes:** `bg-primary` with `text-primary-foreground`
+**Inactive classes:** `bg-surface-alt` with `text-muted`
+
+## Live demo
+
+<FilterChipGroupDemo />

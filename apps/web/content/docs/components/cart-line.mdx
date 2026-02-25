@@ -1,0 +1,39 @@
+---
+title: CartLine
+description: Displays a single cart line item with name, quantity, and total
+---
+
+## Import
+
+```tsx
+import { CartLine } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CartLine item={{ doc: productDocument, quantity: 2 }} currencySymbol="$" />
+```
+
+Horizontal row with product info on the left (name + unit price x quantity) and line total on the right.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `item` | `CartLineItem` | required | Object with `doc` and `quantity` |
+| `currencySymbol` | `string` | `'$'` | Currency symbol |
+| `className` | `string` | — | Override container styles |
+
+### CartLineItem
+
+```ts
+interface CartLineItem {
+  doc: any;       // RxDB product document
+  quantity: number;
+}
+```
+
+## Live demo
+
+<CartLineDemo />

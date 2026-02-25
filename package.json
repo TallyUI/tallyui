@@ -24,7 +24,8 @@
     "onlyBuiltDependencies": [
       "rxdb",
       "protobufjs",
-      "@firebase/util"
+      "@firebase/util",
+      "esbuild"
     ]
   },
   "devDependencies": {
@@ -38,6 +39,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-native-web": "~0.21.2",
+    "tsup": "^8.5.1",
     "vitest": "^4.0.18"
   }
 }

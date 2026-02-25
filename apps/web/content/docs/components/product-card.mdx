@@ -1,0 +1,42 @@
+---
+title: ProductCard
+description: A compact card showing product image, title, and price
+---
+
+## Import
+
+```tsx
+import { ProductCard } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ProductCard doc={productDocument} onPress={() => addToCart(doc)} />
+```
+
+Combines ProductImage, ProductTitle, and ProductPrice into a single tappable card. When `onPress` is provided, the entire card becomes pressable.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `doc` | `any` | required | RxDB product document |
+| `onPress` | `() => void` | — | Tap handler (wraps card in Pressable) |
+| `imageSize` | `number` | `80` | Image width/height in pixels |
+| `currencySymbol` | `string` | `'$'` | Currency symbol for price |
+| `className` | `string` | — | Override card container styles |
+
+**Default classes:** `items-center gap-2 rounded-lg bg-surface p-3`
+
+## Composition
+
+ProductCard renders these components internally:
+
+- `ProductImage` with `size={imageSize}` and rounded corners
+- `ProductTitle` truncated to 2 lines
+- `ProductPrice` with the provided currency symbol
+
+## Live demo
+
+<ProductCardDemo />

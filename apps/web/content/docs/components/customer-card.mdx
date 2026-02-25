@@ -1,0 +1,41 @@
+---
+title: CustomerCard
+description: Displays customer name, email, and address using connector traits
+---
+
+## Import
+
+```tsx
+import { CustomerCard } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CustomerCard doc={customerDocument} />
+```
+
+Renders a customer's name, email, and address summary. The component reads data through `useCustomerTraits()`, so the active connector's customer trait implementation determines which fields are used.
+
+Requires a `ConnectorProvider` ancestor in the component tree.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `doc` | `any` | required | Customer document from RxDB |
+| `className` | `string` | --- | Override container styles |
+
+## Trait mapping
+
+| Field | Trait method |
+|-------|-------------|
+| Name | `traits.customer.getName(doc)` |
+| Email | `traits.customer.getEmail(doc)` |
+| Address | `traits.customer.getAddressSummary(doc)` |
+
+If the connector doesn't implement customer traits, the component renders nothing.
+
+## Live demo
+
+<CustomerCardDemo />

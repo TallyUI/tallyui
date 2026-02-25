@@ -1,0 +1,47 @@
+---
+title: CartPanel
+description: Scrollable cart panel with header, line items, and footer slots
+---
+
+## Import
+
+```tsx
+import { CartPanel } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CartPanel
+  items={cartItems}
+  renderItem={(item) => <CartLine item={item} />}
+  header={<CustomerCard doc={customer} />}
+  footer={<CartTotal items={cartItems} />}
+/>
+```
+
+A scrollable cart panel that composes line items into a list with optional header and footer slots. The header typically holds customer info, and the footer holds totals or a checkout button.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `items` | `CartLineItem[]` | required | Cart line items to render |
+| `renderItem` | `(item, index) => ReactNode` | required | Render function for each line |
+| `header` | `ReactNode` | — | Header slot (e.g. customer info) |
+| `footer` | `ReactNode` | — | Footer slot (e.g. totals, checkout button) |
+| `emptyState` | `ReactNode` | — | Content shown when items is empty |
+| `className` | `string` | — | Override container styles |
+
+### CartLineItem
+
+```ts
+interface CartLineItem {
+  doc: any;       // RxDB product document
+  quantity: number;
+}
+```
+
+## Live demo
+
+<CartPanelDemo />

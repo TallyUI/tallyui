@@ -120,7 +120,7 @@ export class RxStorageInstanceSQLite<RxDocType>
     // Use RxDB's built-in categorization for conflict detection and event generation
     const categorized = categorizeBulkWriteRows<RxDocType>(
       this,
-      this.primaryPath,
+      this.primaryPath as any,
       docsInDb,
       documentWrites,
       context,

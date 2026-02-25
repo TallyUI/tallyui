@@ -1,6 +1,7 @@
 import type { RxJsonSchema } from 'rxdb';
 
 import type { ProductTraits } from './traits/product';
+import type { CustomerTraits } from './traits/customer';
 import type { ReplicationAdapter } from './replication';
 
 /**
@@ -81,7 +82,7 @@ export interface ConnectorSchemas {
  */
 export interface ConnectorTraits {
   product: ProductTraits;
-  // Future: order, customer, etc.
+  customer?: CustomerTraits;
 }
 
 /**

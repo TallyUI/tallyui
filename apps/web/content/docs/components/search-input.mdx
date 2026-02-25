@@ -1,0 +1,37 @@
+---
+title: SearchInput
+description: A styled search text input with magnifying glass icon
+---
+
+## Import
+
+```tsx
+import { SearchInput } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+const [query, setQuery] = React.useState('');
+
+<SearchInput value={query} onChangeText={setQuery} placeholder="Search products..." />
+```
+
+A controlled text input wrapped in a bordered container with a search icon. Typically placed above a product grid or list to drive filtering.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | Current search text |
+| `onChangeText` | `(text: string) => void` | required | Called when text changes |
+| `placeholder` | `string` | `'Search...'` | Placeholder text |
+| `className` | `string` | — | Override container styles |
+
+Plus all `TextInputProps` from React Native (except `value` and `onChangeText` which are required above).
+
+**Default classes:** `flex-row items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2`
+
+## Live demo
+
+<SearchInputDemo />

@@ -12,3 +12,5 @@ export type {
 export type { ReplicationAdapter } from './replication';
 
 export type { ProductTraits } from './traits/product';
+
+export type { CustomerTraits } from './traits/customer';

@@ -1,0 +1,48 @@
+---
+title: PaymentSelector
+description: Radio-style selector for choosing a payment method
+---
+
+## Import
+
+```tsx
+import { PaymentSelector } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<PaymentSelector
+  methods={[
+    { id: 'cash', label: 'Cash' },
+    { id: 'card', label: 'Credit Card' },
+  ]}
+  selected={selectedMethod}
+  onSelect={setSelectedMethod}
+/>
+```
+
+A vertical list of PaymentMethodCard items where exactly one can be selected at a time. Manages the selected state visually and calls `onSelect` with the method ID when tapped.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `methods` | `PaymentMethod[]` | required | Available payment methods |
+| `selected` | `string` | required | ID of the currently selected method |
+| `onSelect` | `(id: string) => void` | required | Called with method ID on selection |
+| `className` | `string` | --- | Override container styles |
+
+### PaymentMethod
+
+```ts
+interface PaymentMethod {
+  id: string;
+  label: string;
+  icon?: ReactNode;
+}
+```
+
+## Live demo
+
+<PaymentSelectorDemo />
