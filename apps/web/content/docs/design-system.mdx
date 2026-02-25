@@ -1,0 +1,174 @@
+---
+title: Design System
+description: Shared design tokens, theming, and styling utilities
+---
+
+## Overview
+
+Tally UI uses a shared design system built on Tailwind CSS 4 and [Uniwind](https://uniwind.dev). The `@tallyui/theme` package provides semantic design tokens, light/dark theming, and a `cn()` utility for className composition.
+
+All components use `className` for styling — no `StyleSheet.create()` or inline style objects. This works across iOS, Android, and Web through Uniwind's build-time compilation.
+
+```bash
+pnpm add @tallyui/theme
+```
+
+## Design Tokens
+
+Tokens are defined in `@tallyui/theme/tokens.css` using Tailwind 4's `@theme` directive. They map to semantic Tailwind classes:
+
+### Backgrounds
+
+| Token | Class | Light | Dark |
+|-------|-------|-------|------|
+| `--color-bg` | `bg-bg` | `#f8f9fa` | `#0d1117` |
+| `--color-surface` | `bg-surface` | `#ffffff` | `#161b22` |
+| `--color-surface-alt` | `bg-surface-alt` | `#f3f4f6` | `#1c2128` |
+
+### Text
+
+| Token | Class | Light | Dark |
+|-------|-------|-------|------|
+| `--color-foreground` | `text-foreground` | `#111827` | `#c9d1d9` |
+| `--color-muted` | `text-muted` | `#6b7280` | `#8b949e` |
+| `--color-bright` | `text-bright` | `#f9fafb` | `#f0f6fc` |
+
+### Status
+
+| Token | Class | Light | Dark |
+|-------|-------|-------|------|
+| `--color-success` | `text-success` | `#059669` | `#3fb950` |
+| `--color-danger` | `text-danger` | `#dc2626` | `#f85149` |
+| `--color-warning` | `text-warning` | `#d97706` | `#d29922` |
+| `--color-info` | `text-info` | `#3b82f6` | `#58a6ff` |
+
+### Commerce
+
+| Token | Class | Light | Dark |
+|-------|-------|-------|------|
+| `--color-price` | `text-price` | `#059669` | `#3fb950` |
+| `--color-sale` | `text-sale` | `#dc2626` | `#f85149` |
+
+### Other
+
+| Token | Class | Light | Dark |
+|-------|-------|-------|------|
+| `--color-border` | `border-border` | `#e5e7eb` | `#30363d` |
+| `--color-primary` | `bg-primary` | `#6366f1` | `#818cf8` |
+| `--color-primary-foreground` | `text-primary-foreground` | `#ffffff` | `#1e1b4b` |
+
+## Theming
+
+Tally UI supports light and dark themes out of the box. Tokens automatically switch values based on the active theme.
+
+### Switching Themes
+
+```tsx
+import { Uniwind } from 'uniwind';
+
+// Set a specific theme
+Uniwind.setTheme('dark');
+Uniwind.setTheme('light');
+
+// Follow device preferences
+Uniwind.setTheme('system');
+```
+
+### Using Dark Variants
+
+You can also use Tailwind's `dark:` prefix for one-off overrides:
+
+```tsx
+<View className="bg-surface dark:bg-surface-alt">
+  <Text className="text-foreground">Adapts to theme</Text>
+</View>
+```
+
+## The `cn()` Utility
+
+The `cn()` function combines [clsx](https://github.com/lukeed/clsx) (conditional class logic) with [tailwind-merge](https://github.com/dcastil/tailwind-merge) (conflict resolution). Import it from `@tallyui/theme`:
+
+```tsx
+import { cn } from '@tallyui/theme';
+
+// Conditional classes
+cn('text-sm', isActive && 'text-primary')
+// → 'text-sm text-primary' (when active)
+
+// Overriding defaults
+cn('text-base text-foreground', className)
+// → consumer's className wins over defaults
+```
+
+## Overriding Component Styles
+
+Every Tally UI component accepts a `className` prop. Defaults are applied internally, and your classes override them via `cn()`:
+
+```tsx
+// Default styling
+<ProductTitle doc={doc} />
+
+// Override with your own classes
+<ProductTitle doc={doc} className="text-2xl font-bold text-primary" />
+```
+
+This works because components use `cn()` internally:
+
+```tsx
+// Inside ProductTitle
+<Text className={cn('text-base font-semibold text-foreground', className)}>
+  {getName(doc)}
+</Text>
+```
+
+Your `text-2xl` replaces the default `text-base`, your `font-bold` replaces `font-semibold`, and `text-primary` replaces `text-foreground`. Non-conflicting classes merge normally.
+
+## Opacity Modifiers
+
+Tailwind's opacity syntax works with all tokens. This is useful for backgrounds on status badges:
+
+```tsx
+<View className="bg-success/15">  {/* 15% opacity green background */}
+<View className="bg-danger/10">   {/* 10% opacity red background */}
+```
+
+## Setup for New Apps
+
+If you're building a new app with Tally UI components, you need to import the design tokens.
+
+### React Native (Expo + Uniwind)
+
+Create a `global.css` at your app root:
+
+```css
+@import 'tailwindcss';
+@import 'uniwind';
+@import '@tallyui/theme/tokens.css';
+
+@source '../../packages/components';
+```
+
+Import it in your root layout:
+
+```tsx
+import './global.css';
+```
+
+And wrap your Metro config:
+
+```js
+const { withUniwindConfig } = require('uniwind/metro');
+
+module.exports = withUniwindConfig(config, {
+  cssEntryFile: './global.css',
+});
+```
+
+### Web (Next.js / Vite)
+
+Import the tokens in your global CSS file:
+
+```css
+@import 'tailwindcss';
+@import '@tallyui/theme/tokens.css';
+```

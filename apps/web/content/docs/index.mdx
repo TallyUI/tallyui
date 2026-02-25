@@ -36,7 +36,7 @@ Tally UI sits between your backend API and your UI. A **connector** maps each ba
 Install the core packages and a connector:
 
 ```bash
-pnpm add @tallyui/core @tallyui/database @tallyui/components @tallyui/connector-woocommerce
+pnpm add @tallyui/core @tallyui/database @tallyui/components @tallyui/theme @tallyui/connector-woocommerce
 ```
 
 Wrap your app with the connector provider:
@@ -54,15 +54,15 @@ function App() {
 }
 ```
 
-Use components that work with any backend:
+Use components that work with any backend. Style with Tailwind classes via [Uniwind](https://uniwind.dev):
 
 ```tsx
 import { ProductTitle, ProductPrice } from '@tallyui/components';
 
 function ProductCard({ doc }) {
   return (
-    <View>
-      <ProductTitle doc={doc} />
+    <View className="bg-surface rounded-lg p-4 gap-1">
+      <ProductTitle doc={doc} className="text-lg font-bold" />
       <ProductPrice doc={doc} currencySymbol="$" />
     </View>
   );
@@ -73,6 +73,7 @@ function ProductCard({ doc }) {
 
 <Cards>
   <Card title="Architecture" href="/docs/architecture" />
-  <Card title="Connectors" href="/docs/connectors" />
+  <Card title="Design System" href="/docs/design-system" />
   <Card title="Components" href="/docs/components" />
+  <Card title="Connectors" href="/docs/connectors" />
 </Cards>

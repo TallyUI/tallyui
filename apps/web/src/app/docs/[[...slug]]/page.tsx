@@ -29,7 +29,6 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
         <MDX
           components={getMDXComponents({
             // this allows you to link to other pages with relative file paths
-            // @ts-expect-error -- React types version mismatch in monorepo (18 vs 19)
             a: createRelativeLink(source, page),
           })}
         />

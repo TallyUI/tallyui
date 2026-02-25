@@ -35,10 +35,10 @@ function ProductCard({ doc }) {
   const { getName, getPrice, getImageUrl } = useProductTraits();
 
   return (
-    <View>
-      <Image source={{ uri: getImageUrl(doc) }} />
-      <Text>{getName(doc)}</Text>
-      <Text>${getPrice(doc)}</Text>
+    <View className="bg-surface rounded-lg p-4 gap-2">
+      <Image source={{ uri: getImageUrl(doc) }} className="rounded w-16 h-16" />
+      <Text className="text-base font-semibold text-foreground">{getName(doc)}</Text>
+      <Text className="text-sm text-price">${getPrice(doc)}</Text>
     </View>
   );
 }
@@ -104,5 +104,8 @@ When you need connector-specific fields that aren't covered by traits, you can a
 | `@tallyui/core` | Connector interfaces, trait types, React context |
 | `@tallyui/database` | RxDB factory — creates databases from connector schemas |
 | `@tallyui/components` | UI primitives (ProductTitle, ProductPrice, etc.) |
+| `@tallyui/theme` | Shared design tokens, theming, and `cn()` utility |
 | `@tallyui/connector-woocommerce` | WooCommerce connector |
 | `@tallyui/connector-medusa` | MedusaJS v2 connector |
+| `@tallyui/connector-shopify` | Shopify Admin API connector |
+| `@tallyui/connector-vendure` | Vendure GraphQL connector |
