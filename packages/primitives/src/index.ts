@@ -26,3 +26,4 @@ export * as ToggleGroup from './toggle-group';
 export * as Collapsible from './collapsible';
 export * as Accordion from './accordion';
 export * as Slider from './slider';
+export * as Toast from './toast';
