@@ -3,6 +3,7 @@ import type { TallyConnector } from '@tallyui/core';
 import { vendureProductSchema } from './schemas/products';
 import { vendureProductTraits } from './traits/product';
 import { vendureProductSync } from './sync/products';
+import { vendureProductReplication } from './replication/products';
 
 /**
  * Vendure connector for Tally UI.
@@ -59,9 +60,14 @@ export const vendureConnector: TallyConnector = {
   sync: {
     products: vendureProductSync,
   },
+
+  replication: {
+    products: vendureProductReplication,
+  },
 };
 
 // Re-export pieces for advanced usage
 export { vendureProductSchema } from './schemas/products';
 export { vendureProductTraits } from './traits/product';
 export { vendureProductSync } from './sync/products';
+export { vendureProductReplication } from './replication/products';
