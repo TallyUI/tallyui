@@ -25,4 +25,9 @@ export {
 export {
   SearchInput,
   type SearchInputProps,
+  FilterChip,
+  FilterChipGroup,
+  type FilterChipProps,
+  type FilterChipGroupProps,
+  type ChipItem,
 } from './input';
