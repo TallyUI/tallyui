@@ -31,3 +31,4 @@ export * as Slider from './slider';
 export * as Toast from './toast';
 export * as Tooltip from './tooltip';
 export * as HoverCard from './hover-card';
+export * as Table from './table';
