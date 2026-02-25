@@ -27,3 +27,5 @@ export * as Collapsible from './collapsible';
 export * as Accordion from './accordion';
 export * as Slider from './slider';
 export * as Toast from './toast';
+export * as Tooltip from './tooltip';
+export * as HoverCard from './hover-card';
