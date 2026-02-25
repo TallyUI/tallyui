@@ -6,12 +6,14 @@ export {
   ProductSku,
   ProductStockBadge,
   ProductCard,
+  ProductGrid,
   type ProductTitleProps,
   type ProductPriceProps,
   type ProductImageProps,
   type ProductSkuProps,
   type ProductStockBadgeProps,
   type ProductCardProps,
+  type ProductGridProps,
 } from './product';
 
 // Cart components
