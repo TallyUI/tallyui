@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/connector-woocommerce",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "WooCommerce connector for Tally UI",
   "main": "./dist/index.js",
@@ -13,7 +13,10 @@
       "source": "./src/index.ts"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "license": "MIT",
   "scripts": {
     "build": "tsup",
