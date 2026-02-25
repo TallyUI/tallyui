@@ -16,7 +16,7 @@ test.describe('Dialog primitive', () => {
     await expect(page.getByRole('dialog')).toBeVisible();
 
     // Click the Close button inside the dialog
-    await page.getByRole('dialog').getByText('Close').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
     await expect(page.getByRole('dialog')).not.toBeVisible();
   });
 
