@@ -1,11 +1,22 @@
 {
   "name": "@tallyui/database",
   "version": "0.1.0",
+  "type": "module",
   "description": "RxDB database factory for Tally UI — accepts pluggable connector schemas",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "source": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "source": "./src/index.ts"
+    }
+  },
+  "files": ["dist", "src"],
   "license": "MIT",
   "scripts": {
+    "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet\""
   },

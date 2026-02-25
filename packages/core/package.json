@@ -1,11 +1,22 @@
 {
   "name": "@tallyui/core",
   "version": "0.1.0",
+  "type": "module",
   "description": "Core interfaces, traits, and context providers for Tally UI",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "source": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "source": "./src/index.ts"
+    }
+  },
+  "files": ["dist", "src"],
   "license": "MIT",
   "scripts": {
+    "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet\""
   },
@@ -13,5 +24,8 @@
     "react": ">=18",
     "rxdb": ">=16",
     "rxjs": ">=7"
+  },
+  "devDependencies": {
+    "@types/react": ">=18"
   }
 }
