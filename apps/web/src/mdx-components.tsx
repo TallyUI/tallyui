@@ -11,6 +11,9 @@ import { CartLineDemo } from '@/components/snacks/cart-line-snack';
 import { CartTotalDemo } from '@/components/snacks/cart-total-snack';
 import { SearchInputDemo } from '@/components/snacks/search-input-snack';
 import { FilterChipGroupDemo } from '@/components/snacks/filter-chip-group-snack';
+import { ProductCardDemo } from '@/components/snacks/product-card-snack';
+import { ProductGridDemo } from '@/components/snacks/product-grid-snack';
+import { CartPanelDemo } from '@/components/snacks/cart-panel-snack';
 
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
   return {
@@ -26,6 +29,9 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     CartTotalDemo,
     SearchInputDemo,
     FilterChipGroupDemo,
+    ProductCardDemo,
+    ProductGridDemo,
+    CartPanelDemo,
     ...components,
   };
 }

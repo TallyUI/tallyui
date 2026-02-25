@@ -1,0 +1,52 @@
+---
+title: ProductGrid
+description: Scrollable grid layout with search and filter slots
+---
+
+## Import
+
+```tsx
+import { ProductGrid } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ProductGrid
+  items={products}
+  renderItem={(doc) => <ProductCard doc={doc} />}
+  searchSlot={<SearchInput value={query} onChangeText={setQuery} />}
+  filterSlot={<FilterChipGroup chips={chips} onChipPress={handleChip} />}
+  numColumns={3}
+/>
+```
+
+A scrollable product grid with optional search and filter slots rendered above the grid. Uses `ScrollView` with `flexWrap` for cross-platform grid layout rather than `FlatList` `numColumns`, keeping rendering predictable across native and web.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `items` | `any[]` | required | Array of product documents |
+| `renderItem` | `(item, index) => ReactNode` | required | Render function for each product |
+| `numColumns` | `number` | `2` | Number of columns in the grid |
+| `searchSlot` | `ReactNode` | — | Search input rendered above the grid |
+| `filterSlot` | `ReactNode` | — | Filter chips rendered between search and grid |
+| `emptyState` | `ReactNode` | — | Content shown when items array is empty |
+| `className` | `string` | — | Override container styles |
+
+## Slot pattern
+
+ProductGrid doesn't own the search or filter state. It provides layout slots, and you pass in the components you want. This keeps filtering logic in your application code where it belongs.
+
+```tsx
+const filtered = products.filter((p) =>
+  p.name.toLowerCase().includes(query.toLowerCase())
+);
+
+<ProductGrid items={filtered} renderItem={...} searchSlot={...} />
+```
+
+## Live demo
+
+<ProductGridDemo />
