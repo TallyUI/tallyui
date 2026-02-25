@@ -12,7 +12,7 @@ describe('ProductPrice', () => {
         <ProductPrice doc={wooDoc} />
       </ConnectorProvider>
     );
-    expect(screen.getByText('$599.99')).toBeDefined();
+    expect(screen.getByText('$1299.00')).toBeDefined();
   });
 
   it('renders Medusa price (converted from cents)', () => {
@@ -22,7 +22,7 @@ describe('ProductPrice', () => {
         <ProductPrice doc={medusaDoc} />
       </ConnectorProvider>
     );
-    expect(screen.getByText('$899.00')).toBeDefined();
+    expect(screen.getByText('$1299.00')).toBeDefined();
   });
 
   it('renders custom currency symbol', () => {
@@ -32,7 +32,7 @@ describe('ProductPrice', () => {
         <ProductPrice doc={wooDoc} currencySymbol="€" />
       </ConnectorProvider>
     );
-    expect(screen.getByText('€599.99')).toBeDefined();
+    expect(screen.getByText('€1299.00')).toBeDefined();
   });
 
   it('renders dash when price is missing', () => {

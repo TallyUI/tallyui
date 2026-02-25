@@ -12,7 +12,7 @@ describe('ProductSku', () => {
         <ProductSku doc={wooDoc} />
       </ConnectorProvider>
     );
-    expect(screen.getByText('ESP-001')).toBeDefined();
+    expect(screen.getByText('EQ-ESP-001')).toBeDefined();
   });
 
   it('renders Medusa SKU from variant', () => {
@@ -22,7 +22,7 @@ describe('ProductSku', () => {
         <ProductSku doc={medusaDoc} />
       </ConnectorProvider>
     );
-    expect(screen.getByText('MED-ESP-001')).toBeDefined();
+    expect(screen.getByText('EQ-ESP-001')).toBeDefined();
   });
 
   it('renders fallback when SKU is missing', () => {

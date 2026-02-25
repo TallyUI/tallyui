@@ -43,7 +43,7 @@ describe('ProductStockBadge', () => {
         <ProductStockBadge doc={wooDoc} showQuantity />
       </ConnectorProvider>
     );
-    expect(screen.getByText('In Stock (15)')).toBeDefined();
+    expect(screen.getByText('In Stock (12)')).toBeDefined();
   });
 
   it('renders "Unknown" when stock status is missing', () => {

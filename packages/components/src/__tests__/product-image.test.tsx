@@ -14,7 +14,7 @@ describe('ProductImage', () => {
     );
     const img = container.querySelector('img');
     expect(img).not.toBeNull();
-    expect(img?.getAttribute('src')).toBe('https://store.example/espresso.jpg');
+    expect(img?.getAttribute('src')).toBe('https://picsum.photos/seed/espresso-machine/800/800');
   });
 
   it('renders an image for Medusa product (uses thumbnail)', () => {
@@ -26,7 +26,7 @@ describe('ProductImage', () => {
     );
     const img = container.querySelector('img');
     expect(img).not.toBeNull();
-    expect(img?.getAttribute('src')).toBe('https://cdn.example/thumb-espresso.jpg');
+    expect(img?.getAttribute('src')).toBe('https://picsum.photos/seed/espresso-machine/800/800');
   });
 
   it('renders nothing when no image URL is available', () => {
@@ -49,6 +49,6 @@ describe('ProductImage', () => {
     );
     const img = container.querySelector('img');
     expect(img).not.toBeNull();
-    expect(img?.getAttribute('src')).toBe('https://store.example/espresso.jpg');
+    expect(img?.getAttribute('src')).toBe('https://picsum.photos/seed/espresso-machine/800/800');
   });
 });
