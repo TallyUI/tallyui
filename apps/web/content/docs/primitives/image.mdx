@@ -1,0 +1,51 @@
+---
+title: Image
+description: A cross-platform image component with consistent content-fit behavior.
+---
+
+## Import
+
+```tsx
+import { Image } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Image.Root
+  source={{ uri: 'https://example.com/photo.jpg' }}
+  alt="Product photo"
+  contentFit="cover"
+  style={{ width: 200, height: 200 }}
+/>
+```
+
+## Components
+
+### Image.Root
+
+Renders an image with a unified `contentFit` API that normalizes across platforms.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `source` | `ImageSourcePropType` | required | The image source (URI or require) |
+| `alt` | `string` | — | Accessible description of the image |
+| `placeholder` | `ImageSourcePropType` | — | Low-res placeholder shown while loading |
+| `contentFit` | `'cover' \| 'contain' \| 'fill' \| 'none' \| 'scale-down'` | `'cover'` | How the image fills its container |
+
+Plus all React Native `ImageProps` (except `resizeMode`, which is replaced by `contentFit`).
+
+## Content fit values
+
+| Value | Description |
+|-------|-------------|
+| `cover` | Scales to fill the container, cropping if necessary |
+| `contain` | Scales to fit entirely within the container |
+| `fill` | Stretches to fill the container exactly |
+| `none` | No scaling, displayed at original size |
+| `scale-down` | Like `contain`, but never scales up beyond original size |
+
+## Accessibility
+
+- The `alt` prop sets `accessibilityLabel` on native and `alt` on web
+- Decorative images should use `alt=""`

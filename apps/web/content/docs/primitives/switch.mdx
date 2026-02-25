@@ -1,0 +1,69 @@
+---
+title: Switch
+description: A toggle control that switches between on and off states.
+---
+
+## Import
+
+```tsx
+import { Switch } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Switch.Root checked={enabled} onCheckedChange={setEnabled}>
+  <Switch.Thumb />
+</Switch.Root>
+```
+
+## Components
+
+### Switch.Root
+
+The pressable track that manages the on/off state.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `checked` | `boolean` | — | Controlled on/off state |
+| `defaultChecked` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onCheckedChange` | `(checked: boolean) => void` | — | Called when state changes |
+| `disabled` | `boolean` | `false` | Prevents interaction |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Switch.Thumb
+
+The sliding indicator inside the track. Position this with styles based on the checked context.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `switch`
+- ARIA: `aria-checked`, `aria-disabled`
+- Toggles on press
+
+## Examples
+
+### Controlled
+
+```tsx
+function NotificationToggle() {
+  const [enabled, setEnabled] = React.useState(false);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Label.Root nativeID="notifications">Notifications</Label.Root>
+      <Switch.Root checked={enabled} onCheckedChange={setEnabled}>
+        <Switch.Thumb />
+      </Switch.Root>
+    </View>
+  );
+}
+```

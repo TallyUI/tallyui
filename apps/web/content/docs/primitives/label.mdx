@@ -1,0 +1,36 @@
+---
+title: Label
+description: An accessible text label that associates with a form control via nativeID.
+---
+
+## Import
+
+```tsx
+import { Label } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Label.Root nativeID="email-input">Email address</Label.Root>
+```
+
+Associate the label with a control by setting the same `nativeID` on both the label and the input's `accessibilityLabelledBy` prop.
+
+## Components
+
+### Label.Root
+
+Renders a text element with accessibility semantics for labeling form controls.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `nativeID` | `string` | — | Links this label to a form control |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+## Accessibility
+
+- Maps to a `<label>` element on web
+- Use `nativeID` to create a programmatic association with form controls

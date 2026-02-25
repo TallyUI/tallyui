@@ -1,0 +1,177 @@
+---
+title: Select
+description: A dropdown control for picking a single option from a list.
+---
+
+## Import
+
+```tsx
+import { Select } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<Select.Root value={value} onValueChange={setValue}>
+  <Select.Trigger>
+    <Select.Value placeholder="Choose a size" />
+  </Select.Trigger>
+  <Select.Portal>
+    <Select.Overlay />
+    <Select.Content sideOffset={4}>
+      <Select.Item value="small" label="Small">
+        <Select.ItemText />
+        <Select.ItemIndicator><CheckIcon /></Select.ItemIndicator>
+      </Select.Item>
+      <Select.Item value="medium" label="Medium">
+        <Select.ItemText />
+        <Select.ItemIndicator><CheckIcon /></Select.ItemIndicator>
+      </Select.Item>
+    </Select.Content>
+  </Select.Portal>
+</Select.Root>
+```
+
+## Components
+
+### Select.Root
+
+Manages the selected value and open/closed state. Does not render a DOM element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `Option` | — | Controlled selected option (`{ value: string; label: string }`) |
+| `defaultValue` | `Option` | — | Initial option (uncontrolled) |
+| `onValueChange` | `(option: Option) => void` | — | Called when selection changes |
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial open state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+| `disabled` | `boolean` | `false` | Prevents interaction |
+
+### Select.Trigger
+
+A pressable that opens the select dropdown.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Select.Value
+
+Displays the selected option's label, or a placeholder when nothing is selected.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `placeholder` | `string` | — | Text to show when no value is selected |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### Select.Portal
+
+Renders children into a portal.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always mount portal content |
+| `hostName` | `string` | — | Target portal host name |
+
+### Select.Overlay
+
+An optional backdrop behind the dropdown.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `closeOnPress` | `boolean` | `true` | Whether pressing the overlay closes the select |
+| `forceMount` | `true` | — | Always render the overlay |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Select.Content
+
+The positioned dropdown panel. Accepts all `PositionedContentProps`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `side` | `'top' \| 'bottom'` | `'bottom'` | Preferred side relative to the trigger |
+| `sideOffset` | `number` | `0` | Distance from the trigger |
+| `align` | `'start' \| 'center' \| 'end'` | `'center'` | Alignment along the trigger |
+| `avoidCollisions` | `boolean` | `true` | Shift to stay within the viewport |
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Select.Item
+
+A selectable option inside the dropdown.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The value for this option |
+| `label` | `string` | required | The display label for this option |
+| `closeOnPress` | `boolean` | `true` | Whether selecting closes the dropdown |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Select.ItemText
+
+Displays the item's label text.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### Select.ItemIndicator
+
+Renders when the parent Item is selected.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render regardless of selection |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Select.Group
+
+Groups related items together.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Select.Label
+
+A label for a Group.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### Select.Separator
+
+A visual divider between items or groups.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `decorative` | `boolean` | `false` | Removes from accessibility tree |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `combobox` on Trigger, `listbox` on Content, `option` on each Item
+- ARIA: `aria-expanded`, `aria-selected`, `aria-disabled`
+- Keyboard navigation through options on web

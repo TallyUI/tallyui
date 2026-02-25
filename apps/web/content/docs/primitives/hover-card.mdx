@@ -1,0 +1,91 @@
+---
+title: HoverCard
+description: A floating card that appears when hovering over a trigger, for previewing content.
+---
+
+## Import
+
+```tsx
+import { HoverCard } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<HoverCard.Root openDelay={200} closeDelay={100}>
+  <HoverCard.Trigger>
+    <Text>@username</Text>
+  </HoverCard.Trigger>
+  <HoverCard.Portal>
+    <HoverCard.Overlay />
+    <HoverCard.Content sideOffset={4}>
+      <Text>User profile card</Text>
+    </HoverCard.Content>
+  </HoverCard.Portal>
+</HoverCard.Root>
+```
+
+## Components
+
+### HoverCard.Root
+
+Manages the open/closed state with configurable open and close delays. Does not render a DOM element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+| `openDelay` | `number` | `0` | Delay in ms before the card appears |
+| `closeDelay` | `number` | `0` | Delay in ms before the card hides |
+
+### HoverCard.Trigger
+
+The element that activates the card on hover.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### HoverCard.Portal
+
+Renders children into a portal.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always mount portal content |
+| `hostName` | `string` | — | Target portal host name |
+
+### HoverCard.Overlay
+
+An optional overlay behind the card content.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `closeOnPress` | `boolean` | `true` | Whether pressing the overlay closes the card |
+| `forceMount` | `true` | — | Always render the overlay |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### HoverCard.Content
+
+The positioned floating card. Accepts all `PositionedContentProps`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `side` | `'top' \| 'bottom'` | `'bottom'` | Preferred side relative to the trigger |
+| `sideOffset` | `number` | `0` | Distance from the trigger |
+| `align` | `'start' \| 'center' \| 'end'` | `'center'` | Alignment along the trigger |
+| `avoidCollisions` | `boolean` | `true` | Shift to stay within the viewport |
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Not announced by screen readers -- HoverCard is supplementary content for sighted pointer users
+- Content should duplicate information available through other means for keyboard and screen reader users

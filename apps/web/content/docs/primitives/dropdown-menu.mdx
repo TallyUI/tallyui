@@ -1,0 +1,221 @@
+---
+title: DropdownMenu
+description: A menu of actions triggered by a button, supporting items, checkboxes, radio groups, and submenus.
+---
+
+## Import
+
+```tsx
+import { DropdownMenu } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<DropdownMenu.Root open={open} onOpenChange={setOpen}>
+  <DropdownMenu.Trigger>
+    <Text>Options</Text>
+  </DropdownMenu.Trigger>
+  <DropdownMenu.Portal>
+    <DropdownMenu.Overlay />
+    <DropdownMenu.Content sideOffset={4}>
+      <DropdownMenu.Item>
+        <Text>Edit</Text>
+      </DropdownMenu.Item>
+      <DropdownMenu.Separator />
+      <DropdownMenu.Item>
+        <Text>Delete</Text>
+      </DropdownMenu.Item>
+    </DropdownMenu.Content>
+  </DropdownMenu.Portal>
+</DropdownMenu.Root>
+```
+
+## Components
+
+### DropdownMenu.Root
+
+Manages the open/closed state. Does not render a DOM element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+
+### DropdownMenu.Trigger
+
+A pressable that opens the menu.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### DropdownMenu.Portal
+
+Renders children into a portal.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always mount portal content |
+| `hostName` | `string` | — | Target portal host name |
+
+### DropdownMenu.Overlay
+
+An optional backdrop behind the menu.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `closeOnPress` | `boolean` | `true` | Whether pressing the overlay closes the menu |
+| `forceMount` | `true` | — | Always render the overlay |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### DropdownMenu.Content
+
+The positioned menu panel. Accepts all `PositionedContentProps`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `side` | `'top' \| 'bottom'` | `'bottom'` | Preferred side relative to the trigger |
+| `sideOffset` | `number` | `0` | Distance from the trigger |
+| `align` | `'start' \| 'center' \| 'end'` | `'center'` | Alignment along the trigger |
+| `avoidCollisions` | `boolean` | `true` | Shift to stay within the viewport |
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### DropdownMenu.Item
+
+A menu action item.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `textValue` | `string` | — | Text for typeahead search |
+| `closeOnPress` | `boolean` | `true` | Whether selecting closes the menu |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### DropdownMenu.CheckboxItem
+
+A menu item that toggles a boolean value.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `checked` | `boolean` | required | Whether the item is checked |
+| `onCheckedChange` | `(checked: boolean) => void` | required | Called when checked state changes |
+| `textValue` | `string` | — | Text for typeahead search |
+| `closeOnPress` | `boolean` | `true` | Whether selecting closes the menu |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### DropdownMenu.RadioGroup
+
+Groups radio items for mutually exclusive selection.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string \| undefined` | required | The currently selected value |
+| `onValueChange` | `(value: string) => void` | required | Called when selection changes |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### DropdownMenu.RadioItem
+
+A radio option inside a RadioGroup.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The value for this option |
+| `textValue` | `string` | — | Text for typeahead search |
+| `closeOnPress` | `boolean` | `true` | Whether selecting closes the menu |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### DropdownMenu.ItemIndicator
+
+Renders when the parent CheckboxItem or RadioItem is selected.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render regardless of selection |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### DropdownMenu.Group
+
+Groups related items together.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### DropdownMenu.Label
+
+A label for a Group.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### DropdownMenu.Separator
+
+A visual divider between items or groups.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `decorative` | `boolean` | `false` | Removes from accessibility tree |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### DropdownMenu.Sub
+
+A nested submenu root.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+
+### DropdownMenu.SubTrigger
+
+A menu item that opens a submenu.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `textValue` | `string` | — | Text for typeahead search |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### DropdownMenu.SubContent
+
+The content of a submenu.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Role: `menu` on Content, `menuitem` on Item, `menuitemcheckbox` on CheckboxItem, `menuitemradio` on RadioItem
+- ARIA: `aria-expanded` on Trigger, `aria-checked` on CheckboxItem and RadioItem
+- Arrow key navigation, typeahead search, and Escape to close on web

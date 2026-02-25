@@ -1,0 +1,55 @@
+---
+title: List
+description: A performant virtualized list for rendering large datasets.
+---
+
+## Import
+
+```tsx
+import { List } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<List.Root
+  data={items}
+  renderItem={({ item }) => (
+    <List.Item>
+      <Text>{item.name}</Text>
+    </List.Item>
+  )}
+  estimatedItemSize={60}
+  keyExtractor={(item) => item.id}
+/>
+```
+
+## Components
+
+### List.Root
+
+A virtualized flat list built on React Native's `FlatList`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `data` | `T[]` | required | The array of items to render |
+| `renderItem` | `(info: { item: T; index: number }) => ReactElement` | required | Function that renders each item |
+| `estimatedItemSize` | `number` | — | Estimated height of each item for virtualization |
+| `keyExtractor` | `(item: T, index: number) => string` | — | Extracts a unique key for each item |
+
+Plus all React Native `FlatListProps` (except `renderItem`, which is typed more strictly).
+
+### List.Item
+
+A container for a single list row.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | — | Content of the list item |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Inherits `FlatList` accessibility behavior
+- Each item should contain accessible content or have `accessibilityLabel` set

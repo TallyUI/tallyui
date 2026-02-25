@@ -1,0 +1,133 @@
+---
+title: AlertDialog
+description: A modal dialog for important confirmations that requires an explicit response.
+---
+
+## Import
+
+```tsx
+import { AlertDialog } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+<AlertDialog.Root open={open} onOpenChange={setOpen}>
+  <AlertDialog.Trigger>
+    <Text>Delete Account</Text>
+  </AlertDialog.Trigger>
+  <AlertDialog.Portal>
+    <AlertDialog.Overlay />
+    <AlertDialog.Content>
+      <AlertDialog.Title>Are you sure?</AlertDialog.Title>
+      <AlertDialog.Description>This action is permanent.</AlertDialog.Description>
+      <AlertDialog.Cancel>
+        <Text>Cancel</Text>
+      </AlertDialog.Cancel>
+      <AlertDialog.Action>
+        <Text>Delete</Text>
+      </AlertDialog.Action>
+    </AlertDialog.Content>
+  </AlertDialog.Portal>
+</AlertDialog.Root>
+```
+
+## Components
+
+### AlertDialog.Root
+
+Manages the open/closed state. Does not render a DOM element.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+
+### AlertDialog.Trigger
+
+A pressable that opens the alert dialog.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### AlertDialog.Portal
+
+Renders children into a portal.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always mount portal content |
+| `hostName` | `string` | — | Target portal host name |
+
+### AlertDialog.Overlay
+
+A backdrop layer behind the content.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render the overlay |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### AlertDialog.Content
+
+The alert dialog panel.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### AlertDialog.Title
+
+An accessible title for the alert dialog.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### AlertDialog.Description
+
+An accessible description for the alert dialog.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### AlertDialog.Action
+
+A pressable for the confirming action. Closes the dialog.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### AlertDialog.Cancel
+
+A pressable for the cancellation action. Closes the dialog.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+## Accessibility
+
+- Role: `alertdialog`
+- ARIA: `aria-modal`, `aria-labelledby` (linked to Title), `aria-describedby` (linked to Description)
+- Unlike Dialog, clicking the overlay does not close an AlertDialog -- the user must pick an explicit action
+- Escape key does not close an AlertDialog on web
