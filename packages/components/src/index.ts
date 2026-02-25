@@ -1,5 +1,4 @@
-// Uniwind className type augmentations for React Native
-import './uniwind-env';
+/// <reference path="./uniwind-env.d.ts" />
 
 // Product components
 export {
