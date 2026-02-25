@@ -5,6 +5,7 @@
     "dev": "turbo dev",
     "dev:demo": "turbo dev --filter=@tallyui/demo",
     "dev:web": "turbo dev --filter=@tallyui/web",
+    "dev:mock-api": "turbo dev --filter=@tallyui/mock-api",
     "build": "turbo build",
     "test": "vitest run",
     "lint": "turbo lint",

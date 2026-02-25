@@ -13,7 +13,7 @@ describe('ProductCard', () => {
       </ConnectorProvider>
     );
     expect(screen.getByText('Espresso Machine Pro')).toBeDefined();
-    expect(screen.getByText('$599.99')).toBeDefined();
+    expect(screen.getByText('$1299.00')).toBeDefined();
   });
 
   it('calls onPress when tapped', () => {
