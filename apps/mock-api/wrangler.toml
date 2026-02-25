@@ -2,5 +2,9 @@ name = "tallyui-mock-api"
 main = "src/index.ts"
 compatibility_date = "2025-02-01"
 
+routes = [
+  { pattern = "mock.tallyui.com/*", zone_name = "tallyui.com" }
+]
+
 [observability]
 enabled = true
