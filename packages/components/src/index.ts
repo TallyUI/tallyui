@@ -37,3 +37,9 @@ export {
   CustomerCard,
   type CustomerCardProps,
 } from './customer';
+
+// Checkout components
+export {
+  PaymentMethodCard,
+  type PaymentMethodCardProps,
+} from './checkout';
