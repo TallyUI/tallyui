@@ -13,11 +13,12 @@ import type {
   RxStorageQueryResult,
   StringKeys,
 } from 'rxdb';
-import { categorizeBulkWriteRows } from 'rxdb';
+import { categorizeBulkWriteRows, getQueryMatcher, getSortComparator } from 'rxdb';
 import { now, ensureNotFalsy, randomToken } from 'rxdb/plugins/utils';
 import { Subject, type Observable } from 'rxjs';
 import type { SQLiteDatabase, SQLiteStorageSettings } from './types';
 import type { RxStorageSQLite } from './rx-storage-sqlite';
+import { buildQuerySQL, buildCountSQL } from './mango-to-sql';
 
 export interface SQLiteStorageInternals {
   database: SQLiteDatabase;
@@ -180,20 +181,59 @@ export class RxStorageInstanceSQLite<RxDocType>
   async query(
     preparedQuery: PreparedQuery<RxDocType>,
   ): Promise<RxStorageQueryResult<RxDocType>> {
-    // Default implementation: load all non-deleted docs and filter in-memory.
-    // Task 13 will add proper Mango-to-SQL translation.
     const { query } = preparedQuery;
 
+    // Try the Mango-to-SQL path first. If the SQLite database supports
+    // json_extract (all modern versions do), this is the fast path.
+    // Fall back to in-memory filtering if the SQL query fails.
+    try {
+      const { sql, params } = buildQuerySQL(this.internals.tableName, query);
+      const rows = this.database.getAllSync<{ data: string }>(sql, params);
+      const documents = rows.map(
+        (row) => JSON.parse(row.data) as RxDocumentData<RxDocType>,
+      );
+      return { documents };
+    } catch {
+      // Fallback: load all non-deleted docs and filter in-memory
+      return this.queryInMemory(query);
+    }
+  }
+
+  async count(
+    preparedQuery: PreparedQuery<RxDocType>,
+  ): Promise<RxStorageCountResult> {
+    const { query } = preparedQuery;
+
+    // Try the SQL COUNT path first.
+    try {
+      const { sql, params } = buildCountSQL(this.internals.tableName, query);
+      const rows = this.database.getAllSync<{ count: number }>(sql, params);
+      if (rows.length > 0 && typeof rows[0].count === 'number') {
+        return { count: rows[0].count, mode: 'fast' };
+      }
+    } catch {
+      // fall through to in-memory
+    }
+
+    // Fallback: do a full query and count the results
+    const result = await this.queryInMemory(query);
+    return { count: result.documents.length, mode: 'slow' };
+  }
+
+  /**
+   * In-memory query fallback using RxDB's built-in query matcher and sort comparator.
+   * Used when the Mango-to-SQL translation fails (e.g., unsupported operators).
+   */
+  private async queryInMemory(
+    query: PreparedQuery<RxDocType>['query'],
+  ): Promise<RxStorageQueryResult<RxDocType>> {
     const rows = this.database.getAllSync<{ data: string }>(
-      `SELECT data FROM "${this.internals.tableName}" WHERE _deleted = 0`
+      `SELECT data FROM "${this.internals.tableName}" WHERE _deleted = 0`,
     );
 
     let documents = rows.map(
-      (row) => JSON.parse(row.data) as RxDocumentData<RxDocType>
+      (row) => JSON.parse(row.data) as RxDocumentData<RxDocType>,
     );
-
-    // Apply in-memory query matching using RxDB's query matcher
-    const { getQueryMatcher, getSortComparator } = await import('rxdb');
 
     const queryMatcher = getQueryMatcher(this.schema, query);
     documents = documents.filter((doc) => queryMatcher(doc));
@@ -201,22 +241,11 @@ export class RxStorageInstanceSQLite<RxDocType>
     const sortComparator = getSortComparator(this.schema, query);
     documents.sort(sortComparator);
 
-    // Apply skip and limit
     const skip = query.skip ?? 0;
     const limit = query.limit ?? Infinity;
     documents = documents.slice(skip, skip + limit);
 
     return { documents };
-  }
-
-  async count(
-    preparedQuery: PreparedQuery<RxDocType>,
-  ): Promise<RxStorageCountResult> {
-    const result = await this.query(preparedQuery);
-    return {
-      count: result.documents.length,
-      mode: 'fast',
-    };
   }
 
   getAttachmentData(
