@@ -50,6 +50,10 @@ Connects to Vendure backends via the GraphQL Admin API. Supports products with v
 - **Square** — Square APIs for retail
 - **Vend/Lightspeed** — Lightspeed Retail
 
+## Replication
+
+All four connectors ship with bidirectional replication adapters. Each adapter knows how to pull changes from its API using checkpoint-based pagination, and push local edits back. See the [Replication guide](/docs/replication) for setup and usage.
+
 ## Building a Custom Connector
 
 Implement the `TallyConnector` interface from `@tallyui/core`:
@@ -65,8 +69,8 @@ export const myConnector: TallyConnector = {
   auth: { /* ... */ },
   schemas: { products: myProductSchema },
   traits: { product: myProductTraits },
-  sync: { products: myProductSync },
+  replication: { products: myProductReplication },
 };
 ```
 
-See the WooCommerce and Medusa connectors for complete examples.
+See the [Replication guide](/docs/replication) for how to implement a `ReplicationAdapter`, and the WooCommerce connector for a complete example.

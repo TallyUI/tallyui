@@ -1,0 +1,178 @@
+---
+title: Replication
+description: Offline-first bidirectional sync between local RxDB and remote APIs
+---
+
+Tally UI uses RxDB's replication protocol to keep local data in sync with your backend. Each connector ships with replication adapters that handle the specifics of its API -- pagination, checkpoints, and conflict resolution are all built in.
+
+## Quick Setup
+
+```tsx
+import { createTallyDatabase, startReplication, getStorage } from '@tallyui/database';
+import { woocommerceConnector } from '@tallyui/connector-woocommerce';
+
+// Create a persistent database
+const db = await createTallyDatabase({
+  connector: woocommerceConnector,
+  storage: getStorage(), // IndexedDB on web, in-memory in Node
+});
+
+// Start replicating products
+const replicationState = startReplication({
+  collection: db.products,
+  adapter: woocommerceConnector.replication.products,
+  context: {
+    connectorId: woocommerceConnector.id,
+    baseUrl: 'https://mystore.com/wp-json/wc/v3',
+    headers: woocommerceConnector.auth.getHeaders(credentials),
+  },
+});
+
+// Monitor sync status
+replicationState.active$.subscribe((active) => {
+  console.log('Syncing:', active);
+});
+
+replicationState.error$.subscribe((error) => {
+  console.error('Sync error:', error);
+});
+```
+
+## How It Works
+
+Each connector's `ReplicationAdapter` provides two handlers:
+
+**Pull** fetches documents changed since the last checkpoint. The checkpoint format is connector-specific -- WooCommerce uses a modified date, Shopify uses cursor pagination, Medusa uses offset + date, Vendure uses GraphQL skip + date.
+
+**Push** sends local changes to the remote API. If the server rejects a change (conflict), the adapter returns the server's version, and RxDB overwrites the local copy. Server always wins.
+
+RxDB's `replicateRxCollection` orchestrates the cycle: pull remote changes, apply locally, push local changes, handle conflicts, repeat.
+
+## Storage
+
+### Web (IndexedDB)
+
+On the web, `getStorage()` returns IndexedDB storage via Dexie. No extra setup needed:
+
+```tsx
+import { getStorage } from '@tallyui/database';
+
+const db = await createTallyDatabase({
+  connector: myConnector,
+  storage: getStorage(), // auto-detects IndexedDB
+});
+```
+
+### React Native (SQLite)
+
+On React Native, provide the SQLite adapter explicitly:
+
+```tsx
+import { createTallyDatabase } from '@tallyui/database';
+import { getRxStorageSQLite } from '@tallyui/storage-sqlite';
+import { openDatabaseSync } from 'expo-sqlite';
+
+const sqliteDb = openDatabaseSync('tally.db');
+
+const db = await createTallyDatabase({
+  connector: myConnector,
+  storage: getRxStorageSQLite({ database: sqliteDb }),
+});
+```
+
+### Tests and SSR
+
+In Node.js environments (tests, server-side rendering), `getStorage()` returns in-memory storage automatically. No configuration needed.
+
+## ReplicationAdapter Interface
+
+If you're building a custom connector, implement `ReplicationAdapter` for each collection:
+
+```typescript
+import type { ReplicationAdapter } from '@tallyui/core';
+
+type MyCheckpoint = { offset: number; updatedAt: string };
+
+const myProductReplication: ReplicationAdapter<any, MyCheckpoint> = {
+  pull: {
+    async handler(lastCheckpoint, batchSize, context) {
+      // Fetch products changed since lastCheckpoint from your API
+      const response = await fetch(
+        `${context.baseUrl}/products?since=${lastCheckpoint?.updatedAt ?? ''}&limit=${batchSize}`,
+        { headers: context.headers },
+      );
+      const products = await response.json();
+
+      // Add _deleted: false (your API returns non-deleted products)
+      const documents = products.map((p) => ({ ...p, _deleted: false }));
+
+      // Return documents + new checkpoint
+      const last = products[products.length - 1];
+      return {
+        documents,
+        checkpoint: last
+          ? { offset: 0, updatedAt: last.updatedAt }
+          : lastCheckpoint ?? { offset: 0, updatedAt: '' },
+      };
+    },
+  },
+
+  push: {
+    async handler(changeRows, context) {
+      const conflicts = [];
+
+      for (const row of changeRows) {
+        const doc = row.newDocumentState;
+        const res = await fetch(`${context.baseUrl}/products/${doc.id}`, {
+          method: 'PUT',
+          headers: { ...context.headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify(doc),
+        });
+
+        // Server rejected -- return its version as conflict
+        if (!res.ok && row.assumedMasterState) {
+          conflicts.push({ ...row.assumedMasterState, _deleted: false });
+        }
+      }
+
+      return conflicts;
+    },
+  },
+};
+```
+
+## startReplication Options
+
+```typescript
+startReplication({
+  collection,         // RxDB collection to replicate
+  adapter,            // ReplicationAdapter for this collection
+  context,            // SyncContext with connectorId, baseUrl, headers
+  live: true,         // Keep syncing after initial pull (default: true)
+  retryTime: 5000,    // Retry interval on error in ms (default: 5000)
+  autoStart: true,    // Start immediately (default: true)
+});
+```
+
+Returns an `RxReplicationState` with:
+
+| Property/Method | Description |
+|-----------------|-------------|
+| `active$` | Observable: is replication currently running? |
+| `error$` | Observable: replication errors |
+| `received$` | Observable: documents received from remote |
+| `sent$` | Observable: documents sent to remote |
+| `cancel()` | Stop replication |
+| `awaitInSync()` | Promise that resolves when fully synced |
+| `reSync()` | Trigger an immediate sync cycle |
+
+## Connector Checkpoint Formats
+
+Each connector uses a checkpoint format that matches its API's pagination model:
+
+| Connector | Checkpoint | Pull Strategy |
+|-----------|-----------|---------------|
+| WooCommerce | `{ id, modified }` | `?modified_after=` ordered by date |
+| Shopify | `{ updated_at }` | `?updated_at_min=` with Link header cursors |
+| Medusa | `{ offset, updated_at }` | `?updated_at[gte]=` with offset pagination |
+| Vendure | `{ skip, updatedAt }` | GraphQL filter with take/skip |

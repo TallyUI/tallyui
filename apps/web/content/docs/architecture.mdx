@@ -59,8 +59,8 @@ interface TallyConnector {
   traits: {             // Accessor functions
     product: ProductTraits;
   };
-  sync: {               // How to fetch/push data
-    products: CollectionSync;
+  replication: {        // Bidirectional sync via RxDB replication
+    products: ReplicationAdapter;
   };
 }
 ```
@@ -78,11 +78,17 @@ When you need connector-specific fields that aren't covered by traits, you can a
 │  Backend API                            │
 │  WooCommerce REST / Medusa Admin / ...  │
 └──────────────────┬──────────────────────┘
-                   │ sync (fetch/push)
+                   │ replication (pull/push)
+┌──────────────────▼──────────────────────┐
+│  ReplicationAdapter                     │
+│  Checkpoint-based sync per connector    │
+│  Server-wins conflict resolution        │
+└──────────────────┬──────────────────────┘
+                   │ replicateRxCollection
 ┌──────────────────▼──────────────────────┐
 │  RxDB (Local Database)                  │
 │  Connector-specific schemas             │
-│  Offline-first, reactive queries        │
+│  IndexedDB (web) / SQLite (mobile)      │
 └──────────────────┬──────────────────────┘
                    │ documents
 ┌──────────────────▼──────────────────────┐
@@ -97,12 +103,36 @@ When you need connector-specific fields that aren't covered by traits, you can a
 └─────────────────────────────────────────┘
 ```
 
+## Replication
+
+Tally UI uses RxDB's built-in replication protocol for bidirectional sync between the local database and remote APIs. Each connector implements a `ReplicationAdapter` that provides checkpoint-based pull and push handlers.
+
+The replication layer handles:
+- **Checkpoint tracking** -- only fetches data that changed since the last sync
+- **Bidirectional sync** -- pulls remote changes and pushes local edits back
+- **Conflict resolution** -- server-wins strategy (the backend is the source of truth)
+- **Live updates** -- real-time streams where backends support them, polling fallback elsewhere
+- **Error recovery** -- automatic retries with configurable intervals
+
+### Platform Storage
+
+Storage is platform-aware. The `getStorage()` factory returns the right adapter automatically:
+
+| Platform | Storage | Package |
+|----------|---------|---------|
+| Web browser | IndexedDB (via Dexie) | Built into `@tallyui/database` |
+| React Native | SQLite (via expo-sqlite) | `@tallyui/storage-sqlite` |
+| Node / SSR / tests | In-memory | Built into `@tallyui/database` |
+
+See the [Replication guide](/docs/replication) for setup and usage details.
+
 ## Packages
 
 | Package | Purpose |
 |---------|---------|
 | `@tallyui/core` | Connector interfaces, trait types, React context |
-| `@tallyui/database` | RxDB factory — creates databases from connector schemas |
+| `@tallyui/database` | RxDB factory, replication orchestrator, platform storage |
+| `@tallyui/storage-sqlite` | RxDB storage adapter for React Native (expo-sqlite) |
 | `@tallyui/components` | UI primitives (ProductTitle, ProductPrice, etc.) |
 | `@tallyui/theme` | Shared design tokens, theming, and `cn()` utility |
 | `@tallyui/connector-woocommerce` | WooCommerce connector |
