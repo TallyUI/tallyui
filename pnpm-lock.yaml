@@ -281,16 +281,16 @@ importers:
       react:
         specifier: '>=18'
         version: 18.3.1
+    devDependencies:
+      '@types/react':
+        specifier: '>=18'
+        version: 19.2.14
       rxdb:
         specifier: '>=16'
         version: 16.21.1(rxjs@7.8.2)
       rxjs:
         specifier: '>=7'
         version: 7.8.2
-    devDependencies:
-      '@types/react':
-        specifier: '>=18'
-        version: 19.2.14
 
   packages/database:
     dependencies:
@@ -324,6 +324,7 @@ importers:
       tailwind-merge:
         specifier: ^3.4.1
         version: 3.5.0
+    devDependencies:
       tailwindcss:
         specifier: ^4.0.0
         version: 4.2.1
