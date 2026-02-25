@@ -9,4 +9,5 @@ export { Portal, PortalHost } from './portal';
 export { toggleGroupUtils, EmptyGestureResponderEvent } from './utils';
 export * as Dialog from './dialog';
 export * as Popover from './popover';
+export * as Select from './select';
 export * as Tabs from './tabs';
