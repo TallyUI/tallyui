@@ -70,7 +70,6 @@ type FocusOutsideEvent = CustomEvent<{ originalEvent: FocusEvent }>;
  */
 interface PositionedContentProps {
   forceMount?: true | undefined;
-  style?: ViewStyle;
   alignOffset?: number;
   insets?: Insets;
   avoidCollisions?: boolean;

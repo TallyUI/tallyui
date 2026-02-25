@@ -216,8 +216,8 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
   },
   ref
 ) {
-  const { open, nativeID } = useRootContext();
-  const { triggerPosition, contentLayout, setContentLayout } = useRootContext();
+  const { open, triggerPosition, contentLayout, setContentLayout } = useRootContext();
+  const { nativeID } = useInternalContext();
 
   const positionStyle = useRelativePosition({
     align,
