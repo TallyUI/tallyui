@@ -54,5 +54,8 @@ export {
   type PaymentSelectorProps,
   type PaymentMethod,
   OrderSummaryLine,
+  OrderSummary,
   type OrderSummaryLineProps,
+  type OrderSummaryProps,
+  type OrderSummaryPayment,
 } from './checkout';
