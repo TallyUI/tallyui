@@ -12,6 +12,7 @@ export * as Dialog from './dialog';
 export * as Popover from './popover';
 export * as Select from './select';
 export * as Tabs from './tabs';
+export * as ContextMenu from './context-menu';
 export * as DropdownMenu from './dropdown-menu';
 export * as List from './list';
 export * as Image from './image';
