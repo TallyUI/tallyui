@@ -5,11 +5,13 @@ export {
   ProductImage,
   ProductSku,
   ProductStockBadge,
+  ProductCard,
   type ProductTitleProps,
   type ProductPriceProps,
   type ProductImageProps,
   type ProductSkuProps,
   type ProductStockBadgeProps,
+  type ProductCardProps,
 } from './product';
 
 // Cart components
