@@ -3,6 +3,7 @@ import type { TallyConnector } from '@tallyui/core';
 import { medusaProductSchema } from './schemas/products';
 import { medusaProductTraits } from './traits/product';
 import { medusaProductSync } from './sync/products';
+import { medusaProductReplication } from './replication/products';
 
 /**
  * MedusaJS v2 connector for Tally UI.
@@ -59,9 +60,14 @@ export const medusaConnector: TallyConnector = {
   sync: {
     products: medusaProductSync,
   },
+
+  replication: {
+    products: medusaProductReplication,
+  },
 };
 
 // Re-export pieces for advanced usage
 export { medusaProductSchema } from './schemas/products';
 export { medusaProductTraits } from './traits/product';
 export { medusaProductSync } from './sync/products';
+export { medusaProductReplication } from './replication/products';
