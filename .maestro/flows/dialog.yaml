@@ -1,0 +1,9 @@
+appId: host.exp.Exponent
+---
+# Dialog primitive — open, verify content, close
+- launchApp
+- tapOn: "Dialog"
+- tapOn: "Open Uncontrolled Dialog"
+- assertVisible: "This dialog manages its own open/close state internally."
+- tapOn: "Close"
+- assertNotVisible: "This dialog manages its own open/close state internally."

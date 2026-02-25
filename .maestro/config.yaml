@@ -1,0 +1,4 @@
+# Maestro configuration for TallyUI demo app
+# Note: Update appId once a bundle identifier is configured in app.json.
+# The Expo dev client defaults to host.exp.Exponent for development builds.
+appId: host.exp.Exponent

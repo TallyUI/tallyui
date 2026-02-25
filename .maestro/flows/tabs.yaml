@@ -1,0 +1,12 @@
+appId: host.exp.Exponent
+---
+# Tabs primitive — switch between tabs and verify content
+- launchApp
+- tapOn: "Tabs"
+- assertVisible: "First Tab"
+- tapOn: "Tab 2"
+- assertVisible: "Second Tab"
+- assertNotVisible: "First Tab"
+- tapOn: "Tab 3"
+- assertVisible: "Third Tab"
+- assertNotVisible: "Second Tab"
