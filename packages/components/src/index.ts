@@ -20,3 +20,9 @@ export {
   type CartLineItem,
   type CartTotalProps,
 } from './cart';
+
+// Input components
+export {
+  SearchInput,
+  type SearchInputProps,
+} from './input';
