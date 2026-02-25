@@ -1,0 +1,42 @@
+---
+title: ProductTitle
+description: Displays a product's name using the active connector's traits
+---
+
+## Import
+
+```tsx
+import { ProductTitle } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ProductTitle doc={productDocument} className="text-lg font-bold" />
+```
+
+The same component reads `doc.name` for WooCommerce and `doc.title` for Medusa — the trait layer handles the mapping.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `doc` | `any` | required | RxDB product document |
+| `className` | `string` | — | Override default styles |
+
+Plus all `TextProps` from React Native.
+
+**Default classes:** `text-base font-semibold text-foreground`
+
+## Trait mapping
+
+| Connector | Field read |
+|-----------|-----------|
+| WooCommerce | `doc.name` |
+| Medusa | `doc.title` |
+| Shopify | `doc.title` |
+| Vendure | `doc.name` |
+
+## Live demo
+
+<ProductTitleDemo />
