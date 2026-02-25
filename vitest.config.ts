@@ -6,6 +6,9 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     include: ['packages/**/*.test.{ts,tsx}', 'connectors/**/*.test.{ts,tsx}'],
+    typecheck: {
+      include: ['packages/**/*.test-d.ts', 'connectors/**/*.test-d.ts'],
+    },
   },
   resolve: {
     alias: {

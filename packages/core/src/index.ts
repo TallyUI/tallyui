@@ -7,6 +7,7 @@ export type {
   AuthField,
   CollectionSync,
   RemoteIdEntry,
+  ReplicationAdapter,
   SyncContext,
   ProductTraits,
 } from './types';
