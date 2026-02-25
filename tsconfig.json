@@ -25,7 +25,11 @@
       "@tallyui/connector-woocommerce": ["connectors/woocommerce/src/index.ts"],
       "@tallyui/connector-woocommerce/*": ["connectors/woocommerce/src/*"],
       "@tallyui/connector-medusa": ["connectors/medusa/src/index.ts"],
-      "@tallyui/connector-medusa/*": ["connectors/medusa/src/*"]
+      "@tallyui/connector-medusa/*": ["connectors/medusa/src/*"],
+      "@tallyui/connector-shopify": ["connectors/shopify/src/index.ts"],
+      "@tallyui/connector-shopify/*": ["connectors/shopify/src/*"],
+      "@tallyui/connector-vendure": ["connectors/vendure/src/index.ts"],
+      "@tallyui/connector-vendure/*": ["connectors/vendure/src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],

@@ -15,6 +15,8 @@ export default defineConfig({
       '@tallyui/components': path.resolve(__dirname, 'packages/components/src'),
       '@tallyui/connector-woocommerce': path.resolve(__dirname, 'connectors/woocommerce/src'),
       '@tallyui/connector-medusa': path.resolve(__dirname, 'connectors/medusa/src'),
+      '@tallyui/connector-shopify': path.resolve(__dirname, 'connectors/shopify/src'),
+      '@tallyui/connector-vendure': path.resolve(__dirname, 'connectors/vendure/src'),
       // React Native → Web for component rendering in tests
       'react-native': 'react-native-web',
       // Deduplicate React to a single copy (prevents "multiple copies" errors)

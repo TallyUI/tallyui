@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@babel/runtime": "^7.28.6",
     "@tallyui/components": "workspace:*",
     "@tallyui/connector-medusa": "workspace:*",
     "@tallyui/connector-woocommerce": "workspace:*",
