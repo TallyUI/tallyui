@@ -66,6 +66,11 @@ export {
   CustomerSelect,
   type CustomerCardProps,
   type CustomerSelectProps,
+  CustomerForm,
+  type CustomerFormProps,
+  type CustomerFormValues,
+  CustomerOrderHistory,
+  type CustomerOrderHistoryProps,
 } from './customer';
 
 // Checkout components
@@ -102,6 +107,18 @@ export {
   type OrderDetailProps,
   type OrderDetailLineItem,
 } from './order';
+
+// Register components
+export {
+  CashCountInput,
+  type CashCountInputProps,
+  type Denomination,
+  RegisterSummary,
+  type RegisterSummaryProps,
+  type TransactionSummary,
+  RegisterOpenClose,
+  type RegisterOpenCloseProps,
+} from './register';
 
 // Settings components
 export { SettingsRow, type SettingsRowProps } from './settings';
