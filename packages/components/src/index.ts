@@ -42,6 +42,9 @@ export {
   type CartPanelProps,
   type DiscountBadgeProps,
   type CartNoteInputProps,
+  CartLineActions,
+  type CartLineActionsProps,
+  type CartAction,
 } from './cart';
 
 // Input components
