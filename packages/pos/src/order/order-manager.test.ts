@@ -134,6 +134,64 @@ describe('OrderManager', () => {
     expect(parked).toHaveLength(0);
   });
 
+  it('preserves line-level discounts through park/resume', async () => {
+    const mgr = createOrderManager({ currency: 'USD', taxContext, draftsCollection: db.pos_drafts });
+
+    const builder = await firstValueFrom(mgr.activeOrder$);
+    const lineId = builder.addProduct(product, traits);
+    builder.applyLineDiscount(lineId, { type: 'percentage', value: 10, label: '10% off' });
+    const orderId = (await firstValueFrom(builder.order$)).id;
+
+    await mgr.parkCurrentOrder();
+    await mgr.resumeOrder(orderId);
+
+    const resumed = await firstValueFrom(mgr.activeOrder$);
+    const order = await firstValueFrom(resumed.order$);
+    expect(order.lineItems[0].discounts).toHaveLength(1);
+    expect(order.lineItems[0].discounts[0].label).toBe('10% off');
+    expect(order.lineItems[0].discountAmount).toBeCloseTo(0.50); // 10% of $5
+  });
+
+  it('preserves order-level discounts through park/resume', async () => {
+    const mgr = createOrderManager({ currency: 'USD', taxContext, draftsCollection: db.pos_drafts });
+
+    const builder = await firstValueFrom(mgr.activeOrder$);
+    builder.addProduct(product, traits);
+    builder.applyOrderDiscount({ type: 'fixed', value: 1, label: 'Loyalty' });
+    const orderId = (await firstValueFrom(builder.order$)).id;
+
+    await mgr.parkCurrentOrder();
+    await mgr.resumeOrder(orderId);
+
+    const resumed = await firstValueFrom(mgr.activeOrder$);
+    const order = await firstValueFrom(resumed.order$);
+    expect(order.discounts).toHaveLength(1);
+    expect(order.discounts[0].label).toBe('Loyalty');
+  });
+
+  it('preserves payments through park/resume', async () => {
+    const mgr = createOrderManager({ currency: 'USD', taxContext, draftsCollection: db.pos_drafts });
+
+    const builder = await firstValueFrom(mgr.activeOrder$);
+    builder.addProduct(product, traits);
+    builder.addPayment({ method: 'cash', amount: 3 });
+    const orderId = (await firstValueFrom(builder.order$)).id;
+
+    await mgr.parkCurrentOrder();
+    await mgr.resumeOrder(orderId);
+
+    const resumed = await firstValueFrom(mgr.activeOrder$);
+    const order = await firstValueFrom(resumed.order$);
+    expect(order.payments).toHaveLength(1);
+    expect(order.payments[0].method).toBe('cash');
+    expect(order.payments[0].amount).toBe(3);
+  });
+
+  it('throws when resuming non-existent order', async () => {
+    const mgr = createOrderManager({ currency: 'USD', taxContext, draftsCollection: db.pos_drafts });
+    await expect(mgr.resumeOrder('nonexistent')).rejects.toThrow('Parked order nonexistent not found');
+  });
+
   it('parking creates a fresh active order', async () => {
     const mgr = createOrderManager({ currency: 'USD', taxContext, draftsCollection: db.pos_drafts });
 

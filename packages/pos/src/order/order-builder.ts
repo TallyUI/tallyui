@@ -53,12 +53,20 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
   function recalculateLine(line: LineItem): LineItem {
     const gross = line.price * line.quantity;
-    const discountAmount = line.discounts.reduce((sum, d) => sum + d.amount, 0);
+
+    // Recompute discount amounts from current gross
+    const recalcedDiscounts = line.discounts.map((d) => ({
+      ...d,
+      amount: computeDiscountAmount(d, gross),
+    }));
+
+    const discountAmount = recalcedDiscounts.reduce((sum, d) => sum + d.amount, 0);
     const afterDiscount = gross - discountAmount;
     const tax = calculateTax(afterDiscount, line.taxRate, taxContext.pricesIncludeTax);
 
     return {
       ...line,
+      discounts: recalcedDiscounts,
       discountAmount,
       taxAmount: tax.taxAmount,
       lineTotal: taxContext.pricesIncludeTax ? afterDiscount : afterDiscount + tax.taxAmount,

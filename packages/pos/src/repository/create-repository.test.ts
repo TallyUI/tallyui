@@ -142,4 +142,15 @@ describe('createRepository', () => {
     const results = await firstValueFrom(repo.search$('coffee', ['name']));
     expect(results).toHaveLength(2);
   });
+
+  it('search$ handles regex special characters in search term', async () => {
+    const repo = createRepository<TestDoc>(db.items);
+    await repo.create({ id: '1', name: 'Coffee (Organic)' });
+    await repo.create({ id: '2', name: 'Tea' });
+
+    // This should not throw — the parentheses are escaped
+    const results = await firstValueFrom(repo.search$('(Organic)', ['name']));
+    expect(results).toHaveLength(1);
+    expect(results[0].name).toBe('Coffee (Organic)');
+  });
 });

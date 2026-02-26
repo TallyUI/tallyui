@@ -21,7 +21,8 @@ export function createRepository<T extends { id: string }>(
     },
 
     search$(term: string, fields: (keyof T)[]): Observable<T[]> {
-      const regex = new RegExp(term, 'i');
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
       return collection.find().$.pipe(
         map((docs) =>
           docs

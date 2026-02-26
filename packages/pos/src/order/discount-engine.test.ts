@@ -81,6 +81,46 @@ describe('discount engine', () => {
     });
   });
 
+  describe('discount recalculation on quantity change', () => {
+    it('percentage discount recalculates when quantity changes', async () => {
+      const builder = createOrderBuilder({ currency: 'USD', taxContext });
+      const lineId = builder.addProduct(product, traits); // $10
+      builder.applyLineDiscount(lineId, { type: 'percentage', value: 10 }); // 10% = $1
+
+      // Change quantity to 3 — discount should now be $3 (10% of $30)
+      builder.updateQuantity(lineId, 3);
+
+      const order = await firstValueFrom(builder.order$);
+      const line = order.lineItems[0];
+      expect(line.discountAmount).toBeCloseTo(3.00); // 10% of $30
+      expect(line.lineTotal).toBeCloseTo(29.70); // ($30 - $3) + $2.70 tax
+    });
+
+    it('fixed discount recalculates (caps) when quantity changes', async () => {
+      const builder = createOrderBuilder({ currency: 'USD', taxContext });
+      const lineId = builder.addProduct({ id: 'p1', name: 'Cheap', price: 2 }, traits);
+      builder.applyLineDiscount(lineId, { type: 'fixed', value: 5 }); // capped at $2
+
+      // Change quantity to 3 — gross now $6, fixed $5 is no longer capped
+      builder.updateQuantity(lineId, 3);
+
+      const order = await firstValueFrom(builder.order$);
+      expect(order.lineItems[0].discountAmount).toBe(5);
+    });
+
+    it('stacks multiple discounts on the same line', async () => {
+      const builder = createOrderBuilder({ currency: 'USD', taxContext });
+      const lineId = builder.addProduct(product, traits); // $10
+      builder.applyLineDiscount(lineId, { type: 'percentage', value: 10, label: '10% off' });
+      builder.applyLineDiscount(lineId, { type: 'fixed', value: 2, label: '$2 off' });
+
+      const order = await firstValueFrom(builder.order$);
+      const line = order.lineItems[0];
+      expect(line.discounts).toHaveLength(2);
+      expect(line.discountAmount).toBeCloseTo(3.00); // $1 + $2
+    });
+  });
+
   describe('removing discounts', () => {
     it('removes a line discount by id', async () => {
       const builder = createOrderBuilder({ currency: 'USD', taxContext });

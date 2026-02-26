@@ -123,6 +123,34 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
         });
       }
 
+      // Restore line-level discounts
+      const resumedOrder = builder.getSnapshot();
+      for (const savedLine of savedOrder.lineItems) {
+        const newLine = resumedOrder.lineItems.find(
+          (li) => li.productId === savedLine.productId && li.variantId === savedLine.variantId,
+        );
+        if (newLine) {
+          for (const discount of savedLine.discounts) {
+            builder.applyLineDiscount(newLine.id, {
+              type: discount.type,
+              value: discount.value,
+              label: discount.label,
+              couponCode: discount.couponCode,
+            });
+          }
+        }
+      }
+
+      // Restore order-level discounts
+      for (const discount of savedOrder.discounts) {
+        builder.applyOrderDiscount({
+          type: discount.type,
+          value: discount.value,
+          label: discount.label,
+          couponCode: discount.couponCode,
+        });
+      }
+
       // Restore payments
       for (const payment of savedOrder.payments) {
         builder.addPayment({
