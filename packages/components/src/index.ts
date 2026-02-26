@@ -121,4 +121,22 @@ export {
 } from './register';
 
 // Settings components
-export { SettingsRow, type SettingsRowProps } from './settings';
+export {
+  SettingsRow,
+  type SettingsRowProps,
+  SettingsGroup,
+  type SettingsGroupProps,
+  ConnectorStatus,
+  type ConnectorStatusProps,
+  type ConnectionStatus,
+} from './settings';
+
+// Layout components
+export {
+  POSLayout,
+  type POSLayoutProps,
+  CheckoutLayout,
+  type CheckoutLayoutProps,
+  SettingsLayout,
+  type SettingsLayoutProps,
+} from './layout';
