@@ -82,10 +82,26 @@ export {
   type OrderSummaryPayment,
   ChangeDisplay,
   type ChangeDisplayProps,
+  CashTendered,
+  type CashTenderedProps,
+  ReceiptPreview,
+  type ReceiptPreviewProps,
+  type ReceiptItem,
 } from './checkout';
 
 // Order components
-export { OrderStatusBadge, type OrderStatusBadgeProps, type OrderStatus } from './order';
+export {
+  OrderStatusBadge,
+  type OrderStatusBadgeProps,
+  type OrderStatus,
+  OrderCard,
+  type OrderCardProps,
+  OrderList,
+  type OrderListProps,
+  OrderDetail,
+  type OrderDetailProps,
+  type OrderDetailLineItem,
+} from './order';
 
 // Settings components
 export { SettingsRow, type SettingsRowProps } from './settings';
