@@ -1,0 +1,73 @@
+---
+title: Icon
+description: SVG icon wrapper that inherits color from parent components via TextClassContext.
+---
+
+## Import
+
+```tsx
+import { Icon } from '@tallyui/components';
+```
+
+## Usage
+
+Wrap any SVG icon component inside `Icon`. It sizes the container and picks up text color from ancestor components like Button or Card through `TextClassContext`.
+
+```tsx
+import { Icon } from '@tallyui/components';
+import { StarIcon } from 'lucide-react-native';
+
+<Icon>
+  <StarIcon />
+</Icon>
+```
+
+## Size variants
+
+| Size | Class |
+|------|-------|
+| `xs` | `h-3 w-3` |
+| `sm` | `h-4 w-4` |
+| `md` (default) | `h-5 w-5` |
+| `lg` | `h-6 w-6` |
+| `xl` | `h-8 w-8` |
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `size` | `'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl'` | `'md'` | Controls width and height of the icon container |
+| `className` | `string` | — | Additional NativeWind classes, merged with defaults |
+
+Plus all React Native `ViewProps`.
+
+## Color inheritance
+
+`Icon` reads from `TextClassContext`, so placing it inside a styled parent automatically applies the right color:
+
+```tsx
+<Button variant="destructive">
+  <Icon>
+    <TrashIcon />
+  </Icon>
+  <Text>Delete</Text>
+</Button>
+```
+
+The icon inherits `text-destructive-foreground` from the Button without any explicit color prop.
+
+## Examples
+
+```tsx
+// Different sizes
+<Icon size="xs"><StarIcon /></Icon>
+<Icon size="sm"><StarIcon /></Icon>
+<Icon size="md"><StarIcon /></Icon>
+<Icon size="lg"><StarIcon /></Icon>
+<Icon size="xl"><StarIcon /></Icon>
+
+// Custom color override
+<Icon className="text-blue-500">
+  <InfoIcon />
+</Icon>
+```

@@ -1,0 +1,73 @@
+---
+title: Avatar
+description: A circular user avatar with image loading and text fallback.
+---
+
+## Import
+
+```tsx
+import { Avatar } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Avatar src="https://example.com/photo.jpg" alt="Jane Doe" />
+```
+
+Avatar displays an image when `src` is provided. If the image fails to load or no `src` is given, it falls back to a muted circle showing the `fallback` string, the first character of `alt`, or a `?` as a last resort.
+
+## Size variants
+
+| Size | Class |
+|------|-------|
+| `sm` | `h-8 w-8` |
+| `md` (default) | `h-10 w-10` |
+| `lg` | `h-12 w-12` |
+| `xl` | `h-16 w-16` |
+
+All sizes share the base classes: `relative overflow-hidden rounded-full`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `src` | `string` | — | Image URI to display |
+| `alt` | `string` | — | Accessibility label for the image; first character used as fallback if `fallback` is not set |
+| `fallback` | `string` | — | Text shown when the image is unavailable (takes priority over `alt` initial) |
+| `size` | `'sm' \| 'md' \| 'lg' \| 'xl'` | `'md'` | Controls the avatar dimensions |
+| `className` | `string` | — | Additional NativeWind classes, merged with defaults |
+
+Plus all React Native `ViewProps`.
+
+## Fallback behavior
+
+The fallback logic works in this order:
+
+1. If `fallback` is set, display that string.
+2. Otherwise, take the first character of `alt` and uppercase it.
+3. If neither is available, display `?`.
+
+The fallback renders on a `bg-muted` background with `text-muted-foreground` text.
+
+## Examples
+
+```tsx
+// With image
+<Avatar src="https://example.com/photo.jpg" alt="Jane Doe" />
+
+// All sizes
+<Avatar size="sm" src="https://example.com/photo.jpg" alt="JD" />
+<Avatar size="md" src="https://example.com/photo.jpg" alt="JD" />
+<Avatar size="lg" src="https://example.com/photo.jpg" alt="JD" />
+<Avatar size="xl" src="https://example.com/photo.jpg" alt="JD" />
+
+// Fallback with initials
+<Avatar alt="Jane Doe" />
+
+// Explicit fallback text
+<Avatar fallback="JD" />
+
+// No data at all
+<Avatar />
+```

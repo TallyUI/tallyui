@@ -1,0 +1,111 @@
+---
+title: ToggleGroup
+description: A group of toggle buttons where one or multiple items can be active at once.
+---
+
+## Import
+
+```tsx
+import { ToggleGroup, ToggleGroupItem, Text } from '@tallyui/components';
+```
+
+## Usage
+
+ToggleGroup manages selection state across a set of `ToggleGroupItem` children. Set `type="single"` for radio-like behavior or `type="multiple"` for checkbox-like behavior.
+
+```tsx
+<ToggleGroup type="single" defaultValue="center">
+  <ToggleGroupItem value="left"><Text>Left</Text></ToggleGroupItem>
+  <ToggleGroupItem value="center"><Text>Center</Text></ToggleGroupItem>
+  <ToggleGroupItem value="right"><Text>Right</Text></ToggleGroupItem>
+</ToggleGroup>
+```
+
+## Variants
+
+ToggleGroup inherits the same variant and size system from `Toggle`. Pass `variant` and `size` on the root and they propagate to all items through context. Individual items can override these values.
+
+| Variant | Class |
+|---------|-------|
+| `default` | `bg-transparent` |
+| `outline` | `border border-input bg-transparent` |
+
+## Sizes
+
+| Size | Class |
+|------|-------|
+| `default` | `h-10 px-3` |
+| `sm` | `h-9 px-2.5` |
+| `lg` | `h-11 px-5` |
+
+## ToggleGroup Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `type` | `'single' \| 'multiple'` | — | **Required.** Selection mode |
+| `value` | `string \| string[]` | — | Controlled selected value(s) |
+| `defaultValue` | `string \| string[]` | — | Uncontrolled initial value(s) |
+| `onValueChange` | `(value: string \| string[]) => void` | — | Called when selection changes |
+| `variant` | `'default' \| 'outline'` | `'default'` | Visual style applied to all items |
+| `size` | `'default' \| 'sm' \| 'lg'` | `'default'` | Size applied to all items |
+| `disabled` | `boolean` | `false` | Disables all items |
+| `className` | `string` | — | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+## ToggleGroupItem Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | — | **Required.** Unique value for this item |
+| `variant` | `'default' \| 'outline'` | — | Overrides the group variant for this item |
+| `size` | `'default' \| 'sm' \| 'lg'` | — | Overrides the group size for this item |
+| `disabled` | `boolean` | `false` | Disables this item independently |
+| `className` | `string` | — | Additional NativeWind classes |
+
+Plus all React Native `PressableProps`.
+
+## Examples
+
+### Single selection (controlled)
+
+```tsx
+const [alignment, setAlignment] = useState('center');
+
+<ToggleGroup type="single" value={alignment} onValueChange={setAlignment}>
+  <ToggleGroupItem value="left"><Text>Left</Text></ToggleGroupItem>
+  <ToggleGroupItem value="center"><Text>Center</Text></ToggleGroupItem>
+  <ToggleGroupItem value="right"><Text>Right</Text></ToggleGroupItem>
+</ToggleGroup>
+```
+
+### Multiple selection
+
+```tsx
+const [formats, setFormats] = useState<string[]>([]);
+
+<ToggleGroup type="multiple" value={formats} onValueChange={setFormats}>
+  <ToggleGroupItem value="bold"><Text>B</Text></ToggleGroupItem>
+  <ToggleGroupItem value="italic"><Text>I</Text></ToggleGroupItem>
+  <ToggleGroupItem value="underline"><Text>U</Text></ToggleGroupItem>
+</ToggleGroup>
+```
+
+### Outline variant with small size
+
+```tsx
+<ToggleGroup type="single" variant="outline" size="sm" defaultValue="a">
+  <ToggleGroupItem value="a"><Text>A</Text></ToggleGroupItem>
+  <ToggleGroupItem value="b"><Text>B</Text></ToggleGroupItem>
+  <ToggleGroupItem value="c"><Text>C</Text></ToggleGroupItem>
+</ToggleGroup>
+```
+
+### Disabled
+
+```tsx
+<ToggleGroup type="single" disabled defaultValue="x">
+  <ToggleGroupItem value="x"><Text>X</Text></ToggleGroupItem>
+  <ToggleGroupItem value="y"><Text>Y</Text></ToggleGroupItem>
+</ToggleGroup>
+```

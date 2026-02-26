@@ -1,0 +1,160 @@
+---
+title: AlertDialog
+description: A modal dialog that requires explicit confirmation or cancellation before the user can continue.
+---
+
+## Import
+
+```tsx
+import {
+  AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
+  AlertDialogFooter, AlertDialogTitle, AlertDialogDescription,
+  AlertDialogAction, AlertDialogCancel,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<AlertDialog>
+  <AlertDialogTrigger asChild>
+    <Button variant="destructive"><Text>Delete Account</Text></Button>
+  </AlertDialogTrigger>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+      <AlertDialogDescription>
+        This action cannot be undone. Your account and all its data will be permanently deleted.
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel asChild>
+        <Button variant="outline"><Text>Cancel</Text></Button>
+      </AlertDialogCancel>
+      <AlertDialogAction asChild>
+        <Button variant="destructive"><Text>Delete</Text></Button>
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+```
+
+AlertDialog is a styled wrapper around the [AlertDialog primitive](/docs/primitives/alert-dialog). Unlike Dialog, it prevents the user from dismissing by clicking outside or pressing Escape -- they must pick an explicit action. For full accessibility and behavior details, see the primitive docs.
+
+## Components
+
+### AlertDialogOverlay
+
+Covers the screen behind the alert dialog.
+
+Default classes: `fixed inset-0 z-50 bg-black/80`
+
+### AlertDialogContent
+
+The centered confirmation panel. Automatically wraps itself in a portal with an overlay.
+
+Default classes: `fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-background p-6 shadow-lg`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | -- | Additional NativeWind classes merged via `cn()` |
+
+Plus all props from the AlertDialog primitive's `Content` component.
+
+### AlertDialogHeader
+
+Layout wrapper for title and description.
+
+Default classes: `flex flex-col gap-2`
+
+### AlertDialogFooter
+
+Layout wrapper for action buttons. Stacks vertically on mobile, rows horizontally on larger screens.
+
+Default classes: `flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2`
+
+### AlertDialogTitle
+
+The heading for the alert dialog. Sets up `TextClassContext` so child text inherits the right styles.
+
+Default classes: `text-lg font-semibold text-foreground`
+
+### AlertDialogDescription
+
+Supporting text explaining what the user is confirming.
+
+Default classes: `text-sm text-muted-foreground`
+
+### AlertDialogAction
+
+The confirm/proceed button. Closes the dialog when pressed.
+
+### AlertDialogCancel
+
+The cancel/dismiss button. Closes the dialog when pressed.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | -- | Controlled open state |
+| `defaultOpen` | `boolean` | -- | Uncontrolled initial open state |
+| `onOpenChange` | `(open: boolean) => void` | -- | Called when the open state changes |
+
+`AlertDialogTrigger`, `AlertDialogAction`, and `AlertDialogCancel` accept `asChild` to merge props onto a custom child element.
+
+## Examples
+
+### Destructive confirmation
+
+```tsx
+<AlertDialog>
+  <AlertDialogTrigger asChild>
+    <Button variant="destructive"><Text>Delete Item</Text></Button>
+  </AlertDialogTrigger>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Delete this item?</AlertDialogTitle>
+      <AlertDialogDescription>
+        This action cannot be undone. The item will be permanently removed.
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel asChild>
+        <Button variant="outline"><Text>Cancel</Text></Button>
+      </AlertDialogCancel>
+      <AlertDialogAction asChild>
+        <Button variant="destructive"><Text>Delete</Text></Button>
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+```
+
+### Controlled alert dialog
+
+```tsx
+const [open, setOpen] = useState(false);
+
+<AlertDialog open={open} onOpenChange={setOpen}>
+  <AlertDialogTrigger asChild>
+    <Button><Text>Discard Changes</Text></Button>
+  </AlertDialogTrigger>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+      <AlertDialogDescription>
+        You have unsaved changes. Are you sure you want to leave?
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel asChild>
+        <Button variant="outline"><Text>Keep Editing</Text></Button>
+      </AlertDialogCancel>
+      <AlertDialogAction asChild>
+        <Button variant="destructive"><Text>Discard</Text></Button>
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+```

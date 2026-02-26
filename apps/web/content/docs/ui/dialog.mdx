@@ -1,0 +1,157 @@
+---
+title: Dialog
+description: A modal window that interrupts the user with important content, requiring interaction before returning to the page.
+---
+
+## Import
+
+```tsx
+import {
+  Dialog, DialogTrigger, DialogContent, DialogHeader,
+  DialogFooter, DialogTitle, DialogDescription, DialogClose,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Dialog>
+  <DialogTrigger asChild>
+    <Button><Text>Open Dialog</Text></Button>
+  </DialogTrigger>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Edit Profile</DialogTitle>
+      <DialogDescription>Make changes to your profile here.</DialogDescription>
+    </DialogHeader>
+    <DialogFooter>
+      <DialogClose asChild>
+        <Button variant="outline"><Text>Cancel</Text></Button>
+      </DialogClose>
+      <Button><Text>Save</Text></Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+```
+
+Dialog is a styled wrapper around the [Dialog primitive](/docs/primitives/dialog). It handles portal rendering, overlay backdrop, and centered positioning out of the box. For full accessibility and behavior details, see the primitive docs.
+
+## Components
+
+### DialogOverlay
+
+Covers the screen behind the dialog with a semi-transparent backdrop.
+
+Default classes: `fixed inset-0 z-50 bg-black/80`
+
+### DialogContent
+
+The centered panel that holds dialog content. Automatically wraps itself in a `DialogPortal` and renders a `DialogOverlay` behind it.
+
+Default classes: `fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-background p-6 shadow-lg`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | -- | Additional NativeWind classes merged via `cn()` |
+
+Plus all props from the Dialog primitive's `Content` component.
+
+### DialogHeader
+
+A layout wrapper for title and description.
+
+Default classes: `flex flex-col gap-1.5 text-center sm:text-left`
+
+### DialogFooter
+
+A layout wrapper for action buttons. Stacks vertically on mobile, rows horizontally on larger screens.
+
+Default classes: `flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2`
+
+### DialogTitle
+
+The heading for the dialog. Sets up `TextClassContext` so child text inherits the right styles.
+
+Default classes: `text-lg font-semibold leading-none text-foreground`
+
+### DialogDescription
+
+Supporting text below the title.
+
+Default classes: `text-sm text-muted-foreground`
+
+## Props
+
+Dialog itself is an uncontrolled/controlled root.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | -- | Controlled open state |
+| `defaultOpen` | `boolean` | -- | Uncontrolled initial open state |
+| `onOpenChange` | `(open: boolean) => void` | -- | Called when the open state changes |
+
+`DialogTrigger` and `DialogClose` accept `asChild` to merge props onto a custom child element.
+
+## Examples
+
+### Basic dialog
+
+```tsx
+<Dialog>
+  <DialogTrigger asChild>
+    <Button><Text>Open</Text></Button>
+  </DialogTrigger>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Welcome</DialogTitle>
+      <DialogDescription>Thanks for trying TallyUI.</DialogDescription>
+    </DialogHeader>
+    <DialogFooter>
+      <DialogClose asChild>
+        <Button><Text>Got it</Text></Button>
+      </DialogClose>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+```
+
+### Controlled dialog
+
+```tsx
+const [open, setOpen] = useState(false);
+
+<Dialog open={open} onOpenChange={setOpen}>
+  <DialogTrigger asChild>
+    <Button><Text>Edit</Text></Button>
+  </DialogTrigger>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Edit Item</DialogTitle>
+      <DialogDescription>State: {open ? 'open' : 'closed'}</DialogDescription>
+    </DialogHeader>
+    <DialogFooter>
+      <DialogClose asChild>
+        <Button variant="outline"><Text>Cancel</Text></Button>
+      </DialogClose>
+      <Button onPress={() => { save(); setOpen(false); }}>
+        <Text>Save</Text>
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+```
+
+### Custom styled content
+
+```tsx
+<DialogContent className="max-w-sm rounded-xl">
+  <DialogHeader>
+    <DialogTitle>Compact Dialog</DialogTitle>
+  </DialogHeader>
+  <DialogFooter>
+    <DialogClose asChild>
+      <Button variant="ghost"><Text>Dismiss</Text></Button>
+    </DialogClose>
+  </DialogFooter>
+</DialogContent>
+```

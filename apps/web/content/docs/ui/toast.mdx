@@ -1,0 +1,126 @@
+---
+title: Toast
+description: A brief notification that appears temporarily to provide feedback about an action.
+---
+
+## Import
+
+```tsx
+import { Toast, ToastTitle, ToastDescription, ToastClose } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Toast>
+  <VStack className="gap-1 flex-1">
+    <ToastTitle>Success</ToastTitle>
+    <ToastDescription>Your changes have been saved.</ToastDescription>
+  </VStack>
+  <ToastClose />
+</Toast>
+```
+
+Toast provides the visual layer for brief notifications. It uses `class-variance-authority` for variant support and is designed to be composed with your own toast management solution (timer logic, stacking, positioning). For positioning in an overlay, render your toasts inside a view positioned with `PortalHost` from `@tallyui/primitives`.
+
+## Variants
+
+| Variant | Class |
+|---------|-------|
+| `default` | `border-border bg-background text-foreground` |
+| `destructive` | `border-destructive bg-destructive text-destructive-foreground` |
+| `success` | `border-success bg-success text-success-foreground` |
+
+All variants share the base classes: `group pointer-events-auto relative flex w-full flex-row items-center justify-between gap-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg`
+
+## Components
+
+### Toast
+
+The outer container. Accepts a `variant` prop for visual differentiation.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `variant` | `'default' \| 'destructive' \| 'success'` | `'default'` | Visual style of the toast |
+| `className` | `string` | -- | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+### ToastTitle
+
+The heading text inside a toast.
+
+Default classes: `text-sm font-semibold`
+
+### ToastDescription
+
+The body text inside a toast.
+
+Default classes: `text-sm opacity-90`
+
+### ToastClose
+
+A close button positioned in the top-right corner. Appears on hover (web) using group-hover opacity transition.
+
+Default classes: `absolute right-2 top-2 rounded-md p-1 opacity-0 web:transition-opacity web:hover:opacity-100 web:focus:opacity-100 web:group-hover:opacity-100`
+
+## Examples
+
+### Default toast
+
+```tsx
+<Toast>
+  <VStack className="gap-1 flex-1">
+    <ToastTitle>Notification</ToastTitle>
+    <ToastDescription>Something happened.</ToastDescription>
+  </VStack>
+  <ToastClose />
+</Toast>
+```
+
+### Destructive toast
+
+```tsx
+<Toast variant="destructive">
+  <VStack className="gap-1 flex-1">
+    <ToastTitle>Error</ToastTitle>
+    <ToastDescription>Something went wrong. Please try again.</ToastDescription>
+  </VStack>
+  <ToastClose />
+</Toast>
+```
+
+### Success toast
+
+```tsx
+<Toast variant="success">
+  <VStack className="gap-1 flex-1">
+    <ToastTitle>Saved</ToastTitle>
+    <ToastDescription>Your profile has been updated.</ToastDescription>
+  </VStack>
+  <ToastClose />
+</Toast>
+```
+
+### With custom action
+
+```tsx
+<Toast>
+  <VStack className="gap-1 flex-1">
+    <ToastTitle>Undo Available</ToastTitle>
+    <ToastDescription>Item moved to trash.</ToastDescription>
+  </VStack>
+  <Button variant="outline" size="sm" onPress={handleUndo}>
+    <Text>Undo</Text>
+  </Button>
+  <ToastClose />
+</Toast>
+```
+
+### Simple title-only toast
+
+```tsx
+<Toast>
+  <ToastTitle>Copied to clipboard</ToastTitle>
+</Toast>
+```

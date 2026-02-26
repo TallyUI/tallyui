@@ -1,0 +1,103 @@
+---
+title: HStack
+description: Horizontal stack layout with configurable spacing and reverse order
+---
+
+## Import
+
+```tsx
+import { HStack } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<HStack>
+  <Text>Left</Text>
+  <Text>Right</Text>
+</HStack>
+```
+
+HStack renders a `View` with `flex-row` and `items-center` applied by default, so children line up horizontally and sit on the same vertical center.
+
+## Variants
+
+### space
+
+Controls the gap between children using Tailwind `gap-*` utilities:
+
+| Value  | Class  |
+| ------ | ------ |
+| `none` | `gap-0` |
+| `xs`   | `gap-1` |
+| `sm`   | `gap-2` |
+| `md`   | `gap-3` |
+| `lg`   | `gap-4` |
+| `xl`   | `gap-6` |
+
+Default: **`md`** (`gap-3`).
+
+```tsx
+<HStack space="lg">
+  <Text>A</Text>
+  <Text>B</Text>
+</HStack>
+```
+
+### reversed
+
+Flips the layout direction to `flex-row-reverse`:
+
+| Value  | Class              |
+| ------ | ------------------ |
+| `true` | `flex-row-reverse` |
+
+```tsx
+<HStack reversed>
+  <Text>Appears second</Text>
+  <Text>Appears first</Text>
+</HStack>
+```
+
+## Props
+
+| Prop        | Type                                             | Default | Description                                      |
+| ----------- | ------------------------------------------------ | ------- | ------------------------------------------------ |
+| `space`     | `'none' \| 'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl'` | `'md'`  | Gap between children                             |
+| `reversed`  | `boolean`                                        | —       | Reverse the horizontal order                     |
+| `className` | `string`                                         | —       | NativeWind classes merged via `cn()`             |
+
+Plus all React Native [`ViewProps`](https://reactnative.dev/docs/view#props).
+
+## Examples
+
+### Spacing scale
+
+```tsx
+<HStack space="none"><Text>A</Text><Text>B</Text></HStack>
+<HStack space="xs"><Text>A</Text><Text>B</Text></HStack>
+<HStack space="sm"><Text>A</Text><Text>B</Text></HStack>
+<HStack space="md"><Text>A</Text><Text>B</Text></HStack>
+<HStack space="lg"><Text>A</Text><Text>B</Text></HStack>
+<HStack space="xl"><Text>A</Text><Text>B</Text></HStack>
+```
+
+### Row with justified ends
+
+```tsx
+<HStack className="justify-between w-full">
+  <Text>Title</Text>
+  <Text className="text-muted-foreground">Action</Text>
+</HStack>
+```
+
+### Reversed order
+
+```tsx
+<HStack reversed space="sm">
+  <Text>1</Text>
+  <Text>2</Text>
+  <Text>3</Text>
+</HStack>
+{/* Renders visually as: 3  2  1 */}
+```

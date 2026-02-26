@@ -1,0 +1,68 @@
+---
+title: Loader
+description: A spinning loading indicator with size variants and color inheritance.
+---
+
+## Import
+
+```tsx
+import { Loader } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Loader />
+```
+
+The Loader renders a circular spinner using a border trick (`border-current border-t-transparent`) and the `animate-spin` animation. It picks up color from `TextClassContext`, so it matches the text color of its parent.
+
+## Size variants
+
+| Size | Class |
+|------|-------|
+| `sm` | `h-4 w-4` |
+| `md` (default) | `h-5 w-5` |
+| `lg` | `h-8 w-8` |
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `size` | `'sm' \| 'md' \| 'lg'` | `'md'` | Controls the spinner dimensions |
+| `className` | `string` | — | Additional NativeWind classes, merged with defaults |
+
+Plus all React Native `ViewProps` (excluding `children`).
+
+## Accessibility
+
+The Loader sets `role="progressbar"` automatically, so screen readers announce it as a loading indicator.
+
+## Color inheritance
+
+When placed inside a Button or other component that sets `TextClassContext`, the spinner color adjusts automatically:
+
+```tsx
+<Button variant="destructive" disabled>
+  <Loader size="sm" />
+  <Text>Deleting...</Text>
+</Button>
+```
+
+## Examples
+
+```tsx
+// Standalone sizes
+<Loader size="sm" />
+<Loader size="md" />
+<Loader size="lg" />
+
+// Custom color
+<Loader className="text-blue-500" />
+
+// Inside a button
+<Button disabled>
+  <Loader size="sm" />
+  <Text>Loading...</Text>
+</Button>
+```

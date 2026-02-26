@@ -1,0 +1,180 @@
+---
+title: Accordion
+description: Vertically stacked sections that expand and collapse to reveal content.
+---
+
+## Import
+
+```tsx
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+  Text,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Accordion type="single" defaultValue="item-1" collapsible>
+  <AccordionItem value="item-1">
+    <AccordionTrigger>
+      <Text>What is TallyUI?</Text>
+    </AccordionTrigger>
+    <AccordionContent>
+      <Text>A cross-platform component library for React Native and web.</Text>
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+```
+
+Accordion wraps the `Accordion` primitive from `@tallyui/primitives` with styled defaults. It supports single or multiple expanded sections, and both controlled and uncontrolled state.
+
+## Components
+
+### Accordion
+
+The root component. Manages which items are expanded.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `type` | `'single' \| 'multiple'` | - | **Required.** `single` allows one open section at a time; `multiple` allows several |
+| `value` | `string \| string[]` | - | Controlled expanded value(s) |
+| `defaultValue` | `string \| string[]` | - | Uncontrolled initial expanded value(s) |
+| `onValueChange` | `(value: string \| string[]) => void` | - | Called when expanded sections change |
+| `collapsible` | `boolean` | `false` | When `type="single"`, allows closing the open section by clicking its trigger again |
+| `disabled` | `boolean` | `false` | Disables all items |
+
+Plus all React Native `ViewProps`.
+
+### AccordionItem
+
+Wraps a single expandable section. Adds a bottom border to separate items visually.
+
+**Default classes:** `border-b border-border`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | - | **Required.** Unique identifier for this item |
+| `disabled` | `boolean` | `false` | Disables this item independently |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+### AccordionTrigger
+
+Pressable header that toggles its parent `AccordionItem`. Text inside is styled through `TextClassContext` with `text-sm font-medium`. On web, triggers show an underline on hover.
+
+**Default classes:** `flex flex-1 flex-row items-center justify-between py-4 font-medium`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `PressableProps`.
+
+### AccordionContent
+
+The collapsible body of an accordion item. Content is wrapped in a padded container and uses `TextClassContext` to apply `text-sm` to descendant text.
+
+**Default classes:** `overflow-hidden text-sm`
+
+**Inner wrapper classes:** `pb-4 pt-0`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `boolean` | `false` | When `true`, content stays in the DOM even when collapsed |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+## Examples
+
+### Single collapsible (uncontrolled)
+
+```tsx
+<Accordion type="single" defaultValue="item-1" collapsible>
+  <AccordionItem value="item-1">
+    <AccordionTrigger>
+      <Text>Is it accessible?</Text>
+    </AccordionTrigger>
+    <AccordionContent>
+      <Text>Yes. It follows WAI-ARIA accordion patterns.</Text>
+    </AccordionContent>
+  </AccordionItem>
+  <AccordionItem value="item-2">
+    <AccordionTrigger>
+      <Text>Is it styled?</Text>
+    </AccordionTrigger>
+    <AccordionContent>
+      <Text>Yes. Ships with default styles via NativeWind.</Text>
+    </AccordionContent>
+  </AccordionItem>
+  <AccordionItem value="item-3">
+    <AccordionTrigger>
+      <Text>Is it animated?</Text>
+    </AccordionTrigger>
+    <AccordionContent>
+      <Text>Yes. The content area transitions on web.</Text>
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+```
+
+### Multiple open sections
+
+```tsx
+<Accordion type="multiple" defaultValue={['faq-1', 'faq-3']}>
+  <AccordionItem value="faq-1">
+    <AccordionTrigger>
+      <Text>How do I install?</Text>
+    </AccordionTrigger>
+    <AccordionContent>
+      <Text>Run npm install @tallyui/components</Text>
+    </AccordionContent>
+  </AccordionItem>
+  <AccordionItem value="faq-2">
+    <AccordionTrigger>
+      <Text>Does it support React Native?</Text>
+    </AccordionTrigger>
+    <AccordionContent>
+      <Text>Yes, all components work on iOS, Android, and web.</Text>
+    </AccordionContent>
+  </AccordionItem>
+  <AccordionItem value="faq-3">
+    <AccordionTrigger>
+      <Text>Can I customize the styles?</Text>
+    </AccordionTrigger>
+    <AccordionContent>
+      <Text>Pass className to any sub-component to override defaults.</Text>
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+```
+
+### Controlled
+
+```tsx
+const [openItem, setOpenItem] = useState('section-1');
+
+<Accordion type="single" value={openItem} onValueChange={setOpenItem} collapsible>
+  <AccordionItem value="section-1">
+    <AccordionTrigger>
+      <Text>Section 1</Text>
+    </AccordionTrigger>
+    <AccordionContent>
+      <Text>Content for section 1. Currently open: {openItem}</Text>
+    </AccordionContent>
+  </AccordionItem>
+  <AccordionItem value="section-2">
+    <AccordionTrigger>
+      <Text>Section 2</Text>
+    </AccordionTrigger>
+    <AccordionContent>
+      <Text>Content for section 2.</Text>
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+```

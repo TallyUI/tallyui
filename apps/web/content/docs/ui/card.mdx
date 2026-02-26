@@ -1,0 +1,172 @@
+---
+title: Card
+description: A styled container with header, content, and footer sections for grouping related information.
+---
+
+## Import
+
+```tsx
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Card>
+  <CardHeader>
+    <CardTitle>Order Summary</CardTitle>
+    <CardDescription>Review your items before checkout.</CardDescription>
+  </CardHeader>
+  <CardContent>
+    <Text>3 items in your cart</Text>
+  </CardContent>
+  <CardFooter>
+    <Button>
+      <Text>Checkout</Text>
+    </Button>
+  </CardFooter>
+</Card>
+```
+
+Card is a compound component. Each sub-component handles a specific section of the card layout. You can use any combination of them -- none are required.
+
+## Components
+
+### Card
+
+The outer container. Applies border, background, rounded corners, and a subtle shadow.
+
+**Default classes:** `rounded-lg border border-border bg-card shadow-sm`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+### CardHeader
+
+Top section of the card. Provides vertical spacing and padding for the title and description.
+
+**Default classes:** `flex flex-col gap-1.5 p-6`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+### CardTitle
+
+Heading text within the card header. Rendered as a heading with `aria-level={3}`.
+
+**Default classes:** `text-2xl font-semibold leading-none text-card-foreground`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `TextProps`.
+
+### CardDescription
+
+Secondary text within the card header. Uses muted foreground color for visual hierarchy.
+
+**Default classes:** `text-sm text-muted-foreground`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `TextProps`.
+
+### CardContent
+
+Main body of the card. Wraps children in a `TextClassContext.Provider` so descendant `Text`, `Icon`, and `Loader` components inherit `text-card-foreground`.
+
+**Default classes:** `p-6 pt-0`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+### CardFooter
+
+Bottom section of the card. Lays out children in a horizontal row with center alignment.
+
+**Default classes:** `flex flex-row items-center p-6 pt-0`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+## Examples
+
+### Minimal card
+
+```tsx
+<Card>
+  <CardContent className="pt-6">
+    <Text>A simple card with only content, no header or footer.</Text>
+  </CardContent>
+</Card>
+```
+
+### Notification card
+
+```tsx
+<Card>
+  <CardHeader>
+    <CardTitle>New Message</CardTitle>
+    <CardDescription>You have 3 unread messages.</CardDescription>
+  </CardHeader>
+  <CardContent>
+    <Text>Check your inbox for the latest updates from your team.</Text>
+  </CardContent>
+  <CardFooter className="justify-between">
+    <Button variant="ghost">
+      <Text>Dismiss</Text>
+    </Button>
+    <Button>
+      <Text>View All</Text>
+    </Button>
+  </CardFooter>
+</Card>
+```
+
+### Stacked cards
+
+```tsx
+<VStack className="gap-4">
+  <Card>
+    <CardHeader>
+      <CardTitle>Revenue</CardTitle>
+      <CardDescription>Monthly total</CardDescription>
+    </CardHeader>
+    <CardContent>
+      <Text className="text-3xl font-bold">$12,450</Text>
+    </CardContent>
+  </Card>
+
+  <Card>
+    <CardHeader>
+      <CardTitle>Orders</CardTitle>
+      <CardDescription>This week</CardDescription>
+    </CardHeader>
+    <CardContent>
+      <Text className="text-3xl font-bold">48</Text>
+    </CardContent>
+  </Card>
+</VStack>
+```

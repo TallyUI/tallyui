@@ -1,0 +1,191 @@
+---
+title: DropdownMenu
+description: A menu of actions or options triggered by a button press, with support for sub-menus, checkboxes, and radio groups.
+---
+
+## Import
+
+```tsx
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuRadioItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuGroup,
+  DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
+  DropdownMenuRadioGroup,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<DropdownMenu>
+  <DropdownMenuTrigger>
+    <Button>Open Menu</Button>
+  </DropdownMenuTrigger>
+  <DropdownMenuContent>
+    <DropdownMenuLabel>My Account</DropdownMenuLabel>
+    <DropdownMenuSeparator />
+    <DropdownMenuItem>
+      <Text>Profile</Text>
+    </DropdownMenuItem>
+    <DropdownMenuItem>
+      <Text>Settings</Text>
+    </DropdownMenuItem>
+    <DropdownMenuSeparator />
+    <DropdownMenuItem>
+      <Text>Log out</Text>
+    </DropdownMenuItem>
+  </DropdownMenuContent>
+</DropdownMenu>
+```
+
+DropdownMenu wraps the `DropdownMenu` primitive from `@tallyui/primitives` with default styling. The content renders through a portal, so you need a `PortalHost` in your native layout. See the [DropdownMenu primitive](/docs/primitives/dropdown-menu) for behavior and accessibility details.
+
+## Components
+
+### DropdownMenuContent
+
+The floating panel containing menu items. Default `sideOffset` is `4`.
+
+| Classes |
+|---------|
+| `z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md` |
+
+### DropdownMenuItem
+
+A single actionable item within the menu.
+
+| Classes |
+|---------|
+| `relative flex cursor-default select-none flex-row items-center rounded-sm px-2 py-1.5 text-sm outline-none` |
+| Focus (web): `bg-accent text-accent-foreground` |
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `inset` | `boolean` | `false` | Adds `pl-8` padding to align with items that have indicators |
+| `className` | `string` | --- | Additional NativeWind classes |
+
+### DropdownMenuCheckboxItem
+
+A menu item that toggles a checkmark.
+
+| Classes |
+|---------|
+| `relative flex cursor-default select-none flex-row items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none` |
+| Focus (web): `bg-accent text-accent-foreground` |
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `checked` | `boolean` | --- | Controlled checked state |
+| `onCheckedChange` | `(checked: boolean) => void` | --- | Called when checked changes |
+
+### DropdownMenuRadioItem
+
+A radio-style menu item, used inside `DropdownMenuRadioGroup`.
+
+| Classes |
+|---------|
+| `relative flex cursor-default select-none flex-row items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none` |
+| Focus (web): `bg-accent text-accent-foreground` |
+
+### DropdownMenuLabel
+
+A non-interactive heading for a group of items.
+
+| Classes |
+|---------|
+| `px-2 py-1.5 text-sm font-semibold` |
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `inset` | `boolean` | `false` | Adds `pl-8` left padding |
+
+### DropdownMenuSeparator
+
+A visual divider between sections.
+
+| Classes |
+|---------|
+| `-mx-1 my-1 h-px bg-muted` |
+
+### DropdownMenuSubTrigger
+
+An item that opens a sub-menu on hover or press.
+
+| Classes |
+|---------|
+| `flex cursor-default select-none flex-row items-center rounded-sm px-2 py-1.5 text-sm outline-none` |
+| Focus (web): `bg-accent` |
+
+### DropdownMenuSubContent
+
+The floating panel for a nested sub-menu.
+
+| Classes |
+|---------|
+| `z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg` |
+
+## Examples
+
+### With checkbox items
+
+```tsx
+const [showStatusBar, setShowStatusBar] = useState(true);
+const [showPanel, setShowPanel] = useState(false);
+
+<DropdownMenu>
+  <DropdownMenuTrigger>
+    <Button>View Options</Button>
+  </DropdownMenuTrigger>
+  <DropdownMenuContent>
+    <DropdownMenuLabel>Appearance</DropdownMenuLabel>
+    <DropdownMenuSeparator />
+    <DropdownMenuCheckboxItem checked={showStatusBar} onCheckedChange={setShowStatusBar}>
+      <Text>Status Bar</Text>
+    </DropdownMenuCheckboxItem>
+    <DropdownMenuCheckboxItem checked={showPanel} onCheckedChange={setShowPanel}>
+      <Text>Side Panel</Text>
+    </DropdownMenuCheckboxItem>
+  </DropdownMenuContent>
+</DropdownMenu>
+```
+
+### With radio group
+
+```tsx
+const [sort, setSort] = useState('date');
+
+<DropdownMenu>
+  <DropdownMenuTrigger>
+    <Button>Sort By</Button>
+  </DropdownMenuTrigger>
+  <DropdownMenuContent>
+    <DropdownMenuRadioGroup value={sort} onValueChange={setSort}>
+      <DropdownMenuRadioItem value="date"><Text>Date</Text></DropdownMenuRadioItem>
+      <DropdownMenuRadioItem value="name"><Text>Name</Text></DropdownMenuRadioItem>
+      <DropdownMenuRadioItem value="size"><Text>Size</Text></DropdownMenuRadioItem>
+    </DropdownMenuRadioGroup>
+  </DropdownMenuContent>
+</DropdownMenu>
+```
+
+### With sub-menu
+
+```tsx
+<DropdownMenu>
+  <DropdownMenuTrigger>
+    <Button>Actions</Button>
+  </DropdownMenuTrigger>
+  <DropdownMenuContent>
+    <DropdownMenuItem><Text>Cut</Text></DropdownMenuItem>
+    <DropdownMenuItem><Text>Copy</Text></DropdownMenuItem>
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger><Text>Share</Text></DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
+        <DropdownMenuItem><Text>Email</Text></DropdownMenuItem>
+        <DropdownMenuItem><Text>Slack</Text></DropdownMenuItem>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  </DropdownMenuContent>
+</DropdownMenu>
+```

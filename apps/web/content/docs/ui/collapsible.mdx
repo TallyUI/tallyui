@@ -1,0 +1,145 @@
+---
+title: Collapsible
+description: A single section that can be expanded or collapsed by a trigger.
+---
+
+## Import
+
+```tsx
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+  Text,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Collapsible>
+  <CollapsibleTrigger>
+    <Text>Toggle details</Text>
+  </CollapsibleTrigger>
+  <CollapsibleContent>
+    <Text>Hidden content revealed on press.</Text>
+  </CollapsibleContent>
+</Collapsible>
+```
+
+Collapsible wraps the `Collapsible` primitive from `@tallyui/primitives`. It provides a straightforward show/hide pattern for a single section. For multiple collapsible sections, consider using `Accordion` instead.
+
+## Components
+
+### Collapsible
+
+The root component. Manages the open/closed state.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | - | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Uncontrolled initial open state |
+| `onOpenChange` | `(open: boolean) => void` | - | Called when the open state changes |
+| `disabled` | `boolean` | `false` | Prevents the trigger from toggling |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+### CollapsibleTrigger
+
+A pressable element that toggles the collapsible open and closed. This is a direct passthrough of the primitive trigger with no additional styling.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merges props onto the child element instead of rendering a default `Pressable` |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `PressableProps`.
+
+### CollapsibleContent
+
+The collapsible body. Uses `TextClassContext` to apply `text-sm` to descendant text. On web, content transitions smoothly with CSS.
+
+**Default classes:** `overflow-hidden`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `boolean` | `false` | When `true`, content stays in the DOM even when closed |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+## Examples
+
+### Uncontrolled
+
+```tsx
+<Collapsible>
+  <CollapsibleTrigger>
+    <Text>Show more</Text>
+  </CollapsibleTrigger>
+  <CollapsibleContent>
+    <Text>This content is hidden by default and revealed on press.</Text>
+  </CollapsibleContent>
+</Collapsible>
+```
+
+### Controlled
+
+```tsx
+const [isOpen, setIsOpen] = useState(false);
+
+<Collapsible open={isOpen} onOpenChange={setIsOpen}>
+  <CollapsibleTrigger>
+    <Text>{isOpen ? 'Hide' : 'Show'} details</Text>
+  </CollapsibleTrigger>
+  <CollapsibleContent>
+    <Text>Controlled content. Open state: {String(isOpen)}</Text>
+  </CollapsibleContent>
+</Collapsible>
+```
+
+### Default open
+
+```tsx
+<Collapsible defaultOpen>
+  <CollapsibleTrigger>
+    <Text>Collapse this section</Text>
+  </CollapsibleTrigger>
+  <CollapsibleContent>
+    <Text>This section starts expanded and can be collapsed.</Text>
+  </CollapsibleContent>
+</Collapsible>
+```
+
+### With a styled trigger
+
+```tsx
+<Collapsible>
+  <CollapsibleTrigger asChild>
+    <Button variant="outline">
+      <Text>Toggle Section</Text>
+    </Button>
+  </CollapsibleTrigger>
+  <CollapsibleContent>
+    <Card className="mt-2">
+      <CardContent className="pt-6">
+        <Text>Content inside a card, toggled by a button.</Text>
+      </CardContent>
+    </Card>
+  </CollapsibleContent>
+</Collapsible>
+```
+
+### Disabled
+
+```tsx
+<Collapsible disabled>
+  <CollapsibleTrigger>
+    <Text className="text-muted-foreground">Cannot toggle (disabled)</Text>
+  </CollapsibleTrigger>
+  <CollapsibleContent>
+    <Text>This content won't be shown.</Text>
+  </CollapsibleContent>
+</Collapsible>
+```

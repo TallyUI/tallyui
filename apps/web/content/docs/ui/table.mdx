@@ -1,0 +1,191 @@
+---
+title: Table
+description: A structured data table with semantic roles for headers, rows, and cells, built for cross-platform rendering.
+---
+
+## Import
+
+```tsx
+import {
+  Table, TableHeader, TableBody, TableFooter,
+  TableRow, TableHead, TableCell,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Table>
+  <TableHeader>
+    <TableRow>
+      <TableHead><Text>Name</Text></TableHead>
+      <TableHead><Text>Status</Text></TableHead>
+      <TableHead><Text>Amount</Text></TableHead>
+    </TableRow>
+  </TableHeader>
+  <TableBody>
+    <TableRow>
+      <TableCell><Text>Invoice #001</Text></TableCell>
+      <TableCell><Text>Paid</Text></TableCell>
+      <TableCell><Text>$250.00</Text></TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell><Text>Invoice #002</Text></TableCell>
+      <TableCell><Text>Pending</Text></TableCell>
+      <TableCell><Text>$150.00</Text></TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
+```
+
+Table is a set of layout components using React Native `View` and `Text` with semantic ARIA roles (`table`, `rowgroup`, `row`, `columnheader`, `cell`). Unlike HTML tables, these are flex-based and work across web and native. The `TextClassContext` from `@tallyui/primitives` is used in `TableHead` to style descendant text.
+
+## Components
+
+### Table
+
+The root container.
+
+| Classes |
+|---------|
+| `w-full` |
+
+ARIA role: `table`
+
+### TableHeader
+
+Groups header rows.
+
+| Classes |
+|---------|
+| `border-b border-border` |
+
+ARIA role: `rowgroup`
+
+### TableBody
+
+Groups body rows.
+
+| Classes |
+|---------|
+| `[&>*:last-child]:border-0` |
+
+ARIA role: `rowgroup`
+
+### TableFooter
+
+Groups footer rows.
+
+| Classes |
+|---------|
+| `border-t border-border bg-muted/50 font-medium` |
+
+ARIA role: `rowgroup`
+
+### TableRow
+
+A single row that lays its children out horizontally.
+
+| Classes |
+|---------|
+| `flex flex-row border-b border-border` |
+| Hover (web): `bg-muted/50` |
+
+ARIA role: `row`
+
+### TableHead
+
+A column header cell. Sets a `TextClassContext` to style descendant text with muted, uppercase styling.
+
+| Classes |
+|---------|
+| `flex-1 px-4 py-3 text-left font-medium text-muted-foreground` |
+| Text context: `text-muted-foreground text-xs uppercase text-left font-medium` |
+
+ARIA role: `columnheader`
+
+### TableCell
+
+A standard data cell.
+
+| Classes |
+|---------|
+| `flex-1 px-4 py-4` |
+
+ARIA role: `cell`
+
+## Props
+
+All table sub-components accept standard React Native `ViewProps` plus a `className` prop merged via `cn()`.
+
+## Examples
+
+### Invoice table with footer
+
+```tsx
+import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell, Text } from '@tallyui/components';
+
+const invoices = [
+  { id: 'INV-001', client: 'Acme Corp', status: 'Paid', amount: 250.0 },
+  { id: 'INV-002', client: 'Globex Inc', status: 'Pending', amount: 150.0 },
+  { id: 'INV-003', client: 'Initech', status: 'Paid', amount: 350.0 },
+];
+
+function InvoiceTable() {
+  const total = invoices.reduce((sum, inv) => sum + inv.amount, 0);
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead><Text>Invoice</Text></TableHead>
+          <TableHead><Text>Client</Text></TableHead>
+          <TableHead><Text>Status</Text></TableHead>
+          <TableHead><Text>Amount</Text></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {invoices.map((inv) => (
+          <TableRow key={inv.id}>
+            <TableCell><Text className="font-medium">{inv.id}</Text></TableCell>
+            <TableCell><Text>{inv.client}</Text></TableCell>
+            <TableCell><Text>{inv.status}</Text></TableCell>
+            <TableCell><Text>${inv.amount.toFixed(2)}</Text></TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+      <TableFooter>
+        <TableRow>
+          <TableCell><Text className="font-bold">Total</Text></TableCell>
+          <TableCell />
+          <TableCell />
+          <TableCell><Text className="font-bold">${total.toFixed(2)}</Text></TableCell>
+        </TableRow>
+      </TableFooter>
+    </Table>
+  );
+}
+```
+
+### Custom column widths
+
+Use NativeWind width utilities instead of `flex-1` to control individual column sizes.
+
+```tsx
+<TableRow>
+  <TableHead className="flex-[2]"><Text>Description</Text></TableHead>
+  <TableHead className="flex-[1]"><Text>Qty</Text></TableHead>
+  <TableHead className="flex-[1]"><Text>Price</Text></TableHead>
+</TableRow>
+```
+
+### Striped rows
+
+```tsx
+{data.map((row, i) => (
+  <TableRow key={row.id} className={i % 2 === 1 ? 'bg-muted/30' : ''}>
+    <TableCell><Text>{row.name}</Text></TableCell>
+    <TableCell><Text>{row.value}</Text></TableCell>
+  </TableRow>
+))}
+```

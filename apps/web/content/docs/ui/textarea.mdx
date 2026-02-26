@@ -1,0 +1,96 @@
+---
+title: Textarea
+description: A multiline text input with consistent styling across platforms.
+---
+
+## Import
+
+```tsx
+import { Textarea } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Textarea placeholder="Type your message..." />
+```
+
+Textarea renders a React Native `TextInput` with `multiline` and `textAlignVertical="top"` baked in, so text starts from the top-left on both iOS and Android.
+
+## Styling
+
+Base classes applied to every Textarea:
+
+```
+min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground
+placeholder:text-muted-foreground web:outline-none
+web:focus-visible:ring-2 web:focus-visible:ring-ring web:focus-visible:ring-offset-2
+```
+
+On web, the focus ring appears via `focus-visible` so keyboard navigation gets a clear indicator.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `placeholder` | `string` | -- | Placeholder text shown when empty |
+| `className` | `string` | -- | NativeWind classes merged via `cn()` |
+
+Plus all React Native [`TextInputProps`](https://reactnative.dev/docs/textinput#props) (`value`, `onChangeText`, `maxLength`, `numberOfLines`, `editable`, etc.).
+
+## Examples
+
+### Basic textarea
+
+```tsx
+<Textarea placeholder="Write something..." />
+```
+
+### With label
+
+```tsx
+import { Label, Textarea } from '@tallyui/components';
+
+<Label nativeID="message">Message</Label>
+<Textarea placeholder="Your message here..." aria-labelledby="message" />
+```
+
+### Controlled value
+
+```tsx
+const [value, setValue] = React.useState('');
+
+<Textarea
+  value={value}
+  onChangeText={setValue}
+  placeholder="Start typing..."
+/>
+```
+
+### Custom height
+
+```tsx
+<Textarea className="min-h-[160px]" placeholder="Long-form content..." />
+```
+
+### Read-only
+
+```tsx
+<Textarea editable={false} value="This content cannot be edited." />
+```
+
+### Character limit
+
+```tsx
+const [text, setText] = React.useState('');
+
+<Textarea
+  value={text}
+  onChangeText={setText}
+  maxLength={280}
+  placeholder="What's happening?"
+/>
+<Text className="text-sm text-muted-foreground text-right">
+  {text.length}/280
+</Text>
+```

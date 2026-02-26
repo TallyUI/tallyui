@@ -1,0 +1,113 @@
+---
+title: IconButton
+description: A square, icon-only button with variant and size options, built on React Native Pressable.
+---
+
+## Import
+
+```tsx
+import { IconButton } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { IconButton, Icon } from '@tallyui/components';
+import { Settings } from 'lucide-react-native';
+
+<IconButton onPress={() => console.log('pressed')}>
+  <Icon><Settings /></Icon>
+</IconButton>
+```
+
+IconButton is a streamlined alternative to `Button` when you only need to display an icon with no label. It defaults to `ghost` variant and `md` size, keeping toolbars and action rows compact.
+
+## Variants
+
+| Variant | Class |
+|---------|-------|
+| `default` | `bg-primary active:opacity-90` |
+| `destructive` | `bg-destructive active:opacity-90` |
+| `outline` | `border border-input bg-background active:bg-accent` |
+| `secondary` | `bg-secondary active:opacity-80` |
+| `ghost` | `active:bg-accent` |
+
+## Sizes
+
+| Size | Class |
+|------|-------|
+| `sm` | `h-8 w-8` |
+| `md` | `h-10 w-10` |
+| `lg` | `h-12 w-12` |
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `variant` | `'default' \| 'destructive' \| 'outline' \| 'secondary' \| 'ghost'` | `'ghost'` | Visual style of the button |
+| `size` | `'sm' \| 'md' \| 'lg'` | `'md'` | Controls the height and width of the square hit area |
+| `asChild` | `boolean` | `false` | When true, renders as a `Slot` instead of `Pressable`, merging props onto the child element |
+| `disabled` | `boolean` | `false` | Disables the button, applying `opacity-50` and blocking pointer events on web |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `PressableProps` (`onPress`, `onLongPress`, `accessibilityLabel`, etc.).
+
+## Differences from Button
+
+| | Button | IconButton |
+|-|--------|------------|
+| Default variant | `default` | `ghost` |
+| Sizes | `default`, `sm`, `lg`, `icon` | `sm`, `md`, `lg` |
+| TextClassContext | Yes -- cascades text/icon colors | No |
+| Typical children | `<Text>` + optional `<Icon>` | `<Icon>` only |
+
+If you need text-color cascading inside an icon-only button, use `<Button size="icon">` instead.
+
+## Examples
+
+### Toolbar row
+
+```tsx
+import { IconButton, Icon, HStack } from '@tallyui/components';
+import { Bold, Italic, Underline } from 'lucide-react-native';
+
+<HStack className="gap-1">
+  <IconButton>
+    <Icon><Bold /></Icon>
+  </IconButton>
+  <IconButton>
+    <Icon><Italic /></Icon>
+  </IconButton>
+  <IconButton>
+    <Icon><Underline /></Icon>
+  </IconButton>
+</HStack>
+```
+
+### Destructive action
+
+```tsx
+import { Trash2 } from 'lucide-react-native';
+
+<IconButton variant="destructive" accessibilityLabel="Delete item">
+  <Icon><Trash2 /></Icon>
+</IconButton>
+```
+
+### Small outline
+
+```tsx
+import { MoreHorizontal } from 'lucide-react-native';
+
+<IconButton variant="outline" size="sm">
+  <Icon size="sm"><MoreHorizontal /></Icon>
+</IconButton>
+```
+
+### Disabled state
+
+```tsx
+<IconButton disabled accessibilityLabel="Locked">
+  <Icon><Lock /></Icon>
+</IconButton>
+```

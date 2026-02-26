@@ -1,0 +1,103 @@
+---
+title: RadioGroup
+description: A styled set of mutually exclusive options, built on the RadioGroup primitive.
+---
+
+## Import
+
+```tsx
+import { RadioGroup, RadioGroupItem } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<RadioGroup value={value} onValueChange={setValue}>
+  <RadioGroupItem value="option-1" />
+  <RadioGroupItem value="option-2" />
+  <RadioGroupItem value="option-3" />
+</RadioGroup>
+```
+
+RadioGroup and RadioGroupItem are pre-styled wrappers around `RadioGroup.Root`, `RadioGroup.Item`, and `RadioGroup.Indicator` from `@tallyui/primitives`. Each item renders a filled circle indicator when selected. See the [RadioGroup primitive](/docs/primitives/radio-group) for behavior and accessibility details.
+
+## Default Styling
+
+| Part | State | Classes |
+|------|-------|---------|
+| Root | Base | `grid gap-2` |
+| Item | Base | `aspect-square h-4 w-4 rounded-full border border-primary text-primary` |
+| Item | Disabled | `opacity-50 web:cursor-not-allowed` |
+| Item | Focus (web) | `ring-2 ring-ring ring-offset-2 ring-offset-background` |
+| Indicator | Base | `flex items-center justify-center` |
+| Indicator dot | Base | `h-2.5 w-2.5 rounded-full bg-current` |
+
+## Props
+
+### RadioGroup
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | --- | Controlled selected value |
+| `defaultValue` | `string` | --- | Initial value (uncontrolled) |
+| `onValueChange` | `(value: string) => void` | --- | Called when selection changes |
+| `disabled` | `boolean` | `false` | Disables all items |
+| `className` | `string` | --- | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+### RadioGroupItem
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The value this item represents |
+| `disabled` | `boolean` | `false` | Disables this individual item |
+| `className` | `string` | --- | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `PressableProps`.
+
+## Examples
+
+### With labels
+
+```tsx
+import { useState } from 'react';
+import { View } from 'react-native';
+import { RadioGroup, RadioGroupItem, Label, Text } from '@tallyui/components';
+
+function SizeSelector() {
+  const [size, setSize] = useState('medium');
+
+  return (
+    <RadioGroup value={size} onValueChange={setSize}>
+      {['small', 'medium', 'large'].map((s) => (
+        <View key={s} className="flex-row items-center gap-2">
+          <RadioGroupItem value={s} nativeID={s} />
+          <Label nativeID={s}>
+            <Text className="capitalize">{s}</Text>
+          </Label>
+        </View>
+      ))}
+    </RadioGroup>
+  );
+}
+```
+
+### Disabled items
+
+```tsx
+<RadioGroup defaultValue="free">
+  <View className="flex-row items-center gap-2">
+    <RadioGroupItem value="free" />
+    <Text>Free</Text>
+  </View>
+  <View className="flex-row items-center gap-2">
+    <RadioGroupItem value="pro" disabled />
+    <Text className="text-muted-foreground">Pro (coming soon)</Text>
+  </View>
+  <View className="flex-row items-center gap-2">
+    <RadioGroupItem value="enterprise" />
+    <Text>Enterprise</Text>
+  </View>
+</RadioGroup>
+```
