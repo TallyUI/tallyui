@@ -321,6 +321,9 @@ importers:
       '@tallyui/core':
         specifier: workspace:*
         version: link:../core
+      '@types/react':
+        specifier: '>=18'
+        version: 19.2.14
       react:
         specifier: ^19.2.4
         version: 19.2.4
