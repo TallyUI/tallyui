@@ -1,1 +1,1 @@
-// Order history components — populated as components are added
+export { OrderStatusBadge, type OrderStatusBadgeProps, type OrderStatus } from './order-status-badge';
