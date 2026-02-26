@@ -1,0 +1,48 @@
+---
+title: CartLineActions
+description: Action buttons overlay for cart line items such as remove or edit
+---
+
+## Import
+
+```tsx
+import { CartLineActions } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CartLineActions
+  actions={[
+    { id: 'remove', label: 'Remove', onPress: () => handleRemove() },
+  ]}
+>
+  <CartLine item={item} />
+</CartLineActions>
+```
+
+Wraps any cart line content and renders a row of action buttons alongside it. Each action gets a pressable button with a label and optional icon slot.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | required | Cart line content to wrap |
+| `actions` | `CartAction[]` | required | Array of action button definitions |
+| `className` | `string` | — | Override container styles |
+
+### CartAction
+
+```ts
+interface CartAction {
+  id: string;
+  label: string;
+  onPress: () => void;
+  color?: string;      // Text color class (defaults to 'text-danger')
+  iconSlot?: ReactNode; // Optional icon before the label
+}
+```
+
+## Live demo
+
+<CartLineActionsDemo />

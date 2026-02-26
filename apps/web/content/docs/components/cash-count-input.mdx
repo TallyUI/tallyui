@@ -1,0 +1,42 @@
+---
+title: CashCountInput
+description: Denomination-based cash counting input for register open/close workflows
+---
+
+## Import
+
+```tsx
+import { CashCountInput } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CashCountInput onChangeTotal={(total) => console.log(total)} />
+```
+
+Renders a row for each cash denomination with a QuantityStepper to set the count. Automatically calculates and displays the running total. Supports both controlled and uncontrolled modes.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `denominations` | `Denomination[]` | US currency denominations | Custom denominations to display |
+| `defaultCounts` | `Record<number, number>` | `{}` | Initial counts for uncontrolled mode |
+| `counts` | `Record<number, number>` | --- | Controlled counts by denomination value |
+| `onChangeCounts` | `(counts: Record<number, number>) => void` | --- | Called when any count changes |
+| `onChangeTotal` | `(total: number) => void` | --- | Called with the recalculated total |
+| `className` | `string` | --- | Override container styles |
+
+### Denomination
+
+```ts
+interface Denomination {
+  label: string;
+  value: number;
+}
+```
+
+## Live demo
+
+<CashCountInputDemo />

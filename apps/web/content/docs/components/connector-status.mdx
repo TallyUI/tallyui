@@ -1,0 +1,42 @@
+---
+title: ConnectorStatus
+description: Displays the connection state and sync info for an external service
+---
+
+## Import
+
+```tsx
+import { ConnectorStatus } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ConnectorStatus
+  name="WooCommerce"
+  status="connected"
+  lastSync="2 minutes ago"
+/>
+```
+
+A compact status card showing a connector name, a color-coded status indicator dot with label, optional last-sync timestamp, and an error message when relevant.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `name` | `string` | required | Display name of the connector |
+| `status` | `ConnectionStatus` | required | Current connection state |
+| `lastSync` | `string` | --- | Human-readable last sync time |
+| `error` | `string` | --- | Error message shown in the error state |
+| `className` | `string` | --- | Override container styles |
+
+### ConnectionStatus
+
+```ts
+type ConnectionStatus = 'connected' | 'disconnected' | 'syncing' | 'error';
+```
+
+## Live demo
+
+<ConnectorStatusDemo />

@@ -1,0 +1,48 @@
+---
+title: CategoryNav
+description: Horizontal or vertical list of category pill buttons for filtering products
+---
+
+## Import
+
+```tsx
+import { CategoryNav } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CategoryNav
+  categories={[
+    { id: 'all', name: 'All' },
+    { id: 'equipment', name: 'Equipment' },
+  ]}
+  selectedId="all"
+  onSelect={(id) => setSelectedCategory(id)}
+/>
+```
+
+A row of pill-shaped buttons for category filtering. The active category is visually highlighted. Supports horizontal scrolling (default) or vertical stacking.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `categories` | `CategoryItem[]` | required | Array of category objects |
+| `selectedId` | `string` | required | ID of the currently active category |
+| `onSelect` | `(id: string) => void` | required | Callback when a category is tapped |
+| `orientation` | `'horizontal' \| 'vertical'` | `'horizontal'` | Layout direction |
+| `className` | `string` | — | Override container styles |
+
+### CategoryItem
+
+```ts
+interface CategoryItem {
+  id: string;
+  name: string;
+}
+```
+
+## Live demo
+
+<CategoryNavDemo />

@@ -1,0 +1,41 @@
+---
+title: POSLayout
+description: Responsive split or tabbed layout for the main POS browse-and-cart view
+---
+
+## Import
+
+```tsx
+import { POSLayout } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<POSLayout
+  headerSlot={<Header />}
+  browseSlot={<ProductGrid />}
+  cartSlot={<CartPanel />}
+/>
+```
+
+On wide screens (at or above the breakpoint), renders a side-by-side split with the browse area taking 3/5 and the cart taking 2/5. On narrow screens, shows a tabbed interface that toggles between Browse and Cart views. The layout mode can be forced via the `layout` prop or left to respond automatically.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `browseSlot` | `ReactNode` | required | Product browsing content |
+| `cartSlot` | `ReactNode` | required | Shopping cart content |
+| `headerSlot` | `ReactNode` | --- | Optional top header bar |
+| `layout` | `'split' \| 'stacked'` | auto | Force a layout mode instead of using the breakpoint |
+| `breakpoint` | `number` | `768` | Width threshold for switching between split and stacked |
+| `className` | `string` | --- | Override container styles |
+
+## Slots
+
+| Slot | Purpose |
+|------|---------|
+| `browseSlot` | Main product browsing area (left side in split, first tab in stacked) |
+| `cartSlot` | Cart panel (right side in split, second tab in stacked) |
+| `headerSlot` | Top bar rendered above the layout with a bottom border |

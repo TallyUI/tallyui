@@ -1,0 +1,39 @@
+---
+title: OrderCard
+description: Compact card showing an order's number, date, status, and total
+---
+
+## Import
+
+```tsx
+import { OrderCard } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OrderCard
+  orderNumber="#1042"
+  date="Feb 26, 2026"
+  total="$48.50"
+  status="completed"
+/>
+```
+
+A compact card that summarises a single order. Tap behaviour is optional -- pass `onPress` to make the card pressable for navigating to order details.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `orderNumber` | `string` | required | Display label for the order (e.g. `"#1042"`) |
+| `date` | `string` | required | Formatted date string |
+| `total` | `string` | required | Formatted order total |
+| `status` | `OrderStatus` | required | Status value passed to `OrderStatusBadge` |
+| `customerName` | `string` | — | Optional customer name shown below the date |
+| `onPress` | `() => void` | — | Makes the card pressable |
+| `className` | `string` | — | Override container styles |
+
+## Live demo
+
+<OrderCardDemo />

@@ -1,0 +1,48 @@
+---
+title: CustomerForm
+description: Form fields for creating or editing a customer record
+---
+
+## Import
+
+```tsx
+import { CustomerForm } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CustomerForm
+  values={{ firstName: '', lastName: '', email: '', phone: '', address: '' }}
+  onChangeField={(field, value) => updateField(field, value)}
+  onSubmit={() => saveCustomer()}
+/>
+```
+
+A structured form with labeled inputs for first name, last name, email, phone, and address. First and last name render side by side; email and phone use the appropriate keyboard types. An optional submit button appears when `onSubmit` is provided.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `values` | `CustomerFormValues` | required | Current form field values |
+| `onChangeField` | `(field: keyof CustomerFormValues, value: string) => void` | required | Called when any field changes |
+| `onSubmit` | `() => void` | --- | Called on submit button press; hides button if omitted |
+| `submitLabel` | `string` | `'Save Customer'` | Custom label for the submit button |
+| `className` | `string` | --- | Override container styles |
+
+### CustomerFormValues
+
+```ts
+interface CustomerFormValues {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address: string;
+}
+```
+
+## Live demo
+
+<CustomerFormDemo />

@@ -1,0 +1,41 @@
+---
+title: CheckoutLayout
+description: Responsive split or stacked layout for the checkout flow
+---
+
+## Import
+
+```tsx
+import { CheckoutLayout } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CheckoutLayout
+  headerSlot={<Header />}
+  summarySlot={<OrderSummary />}
+  paymentSlot={<PaymentSelector />}
+/>
+```
+
+On wide screens, renders the order summary and payment panel side by side in a 50/50 split. On narrow screens, stacks them vertically inside a scrollable container. The layout mode can be forced via the `layout` prop or left to respond automatically based on the breakpoint.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `summarySlot` | `ReactNode` | required | Order summary content |
+| `paymentSlot` | `ReactNode` | required | Payment method and action content |
+| `headerSlot` | `ReactNode` | --- | Optional top header bar |
+| `layout` | `'split' \| 'stacked'` | auto | Force a layout mode instead of using the breakpoint |
+| `breakpoint` | `number` | `768` | Width threshold for switching between split and stacked |
+| `className` | `string` | --- | Override container styles |
+
+## Slots
+
+| Slot | Purpose |
+|------|---------|
+| `summarySlot` | Order summary area (left side in split, first section in stacked) |
+| `paymentSlot` | Payment method selection and actions (right side in split, second section in stacked) |
+| `headerSlot` | Top bar rendered above the layout with a bottom border |

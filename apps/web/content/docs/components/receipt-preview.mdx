@@ -1,0 +1,50 @@
+---
+title: ReceiptPreview
+description: Renders a receipt-style summary with line items, totals, and optional payment details
+---
+
+## Import
+
+```tsx
+import { ReceiptPreview } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ReceiptPreview
+  items={[{ name: 'Espresso', quantity: 2, total: '$9.00' }]}
+  subtotal="$9.00"
+  tax="$0.72"
+  total="$9.72"
+/>
+```
+
+Displays a receipt-style card with itemised lines, subtotal, tax, and total. You can optionally show payment methods and plug in custom header or footer content through slots.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `items` | `ReceiptItem[]` | required | Array of line items |
+| `subtotal` | `string` | required | Formatted subtotal |
+| `tax` | `string` | required | Formatted tax amount |
+| `total` | `string` | required | Formatted order total |
+| `payments` | `Array<{ method: string; amount: string }>` | — | Payment method rows |
+| `headerSlot` | `ReactNode` | — | Content above the item list |
+| `footerSlot` | `ReactNode` | — | Content below everything |
+| `className` | `string` | — | Override container styles |
+
+### ReceiptItem
+
+```ts
+interface ReceiptItem {
+  name: string;
+  quantity: number;
+  total: string;
+}
+```
+
+## Live demo
+
+<ReceiptPreviewDemo />

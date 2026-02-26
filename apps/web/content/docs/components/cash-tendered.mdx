@@ -1,0 +1,33 @@
+---
+title: CashTendered
+description: Cash amount input with quick-select buttons for common denominations
+---
+
+## Import
+
+```tsx
+import { CashTendered } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CashTendered total={42.5} onChangeAmount={(amount) => console.log(amount)} />
+```
+
+Renders a set of quick-amount buttons alongside a text input so the cashier can record how much cash the customer handed over. Buttons auto-generate rounded denominations based on the order total, or you can supply your own.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `total` | `number` | required | Order total used to derive quick-select amounts |
+| `defaultAmount` | `number` | `total` | Initial amount when uncontrolled |
+| `amount` | `number` | — | Controlled amount value |
+| `onChangeAmount` | `(amount: number) => void` | — | Called when the selected amount changes |
+| `quickAmounts` | `number[]` | auto-generated | Override the set of quick-select buttons |
+| `className` | `string` | — | Override container styles |
+
+## Live demo
+
+<CashTenderedDemo />

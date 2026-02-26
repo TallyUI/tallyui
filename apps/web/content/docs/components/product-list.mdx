@@ -1,0 +1,37 @@
+---
+title: ProductList
+description: Scrollable list layout for rendering product items with optional search and filter slots
+---
+
+## Import
+
+```tsx
+import { ProductList } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ProductList
+  items={products}
+  renderItem={(item) => <Text>{item.name}</Text>}
+  emptyState={<Text>No products found</Text>}
+/>
+```
+
+A flexible list container that renders each product through a `renderItem` callback. Includes optional slots for search and filter UI above the list, and an empty state fallback when there are no items.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `items` | `any[]` | required | Array of product objects to render |
+| `renderItem` | `(item: any, index: number) => ReactNode` | required | Render function for each item |
+| `searchSlot` | `ReactNode` | — | Slot for a search input above the list |
+| `filterSlot` | `ReactNode` | — | Slot for filter chips below search |
+| `emptyState` | `ReactNode` | — | Content shown when `items` is empty |
+| `className` | `string` | — | Override container styles |
+
+## Live demo
+
+<ProductListDemo />

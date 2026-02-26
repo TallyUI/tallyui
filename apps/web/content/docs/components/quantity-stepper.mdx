@@ -1,0 +1,33 @@
+---
+title: QuantityStepper
+description: Increment/decrement control for adjusting item quantities
+---
+
+## Import
+
+```tsx
+import { QuantityStepper } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<QuantityStepper defaultQuantity={1} onChangeQuantity={(qty) => console.log(qty)} />
+```
+
+A compact stepper with minus and plus buttons flanking a numeric display. Supports both controlled and uncontrolled modes.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `defaultQuantity` | `number` | `1` | Initial quantity in uncontrolled mode |
+| `quantity` | `number` | — | Controlled quantity value |
+| `onChangeQuantity` | `(quantity: number) => void` | — | Callback when quantity changes |
+| `min` | `number` | `1` | Minimum allowed quantity |
+| `max` | `number` | `999` | Maximum allowed quantity |
+| `className` | `string` | — | Override container styles |
+
+## Live demo
+
+<QuantityStepperDemo />
