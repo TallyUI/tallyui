@@ -1,0 +1,103 @@
+---
+title: Toggle
+description: A two-state button that can be toggled on or off.
+---
+
+## Import
+
+```tsx
+import { Toggle, Text } from '@tallyui/components';
+```
+
+## Usage
+
+Toggle is a pressable that tracks a boolean `pressed` state. Wrap a `Text` (or `Icon`) inside it -- child text styling is handled automatically through `TextClassContext`.
+
+```tsx
+<Toggle onPressedChange={(pressed) => console.log(pressed)}>
+  <Text>Bold</Text>
+</Toggle>
+```
+
+## Variants
+
+| Variant | Class |
+|---------|-------|
+| `default` | `bg-transparent` |
+| `outline` | `border border-input bg-transparent` |
+
+Both variants apply `bg-accent text-accent-foreground` when `pressed` is true.
+
+## Sizes
+
+| Size | Class |
+|------|-------|
+| `default` | `h-10 px-3` |
+| `sm` | `h-9 px-2.5` |
+| `lg` | `h-11 px-5` |
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `variant` | `'default' \| 'outline'` | `'default'` | Visual style of the toggle |
+| `size` | `'default' \| 'sm' \| 'lg'` | `'default'` | Controls height and padding |
+| `pressed` | `boolean` | — | Controlled pressed state |
+| `defaultPressed` | `boolean` | — | Uncontrolled initial pressed state |
+| `onPressedChange` | `(pressed: boolean) => void` | — | Called when the pressed state changes |
+| `disabled` | `boolean` | `false` | Disables the toggle |
+| `asChild` | `boolean` | `false` | Renders as a `Slot`, merging props onto the child element |
+| `className` | `string` | — | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `PressableProps`.
+
+## TextClassContext
+
+Toggle wraps its children in a `TextClassContext.Provider` so that `Text`, `Icon`, and `Loader` components rendered inside automatically pick up the correct font size for the current size variant. Text classes use `text-sm font-medium` across all variants.
+
+## Examples
+
+### Controlled toggle
+
+```tsx
+const [bold, setBold] = useState(false);
+
+<Toggle pressed={bold} onPressedChange={setBold}>
+  <Text>B</Text>
+</Toggle>
+```
+
+### Outline variant
+
+```tsx
+<Toggle variant="outline">
+  <Text>Italic</Text>
+</Toggle>
+```
+
+### With an icon
+
+```tsx
+import { Icon } from '@tallyui/components';
+import { Bold } from 'lucide-react-native';
+
+<Toggle pressed={bold} onPressedChange={setBold}>
+  <Icon><Bold /></Icon>
+</Toggle>
+```
+
+### Different sizes
+
+```tsx
+<Toggle size="sm"><Text>S</Text></Toggle>
+<Toggle size="default"><Text>M</Text></Toggle>
+<Toggle size="lg"><Text>L</Text></Toggle>
+```
+
+### Disabled
+
+```tsx
+<Toggle disabled>
+  <Text>Off</Text>
+</Toggle>
+```

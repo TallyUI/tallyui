@@ -1,0 +1,85 @@
+---
+title: Switch
+description: A styled toggle switch with a sliding thumb, built on the Switch primitive.
+---
+
+## Import
+
+```tsx
+import { Switch } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Switch checked={enabled} onCheckedChange={setEnabled} />
+```
+
+Switch is a pre-styled wrapper around `Switch.Root` and `Switch.Thumb` from `@tallyui/primitives`. The thumb slides between positions when toggled. See the [Switch primitive](/docs/primitives/switch) for behavior and accessibility details.
+
+## Default Styling
+
+| Part | State | Classes |
+|------|-------|---------|
+| Track | Base | `inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent` |
+| Track | Off | `bg-input` |
+| Track | On | `bg-primary` |
+| Track | Disabled | `opacity-50 web:cursor-not-allowed` |
+| Track | Focus (web) | `ring-2 ring-ring ring-offset-2 ring-offset-background` |
+| Thumb | Base | `pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0` |
+| Thumb | Off | `translate-x-0` |
+| Thumb | On | `translate-x-5` |
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `checked` | `boolean` | --- | Controlled on/off state |
+| `defaultChecked` | `boolean` | `false` | Initial state (uncontrolled) |
+| `onCheckedChange` | `(checked: boolean) => void` | --- | Called when state changes |
+| `disabled` | `boolean` | `false` | Prevents interaction and applies `opacity-50` |
+| `className` | `string` | --- | Additional NativeWind classes for the track, merged via `cn()` |
+
+Plus all React Native `PressableProps`.
+
+## Examples
+
+### With a label
+
+```tsx
+import { useState } from 'react';
+import { View } from 'react-native';
+import { Switch, Label, Text } from '@tallyui/components';
+
+function NotificationsToggle() {
+  const [enabled, setEnabled] = useState(false);
+
+  return (
+    <View className="flex-row items-center justify-between">
+      <Label nativeID="notifications">
+        <Text>Enable notifications</Text>
+      </Label>
+      <Switch checked={enabled} onCheckedChange={setEnabled} />
+    </View>
+  );
+}
+```
+
+### Disabled
+
+```tsx
+<Switch disabled />
+<Switch disabled checked />
+```
+
+### Settings row pattern
+
+```tsx
+<View className="flex-row items-center justify-between rounded-lg border border-border px-4 py-3">
+  <VStack className="gap-0.5">
+    <Text className="text-sm font-medium">Dark mode</Text>
+    <Text className="text-xs text-muted-foreground">Use the dark theme across the app</Text>
+  </VStack>
+  <Switch checked={darkMode} onCheckedChange={setDarkMode} />
+</View>
+```

@@ -1,0 +1,85 @@
+---
+title: Text
+description: Styled text component with variant support and automatic style inheritance via TextClassContext
+---
+
+## Import
+
+```tsx
+import { Text } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Text>Hello, world</Text>
+```
+
+Text renders a React Native `Text` element with sensible defaults: `text-foreground`, `text-base`, and `web:select-text` so content is selectable on the web.
+
+## Variants
+
+Text uses [CVA](https://cva.style) for variant-driven styling:
+
+| Variant   | Classes                                                                                           |
+| --------- | ------------------------------------------------------------------------------------------------- |
+| `default` | _(none — inherits base styles)_                                                                   |
+| `link`    | `web:hover:underline web:focus:underline web:hover:cursor-pointer group-active:underline` |
+
+```tsx
+<Text variant="link">Tap here</Text>
+```
+
+## TextClassContext
+
+Parent components (like Button or Card) can push text styles down to any nested Text without explicit props. Text reads from `TextClassContext` and merges those classes between variant styles and your `className` override — so parent intentions are respected, but you always have the final say.
+
+```tsx
+import { TextClassContext } from '@tallyui/components';
+
+<TextClassContext.Provider value="text-sm text-muted-foreground">
+  <Text>I inherit the provider styles</Text>
+  <Text className="text-destructive">I override the color</Text>
+</TextClassContext.Provider>
+```
+
+## Props
+
+| Prop        | Type                         | Default     | Description                                                                 |
+| ----------- | ---------------------------- | ----------- | --------------------------------------------------------------------------- |
+| `variant`   | `'default' \| 'link'`       | `'default'` | Visual variant                                                              |
+| `asChild`   | `boolean`                    | `false`     | Render as a `Slot`, merging props onto the child element instead of `Text`  |
+| `className` | `string`                     | —           | NativeWind classes merged via `cn()`                                        |
+
+Plus all React Native [`TextProps`](https://reactnative.dev/docs/text#props).
+
+## Examples
+
+### Basic sizes
+
+```tsx
+<Text className="text-xs">Extra small</Text>
+<Text className="text-sm">Small</Text>
+<Text>Base (default)</Text>
+<Text className="text-lg">Large</Text>
+<Text className="text-2xl">Extra large</Text>
+```
+
+### Link variant
+
+```tsx
+<Text variant="link" onPress={() => console.log('tapped')}>
+  Learn more
+</Text>
+```
+
+### Slot composition with asChild
+
+```tsx
+import { Text } from '@tallyui/components';
+import { Link } from 'expo-router';
+
+<Text asChild variant="link">
+  <Link href="/about">About page</Link>
+</Text>
+```

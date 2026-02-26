@@ -1,0 +1,117 @@
+---
+title: Popover
+description: A floating panel anchored to a trigger element, useful for displaying additional content or controls.
+---
+
+## Import
+
+```tsx
+import { Popover, PopoverTrigger, PopoverContent } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Popover>
+  <PopoverTrigger asChild>
+    <Button variant="outline"><Text>Open Popover</Text></Button>
+  </PopoverTrigger>
+  <PopoverContent>
+    <Text className="text-sm font-medium">Popover Content</Text>
+    <Text className="text-sm text-muted-foreground">
+      Place any content here.
+    </Text>
+  </PopoverContent>
+</Popover>
+```
+
+Popover is a styled wrapper around the [Popover primitive](/docs/primitives/popover). It handles portal rendering and provides default positioning. Content text is styled through `TextClassContext` so descendant `Text` components pick up `text-popover-foreground` automatically. For full accessibility and behavior details, see the primitive docs.
+
+## Components
+
+### PopoverContent
+
+The floating panel anchored to the trigger. Renders through a portal automatically.
+
+Default classes: `z-50 w-72 rounded-md border border-border bg-popover p-4 text-popover-foreground shadow-md outline-none`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `align` | `'start' \| 'center' \| 'end'` | `'center'` | Horizontal alignment relative to the trigger |
+| `sideOffset` | `number` | `4` | Distance in pixels between the trigger and the popover |
+| `side` | `'top' \| 'bottom' \| 'left' \| 'right'` | `'bottom'` | Which side of the trigger to position the popover |
+| `className` | `string` | -- | Additional NativeWind classes merged via `cn()` |
+
+Plus all props from the Popover primitive's `Content` component.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | -- | Controlled open state |
+| `defaultOpen` | `boolean` | -- | Uncontrolled initial open state |
+| `onOpenChange` | `(open: boolean) => void` | -- | Called when the open state changes |
+
+`PopoverTrigger` accepts `asChild` to merge props onto a custom child element.
+
+## Examples
+
+### Settings popover
+
+```tsx
+<Popover>
+  <PopoverTrigger asChild>
+    <Button variant="outline"><Text>Settings</Text></Button>
+  </PopoverTrigger>
+  <PopoverContent className="w-80">
+    <VStack className="gap-4">
+      <VStack className="gap-1">
+        <Text className="text-sm font-medium">Dimensions</Text>
+        <Text className="text-xs text-muted-foreground">
+          Set the dimensions for the layer.
+        </Text>
+      </VStack>
+      <VStack className="gap-2">
+        <HStack className="items-center gap-4">
+          <Label className="w-16">Width</Label>
+          <Input className="flex-1" defaultValue="100%" />
+        </HStack>
+        <HStack className="items-center gap-4">
+          <Label className="w-16">Height</Label>
+          <Input className="flex-1" defaultValue="auto" />
+        </HStack>
+      </VStack>
+    </VStack>
+  </PopoverContent>
+</Popover>
+```
+
+### Controlled popover
+
+```tsx
+const [open, setOpen] = useState(false);
+
+<Popover open={open} onOpenChange={setOpen}>
+  <PopoverTrigger asChild>
+    <Button><Text>Info</Text></Button>
+  </PopoverTrigger>
+  <PopoverContent>
+    <Text className="text-sm">
+      This popover is controlled. Open: {open ? 'true' : 'false'}
+    </Text>
+  </PopoverContent>
+</Popover>
+```
+
+### Custom alignment
+
+```tsx
+<Popover>
+  <PopoverTrigger asChild>
+    <Button variant="ghost"><Text>Align Start</Text></Button>
+  </PopoverTrigger>
+  <PopoverContent align="start" sideOffset={8}>
+    <Text className="text-sm">Aligned to the start of the trigger.</Text>
+  </PopoverContent>
+</Popover>
+```

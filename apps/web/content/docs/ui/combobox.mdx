@@ -1,0 +1,159 @@
+---
+title: Combobox
+description: A searchable dropdown that combines a text input with a filterable list of options.
+---
+
+## Import
+
+```tsx
+import {
+  Combobox, ComboboxTrigger, ComboboxInput,
+  ComboboxContent, ComboboxItem, ComboboxEmpty,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Combobox>
+  <ComboboxTrigger>
+    <ComboboxInput placeholder="Search frameworks..." />
+  </ComboboxTrigger>
+  <ComboboxContent>
+    <ComboboxItem value="react">React</ComboboxItem>
+    <ComboboxItem value="vue">Vue</ComboboxItem>
+    <ComboboxItem value="svelte">Svelte</ComboboxItem>
+    <ComboboxEmpty />
+  </ComboboxContent>
+</Combobox>
+```
+
+Combobox wraps the `Combobox` primitive from `@tallyui/primitives` with default styling. The content renders through a portal, so you need a `PortalHost` in your native layout. See the [Combobox primitive](/docs/primitives/combobox) for behavior, filtering logic, and accessibility details.
+
+## Components
+
+### ComboboxTrigger
+
+The container that holds the input and opens the dropdown.
+
+| Classes |
+|---------|
+| `flex h-10 w-full flex-row items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm` |
+| Focus (web): `ring-2 ring-ring ring-offset-2 ring-offset-background` |
+
+### ComboboxInput
+
+The text input used for filtering options.
+
+| Classes |
+|---------|
+| `flex-1 text-sm text-foreground placeholder:text-muted-foreground` |
+
+### ComboboxContent
+
+The floating panel that holds matching items. Wraps its children in a portal.
+
+| Classes |
+|---------|
+| `z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md` |
+
+### ComboboxItem
+
+An individual selectable option within the dropdown.
+
+| Classes |
+|---------|
+| `relative flex cursor-default select-none flex-row items-center rounded-sm px-2 py-1.5 text-sm outline-none` |
+| Focus (web): `bg-accent text-accent-foreground` |
+
+### ComboboxEmpty
+
+A fallback shown when no items match the current search query. Displays "No results found." by default.
+
+| Classes |
+|---------|
+| `py-6 text-center` |
+
+## Props
+
+All styled sub-components accept a `className` prop merged via `cn()`, plus forward every prop from the underlying primitive.
+
+### Combobox (Root)
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | --- | Controlled selected value |
+| `defaultValue` | `string` | --- | Initial value (uncontrolled) |
+| `onValueChange` | `(value: string) => void` | --- | Called when the selection changes |
+| `open` | `boolean` | --- | Controlled open state |
+| `onOpenChange` | `(open: boolean) => void` | --- | Called when open state changes |
+| `filterFn` | `(value: string, search: string) => boolean` | --- | Custom filter function |
+
+### ComboboxInput
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `placeholder` | `string` | --- | Placeholder text for the input |
+| `className` | `string` | --- | Additional NativeWind classes |
+
+### ComboboxItem
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The value this item represents |
+| `className` | `string` | --- | Additional NativeWind classes |
+
+## Examples
+
+### Country picker
+
+```tsx
+import { useState } from 'react';
+import {
+  Combobox, ComboboxTrigger, ComboboxInput,
+  ComboboxContent, ComboboxItem, ComboboxEmpty,
+} from '@tallyui/components';
+
+const countries = [
+  { value: 'us', label: 'United States' },
+  { value: 'gb', label: 'United Kingdom' },
+  { value: 'ca', label: 'Canada' },
+  { value: 'au', label: 'Australia' },
+  { value: 'de', label: 'Germany' },
+];
+
+function CountryPicker() {
+  const [value, setValue] = useState('');
+
+  return (
+    <Combobox value={value} onValueChange={setValue}>
+      <ComboboxTrigger>
+        <ComboboxInput placeholder="Search countries..." />
+      </ComboboxTrigger>
+      <ComboboxContent>
+        {countries.map((c) => (
+          <ComboboxItem key={c.value} value={c.value}>
+            {c.label}
+          </ComboboxItem>
+        ))}
+        <ComboboxEmpty />
+      </ComboboxContent>
+    </Combobox>
+  );
+}
+```
+
+### Fixed width
+
+```tsx
+<Combobox>
+  <ComboboxTrigger className="w-64">
+    <ComboboxInput placeholder="Search..." />
+  </ComboboxTrigger>
+  <ComboboxContent>
+    <ComboboxItem value="one">Option One</ComboboxItem>
+    <ComboboxItem value="two">Option Two</ComboboxItem>
+    <ComboboxEmpty />
+  </ComboboxContent>
+</Combobox>
+```

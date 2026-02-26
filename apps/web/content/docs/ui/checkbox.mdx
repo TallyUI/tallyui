@@ -1,0 +1,81 @@
+---
+title: Checkbox
+description: A styled checkbox control with a checkmark indicator, built on the Checkbox primitive.
+---
+
+## Import
+
+```tsx
+import { Checkbox } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Checkbox checked={checked} onCheckedChange={setChecked} />
+```
+
+Checkbox is a pre-styled wrapper around `Checkbox.Root` and `Checkbox.Indicator` from `@tallyui/primitives`. It renders a checkmark character when checked. See the [Checkbox primitive](/docs/primitives/checkbox) for behavior and accessibility details.
+
+## Default Styling
+
+| State | Classes |
+|-------|---------|
+| Base | `h-4 w-4 shrink-0 rounded-sm border border-primary` |
+| Checked | `bg-primary` |
+| Disabled | `opacity-50 web:cursor-not-allowed` |
+| Focus (web) | `ring-2 ring-ring ring-offset-2 ring-offset-background` |
+| Indicator | `flex items-center justify-center text-current` |
+| Checkmark | `text-xs text-primary-foreground` |
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `checked` | `boolean` | --- | Controlled checked state |
+| `defaultChecked` | `boolean` | `false` | Initial checked state (uncontrolled) |
+| `onCheckedChange` | `(checked: boolean) => void` | --- | Called when the checked state changes |
+| `disabled` | `boolean` | `false` | Prevents interaction and applies `opacity-50` |
+| `className` | `string` | --- | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `PressableProps`.
+
+## Examples
+
+### Controlled with label
+
+```tsx
+import { useState } from 'react';
+import { View } from 'react-native';
+import { Checkbox, Label, Text } from '@tallyui/components';
+
+function TermsCheckbox() {
+  const [accepted, setAccepted] = useState(false);
+
+  return (
+    <View className="flex-row items-center gap-2">
+      <Checkbox
+        checked={accepted}
+        onCheckedChange={setAccepted}
+        nativeID="terms"
+      />
+      <Label nativeID="terms">
+        <Text>Accept terms and conditions</Text>
+      </Label>
+    </View>
+  );
+}
+```
+
+### Disabled
+
+```tsx
+<Checkbox disabled />
+<Checkbox disabled checked />
+```
+
+### Custom size
+
+```tsx
+<Checkbox className="h-6 w-6" />
+```

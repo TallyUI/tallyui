@@ -1,0 +1,80 @@
+---
+title: Separator
+description: A visual divider between content sections, supporting horizontal and vertical orientations.
+---
+
+## Import
+
+```tsx
+import { Separator } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Text>Section A</Text>
+<Separator />
+<Text>Section B</Text>
+```
+
+Separator renders as a thin line using the `border` theme color. It wraps the `Separator` primitive from `@tallyui/primitives` and adds default styling.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `orientation` | `'horizontal' \| 'vertical'` | `'horizontal'` | Direction of the separator line |
+| `decorative` | `boolean` | `true` | When `true`, the separator is purely visual and hidden from assistive technology. Set to `false` if the separator conveys meaningful structure. |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+## Default Classes
+
+| Orientation | Classes |
+|-------------|---------|
+| Both | `shrink-0 bg-border` |
+| `horizontal` | `h-[1px] w-full` |
+| `vertical` | `h-full w-[1px]` |
+
+## Examples
+
+### Horizontal (default)
+
+```tsx
+<VStack className="gap-4">
+  <Text>Above the line</Text>
+  <Separator />
+  <Text>Below the line</Text>
+</VStack>
+```
+
+### Vertical separator in a row
+
+```tsx
+<HStack className="h-10 items-center gap-4">
+  <Text>Left</Text>
+  <Separator orientation="vertical" />
+  <Text>Right</Text>
+</HStack>
+```
+
+### Inside a card
+
+```tsx
+<Card>
+  <CardHeader>
+    <CardTitle>Profile</CardTitle>
+  </CardHeader>
+  <Separator />
+  <CardContent className="pt-6">
+    <Text>Account details go here.</Text>
+  </CardContent>
+</Card>
+```
+
+### Custom color
+
+```tsx
+<Separator className="bg-primary" />
+```

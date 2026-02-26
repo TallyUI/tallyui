@@ -1,0 +1,151 @@
+---
+title: Input
+description: A compound text input with root container, field, and optional left/right slots for icons or actions.
+---
+
+## Import
+
+```tsx
+import { Input } from '@tallyui/components';
+```
+
+Or import the individual parts directly:
+
+```tsx
+import { InputRoot, InputField, InputSlot } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Input>
+  <Input.Field placeholder="Enter text" />
+</Input>
+```
+
+Input is a compound component with three parts:
+
+- **`Input`** (root) -- the outer container that manages focus ring and disabled state
+- **`Input.Field`** -- the actual `TextInput` element
+- **`Input.Left`** / **`Input.Right`** -- optional slots for icons, buttons, or other adornments
+
+The root automatically shows a focus ring when the field is focused, and dims the entire group when disabled.
+
+## Sub-components
+
+### Input (Root)
+
+The outer `View` container. Provides `InputContext` with `focused` and `disabled` state to all children.
+
+**Base classes:**
+
+```
+flex h-10 flex-row items-center rounded-md border border-input bg-background px-3
+```
+
+**State classes:**
+
+| State | Class |
+|-------|-------|
+| Focused | `ring-2 ring-ring ring-offset-2` |
+| Disabled | `opacity-50` |
+
+### Input.Field
+
+The `TextInput` element. Reads `disabled` from context and sets `editable={false}` when the parent is disabled.
+
+**Base classes:**
+
+```
+flex-1 text-sm text-foreground web:outline-none placeholder:text-muted-foreground
+```
+
+### Input.Left / Input.Right
+
+Identical `InputSlot` components for positioning content on either side of the field. Renders a `View` with `justify-center`.
+
+## Props
+
+### Input (Root)
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `disabled` | `boolean` | `false` | Disables the field and dims the container |
+| `className` | `string` | -- | NativeWind classes merged via `cn()` |
+
+Plus all React Native [`ViewProps`](https://reactnative.dev/docs/view#props).
+
+### Input.Field
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `placeholder` | `string` | -- | Placeholder text |
+| `className` | `string` | -- | NativeWind classes merged via `cn()` |
+
+Plus all React Native [`TextInputProps`](https://reactnative.dev/docs/textinput#props) (`value`, `onChangeText`, `secureTextEntry`, `keyboardType`, etc.).
+
+### Input.Left / Input.Right
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | -- | NativeWind classes merged via `cn()` |
+
+Plus all React Native [`ViewProps`](https://reactnative.dev/docs/view#props).
+
+## Examples
+
+### Simple input
+
+```tsx
+<Input>
+  <Input.Field placeholder="Enter your name" />
+</Input>
+```
+
+### With icon slots
+
+```tsx
+import { Input, Icon } from '@tallyui/components';
+import { Search, X } from 'lucide-react-native';
+
+<Input>
+  <Input.Left className="mr-2">
+    <Icon className="text-muted-foreground"><Search /></Icon>
+  </Input.Left>
+  <Input.Field placeholder="Search..." />
+  <Input.Right className="ml-2">
+    <Icon className="text-muted-foreground"><X /></Icon>
+  </Input.Right>
+</Input>
+```
+
+### Disabled state
+
+```tsx
+<Input disabled>
+  <Input.Field placeholder="Can't edit this" />
+</Input>
+```
+
+### Password input
+
+```tsx
+<Input>
+  <Input.Field placeholder="Password" secureTextEntry />
+</Input>
+```
+
+### With label
+
+```tsx
+import { Label, Input } from '@tallyui/components';
+
+<Label nativeID="email">Email</Label>
+<Input>
+  <Input.Field
+    placeholder="you@example.com"
+    keyboardType="email-address"
+    aria-labelledby="email"
+  />
+</Input>
+```

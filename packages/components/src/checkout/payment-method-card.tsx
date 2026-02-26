@@ -1,9 +1,10 @@
-import { Pressable, Text, View, type ViewProps } from 'react-native';
+import { Pressable, View, type PressableProps } from 'react-native';
 import type { ReactNode } from 'react';
 
 import { cn } from '@tallyui/theme';
+import { Text, HStack } from '../ui';
 
-export interface PaymentMethodCardProps extends Omit<ViewProps, 'children'> {
+export interface PaymentMethodCardProps extends Omit<PressableProps, 'children'> {
   label: string;
   selected: boolean;
   onPress: () => void;
@@ -11,18 +12,18 @@ export interface PaymentMethodCardProps extends Omit<ViewProps, 'children'> {
   className?: string;
 }
 
-export function PaymentMethodCard({ label, selected, onPress, icon, className, ...viewProps }: PaymentMethodCardProps) {
+export function PaymentMethodCard({ label, selected, onPress, icon, className, ...props }: PaymentMethodCardProps) {
   return (
-    <Pressable onPress={onPress} {...viewProps}>
-      <View
+    <Pressable onPress={onPress} {...props}>
+      <HStack
         className={cn(
-          'flex-row items-center gap-3 rounded-lg border px-4 py-3',
+          'rounded-lg border px-4 py-3',
           selected ? 'border-primary bg-primary/5' : 'border-border bg-card',
           className,
         )}
       >
         {icon && <View>{icon}</View>}
-        <Text className={cn('flex-1 text-sm font-medium', selected ? 'text-primary' : 'text-foreground')}>
+        <Text className={cn('flex-1 text-sm font-medium', selected ? 'text-primary' : '')}>
           {label}
         </Text>
         {selected && (
@@ -30,7 +31,7 @@ export function PaymentMethodCard({ label, selected, onPress, icon, className, .
             <Text className="text-xs text-primary-foreground">{'\u2713'}</Text>
           </View>
         )}
-      </View>
+      </HStack>
     </Pressable>
   );
 }

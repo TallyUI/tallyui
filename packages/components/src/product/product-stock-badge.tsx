@@ -1,9 +1,10 @@
-import { Text, View, type ViewProps } from 'react-native';
+import { View } from 'react-native';
 
 import { useProductTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { Text, HStack, type HStackProps } from '../ui';
 
-export interface ProductStockBadgeProps extends Omit<ViewProps, 'children'> {
+export interface ProductStockBadgeProps extends Omit<HStackProps, 'children'> {
   /** The raw RxDB product document (connector-specific shape) */
   doc: any;
   /** Whether to show the quantity alongside the status */
@@ -51,7 +52,7 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string; text: string }
  * <ProductStockBadge doc={productDocument} showQuantity />
  * ```
  */
-export function ProductStockBadge({ doc, showQuantity = false, className, ...viewProps }: ProductStockBadgeProps) {
+export function ProductStockBadge({ doc, showQuantity = false, className, ...props }: ProductStockBadgeProps) {
   const { getStockStatus, getStockQuantity } = useProductTraits();
   const status = getStockStatus(doc);
   const quantity = getStockQuantity(doc);
@@ -59,15 +60,16 @@ export function ProductStockBadge({ doc, showQuantity = false, className, ...vie
   const styles = STATUS_STYLES[status] ?? STATUS_STYLES.unknown;
 
   return (
-    <View
-      className={cn('flex-row items-center self-start gap-1.5 rounded-xl px-2 py-1', styles.badge, className)}
-      {...viewProps}
+    <HStack
+      space="none"
+      className={cn('gap-1.5 self-start rounded-xl px-2 py-1', styles.badge, className)}
+      {...props}
     >
       <View className={cn('h-1.5 w-1.5 rounded-full', styles.dot)} />
       <Text className={cn('text-xs font-semibold', styles.text)}>
         {label}
         {showQuantity && quantity != null ? ` (${quantity})` : ''}
       </Text>
-    </View>
+    </HStack>
   );
 }

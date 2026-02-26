@@ -1,0 +1,127 @@
+---
+title: Button
+description: A pressable button with multiple visual variants and sizes, built on React Native Pressable.
+---
+
+## Import
+
+```tsx
+import { Button, Text } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Button variant="default" onPress={() => console.log('pressed')}>
+  <Text>Click me</Text>
+</Button>
+```
+
+Button uses `TextClassContext` to automatically style descendant `Text`, `Icon`, and `Loader` components. You don't need to pass color props to children -- they inherit the right foreground color from the button variant.
+
+## Variants
+
+| Variant | Class |
+|---------|-------|
+| `default` | `bg-primary active:opacity-90` |
+| `destructive` | `bg-destructive active:opacity-90` |
+| `outline` | `border border-input bg-background active:bg-accent` |
+| `secondary` | `bg-secondary active:opacity-80` |
+| `ghost` | `active:bg-accent` |
+| `link` | `web:underline-offset-4 web:hover:underline` |
+
+## Sizes
+
+| Size | Class |
+|------|-------|
+| `default` | `h-10 px-4 py-2` |
+| `sm` | `h-9 rounded-md px-3` |
+| `lg` | `h-11 rounded-md px-8` |
+| `icon` | `h-10 w-10` |
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `variant` | `'default' \| 'destructive' \| 'outline' \| 'secondary' \| 'ghost' \| 'link'` | `'default'` | Visual style of the button |
+| `size` | `'default' \| 'sm' \| 'lg' \| 'icon'` | `'default'` | Controls height and padding |
+| `asChild` | `boolean` | `false` | When true, renders as a `Slot` instead of `Pressable`, merging props onto the child element |
+| `disabled` | `boolean` | `false` | Disables the button, applying `opacity-50` and blocking pointer events on web |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `PressableProps` (`onPress`, `onLongPress`, `accessibilityLabel`, etc.).
+
+## TextClassContext
+
+Button wraps its children in a `TextClassContext.Provider` so that any `Text`, `Icon`, or `Loader` rendered inside automatically picks up the correct foreground color and font size for the current variant and size combination.
+
+The text classes applied per variant:
+
+| Variant | Text Class |
+|---------|------------|
+| `default` | `text-primary-foreground` |
+| `destructive` | `text-destructive-foreground` |
+| `outline` | `text-foreground` |
+| `secondary` | `text-secondary-foreground` |
+| `ghost` | `text-foreground` |
+| `link` | `text-primary` |
+
+The `lg` size additionally applies `text-base`; all other sizes use the default `text-sm font-medium`.
+
+## Examples
+
+### Basic variants
+
+```tsx
+<Button>
+  <Text>Default</Text>
+</Button>
+
+<Button variant="destructive">
+  <Text>Delete</Text>
+</Button>
+
+<Button variant="outline">
+  <Text>Outline</Text>
+</Button>
+```
+
+### With an icon
+
+```tsx
+import { Button, Text, Icon } from '@tallyui/components';
+import { Plus } from 'lucide-react-native';
+
+<Button variant="secondary" size="sm">
+  <Icon><Plus /></Icon>
+  <Text>Add Item</Text>
+</Button>
+```
+
+### Icon-only button using the `icon` size
+
+```tsx
+<Button variant="ghost" size="icon">
+  <Icon><Settings /></Icon>
+</Button>
+```
+
+### As a link (using `asChild`)
+
+```tsx
+import { Link } from 'expo-router';
+
+<Button asChild variant="link">
+  <Link href="/settings">
+    <Text>Go to settings</Text>
+  </Link>
+</Button>
+```
+
+### Disabled state
+
+```tsx
+<Button disabled>
+  <Text>Can't touch this</Text>
+</Button>
+```

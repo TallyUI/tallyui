@@ -1,9 +1,10 @@
-import { Image, type ImageProps, type ImageStyle, type StyleProp } from 'react-native';
+import type { ImageStyle, StyleProp } from 'react-native';
+import { Image } from '@tallyui/primitives';
 
 import { useProductTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 
-export interface ProductImageProps extends Omit<ImageProps, 'source'> {
+export interface ProductImageProps extends Omit<React.ComponentPropsWithoutRef<typeof Image.Root>, 'source'> {
   /** The raw RxDB product document */
   doc: any;
   /** Image dimensions */
@@ -23,7 +24,7 @@ export interface ProductImageProps extends Omit<ImageProps, 'source'> {
  * ```
  */
 export function ProductImage({ doc, size = 60, style, className, ...imageProps }: ProductImageProps) {
-  const { getImageUrl } = useProductTraits();
+  const { getImageUrl, getName } = useProductTraits();
   const imageUrl = getImageUrl(doc);
 
   if (!imageUrl) {
@@ -31,8 +32,9 @@ export function ProductImage({ doc, size = 60, style, className, ...imageProps }
   }
 
   return (
-    <Image
+    <Image.Root
       source={{ uri: imageUrl }}
+      alt={getName(doc)}
       className={cn('rounded', className)}
       style={[{ width: size, height: size }, style]}
       {...imageProps}

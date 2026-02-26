@@ -1,0 +1,64 @@
+---
+title: UI Components
+description: Styled, ready-to-use components built on top of TallyUI primitives
+---
+
+`@tallyui/components` provides a set of styled UI components that combine [headless primitives](/docs/primitives) with TallyUI's [design tokens](/docs/design-system). They give you a consistent, accessible component library out of the box while remaining fully customizable via `className` overrides.
+
+## How UI components fit in
+
+```
+@tallyui/components (UI)    ← styled, variant-driven
+  └─ @tallyui/primitives     ← headless, accessible
+       └─ React Native
+```
+
+UI components add:
+- **CVA variants** — predefined visual styles (`variant`, `size`) powered by [class-variance-authority](https://cva.style)
+- **Design tokens** — semantic colors (`bg-primary`, `text-destructive-foreground`) from `@tallyui/theme`
+- **TextClassContext** — parent components like Button and Card cascade text styles to descendant Text, Icon, and Loader components automatically
+
+## Installation
+
+```bash
+pnpm add @tallyui/components
+```
+
+Peer dependencies: `@tallyui/primitives`, `@tallyui/theme`, `react`, `react-native`.
+
+## Basic usage
+
+```tsx
+import { Button, Text } from '@tallyui/components';
+
+function MyButton() {
+  return (
+    <Button variant="destructive" size="sm" onPress={handleDelete}>
+      <Text>Delete Item</Text>
+    </Button>
+  );
+}
+```
+
+The `Text` component inside Button automatically receives destructive text colors via TextClassContext — no manual color prop needed.
+
+## Customization
+
+Every component accepts a `className` prop. Your classes are merged with defaults using `cn()` from `@tallyui/theme`, so overrides work cleanly:
+
+```tsx
+<Button className="rounded-full px-8">
+  <Text>Custom Shape</Text>
+</Button>
+```
+
+## Component categories
+
+- **Core** — [Text](/docs/ui/text), [HStack](/docs/ui/hstack), [VStack](/docs/ui/vstack)
+- **Visual** — [Icon](/docs/ui/icon), [Loader](/docs/ui/loader), [Badge](/docs/ui/badge), [Avatar](/docs/ui/avatar)
+- **Interactive** — [Button](/docs/ui/button), [IconButton](/docs/ui/icon-button)
+- **Form** — [Label](/docs/ui/label), [Input](/docs/ui/input), [Textarea](/docs/ui/textarea), [Checkbox](/docs/ui/checkbox), [Switch](/docs/ui/switch), [RadioGroup](/docs/ui/radio-group), [Toggle](/docs/ui/toggle), [ToggleGroup](/docs/ui/toggle-group), [Slider](/docs/ui/slider), [Progress](/docs/ui/progress)
+- **Containers** — [Card](/docs/ui/card), [Separator](/docs/ui/separator), [Tabs](/docs/ui/tabs), [Accordion](/docs/ui/accordion), [Collapsible](/docs/ui/collapsible)
+- **Overlay** — [Dialog](/docs/ui/dialog), [AlertDialog](/docs/ui/alert-dialog), [Popover](/docs/ui/popover), [Tooltip](/docs/ui/tooltip), [HoverCard](/docs/ui/hover-card), [Toast](/docs/ui/toast)
+- **Menu** — [Select](/docs/ui/select), [Combobox](/docs/ui/combobox), [DropdownMenu](/docs/ui/dropdown-menu), [ContextMenu](/docs/ui/context-menu)
+- **Data** — [Table](/docs/ui/table)

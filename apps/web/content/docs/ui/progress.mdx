@@ -1,0 +1,97 @@
+---
+title: Progress
+description: A horizontal bar that indicates completion or loading progress.
+---
+
+## Import
+
+```tsx
+import { Progress } from '@tallyui/components';
+```
+
+## Usage
+
+Pass a `value` between 0 and `max` (defaults to 100) to show determinate progress. Omit `value` (or pass `null`) for an indeterminate state.
+
+```tsx
+<Progress value={60} />
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `number \| null` | — | Current progress value. `null` or `undefined` renders an indeterminate bar |
+| `max` | `number` | `100` | Maximum value |
+| `getValueLabel` | `(value: number, max: number) => string` | percentage string | Custom accessible label function |
+| `asChild` | `boolean` | `false` | Renders as a `Slot`, merging props onto the child element |
+| `className` | `string` | — | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+## Anatomy
+
+The styled Progress renders this structure internally:
+
+```tsx
+<Progress.Root>       {/* h-4 w-full rounded-full bg-secondary */}
+  <Progress.Indicator  {/* h-full rounded-full bg-primary, translateX for value */}
+</Progress.Root>
+```
+
+The indicator uses `translateX(-${100 - value}%)` to fill from left to right.
+
+## Accessibility
+
+The root element has `role="progressbar"` with `aria-valuemin`, `aria-valuemax`, `aria-valuenow`, and `aria-valuetext` set automatically. Override the label format with `getValueLabel`.
+
+## Examples
+
+### Basic progress
+
+```tsx
+<Progress value={45} />
+```
+
+### Controlled with state
+
+```tsx
+const [progress, setProgress] = useState(0);
+
+useEffect(() => {
+  const timer = setInterval(() => {
+    setProgress((prev) => (prev >= 100 ? 0 : prev + 10));
+  }, 500);
+  return () => clearInterval(timer);
+}, []);
+
+<Progress value={progress} />
+```
+
+### Custom max
+
+```tsx
+<Progress value={3} max={5} />
+```
+
+### Custom value label
+
+```tsx
+<Progress
+  value={3}
+  max={5}
+  getValueLabel={(value, max) => `${value} of ${max} steps`}
+/>
+```
+
+### Indeterminate
+
+```tsx
+<Progress value={null} />
+```
+
+### Zero state
+
+```tsx
+<Progress value={0} />
+```

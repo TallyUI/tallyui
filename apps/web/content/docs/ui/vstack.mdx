@@ -1,0 +1,109 @@
+---
+title: VStack
+description: Vertical stack layout with configurable spacing and reverse order
+---
+
+## Import
+
+```tsx
+import { VStack } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<VStack>
+  <Text>Top</Text>
+  <Text>Bottom</Text>
+</VStack>
+```
+
+VStack renders a `View` with `flex-col` applied by default, stacking children vertically from top to bottom.
+
+## Variants
+
+### space
+
+Controls the gap between children using Tailwind `gap-*` utilities:
+
+| Value  | Class   |
+| ------ | ------- |
+| `none` | `gap-0` |
+| `xs`   | `gap-1` |
+| `sm`   | `gap-2` |
+| `md`   | `gap-3` |
+| `lg`   | `gap-4` |
+| `xl`   | `gap-6` |
+
+Default: **`md`** (`gap-3`).
+
+```tsx
+<VStack space="lg">
+  <Text>First</Text>
+  <Text>Second</Text>
+</VStack>
+```
+
+### reversed
+
+Flips the layout direction to `flex-col-reverse`:
+
+| Value  | Class              |
+| ------ | ------------------ |
+| `true` | `flex-col-reverse` |
+
+```tsx
+<VStack reversed>
+  <Text>Appears at bottom</Text>
+  <Text>Appears at top</Text>
+</VStack>
+```
+
+## Props
+
+| Prop        | Type                                             | Default | Description                                      |
+| ----------- | ------------------------------------------------ | ------- | ------------------------------------------------ |
+| `space`     | `'none' \| 'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl'` | `'md'`  | Gap between children                             |
+| `reversed`  | `boolean`                                        | —       | Reverse the vertical order                       |
+| `className` | `string`                                         | —       | NativeWind classes merged via `cn()`             |
+
+Plus all React Native [`ViewProps`](https://reactnative.dev/docs/view#props).
+
+## Examples
+
+### Spacing scale
+
+```tsx
+<VStack space="none"><Text>A</Text><Text>B</Text></VStack>
+<VStack space="xs"><Text>A</Text><Text>B</Text></VStack>
+<VStack space="sm"><Text>A</Text><Text>B</Text></VStack>
+<VStack space="md"><Text>A</Text><Text>B</Text></VStack>
+<VStack space="lg"><Text>A</Text><Text>B</Text></VStack>
+<VStack space="xl"><Text>A</Text><Text>B</Text></VStack>
+```
+
+### Form-style layout
+
+```tsx
+<VStack space="lg">
+  <VStack space="xs">
+    <Text className="text-sm font-medium">Email</Text>
+    <Input placeholder="you@example.com" />
+  </VStack>
+  <VStack space="xs">
+    <Text className="text-sm font-medium">Password</Text>
+    <Input secureTextEntry />
+  </VStack>
+</VStack>
+```
+
+### Reversed order
+
+```tsx
+<VStack reversed space="sm">
+  <Text>1</Text>
+  <Text>2</Text>
+  <Text>3</Text>
+</VStack>
+{/* Renders visually as: 3, 2, 1 from top to bottom */}
+```

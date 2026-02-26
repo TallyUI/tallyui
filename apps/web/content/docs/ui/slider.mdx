@@ -1,0 +1,76 @@
+---
+title: Slider
+description: A draggable input for selecting a numeric value within a range.
+---
+
+## Import
+
+```tsx
+import { Slider } from '@tallyui/components';
+```
+
+## Usage
+
+Slider is a compound primitive composed of `Root`, `Track`, `Range`, and `Thumb` -- but the styled component wraps all of those into a single `<Slider>` element for convenience.
+
+```tsx
+<Slider defaultValue={50} />
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `number` | — | Controlled current value |
+| `defaultValue` | `number` | — | Uncontrolled initial value |
+| `onValueChange` | `(value: number) => void` | — | Called when the value changes |
+| `min` | `number` | `0` | Minimum value |
+| `max` | `number` | `100` | Maximum value |
+| `step` | `number` | `1` | Step increment |
+| `disabled` | `boolean` | `false` | Disables the slider |
+| `asChild` | `boolean` | `false` | Renders as a `Slot`, merging props onto the child element |
+| `className` | `string` | — | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps` on the root.
+
+## Anatomy
+
+The styled Slider renders this structure internally:
+
+```tsx
+<Slider.Root>       {/* relative flex w-full touch-none select-none items-center */}
+  <Slider.Track>    {/* h-2 w-full rounded-full bg-secondary */}
+    <Slider.Range>  {/* absolute h-full bg-primary */}
+  </Slider.Track>
+  <Slider.Thumb>    {/* h-5 w-5 rounded-full border-2 border-primary bg-background */}
+</Slider.Root>
+```
+
+## Examples
+
+### Controlled slider
+
+```tsx
+const [volume, setVolume] = useState(50);
+
+<Slider value={volume} onValueChange={setVolume} />
+<Text>{volume}%</Text>
+```
+
+### Custom range
+
+```tsx
+<Slider min={0} max={10} step={1} defaultValue={5} />
+```
+
+### With step increments
+
+```tsx
+<Slider min={0} max={100} step={25} defaultValue={50} />
+```
+
+### Disabled
+
+```tsx
+<Slider value={30} disabled />
+```

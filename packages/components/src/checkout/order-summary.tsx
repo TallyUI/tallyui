@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { View, type ViewProps } from 'react-native';
+import { View } from 'react-native';
 import { cn } from '@tallyui/theme';
+import { VStack, type VStackProps } from '../ui';
 import { OrderSummaryLine } from './order-summary-line';
 
 export interface OrderSummaryPayment {
@@ -8,7 +9,7 @@ export interface OrderSummaryPayment {
   amount: string;
 }
 
-export interface OrderSummaryProps extends Omit<ViewProps, 'children'> {
+export interface OrderSummaryProps extends Omit<VStackProps, 'children'> {
   /** Formatted subtotal string (e.g. "$1199.98") */
   subtotal: string;
   /** Formatted tax amount (optional) */
@@ -53,10 +54,10 @@ export function OrderSummary({
   header,
   footer,
   className,
-  ...viewProps
+  ...props
 }: OrderSummaryProps) {
   return (
-    <View className={cn('gap-1.5 px-3 py-3', className)} {...viewProps}>
+    <VStack space="none" className={cn('gap-1.5 px-3 py-3', className)} {...props}>
       {header && <View className="mb-2">{header}</View>}
 
       <OrderSummaryLine label="Subtotal" amount={subtotal} />
@@ -64,14 +65,14 @@ export function OrderSummary({
       <OrderSummaryLine label="Total" amount={total} bold />
 
       {payments && payments.length > 0 && (
-        <View className="mt-2 gap-1.5 border-t border-border pt-2">
+        <VStack space="none" className="mt-2 gap-1.5 border-t border-border pt-2">
           {payments.map((payment) => (
             <OrderSummaryLine key={payment.label} label={payment.label} amount={payment.amount} />
           ))}
-        </View>
+        </VStack>
       )}
 
       {footer && <View className="mt-2">{footer}</View>}
-    </View>
+    </VStack>
   );
 }

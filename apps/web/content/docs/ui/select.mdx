@@ -1,0 +1,138 @@
+---
+title: Select
+description: A styled dropdown picker for choosing a single value from a list of options.
+---
+
+## Import
+
+```tsx
+import {
+  Select, SelectTrigger, SelectValue, SelectContent,
+  SelectGroup, SelectLabel, SelectItem, SelectSeparator,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Select>
+  <SelectTrigger>
+    <SelectValue placeholder="Pick a fruit" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="apple">Apple</SelectItem>
+    <SelectItem value="banana">Banana</SelectItem>
+    <SelectItem value="cherry">Cherry</SelectItem>
+  </SelectContent>
+</Select>
+```
+
+Select wraps the `Select` primitive from `@tallyui/primitives` with default styling. The content is rendered through a portal, so you need a `PortalHost` in your native layout. See the [Select primitive](/docs/primitives/select) for behavior and accessibility details.
+
+## Components
+
+### SelectTrigger
+
+The button that opens the dropdown.
+
+| Classes |
+|---------|
+| `flex h-10 w-full flex-row items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground` |
+| Focus (web): `ring-2 ring-ring ring-offset-2 ring-offset-background` |
+
+### SelectContent
+
+The floating panel that holds the list of options. Wraps its children in a portal.
+
+| Classes |
+|---------|
+| `relative z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md` |
+
+### SelectItem
+
+An individual option within the dropdown.
+
+| Classes |
+|---------|
+| `relative flex w-full cursor-default select-none flex-row items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none` |
+| Focus (web): `bg-accent text-accent-foreground` |
+
+### SelectLabel
+
+A non-interactive heading for a group of items.
+
+| Classes |
+|---------|
+| `py-1.5 pl-8 pr-2 text-sm font-semibold` |
+
+### SelectSeparator
+
+A visual divider between groups.
+
+| Classes |
+|---------|
+| `-mx-1 my-1 h-px bg-muted` |
+
+## Props
+
+All styled sub-components accept a `className` prop that gets merged via `cn()`, plus forward every prop from the underlying primitive.
+
+### Select (Root)
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | --- | Controlled selected value |
+| `defaultValue` | `string` | --- | Initial value (uncontrolled) |
+| `onValueChange` | `(value: string) => void` | --- | Called when the selection changes |
+| `open` | `boolean` | --- | Controlled open state |
+| `onOpenChange` | `(open: boolean) => void` | --- | Called when open state changes |
+
+### SelectItem
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The value this item represents |
+| `disabled` | `boolean` | `false` | Prevents selecting this item |
+| `className` | `string` | --- | Additional NativeWind classes |
+
+## Examples
+
+### Grouped options
+
+```tsx
+<Select>
+  <SelectTrigger className="w-48">
+    <SelectValue placeholder="Choose a food" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectGroup>
+      <SelectLabel>Fruits</SelectLabel>
+      <SelectItem value="apple">Apple</SelectItem>
+      <SelectItem value="banana">Banana</SelectItem>
+    </SelectGroup>
+    <SelectSeparator />
+    <SelectGroup>
+      <SelectLabel>Vegetables</SelectLabel>
+      <SelectItem value="carrot">Carrot</SelectItem>
+      <SelectItem value="broccoli">Broccoli</SelectItem>
+    </SelectGroup>
+  </SelectContent>
+</Select>
+```
+
+### Controlled
+
+```tsx
+const [country, setCountry] = useState('');
+
+<Select value={country} onValueChange={setCountry}>
+  <SelectTrigger>
+    <SelectValue placeholder="Select a country" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="us">United States</SelectItem>
+    <SelectItem value="gb">United Kingdom</SelectItem>
+    <SelectItem value="au">Australia</SelectItem>
+  </SelectContent>
+</Select>
+```

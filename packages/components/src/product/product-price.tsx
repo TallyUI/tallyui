@@ -1,7 +1,6 @@
-import { Text, type TextProps } from 'react-native';
-
 import { useProductTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { Text, type TextProps } from '../ui';
 
 export interface ProductPriceProps extends Omit<TextProps, 'children'> {
   /** The raw RxDB product document (connector-specific shape) */

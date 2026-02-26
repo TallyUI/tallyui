@@ -84,14 +84,23 @@ export default function DemoScreen() {
       <Stack.Screen options={{ title: 'Tally UI Demo' }} />
 
       <View className="flex-1 bg-bg">
-        {/* Primitives test screens link */}
-        <Link href="/primitives" asChild>
-          <Pressable className="mx-4 mt-4 rounded-lg bg-primary px-4 py-3">
-            <Text className="text-center text-[15px] font-semibold text-primary-foreground">
-              Primitives Test Screens
-            </Text>
-          </Pressable>
-        </Link>
+        {/* Test screen links */}
+        <View className="mx-4 mt-4 gap-2">
+          <Link href="/primitives" asChild>
+            <Pressable className="rounded-lg bg-primary px-4 py-3">
+              <Text className="text-center text-[15px] font-semibold text-primary-foreground">
+                Primitives Test Screens
+              </Text>
+            </Pressable>
+          </Link>
+          <Link href="/ui" asChild>
+            <Pressable className="rounded-lg bg-secondary px-4 py-3">
+              <Text className="text-center text-[15px] font-semibold text-secondary-foreground">
+                UI Components
+              </Text>
+            </Pressable>
+          </Link>
+        </View>
 
         {/* Connector picker */}
         <View className="px-4 pb-2 pt-4">

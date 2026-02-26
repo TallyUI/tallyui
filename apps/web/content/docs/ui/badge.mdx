@@ -1,0 +1,71 @@
+---
+title: Badge
+description: A small status label with semantic color variants.
+---
+
+## Import
+
+```tsx
+import { Badge } from '@tallyui/components';
+```
+
+## Usage
+
+Pass a `label` string for simple text badges, or provide custom children for more complex content.
+
+```tsx
+<Badge label="New" />
+```
+
+```tsx
+<Badge variant="success">
+  <CustomContent />
+</Badge>
+```
+
+## Variants
+
+| Variant | Container class | Text class |
+|---------|----------------|------------|
+| `default` | `border-transparent bg-primary` | `text-primary-foreground` |
+| `secondary` | `border-transparent bg-secondary` | `text-secondary-foreground` |
+| `destructive` | `border-transparent bg-destructive` | `text-destructive-foreground` |
+| `outline` | `border-border` | `text-foreground` |
+| `success` | `border-transparent bg-success` | `text-success-foreground` |
+| `warning` | `border-transparent bg-warning` | `text-warning-foreground` |
+| `info` | `border-transparent bg-info` | `text-info-foreground` |
+
+All variants share the base classes: `inline-flex items-center rounded-full border px-2.5 py-0.5`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `variant` | `'default' \| 'secondary' \| 'destructive' \| 'outline' \| 'success' \| 'warning' \| 'info'` | `'default'` | Semantic color variant |
+| `label` | `string` | — | Shorthand for rendering a styled text label |
+| `className` | `string` | — | Additional NativeWind classes, merged with defaults |
+
+Plus all React Native `ViewProps`.
+
+## Label vs children
+
+When `label` is provided, Badge renders a `<Text>` with the matching text variant classes (`text-xs font-semibold` plus the variant color). When using `children` instead, you control the content yourself.
+
+## Examples
+
+```tsx
+// All variants
+<Badge label="Default" />
+<Badge variant="secondary" label="Secondary" />
+<Badge variant="destructive" label="Destructive" />
+<Badge variant="outline" label="Outline" />
+<Badge variant="success" label="Success" />
+<Badge variant="warning" label="Warning" />
+<Badge variant="info" label="Info" />
+
+// Custom children
+<Badge variant="success">
+  <Icon size="xs"><CheckIcon /></Icon>
+  <Text className="text-xs font-semibold text-success-foreground ml-1">Verified</Text>
+</Badge>
+```

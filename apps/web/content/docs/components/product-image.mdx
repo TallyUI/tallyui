@@ -17,13 +17,18 @@ import { ProductImage } from '@tallyui/components';
 
 Returns `null` if no image is available. The `size` prop controls width and height via the `style` prop (dynamic values can't be Tailwind classes).
 
+Built on the Image primitive from `@tallyui/primitives`, which normalizes the image API across platforms with `contentFit`, `alt`, and `placeholder` support.
+
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `doc` | `any` | required | RxDB product document |
 | `size` | `number` | `60` | Image width and height in pixels |
+| `contentFit` | `'cover' \| 'contain' \| 'fill' \| 'none' \| 'scale-down'` | `'cover'` | How the image fills its container |
 | `className` | `string` | — | Override default styles |
+
+The `alt` text is automatically derived from the product name via `getName(doc)`.
 
 **Default classes:** `rounded`
 

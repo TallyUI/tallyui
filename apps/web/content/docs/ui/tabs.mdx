@@ -1,0 +1,173 @@
+---
+title: Tabs
+description: A set of layered panels activated by corresponding trigger buttons.
+---
+
+## Import
+
+```tsx
+import { Tabs, TabsList, TabsTrigger, TabsContent, Text } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Tabs defaultValue="overview">
+  <TabsList>
+    <TabsTrigger value="overview"><Text>Overview</Text></TabsTrigger>
+    <TabsTrigger value="analytics"><Text>Analytics</Text></TabsTrigger>
+  </TabsList>
+  <TabsContent value="overview">
+    <Text>Overview panel content.</Text>
+  </TabsContent>
+  <TabsContent value="analytics">
+    <Text>Analytics panel content.</Text>
+  </TabsContent>
+</Tabs>
+```
+
+Tabs wraps the `Tabs` primitive from `@tallyui/primitives` with styled defaults. It supports both controlled and uncontrolled usage. `TabsTrigger` automatically highlights the active tab and applies text color through `TextClassContext`.
+
+## Components
+
+### Tabs
+
+The root component. Manages which tab is active.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | - | Controlled active tab value |
+| `defaultValue` | `string` | - | Uncontrolled initial tab value |
+| `onValueChange` | `(value: string) => void` | - | Called when the active tab changes |
+
+### TabsList
+
+Container for the tab triggers. Provides the pill-shaped muted background.
+
+**Default classes:** `inline-flex h-10 items-center justify-center rounded-md bg-muted p-1`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+### TabsTrigger
+
+A pressable button that activates its corresponding content panel. The active trigger gets a white background and shadow. Text color updates automatically through `TextClassContext`.
+
+**Default classes:** `inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium`
+
+**Active classes:** `bg-background shadow-sm`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | - | **Required.** Must match a `TabsContent` value |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `PressableProps`.
+
+### TabsContent
+
+Panel that renders when its `value` matches the active tab.
+
+**Default classes:** `mt-2`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | - | **Required.** Must match a `TabsTrigger` value |
+| `forceMount` | `boolean` | `false` | When `true`, content stays in the DOM even when inactive |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+
+Plus all React Native `ViewProps`.
+
+## Examples
+
+### Uncontrolled
+
+```tsx
+<Tabs defaultValue="tab1">
+  <TabsList>
+    <TabsTrigger value="tab1"><Text>Account</Text></TabsTrigger>
+    <TabsTrigger value="tab2"><Text>Security</Text></TabsTrigger>
+  </TabsList>
+  <TabsContent value="tab1">
+    <Text>Account settings go here.</Text>
+  </TabsContent>
+  <TabsContent value="tab2">
+    <Text>Security settings go here.</Text>
+  </TabsContent>
+</Tabs>
+```
+
+### Controlled
+
+```tsx
+const [tab, setTab] = useState('account');
+
+<Tabs value={tab} onValueChange={setTab}>
+  <TabsList>
+    <TabsTrigger value="account"><Text>Account</Text></TabsTrigger>
+    <TabsTrigger value="billing"><Text>Billing</Text></TabsTrigger>
+  </TabsList>
+  <TabsContent value="account">
+    <Card>
+      <CardContent className="pt-6">
+        <Text>Active tab: {tab}</Text>
+      </CardContent>
+    </Card>
+  </TabsContent>
+  <TabsContent value="billing">
+    <Card>
+      <CardContent className="pt-6">
+        <Text>Billing information would appear here.</Text>
+      </CardContent>
+    </Card>
+  </TabsContent>
+</Tabs>
+```
+
+### With cards in each panel
+
+```tsx
+<Tabs defaultValue="overview">
+  <TabsList>
+    <TabsTrigger value="overview"><Text>Overview</Text></TabsTrigger>
+    <TabsTrigger value="analytics"><Text>Analytics</Text></TabsTrigger>
+    <TabsTrigger value="reports"><Text>Reports</Text></TabsTrigger>
+  </TabsList>
+  <TabsContent value="overview">
+    <Card>
+      <CardHeader>
+        <CardTitle>Overview</CardTitle>
+        <CardDescription>Your store at a glance.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Text>Dashboard widgets go here.</Text>
+      </CardContent>
+    </Card>
+  </TabsContent>
+  <TabsContent value="analytics">
+    <Card>
+      <CardHeader>
+        <CardTitle>Analytics</CardTitle>
+        <CardDescription>Detailed performance metrics.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Text>Charts and graphs go here.</Text>
+      </CardContent>
+    </Card>
+  </TabsContent>
+  <TabsContent value="reports">
+    <Card>
+      <CardHeader>
+        <CardTitle>Reports</CardTitle>
+        <CardDescription>Export and review reports.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Text>Report generation tools go here.</Text>
+      </CardContent>
+    </Card>
+  </TabsContent>
+</Tabs>
+```

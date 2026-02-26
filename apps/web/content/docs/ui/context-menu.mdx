@@ -1,0 +1,184 @@
+---
+title: ContextMenu
+description: A right-click (or long-press on native) menu with support for sub-menus, checkboxes, and radio groups.
+---
+
+## Import
+
+```tsx
+import {
+  ContextMenu, ContextMenuTrigger, ContextMenuContent,
+  ContextMenuItem, ContextMenuCheckboxItem, ContextMenuRadioItem,
+  ContextMenuLabel, ContextMenuSeparator, ContextMenuGroup,
+  ContextMenuSub, ContextMenuSubTrigger, ContextMenuSubContent,
+  ContextMenuRadioGroup,
+} from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ContextMenu>
+  <ContextMenuTrigger>
+    <View className="h-32 w-full items-center justify-center rounded-md border border-dashed border-border">
+      <Text>Right-click here</Text>
+    </View>
+  </ContextMenuTrigger>
+  <ContextMenuContent>
+    <ContextMenuItem>
+      <Text>Cut</Text>
+    </ContextMenuItem>
+    <ContextMenuItem>
+      <Text>Copy</Text>
+    </ContextMenuItem>
+    <ContextMenuItem>
+      <Text>Paste</Text>
+    </ContextMenuItem>
+  </ContextMenuContent>
+</ContextMenu>
+```
+
+ContextMenu wraps the `ContextMenu` primitive from `@tallyui/primitives` with default styling. It opens on right-click (web) or long-press (native). The content renders through a portal, so you need a `PortalHost` in your native layout. See the [ContextMenu primitive](/docs/primitives/context-menu) for behavior and accessibility details.
+
+## Components
+
+### ContextMenuContent
+
+The floating panel containing menu items.
+
+| Classes |
+|---------|
+| `z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md` |
+
+### ContextMenuItem
+
+A single actionable item.
+
+| Classes |
+|---------|
+| `relative flex cursor-default select-none flex-row items-center rounded-sm px-2 py-1.5 text-sm outline-none` |
+| Focus (web): `bg-accent text-accent-foreground` |
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `inset` | `boolean` | `false` | Adds `pl-8` padding to align with indicator items |
+| `className` | `string` | --- | Additional NativeWind classes |
+
+### ContextMenuCheckboxItem
+
+A menu item that toggles a checkmark.
+
+| Classes |
+|---------|
+| `relative flex cursor-default select-none flex-row items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none` |
+| Focus (web): `bg-accent text-accent-foreground` |
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `checked` | `boolean` | --- | Controlled checked state |
+| `onCheckedChange` | `(checked: boolean) => void` | --- | Called when checked changes |
+
+### ContextMenuRadioItem
+
+A radio-style item, used inside `ContextMenuRadioGroup`.
+
+| Classes |
+|---------|
+| `relative flex cursor-default select-none flex-row items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none` |
+| Focus (web): `bg-accent text-accent-foreground` |
+
+### ContextMenuLabel
+
+A non-interactive heading for a group of items.
+
+| Classes |
+|---------|
+| `px-2 py-1.5 text-sm font-semibold` |
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `inset` | `boolean` | `false` | Adds `pl-8` left padding |
+
+### ContextMenuSeparator
+
+A visual divider between sections.
+
+| Classes |
+|---------|
+| `-mx-1 my-1 h-px bg-muted` |
+
+### ContextMenuSubTrigger
+
+An item that opens a sub-menu.
+
+| Classes |
+|---------|
+| `flex cursor-default select-none flex-row items-center rounded-sm px-2 py-1.5 text-sm outline-none` |
+| Focus (web): `bg-accent` |
+
+### ContextMenuSubContent
+
+The floating panel for a nested sub-menu.
+
+| Classes |
+|---------|
+| `z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg` |
+
+## Examples
+
+### File manager context menu
+
+```tsx
+const [showHidden, setShowHidden] = useState(false);
+const [viewMode, setViewMode] = useState('list');
+
+<ContextMenu>
+  <ContextMenuTrigger>
+    <View className="h-40 items-center justify-center rounded-md border border-dashed border-border">
+      <Text className="text-muted-foreground">Right-click for file options</Text>
+    </View>
+  </ContextMenuTrigger>
+  <ContextMenuContent>
+    <ContextMenuLabel>File Actions</ContextMenuLabel>
+    <ContextMenuSeparator />
+    <ContextMenuItem><Text>New File</Text></ContextMenuItem>
+    <ContextMenuItem><Text>New Folder</Text></ContextMenuItem>
+    <ContextMenuSeparator />
+    <ContextMenuCheckboxItem checked={showHidden} onCheckedChange={setShowHidden}>
+      <Text>Show Hidden Files</Text>
+    </ContextMenuCheckboxItem>
+    <ContextMenuSeparator />
+    <ContextMenuLabel>View</ContextMenuLabel>
+    <ContextMenuRadioGroup value={viewMode} onValueChange={setViewMode}>
+      <ContextMenuRadioItem value="list"><Text>List</Text></ContextMenuRadioItem>
+      <ContextMenuRadioItem value="grid"><Text>Grid</Text></ContextMenuRadioItem>
+      <ContextMenuRadioItem value="columns"><Text>Columns</Text></ContextMenuRadioItem>
+    </ContextMenuRadioGroup>
+  </ContextMenuContent>
+</ContextMenu>
+```
+
+### With sub-menu
+
+```tsx
+<ContextMenu>
+  <ContextMenuTrigger>
+    <View className="h-32 items-center justify-center rounded-md border border-dashed border-border">
+      <Text>Right-click me</Text>
+    </View>
+  </ContextMenuTrigger>
+  <ContextMenuContent>
+    <ContextMenuItem><Text>Undo</Text></ContextMenuItem>
+    <ContextMenuItem><Text>Redo</Text></ContextMenuItem>
+    <ContextMenuSeparator />
+    <ContextMenuSub>
+      <ContextMenuSubTrigger><Text>More Tools</Text></ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        <ContextMenuItem><Text>Save As...</Text></ContextMenuItem>
+        <ContextMenuItem><Text>Export PDF</Text></ContextMenuItem>
+        <ContextMenuItem><Text>Print</Text></ContextMenuItem>
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  </ContextMenuContent>
+</ContextMenu>
+```

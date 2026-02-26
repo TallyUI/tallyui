@@ -1,0 +1,73 @@
+---
+title: Label
+description: An accessible text label that associates with form controls via the Label primitive.
+---
+
+## Import
+
+```tsx
+import { Label } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Label nativeID="email">Email address</Label>
+```
+
+Label renders a styled `Text` element through `@tallyui/primitives` Label.Root. Connect it to a form control by matching the `nativeID` prop on the Label with the `aria-labelledby` prop on the input.
+
+## Styling
+
+Label applies these base classes:
+
+```
+text-sm font-medium leading-none text-foreground
+web:peer-disabled:cursor-not-allowed web:peer-disabled:opacity-70
+```
+
+On web, when a sibling input has the `peer` class and is disabled, the label automatically dims and shows a `not-allowed` cursor.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `nativeID` | `string` | -- | Connects the label to a form control via `aria-labelledby` |
+| `className` | `string` | -- | NativeWind classes merged via `cn()` |
+
+Plus all React Native [`TextProps`](https://reactnative.dev/docs/text#props) and any props from the Label primitive root.
+
+## Examples
+
+### Basic label with an input
+
+```tsx
+import { Label, Input } from '@tallyui/components';
+
+<Label nativeID="username">Username</Label>
+<Input>
+  <Input.Field placeholder="Enter username" aria-labelledby="username" />
+</Input>
+```
+
+### Required field pattern
+
+```tsx
+import { Label, Input, Text } from '@tallyui/components';
+
+<HStack className="gap-1">
+  <Label nativeID="email">Email</Label>
+  <Text className="text-destructive">*</Text>
+</HStack>
+<Input>
+  <Input.Field placeholder="you@example.com" aria-labelledby="email" />
+</Input>
+```
+
+### Custom styling
+
+```tsx
+<Label className="text-base text-muted-foreground">
+  Optional notes
+</Label>
+```
