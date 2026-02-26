@@ -21,6 +21,9 @@ export {
   type ProductGridProps,
   ProductList,
   type ProductListProps,
+  CategoryNav,
+  type CategoryNavProps,
+  type CategoryItem,
 } from './product';
 
 // Cart components

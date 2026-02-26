@@ -6,3 +6,4 @@ export { ProductStockBadge, type ProductStockBadgeProps } from './product-stock-
 export { ProductCard, type ProductCardProps } from './product-card';
 export { ProductGrid, type ProductGridProps } from './product-grid';
 export { ProductList, type ProductListProps } from './product-list';
+export { CategoryNav, type CategoryNavProps, type CategoryItem } from './category-nav';
