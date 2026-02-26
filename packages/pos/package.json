@@ -1,0 +1,39 @@
+{
+  "name": "@tallyui/pos",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared POS business logic for Tally UI — tax, orders, payments, discounts, receipts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "source": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "source": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@tallyui/core": "workspace:*",
+    "react": ">=18",
+    "rxdb": ">=16",
+    "rxjs": ">=7"
+  },
+  "devDependencies": {
+    "@tallyui/core": "workspace:*",
+    "@types/react": ">=18",
+    "react": "^19.2.4",
+    "rxdb": "16.21.1",
+    "rxjs": "7.8.2"
+  }
+}

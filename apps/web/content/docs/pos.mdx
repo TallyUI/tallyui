@@ -1,0 +1,302 @@
+---
+title: POS Business Logic
+description: Tax calculations, currency formatting, order management, receipts, and logging for point-of-sale apps
+---
+
+The `@tallyui/pos` package handles the business logic layer of a point-of-sale application. It sits between the UI components and the data layer, providing tax math, currency formatting, order building, receipt generation, and structured logging.
+
+Everything here is framework-agnostic at its core -- plain functions and observables -- with thin React providers where components need shared config.
+
+## Installation
+
+```bash
+pnpm add @tallyui/pos
+```
+
+The package has peer dependencies on `react`, `rxjs`, and `rxdb`.
+
+## Tax System
+
+Tax calculations need to handle two common retail scenarios: prices that already include tax (common in Europe, Australia) and prices where tax gets added at checkout (common in the US).
+
+### Tax Provider
+
+Wrap your app with `TaxProvider` to make tax configuration available to the order system and any component that needs it:
+
+```tsx
+import { TaxProvider } from '@tallyui/pos';
+
+function App() {
+  return (
+    <TaxProvider
+      rates={{ default: 0.1, reduced: 0.05 }}
+      pricesIncludeTax={true}
+    >
+      <PosInterface />
+    </TaxProvider>
+  );
+}
+```
+
+The `rates` object maps tax class names to decimal rates. A `default` key is required -- it's the fallback when no tax class is specified.
+
+### useTax Hook
+
+Inside the provider, `useTax()` gives you the tax context:
+
+```tsx
+import { useTax } from '@tallyui/pos';
+
+function PriceDisplay({ price, taxClass }: { price: number; taxClass?: string }) {
+  const { getTaxRate, pricesIncludeTax } = useTax();
+  const rate = getTaxRate(taxClass);
+
+  // rate is 0.1 for default, 0.05 for 'reduced', etc.
+}
+```
+
+### Direct Calculation
+
+For standalone tax math outside of React, use the calculation functions directly:
+
+```typescript
+import { calculateTax, extractTax, addTax } from '@tallyui/pos';
+
+// Price is $10 exclusive of tax, rate is 10%
+const result = calculateTax(10, 0.1, false);
+// { priceExclTax: 10, priceInclTax: 11, taxAmount: 1 }
+
+// Price is $11 inclusive of tax, rate is 10%
+const result2 = calculateTax(11, 0.1, true);
+// { priceExclTax: 10, priceInclTax: 11, taxAmount: 1 }
+
+// Utility helpers
+addTax(10, 0.1);      // 11
+extractTax(11, 0.1);  // 1
+```
+
+## Currency Formatting
+
+Currency formatting uses `Intl.NumberFormat` under the hood, with a caching layer so formatters are only created once per currency/locale pair.
+
+### Standalone Function
+
+```typescript
+import { formatCurrency } from '@tallyui/pos';
+
+formatCurrency(29.99, 'USD');         // "$29.99"
+formatCurrency(29.99, 'EUR', 'de-DE'); // "29,99 €"
+formatCurrency(1500, 'JPY', 'ja-JP'); // "￥1,500"
+```
+
+### Currency Provider
+
+For components that format prices throughout the app, the provider avoids passing currency codes everywhere:
+
+```tsx
+import { CurrencyProvider, useCurrencyFormatter } from '@tallyui/pos';
+
+function App() {
+  return (
+    <CurrencyProvider currencyCode="USD" locale="en-US">
+      <PosInterface />
+    </CurrencyProvider>
+  );
+}
+
+function TotalDisplay({ amount }: { amount: number }) {
+  const format = useCurrencyFormatter();
+  return <Text>{format(amount)}</Text>; // "$29.99"
+}
+```
+
+## Order Management
+
+The order system has two layers: `OrderBuilder` handles a single order's state, and `OrderManager` coordinates multiple orders (parking, resuming, creating new ones).
+
+### Building an Order
+
+`createOrderBuilder` returns a reactive order object. Every mutation emits the recalculated order through `order$`:
+
+```typescript
+import { createOrderBuilder } from '@tallyui/pos';
+
+const builder = createOrderBuilder({
+  currency: 'USD',
+  taxContext: { getTaxRate: () => 0.1, pricesIncludeTax: false },
+});
+
+// Subscribe to order changes
+builder.order$.subscribe((order) => {
+  console.log('Total:', order.total);
+  console.log('Tax:', order.taxTotal);
+  console.log('Balance due:', order.balanceDue);
+});
+
+// Add products using connector traits
+const lineId = builder.addProduct(productDoc, productTraits, { quantity: 2 });
+
+// Adjust quantities
+builder.updateQuantity(lineId, 3);
+
+// Apply a 10% line discount
+builder.applyLineDiscount(lineId, {
+  type: 'percentage',
+  value: 10,
+  label: 'Staff discount',
+});
+
+// Apply a $5 order-level discount
+builder.applyOrderDiscount({
+  type: 'fixed',
+  value: 5,
+  label: 'Loyalty reward',
+});
+
+// Record payment
+builder.addPayment({ method: 'card', amount: 25.50 });
+
+// Attach a customer
+builder.setCustomer({ id: '42', name: 'Jane Doe', email: 'jane@example.com' });
+```
+
+The builder automatically recalculates subtotals, discounts, tax, and balance due on every change. It handles both tax-inclusive and tax-exclusive pricing based on the `taxContext` you provide.
+
+When the same product is added twice, the builder increments the existing line item's quantity rather than adding a duplicate.
+
+### Managing Multiple Orders
+
+`createOrderManager` wraps the builder with persistence. It requires an RxDB collection to store parked order drafts:
+
+```typescript
+import { createOrderManager } from '@tallyui/pos';
+
+const manager = createOrderManager({
+  currency: 'USD',
+  taxContext: { getTaxRate: () => 0.1, pricesIncludeTax: false },
+  draftsCollection: db.order_drafts,
+});
+
+// The active order builder
+manager.activeOrder$.subscribe((builder) => {
+  // Use builder.order$ for the current order state
+});
+
+// Park the current order (saves to RxDB, starts a fresh one)
+const parkedId = await manager.parkCurrentOrder();
+
+// See all parked orders
+manager.parkedOrders$.subscribe((parked) => {
+  // [{ id, customerName, itemCount, total, parkedAt }]
+});
+
+// Resume a parked order (restores all line items, discounts, payments)
+const builder = await manager.resumeOrder(parkedId);
+
+// Delete a parked order without resuming
+await manager.deleteParkedOrder(parkedId);
+
+// Start a fresh order manually
+manager.newOrder();
+```
+
+## Repositories
+
+`createRepository` wraps an RxDB collection with a clean read/write API that returns plain JSON objects instead of RxDB documents:
+
+```typescript
+import { createRepository } from '@tallyui/pos';
+
+const productRepo = createRepository(db.products);
+
+// Reactive queries (return Observables)
+productRepo.findById$('prod-123').subscribe((product) => { /* ... */ });
+productRepo.findAll$({ selector: { status: 'active' } }).subscribe((products) => { /* ... */ });
+productRepo.search$('espresso', ['name', 'sku']).subscribe((results) => { /* ... */ });
+productRepo.count$().subscribe((count) => { /* ... */ });
+
+// Mutations (return Promises)
+await productRepo.create({ id: 'prod-new', name: 'Flat White', price: '4.50' });
+await productRepo.update('prod-new', { price: '5.00' });
+await productRepo.remove('prod-new');
+
+// Bulk operations
+await productRepo.bulkCreate([item1, item2, item3]);
+await productRepo.bulkRemove(['id-1', 'id-2']);
+```
+
+The reactive queries (`findAll$`, `search$`, etc.) stay live -- they re-emit whenever the underlying collection changes, which ties directly into RxDB's replication system.
+
+## Receipt Builder
+
+`buildReceiptData` takes a completed order and a store config, and returns a structured receipt object ready for rendering or printing:
+
+```typescript
+import { buildReceiptData } from '@tallyui/pos';
+
+const receipt = buildReceiptData(order, {
+  storeName: 'Blue Bottle Coffee',
+  storeAddress: '123 Main St, San Francisco, CA',
+  cashier: 'Alex',
+  register: 'POS-1',
+  taxLabels: { 0.1: 'GST 10%', 0.05: 'Reduced GST 5%' },
+});
+
+// receipt.header  — store name, address, order number, date, cashier, register
+// receipt.lineItems — name, sku, quantity, unitPrice, lineTotal
+// receipt.discounts — label, amount
+// receipt.totals — subtotal, discountTotal, taxLines[], taxTotal, total
+// receipt.payments — method, amount, reference
+// receipt.changeDue — change owed to customer
+// receipt.footer — note, barcode
+// receipt.currency — currency code
+```
+
+The `taxLabels` config maps tax rates to human-readable labels. If a rate doesn't have a label, it falls back to "Tax X%" formatting.
+
+## Logging
+
+`createLogger` provides structured logging with scopes and pluggable sinks. Each sink controls which log levels and scopes it listens to.
+
+```typescript
+import { createLogger, consoleSink, callbackSink } from '@tallyui/pos';
+
+const logger = createLogger('pos');
+
+// Add a console sink that logs warnings and errors
+logger.addSink(consoleSink({
+  levels: ['warn', 'error'],
+}));
+
+// Add a callback sink for sending logs to a remote service
+logger.addSink(callbackSink({
+  id: 'remote',
+  levels: ['error'],
+  callback: (entry) => {
+    fetch('/api/logs', {
+      method: 'POST',
+      body: JSON.stringify(entry),
+    });
+  },
+}));
+
+// Log messages
+logger.info('Order completed', { orderId: '123', total: 42.50 });
+logger.error('Payment failed', { method: 'card', error: 'declined' });
+
+// Create scoped child loggers (share parent's sinks)
+const replicationLogger = logger.createScope('replication');
+replicationLogger.info('Sync started');
+// Console output: [replication] Sync started
+```
+
+Scoped loggers inherit all sinks from the parent. You can filter sinks by scope if you only want certain loggers to write to certain destinations:
+
+```typescript
+logger.addSink(consoleSink({
+  levels: ['debug', 'info', 'warn', 'error'],
+  scopes: ['replication'], // only logs from the 'replication' scope
+}));
+```
+
+Log entries include a `timestamp`, `level`, `scope`, `message`, and optional `data` object -- enough structure for filtering and search without over-engineering it.
