@@ -1,7 +1,6 @@
-import { Text, View, type ViewProps } from 'react-native';
-
 import { useProductTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { Text, HStack, VStack, type HStackProps } from '../ui';
 
 export interface CartLineItem {
   /** The raw product document (connector-specific shape) */
@@ -10,7 +9,7 @@ export interface CartLineItem {
   quantity: number;
 }
 
-export interface CartLineProps extends Omit<ViewProps, 'children'> {
+export interface CartLineProps extends Omit<HStackProps, 'children'> {
   /** The cart line item */
   item: CartLineItem;
   /** Currency symbol (defaults to '$') */
@@ -25,7 +24,7 @@ export interface CartLineProps extends Omit<ViewProps, 'children'> {
  * <CartLine item={{ doc: productDocument, quantity: 2 }} />
  * ```
  */
-export function CartLine({ item, currencySymbol = '$', className, ...viewProps }: CartLineProps) {
+export function CartLine({ item, currencySymbol = '$', className, ...props }: CartLineProps) {
   const { getName, getPrice } = useProductTraits();
   const name = getName(item.doc);
   const unitPrice = getPrice(item.doc);
@@ -34,16 +33,16 @@ export function CartLine({ item, currencySymbol = '$', className, ...viewProps }
     : null;
 
   return (
-    <View className={cn('flex-row items-center gap-3 px-3 py-2.5', className)} {...viewProps}>
-      <View className="flex-1 gap-0.5">
-        <Text className="text-sm font-medium text-foreground" numberOfLines={1}>{name}</Text>
+    <HStack className={cn('px-3 py-2.5', className)} {...props}>
+      <VStack space="none" className="flex-1 gap-0.5">
+        <Text className="text-sm font-medium" numberOfLines={1}>{name}</Text>
         <Text className="text-xs text-muted-foreground">
           {unitPrice ? `${currencySymbol}${unitPrice} × ${item.quantity}` : `× ${item.quantity}`}
         </Text>
-      </View>
-      <Text className="text-sm font-semibold text-foreground">
+      </VStack>
+      <Text className="text-sm font-semibold">
         {lineTotal ? `${currencySymbol}${lineTotal}` : '—'}
       </Text>
-    </View>
+    </HStack>
   );
 }

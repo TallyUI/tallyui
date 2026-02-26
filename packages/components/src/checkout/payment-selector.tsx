@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { View, type ViewProps } from 'react-native';
 import { cn } from '@tallyui/theme';
+import { VStack, type VStackProps } from '../ui';
 import { PaymentMethodCard } from './payment-method-card';
 
 export interface PaymentMethod {
@@ -9,7 +9,7 @@ export interface PaymentMethod {
   icon?: ReactNode;
 }
 
-export interface PaymentSelectorProps extends Omit<ViewProps, 'children'> {
+export interface PaymentSelectorProps extends Omit<VStackProps, 'children'> {
   /** Available payment methods */
   methods: PaymentMethod[];
   /** ID of the currently selected method */
@@ -37,10 +37,10 @@ export function PaymentSelector({
   selected,
   onSelect,
   className,
-  ...viewProps
+  ...props
 }: PaymentSelectorProps) {
   return (
-    <View className={cn('gap-2', className)} {...viewProps}>
+    <VStack space="sm" className={cn(className)} {...props}>
       {methods.map((method) => (
         <PaymentMethodCard
           key={method.id}
@@ -50,6 +50,6 @@ export function PaymentSelector({
           icon={method.icon}
         />
       ))}
-    </View>
+    </VStack>
   );
 }

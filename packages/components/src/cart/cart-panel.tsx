@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
-import { ScrollView, View, type ViewProps } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { cn } from '@tallyui/theme';
+import { VStack, type VStackProps } from '../ui';
 import type { CartLineItem } from './cart-line';
 
-export interface CartPanelProps extends Omit<ViewProps, 'children'> {
+export interface CartPanelProps extends Omit<VStackProps, 'children'> {
   /** Cart line items to render */
   items: CartLineItem[];
   /** Render function for each cart line */
@@ -39,12 +40,12 @@ export function CartPanel({
   footer,
   emptyState,
   className,
-  ...viewProps
+  ...props
 }: CartPanelProps) {
   const hasItems = items.length > 0;
 
   return (
-    <View className={cn('flex-1', className)} {...viewProps}>
+    <VStack space="none" className={cn('flex-1', className)} {...props}>
       {header && <View className="border-b border-border px-3 py-2">{header}</View>}
 
       {hasItems ? (
@@ -60,6 +61,6 @@ export function CartPanel({
       )}
 
       {footer && <View className="border-t border-border px-3 py-2">{footer}</View>}
-    </View>
+    </VStack>
   );
 }

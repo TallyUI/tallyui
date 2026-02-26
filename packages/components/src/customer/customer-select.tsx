@@ -1,10 +1,11 @@
-import { ScrollView, View, type ViewProps } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { Select } from '@tallyui/primitives';
 import { useCustomerTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { VStack, type VStackProps } from '../ui';
 import { CustomerCard } from './customer-card';
 
-export interface CustomerSelectProps extends Omit<ViewProps, 'children'> {
+export interface CustomerSelectProps extends Omit<VStackProps, 'children'> {
   /** Customer documents to display as options */
   customers: any[];
   /** Currently selected customer (if any) */
@@ -45,7 +46,7 @@ export function CustomerSelect({
   onSearch,
   placeholder = 'Search customers...',
   className,
-  ...viewProps
+  ...props
 }: CustomerSelectProps) {
   const traits = useCustomerTraits();
 
@@ -73,7 +74,7 @@ export function CustomerSelect({
       onValueChange={handleValueChange}
       defaultOpen={true}
     >
-      <View className={cn('gap-2', className)} {...viewProps}>
+      <VStack space="sm" className={cn(className)} {...props}>
         {selected && traits && (
           <Select.Trigger asChild>
             <View className="rounded-lg border border-primary bg-primary/5 px-3 py-2">
@@ -104,7 +105,7 @@ export function CustomerSelect({
             </ScrollView>
           </Select.Content>
         )}
-      </View>
+      </VStack>
     </Select.Root>
   );
 }

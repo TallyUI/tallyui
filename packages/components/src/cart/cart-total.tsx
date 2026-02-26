@@ -1,10 +1,9 @@
-import { Text, View, type ViewProps } from 'react-native';
-
 import { useProductTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { Text, HStack, VStack, type VStackProps } from '../ui';
 import type { CartLineItem } from './cart-line';
 
-export interface CartTotalProps extends Omit<ViewProps, 'children'> {
+export interface CartTotalProps extends Omit<VStackProps, 'children'> {
   /** All cart line items */
   items: CartLineItem[];
   /** Currency symbol (defaults to '$') */
@@ -29,7 +28,7 @@ export function CartTotal({
   taxRate = 0,
   taxLabel = 'Tax',
   className,
-  ...viewProps
+  ...props
 }: CartTotalProps) {
   const { getPrice } = useProductTraits();
 
@@ -42,23 +41,23 @@ export function CartTotal({
   const total = subtotal + tax;
 
   return (
-    <View className={cn('gap-1.5 px-3 py-3', className)} {...viewProps}>
-      <View className="flex-row items-center justify-between">
+    <VStack space="none" className={cn('gap-1.5 px-3 py-3', className)} {...props}>
+      <HStack space="none" className="justify-between">
         <Text className="text-sm text-muted-foreground">Subtotal</Text>
-        <Text className="text-sm text-foreground">{currencySymbol}{subtotal.toFixed(2)}</Text>
-      </View>
+        <Text className="text-sm">{currencySymbol}{subtotal.toFixed(2)}</Text>
+      </HStack>
 
       {taxRate > 0 && (
-        <View className="flex-row items-center justify-between">
+        <HStack space="none" className="justify-between">
           <Text className="text-sm text-muted-foreground">{taxLabel}</Text>
-          <Text className="text-sm text-foreground">{currencySymbol}{tax.toFixed(2)}</Text>
-        </View>
+          <Text className="text-sm">{currencySymbol}{tax.toFixed(2)}</Text>
+        </HStack>
       )}
 
-      <View className="mt-1.5 flex-row items-center justify-between border-t border-border pt-2">
-        <Text className="text-base font-bold text-foreground">Total</Text>
-        <Text className="text-base font-bold text-foreground">{currencySymbol}{total.toFixed(2)}</Text>
-      </View>
-    </View>
+      <HStack space="none" className="mt-1.5 justify-between border-t border-border pt-2">
+        <Text className="font-bold">Total</Text>
+        <Text className="font-bold">{currencySymbol}{total.toFixed(2)}</Text>
+      </HStack>
+    </VStack>
   );
 }

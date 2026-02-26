@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { Pressable, ScrollView, Text, type ViewProps } from 'react-native';
+import { Pressable, ScrollView, type ViewProps } from 'react-native';
 import { ToggleGroup } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
+import { Text } from '../ui';
 
 export interface FilterChipProps {
   label: string;
