@@ -19,6 +19,8 @@ export {
   type ProductStockBadgeProps,
   type ProductCardProps,
   type ProductGridProps,
+  ProductList,
+  type ProductListProps,
 } from './product';
 
 // Cart components
