@@ -183,9 +183,14 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     },
 
     updateQuantity(lineId, quantity) {
-      lineItems = lineItems.map((li) =>
-        li.id === lineId ? recalculateLine({ ...li, quantity }) : li,
-      );
+      if (quantity <= 0) {
+        // Treat zero/negative as removal
+        lineItems = lineItems.filter((li) => li.id !== lineId);
+      } else {
+        lineItems = lineItems.map((li) =>
+          li.id === lineId ? recalculateLine({ ...li, quantity }) : li,
+        );
+      }
       emit();
     },
 

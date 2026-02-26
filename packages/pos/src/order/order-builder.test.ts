@@ -167,4 +167,80 @@ describe('OrderBuilder', () => {
     const order = await firstValueFrom(builder.order$);
     expect(order.lineItems[0].quantity).toBe(5);
   });
+
+  it('removes line item when quantity set to 0', async () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const lineId = builder.addProduct(productDoc, traits);
+    builder.updateQuantity(lineId, 0);
+
+    const order = await firstValueFrom(builder.order$);
+    expect(order.lineItems).toHaveLength(0);
+    expect(order.subtotal).toBe(0);
+  });
+
+  it('removes line item when quantity set to negative', async () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const lineId = builder.addProduct(productDoc, traits);
+    builder.updateQuantity(lineId, -1);
+
+    const order = await firstValueFrom(builder.order$);
+    expect(order.lineItems).toHaveLength(0);
+  });
+
+  it('getSnapshot() matches order$ emission', async () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct(productDoc, traits);
+
+    const fromObservable = await firstValueFrom(builder.order$);
+    const fromSnapshot = builder.getSnapshot();
+    expect(fromSnapshot.id).toBe(fromObservable.id);
+    expect(fromSnapshot.lineItems).toEqual(fromObservable.lineItems);
+    expect(fromSnapshot.total).toBe(fromObservable.total);
+  });
+
+  it('clear() resets payments, customer, and discounts', async () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const lineId = builder.addProduct(productDoc, traits);
+    builder.setCustomer({ id: 'c1', name: 'Alice' });
+    builder.addPayment({ method: 'cash', amount: 5 });
+    builder.applyLineDiscount(lineId, { type: 'fixed', value: 1 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    builder.clear();
+
+    const order = await firstValueFrom(builder.order$);
+    expect(order.lineItems).toHaveLength(0);
+    expect(order.payments).toHaveLength(0);
+    expect(order.discounts).toHaveLength(0);
+    expect(order.customer).toBeNull();
+    expect(order.note).toBe('');
+  });
+
+  it('handles product with undefined price gracefully', async () => {
+    const noPriceTraits = { ...traits, getPrice: () => undefined };
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct({ id: 'p1', name: 'Free Item' }, noPriceTraits);
+
+    const order = await firstValueFrom(builder.order$);
+    expect(order.lineItems[0].price).toBe(0);
+    expect(order.total).toBe(0);
+  });
+
+  it('adds same product with different variantIds as separate lines', async () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct(productDoc, traits, { variantId: 'small' });
+    builder.addProduct(productDoc, traits, { variantId: 'large' });
+
+    const order = await firstValueFrom(builder.order$);
+    expect(order.lineItems).toHaveLength(2);
+  });
+
+  it('merges same product+variant on second add', async () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct(productDoc, traits, { variantId: 'small' });
+    builder.addProduct(productDoc, traits, { variantId: 'small' });
+
+    const order = await firstValueFrom(builder.order$);
+    expect(order.lineItems).toHaveLength(1);
+    expect(order.lineItems[0].quantity).toBe(2);
+  });
 });

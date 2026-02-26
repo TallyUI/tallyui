@@ -138,4 +138,17 @@ describe('scoped loggers', () => {
 
     expect(sink.entries).toHaveLength(1);
   });
+
+  it('nested scopes (grandchild) share sinks with root', () => {
+    const logger = createLogger();
+    const sink = createTestSink();
+    logger.addSink(sink);
+
+    const child = logger.createScope('parent');
+    const grandchild = child.createScope('grandchild');
+
+    grandchild.info('deep message');
+    expect(sink.entries).toHaveLength(1);
+    expect(sink.entries[0].scope).toBe('grandchild');
+  });
 });

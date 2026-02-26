@@ -133,4 +133,34 @@ describe('buildReceiptData', () => {
     const receipt = buildReceiptData(baseOrder, config);
     expect(receipt.currency).toBe('USD');
   });
+
+  it('handles empty order with no line items', () => {
+    const emptyOrder: Order = {
+      ...baseOrder,
+      lineItems: [],
+      discounts: [],
+      payments: [],
+      subtotal: 0,
+      discountTotal: 0,
+      taxTotal: 0,
+      total: 0,
+      balanceDue: 0,
+      changeDue: 0,
+    };
+    const receipt = buildReceiptData(emptyOrder, config);
+    expect(receipt.lineItems).toHaveLength(0);
+    expect(receipt.totals.taxLines).toHaveLength(0);
+    expect(receipt.totals.total).toBe(0);
+  });
+
+  it('uses fallback label for discount without label or couponCode', () => {
+    const orderWithUnlabeledDiscount: Order = {
+      ...baseOrder,
+      discounts: [
+        { id: 'd1', type: 'percentage', value: 10, amount: 1.20 },
+      ],
+    };
+    const receipt = buildReceiptData(orderWithUnlabeledDiscount, config);
+    expect(receipt.discounts[0].label).toBe('percentage discount');
+  });
 });

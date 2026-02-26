@@ -153,4 +153,14 @@ describe('createRepository', () => {
     expect(results).toHaveLength(1);
     expect(results[0].name).toBe('Coffee (Organic)');
   });
+
+  it('throws when updating a non-existent document', async () => {
+    const repo = createRepository<TestDoc>(db.items);
+    await expect(repo.update('nonexistent', { name: 'New' })).rejects.toThrow('Document nonexistent not found');
+  });
+
+  it('throws when removing a non-existent document', async () => {
+    const repo = createRepository<TestDoc>(db.items);
+    await expect(repo.remove('nonexistent')).rejects.toThrow('Document nonexistent not found');
+  });
 });
