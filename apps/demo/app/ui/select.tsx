@@ -8,9 +8,14 @@ import {
   Text, VStack,
 } from '@tallyui/components';
 
+interface Option {
+  value: string;
+  label: string;
+}
+
 export default function SelectScreen() {
-  const [fruit, setFruit] = useState('');
-  const [country, setCountry] = useState('');
+  const [fruit, setFruit] = useState<Option | undefined>();
+  const [country, setCountry] = useState<Option | undefined>();
 
   return (
     <>
@@ -23,14 +28,14 @@ export default function SelectScreen() {
               <SelectValue placeholder="Pick a fruit" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="apple">Apple</SelectItem>
-              <SelectItem value="banana">Banana</SelectItem>
-              <SelectItem value="cherry">Cherry</SelectItem>
-              <SelectItem value="mango">Mango</SelectItem>
+              <SelectItem value="apple" label="Apple">Apple</SelectItem>
+              <SelectItem value="banana" label="Banana">Banana</SelectItem>
+              <SelectItem value="cherry" label="Cherry">Cherry</SelectItem>
+              <SelectItem value="mango" label="Mango">Mango</SelectItem>
             </SelectContent>
           </Select>
           <Text className="text-sm text-muted-foreground">
-            Selected: {fruit || 'none'}
+            Selected: {fruit?.label || 'none'}
           </Text>
         </VStack>
 
@@ -43,41 +48,41 @@ export default function SelectScreen() {
             <SelectContent>
               <SelectGroup>
                 <SelectLabel>Americas</SelectLabel>
-                <SelectItem value="us">United States</SelectItem>
-                <SelectItem value="ca">Canada</SelectItem>
-                <SelectItem value="br">Brazil</SelectItem>
+                <SelectItem value="us" label="United States">United States</SelectItem>
+                <SelectItem value="ca" label="Canada">Canada</SelectItem>
+                <SelectItem value="br" label="Brazil">Brazil</SelectItem>
               </SelectGroup>
               <SelectSeparator />
               <SelectGroup>
                 <SelectLabel>Europe</SelectLabel>
-                <SelectItem value="gb">United Kingdom</SelectItem>
-                <SelectItem value="de">Germany</SelectItem>
-                <SelectItem value="fr">France</SelectItem>
+                <SelectItem value="gb" label="United Kingdom">United Kingdom</SelectItem>
+                <SelectItem value="de" label="Germany">Germany</SelectItem>
+                <SelectItem value="fr" label="France">France</SelectItem>
               </SelectGroup>
               <SelectSeparator />
               <SelectGroup>
                 <SelectLabel>Asia-Pacific</SelectLabel>
-                <SelectItem value="au">Australia</SelectItem>
-                <SelectItem value="jp">Japan</SelectItem>
+                <SelectItem value="au" label="Australia">Australia</SelectItem>
+                <SelectItem value="jp" label="Japan">Japan</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
           <Text className="text-sm text-muted-foreground">
-            Selected: {country || 'none'}
+            Selected: {country?.label || 'none'}
           </Text>
         </VStack>
 
         <VStack className="gap-3">
           <Text className="text-lg font-bold">Fixed Width</Text>
-          <Select defaultValue="medium">
+          <Select defaultValue={{ value: 'medium', label: 'Medium' }}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Size" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="small">Small</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="large">Large</SelectItem>
-              <SelectItem value="xl">Extra Large</SelectItem>
+              <SelectItem value="small" label="Small">Small</SelectItem>
+              <SelectItem value="medium" label="Medium">Medium</SelectItem>
+              <SelectItem value="large" label="Large">Large</SelectItem>
+              <SelectItem value="xl" label="Extra Large">Extra Large</SelectItem>
             </SelectContent>
           </Select>
         </VStack>

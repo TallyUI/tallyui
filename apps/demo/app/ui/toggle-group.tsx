@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
 import { ToggleGroup, ToggleGroupItem, Text, VStack, Icon } from '@tallyui/components';
-import { AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline } from 'lucide-react-native';
 
 export default function ToggleGroupScreen() {
   const [alignment, setAlignment] = useState('center');
@@ -19,13 +18,13 @@ export default function ToggleGroupScreen() {
           </Text>
           <ToggleGroup type="single" value={alignment} onValueChange={setAlignment}>
             <ToggleGroupItem value="left">
-              <Icon><AlignLeft /></Icon>
+              <Icon><Text>L</Text></Icon>
             </ToggleGroupItem>
             <ToggleGroupItem value="center">
-              <Icon><AlignCenter /></Icon>
+              <Icon><Text>C</Text></Icon>
             </ToggleGroupItem>
             <ToggleGroupItem value="right">
-              <Icon><AlignRight /></Icon>
+              <Icon><Text>R</Text></Icon>
             </ToggleGroupItem>
           </ToggleGroup>
         </VStack>
@@ -37,13 +36,13 @@ export default function ToggleGroupScreen() {
           </Text>
           <ToggleGroup type="multiple" value={formats} onValueChange={setFormats}>
             <ToggleGroupItem value="bold">
-              <Icon><Bold /></Icon>
+              <Icon><Text>B</Text></Icon>
             </ToggleGroupItem>
             <ToggleGroupItem value="italic">
-              <Icon><Italic /></Icon>
+              <Icon><Text>I</Text></Icon>
             </ToggleGroupItem>
             <ToggleGroupItem value="underline">
-              <Icon><Underline /></Icon>
+              <Icon><Text>U</Text></Icon>
             </ToggleGroupItem>
           </ToggleGroup>
         </VStack>

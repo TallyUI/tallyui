@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
 import { Toggle, Text, VStack, Icon } from '@tallyui/components';
-import { Bold, Italic, Underline } from 'lucide-react-native';
 
 export default function ToggleScreen() {
   const [bold, setBold] = useState(false);
@@ -48,13 +47,13 @@ export default function ToggleScreen() {
         <VStack className="gap-3">
           <Text className="text-lg font-bold">With Icons</Text>
           <Toggle pressed={bold} onPressedChange={setBold}>
-            <Icon><Bold /></Icon>
+            <Icon><Text>B</Text></Icon>
           </Toggle>
           <Toggle variant="outline" pressed={italic} onPressedChange={setItalic}>
-            <Icon><Italic /></Icon>
+            <Icon><Text>I</Text></Icon>
           </Toggle>
           <Toggle variant="outline">
-            <Icon><Underline /></Icon>
+            <Icon><Text>U</Text></Icon>
           </Toggle>
         </VStack>
 

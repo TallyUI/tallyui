@@ -1,7 +1,6 @@
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
 import { Input, Label, Text, VStack, Icon } from '@tallyui/components';
-import { Search, Mail, Lock, X, Eye } from 'lucide-react-native';
 
 export default function InputScreen() {
   return (
@@ -34,7 +33,7 @@ export default function InputScreen() {
           <Input>
             <Input.Left className="mr-2">
               <Icon className="text-muted-foreground">
-                <Search />
+                <Text>Q</Text>
               </Icon>
             </Input.Left>
             <Input.Field placeholder="Search..." />
@@ -42,7 +41,7 @@ export default function InputScreen() {
           <Input>
             <Input.Left className="mr-2">
               <Icon className="text-muted-foreground">
-                <Mail />
+                <Text>@</Text>
               </Icon>
             </Input.Left>
             <Input.Field placeholder="Email" keyboardType="email-address" />
@@ -55,7 +54,7 @@ export default function InputScreen() {
             <Input.Field placeholder="Search..." />
             <Input.Right className="ml-2">
               <Icon className="text-muted-foreground">
-                <X />
+                <Text>X</Text>
               </Icon>
             </Input.Right>
           </Input>
@@ -66,13 +65,13 @@ export default function InputScreen() {
           <Input>
             <Input.Left className="mr-2">
               <Icon className="text-muted-foreground">
-                <Lock />
+                <Text>#</Text>
               </Icon>
             </Input.Left>
             <Input.Field placeholder="Password" secureTextEntry />
             <Input.Right className="ml-2">
               <Icon className="text-muted-foreground">
-                <Eye />
+                <Text>o</Text>
               </Icon>
             </Input.Right>
           </Input>
@@ -86,7 +85,7 @@ export default function InputScreen() {
           <Input disabled>
             <Input.Left className="mr-2">
               <Icon className="text-muted-foreground">
-                <Search />
+                <Text>Q</Text>
               </Icon>
             </Input.Left>
             <Input.Field placeholder="Disabled with icon" />

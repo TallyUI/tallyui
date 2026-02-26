@@ -48,11 +48,15 @@ export default function PopoverScreen() {
                 <VStack className="gap-2">
                   <HStack className="items-center gap-4">
                     <Label className="w-16">Width</Label>
-                    <Input className="flex-1" defaultValue="100%" />
+                    <Input className="flex-1">
+                      <Input.Field defaultValue="100%" />
+                    </Input>
                   </HStack>
                   <HStack className="items-center gap-4">
                     <Label className="w-16">Height</Label>
-                    <Input className="flex-1" defaultValue="auto" />
+                    <Input className="flex-1">
+                      <Input.Field defaultValue="auto" />
+                    </Input>
                   </HStack>
                 </VStack>
               </VStack>

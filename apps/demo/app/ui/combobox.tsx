@@ -8,7 +8,12 @@ import {
   Text, VStack,
 } from '@tallyui/components';
 
-const frameworks = [
+interface Option {
+  value: string;
+  label: string;
+}
+
+const frameworks: Option[] = [
   { value: 'react', label: 'React' },
   { value: 'vue', label: 'Vue' },
   { value: 'angular', label: 'Angular' },
@@ -17,7 +22,7 @@ const frameworks = [
   { value: 'qwik', label: 'Qwik' },
 ];
 
-const countries = [
+const countries: Option[] = [
   { value: 'us', label: 'United States' },
   { value: 'gb', label: 'United Kingdom' },
   { value: 'ca', label: 'Canada' },
@@ -29,8 +34,8 @@ const countries = [
 ];
 
 export default function ComboboxScreen() {
-  const [framework, setFramework] = useState('');
-  const [country, setCountry] = useState('');
+  const [framework, setFramework] = useState<Option | undefined>();
+  const [country, setCountry] = useState<Option | undefined>();
 
   return (
     <>
@@ -44,7 +49,7 @@ export default function ComboboxScreen() {
             </ComboboxTrigger>
             <ComboboxContent>
               {frameworks.map((f) => (
-                <ComboboxItem key={f.value} value={f.value}>
+                <ComboboxItem key={f.value} value={f.value} label={f.label}>
                   {f.label}
                 </ComboboxItem>
               ))}
@@ -52,7 +57,7 @@ export default function ComboboxScreen() {
             </ComboboxContent>
           </Combobox>
           <Text className="text-sm text-muted-foreground">
-            Selected: {framework || 'none'}
+            Selected: {framework?.label || 'none'}
           </Text>
         </VStack>
 
@@ -67,7 +72,7 @@ export default function ComboboxScreen() {
             </ComboboxTrigger>
             <ComboboxContent>
               {countries.map((c) => (
-                <ComboboxItem key={c.value} value={c.value}>
+                <ComboboxItem key={c.value} value={c.value} label={c.label}>
                   {c.label}
                 </ComboboxItem>
               ))}
@@ -75,7 +80,7 @@ export default function ComboboxScreen() {
             </ComboboxContent>
           </Combobox>
           <Text className="text-sm text-muted-foreground">
-            Selected: {country || 'none'}
+            Selected: {country?.label || 'none'}
           </Text>
         </VStack>
 
@@ -86,10 +91,10 @@ export default function ComboboxScreen() {
               <ComboboxInput placeholder="Pick a color..." />
             </ComboboxTrigger>
             <ComboboxContent>
-              <ComboboxItem value="red">Red</ComboboxItem>
-              <ComboboxItem value="green">Green</ComboboxItem>
-              <ComboboxItem value="blue">Blue</ComboboxItem>
-              <ComboboxItem value="purple">Purple</ComboboxItem>
+              <ComboboxItem value="red" label="Red">Red</ComboboxItem>
+              <ComboboxItem value="green" label="Green">Green</ComboboxItem>
+              <ComboboxItem value="blue" label="Blue">Blue</ComboboxItem>
+              <ComboboxItem value="purple" label="Purple">Purple</ComboboxItem>
               <ComboboxEmpty />
             </ComboboxContent>
           </Combobox>

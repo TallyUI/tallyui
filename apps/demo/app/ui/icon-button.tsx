@@ -1,7 +1,6 @@
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
 import { IconButton, Text, VStack, HStack, Icon } from '@tallyui/components';
-import { Settings, Trash2, MoreHorizontal, Plus, Bold, Italic, Underline } from 'lucide-react-native';
 
 export default function IconButtonScreen() {
   return (
@@ -13,27 +12,27 @@ export default function IconButtonScreen() {
           <HStack className="gap-2">
             <IconButton variant="default">
               <Icon>
-                <Settings />
+                <Text>S</Text>
               </Icon>
             </IconButton>
             <IconButton variant="destructive">
               <Icon>
-                <Trash2 />
+                <Text>X</Text>
               </Icon>
             </IconButton>
             <IconButton variant="outline">
               <Icon>
-                <MoreHorizontal />
+                <Text>...</Text>
               </Icon>
             </IconButton>
             <IconButton variant="secondary">
               <Icon>
-                <Plus />
+                <Text>+</Text>
               </Icon>
             </IconButton>
             <IconButton variant="ghost">
               <Icon>
-                <Settings />
+                <Text>S</Text>
               </Icon>
             </IconButton>
           </HStack>
@@ -44,17 +43,17 @@ export default function IconButtonScreen() {
           <HStack className="items-center gap-2">
             <IconButton size="sm">
               <Icon size="sm">
-                <Settings />
+                <Text>S</Text>
               </Icon>
             </IconButton>
             <IconButton size="md">
               <Icon>
-                <Settings />
+                <Text>S</Text>
               </Icon>
             </IconButton>
             <IconButton size="lg">
               <Icon size="lg">
-                <Settings />
+                <Text>S</Text>
               </Icon>
             </IconButton>
           </HStack>
@@ -65,17 +64,17 @@ export default function IconButtonScreen() {
           <HStack className="gap-1">
             <IconButton>
               <Icon>
-                <Bold />
+                <Text>B</Text>
               </Icon>
             </IconButton>
             <IconButton>
               <Icon>
-                <Italic />
+                <Text>I</Text>
               </Icon>
             </IconButton>
             <IconButton>
               <Icon>
-                <Underline />
+                <Text>U</Text>
               </Icon>
             </IconButton>
           </HStack>
@@ -86,17 +85,17 @@ export default function IconButtonScreen() {
           <HStack className="gap-2">
             <IconButton disabled>
               <Icon>
-                <Settings />
+                <Text>S</Text>
               </Icon>
             </IconButton>
             <IconButton variant="destructive" disabled>
               <Icon>
-                <Trash2 />
+                <Text>X</Text>
               </Icon>
             </IconButton>
             <IconButton variant="outline" disabled>
               <Icon>
-                <MoreHorizontal />
+                <Text>...</Text>
               </Icon>
             </IconButton>
           </HStack>

@@ -53,11 +53,15 @@ export default function DialogScreen() {
               <VStack className="gap-4">
                 <VStack className="gap-1.5">
                   <Label>Name</Label>
-                  <Input defaultValue="Jane Doe" />
+                  <Input>
+                    <Input.Field defaultValue="Jane Doe" />
+                  </Input>
                 </VStack>
                 <VStack className="gap-1.5">
                   <Label>Username</Label>
-                  <Input defaultValue="@janedoe" />
+                  <Input>
+                    <Input.Field defaultValue="@janedoe" />
+                  </Input>
                 </VStack>
               </VStack>
               <DialogFooter>

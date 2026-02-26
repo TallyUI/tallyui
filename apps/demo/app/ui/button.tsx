@@ -1,7 +1,6 @@
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
 import { Button, Text, VStack, Icon } from '@tallyui/components';
-import { Plus, Trash2, Settings } from 'lucide-react-native';
 
 export default function ButtonScreen() {
   return (
@@ -43,7 +42,7 @@ export default function ButtonScreen() {
           </Button>
           <Button size="icon">
             <Icon>
-              <Settings />
+              <Text>S</Text>
             </Icon>
           </Button>
         </VStack>
@@ -52,13 +51,13 @@ export default function ButtonScreen() {
           <Text className="text-lg font-bold">With Icons</Text>
           <Button variant="secondary" size="sm">
             <Icon>
-              <Plus />
+              <Text>+</Text>
             </Icon>
             <Text>Add Item</Text>
           </Button>
           <Button variant="destructive">
             <Icon>
-              <Trash2 />
+              <Text>X</Text>
             </Icon>
             <Text>Delete</Text>
           </Button>

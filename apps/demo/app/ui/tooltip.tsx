@@ -5,7 +5,6 @@ import {
   Tooltip, TooltipTrigger, TooltipContent,
   Button, Text, VStack, HStack, Icon,
 } from '@tallyui/components';
-import { Plus, Settings, Trash2, Info } from 'lucide-react-native';
 
 export default function TooltipScreen() {
   return (
@@ -30,7 +29,7 @@ export default function TooltipScreen() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <Icon><Plus /></Icon>
+                  <Icon><Text>+</Text></Icon>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -41,7 +40,7 @@ export default function TooltipScreen() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <Icon><Settings /></Icon>
+                  <Icon><Text>S</Text></Icon>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -52,7 +51,7 @@ export default function TooltipScreen() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <Icon><Trash2 /></Icon>
+                  <Icon><Text>X</Text></Icon>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -63,7 +62,7 @@ export default function TooltipScreen() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <Icon><Info /></Icon>
+                  <Icon><Text>i</Text></Icon>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -96,19 +95,19 @@ export default function TooltipScreen() {
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline"><Text>Left</Text></Button>
+                <Button variant="outline"><Text>Top (alt)</Text></Button>
               </TooltipTrigger>
-              <TooltipContent side="left">
-                <Text>Left tooltip</Text>
+              <TooltipContent side="top">
+                <Text>Top tooltip</Text>
               </TooltipContent>
             </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline"><Text>Right</Text></Button>
+                <Button variant="outline"><Text>Bottom (alt)</Text></Button>
               </TooltipTrigger>
-              <TooltipContent side="right">
-                <Text>Right tooltip</Text>
+              <TooltipContent side="bottom">
+                <Text>Bottom tooltip</Text>
               </TooltipContent>
             </Tooltip>
           </HStack>
