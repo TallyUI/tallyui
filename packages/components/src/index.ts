@@ -26,10 +26,14 @@ export {
   CartLine,
   CartTotal,
   CartPanel,
+  DiscountBadge,
+  CartNoteInput,
   type CartLineProps,
   type CartLineItem,
   type CartTotalProps,
   type CartPanelProps,
+  type DiscountBadgeProps,
+  type CartNoteInputProps,
 } from './cart';
 
 // Input components
@@ -41,6 +45,8 @@ export {
   type FilterChipProps,
   type FilterChipGroupProps,
   type ChipItem,
+  QuantityStepper,
+  type QuantityStepperProps,
 } from './input';
 
 // Customer components
@@ -63,4 +69,12 @@ export {
   type OrderSummaryLineProps,
   type OrderSummaryProps,
   type OrderSummaryPayment,
+  ChangeDisplay,
+  type ChangeDisplayProps,
 } from './checkout';
+
+// Order components
+export { OrderStatusBadge, type OrderStatusBadgeProps, type OrderStatus } from './order';
+
+// Settings components
+export { SettingsRow, type SettingsRowProps } from './settings';

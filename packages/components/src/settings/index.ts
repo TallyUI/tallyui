@@ -1,1 +1,1 @@
-// Settings components — populated as components are added
+export { SettingsRow, type SettingsRowProps } from './settings-row';
