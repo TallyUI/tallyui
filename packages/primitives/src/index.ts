@@ -1,3 +1,4 @@
+/// <reference path="./uniwind-env.d.ts" />
 // @tallyui/primitives
 // Headless, accessible, cross-platform UI primitives
 
@@ -33,3 +34,5 @@ export * as Toast from './toast';
 export * as Tooltip from './tooltip';
 export * as HoverCard from './hover-card';
 export * as Table from './table';
+export * as Text from './text';
+export { TextClassContext } from './text';

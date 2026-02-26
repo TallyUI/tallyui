@@ -1,26 +1,52 @@
 @theme {
-  /* Background hierarchy */
-  --color-bg: #f8f9fa;
-  --color-surface: #ffffff;
-  --color-surface-alt: #f3f4f6;
-
-  /* Text hierarchy */
+  /* Base */
+  --color-background: #f8f9fa;
   --color-foreground: #111827;
-  --color-muted: #6b7280;
-  --color-bright: #f9fafb;
 
-  /* Border */
-  --color-border: #e5e7eb;
+  /* Card */
+  --color-card: #ffffff;
+  --color-card-foreground: #111827;
 
-  /* Brand / Primary */
+  /* Popover */
+  --color-popover: #ffffff;
+  --color-popover-foreground: #111827;
+
+  /* Primary */
   --color-primary: #6366f1;
   --color-primary-foreground: #ffffff;
 
-  /* Status */
+  /* Secondary */
+  --color-secondary: #f3f4f6;
+  --color-secondary-foreground: #111827;
+
+  /* Muted */
+  --color-muted: #f3f4f6;
+  --color-muted-foreground: #6b7280;
+
+  /* Accent */
+  --color-accent: #f3f4f6;
+  --color-accent-foreground: #111827;
+
+  /* Destructive */
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+
+  /* Success */
   --color-success: #059669;
-  --color-danger: #dc2626;
+  --color-success-foreground: #ffffff;
+
+  /* Warning */
   --color-warning: #d97706;
+  --color-warning-foreground: #ffffff;
+
+  /* Info */
   --color-info: #3b82f6;
+  --color-info-foreground: #ffffff;
+
+  /* Border / Input / Ring */
+  --color-border: #e5e7eb;
+  --color-input: #e5e7eb;
+  --color-ring: #6366f1;
 
   /* Commerce */
   --color-price: #059669;
@@ -30,24 +56,56 @@
 @layer theme {
   :root {
     @variant dark {
-      --color-bg: #0d1117;
-      --color-surface: #161b22;
-      --color-surface-alt: #1c2128;
-
+      /* Base */
+      --color-background: #0d1117;
       --color-foreground: #c9d1d9;
-      --color-muted: #8b949e;
-      --color-bright: #f0f6fc;
 
-      --color-border: #30363d;
+      /* Card */
+      --color-card: #161b22;
+      --color-card-foreground: #c9d1d9;
 
+      /* Popover */
+      --color-popover: #1c2128;
+      --color-popover-foreground: #c9d1d9;
+
+      /* Primary */
       --color-primary: #818cf8;
       --color-primary-foreground: #1e1b4b;
 
-      --color-success: #3fb950;
-      --color-danger: #f85149;
-      --color-warning: #d29922;
-      --color-info: #58a6ff;
+      /* Secondary */
+      --color-secondary: #1c2128;
+      --color-secondary-foreground: #c9d1d9;
 
+      /* Muted */
+      --color-muted: #1c2128;
+      --color-muted-foreground: #8b949e;
+
+      /* Accent */
+      --color-accent: #1c2128;
+      --color-accent-foreground: #c9d1d9;
+
+      /* Destructive */
+      --color-destructive: #f85149;
+      --color-destructive-foreground: #ffffff;
+
+      /* Success */
+      --color-success: #3fb950;
+      --color-success-foreground: #0d1117;
+
+      /* Warning */
+      --color-warning: #d29922;
+      --color-warning-foreground: #0d1117;
+
+      /* Info */
+      --color-info: #58a6ff;
+      --color-info-foreground: #0d1117;
+
+      /* Border / Input / Ring */
+      --color-border: #30363d;
+      --color-input: #30363d;
+      --color-ring: #818cf8;
+
+      /* Commerce */
       --color-price: #3fb950;
       --color-sale: #f85149;
     }

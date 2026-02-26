@@ -25,9 +25,9 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string; text: string }
     text: 'text-success',
   },
   outofstock: {
-    badge: 'bg-danger/15',
-    dot: 'bg-danger',
-    text: 'text-danger',
+    badge: 'bg-destructive/15',
+    dot: 'bg-destructive',
+    text: 'text-destructive',
   },
   onbackorder: {
     badge: 'bg-warning/15',
@@ -37,7 +37,7 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string; text: string }
   unknown: {
     badge: 'bg-muted/15',
     dot: 'bg-muted',
-    text: 'text-muted',
+    text: 'text-muted-foreground',
   },
 };
 

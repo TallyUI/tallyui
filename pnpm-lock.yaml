@@ -274,6 +274,9 @@ importers:
       '@tallyui/theme':
         specifier: workspace:*
         version: link:../theme
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
       react:
         specifier: '>=18'
         version: 18.3.1

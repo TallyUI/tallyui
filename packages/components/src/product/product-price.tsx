@@ -28,7 +28,7 @@ export function ProductPrice({ doc, currencySymbol = '$', className, ...textProp
 
   if (!price) {
     return (
-      <Text className={cn('text-sm text-muted', className)} {...textProps}>
+      <Text className={cn('text-sm text-muted-foreground', className)} {...textProps}>
         -
       </Text>
     );

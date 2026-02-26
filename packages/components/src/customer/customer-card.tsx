@@ -19,8 +19,8 @@ export function CustomerCard({ doc, className, ...viewProps }: CustomerCardProps
   return (
     <View className={cn('gap-0.5', className)} {...viewProps}>
       <Text className="text-sm font-semibold text-foreground">{name}</Text>
-      {email && <Text className="text-xs text-muted">{email}</Text>}
-      {address && <Text className="text-xs text-muted">{address}</Text>}
+      {email && <Text className="text-xs text-muted-foreground">{email}</Text>}
+      {address && <Text className="text-xs text-muted-foreground">{address}</Text>}
     </View>
   );
 }

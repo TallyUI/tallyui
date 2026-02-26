@@ -17,7 +17,7 @@ export function PaymentMethodCard({ label, selected, onPress, icon, className, .
       <View
         className={cn(
           'flex-row items-center gap-3 rounded-lg border px-4 py-3',
-          selected ? 'border-primary bg-primary/5' : 'border-border bg-surface',
+          selected ? 'border-primary bg-primary/5' : 'border-border bg-card',
           className,
         )}
       >

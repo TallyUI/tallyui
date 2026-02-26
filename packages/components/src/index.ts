@@ -1,5 +1,8 @@
 /// <reference path="./uniwind-env.d.ts" />
 
+// Generic UI components
+export * from './ui';
+
 // Product components
 export {
   ProductTitle,

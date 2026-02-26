@@ -27,11 +27,11 @@ export function FilterChip({ label, active, onPress, className }: FilterChipProp
         <Pressable
           className={cn(
             'rounded-full px-3 py-1.5',
-            active ? 'bg-primary' : 'bg-surface-alt',
+            active ? 'bg-primary' : 'bg-accent',
             className,
           )}
         >
-          <Text className={cn('text-xs font-semibold', active ? 'text-primary-foreground' : 'text-muted')}>
+          <Text className={cn('text-xs font-semibold', active ? 'text-primary-foreground' : 'text-muted-foreground')}>
             {label}
           </Text>
         </Pressable>
@@ -100,10 +100,10 @@ export function FilterChipGroup({ chips, onChipPress, className, ...viewProps }:
             <Pressable
               className={cn(
                 'rounded-full px-3 py-1.5',
-                chip.active ? 'bg-primary' : 'bg-surface-alt',
+                chip.active ? 'bg-primary' : 'bg-accent',
               )}
             >
-              <Text className={cn('text-xs font-semibold', chip.active ? 'text-primary-foreground' : 'text-muted')}>
+              <Text className={cn('text-xs font-semibold', chip.active ? 'text-primary-foreground' : 'text-muted-foreground')}>
                 {chip.label}
               </Text>
             </Pressable>
