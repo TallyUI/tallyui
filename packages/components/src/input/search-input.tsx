@@ -13,9 +13,9 @@ export function SearchInput({ value, onChangeText, className, placeholder = 'Sea
   const labelId = useId();
 
   return (
-    <View className={cn('flex-row items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2', className)}>
+    <View className={cn('flex-row items-center gap-2 rounded-lg border border-border bg-card px-3 py-2', className)}>
       <Label.Root nativeID={labelId} asChild>
-        <Text className="text-muted">{'\u2315'}</Text>
+        <Text className="text-muted-foreground">{'\u2315'}</Text>
       </Label.Root>
       <TextInput
         role="searchbox"

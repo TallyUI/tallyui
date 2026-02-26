@@ -44,13 +44,13 @@ export function CartTotal({
   return (
     <View className={cn('gap-1.5 px-3 py-3', className)} {...viewProps}>
       <View className="flex-row items-center justify-between">
-        <Text className="text-sm text-muted">Subtotal</Text>
+        <Text className="text-sm text-muted-foreground">Subtotal</Text>
         <Text className="text-sm text-foreground">{currencySymbol}{subtotal.toFixed(2)}</Text>
       </View>
 
       {taxRate > 0 && (
         <View className="flex-row items-center justify-between">
-          <Text className="text-sm text-muted">{taxLabel}</Text>
+          <Text className="text-sm text-muted-foreground">{taxLabel}</Text>
           <Text className="text-sm text-foreground">{currencySymbol}{tax.toFixed(2)}</Text>
         </View>
       )}

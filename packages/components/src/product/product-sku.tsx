@@ -26,7 +26,7 @@ export function ProductSku({ doc, fallback = '—', className, ...textProps }: P
   const sku = getSku(doc);
 
   return (
-    <Text className={cn('text-xs text-muted', className)} {...textProps}>
+    <Text className={cn('text-xs text-muted-foreground', className)} {...textProps}>
       {sku ?? fallback}
     </Text>
   );

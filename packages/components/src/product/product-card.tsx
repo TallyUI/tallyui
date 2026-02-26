@@ -14,7 +14,7 @@ export interface ProductCardProps extends Omit<ViewProps, 'children'> {
 
 export function ProductCard({ doc, onPress, imageSize = 80, currencySymbol, className, ...viewProps }: ProductCardProps) {
   const content = (
-    <View className={cn('items-center gap-2 rounded-lg bg-surface p-3', className)} {...viewProps}>
+    <View className={cn('items-center gap-2 rounded-lg bg-card p-3', className)} {...viewProps}>
       <ProductImage doc={doc} size={imageSize} className="rounded-md" />
       <ProductTitle doc={doc} className="text-sm" numberOfLines={2} />
       <ProductPrice doc={doc} currencySymbol={currencySymbol} />

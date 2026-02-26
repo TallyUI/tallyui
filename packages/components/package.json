@@ -30,6 +30,9 @@
     "react": ">=18",
     "react-native": ">=0.74"
   },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1"
+  },
   "devDependencies": {
     "@types/react": ">=18"
   }
