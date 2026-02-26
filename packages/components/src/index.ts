@@ -24,6 +24,9 @@ export {
   CategoryNav,
   type CategoryNavProps,
   type CategoryItem,
+  ProductVariantPicker,
+  type ProductVariantPickerProps,
+  type VariantOption,
 } from './product';
 
 // Cart components
