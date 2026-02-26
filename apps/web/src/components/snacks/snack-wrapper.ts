@@ -97,3 +97,37 @@ export const snackDependencies = [
   '@tallyui/connector-woocommerce',
   '@tallyui/connector-medusa',
 ].join(',');
+
+/**
+ * Generates Expo Snack files for props-based component demos (no connector toggle).
+ *
+ * Use this for components that accept plain props rather than RxDB documents.
+ */
+export function createPropsSnackFiles(demoCode: string) {
+  const appCode = `import React from 'react';
+import { View, StyleSheet } from 'react-native';
+import Demo from './Demo';
+
+export default function App() {
+  return (
+    <View style={styles.container}>
+      <Demo />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: '#f8f9fa' },
+});`;
+
+  return {
+    'App.js': { type: 'CODE' as const, contents: appCode },
+    'Demo.js': { type: 'CODE' as const, contents: demoCode },
+  };
+}
+
+/** Standard npm dependencies for props-based Snack demos */
+export const propsSnackDependencies = [
+  '@tallyui/components',
+  '@tallyui/theme',
+].join(',');

@@ -1,0 +1,35 @@
+---
+title: OrderStatusBadge
+description: Colour-coded badge that indicates the current status of an order
+---
+
+## Import
+
+```tsx
+import { OrderStatusBadge } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OrderStatusBadge status="completed" />
+```
+
+Renders a small pill with a coloured dot and label. Each status maps to a distinct colour so cashiers can scan order states at a glance.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `status` | `OrderStatus` | required | One of `'pending'`, `'processing'`, `'completed'`, `'refunded'`, or `'cancelled'` |
+| `className` | `string` | — | Override container styles |
+
+### OrderStatus
+
+```ts
+type OrderStatus = 'pending' | 'processing' | 'completed' | 'refunded' | 'cancelled';
+```
+
+## Live demo
+
+<OrderStatusBadgeDemo />

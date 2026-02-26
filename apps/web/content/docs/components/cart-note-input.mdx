@@ -1,0 +1,32 @@
+---
+title: CartNoteInput
+description: Expandable text input for adding notes to a cart or order
+---
+
+## Import
+
+```tsx
+import { CartNoteInput } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+const [note, setNote] = useState('');
+<CartNoteInput value={note} onChangeText={setNote} />
+```
+
+Starts as a compact "Add note" link. Tapping it expands into a multiline text input. If the value already has content, the input starts expanded.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | Current note text |
+| `onChangeText` | `(text: string) => void` | required | Callback when text changes |
+| `placeholder` | `string` | `'Order note...'` | Placeholder text for the input |
+| `className` | `string` | — | Override container styles |
+
+## Live demo
+
+<CartNoteInputDemo />

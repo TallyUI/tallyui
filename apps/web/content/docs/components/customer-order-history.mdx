@@ -1,0 +1,35 @@
+---
+title: CustomerOrderHistory
+description: Scrollable list of a customer's past orders with custom rendering
+---
+
+## Import
+
+```tsx
+import { CustomerOrderHistory } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CustomerOrderHistory
+  orders={orders}
+  renderItem={(order) => <OrderRow order={order} />}
+  emptyState={<Text>No orders yet</Text>}
+/>
+```
+
+A scrollable container that maps over an array of orders and delegates rendering to `renderItem`. Shows a section header and falls back to an optional `emptyState` node when the list is empty.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `orders` | `any[]` | required | Array of order objects to display |
+| `renderItem` | `(order: any, index: number) => ReactNode` | required | Render function for each order row |
+| `emptyState` | `ReactNode` | --- | Shown when the orders array is empty |
+| `className` | `string` | --- | Override container styles |
+
+## Live demo
+
+<CustomerOrderHistoryDemo />

@@ -1,0 +1,35 @@
+---
+title: SettingsRow
+description: A single settings row with label, description, and an action slot
+---
+
+## Import
+
+```tsx
+import { SettingsRow } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<SettingsRow
+  label="Dark Mode"
+  description="Toggle the app's color scheme"
+  action={<Switch value={darkMode} onValueChange={setDarkMode} />}
+/>
+```
+
+Renders a horizontal row with a text label and optional description on the left, and an action widget on the right. Designed to be stacked inside a SettingsGroup.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `label` | `string` | required | Primary text label |
+| `description` | `string` | --- | Secondary description text below the label |
+| `action` | `ReactNode` | --- | Widget rendered on the right side (switch, button, etc.) |
+| `className` | `string` | --- | Override container styles |
+
+## Live demo
+
+<SettingsRowDemo />

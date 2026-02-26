@@ -100,6 +100,13 @@ export default function DemoScreen() {
               </Text>
             </Pressable>
           </Link>
+          <Link href="/pos" asChild>
+            <Pressable className="rounded-lg bg-secondary px-4 py-3">
+              <Text className="text-center text-[15px] font-semibold text-secondary-foreground">
+                POS Components
+              </Text>
+            </Pressable>
+          </Link>
         </View>
 
         {/* Connector picker */}

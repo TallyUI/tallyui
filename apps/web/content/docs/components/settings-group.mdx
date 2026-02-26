@@ -1,0 +1,34 @@
+---
+title: SettingsGroup
+description: Groups related settings rows under a titled section
+---
+
+## Import
+
+```tsx
+import { SettingsGroup } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<SettingsGroup title="Appearance" description="Customize how the app looks">
+  <SettingsRow label="Dark Mode" action={<Switch />} />
+  <SettingsRow label="Font Size" action={<Text>Medium</Text>} />
+</SettingsGroup>
+```
+
+Wraps a set of SettingsRow children in a bordered card with a section title and optional description. Use multiple groups on a settings screen to organize options into logical categories.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `title` | `string` | required | Section heading text |
+| `description` | `string` | --- | Secondary description below the title |
+| `children` | `ReactNode` | required | SettingsRow items or other content |
+| `className` | `string` | --- | Override container styles |
+
+## Live demo
+
+<SettingsGroupDemo />

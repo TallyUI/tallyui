@@ -1,0 +1,41 @@
+---
+title: SettingsLayout
+description: Responsive split or collapsible layout for settings navigation and content
+---
+
+## Import
+
+```tsx
+import { SettingsLayout } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<SettingsLayout
+  headerSlot={<Header />}
+  navSlot={<SettingsNav />}
+  contentSlot={<SettingsContent />}
+/>
+```
+
+On wide screens, renders a fixed-width navigation sidebar alongside the main content area. On narrow screens, collapses to a single-pane view with a "Menu" button that toggles the navigation overlay. The layout mode can be forced via the `layout` prop or left to respond automatically based on the breakpoint.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `navSlot` | `ReactNode` | required | Navigation menu content |
+| `contentSlot` | `ReactNode` | required | Main settings content |
+| `headerSlot` | `ReactNode` | --- | Optional top header bar |
+| `layout` | `'split' \| 'stacked'` | auto | Force a layout mode instead of using the breakpoint |
+| `breakpoint` | `number` | `768` | Width threshold for switching between split and stacked |
+| `className` | `string` | --- | Override container styles |
+
+## Slots
+
+| Slot | Purpose |
+|------|---------|
+| `navSlot` | Settings navigation menu (left sidebar in split, toggleable overlay in stacked) |
+| `contentSlot` | Main settings content area (right side in split, primary view in stacked) |
+| `headerSlot` | Top bar rendered above the layout with a bottom border |

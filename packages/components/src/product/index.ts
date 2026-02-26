@@ -5,3 +5,6 @@ export { ProductSku, type ProductSkuProps } from './product-sku';
 export { ProductStockBadge, type ProductStockBadgeProps } from './product-stock-badge';
 export { ProductCard, type ProductCardProps } from './product-card';
 export { ProductGrid, type ProductGridProps } from './product-grid';
+export { ProductList, type ProductListProps } from './product-list';
+export { CategoryNav, type CategoryNavProps, type CategoryItem } from './category-nav';
+export { ProductVariantPicker, type ProductVariantPickerProps, type VariantOption } from './product-variant-picker';

@@ -1,0 +1,54 @@
+---
+title: OrderDetail
+description: Full-page order view with line items, totals, and slots for customer, payment, and footer content
+---
+
+## Import
+
+```tsx
+import { OrderDetail } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OrderDetail
+  orderNumber="#1042"
+  status="completed"
+  lineItems={[{ name: 'Espresso', quantity: 2, total: '$9.00' }]}
+  subtotal="$9.00"
+  tax="$0.72"
+  total="$9.72"
+/>
+```
+
+Renders a scrollable detail view for a single order, including a status badge, itemised line items, and totals breakdown. Use the slot props to inject customer info, payment details, or action buttons.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `orderNumber` | `string` | required | Display label for the order |
+| `status` | `OrderStatus` | required | Status value passed to `OrderStatusBadge` |
+| `lineItems` | `OrderDetailLineItem[]` | required | Array of line items |
+| `subtotal` | `string` | required | Formatted subtotal |
+| `tax` | `string` | required | Formatted tax amount |
+| `total` | `string` | required | Formatted order total |
+| `customerSlot` | `ReactNode` | — | Content shown below the header |
+| `paymentSlot` | `ReactNode` | — | Payment info below the totals |
+| `footerSlot` | `ReactNode` | — | Actions or notes at the bottom |
+| `className` | `string` | — | Override container styles |
+
+### OrderDetailLineItem
+
+```ts
+interface OrderDetailLineItem {
+  name: string;
+  quantity: number;
+  total: string;
+}
+```
+
+## Live demo
+
+<OrderDetailDemo />

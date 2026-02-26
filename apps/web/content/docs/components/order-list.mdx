@@ -1,0 +1,42 @@
+---
+title: OrderList
+description: Scrollable list of orders with a render-prop pattern and optional header and empty state
+---
+
+## Import
+
+```tsx
+import { OrderList } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OrderList
+  items={orders}
+  renderItem={(order) => (
+    <OrderCard
+      orderNumber={order.number}
+      date={order.date}
+      total={order.total}
+      status={order.status}
+    />
+  )}
+/>
+```
+
+Wraps a scrollable list around any array of data. You supply a `renderItem` callback to control how each row looks, making it easy to pair with `OrderCard` or any custom row component.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `items` | `any[]` | required | Array of data objects to render |
+| `renderItem` | `(item: any, index: number) => ReactNode` | required | Render callback for each item |
+| `headerSlot` | `ReactNode` | — | Content rendered above the list |
+| `emptyState` | `ReactNode` | — | Shown when `items` is empty |
+| `className` | `string` | — | Override container styles |
+
+## Live demo
+
+<OrderListDemo />

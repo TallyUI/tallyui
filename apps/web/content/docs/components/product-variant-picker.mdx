@@ -1,0 +1,47 @@
+---
+title: ProductVariantPicker
+description: Displays variant option groups with selectable value chips
+---
+
+## Import
+
+```tsx
+import { ProductVariantPicker } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ProductVariantPicker
+  options={[
+    { name: 'Size', values: ['S', 'M', 'L'] },
+    { name: 'Color', values: ['Black', 'White'] },
+  ]}
+  selected={{ Size: 'M', Color: 'Black' }}
+  onSelect={(selection) => setSelected(selection)}
+/>
+```
+
+Renders each variant option as a labeled group of chip-style buttons. The active value in each group is highlighted. Selections are tracked as a key-value record.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `options` | `VariantOption[]` | required | Array of option groups to display |
+| `selected` | `Record<string, string>` | `{}` | Currently selected values keyed by option name |
+| `onSelect` | `(selection: Record<string, string>) => void` | — | Callback with updated selection record |
+| `className` | `string` | — | Override container styles |
+
+### VariantOption
+
+```ts
+interface VariantOption {
+  name: string;
+  values: string[];
+}
+```
+
+## Live demo
+
+<ProductVariantPickerDemo />

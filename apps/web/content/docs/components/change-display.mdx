@@ -1,0 +1,30 @@
+---
+title: ChangeDisplay
+description: Shows the change due to the customer after a cash payment
+---
+
+## Import
+
+```tsx
+import { ChangeDisplay } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ChangeDisplay tendered={50} total={42.5} />
+```
+
+Calculates and displays the change owed by subtracting the order total from the amount tendered. If the tendered amount is less than the total, change displays as zero.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `tendered` | `number` | required | Amount of cash the customer handed over |
+| `total` | `number` | required | Order total to pay |
+| `className` | `string` | — | Override container styles |
+
+## Live demo
+
+<ChangeDisplayDemo />

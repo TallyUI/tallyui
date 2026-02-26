@@ -1,0 +1,50 @@
+---
+title: RegisterSummary
+description: End-of-day summary showing cash drawer discrepancy and transaction totals
+---
+
+## Import
+
+```tsx
+import { RegisterSummary } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<RegisterSummary
+  expectedCash={500}
+  actualCash={495.50}
+  transactions={[
+    { method: 'Cash', count: 12, total: 245.00 },
+    { method: 'Card', count: 8, total: 312.50 },
+  ]}
+/>
+```
+
+Displays a cash drawer comparison with expected vs. actual amounts, highlights any discrepancy in green (balanced) or red (off), and lists transaction breakdowns by payment method.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `expectedCash` | `number` | required | Expected cash drawer amount |
+| `actualCash` | `number` | required | Actual counted cash amount |
+| `transactions` | `TransactionSummary[]` | required | Transaction totals grouped by payment method |
+| `headerSlot` | `ReactNode` | --- | Content rendered above the cash drawer section |
+| `footerSlot` | `ReactNode` | --- | Content rendered below the transactions section |
+| `className` | `string` | --- | Override container styles |
+
+### TransactionSummary
+
+```ts
+interface TransactionSummary {
+  method: string;
+  count: number;
+  total: number;
+}
+```
+
+## Live demo
+
+<RegisterSummaryDemo />

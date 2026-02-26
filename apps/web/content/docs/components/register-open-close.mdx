@@ -1,0 +1,38 @@
+---
+title: RegisterOpenClose
+description: Register open and close workflow with cash count and action button
+---
+
+## Import
+
+```tsx
+import { RegisterOpenClose } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<RegisterOpenClose
+  isOpen={false}
+  onOpen={() => openRegister()}
+  onClose={() => closeRegister()}
+/>
+```
+
+Provides the UI shell for opening or closing a cash register. Shows a contextual heading, an optional expected balance banner, and slot areas for a cash count input and notes field. The primary action button toggles between "Open Register" and "Close Register" based on the current state.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `isOpen` | `boolean` | required | Whether the register is currently open |
+| `onOpen` | `() => void` | --- | Called when the open button is pressed |
+| `onClose` | `() => void` | --- | Called when the close button is pressed |
+| `expectedBalance` | `number` | --- | Expected cash balance shown when closing |
+| `cashCountSlot` | `ReactNode` | --- | Slot for a CashCountInput or similar widget |
+| `notesSlot` | `ReactNode` | --- | Slot for a notes text input |
+| `className` | `string` | --- | Override container styles |
+
+## Live demo
+
+<RegisterOpenCloseDemo />
