@@ -5,8 +5,20 @@ export type MedusaProductCheckpoint = {
   updated_at: string;
 };
 
-const MEDUSA_PRODUCT_FIELDS =
-  '*variants,*variants.prices,*images,*categories,*tags,*options,*options.values';
+// The Admin API does not compute variants.inventory_quantity (only the Store
+// API does), so fetch the inventory levels the traits sum instead.
+const MEDUSA_PRODUCT_FIELDS = [
+  '*variants',
+  '*variants.prices',
+  '+variants.inventory_items.required_quantity',
+  '+variants.inventory_items.inventory.location_levels.stocked_quantity',
+  '+variants.inventory_items.inventory.location_levels.reserved_quantity',
+  '*images',
+  '*categories',
+  '*tags',
+  '*options',
+  '*options.values',
+].join(',');
 
 /**
  * Replication adapter for Medusa v2 products.
@@ -22,6 +34,8 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
         limit: String(batchSize),
         offset: String(lastCheckpoint?.offset ?? 0),
         fields: MEDUSA_PRODUCT_FIELDS,
+        // A stable order is what makes the offset + updated_at checkpoint valid.
+        order: 'updated_at',
       });
 
       if (lastCheckpoint?.updated_at) {

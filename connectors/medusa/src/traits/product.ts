@@ -2,15 +2,40 @@ import { minorUnitDigits } from '@tallyui/core';
 import type { ProductPrice, ProductTraits } from '@tallyui/core';
 
 /**
+ * Units a Medusa variant can sell now.
+ *
+ * The Store API computes `inventory_quantity`; the Admin API does not, so
+ * otherwise sum available stock (stocked minus reserved) across locations
+ * for each inventory item, divided by the units the variant needs of it,
+ * and take the scarcest item. Null when neither is present.
+ */
+function variantQuantity(variant: any): number | null {
+  if (variant?.inventory_quantity != null) return variant.inventory_quantity;
+  const items: any[] = variant?.inventory_items ?? [];
+  const known = items.filter((item) => item?.inventory?.location_levels);
+  if (!known.length) return null;
+  return Math.min(
+    ...known.map((item) => {
+      const available = item.inventory.location_levels.reduce(
+        (sum: number, level: any) =>
+          sum + Number(level?.stocked_quantity ?? 0) - Number(level?.reserved_quantity ?? 0),
+        0,
+      );
+      return Math.floor(available / Number(item.required_quantity || 1));
+    }),
+  );
+}
+
+/**
  * Medusa v2 product trait implementations.
  *
  * Key mapping differences from WooCommerce:
  * - Product name is `title` (not `name`)
- * - Price lives on `variants[0].prices[0].amount` (cents, integer)
+ * - Price lives on `variants[0].prices[0].amount` (major units: 12 = 12.00)
  * - Images use `url` (not `src`)
  * - SKU/barcode live on variants, not the product
  * - Categories use `name`, tags use `value`
- * - Stock is per-variant via `inventory_quantity`
+ * - Stock is per-variant: `inventory_quantity` (Store API) or inventory levels (Admin API)
  */
 export const medusaProductTraits: ProductTraits = {
   getId: (doc) => doc.id,
@@ -56,18 +81,17 @@ export const medusaProductTraits: ProductTraits = {
     const variant = doc.variants?.[0];
     if (!variant) return { status: 'unknown' };
     if (variant.manage_inventory === false) return { status: 'in_stock' };
-    const quantity = variant.inventory_quantity;
+    const quantity = variantQuantity(variant);
     if (quantity == null) return { status: 'unknown' };
     if (quantity > 0) return { status: 'in_stock', quantity };
     return { status: variant.allow_backorder ? 'backorder' : 'out_of_stock', quantity };
   },
 
   getPrice: (doc) => {
-    // Medusa stores prices as integers in smallest currency unit (cents)
+    // Medusa v2 amounts are already major units (not cents).
     const amount = doc.variants?.[0]?.prices?.[0]?.amount;
     if (amount == null) return undefined;
-    // Convert cents to decimal string (assumes 2 decimal places)
-    return (amount / 100).toFixed(2);
+    return Number(amount).toFixed(2);
   },
 
   getRegularPrice: (doc) => {
@@ -75,7 +99,7 @@ export const medusaProductTraits: ProductTraits = {
     // The pricing engine handles this via price lists
     const amount = doc.variants?.[0]?.prices?.[0]?.amount;
     if (amount == null) return undefined;
-    return (amount / 100).toFixed(2);
+    return Number(amount).toFixed(2);
   },
 
   getSalePrice: () => {
@@ -111,13 +135,13 @@ export const medusaProductTraits: ProductTraits = {
     if (variant.manage_inventory === false) return 'instock';
     if (variant.allow_backorder) return 'onbackorder';
 
-    const qty = variant.inventory_quantity;
+    const qty = variantQuantity(variant);
     if (qty == null) return 'unknown';
     return qty > 0 ? 'instock' : 'outofstock';
   },
 
   getStockQuantity: (doc) => {
-    return doc.variants?.[0]?.inventory_quantity ?? null;
+    return variantQuantity(doc.variants?.[0]);
   },
 
   hasVariants: (doc) => {

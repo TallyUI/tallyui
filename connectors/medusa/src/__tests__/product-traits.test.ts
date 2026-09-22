@@ -31,8 +31,8 @@ const fullProduct = {
       manage_inventory: true,
       allow_backorder: false,
       prices: [
-        { currency_code: 'usd', amount: 89900 },
-        { currency_code: 'eur', amount: 82500 },
+        { currency_code: 'usd', amount: 899 },
+        { currency_code: 'eur', amount: 825 },
       ],
     },
   ],
@@ -51,7 +51,7 @@ const multiVariantProduct = {
       inventory_quantity: 3,
       manage_inventory: true,
       allow_backorder: false,
-      prices: [{ currency_code: 'usd', amount: 89900 }],
+      prices: [{ currency_code: 'usd', amount: 899 }],
     },
     {
       id: 'var_02',
@@ -62,7 +62,7 @@ const multiVariantProduct = {
       inventory_quantity: 0,
       manage_inventory: true,
       allow_backorder: true,
-      prices: [{ currency_code: 'usd', amount: 109900 }],
+      prices: [{ currency_code: 'usd', amount: 1099 }],
     },
   ],
 };
@@ -81,7 +81,7 @@ const giftcardProduct = {
       inventory_quantity: null,
       manage_inventory: false,
       allow_backorder: false,
-      prices: [{ currency_code: 'usd', amount: 5000 }],
+      prices: [{ currency_code: 'usd', amount: 50 }],
     },
   ],
 };
@@ -118,7 +118,7 @@ describe('Medusa product traits', () => {
   });
 
   describe('getPrice', () => {
-    it('converts cents to decimal string', () => {
+    it('formats the major-unit amount as a decimal string', () => {
       expect(medusaProductTraits.getPrice(fullProduct)).toBe('899.00');
     });
 
@@ -296,5 +296,22 @@ describe('Medusa neutral price and stock', () => {
     expect(medusaProductTraits.getStock({ variants: [{ ...variant, manage_inventory: false }] }))
       .toEqual({ status: 'in_stock' });
     expect(medusaProductTraits.getStock({}).status).toBe('unknown');
+  });
+
+  it('derives quantity from Admin API inventory levels when inventory_quantity is absent', () => {
+    const adminVariant = {
+      manage_inventory: true,
+      allow_backorder: false,
+      inventory_items: [
+        { required_quantity: 1, inventory: { location_levels: [
+          { stocked_quantity: 10, reserved_quantity: 2 },
+          { stocked_quantity: 5, reserved_quantity: 0 },
+        ] } },
+        // A bundle part needed twice per unit: 9 available -> 4 units.
+        { required_quantity: 2, inventory: { location_levels: [{ stocked_quantity: 9, reserved_quantity: 0 }] } },
+      ],
+    };
+    expect(medusaProductTraits.getStock({ variants: [adminVariant] })).toEqual({ status: 'in_stock', quantity: 4 });
+    expect(medusaProductTraits.getStockQuantity({ variants: [adminVariant] })).toBe(4);
   });
 });
