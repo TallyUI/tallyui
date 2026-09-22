@@ -40,10 +40,10 @@ export function ProductImage({ doc, size = 60, style, showPlaceholder = false, c
       <View
         role="img"
         aria-label={name}
-        className={cn('items-center justify-center rounded bg-muted', className)}
+        className={cn('items-center justify-center rounded border border-border bg-primary/10', className)}
         style={{ width: size, height: size }}
       >
-        <Text className="font-semibold text-muted-foreground" style={{ fontSize: size * 0.4 }}>
+        <Text className="font-semibold text-primary" style={{ fontSize: size * 0.4 }}>
           {name.trim().charAt(0).toUpperCase() || '?'}
         </Text>
       </View>
@@ -54,7 +54,7 @@ export function ProductImage({ doc, size = 60, style, showPlaceholder = false, c
     <Image.Root
       source={{ uri: imageUrl }}
       alt={getName(doc)}
-      className={cn('rounded', className)}
+      className={cn('rounded border border-border bg-card', className)}
       style={[{ width: size, height: size }, style]}
       {...imageProps}
     />

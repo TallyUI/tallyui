@@ -68,7 +68,7 @@ export function ProductStockBadge({ doc, showQuantity = false, className, ...pro
       <View className={cn('h-1.5 w-1.5 rounded-full', styles.dot)} />
       <Text className={cn('text-xs font-semibold', styles.text)}>
         {label}
-        {showQuantity && quantity != null ? ` (${quantity})` : ''}
+        {status !== 'out_of_stock' && showQuantity && quantity != null ? ` (${quantity})` : ''}
       </Text>
     </HStack>
   );

@@ -49,14 +49,23 @@ export function ProductPrice({ doc, currency, locale, currencySymbol = '$', clas
 
   if (resolved.was) {
     return (
-      <Text className={cn('text-sm font-medium text-sale', className)} {...textProps}>
-        {format(resolved.current)} (was {format(resolved.was)})
+      <Text
+        className={cn('text-sm font-semibold text-foreground', className)}
+        {...textProps}
+        style={[{ fontVariant: ['tabular-nums'] }, textProps.style]}
+      >
+        {format(resolved.current)}{' '}
+        <Text className="text-muted-foreground line-through" style={{ textDecorationLine: 'line-through' }}>(was {format(resolved.was)})</Text>
       </Text>
     );
   }
 
   return (
-    <Text className={cn('text-sm font-medium text-price', className)} {...textProps}>
+    <Text
+      className={cn('text-sm font-medium text-foreground', className)}
+      {...textProps}
+      style={[{ fontVariant: ['tabular-nums'] }, textProps.style]}
+    >
       {format(resolved.current)}
     </Text>
   );

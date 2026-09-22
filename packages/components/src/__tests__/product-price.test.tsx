@@ -33,6 +33,21 @@ describe('ProductPrice', () => {
       </ConnectorProvider>
     );
     expect(screen.getByText('€1,299.00')).toBeDefined();
+    const price = screen.getByText('€1,299.00');
+    expect(price.style.fontVariant).toBe('tabular-nums');
+  });
+
+  it('merges tabular numerals with caller text styles', () => {
+    const connector = createTestConnector('woo');
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductPrice doc={wooDoc} style={[{ marginTop: 3 }, { marginBottom: 5 }]} />
+      </ConnectorProvider>
+    );
+    const price = screen.getByText('$1299.00');
+    expect(price.style.fontVariant).toBe('tabular-nums');
+    expect(price.style.marginTop).toBe('3px');
+    expect(price.style.marginBottom).toBe('5px');
   });
 
   it('shows a Medusa sale price list price with the base price it replaces', () => {
@@ -51,7 +66,10 @@ describe('ProductPrice', () => {
         <ProductPrice doc={{ ...medusaDoc, variants: [variant] }} locale="en-US" />
       </ConnectorProvider>
     );
-    expect(screen.getByText('€16.00 (was €20.00)')).toBeDefined();
+    const price = screen.getByText(/€16\.00/);
+    expect(price.textContent).toBe('€16.00 (was €20.00)');
+    const was = screen.getByText('(was €20.00)');
+    expect(was.style.textDecoration).toContain('line-through');
   });
 
   it('renders custom currency symbol', () => {
