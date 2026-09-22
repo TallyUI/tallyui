@@ -86,13 +86,14 @@ type ProductType = {
   options: string[][]
   /** Price range in major units (EUR). */
   price: [number, number]
+  /** Photos that actually show this kind of product; none means no image. */
+  images?: string[]
 }
 
 type Department = {
   name: string
   children: { name: string; types: ProductType[] }[]
   adjectives: string[]
-  images: string[]
 }
 
 const MEDUSA_IMG = 'https://medusa-public-images.s3.eu-west-1.amazonaws.com'
@@ -101,22 +102,15 @@ const DEPARTMENTS: Department[] = [
   {
     name: 'Apparel',
     adjectives: ['Classic', 'Relaxed', 'Heritage', 'Everyday', 'Organic', 'Heavyweight', 'Vintage'],
-    images: [
-      `${MEDUSA_IMG}/tee-black-front.png`,
-      `${MEDUSA_IMG}/tee-white-front.png`,
-      `${MEDUSA_IMG}/sweatshirt-vintage-front.png`,
-      `${MEDUSA_IMG}/sweatpants-gray-front.png`,
-      `${MEDUSA_IMG}/shorts-vintage-front.png`,
-    ],
     children: [
       { name: 'Tops', types: [
-        { noun: 'Tee', options: [['Size', 'Color'], ['Size']], price: [15, 35] },
-        { noun: 'Hoodie', options: [['Size', 'Color']], price: [45, 85] },
-        { noun: 'Sweatshirt', options: [['Size']], price: [40, 70] },
+        { noun: 'Tee', options: [['Size', 'Color'], ['Size']], price: [15, 35], images: [`${MEDUSA_IMG}/tee-black-front.png`, `${MEDUSA_IMG}/tee-white-front.png`] },
+        { noun: 'Hoodie', options: [['Size', 'Color']], price: [45, 85], images: [`${MEDUSA_IMG}/sweatshirt-vintage-front.png`] },
+        { noun: 'Sweatshirt', options: [['Size']], price: [40, 70], images: [`${MEDUSA_IMG}/sweatshirt-vintage-front.png`] },
       ] },
       { name: 'Bottoms', types: [
-        { noun: 'Joggers', options: [['Size']], price: [35, 65] },
-        { noun: 'Shorts', options: [['Size'], ['Size', 'Color']], price: [25, 45] },
+        { noun: 'Joggers', options: [['Size']], price: [35, 65], images: [`${MEDUSA_IMG}/sweatpants-gray-front.png`] },
+        { noun: 'Shorts', options: [['Size'], ['Size', 'Color']], price: [25, 45], images: [`${MEDUSA_IMG}/shorts-vintage-front.png`] },
       ] },
       { name: 'Accessories', types: [
         { noun: 'Cap', options: [[], ['Color']], price: [18, 30] },
@@ -132,10 +126,9 @@ const DEPARTMENTS: Department[] = [
   {
     name: 'Home & Kitchen',
     adjectives: ['Stoneware', 'Handmade', 'Nordic', 'Speckled', 'Enamel', 'Oak', 'Recycled'],
-    images: [`${MEDUSA_IMG}/coffee-mug.png`],
     children: [
       { name: 'Drinkware', types: [
-        { noun: 'Mug', options: [[], ['Finish']], price: [9, 24] },
+        { noun: 'Mug', options: [[], ['Finish']], price: [9, 24], images: [`${MEDUSA_IMG}/coffee-mug.png`] },
         { noun: 'Tumbler', options: [[]], price: [12, 28] },
       ] },
       { name: 'Candles', types: [
@@ -150,7 +143,6 @@ const DEPARTMENTS: Department[] = [
   {
     name: 'Pantry',
     adjectives: ['Single-Origin', 'Organic', 'Small-Batch', 'House', 'Fairtrade', 'Smoked'],
-    images: [],
     children: [
       { name: 'Coffee', types: [
         { noun: 'Coffee Beans', options: [['Weight']], price: [8, 22] },
@@ -167,7 +159,6 @@ const DEPARTMENTS: Department[] = [
   {
     name: 'Beauty',
     adjectives: ['Botanical', 'Sea Salt', 'Oat', 'Charcoal', 'Rosewater', 'Shea'],
-    images: [],
     children: [
       { name: 'Bath', types: [
         { noun: 'Bar Soap', options: [['Scent'], []], price: [5, 12] },
@@ -182,7 +173,6 @@ const DEPARTMENTS: Department[] = [
   {
     name: 'Stationery',
     adjectives: ['Dot Grid', 'Recycled', 'Linen', 'Pocket', 'Archival', 'Kraft'],
-    images: [],
     children: [
       { name: 'Paper', types: [
         { noun: 'Notebook', options: [[], ['Color']], price: [6, 24] },
@@ -197,7 +187,6 @@ const DEPARTMENTS: Department[] = [
   {
     name: 'Electronics',
     adjectives: ['Braided', 'Compact', 'Fast-Charge', 'Travel', 'Pro', 'Wireless'],
-    images: [],
     children: [
       { name: 'Cables', types: [{ noun: 'USB-C Cable', options: [['Length']], price: [8, 25] }] },
       { name: 'Power', types: [
@@ -359,7 +348,7 @@ export default async function seedDevStore({ container }: ExecArgs) {
     }
 
     const sku = `TLY-${String(index + 1).padStart(5, '0')}`
-    const image = dept.images.length && random() < 0.85 ? pick(dept.images) : undefined
+    const image = type.images?.length && random() < 0.85 ? pick(type.images) : undefined
     const collectionTitle = random() < 0.6 ? pick(COLLECTIONS) : undefined
 
     products.push({
@@ -488,7 +477,8 @@ export default async function seedDevStore({ container }: ExecArgs) {
           type: 'sale',
           status: 'active',
           prices,
-        }],
+          // `type` is accepted at runtime but missing from the 2.21.0 DTO type.
+        } as never],
       },
     })
     logger.info(`Sale price list: ${prices.length} prices over ${saleHandles.size} products`)

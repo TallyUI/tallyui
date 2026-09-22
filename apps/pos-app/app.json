@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "TallyUI POS",
+    "slug": "tallyui-pos",
+    "version": "0.0.0",
+    "scheme": "tallyui-pos",
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
