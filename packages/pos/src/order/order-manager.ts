@@ -116,6 +116,8 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
           getStockStatus: () => 'instock' as const,
           getStockQuantity: () => null,
           hasVariants: () => false,
+          isSellable: () => true,
+          getVariantCount: () => 1,
           getType: () => 'simple',
           getBarcode: () => undefined,
           getCategoryNames: () => [],

@@ -1,6 +1,35 @@
 import { describe, it, expect } from 'vitest';
 import { wooProductTraits } from '../traits/product';
 
+describe('WooCommerce isSellable / getVariantCount', () => {
+  it('allows published products', () => {
+    expect(wooProductTraits.isSellable({ status: 'publish' })).toBe(true);
+  });
+
+  it.each(['draft', 'pending', 'private'])('rejects %s products', (status) => {
+    expect(wooProductTraits.isSellable({ status })).toBe(false);
+  });
+
+  it('allows products with missing status', () => {
+    expect(wooProductTraits.isSellable({})).toBe(true);
+  });
+
+  it('counts one variant for simple products', () => {
+    expect(wooProductTraits.getVariantCount({ type: 'simple', variations: [1, 2] })).toBe(1);
+  });
+
+  it('counts the variations of variable products', () => {
+    expect(wooProductTraits.getVariantCount({ type: 'variable', variations: [1] })).toBe(1);
+    expect(wooProductTraits.getVariantCount({ type: 'variable', variations: [1, 2, 3] })).toBe(3);
+  });
+
+  it('handles empty and missing variation data', () => {
+    expect(wooProductTraits.getVariantCount({ type: 'variable', variations: [] })).toBe(0);
+    expect(wooProductTraits.getVariantCount({ type: 'variable' })).toBe(0);
+    expect(wooProductTraits.getVariantCount({})).toBe(1);
+  });
+});
+
 /**
  * Realistic WooCommerce product document, shaped like the REST API v3 response.
  */

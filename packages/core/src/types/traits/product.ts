@@ -72,6 +72,12 @@ export interface ProductTraits<Doc = any> {
   /** Whether this product has variants/variations */
   hasVariants: (doc: Doc) => boolean;
 
+  /** Whether the product may be sold at the register now: published/active, not a draft, archived or disabled. */
+  isSellable: (doc: Doc) => boolean;
+
+  /** Number of purchasable variants; 1 for a simple product. */
+  getVariantCount: (doc: Doc) => number;
+
   /** Product type (simple, variable, etc. — connector-specific but useful for UI hints) */
   getType: (doc: Doc) => string;
 

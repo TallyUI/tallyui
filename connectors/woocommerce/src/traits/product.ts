@@ -63,6 +63,10 @@ export const wooProductTraits: ProductTraits = {
 
   hasVariants: (doc) => doc.type === 'variable',
 
+  isSellable: (doc) => doc.status === undefined || doc.status === 'publish',
+
+  getVariantCount: (doc) => doc.type === 'variable' ? doc.variations?.length ?? 0 : 1,
+
   getType: (doc) => doc.type ?? 'simple',
 
   getBarcode: (doc) => doc.barcode || undefined,

@@ -148,6 +148,10 @@ export const medusaProductTraits: ProductTraits = {
     return (doc.variants?.length ?? 0) > 1;
   },
 
+  isSellable: (doc) => doc.status === undefined || doc.status === 'published',
+
+  getVariantCount: (doc) => doc.variants?.length ?? 1,
+
   getType: (doc) => {
     // Medusa doesn't have product types like WooCommerce
     // A gift card is the closest equivalent to a "type"

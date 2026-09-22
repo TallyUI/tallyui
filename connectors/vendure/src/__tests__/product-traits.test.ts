@@ -1,6 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { vendureProductTraits } from '../traits/product';
 
+describe('Vendure isSellable / getVariantCount', () => {
+  it('allows enabled products', () => {
+    expect(vendureProductTraits.isSellable({ enabled: true })).toBe(true);
+  });
+
+  it('rejects disabled products', () => {
+    expect(vendureProductTraits.isSellable({ enabled: false })).toBe(false);
+  });
+
+  it('allows products with missing enabled status', () => {
+    expect(vendureProductTraits.isSellable({})).toBe(true);
+  });
+
+  it('counts a single variant', () => {
+    expect(vendureProductTraits.getVariantCount({ variants: [{}] })).toBe(1);
+  });
+
+  it('counts several variants', () => {
+    expect(vendureProductTraits.getVariantCount({ variants: [{}, {}, {}] })).toBe(3);
+  });
+
+  it('distinguishes empty and missing variant data', () => {
+    expect(vendureProductTraits.getVariantCount({ variants: [] })).toBe(0);
+    expect(vendureProductTraits.getVariantCount({})).toBe(1);
+  });
+});
+
 /**
  * Realistic Vendure product document, shaped like the Admin GraphQL API response.
  */

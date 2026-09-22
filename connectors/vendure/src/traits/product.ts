@@ -101,6 +101,10 @@ export const vendureProductTraits: ProductTraits = {
 
   hasVariants: (doc) => (doc.variants?.length ?? 0) > 1,
 
+  isSellable: (doc) => doc.enabled !== false,
+
+  getVariantCount: (doc) => doc.variants?.length ?? 1,
+
   getType: (doc) => {
     // Vendure has no native product type field
     if ((doc.variants?.length ?? 0) > 1) return 'variable';

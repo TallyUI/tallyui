@@ -1,6 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { medusaProductTraits } from '../traits/product';
 
+describe('Medusa isSellable / getVariantCount', () => {
+  it('allows published products', () => {
+    expect(medusaProductTraits.isSellable({ status: 'published' })).toBe(true);
+  });
+
+  it.each(['draft', 'proposed', 'rejected'])('rejects %s products', (status) => {
+    expect(medusaProductTraits.isSellable({ status })).toBe(false);
+  });
+
+  it('allows products with missing status', () => {
+    expect(medusaProductTraits.isSellable({})).toBe(true);
+  });
+
+  it('counts a single variant', () => {
+    expect(medusaProductTraits.getVariantCount({ variants: [{}] })).toBe(1);
+  });
+
+  it('counts several variants', () => {
+    expect(medusaProductTraits.getVariantCount({ variants: [{}, {}, {}] })).toBe(3);
+  });
+
+  it('distinguishes empty and missing variant data', () => {
+    expect(medusaProductTraits.getVariantCount({ variants: [] })).toBe(0);
+    expect(medusaProductTraits.getVariantCount({})).toBe(1);
+  });
+});
+
 /**
  * Realistic MedusaJS v2 product document, shaped like the Admin API response.
  */

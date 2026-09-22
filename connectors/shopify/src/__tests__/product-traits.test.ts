@@ -1,6 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { shopifyProductTraits } from '../traits/product';
 
+describe('Shopify isSellable / getVariantCount', () => {
+  it('allows active products', () => {
+    expect(shopifyProductTraits.isSellable({ status: 'active' })).toBe(true);
+  });
+
+  it.each(['draft', 'archived'])('rejects %s products', (status) => {
+    expect(shopifyProductTraits.isSellable({ status })).toBe(false);
+  });
+
+  it('allows products with missing status', () => {
+    expect(shopifyProductTraits.isSellable({})).toBe(true);
+  });
+
+  it('counts a single variant', () => {
+    expect(shopifyProductTraits.getVariantCount({ variants: [{}] })).toBe(1);
+  });
+
+  it('counts several variants', () => {
+    expect(shopifyProductTraits.getVariantCount({ variants: [{}, {}, {}] })).toBe(3);
+  });
+
+  it('distinguishes empty and missing variant data', () => {
+    expect(shopifyProductTraits.getVariantCount({ variants: [] })).toBe(0);
+    expect(shopifyProductTraits.getVariantCount({})).toBe(1);
+  });
+});
+
 /**
  * Realistic Shopify product document, shaped like the Admin REST API response.
  */

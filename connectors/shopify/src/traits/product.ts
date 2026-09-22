@@ -101,6 +101,10 @@ export const shopifyProductTraits: ProductTraits = {
 
   hasVariants: (doc) => (doc.variants?.length ?? 0) > 1,
 
+  isSellable: (doc) => doc.status === undefined || doc.status === 'active',
+
+  getVariantCount: (doc) => doc.variants?.length ?? 1,
+
   getType: (doc) => doc.product_type || 'simple',
 
   getBarcode: (doc) => doc.variants?.[0]?.barcode || undefined,
