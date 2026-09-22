@@ -273,3 +273,30 @@ describe('Shopify product traits', () => {
     });
   });
 });
+
+describe('Shopify neutral price and stock', () => {
+  const variant = { price: '15.00', compare_at_price: '20.00', inventory_management: 'shopify',
+    inventory_policy: 'deny', inventory_quantity: 3 };
+
+  it('treats compare_at_price above price as base, with price as the sale', () => {
+    expect(shopifyProductTraits.getPrices({ variants: [variant] }, { currency: 'USD' })).toEqual([
+      { amount: 2000, currency: 'USD', kind: 'base' },
+      { amount: 1500, currency: 'USD', kind: 'sale' },
+    ]);
+  });
+
+  it('has only a base entry without a higher compare_at_price', () => {
+    expect(shopifyProductTraits.getPrices({ variants: [{ ...variant, compare_at_price: null }] }, { currency: 'USD' }))
+      .toEqual([{ amount: 1500, currency: 'USD', kind: 'base' }]);
+  });
+
+  it('maps inventory to the neutral stock model', () => {
+    expect(shopifyProductTraits.getStock({ variants: [variant] })).toEqual({ status: 'in_stock', quantity: 3 });
+    expect(shopifyProductTraits.getStock({ variants: [{ ...variant, inventory_quantity: 0 }] }))
+      .toEqual({ status: 'out_of_stock', quantity: 0 });
+    expect(shopifyProductTraits.getStock({ variants: [{ ...variant, inventory_quantity: 0, inventory_policy: 'continue' }] }))
+      .toEqual({ status: 'backorder', quantity: 0 });
+    expect(shopifyProductTraits.getStock({ variants: [{ ...variant, inventory_management: null }] }))
+      .toEqual({ status: 'in_stock' });
+  });
+});

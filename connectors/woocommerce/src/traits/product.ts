@@ -1,4 +1,12 @@
-import type { ProductTraits } from '@tallyui/core';
+import { moneyFromMajor } from '@tallyui/core';
+import type { ProductPrice, ProductTraits, StockStatus } from '@tallyui/core';
+
+/** WooCommerce's stock_status strings, mapped to the neutral enum. */
+const WOO_STOCK_STATUS: Record<string, StockStatus> = {
+  instock: 'in_stock',
+  outofstock: 'out_of_stock',
+  onbackorder: 'backorder',
+};
 
 /**
  * WooCommerce product trait implementations.
@@ -12,6 +20,22 @@ export const wooProductTraits: ProductTraits = {
   getName: (doc) => doc.name ?? '',
 
   getSku: (doc) => doc.sku || undefined,
+
+  getPrices: (doc, context) => {
+    // Woo prices are decimal strings with no currency; the store supplies it.
+    const currency = context?.currency ?? 'XXX';
+    const prices: ProductPrice[] = [];
+    const base = moneyFromMajor(doc.regular_price || doc.price, currency);
+    if (base) prices.push({ ...base, kind: 'base' });
+    const sale = doc.on_sale === true ? moneyFromMajor(doc.sale_price, currency) : undefined;
+    if (sale) prices.push({ ...sale, kind: 'sale' });
+    return prices;
+  },
+
+  getStock: (doc) => ({
+    status: WOO_STOCK_STATUS[doc.stock_status] ?? 'unknown',
+    quantity: doc.manage_stock === false ? undefined : doc.stock_quantity ?? undefined,
+  }),
 
   getPrice: (doc) => doc.price || undefined,
 

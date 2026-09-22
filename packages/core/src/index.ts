@@ -10,8 +10,17 @@ export type {
   ReplicationAdapter,
   SyncContext,
   ProductTraits,
+  TraitContext,
   CustomerTraits,
+  Money,
+  ProductPrice,
+  ResolvedPrice,
+  StockLevel,
+  StockStatus,
 } from './types';
+
+// Money helpers
+export { minorUnitDigits, moneyFromMajor, moneyToMajor, resolvePrice } from './money';
 
 // Context & hooks
 export {

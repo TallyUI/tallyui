@@ -1,4 +1,5 @@
-import type { ProductTraits } from '@tallyui/core';
+import { moneyFromMajor } from '@tallyui/core';
+import type { ProductPrice, ProductTraits } from '@tallyui/core';
 
 /**
  * Shopify product trait implementations.
@@ -17,6 +18,32 @@ export const shopifyProductTraits: ProductTraits = {
   getName: (doc) => doc.title ?? '',
 
   getSku: (doc) => doc.variants?.[0]?.sku || undefined,
+
+  getPrices: (doc, context) => {
+    const variant = doc.variants?.[0];
+    if (!variant) return [];
+    // REST variant prices are decimal strings in the shop currency.
+    const currency = context?.currency ?? 'XXX';
+    const price = moneyFromMajor(variant.price, currency);
+    const compareAt = moneyFromMajor(variant.compare_at_price, currency);
+    if (!price) return [];
+    // compare_at_price above price means `price` is a sale price.
+    if (compareAt && compareAt.amount > price.amount) {
+      return [{ ...compareAt, kind: 'base' }, { ...price, kind: 'sale' }] as ProductPrice[];
+    }
+    return [{ ...price, kind: 'base' }];
+  },
+
+  getStock: (doc) => {
+    const variant = doc.variants?.[0];
+    if (!variant) return { status: 'unknown' };
+    if (variant.inventory_management == null) return { status: 'in_stock' };
+    const quantity = variant.inventory_quantity ?? undefined;
+    if (quantity == null) return { status: 'unknown' };
+    if (quantity > 0) return { status: 'in_stock', quantity };
+    // inventory_policy 'continue' allows overselling.
+    return { status: variant.inventory_policy === 'continue' ? 'backorder' : 'out_of_stock', quantity };
+  },
 
   getPrice: (doc) => doc.variants?.[0]?.price || undefined,
 

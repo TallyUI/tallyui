@@ -103,6 +103,9 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
           getId: (d: any) => d.productId,
           getName: (d: any) => d.name,
           getSku: (d: any) => d.sku,
+          // OrderBuilder still prices lines from the legacy string accessor.
+          getPrices: () => [],
+          getStock: () => ({ status: 'in_stock' as const }),
           getPrice: (d: any) => String(d.price),
           getRegularPrice: (d: any) => String(d.price),
           getSalePrice: () => undefined,

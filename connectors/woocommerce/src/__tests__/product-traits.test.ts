@@ -189,3 +189,35 @@ describe('WooCommerce product traits', () => {
     });
   });
 });
+
+describe('WooCommerce neutral price and stock', () => {
+  const doc = { regular_price: '20.00', price: '15.99', sale_price: '15.99', on_sale: true,
+    stock_status: 'instock', manage_stock: true, stock_quantity: 4 };
+
+  it('maps regular/sale strings to a price list in the store currency', () => {
+    expect(wooProductTraits.getPrices(doc, { currency: 'eur' })).toEqual([
+      { amount: 2000, currency: 'EUR', kind: 'base' },
+      { amount: 1599, currency: 'EUR', kind: 'sale' },
+    ]);
+  });
+
+  it('has no sale entry when not on sale, and XXX without a store currency', () => {
+    expect(wooProductTraits.getPrices({ ...doc, on_sale: false })).toEqual([
+      { amount: 2000, currency: 'XXX', kind: 'base' },
+    ]);
+  });
+
+  it('maps stock_status strings to the neutral enum', () => {
+    expect(wooProductTraits.getStock(doc)).toEqual({ status: 'in_stock', quantity: 4 });
+    expect(wooProductTraits.getStock({ stock_status: 'outofstock', manage_stock: true, stock_quantity: 0 }))
+      .toEqual({ status: 'out_of_stock', quantity: 0 });
+    expect(wooProductTraits.getStock({ stock_status: 'onbackorder', manage_stock: false }).status)
+      .toBe('backorder');
+    expect(wooProductTraits.getStock({}).status).toBe('unknown');
+  });
+
+  it('leaves quantity undefined when stock is not managed', () => {
+    expect(wooProductTraits.getStock({ stock_status: 'instock', manage_stock: false, stock_quantity: null }))
+      .toEqual({ status: 'in_stock', quantity: undefined });
+  });
+});

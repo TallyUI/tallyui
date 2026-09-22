@@ -258,3 +258,43 @@ describe('Medusa product traits', () => {
     });
   });
 });
+
+describe('Medusa neutral price and stock', () => {
+  // Medusa v2 amounts are major units: 12 is €12.00.
+  const variant = { manage_inventory: true, allow_backorder: false, inventory_quantity: 7,
+    prices: [
+      { amount: 12, currency_code: 'eur', price_list_id: null },
+      { amount: 13.5, currency_code: 'usd', price_list_id: null },
+      { amount: 9, currency_code: 'eur', price_list_id: 'plist_1' },
+    ] };
+
+  it('maps variant prices to base entries in minor units, skipping price-list rows', () => {
+    expect(medusaProductTraits.getPrices({ variants: [variant] })).toEqual([
+      { amount: 1200, currency: 'EUR', kind: 'base' },
+      { amount: 1350, currency: 'USD', kind: 'base' },
+    ]);
+  });
+
+  it('adds a sale entry from a sale calculated_price', () => {
+    const withSale = { ...variant, calculated_price: { currency_code: 'eur', calculated_amount: 9.6,
+      original_amount: 12, calculated_price: { price_list_type: 'sale' } } };
+    expect(medusaProductTraits.getPrices({ variants: [withSale] })).toContainEqual(
+      { amount: 960, currency: 'EUR', kind: 'sale' },
+    );
+  });
+
+  it('returns an empty list without variants', () => {
+    expect(medusaProductTraits.getPrices({})).toEqual([]);
+  });
+
+  it('maps inventory to the neutral stock model', () => {
+    expect(medusaProductTraits.getStock({ variants: [variant] })).toEqual({ status: 'in_stock', quantity: 7 });
+    expect(medusaProductTraits.getStock({ variants: [{ ...variant, inventory_quantity: 0 }] }))
+      .toEqual({ status: 'out_of_stock', quantity: 0 });
+    expect(medusaProductTraits.getStock({ variants: [{ ...variant, inventory_quantity: 0, allow_backorder: true }] }))
+      .toEqual({ status: 'backorder', quantity: 0 });
+    expect(medusaProductTraits.getStock({ variants: [{ ...variant, manage_inventory: false }] }))
+      .toEqual({ status: 'in_stock' });
+    expect(medusaProductTraits.getStock({}).status).toBe('unknown');
+  });
+});

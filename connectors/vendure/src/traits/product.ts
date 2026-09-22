@@ -19,6 +19,32 @@ export const vendureProductTraits: ProductTraits = {
 
   getSku: (doc) => doc.variants?.[0]?.sku || undefined,
 
+  getPrices: (doc, context) => {
+    const variant = doc.variants?.[0];
+    // priceWithTax is already an integer in minor units.
+    if (variant?.priceWithTax == null) return [];
+    const currency = String(variant.currencyCode ?? context?.currency ?? 'XXX').toUpperCase();
+    // Vendure applies sales as order-level promotions, so there is no sale entry.
+    return [{ amount: variant.priceWithTax, currency, kind: 'base' }];
+  },
+
+  getStock: (doc) => {
+    const variant = doc.variants?.[0];
+    if (!variant) return { status: 'unknown' };
+    // Admin API: exact stockOnHand. Shop API: only the stockLevel string.
+    if (variant.stockOnHand != null) {
+      return {
+        status: variant.stockOnHand > 0 ? 'in_stock' : 'out_of_stock',
+        quantity: variant.stockOnHand,
+      };
+    }
+    if (variant.stockLevel === 'IN_STOCK' || variant.stockLevel === 'LOW_STOCK') {
+      return { status: 'in_stock' };
+    }
+    if (variant.stockLevel === 'OUT_OF_STOCK') return { status: 'out_of_stock' };
+    return { status: 'unknown' };
+  },
+
   getPrice: (doc) => {
     // Vendure stores prices as integers in smallest currency unit (cents)
     const amount = doc.variants?.[0]?.priceWithTax;

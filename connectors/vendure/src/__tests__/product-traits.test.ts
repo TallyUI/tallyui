@@ -246,3 +246,18 @@ describe('Vendure product traits', () => {
     });
   });
 });
+
+describe('Vendure neutral price and stock', () => {
+  it('passes integer priceWithTax through with the variant currency', () => {
+    expect(vendureProductTraits.getPrices({ variants: [{ priceWithTax: 1299, currencyCode: 'EUR' }] }))
+      .toEqual([{ amount: 1299, currency: 'EUR', kind: 'base' }]);
+    expect(vendureProductTraits.getPrices({})).toEqual([]);
+  });
+
+  it('prefers exact stockOnHand, then the stockLevel string', () => {
+    expect(vendureProductTraits.getStock({ variants: [{ stockOnHand: 5 }] })).toEqual({ status: 'in_stock', quantity: 5 });
+    expect(vendureProductTraits.getStock({ variants: [{ stockLevel: 'LOW_STOCK' }] })).toEqual({ status: 'in_stock' });
+    expect(vendureProductTraits.getStock({ variants: [{ stockLevel: 'OUT_OF_STOCK' }] })).toEqual({ status: 'out_of_stock' });
+    expect(vendureProductTraits.getStock({}).status).toBe('unknown');
+  });
+});
