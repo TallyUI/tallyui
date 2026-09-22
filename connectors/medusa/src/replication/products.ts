@@ -61,17 +61,20 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
       const products: any[] = data.products ?? [];
       const documents = products.map((p) => ({ ...p, _deleted: false }));
 
-      // Reset offset when batch is smaller than batchSize (end of page)
-      const nextOffset = products.length < batchSize
-        ? 0
-        : (lastCheckpoint?.offset ?? 0) + products.length;
-
-      const checkpoint: MedusaProductCheckpoint = products.length > 0
-        ? {
-            offset: nextOffset,
-            updated_at: products[products.length - 1].updated_at,
-          }
-        : lastCheckpoint ?? { offset: 0, updated_at: '' };
+      // While paging, the offset counts from the same updated_at filter the
+      // page was fetched with, so the filter must not move. Only when a short
+      // page shows the pass is done does the checkpoint advance to the newest
+      // updated_at and reset the offset. (Moving both at once skips a page's
+      // worth of products each time.)
+      const fullPage = products.length >= batchSize;
+      const checkpoint: MedusaProductCheckpoint = products.length === 0
+        ? lastCheckpoint ?? { offset: 0, updated_at: '' }
+        : fullPage
+          ? {
+              offset: (lastCheckpoint?.offset ?? 0) + products.length,
+              updated_at: lastCheckpoint?.updated_at ?? '',
+            }
+          : { offset: 0, updated_at: products[products.length - 1].updated_at };
 
       return { documents, checkpoint };
     },
