@@ -33,6 +33,7 @@ import {
   ProductStatus,
 } from '@medusajs/framework/utils'
 import type { ExecArgs } from '@medusajs/framework/types'
+import { productTitles } from "./seed-titles"
 
 const PRODUCT_COUNT = 2000
 const CUSTOMER_COUNT = 2000
@@ -312,6 +313,10 @@ export default async function seedDevStore({ container }: ExecArgs) {
   const leaves = DEPARTMENTS.flatMap((dept) =>
     dept.children.flatMap((child) => child.types.map((type) => ({ dept, child, type })))
   )
+  const titles = productTitles(Array.from({ length: PRODUCT_COUNT }, (_, i) => {
+    const { dept, type } = leaves[i % leaves.length]
+    return { department: dept.name, adjectives: dept.adjectives, noun: type.noun }
+  }))
 
   /** Stock plan per SKU, applied once the inventory items exist. */
   const stockPlan = new Map<string, number>()
@@ -324,7 +329,7 @@ export default async function seedDevStore({ container }: ExecArgs) {
     const handle = `${HANDLE_PREFIX}-${String(index + 1).padStart(4, '0')}`
     if (takenHandles.has(handle)) continue
 
-    const title = `${pick(dept.adjectives)} ${type.noun}`
+    const title = titles[index]
     const optionTitles = pick(type.options)
     const base = type.price[0] + Math.floor(random() * (type.price[1] - type.price[0] + 1))
     const eur = base - 0.01
