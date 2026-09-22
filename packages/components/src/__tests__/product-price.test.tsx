@@ -15,14 +15,43 @@ describe('ProductPrice', () => {
     expect(screen.getByText('$1299.00')).toBeDefined();
   });
 
-  it('renders Medusa price (converted from cents)', () => {
+  it('formats a Medusa price in the currency the backend gives', () => {
     const connector = createTestConnector('medusa');
     render(
       <ConnectorProvider connector={connector}>
-        <ProductPrice doc={medusaDoc} />
+        <ProductPrice doc={medusaDoc} locale="en-US" />
       </ConnectorProvider>
     );
-    expect(screen.getByText('$1299.00')).toBeDefined();
+    expect(screen.getByText('$1,299.00')).toBeDefined();
+  });
+
+  it('uses the provider store currency for backends whose documents omit it', () => {
+    const connector = createTestConnector('woo');
+    render(
+      <ConnectorProvider connector={connector} traitContext={{ currency: 'EUR' }}>
+        <ProductPrice doc={wooDoc} locale="en-US" />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('€1,299.00')).toBeDefined();
+  });
+
+  it('shows a Medusa sale price list price with the base price it replaces', () => {
+    const connector = createTestConnector('medusa');
+    const variant = {
+      ...medusaDoc.variants[0],
+      prices: [{ amount: 20, currency_code: 'eur' }],
+      calculated_price: {
+        currency_code: 'eur',
+        calculated_amount: 16,
+        calculated_price: { price_list_type: 'sale' },
+      },
+    };
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductPrice doc={{ ...medusaDoc, variants: [variant] }} locale="en-US" />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('€16.00 (was €20.00)')).toBeDefined();
   });
 
   it('renders custom currency symbol', () => {

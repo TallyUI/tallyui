@@ -20,7 +20,7 @@ export type {
 } from './types';
 
 // Money helpers
-export { minorUnitDigits, moneyFromMajor, moneyToMajor, resolvePrice } from './money';
+export { formatMoney, minorUnitDigits, moneyFromMajor, moneyToMajor, resolvePrice } from './money';
 
 // Context & hooks
 export {
@@ -28,5 +28,6 @@ export {
   useConnector,
   useProductTraits,
   useCustomerTraits,
+  useTraitContext,
 } from './context/connector-context';
 export type { ConnectorProviderProps } from './context/connector-context';

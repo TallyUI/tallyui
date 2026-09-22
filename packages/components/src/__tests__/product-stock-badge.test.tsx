@@ -55,4 +55,15 @@ describe('ProductStockBadge', () => {
     );
     expect(screen.getByText('Unknown')).toBeDefined();
   });
+
+  it('renders "On Backorder" for a Medusa variant with none left that allows backorders', () => {
+    const connector = createTestConnector('medusa');
+    const variant = { ...medusaDoc.variants[0], manage_inventory: true, allow_backorder: true, inventory_quantity: 0 };
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductStockBadge doc={{ ...medusaDoc, variants: [variant] }} showQuantity />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('On Backorder (0)')).toBeDefined();
+  });
 });

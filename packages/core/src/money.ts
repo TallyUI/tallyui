@@ -39,6 +39,27 @@ export function moneyToMajor(money: Money): number {
   return money.amount / 10 ** minorUnitDigits(money.currency);
 }
 
+const formatters = new Map<string, Intl.NumberFormat>();
+
+/**
+ * Formats Money for display with Intl, e.g. '€12.50' or '¥1,200'.
+ * Returns undefined for 'XXX' (currency unknown), so callers can fall back.
+ */
+export function formatMoney(money: Money, locale?: string): string | undefined {
+  if (money.currency === 'XXX') return undefined;
+  const key = `${money.currency}:${locale ?? ''}`;
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    try {
+      formatter = new Intl.NumberFormat(locale, { style: 'currency', currency: money.currency });
+    } catch {
+      return undefined;
+    }
+    formatters.set(key, formatter);
+  }
+  return formatter.format(moneyToMajor(money));
+}
+
 /**
  * Picks the price to charge from a price list, in `currency` if given, else in
  * the first currency listed. A sale entry wins over the base entry.

@@ -32,3 +32,6 @@ export type {
 // Receipt
 export { buildReceiptData } from './receipt';
 export type { ReceiptData, ReceiptLineItem, ReceiptConfig } from './receipt';
+
+// Product
+export { searchProducts } from './product';
