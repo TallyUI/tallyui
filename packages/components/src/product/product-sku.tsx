@@ -21,12 +21,13 @@ export interface ProductSkuProps extends Omit<TextProps, 'children'> {
  * ```
  */
 export function ProductSku({ doc, fallback = '—', className, ...textProps }: ProductSkuProps) {
-  const { getSku } = useProductTraits();
+  const { getSku, getVariantCount } = useProductTraits();
+  const count = getVariantCount(doc);
   const sku = getSku(doc);
 
   return (
     <Text className={cn('text-xs text-muted-foreground', className)} {...textProps}>
-      {sku ?? fallback}
+      {count > 1 ? `${count} variants` : sku ?? fallback}
     </Text>
   );
 }

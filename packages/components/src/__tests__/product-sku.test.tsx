@@ -15,7 +15,7 @@ describe('ProductSku', () => {
     expect(screen.getByText('EQ-ESP-001')).toBeDefined();
   });
 
-  it('renders Medusa SKU from variant', () => {
+  it('renders Medusa SKU for a single-variant product', () => {
     const connector = createTestConnector('medusa');
     render(
       <ConnectorProvider connector={connector}>
@@ -23,6 +23,18 @@ describe('ProductSku', () => {
       </ConnectorProvider>
     );
     expect(screen.getByText('EQ-ESP-001')).toBeDefined();
+  });
+
+  it('renders the variant count for a multi-variant Medusa product', () => {
+    const connector = createTestConnector('medusa');
+    const doc = { ...medusaDoc, variants: [{ sku: 'FIRST' }, { sku: 'SECOND' }, { sku: 'THIRD' }] };
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductSku doc={doc} />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('3 variants')).toBeDefined();
+    expect(screen.queryByText('FIRST')).toBeNull();
   });
 
   it('renders fallback when SKU is missing', () => {

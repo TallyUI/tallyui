@@ -41,9 +41,10 @@ export default function ProductsScreen() {
   const deferredQuery = useDeferredValue(query);
 
   const sorted = useMemo(
-    () => [...products].sort((a, b) => traits.getName(a).localeCompare(traits.getName(b))),
+    () => products.filter(traits.isSellable).sort((a, b) => traits.getName(a).localeCompare(traits.getName(b))),
     [products],
   );
+  const sellableCount = sorted.length;
   const results = useMemo(
     () => searchProducts(sorted, deferredQuery, traits),
     [sorted, deferredQuery],
@@ -65,7 +66,7 @@ export default function ProductsScreen() {
               <ActivityIndicator size="small" />
             ) : null}
             <Text className={state === 'error' ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
-              {connector.name} · {STATE_LABEL[state]} · {products.length.toLocaleString()} products
+              {connector.name} · {STATE_LABEL[state]} · {sellableCount.toLocaleString()} products
               {deferredQuery.trim() ? ` · ${results.length.toLocaleString()} matching` : ''}
               {error ? ` · ${error}` : ''}
             </Text>
