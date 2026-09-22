@@ -1,8 +1,28 @@
 import type { ReplicationAdapter } from '@tallyui/core';
 
+import { medusaProductSchema } from '../schemas/products';
+
+/** Top-level fields the RxDB schema declares; RxDB rejects any others. */
+const SCHEMA_FIELDS = Object.keys(medusaProductSchema.properties);
+
+/** Keeps only schema fields, so new Medusa API fields never fail validation. */
+function toDocument(product: Record<string, unknown>) {
+  const doc: Record<string, unknown> = {};
+  for (const field of SCHEMA_FIELDS) {
+    if (product[field] !== undefined) doc[field] = product[field];
+  }
+  return doc;
+}
+
+/**
+ * A pass pages through every product with updated_at >= `updated_at`, in id
+ * order, `offset` rows in. `pass_max` is the newest updated_at seen so far
+ * this pass, and becomes the next pass's `updated_at`.
+ */
 export type MedusaProductCheckpoint = {
   offset: number;
   updated_at: string;
+  pass_max?: string;
 };
 
 // The Admin API does not compute variants.inventory_quantity (only the Store
@@ -23,7 +43,7 @@ const MEDUSA_PRODUCT_FIELDS = [
 /**
  * Replication adapter for Medusa v2 products.
  *
- * Implements pull (offset-based pagination with updated_at filtering) and
+ * Implements pull (id-ordered offset pages within an updated_at window) and
  * push (POST to update individual products via Admin API). Designed for
  * use with RxDB's replicateRxCollection.
  */
@@ -34,8 +54,10 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
         limit: String(batchSize),
         offset: String(lastCheckpoint?.offset ?? 0),
         fields: MEDUSA_PRODUCT_FIELDS,
-        // A stable order is what makes the offset + updated_at checkpoint valid.
-        order: 'updated_at',
+        // Offsets need a total order. Many products share an updated_at
+        // (bulk writes), and Medusa sorts by one field only, so page by the
+        // unique id within the fixed updated_at window.
+        order: 'id',
       });
 
       if (lastCheckpoint?.updated_at) {
@@ -59,22 +81,26 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
 
       const data = await response.json();
       const products: any[] = data.products ?? [];
-      const documents = products.map((p) => ({ ...p, _deleted: false }));
+      const documents = products.map((p) => ({ ...toDocument(p), _deleted: false }));
 
-      // While paging, the offset counts from the same updated_at filter the
-      // page was fetched with, so the filter must not move. Only when a short
-      // page shows the pass is done does the checkpoint advance to the newest
-      // updated_at and reset the offset. (Moving both at once skips a page's
-      // worth of products each time.)
-      const fullPage = products.length >= batchSize;
+      // The updated_at window stays fixed for the whole pass, or the offset
+      // would count from a different set. A short page ends the pass; the
+      // next pass starts from the newest updated_at this pass saw.
+      const passMax = products.reduce(
+        (max, p) => (p.updated_at && p.updated_at > max ? p.updated_at : max),
+        lastCheckpoint?.pass_max ?? lastCheckpoint?.updated_at ?? '',
+      );
       const checkpoint: MedusaProductCheckpoint = products.length === 0
-        ? lastCheckpoint ?? { offset: 0, updated_at: '' }
-        : fullPage
+        ? lastCheckpoint?.pass_max
+          ? { offset: 0, updated_at: lastCheckpoint.pass_max }
+          : lastCheckpoint ?? { offset: 0, updated_at: '' }
+        : products.length >= batchSize
           ? {
               offset: (lastCheckpoint?.offset ?? 0) + products.length,
               updated_at: lastCheckpoint?.updated_at ?? '',
+              pass_max: passMax,
             }
-          : { offset: 0, updated_at: products[products.length - 1].updated_at };
+          : { offset: 0, updated_at: passMax };
 
       return { documents, checkpoint };
     },

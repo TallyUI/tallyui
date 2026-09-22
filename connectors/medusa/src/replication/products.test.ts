@@ -75,6 +75,15 @@ describe('medusaProductReplication.pull.handler', () => {
     expect(result.checkpoint.offset).toBe(25);
     // The filter stays put while paging, or the next offset would skip a page.
     expect(result.checkpoint.updated_at).toBe('');
+    expect(result.checkpoint.pass_max).toBe('2026-01-01T00:00:00Z');
+  });
+
+  it('pages in id order, since many products share an updated_at', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ products: [] }), { status: 200 }),
+    );
+    await medusaProductReplication.pull.handler(undefined, 10, context);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('order=id');
   });
 
   it('keeps the updated_at filter while paging through a full pass', async () => {
