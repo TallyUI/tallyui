@@ -1,3 +1,5 @@
+import type { Money } from '@tallyui/core';
+
 export interface Order {
   id: string;
   status: 'draft' | 'parked' | 'saved' | 'completed';
@@ -6,13 +8,15 @@ export interface Order {
   payments: Payment[];
   customer: CustomerSummary | null;
   note: string;
-  subtotal: number;
-  discountTotal: number;
-  taxTotal: number;
-  total: number;
-  balanceDue: number;
-  changeDue: number;
   currency: string;
+  pricesIncludeTax: boolean;
+  subtotalMinor: number;      // excl. tax, after line discounts
+  discountMinor: number;      // line + order discounts
+  taxMinor: number;           // rounded once per order
+  totalMinor: number;         // what the customer pays
+  paidMinor: number;
+  balanceDueMinor: number;    // max(0, total − paid)
+  changeDueMinor: number;     // max(0, paid − total)
   createdAt: string;
   updatedAt: string;
 }
@@ -24,31 +28,39 @@ export interface LineItem {
   name: string;
   sku: string;
   imageUrl?: string;
-  price: number;
-  quantity: number;
-  taxRate: number;
-  taxAmount: number;
+  unitPriceMinor: number;     // as sold, integer
+  quantity: number;           // integer >= 1
+  taxLines: LineTaxLine[];    // stacked rates on the same net base (ADR-040)
   discounts: AppliedDiscount[];
-  discountAmount: number;
-  lineTotal: number;
+  discountMinor: number;
+  netMinor: number;           // unitPriceMinor × quantity − discountMinor
+  taxMicros: string;          // Σ taxLines[].taxMicros, decimal string of a bigint
+}
+
+export interface LineTaxLine {
+  code?: string;
+  ratePpm: number;
+  taxMicros: string;          // exact, decimal string of a bigint
 }
 
 export interface Discount {
   type: 'percentage' | 'fixed';
-  value: number;
+  value: number;              // percentage: percent (e.g. 10); fixed: integer minor units
   label?: string;
   couponCode?: string;
 }
 
 export interface AppliedDiscount extends Discount {
   id: string;
-  amount: number;
+  amountMinor: number;
 }
 
 export interface Payment {
   id: string;
   method: string;
-  amount: number;
+  amountMinor: number;
+  tenderedMinor?: number;
+  changeMinor?: number;
   reference?: string;
 }
 
@@ -63,4 +75,15 @@ export interface PaymentMethod {
   label: string;
   icon?: string;
   requiresReference?: boolean;
+}
+
+export interface AddLineInput {
+  productId: string;
+  variantId?: string;
+  name: string;
+  sku?: string;
+  imageUrl?: string;
+  unitPrice: Money;           // currency must equal the order currency
+  quantity?: number;          // default 1
+  taxRates?: Array<{ code?: string; ratePpm: number }>; // default: [{ ratePpm: from taxContext }]
 }

@@ -1,7 +1,7 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
-import type { ProductTraits } from '@tallyui/core';
+import { resolvePrice, type ProductTraits } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
-import { calculateTax } from '../tax/calculate';
+import { taxMicros, roundMicrosToMinor } from '../tax/exact';
 import type {
   Order,
   LineItem,
@@ -9,11 +9,16 @@ import type {
   AppliedDiscount,
   Payment,
   CustomerSummary,
+  AddLineInput,
 } from './types';
 
 let nextId = 0;
 function uid(): string {
   return `${Date.now()}-${++nextId}`;
+}
+
+function roundHalfAway(n: number): number {
+  return Math.sign(n) * Math.round(Math.abs(n));
 }
 
 export interface OrderBuilderOptions {
@@ -25,6 +30,7 @@ export interface OrderBuilderOptions {
 export interface OrderBuilder {
   order$: Observable<Order>;
   addProduct(doc: any, traits: ProductTraits, options?: { variantId?: string; quantity?: number }): string;
+  addLine(input: AddLineInput): string;
   updateQuantity(lineId: string, quantity: number): void;
   removeItem(lineId: string): void;
   applyLineDiscount(lineId: string, discount: Discount): void;
@@ -39,7 +45,8 @@ export interface OrderBuilder {
 }
 
 export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
-  const { currency, taxContext } = options;
+  const { taxContext } = options;
+  const currency = options.currency.toUpperCase();
   const orderId = options.id ?? uid();
 
   let lineItems: LineItem[] = [];
@@ -52,64 +59,65 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const subject = new BehaviorSubject<Order>(buildOrder());
 
   function recalculateLine(line: LineItem): LineItem {
-    const gross = line.price * line.quantity;
+    const grossMinor = line.unitPriceMinor * line.quantity;
 
     // Recompute discount amounts from current gross
     const recalcedDiscounts = line.discounts.map((d) => ({
       ...d,
-      amount: computeDiscountAmount(d, gross),
+      amountMinor: computeDiscountAmount(d, grossMinor),
     }));
 
-    const discountAmount = recalcedDiscounts.reduce((sum, d) => sum + d.amount, 0);
-    const afterDiscount = gross - discountAmount;
-    const tax = calculateTax(afterDiscount, line.taxRate, taxContext.pricesIncludeTax);
+    const discountMinor = Math.min(grossMinor, recalcedDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
+    const netMinor = grossMinor - discountMinor;
+    const combinedRate = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
+    const inclusiveTax = taxContext.pricesIncludeTax ? taxMicros(netMinor, combinedRate, true) : 0n;
+    let allocatedTax = 0n;
+    const taxLines = line.taxLines.map((tax, index) => {
+      const micros = taxContext.pricesIncludeTax
+        ? index === line.taxLines.length - 1
+          ? inclusiveTax - allocatedTax
+          : combinedRate === 0 ? 0n : inclusiveTax * BigInt(tax.ratePpm) / BigInt(combinedRate)
+        : taxMicros(netMinor, tax.ratePpm, false);
+      allocatedTax += micros;
+      return { ...tax, taxMicros: micros.toString() };
+    });
 
     return {
       ...line,
       discounts: recalcedDiscounts,
-      discountAmount,
-      taxAmount: tax.taxAmount,
-      lineTotal: taxContext.pricesIncludeTax ? afterDiscount : afterDiscount + tax.taxAmount,
+      discountMinor,
+      netMinor,
+      taxLines,
+      taxMicros: allocatedTax.toString(),
     };
   }
 
   function computeDiscountAmount(discount: Discount, base: number): number {
     if (discount.type === 'percentage') {
-      return Math.round((base * discount.value) / 100 * 100) / 100;
+      return roundHalfAway(base * discount.value / 100);
     }
+    if (!Number.isInteger(discount.value)) throw new RangeError('Fixed discount must be integer minor units');
     return Math.min(discount.value, base);
   }
 
   function buildOrder(): Order {
-    const subtotalLines = lineItems.reduce((sum, li) => {
-      const lineGross = li.price * li.quantity - li.discountAmount;
-      if (taxContext.pricesIncludeTax) {
-        const tax = calculateTax(lineGross, li.taxRate, true);
-        return sum + tax.priceExclTax;
-      }
-      return sum + lineGross;
-    }, 0);
-
-    const subtotal = Math.round(subtotalLines * 100) / 100;
-
-    const recalcedOrderDiscounts = orderDiscounts.map((d) => ({
-      ...d,
-      amount: computeDiscountAmount(d, subtotal),
-    }));
-
-    const discountTotal =
-      lineItems.reduce((sum, li) => sum + li.discountAmount, 0) +
-      recalcedOrderDiscounts.reduce((sum, d) => sum + d.amount, 0);
-
-    const taxTotal = lineItems.reduce((sum, li) => sum + li.taxAmount, 0);
-
-    const total = lineItems.reduce((sum, li) => sum + li.lineTotal, 0) -
-      recalcedOrderDiscounts.reduce((sum, d) => sum + d.amount, 0);
-
-    const roundedTotal = Math.round(total * 100) / 100;
-    const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
-    const balanceDue = Math.max(0, Math.round((roundedTotal - paidAmount) * 100) / 100);
-    const changeDue = Math.max(0, Math.round((paidAmount - roundedTotal) * 100) / 100);
+    const netMinor = lineItems.reduce((sum, li) => sum + li.netMinor, 0);
+    const lineTaxMicros = lineItems.reduce((sum, li) => sum + BigInt(li.taxMicros), 0n);
+    const taxMinor = roundMicrosToMinor(lineTaxMicros);
+    const subtotalMinor = taxContext.pricesIncludeTax ? netMinor - taxMinor : netMinor;
+    const preOrderDiscountTotal = taxContext.pricesIncludeTax ? netMinor : subtotalMinor + taxMinor;
+    let remaining = preOrderDiscountTotal;
+    const recalcedOrderDiscounts = orderDiscounts.map((d) => {
+      const amountMinor = computeDiscountAmount(d, d.type === 'percentage' ? subtotalMinor : remaining);
+      remaining = Math.max(0, remaining - amountMinor);
+      return { ...d, amountMinor };
+    });
+    const orderDiscountMinor = recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0);
+    const discountMinor = lineItems.reduce((sum, li) => sum + li.discountMinor, 0) + orderDiscountMinor;
+    const totalMinor = Math.max(0, preOrderDiscountTotal - orderDiscountMinor);
+    const paidMinor = payments.reduce((sum, p) => sum + p.amountMinor, 0);
+    const balanceDueMinor = Math.max(0, totalMinor - paidMinor);
+    const changeDueMinor = Math.max(0, paidMinor - totalMinor);
 
     return {
       id: orderId,
@@ -119,13 +127,15 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       payments: [...payments],
       customer,
       note,
-      subtotal,
-      discountTotal: Math.round(discountTotal * 100) / 100,
-      taxTotal: Math.round(taxTotal * 100) / 100,
-      total: roundedTotal,
-      balanceDue,
-      changeDue,
+      subtotalMinor,
+      discountMinor,
+      taxMinor,
+      totalMinor,
+      paidMinor,
+      balanceDueMinor,
+      changeDueMinor,
       currency,
+      pricesIncludeTax: taxContext.pricesIncludeTax,
       createdAt: now,
       updatedAt: new Date().toISOString(),
     };
@@ -135,51 +145,67 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     subject.next(buildOrder());
   }
 
+  function addLine(input: AddLineInput): string {
+    const { productId, variantId, unitPrice } = input;
+    const quantity = input.quantity ?? 1;
+    if (unitPrice.currency !== currency) throw new RangeError('Line currency must match ' + currency);
+    if (!Number.isInteger(unitPrice.amount)) throw new RangeError('Price must be integer minor units');
+    if (!Number.isInteger(quantity) || quantity < 1) throw new RangeError('Quantity must be an integer >= 1');
+    const taxRates = input.taxRates ?? [{ ratePpm: Math.round(taxContext.getTaxRate() * 1_000_000) }];
+
+    const existing = lineItems.find(
+      (li) => li.productId === productId && li.variantId === variantId
+        && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length
+        && li.taxLines.every((tax, index) => tax.code === taxRates[index].code && tax.ratePpm === taxRates[index].ratePpm),
+    );
+
+    if (existing) {
+      lineItems = lineItems.map((li) =>
+        li.id === existing.id ? recalculateLine({ ...li, quantity: li.quantity + quantity }) : li,
+      );
+      emit();
+      return existing.id;
+    }
+
+    const lineId = uid();
+    const line: LineItem = {
+      id: lineId,
+      productId,
+      variantId,
+      name: input.name,
+      sku: input.sku ?? '',
+      imageUrl: input.imageUrl,
+      unitPriceMinor: unitPrice.amount,
+      quantity,
+      taxLines: taxRates.map((tax) => ({ ...tax, taxMicros: '0' })),
+      discounts: [],
+      discountMinor: 0,
+      netMinor: 0,
+      taxMicros: '0',
+    };
+
+    lineItems = [...lineItems, recalculateLine(line)];
+    emit();
+    return lineId;
+  }
+
   return {
     order$: subject.asObservable(),
+    addLine,
 
     addProduct(doc, traits, opts) {
       const productId = traits.getId(doc);
-      const variantId = opts?.variantId;
-      const quantity = opts?.quantity ?? 1;
-
-      const existing = lineItems.find(
-        (li) => li.productId === productId && li.variantId === variantId,
-      );
-
-      if (existing) {
-        existing.quantity += quantity;
-        lineItems = lineItems.map((li) =>
-          li.id === existing.id ? recalculateLine(existing) : li,
-        );
-        emit();
-        return existing.id;
-      }
-
-      const priceStr = traits.getPrice(doc);
-      const price = priceStr ? parseFloat(priceStr) : 0;
-      const taxRate = taxContext.getTaxRate();
-
-      const lineId = uid();
-      const line: LineItem = {
-        id: lineId,
+      const unitPrice = resolvePrice(traits.getPrices(doc, { currency }), currency)?.current;
+      if (!unitPrice) throw new Error('No price in ' + currency + ' for product ' + productId);
+      return addLine({
         productId,
-        variantId,
+        variantId: opts?.variantId,
         name: traits.getName(doc),
-        sku: traits.getSku(doc) ?? '',
+        sku: traits.getSku(doc),
         imageUrl: traits.getImageUrl(doc),
-        price,
-        quantity,
-        taxRate,
-        taxAmount: 0,
-        discounts: [],
-        discountAmount: 0,
-        lineTotal: 0,
-      };
-
-      lineItems = [...lineItems, recalculateLine(line)];
-      emit();
-      return lineId;
+        unitPrice,
+        quantity: opts?.quantity,
+      });
     },
 
     updateQuantity(lineId, quantity) {
@@ -202,11 +228,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     applyLineDiscount(lineId, discount) {
       lineItems = lineItems.map((li) => {
         if (li.id !== lineId) return li;
-        const base = li.price * li.quantity;
+        const base = li.unitPriceMinor * li.quantity;
         const applied: AppliedDiscount = {
           ...discount,
           id: uid(),
-          amount: computeDiscountAmount(discount, base),
+          amountMinor: computeDiscountAmount(discount, base),
         };
         return recalculateLine({ ...li, discounts: [...li.discounts, applied] });
       });
@@ -217,7 +243,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       const applied: AppliedDiscount = {
         ...discount,
         id: uid(),
-        amount: 0,
+        amountMinor: computeDiscountAmount(discount, 0),
       };
       orderDiscounts = [...orderDiscounts, applied];
       emit();

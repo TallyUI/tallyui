@@ -5,6 +5,8 @@ export type { OrderManager, OrderManagerOptions, ParkedOrderSummary } from './or
 export type {
   Order,
   LineItem,
+  LineTaxLine,
+  AddLineInput,
   Discount,
   AppliedDiscount,
   Payment,

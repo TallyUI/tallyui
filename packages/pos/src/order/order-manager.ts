@@ -8,7 +8,7 @@ export interface ParkedOrderSummary {
   id: string;
   customerName?: string;
   itemCount: number;
-  total: number;
+  totalMinor: number;
   parkedAt: string;
   source: 'local' | 'server';
 }
@@ -29,7 +29,8 @@ export interface OrderManager {
 }
 
 export function createOrderManager(options: OrderManagerOptions): OrderManager {
-  const { currency, taxContext, draftsCollection } = options;
+  const { taxContext, draftsCollection } = options;
+  const currency = options.currency.toUpperCase();
 
   let activeBuilder = createOrderBuilder({ currency, taxContext });
   const activeSubject = new BehaviorSubject<OrderBuilder>(activeBuilder);
@@ -42,7 +43,7 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
           id: json.id,
           customerName: json.customerName || undefined,
           itemCount: json.itemCount ?? 0,
-          total: json.total ?? 0,
+          totalMinor: json.total ?? 0,
           parkedAt: json.parkedAt ?? '',
           source: 'local' as const,
         };
@@ -67,7 +68,7 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
         data: JSON.stringify(snapshot),
         customerName: snapshot.customer?.name ?? '',
         itemCount: snapshot.lineItems.length,
-        total: snapshot.total,
+        total: snapshot.totalMinor,
         parkedAt: new Date().toISOString(),
       });
 
@@ -97,52 +98,25 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
         builder.setNote(savedOrder.note);
       }
 
-      // Restore line items using synthetic traits
+      // Restore line items and their discounts
       for (const line of savedOrder.lineItems) {
-        const syntheticTraits = {
-          getId: (d: any) => d.productId,
-          getName: (d: any) => d.name,
-          getSku: (d: any) => d.sku,
-          // OrderBuilder still prices lines from the legacy string accessor.
-          getPrices: () => [],
-          getStock: () => ({ status: 'in_stock' as const }),
-          getPrice: (d: any) => String(d.price),
-          getRegularPrice: (d: any) => String(d.price),
-          getSalePrice: () => undefined,
-          isOnSale: () => false,
-          getImageUrl: (d: any) => d.imageUrl,
-          getImageUrls: (d: any) => (d.imageUrl ? [d.imageUrl] : []),
-          getDescription: () => undefined,
-          getStockStatus: () => 'instock' as const,
-          getStockQuantity: () => null,
-          hasVariants: () => false,
-          isSellable: () => true,
-          getVariantCount: () => 1,
-          getType: () => 'simple',
-          getBarcode: () => undefined,
-          getCategoryNames: () => [],
-        };
-        builder.addProduct(line, syntheticTraits, {
+        const lineId = builder.addLine({
+          productId: line.productId,
           variantId: line.variantId,
+          name: line.name,
+          sku: line.sku,
+          imageUrl: line.imageUrl,
+          unitPrice: { amount: line.unitPriceMinor, currency },
           quantity: line.quantity,
+          taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })),
         });
-      }
-
-      // Restore line-level discounts
-      const resumedOrder = builder.getSnapshot();
-      for (const savedLine of savedOrder.lineItems) {
-        const newLine = resumedOrder.lineItems.find(
-          (li) => li.productId === savedLine.productId && li.variantId === savedLine.variantId,
-        );
-        if (newLine) {
-          for (const discount of savedLine.discounts) {
-            builder.applyLineDiscount(newLine.id, {
-              type: discount.type,
-              value: discount.value,
-              label: discount.label,
-              couponCode: discount.couponCode,
-            });
-          }
+        for (const discount of line.discounts) {
+          builder.applyLineDiscount(lineId, {
+            type: discount.type,
+            value: discount.value,
+            label: discount.label,
+            couponCode: discount.couponCode,
+          });
         }
       }
 
@@ -160,7 +134,9 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
       for (const payment of savedOrder.payments) {
         builder.addPayment({
           method: payment.method,
-          amount: payment.amount,
+          amountMinor: payment.amountMinor,
+          tenderedMinor: payment.tenderedMinor,
+          changeMinor: payment.changeMinor,
           reference: payment.reference,
         });
       }
