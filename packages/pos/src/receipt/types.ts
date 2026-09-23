@@ -2,8 +2,8 @@ export interface ReceiptLineItem {
   name: string;
   sku: string;
   quantity: number;
-  unitPrice: number;
-  lineTotal: number;
+  unitPriceMinor: number;
+  lineTotalMinor: number;
 }
 
 export interface ReceiptData {
@@ -16,16 +16,16 @@ export interface ReceiptData {
     register?: string;
   };
   lineItems: ReceiptLineItem[];
-  discounts: { label: string; amount: number }[];
+  discounts: { label: string; amountMinor: number }[];
   totals: {
-    subtotal: number;
-    discountTotal: number;
-    taxLines: { label: string; rate: number; amount: number }[];
-    taxTotal: number;
-    total: number;
+    subtotalMinor: number;
+    discountMinor: number;
+    taxLines: { label: string; code?: string; ratePpm: number; amountMinor: number }[];
+    taxMinor: number;
+    totalMinor: number;
   };
-  payments: { method: string; amount: number; reference?: string }[];
-  changeDue: number;
+  payments: { method: string; amountMinor: number; reference?: string }[];
+  changeDueMinor: number;
   footer: {
     note?: string;
     barcode?: string;
