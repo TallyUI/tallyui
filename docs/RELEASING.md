@@ -54,7 +54,10 @@ Check the result before committing:
   pending changeset is consumed.
 - All 11 packages have the same new version, and each one's `CHANGELOG.md`
   has an entry for it.
-- The private apps (`demo`, `web`, `mock-api`) are unchanged.
+- `demo` and `web` are unchanged, because changesets ignores them. The
+  private `mock-api` moves to the shared version with the rest (it falls
+  in the fixed `@tallyui/*` group) but is never published. That is
+  expected.
 - If `pnpm install --frozen-lockfile` failed after versioning, run
   `pnpm install` and commit `pnpm-lock.yaml` too.
 
