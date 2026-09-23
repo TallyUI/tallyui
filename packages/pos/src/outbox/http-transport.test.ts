@@ -35,6 +35,13 @@ describe('HTTP command transport', () => {
     expect(fetch).toHaveBeenCalledWith('http://x/tally/v1/commands', expect.objectContaining({ method: 'POST' }));
   });
 
+  it('strips 100000 trailing slashes', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ results: [] }));
+    const transport = createHttpCommandTransport({ baseUrl: 'http://x' + '/'.repeat(100000), getHeaders: () => ({}), fetch });
+    await transport.send(commands);
+    expect(fetch).toHaveBeenCalledWith('http://x/tally/v1/commands', expect.objectContaining({ method: 'POST' }));
+  });
+
   it.each([500, 409, 401, 429, 400])('retries status %i', async (status) => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ code: 'in_progress' }, { status }));
     const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });

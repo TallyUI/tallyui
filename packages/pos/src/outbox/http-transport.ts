@@ -10,7 +10,11 @@ export interface HttpTransportOptions {
 
 export function createHttpCommandTransport(options: HttpTransportOptions): CommandTransport {
   const fetch = options.fetch ?? globalThis.fetch;
-  const baseUrl = options.baseUrl.replace(/\/+$/, '');
+  let end = options.baseUrl.length;
+  while (end > 0 && options.baseUrl[end - 1] === '/') {
+    end--;
+  }
+  const baseUrl = options.baseUrl.slice(0, end);
   return {
     async send(batch) {
       const controller = new AbortController();
