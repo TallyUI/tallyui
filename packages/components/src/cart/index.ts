@@ -1,4 +1,4 @@
-export { CartLine, type CartLineProps, type CartLineItem } from './cart-line';
+export { CartLine, type CartLineProps } from './cart-line';
 export { CartTotal, type CartTotalProps } from './cart-total';
 export { CartPanel, type CartPanelProps } from './cart-panel';
 export { DiscountBadge, type DiscountBadgeProps } from './discount-badge';

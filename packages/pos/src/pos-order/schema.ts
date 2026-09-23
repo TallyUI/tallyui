@@ -36,14 +36,10 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     serverRefs: { type: 'object', properties: {
       orderId: { type: 'string' }, displayId: { type: 'string' }, totalMinor: { type: 'integer' },
     }, required: ['orderId', 'totalMinor'] },
-    warnings: { type: 'array', items: { oneOf: [
-      { type: 'object', properties: {
-        code: { type: 'string', enum: ['total_mismatch'] }, expectedMinor: { type: 'integer' }, serverMinor: { type: 'integer' },
-      }, required: ['code', 'expectedMinor', 'serverMinor'] },
-      { type: 'object', properties: {
-        code: { type: 'string', enum: ['insufficient_stock'] }, variantId: { type: 'string' }, quantity: { type: 'integer' },
-      }, required: ['code', 'variantId', 'quantity'] },
-    ] } },
+    warnings: { type: 'array', items: {
+      type: 'object', properties: { code: { type: 'string', maxLength: 64 } },
+      required: ['code'], additionalProperties: true,
+    } },
     error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'] },
   },
   required: ['id', 'createdAt', 'currency', 'pricesIncludeTax', 'lines', 'subtotalMinor', 'discountMinor', 'taxMinor',

@@ -42,3 +42,5 @@ export { searchProducts } from './product';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';
+export { createHttpCommandTransport, createOrderOutbox } from './outbox';
+export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OutboxState } from './outbox';

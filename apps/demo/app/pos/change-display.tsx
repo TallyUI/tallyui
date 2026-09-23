@@ -9,17 +9,17 @@ export default function ChangeDisplayScreen() {
       <ScrollView className="flex-1 bg-background" contentContainerClassName="p-4 gap-6">
         <View className="gap-3">
           <Text className="text-lg font-bold">Change Due</Text>
-          <ChangeDisplay tendered={50} total={23.47} />
+          <ChangeDisplay change={{ amount: 2653, currency: 'EUR' }} />
         </View>
 
         <View className="gap-3">
           <Text className="text-lg font-bold">Exact Amount</Text>
-          <ChangeDisplay tendered={23.47} total={23.47} />
+          <ChangeDisplay change={{ amount: 0, currency: 'EUR' }} />
         </View>
 
         <View className="gap-3">
-          <Text className="text-lg font-bold">Underpaid (clamped to 0)</Text>
-          <ChangeDisplay tendered={10} total={23.47} />
+          <Text className="text-lg font-bold">Underpaid (zero change supplied)</Text>
+          <ChangeDisplay change={{ amount: 0, currency: 'EUR' }} />
         </View>
       </ScrollView>
     </>

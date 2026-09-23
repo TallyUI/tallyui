@@ -1,60 +1,45 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { ConnectorProvider } from '@tallyui/core';
 import { CartTotal } from '../cart/cart-total';
-import { createTestConnector, wooDoc } from './helpers';
 
-const cartItems = [
-  { doc: wooDoc, quantity: 2 },
-  { doc: { ...wooDoc, name: 'Milk Frother', price: '49.99' }, quantity: 1 },
-];
+const subtotal = { amount: 3000, currency: 'EUR' };
+const total = { amount: 3451, currency: 'EUR' };
 
 describe('CartTotal', () => {
-  it('renders subtotal and total labels', () => {
-    const connector = createTestConnector('woo');
-    const { container } = render(
-      <ConnectorProvider connector={connector}>
-        <CartTotal items={cartItems} />
-      </ConnectorProvider>
-    );
+  it('renders supplied subtotal and total without calculating them', () => {
+    render(<CartTotal subtotal={subtotal} total={total} locale="en" />);
     expect(screen.getByText('Subtotal')).toBeDefined();
     expect(screen.getByText('Total')).toBeDefined();
-    // subtotal and total both $2647.99 (no tax), so 2 elements
-    expect(screen.getAllByText('$2647.99')).toHaveLength(2);
+    expect(screen.getByText('€30.00')).toBeDefined();
+    expect(screen.getByText('€34.51')).toBeDefined();
+    expect(screen.queryByText('Discount')).toBeNull();
   });
 
-  it('renders tax when taxRate is provided', () => {
-    const connector = createTestConnector('woo');
-    render(
-      <ConnectorProvider connector={connector}>
-        <CartTotal items={cartItems} taxRate={0.1} />
-      </ConnectorProvider>
-    );
-    expect(screen.getByText('Tax')).toBeDefined();
-    expect(screen.getByText('$264.80')).toBeDefined();
-    expect(screen.getByText('$2912.79')).toBeDefined();
-  });
-
-  it('uses custom currency symbol and tax label', () => {
-    const connector = createTestConnector('woo');
-    render(
-      <ConnectorProvider connector={connector}>
-        <CartTotal items={cartItems} currencySymbol="€" taxRate={0.2} taxLabel="VAT" />
-      </ConnectorProvider>
-    );
+  it('renders each supplied tax row', () => {
+    render(<CartTotal subtotal={subtotal} total={total} locale="en" taxLines={[
+      { label: 'VAT', amount: { amount: 400, currency: 'EUR' } },
+      { label: 'Local tax', amount: { amount: 51, currency: 'EUR' } },
+    ]} />);
     expect(screen.getByText('VAT')).toBeDefined();
-    // Multiple euro amounts present — just check at least one exists
-    expect(screen.getAllByText(/€/).length).toBeGreaterThan(0);
+    expect(screen.getByText('€4.00')).toBeDefined();
+    expect(screen.getByText('Local tax')).toBeDefined();
+    expect(screen.getByText('€0.51')).toBeDefined();
+    expect(screen.getByText('€34.51')).toBeDefined();
   });
 
-  it('handles empty cart', () => {
-    const connector = createTestConnector('woo');
-    render(
-      <ConnectorProvider connector={connector}>
-        <CartTotal items={[]} />
-      </ConnectorProvider>
-    );
-    // subtotal and total both $0.00
-    expect(screen.getAllByText('$0.00')).toHaveLength(2);
+  it('shows positive discounts with a minus sign', () => {
+    render(<CartTotal subtotal={subtotal} total={total} discount={{ amount: 250, currency: 'EUR' }} locale="en" />);
+    expect(screen.getByText('Discount')).toBeDefined();
+    expect(screen.getByText('−€2.50')).toBeDefined();
+  });
+
+  it.each([0, -100])('omits a discount of %i', (amount) => {
+    render(<CartTotal subtotal={subtotal} total={total} discount={{ amount, currency: 'EUR' }} locale="en" />);
+    expect(screen.queryByText('Discount')).toBeNull();
+  });
+
+  it('renders supplied zero amounts', () => {
+    render(<CartTotal subtotal={{ amount: 0, currency: 'EUR' }} total={{ amount: 0, currency: 'EUR' }} locale="en" />);
+    expect(screen.getAllByText('€0.00')).toHaveLength(2);
   });
 });

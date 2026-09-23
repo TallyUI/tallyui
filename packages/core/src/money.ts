@@ -34,6 +34,18 @@ export function moneyFromMajor(
   return { amount: Math.round(major * 10 ** minorUnitDigits(code)), currency: code };
 }
 
+/** Parses trimmed decimal text into safe integer minor units, without rounding. */
+export function moneyFromDecimalString(text: string, currency: string): Money | undefined {
+  const trimmed = text.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return undefined;
+  const code = currency.toUpperCase();
+  const digits = minorUnitDigits(code);
+  const [whole, fraction = ''] = trimmed.split('.');
+  if (fraction.length > digits) return undefined;
+  const amount = Number(whole) * 10 ** digits + Number(fraction.padEnd(digits, '0'));
+  return Number.isSafeInteger(amount) ? { amount, currency: code } : undefined;
+}
+
 /** Converts Money back to a major-unit number, e.g. for Intl formatting. */
 export function moneyToMajor(money: Money): number {
   return money.amount / 10 ** minorUnitDigits(money.currency);
