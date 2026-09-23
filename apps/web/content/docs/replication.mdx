@@ -40,13 +40,11 @@ replicationState.error$.subscribe((error) => {
 
 ## How It Works
 
-Each connector's `ReplicationAdapter` provides two handlers:
+Each connector's `ReplicationAdapter` provides a **pull** handler, which fetches documents changed since the last checkpoint. The checkpoint format is connector-specific -- WooCommerce uses a modified date, Shopify uses cursor pagination, Medusa uses offset + date, Vendure uses GraphQL skip + date.
 
-**Pull** fetches documents changed since the last checkpoint. The checkpoint format is connector-specific -- WooCommerce uses a modified date, Shopify uses cursor pagination, Medusa uses offset + date, Vendure uses GraphQL skip + date.
+Product replication is **pull-only**. Catalogue data is owned by the server, so the POS never writes products back. Data the POS creates, such as orders, will travel through a separate command outbox with idempotent writes (see the programme plan in `docs/plans/`). `ReplicationAdapter` keeps an optional `push` for that work.
 
-**Push** sends local changes to the remote API. If the server rejects a change (conflict), the adapter returns the server's version, and RxDB overwrites the local copy. Server always wins.
-
-RxDB's `replicateRxCollection` orchestrates the cycle: pull remote changes, apply locally, push local changes, handle conflicts, repeat.
+RxDB's `replicateRxCollection` orchestrates the cycle: pull remote changes, apply them locally, repeat.
 
 ## Storage
 
@@ -116,30 +114,10 @@ const myProductReplication: ReplicationAdapter<any, MyCheckpoint> = {
       };
     },
   },
-
-  push: {
-    async handler(changeRows, context) {
-      const conflicts = [];
-
-      for (const row of changeRows) {
-        const doc = row.newDocumentState;
-        const res = await fetch(`${context.baseUrl}/products/${doc.id}`, {
-          method: 'PUT',
-          headers: { ...context.headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify(doc),
-        });
-
-        // Server rejected -- return its version as conflict
-        if (!res.ok && row.assumedMasterState) {
-          conflicts.push({ ...row.assumedMasterState, _deleted: false });
-        }
-      }
-
-      return conflicts;
-    },
-  },
 };
 ```
+
+Product adapters have no `push`: the catalogue is server-owned, and the POS never writes products.
 
 ## startReplication Options
 

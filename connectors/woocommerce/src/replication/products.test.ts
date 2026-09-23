@@ -10,6 +10,10 @@ const context: SyncContext = {
 };
 
 describe('wooProductReplication.pull.handler', () => {
+  it('is pull-only: products are server-owned', () => {
+    expect(wooProductReplication.push).toBeUndefined();
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -94,96 +98,5 @@ describe('wooProductReplication.pull.handler', () => {
     const result = await wooProductReplication.pull.handler(undefined, 100, context);
 
     expect(result.checkpoint.id).toBe('42');
-  });
-});
-
-describe('wooProductReplication.push.handler', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('sends PUT for updates', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({}), { status: 200 }),
-    );
-
-    const conflicts = await wooProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1', name: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: '1', name: 'Old', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(0);
-    const [url, opts] = (globalThis.fetch as any).mock.calls[0];
-    expect(url).toContain('/products/1');
-    expect(opts.method).toBe('PUT');
-  });
-
-  it('sends POST for creates', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({}), { status: 200 }),
-    );
-
-    const conflicts = await wooProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1', name: 'New Product', _deleted: false } as any,
-        // No assumedMasterState = create
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(0);
-    const [, opts] = (globalThis.fetch as any).mock.calls[0];
-    expect(opts.method).toBe('POST');
-  });
-
-  it('returns conflicts on server error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response('conflict', { status: 409 }),
-    );
-
-    const conflicts = await wooProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1', name: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: '1', name: 'Server Version', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(1);
-    expect(conflicts[0].name).toBe('Server Version');
-  });
-
-  it('returns conflicts on network failure', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Network error'));
-
-    const conflicts = await wooProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1', name: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: '1', name: 'Server Version', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(1);
-  });
-
-  it('does not return conflict for creates that fail', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response('error', { status: 500 }),
-    );
-
-    const conflicts = await wooProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1', name: 'New Product', _deleted: false } as any,
-        // No assumedMasterState = create, so no conflict to report
-      }],
-      context,
-    );
-
-    // Creates without assumedMasterState don't produce conflicts
-    expect(conflicts).toHaveLength(0);
   });
 });

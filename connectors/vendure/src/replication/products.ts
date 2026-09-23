@@ -40,15 +40,6 @@ const PRODUCT_LIST_QUERY = `
   }
 `;
 
-const UPDATE_PRODUCT_MUTATION = `
-  mutation UpdateProduct($input: UpdateProductInput!) {
-    updateProduct(input: $input) {
-      id
-      updatedAt
-    }
-  }
-`;
-
 /**
  * Helper to execute a GraphQL query against the Vendure Admin API.
  */
@@ -74,9 +65,9 @@ async function gql(
 /**
  * Replication adapter for Vendure products.
  *
- * Implements pull (GraphQL query with offset pagination and updatedAt
- * filtering) and push (GraphQL updateProduct mutation). Designed for
- * use with RxDB's replicateRxCollection.
+ * Pull-only (GraphQL query with offset pagination and updatedAt filtering)
+ * for RxDB's replicateRxCollection. Catalogue data is server-owned; the
+ * POS never writes products.
  */
 export const vendureProductReplication: ReplicationAdapter<any, VendureProductCheckpoint> = {
   pull: {
@@ -115,34 +106,6 @@ export const vendureProductReplication: ReplicationAdapter<any, VendureProductCh
         : lastCheckpoint ?? { skip: 0, updatedAt: '' };
 
       return { documents, checkpoint };
-    },
-  },
-
-  push: {
-    async handler(changeRows, context) {
-      const conflicts: any[] = [];
-
-      for (const row of changeRows) {
-        const doc = row.newDocumentState as any;
-
-        try {
-          const res = await gql(context, UPDATE_PRODUCT_MUTATION, {
-            input: doc,
-          });
-
-          if (res.errors?.length) {
-            if (row.assumedMasterState) {
-              conflicts.push({ ...row.assumedMasterState, _deleted: false });
-            }
-          }
-        } catch {
-          if (row.assumedMasterState) {
-            conflicts.push({ ...row.assumedMasterState, _deleted: false });
-          }
-        }
-      }
-
-      return conflicts;
     },
   },
 };

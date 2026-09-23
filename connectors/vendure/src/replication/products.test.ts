@@ -20,6 +20,10 @@ function gqlResponse(data: any, errors?: any[]) {
 }
 
 describe('vendureProductReplication.pull.handler', () => {
+  it('is pull-only: products are server-owned', () => {
+    expect(vendureProductReplication.push).toBeUndefined();
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -127,78 +131,5 @@ describe('vendureProductReplication.pull.handler', () => {
     const result = await vendureProductReplication.pull.handler(checkpoint, 100, context);
 
     expect(result.checkpoint).toEqual(checkpoint);
-  });
-});
-
-describe('vendureProductReplication.push.handler', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('sends updateProduct mutation', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      gqlResponse({
-        updateProduct: { id: '1', updatedAt: '2026-01-03T00:00:00Z' },
-      }),
-    );
-
-    const conflicts = await vendureProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1', name: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: '1', name: 'Old', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(0);
-    const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
-    expect(body.query).toContain('updateProduct');
-    expect(body.variables.input.name).toBe('Updated');
-  });
-
-  it('returns conflicts on GraphQL error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      gqlResponse(null, [{ message: 'Conflict' }]),
-    );
-
-    const conflicts = await vendureProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1', name: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: '1', name: 'Server Version', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(1);
-    expect(conflicts[0].name).toBe('Server Version');
-  });
-
-  it('returns conflicts on network failure', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Network error'));
-
-    const conflicts = await vendureProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1', name: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: '1', name: 'Server Version', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(1);
-  });
-
-  it('does not return conflict when assumedMasterState is absent', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      gqlResponse(null, [{ message: 'Error' }]),
-    );
-
-    const conflicts = await vendureProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1', name: 'New Product', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(0);
   });
 });
