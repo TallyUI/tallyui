@@ -8,6 +8,8 @@ export type { CurrencyProviderProps } from './currency';
 
 // Tax
 export { calculateTax, extractTax, addTax, TaxProvider, useTax } from './tax';
+export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, computeOrderTax } from './tax';
+export type { TaxLineInput, OrderTaxTotals } from './tax';
 export type { TaxProviderProps } from './tax';
 export type { TaxResult, TaxRateMap, TaxContext } from './tax';
 
