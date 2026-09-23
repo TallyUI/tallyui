@@ -268,9 +268,26 @@ bodies and design docs, and the source is given for each.
 - **Context:** Medusa has the most sync-ready API (`with_deleted=true` on
   every list route, no maximum page size, barcode filters), MIT licensing,
   a live domain and a seeded dev store. Vendure has no POS today and a clean
-  plugin model (MIT allowed under its GPL plugin exception). Shopify's API
-  Terms §2.3.18 and §2.3.10 and App Store rule 1.1.8 bar a third-party POS
-  without written authorisation.
+  plugin model (MIT allowed under its GPL plugin exception). Shopify bars a
+  third-party POS without written authorisation. From the Shopify API Terms
+  (https://www.shopify.com/legal/api-terms, last updated 2026-02-27,
+  retrieved 2026-09-23):
+  - §2.3.18: "not, except with Shopify's express written authorization,
+    (i) use an alternative to Shopify Checkout for checkout or payment
+    processing for Shopify Merchants, or register any transactions through
+    the Shopify API in connection with such activity, or (ii) use Shopify
+    Checkout in any manner other than a Pop-up Implementation"
+  - §2.3.10: "not, except as authorized by Shopify in writing, use Shopify
+    Confidential Information or access to the Shopify API to substantially
+    replicate products or services offered by Shopify or any Shopify Related
+    Entity"
+
+  And from the App Store requirements
+  (https://shopify.dev/docs/apps/launch/shopify-app-store/app-store-requirements,
+  retrieved 2026-09-23):
+  - 1.1.8: "Build apps for Shopify POS only, not third-party systems.
+    Shopify is not currently accepting apps that connect to a POS system
+    outside of Shopify."
 - **Decision:** Build Medusa first. Vendure starts once the sync
   conformance suite is green on Medusa. No Shopify POS work until Paul
   decides.
@@ -351,3 +368,31 @@ bodies and design docs, and the source is given for each.
 - **Context:** Every package manifest already declares MIT, but the public
   repository has no LICENSE file.
 - **Decision:** Add an MIT LICENSE file at the root.
+
+## ADR-027 medusapos.com demo runs in the browser first (plan D5)
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Front desk, 2026-09-23, as
+  recommended in the plan) · **Source:** plan D5, PR #13 review
+- **Decision:** The M4 demo at demo.medusapos.com is an in-browser demo:
+  seeded RxDB with a simulated backend, no server, no API key in the
+  bundle, no running cost. A public Medusa instance (about US$20–40 a month)
+  comes only once the Medusa plugin is stable.
+
+## ADR-028 Vendure repositories are created when M6 starts (plan D6)
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Front desk, 2026-09-23, as
+  recommended in the plan) · **Source:** plan D6, PR #13 review
+- **Decision:** The `vendurepos` GitHub organisation and repository are
+  created when M6 (Vendure) starts, not before. Paul points vendurepos.com's
+  DNS at Vercel then. The worker confirms the org creation with Paul at that
+  point, under the standing rule that a new repository or organisation needs
+  his go-ahead (ADR-014).
+
+## ADR-029 medusapos/app PR #3 becomes the baseline once CI is green (plan D7)
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Front desk, 2026-09-23, as
+  recommended in the plan) · **Source:** plan D7, PR #13 review
+- **Decision:** Add CI (typecheck and unit tests) to medusapos/app. Merge
+  draft PR #3 (the Medusa dev store and first app) as the baseline once that
+  CI is green. The app is then rebuilt on the M1–M3 packages rather than
+  grown from the sample register on `main`.

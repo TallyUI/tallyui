@@ -31,10 +31,10 @@ is the discovery, Part 2 the plan, Part 3 the decisions that need Paul.*
 4. **Every milestone has numbers.** Examples: initial sync time, zero lost or
    duplicated orders across 1,000 fault-injected replays, and the line count
    of a new backend.
-5. **Seven decisions need Paul** (Part 3). The biggest: RxDB premium or fully
-   open-source storage; open source only or an open core with a paid tier;
-   port WCPOS packages into TallyUI or publish them from WCPOS; and the
-   Shopify call.
+5. **Four decisions need Paul** (Part 3, D1–D4): the Shopify call; RxDB
+   premium or fully open-source storage; port WCPOS packages into TallyUI
+   or publish them from WCPOS; and open source only or an open core with a
+   paid tier. The Front desk settled D5–D7 on 2026-09-23.
 
 ---
 
@@ -448,9 +448,8 @@ green on Medusa. M7 is a decision gate.
 **Goal:** the library can ship a production app.
 - Fix DB9: the database is created with dev mode off.
 - Remove product push (decision 6 above).
-- Upgrade RxDB 16.21.1 → 17.5 (including storage-sqlite), with
-  `multiInstance` and leader election. Fix the design doc, which names the
-  premium IndexedDB storage.
+- The RxDB upgrade is its own job (Job 4 in §2.3), bracketed by Job 3's
+  benchmark, so any regression is visible and revertable.
 - Add a lint rule banning `rxdb-premium` and `rxdb-server` imports in
   library packages.
 - Make the deprecated traits and `sync` optional in `TallyConnector`.
@@ -464,7 +463,8 @@ green on Medusa. M7 is a decision gate.
 **Acceptance:**
 - `NODE_ENV=production` test creates a database and round-trips a document.
 - No connector exports a product push handler.
-- The storage-sqlite tests pass on RxDB 17.
+- Job 4's before/after benchmark medians are recorded, and the upgrade
+  regresses them by no more than 10%.
 - `grep -rn "parseFloat\|toFixed(2)" packages/pos/src packages/components/src/cart`
   finds nothing outside formatting.
 - A clean project runs `npm pack` then install for every package and passes
@@ -626,14 +626,48 @@ worktree off `main`, and becomes one PR.
 - *Acceptance:* the script exits 0 and prints the JSON line. I run it three
   times and record the median in DECISIONS.md.
 
+**Job 4 (after jobs 1–3): RxDB 16.21.1 → 17.5 as a standalone upgrade.**
+- *Scope:* the RxDB and rxjs pins, `@tallyui/storage-sqlite` (storage
+  interface changes), `createTallyDatabase` (`multiInstance: true` plus
+  leader election), and the 2026-02-25 replication design doc, which names
+  the premium IndexedDB storage.
+- *Before and after:* run the Job 3 benchmark three times on 16.21.1 and
+  three times on 17.5. Record both medians in the PR.
+- *Acceptance:* the full test suite stays green, with no drop from the
+  current count; the storage-sqlite tests pass on RxDB 17; the benchmark
+  median regresses by no more than 10%. If it regresses by more, the PR
+  stays open and the upgrade is reverted, not patched over.
+
 ---
 
 # Part 3: Decisions that need Paul
 
 Each has my recommendation. Everything else I decide and log.
 
-**D1: Shopify.** Its API Terms §2.3.18 and §2.3.10 and App Store rule 1.1.8
-bar a third-party POS without Shopify's written authorisation.
+**D1: Shopify.** Its API Terms and App Store requirements bar a third-party
+POS without Shopify's written authorisation. The exact text, retrieved
+2026-09-23:
+
+- **Shopify API Terms**, https://www.shopify.com/legal/api-terms ("Last
+  Updated: February 27, 2026"):
+  - §2.3.18: "not, except with Shopify's express written authorization,
+    (i) use an alternative to Shopify Checkout for checkout or payment
+    processing for Shopify Merchants, or register any transactions through
+    the Shopify API in connection with such activity, or (ii) use Shopify
+    Checkout in any manner other than a Pop-up Implementation"
+  - §2.3.10: "not, except as authorized by Shopify in writing, use Shopify
+    Confidential Information or access to the Shopify API to substantially
+    replicate products or services offered by Shopify or any Shopify Related
+    Entity"
+- **Shopify App Store requirements**,
+  https://shopify.dev/docs/apps/launch/shopify-app-store/app-store-requirements:
+  - 1.1.8: "Build apps for Shopify POS only, not third-party systems.
+    Shopify is not currently accepting apps that connect to a POS system
+    outside of Shopify." The page adds: "This applies to all apps that
+    connect to a POS system outside of Shopify."
+
+Both clauses of the API Terms allow Shopify's written authorisation as an
+exception, so asking Shopify is a real option.
 - **Recommend:** drop Shopify as a POS target. Keep the connector as a
   read-only catalogue example. Revisit only if Paul wants to ask Shopify for
   authorisation, or wants a POS UI extension pack for Shopify's own POS.
@@ -668,13 +702,13 @@ bar a third-party POS without Shopify's written authorisation.
   Revenue, if any, comes from hosting and support. Say so before M5, because
   it decides whether terminal drivers go in public repos.
 
-**D5: Hosted demo backend.**
+**D5: Hosted demo backend.** *Decided 2026-09-23 by the Front desk, as recommended (ADR-027).*
 - **Recommend:** an in-browser demo with a simulated backend (seeded RxDB, no
   server, no key exposure, no running cost) for M4.
 - A public Medusa instance (about US$20–40 a month for hosting plus
   Postgres) only once the plugin is stable.
 
-**D6: Vendure repos and domain.**
+**D6: Vendure repos and domain.** *Decided 2026-09-23 by the Front desk, as recommended (ADR-028).*
 - M6 needs a `vendurepos` GitHub org and repo, which doesn't exist yet;
   creating one needs Paul's go-ahead (ADR-014).
 - vendurepos.com's DNS is at Squarespace / Google Cloud DNS.
@@ -682,7 +716,7 @@ bar a third-party POS without Shopify's written authorisation.
   vendurepos.com's DNS at Vercel then (a five-minute registrar change only
   he can make).
 
-**D7: medusapos/app PR #3.**
+**D7: medusapos/app PR #3.** *Decided 2026-09-23 by the Front desk, as recommended (ADR-029).*
 - The 25k-line draft carries the dev store and first app, with no CI.
 - **Recommend:** merge it as the baseline once CI (typecheck and unit) is
   added. Rebuild the app on the M1–M3 packages rather than grow the sample
