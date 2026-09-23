@@ -28,6 +28,13 @@ describe('HTTP command transport', () => {
     expect(fetch.mock.calls[1][1]?.headers).toMatchObject({ Authorization: 'Bearer second' });
   });
 
+  it.each(['http://x/', 'http://x//'])('strips trailing slashes from %s', async (baseUrl) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ results: [] }));
+    const transport = createHttpCommandTransport({ baseUrl, getHeaders: () => ({}), fetch });
+    await transport.send(commands);
+    expect(fetch).toHaveBeenCalledWith('http://x/tally/v1/commands', expect.objectContaining({ method: 'POST' }));
+  });
+
   it.each([500, 409, 401, 429, 400])('retries status %i', async (status) => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ code: 'in_progress' }, { status }));
     const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });

@@ -10,12 +10,13 @@ export interface HttpTransportOptions {
 
 export function createHttpCommandTransport(options: HttpTransportOptions): CommandTransport {
   const fetch = options.fetch ?? globalThis.fetch;
+  const baseUrl = options.baseUrl.replace(/\/+$/, '');
   return {
     async send(batch) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30000);
       try {
-        const response = await fetch(`${options.baseUrl}${COMMANDS_PATH}`, {
+        const response = await fetch(`${baseUrl}${COMMANDS_PATH}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -43,6 +43,15 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     state$.next({ ...state$.value, ...patch, pending });
   }
 
+  async function scheduleRetry(reason: string, retryAfterMs = 0) {
+    await updateState({ lastRetryReason: reason });
+    if (stopped) return;
+    const delay = Math.max(retryAfterMs, backoff * (0.9 + 0.2 * random()));
+    backoff = Math.min(backoff * 2, maxBackoff);
+    timer = setTimeout(() => { timer = undefined; void flush(); }, delay);
+    state$.next({ ...state$.value, sending: false, nextAttemptAt: now() + delay });
+  }
+
   async function run() {
     await updateState({ sending: true, nextAttemptAt: undefined });
     while (!stopped) {
@@ -58,16 +67,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       });
       const outcome = await transport.send(batch);
       if (outcome.kind === 'retry') {
-        await updateState({ lastRetryReason: outcome.reason });
-        if (stopped) return;
-        const delay = Math.max(outcome.retryAfterMs ?? 0, backoff * (0.9 + 0.2 * random()));
-        backoff = Math.min(backoff * 2, maxBackoff);
-        timer = setTimeout(() => { timer = undefined; void flush(); }, delay);
-        state$.next({ ...state$.value, sending: false, nextAttemptAt: now() + delay });
-        return;
+        return scheduleRetry(outcome.reason, outcome.retryAfterMs);
       }
-      backoff = initialBackoff;
-      state$.next({ ...state$.value, lastRetryReason: undefined });
+      let progressed = false;
       for (const order of orders) {
         const result = outcome.results.find((entry) => entry.id === order.commandId);
         if (!result) continue;
@@ -78,8 +80,12 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           ? { syncStatus: 'rejected', error: result.error, updatedAt }
           : { syncStatus: 'applied', serverRefs: result.serverRefs,
             ...(result.warnings ? { warnings: result.warnings } : {}), updatedAt });
+        progressed = true;
         await updateState();
       }
+      if (!progressed) return scheduleRetry('no_progress');
+      backoff = initialBackoff;
+      state$.next({ ...state$.value, lastRetryReason: undefined });
     }
   }
 

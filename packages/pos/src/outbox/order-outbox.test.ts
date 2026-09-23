@@ -127,6 +127,46 @@ describe('order outbox', () => {
     expect((await collection.findOne().exec())?.syncStatus).toBe('applied');
   });
 
+  it('backs off after empty results without changing the pending order', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue({ kind: 'results', results: [] });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(states.at(-1)).toEqual({ pending: 1, sending: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(send).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(states.at(-1)).toEqual({ pending: 1, sending: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 3000 });
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(send).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(send).toHaveBeenCalledTimes(3);
+    expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('pending');
+  });
+
+  it('resends immediately after partial progress, then backs off after empty results', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    const orders = [order(0), order(1)];
+    await collection.bulkInsert(orders);
+    const { outbox, send, states } = setup();
+    send.mockImplementationOnce(async (batch) => ({ kind: 'results', results: [applied(batch)[0]] }))
+      .mockResolvedValueOnce({ kind: 'results', results: [] });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls.map(([batch]) => batch.map((command) => command.id)))
+      .toEqual([orders.map((input) => input.commandId), [orders[1].commandId]]);
+    expect(Date.now()).toBe(epoch);
+    expect((await collection.findOne(orders[0].id).exec())?.syncStatus).toBe('applied');
+    expect((await collection.findOne(orders[1].id).exec())?.syncStatus).toBe('pending');
+    expect(states.at(-1)).toEqual({ pending: 1, sending: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
+  });
+
   it('shares the same promise between concurrent flush calls', async () => {
     await collection.insert(order(0));
     const { outbox, send } = setup();
