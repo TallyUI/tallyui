@@ -18,3 +18,10 @@ export type { Money, ProductPrice, ResolvedPrice } from './money';
 export type { StockLevel, StockStatus } from './stock';
 
 export type { CustomerTraits } from './traits/customer';
+
+export type {
+  CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,
+  CommandWarning, CommandError, CommandResult, OrderCreateLine,
+  PaymentMethodKind, OrderCreatePayment, OrderCreatePayload,
+  CommandBatchRequest, CommandBatchResponse,
+} from './commands';
