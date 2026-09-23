@@ -548,3 +548,112 @@ bodies and design docs, and the source is given for each.
   - Still open: whether `email` can be omitted for walk-in sales (the spike
     passed one), and whether price-list prices interact with the override.
     The override is expected to win; this is checked in the plugin's tests.
+
+## ADR-037 Tax is computed exactly and rounded once, at the order total
+
+- **Date:** 2026-09-23 · **Status:** Accepted (programme lead) · **Source:**
+  follow-up spike on medusa-dev (a throwaway draft and a cancelled order)
+- **Evidence:**
+  - Medusa does **not round line tax**. At 19%, €1.50 × 1 gives tax
+    €0.285; €0.35 × 3 gives €0.1995; €0.05 × 1 gives €0.0095 (stored at
+    precision 20).
+  - The order total was **€3.094**. Paying the rounded €3.09 gave
+    `payment_status: captured` with a pending difference of 0, so Medusa
+    rounds only at the payment boundary.
+- **Decision:**
+  - Every amount that changes hands (unit prices, line subtotals, order
+    totals, tenders, change) is integer minor units (`Money`).
+  - Tax rates are integer parts per million (19% = 190000; 7.25% = 72500).
+  - Line tax is kept **exactly**, as an integer in micro-minor-units
+    (`amountMinor × ratePpm`, divided by 10⁶ only at the end). It is summed
+    across lines and rounded **once, half away from zero**, when the order
+    total is formed.
+  - Tax-inclusive prices extract tax the same way: exactly, rounded once.
+  - No floating-point arithmetic touches money.
+- **Consequences:** `@tallyui/pos` tax functions change signature (job T1).
+  The POS's rounded total equals Medusa's total rounded to the cent. The
+  MVP e2e test ("totals match to the cent") checks this.
+
+## ADR-038 The `order.create` command contract (T6/T8 ↔ A3/A4)
+
+- **Date:** 2026-09-23 · **Status:** Accepted (programme lead); the
+  interface between the TallyUI and medusapos tracks · **Source:** plan §2.2,
+  ADR-036, ADR-037
+- **Transport:** `POST /tally/v1/commands`, header `X-Tally-Protocol: 1`.
+  - Body: `{ commands: CommandEnvelope[] }`, at most 50, processed in
+    order.
+  - A `200` response is `{ results: CommandResult[] }`, in the same order.
+  - Retryable (the client keeps the command and backs off): network errors,
+    `5xx`, `429`, and `409 {code: 'in_progress'}` (the same id is being
+    applied concurrently).
+  - Authentication is the platform's own admin auth (for Medusa, an admin
+    user's JWT bearer token).
+- **Types** (in `@tallyui/core`, job T6):
+
+```ts
+interface CommandEnvelope<P = unknown> {
+  id: string;            // UUIDv7, the idempotency key; never reused
+  type: 'order.create';  // more types later
+  version: 1;
+  payload: P;
+  createdAt: string;     // ISO 8601, client clock (sale time)
+  deviceId: string;
+  attempt: number;       // 1-based, informational
+}
+
+interface CommandResult {
+  id: string;
+  status: 'applied' | 'duplicate' | 'rejected';
+  serverRefs?: { orderId: string; displayId?: string; totalMinor: number };
+  warnings?: Array<{ code: 'total_mismatch'; expectedMinor: number; serverMinor: number }>;
+  error?: { code: string; message: string }; // only when rejected
+}
+
+interface OrderCreatePayload {
+  clientOrderId: string;          // PosOrder id (UUIDv7)
+  createdAt: string;              // sale time, ISO 8601
+  currency: string;               // ISO 4217, upper case
+  pricesIncludeTax: boolean;
+  lines: Array<{
+    clientLineId: string;         // UUIDv7
+    variantId: string;            // platform variant id (opaque)
+    title?: string;
+    quantity: number;             // positive integer
+    unitPriceMinor: number;       // as sold, integer minor units
+  }>;
+  subtotalMinor: number;          // POS-computed
+  taxMinor: number;               // POS-computed, rounded once (ADR-037)
+  totalMinor: number;             // POS-computed
+  payments: Array<{
+    clientPaymentId: string;      // UUIDv7
+    method: 'cash' | 'external';  // 'external' = card on a standalone terminal
+    amountMinor: number;          // amount applied to the order
+    tenderedMinor?: number;       // cash handed over
+    changeMinor?: number;
+    reference?: string;
+  }>;
+  customer?: { email?: string } | null; // null = walk-in
+  registerId?: string;
+  cashierRef?: string;
+  locationId?: string;            // stock location; server default if absent
+}
+```
+
+- **Server semantics (Medusa plugin, jobs A3/A4):**
+  - A command's `id` is claimed in a ledger. A replay of an applied id
+    returns `duplicate` with the original `serverRefs`. The same id with a
+    different payload fingerprint is `rejected` with code
+    `idempotency_mismatch`.
+  - `order.create` runs ADR-036's six steps as one workflow with
+    compensation. Unit prices are converted from minor to major units. The
+    walk-in address comes from the stock location.
+    `metadata.tally_client_id`, `metadata.tally_created_at` and per-line
+    `metadata.tally_line_uuid` are set.
+  - The payment collection amount is the sum of `payments[].amountMinor`.
+  - If Medusa's total, rounded to the cent, differs from `totalMinor`, the
+    order is still applied (the ledger records facts). The result carries a
+    `total_mismatch` warning, which the POS surfaces.
+  - A permanent refusal (unknown variant, invalid quantity, payments less
+    than the rounded total) is `rejected` with a stable `error.code`.
+- **Change rule:** changing any of these shapes needs a new ADR and a
+  `version` bump, agreed by both tracks.
