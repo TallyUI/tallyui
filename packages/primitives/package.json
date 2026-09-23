@@ -1,16 +1,23 @@
 {
   "name": "@tallyui/primitives",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "description": "Headless, accessible React Native primitives for Tally UI",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "source": "./src/index.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "source": "./src/index.ts"
     }
   },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "license": "MIT",
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",

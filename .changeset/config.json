@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
   "changelog": ["@changesets/changelog-github", { "repo": "TallyUI/tallyui" }],
   "commit": false,
-  "fixed": [],
+  "fixed": [["@tallyui/*"]],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
