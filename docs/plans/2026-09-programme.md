@@ -519,6 +519,12 @@ tester doesn't need is deferred until after this.
   until the app is reset.
 - **From M3:** split tender, register open and close with X/Z closures,
   the tender-reducer port, and customers.
+- **Outbox follow-ups** (from the PR #22 review):
+  - leader election with `multiInstance: true`, so exactly one tab sends;
+  - a monotonic within-millisecond counter in `uuidv7`, for strict ordering;
+  - surfacing permanent 400/401 transport failures to the cashier;
+  - an abrupt-kill reload case (process killed mid-patch) and ADR-039's
+    batch-stopping 409 semantics in the fault test.
 - **Discounts:** the ADR-038 `order.create` payload has no discount field,
   so `finalizeOrder` refuses discounted sales until a discount contract ADR
   is written. That ADR will carry line and order discounts to the backend,
