@@ -672,3 +672,56 @@ interface OrderCreatePayload {
     than the rounded total) is `rejected` with a stable `error.code`.
 - **Change rule:** changing any of these shapes needs a new ADR and a
   `version` bump, agreed by both tracks.
+
+## ADR-039 `order.create` edge cases (addendum to ADR-038)
+
+- **Date:** 2026-09-23 · **Status:** Accepted (programme lead), agreed with
+  the medusapos worker before A3 · **Source:** A-track questions
+- **Tax-inclusive prices:** spike order #301 used the dev store's
+  tax-exclusive price preference. For `pricesIncludeTax: true`, the plugin
+  tries these in order:
+  1. Set `is_tax_inclusive` on each draft-order item. The spike response
+     already shows that field on items.
+  2. If the Admin API rejects it, send a tax-exclusive `unit_price` backed
+     out at full decimal precision: `unitPriceMinor × 10⁶ / (10⁶ + ratePpm)`
+     as a decimal string, never rounded to the cent.
+  3. If neither works, reject with `unsupported_tax_mode`.
+
+  A3 proves whichever path it uses with an inclusive-region test. It must
+  stay within ADR-037's ≤ 1 minor unit guard.
+- **Walk-in customer:** omit `email` if Medusa accepts that. Otherwise use a
+  **server-configured** placeholder, defaulting to `walk-in@pos.invalid`
+  (the `.invalid` TLD can never receive mail). Always set
+  `no_notification`. The client never invents an email.
+- **Insufficient stock:** the sale physically happened, so the order is
+  recorded.
+  - If fulfilment is refused for some items (no stock and no backorder),
+    the order is still applied and paid, those items stay unfulfilled, and
+    the result carries an `insufficient_stock` warning per affected
+    variant.
+  - Only if Medusa refuses the order itself is it `rejected` with
+    `insufficient_stock`. It then lands in the POS's "needs attention"
+    list.
+- **Overpayment:** if Σ `payments[].amountMinor` > `totalMinor`, the order
+  is applied, with the collection amount = `totalMinor` (ADR-037). Cash
+  change is already carried by `tenderedMinor` and `changeMinor`.
+- **Contract change (additive, no version bump):** `CommandWarning` becomes
+  a union:
+  `{ code: 'total_mismatch'; expectedMinor; serverMinor } | { code: 'insufficient_stock'; variantId: string; quantity: number }`.
+  Clients must ignore warning codes they don't know. From now on, adding a
+  warning code is additive and needs only an ADR. Changing an existing
+  shape still needs a `version` bump.
+- **Server semantics adopted from the A-track proposal:**
+  - A `409 in_progress` stops the batch at that command. The response is
+    HTTP 409 `{ code: 'in_progress', id }`. The client retries the whole
+    batch, and earlier commands replay as `duplicate`.
+  - The fingerprint is sha256 of canonical JSON of
+    `{ type, version, payload }`, excluding `attempt`, `deviceId` and the
+    envelope's `createdAt`.
+  - The region is the one whose currency matches `payload.currency` and
+    which contains the stock location's country. If there is none, reject
+    with `unsupported_currency`.
+  - A transient mid-workflow failure is compensated, the ledger claim is
+    released, and the server returns 5xx (retryable).
+  - The outbox sends **at most 10 commands per request** (each order is
+    about 6 Admin steps), well under `MAX_COMMANDS_PER_BATCH` = 50.
