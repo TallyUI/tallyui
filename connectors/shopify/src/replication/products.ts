@@ -24,9 +24,9 @@ function normalizeId(product: any) {
 /**
  * Replication adapter for Shopify products.
  *
- * Implements pull (cursor-based pagination via Link header, filtered by
- * updated_at_min) and push (PUT to update individual products via Admin
- * REST API). Designed for use with RxDB's replicateRxCollection.
+ * Pull-only (cursor-based pagination via Link header, filtered by
+ * updated_at_min) for RxDB's replicateRxCollection. Catalogue data is
+ * server-owned; the POS never writes products.
  */
 export const shopifyProductReplication: ReplicationAdapter<any, ShopifyProductCheckpoint> = {
   pull: {
@@ -69,43 +69,6 @@ export const shopifyProductReplication: ReplicationAdapter<any, ShopifyProductCh
         : lastCheckpoint ?? { updated_at: '' };
 
       return { documents, checkpoint };
-    },
-  },
-
-  push: {
-    async handler(changeRows, context) {
-      const conflicts: any[] = [];
-
-      for (const row of changeRows) {
-        const doc = row.newDocumentState as any;
-
-        try {
-          const response = await fetch(
-            `${context.baseUrl}/admin/api/2024-01/products/${doc.id}.json`,
-            {
-              method: 'PUT',
-              headers: {
-                ...context.headers,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ product: doc }),
-              signal: context.signal,
-            },
-          );
-
-          if (!response.ok) {
-            if (row.assumedMasterState) {
-              conflicts.push({ ...row.assumedMasterState, _deleted: false });
-            }
-          }
-        } catch {
-          if (row.assumedMasterState) {
-            conflicts.push({ ...row.assumedMasterState, _deleted: false });
-          }
-        }
-      }
-
-      return conflicts;
     },
   },
 };

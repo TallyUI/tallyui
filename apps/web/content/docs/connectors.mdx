@@ -52,7 +52,7 @@ Connects to Vendure backends via the GraphQL Admin API. Supports products with v
 
 ## Replication
 
-All four connectors ship with bidirectional replication adapters. Each adapter knows how to pull changes from its API using checkpoint-based pagination, and push local edits back. See the [Replication guide](/docs/replication) for setup and usage.
+All four connectors ship with pull-only product replication adapters. Each adapter knows how to pull changes from its API using checkpoint-based pagination. The POS never writes catalogue data back. See the [Replication guide](/docs/replication) for setup and usage.
 
 ## Building a Custom Connector
 

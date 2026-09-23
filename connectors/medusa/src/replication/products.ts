@@ -43,9 +43,9 @@ const MEDUSA_PRODUCT_FIELDS = [
 /**
  * Replication adapter for Medusa v2 products.
  *
- * Implements pull (id-ordered offset pages within an updated_at window) and
- * push (POST to update individual products via Admin API). Designed for
- * use with RxDB's replicateRxCollection.
+ * Pull-only (id-ordered offset pages within an updated_at window) for RxDB's
+ * replicateRxCollection. Catalogue data is server-owned; the POS never
+ * writes products.
  */
 export const medusaProductReplication: ReplicationAdapter<any, MedusaProductCheckpoint> = {
   pull: {
@@ -103,43 +103,6 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
           : { offset: 0, updated_at: passMax };
 
       return { documents, checkpoint };
-    },
-  },
-
-  push: {
-    async handler(changeRows, context) {
-      const conflicts: any[] = [];
-
-      for (const row of changeRows) {
-        const doc = row.newDocumentState as any;
-
-        try {
-          const response = await fetch(
-            `${context.baseUrl}/admin/products/${doc.id}`,
-            {
-              method: 'POST',
-              headers: {
-                ...context.headers,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(doc),
-              signal: context.signal,
-            },
-          );
-
-          if (!response.ok) {
-            if (row.assumedMasterState) {
-              conflicts.push({ ...row.assumedMasterState, _deleted: false });
-            }
-          }
-        } catch {
-          if (row.assumedMasterState) {
-            conflicts.push({ ...row.assumedMasterState, _deleted: false });
-          }
-        }
-      }
-
-      return conflicts;
     },
   },
 };

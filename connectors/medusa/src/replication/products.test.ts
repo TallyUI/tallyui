@@ -10,6 +10,10 @@ const context: SyncContext = {
 };
 
 describe('medusaProductReplication.pull.handler', () => {
+  it('is pull-only: products are server-owned', () => {
+    expect(medusaProductReplication.push).toBeUndefined();
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -125,76 +129,5 @@ describe('medusaProductReplication.pull.handler', () => {
     const result = await medusaProductReplication.pull.handler(checkpoint, 100, context);
 
     expect(result.checkpoint).toEqual(checkpoint);
-  });
-});
-
-describe('medusaProductReplication.push.handler', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('sends POST for updates', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({}), { status: 200 }),
-    );
-
-    const conflicts = await medusaProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: 'prod_01', title: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: 'prod_01', title: 'Old', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(0);
-    const [url, opts] = (globalThis.fetch as any).mock.calls[0];
-    expect(url).toContain('/admin/products/prod_01');
-    expect(opts.method).toBe('POST');
-  });
-
-  it('returns conflicts on server error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response('conflict', { status: 409 }),
-    );
-
-    const conflicts = await medusaProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: 'prod_01', title: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: 'prod_01', title: 'Server Version', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(1);
-    expect(conflicts[0].title).toBe('Server Version');
-  });
-
-  it('returns conflicts on network failure', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Network error'));
-
-    const conflicts = await medusaProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: 'prod_01', title: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: 'prod_01', title: 'Server Version', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(1);
-  });
-
-  it('does not return conflict when assumedMasterState is absent', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response('error', { status: 500 }),
-    );
-
-    const conflicts = await medusaProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: 'prod_01', title: 'New Product', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(0);
   });
 });

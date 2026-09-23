@@ -1,4 +1,4 @@
-import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
+import type { ReplicationAdapter } from '@tallyui/core';
 
 export type WooProductCheckpoint = {
   id: string;
@@ -8,9 +8,9 @@ export type WooProductCheckpoint = {
 /**
  * Replication adapter for WooCommerce products.
  *
- * Implements pull (cursor-based pagination by date_modified_gmt) and push
- * (individual create/update via WC REST API v3). Designed for use with
- * RxDB's replicateRxCollection.
+ * Pull-only (cursor-based pagination by date_modified_gmt) for RxDB's
+ * replicateRxCollection. Catalogue data is server-owned; the POS never
+ * writes products.
  */
 export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint> = {
   pull: {
@@ -48,46 +48,6 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
         : lastCheckpoint ?? { id: '', modified: '' };
 
       return { documents, checkpoint };
-    },
-  },
-
-  push: {
-    async handler(changeRows, context) {
-      const conflicts: any[] = [];
-
-      for (const row of changeRows) {
-        const doc = row.newDocumentState as any;
-
-        try {
-          const isCreate = !row.assumedMasterState;
-          const method = isCreate ? 'POST' : 'PUT';
-          const url = isCreate
-            ? `${context.baseUrl}/products`
-            : `${context.baseUrl}/products/${doc.id}`;
-
-          const response = await fetch(url, {
-            method,
-            headers: {
-              ...context.headers,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(doc),
-            signal: context.signal,
-          });
-
-          if (!response.ok) {
-            if (row.assumedMasterState) {
-              conflicts.push({ ...row.assumedMasterState, _deleted: false });
-            }
-          }
-        } catch {
-          if (row.assumedMasterState) {
-            conflicts.push({ ...row.assumedMasterState, _deleted: false });
-          }
-        }
-      }
-
-      return conflicts;
     },
   },
 };

@@ -59,7 +59,7 @@ interface TallyConnector {
   traits: {             // Accessor functions
     product: ProductTraits;
   };
-  replication: {        // Bidirectional sync via RxDB replication
+  replication: {        // Pull-only sync via RxDB replication
     products: ReplicationAdapter;
   };
 }
@@ -78,7 +78,7 @@ When you need connector-specific fields that aren't covered by traits, you can a
 │  Backend API                            │
 │  WooCommerce REST / Medusa Admin / ...  │
 └──────────────────┬──────────────────────┘
-                   │ replication (pull/push)
+                   │ replication (pull)
 ┌──────────────────▼──────────────────────┐
 │  ReplicationAdapter                     │
 │  Checkpoint-based sync per connector    │
@@ -105,11 +105,11 @@ When you need connector-specific fields that aren't covered by traits, you can a
 
 ## Replication
 
-Tally UI uses RxDB's built-in replication protocol for bidirectional sync between the local database and remote APIs. Each connector implements a `ReplicationAdapter` that provides checkpoint-based pull and push handlers.
+Tally UI uses RxDB's built-in replication protocol to sync the local database from remote APIs. Each connector implements a `ReplicationAdapter` with a checkpoint-based pull handler. Catalogue replication is pull-only; POS-created data such as orders will go through a command outbox.
 
 The replication layer handles:
 - **Checkpoint tracking** -- only fetches data that changed since the last sync
-- **Bidirectional sync** -- pulls remote changes and pushes local edits back
+- **Pull-only catalogue sync** -- pulls remote changes; the POS never writes products
 - **Conflict resolution** -- server-wins strategy (the backend is the source of truth)
 - **Live updates** -- real-time streams where backends support them, polling fallback elsewhere
 - **Error recovery** -- automatic retries with configurable intervals

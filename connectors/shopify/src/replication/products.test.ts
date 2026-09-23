@@ -10,6 +10,10 @@ const context: SyncContext = {
 };
 
 describe('shopifyProductReplication.pull.handler', () => {
+  it('is pull-only: products are server-owned', () => {
+    expect(shopifyProductReplication.push).toBeUndefined();
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -128,79 +132,5 @@ describe('shopifyProductReplication.pull.handler', () => {
     const result = await shopifyProductReplication.pull.handler(undefined, 100, context);
 
     expect(result.documents[0].id).toBe('9999');
-  });
-});
-
-describe('shopifyProductReplication.push.handler', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('sends PUT for updates with product wrapper', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({}), { status: 200 }),
-    );
-
-    const conflicts = await shopifyProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1001', title: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: '1001', title: 'Old', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(0);
-    const [url, opts] = (globalThis.fetch as any).mock.calls[0];
-    expect(url).toContain('/admin/api/2024-01/products/1001.json');
-    expect(opts.method).toBe('PUT');
-    const body = JSON.parse(opts.body);
-    expect(body.product).toBeDefined();
-    expect(body.product.title).toBe('Updated');
-  });
-
-  it('returns conflicts on server error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response('conflict', { status: 409 }),
-    );
-
-    const conflicts = await shopifyProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1001', title: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: '1001', title: 'Server Version', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(1);
-    expect(conflicts[0].title).toBe('Server Version');
-  });
-
-  it('returns conflicts on network failure', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Network error'));
-
-    const conflicts = await shopifyProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1001', title: 'Updated', _deleted: false } as any,
-        assumedMasterState: { id: '1001', title: 'Server Version', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(1);
-  });
-
-  it('does not return conflict when assumedMasterState is absent', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response('error', { status: 500 }),
-    );
-
-    const conflicts = await shopifyProductReplication.push!.handler(
-      [{
-        newDocumentState: { id: '1001', title: 'New Product', _deleted: false } as any,
-      }],
-      context,
-    );
-
-    expect(conflicts).toHaveLength(0);
   });
 });
