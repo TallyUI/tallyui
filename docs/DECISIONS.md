@@ -894,12 +894,20 @@ interface OrderCreatePayload {
     never touches a tracked file.
   - `sideEffectsCache` stays at pnpm's default (Front desk, 2026-09-24).
 - **Consequences:**
-  - Every install needs the token. That includes Vercel's install for the
-    docs site, which needs `RXDB_PREMIUM` in the Vercel project settings,
-    and Dependabot PRs, which need it as a Dependabot secret. Fork PRs get
-    no secrets, so their CI install fails.
+  - A full workspace install needs the token. Dependabot PRs need it as a
+    Dependabot secret. Fork PRs get no secrets, so their CI install fails.
+  - Vercel deploys only the docs site, and this machine cannot reach the
+    Vercel account to add a token there. So `vercel.json` installs and
+    builds only `@tallyui/web` and its workspace dependencies:
+    `pnpm install --frozen-lockfile --filter "@tallyui/web..."` and
+    `pnpm --filter "@tallyui/web..." build`. `rxdb` and `rxdb-premium` are
+    not in that set. Measured 2026-09-24 in a clean clone with no token:
+    the install succeeds without `rxdb-premium`, and the build scopes 2 of
+    15 projects (theme, web) and writes `apps/web/.next`. If `apps/web`
+    ever depends on a package that pulls in premium, Vercel's install
+    breaks again.
   - The installer prints the token. GitHub masks secrets in Actions logs,
-    but other build logs, such as Vercel's, do not.
+    and Vercel never runs the installer.
   - pnpm's side-effects cache keeps the decrypted plugin files in the pnpm
     store (checked on the agent host: the store index records them for
     `rxdb-premium@16.21.1`). That is acceptable on the agent host. In CI,
