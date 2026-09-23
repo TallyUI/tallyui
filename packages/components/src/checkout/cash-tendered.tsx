@@ -89,7 +89,7 @@ export function CashTendered({
             setText(text);
             lastTextAmount.current = parsed;
             handleChange(parsed);
-          } else if (/^\d+\.$/.test(text)) {
+          } else if (text === '' || /^\d+\.$/.test(text)) {
             setText(text);
           }
         }}

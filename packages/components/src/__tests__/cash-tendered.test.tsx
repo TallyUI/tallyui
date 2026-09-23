@@ -49,6 +49,21 @@ describe('CashTendered', () => {
     expect(onChange).toHaveBeenLastCalledWith({ amount: 3451, currency: 'EUR' });
   });
 
+  it('allows clearing the text without emitting and entering a new amount', () => {
+    const onChange = vi.fn();
+    render(<CashTendered total={total} onChangeAmount={onChange} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '3' } });
+    expect(onChange).toHaveBeenLastCalledWith({ amount: 300, currency: 'EUR' });
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.value).toBe('');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    fireEvent.change(input, { target: { value: '5' } });
+    expect(input.value).toBe('5');
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith({ amount: 500, currency: 'EUR' });
+  });
+
   it('keeps the previous text when precision is exceeded or letters are entered', () => {
     const onChange = vi.fn();
     render(<CashTendered total={total} onChangeAmount={onChange} />);
