@@ -286,6 +286,52 @@ describe('Medusa product traits', () => {
   });
 });
 
+describe('product-level getStock', () => {
+  const tracked = { manage_inventory: true, inventory_quantity: 3 };
+
+  it('sums all tracked variants and prefers in_stock over backorder', () => {
+    expect(medusaProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: -1, allow_backorder: true }, tracked,
+    ] })).toEqual({ status: 'in_stock', quantity: 2 });
+  });
+
+  it('omits quantity when one variant is untracked', () => {
+    expect(medusaProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: 0 }, { ...tracked, manage_inventory: false },
+    ] })).toEqual({ status: 'in_stock', quantity: undefined });
+  });
+
+  it('sums quantities when all variants are out of stock', () => {
+    expect(medusaProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: 0 }, { ...tracked, inventory_quantity: -2 },
+    ] })).toEqual({ status: 'out_of_stock', quantity: -2 });
+  });
+
+  it('returns backorder when none are in stock and one allows backorder', () => {
+    expect(medusaProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: 0 }, { ...tracked, inventory_quantity: -1, allow_backorder: true },
+    ] })).toEqual({ status: 'backorder', quantity: -1 });
+  });
+
+  it.each([
+    [[], { status: 'unknown' }],
+    [[tracked, { manage_inventory: true }], { status: 'in_stock' }],
+    [[{ ...tracked, inventory_quantity: 0 }, { manage_inventory: true }], { status: 'unknown' }],
+  ])('handles missing quantities for %j', (variants, expected) => {
+    expect(medusaProductTraits.getStock({ variants })).toEqual(expected);
+  });
+
+  it.each([
+    [tracked, { status: 'in_stock', quantity: 3 }],
+    [{ ...tracked, inventory_quantity: 0 }, { status: 'out_of_stock', quantity: 0 }],
+    [{ ...tracked, inventory_quantity: -1, allow_backorder: true }, { status: 'backorder', quantity: -1 }],
+    [{ ...tracked, manage_inventory: false }, { status: 'in_stock' }],
+    [{ manage_inventory: true }, { status: 'unknown' }],
+  ])('leaves a single variant unchanged: %j', (variant, expected) => {
+    expect(medusaProductTraits.getStock({ variants: [variant] })).toStrictEqual(expected);
+  });
+});
+
 describe('Medusa neutral price and stock', () => {
   // Medusa v2 amounts are major units: 12 is €12.00.
   const variant = { manage_inventory: true, allow_backorder: false, inventory_quantity: 7,

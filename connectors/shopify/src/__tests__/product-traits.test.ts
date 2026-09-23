@@ -301,6 +301,52 @@ describe('Shopify product traits', () => {
   });
 });
 
+describe('product-level getStock', () => {
+  const tracked = { inventory_management: 'shopify', inventory_quantity: 3 };
+
+  it('sums all tracked variants and prefers in_stock over backorder', () => {
+    expect(shopifyProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: -1, inventory_policy: 'continue' }, tracked,
+    ] })).toEqual({ status: 'in_stock', quantity: 2 });
+  });
+
+  it('omits quantity when one variant is untracked', () => {
+    expect(shopifyProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: 0 }, { ...tracked, inventory_management: null },
+    ] })).toEqual({ status: 'in_stock', quantity: undefined });
+  });
+
+  it('sums quantities when all variants are out of stock', () => {
+    expect(shopifyProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: 0 }, { ...tracked, inventory_quantity: -2 },
+    ] })).toEqual({ status: 'out_of_stock', quantity: -2 });
+  });
+
+  it('returns backorder when none are in stock and one allows backorder', () => {
+    expect(shopifyProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: 0 }, { ...tracked, inventory_quantity: -1, inventory_policy: 'continue' },
+    ] })).toEqual({ status: 'backorder', quantity: -1 });
+  });
+
+  it.each([
+    [[], { status: 'unknown' }],
+    [[tracked, { inventory_management: 'shopify' }], { status: 'in_stock' }],
+    [[{ ...tracked, inventory_quantity: 0 }, { inventory_management: 'shopify' }], { status: 'unknown' }],
+  ])('handles missing quantities for %j', (variants, expected) => {
+    expect(shopifyProductTraits.getStock({ variants })).toEqual(expected);
+  });
+
+  it.each([
+    [tracked, { status: 'in_stock', quantity: 3 }],
+    [{ ...tracked, inventory_quantity: 0 }, { status: 'out_of_stock', quantity: 0 }],
+    [{ ...tracked, inventory_quantity: -1, inventory_policy: 'continue' }, { status: 'backorder', quantity: -1 }],
+    [{ ...tracked, inventory_management: null }, { status: 'in_stock' }],
+    [{ inventory_management: 'shopify' }, { status: 'unknown' }],
+  ])('leaves a single variant unchanged: %j', (variant, expected) => {
+    expect(shopifyProductTraits.getStock({ variants: [variant] })).toStrictEqual(expected);
+  });
+});
+
 describe('Shopify neutral price and stock', () => {
   const variant = { price: '15.00', compare_at_price: '20.00', inventory_management: 'shopify',
     inventory_policy: 'deny', inventory_quantity: 3 };

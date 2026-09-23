@@ -39,7 +39,7 @@ export interface ProductTraits<Doc = any> {
    */
   getPrices: (doc: Doc, context?: TraitContext) => ProductPrice[];
 
-  /** Stock state and, when tracked, quantity on hand. */
+  /** Stock state of the whole product across its variants; `quantity` is the total on hand when every variant is tracked, else undefined. */
   getStock: (doc: Doc) => StockLevel;
 
   /** @deprecated Use `getPrices` with `resolvePrice`. */

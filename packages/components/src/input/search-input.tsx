@@ -22,8 +22,11 @@ export function SearchInput({ value, onChangeText, className, placeholder = 'Sea
     )}>
       <Label.Root nativeID={labelId} asChild>
         <View aria-hidden className="relative h-4 w-4">
-          <View className="absolute left-0 top-0 h-2.5 w-2.5 rounded-full border-2 border-muted-foreground" />
-          <View className="absolute bottom-0 right-0 h-1.5 w-0.5 rotate-45 bg-muted-foreground" />
+          <View className="absolute left-0 top-0 rounded-full border-2 border-muted-foreground" style={{ width: 11, height: 11 }} />
+          <View className="bg-muted-foreground" style={{
+            position: 'absolute', left: 10, top: 8, width: 2, height: 6,
+            borderRadius: 1, transform: [{ rotate: '-45deg' }],
+          }} />
         </View>
       </Label.Root>
       <TextInput

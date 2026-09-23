@@ -274,6 +274,46 @@ describe('Vendure product traits', () => {
   });
 });
 
+describe('product-level getStock', () => {
+  it('sums all tracked variants and uses any in-stock variant', () => {
+    expect(vendureProductTraits.getStock({ variants: [
+      { stockOnHand: 0 }, { stockOnHand: 3 }, { stockOnHand: 5 },
+    ] })).toEqual({ status: 'in_stock', quantity: 8 });
+  });
+
+  it('omits quantity when one variant has only a stock level', () => {
+    expect(vendureProductTraits.getStock({ variants: [
+      { stockOnHand: 0 }, { stockLevel: 'IN_STOCK' },
+    ] })).toEqual({ status: 'in_stock', quantity: undefined });
+  });
+
+  it('sums quantities when all variants are out of stock', () => {
+    expect(vendureProductTraits.getStock({ variants: [
+      { stockOnHand: 0 }, { stockOnHand: -2 },
+    ] })).toEqual({ status: 'out_of_stock', quantity: -2 });
+  });
+
+  it.each([
+    [[], { status: 'unknown' }],
+    [[{ stockOnHand: 3 }, {}], { status: 'in_stock' }],
+    [[{ stockOnHand: 0 }, {}], { status: 'unknown' }],
+    [[{ stockOnHand: 0 }, { stockLevel: 'OUT_OF_STOCK' }], { status: 'out_of_stock' }],
+  ])('handles missing quantities for %j', (variants, expected) => {
+    expect(vendureProductTraits.getStock({ variants })).toEqual(expected);
+  });
+
+  it.each([
+    [{ stockOnHand: 3, stockLevel: 'OUT_OF_STOCK' }, { status: 'in_stock', quantity: 3 }],
+    [{ stockOnHand: 0, stockLevel: 'IN_STOCK' }, { status: 'out_of_stock', quantity: 0 }],
+    [{ stockLevel: 'IN_STOCK' }, { status: 'in_stock' }],
+    [{ stockLevel: 'LOW_STOCK' }, { status: 'in_stock' }],
+    [{ stockLevel: 'OUT_OF_STOCK' }, { status: 'out_of_stock' }],
+    [{}, { status: 'unknown' }],
+  ])('leaves a single variant unchanged: %j', (variant, expected) => {
+    expect(vendureProductTraits.getStock({ variants: [variant] })).toStrictEqual(expected);
+  });
+});
+
 describe('Vendure neutral price and stock', () => {
   it('passes integer priceWithTax through with the variant currency', () => {
     expect(vendureProductTraits.getPrices({ variants: [{ priceWithTax: 1299, currencyCode: 'EUR' }] }))

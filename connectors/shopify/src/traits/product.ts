@@ -1,5 +1,15 @@
 import { moneyFromMajor } from '@tallyui/core';
-import type { ProductPrice, ProductTraits } from '@tallyui/core';
+import type { ProductPrice, ProductTraits, StockLevel } from '@tallyui/core';
+
+function productStock(variants: StockLevel[]): StockLevel {
+  if (!variants.length) return { status: 'unknown' };
+  const status = variants.some((stock) => stock.status === 'in_stock') ? 'in_stock'
+    : variants.some((stock) => stock.status === 'backorder') ? 'backorder'
+    : variants.every((stock) => stock.status === 'out_of_stock') ? 'out_of_stock' : 'unknown';
+  const quantity = variants.every((stock) => stock.quantity != null)
+    ? variants.reduce((sum, stock) => sum + stock.quantity!, 0) : undefined;
+  return quantity === undefined ? { status } : { status, quantity };
+}
 
 /**
  * Shopify product trait implementations.
@@ -34,8 +44,7 @@ export const shopifyProductTraits: ProductTraits = {
     return [{ ...price, kind: 'base' }];
   },
 
-  getStock: (doc) => {
-    const variant = doc.variants?.[0];
+  getStock: (doc) => productStock((doc.variants ?? []).map((variant: any): StockLevel => {
     if (!variant) return { status: 'unknown' };
     if (variant.inventory_management == null) return { status: 'in_stock' };
     const quantity = variant.inventory_quantity ?? undefined;
@@ -43,7 +52,7 @@ export const shopifyProductTraits: ProductTraits = {
     if (quantity > 0) return { status: 'in_stock', quantity };
     // inventory_policy 'continue' allows overselling.
     return { status: variant.inventory_policy === 'continue' ? 'backorder' : 'out_of_stock', quantity };
-  },
+  })),
 
   getPrice: (doc) => doc.variants?.[0]?.price || undefined,
 

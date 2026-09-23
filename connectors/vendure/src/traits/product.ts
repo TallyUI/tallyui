@@ -1,4 +1,14 @@
-import type { ProductTraits } from '@tallyui/core';
+import type { ProductTraits, StockLevel } from '@tallyui/core';
+
+function productStock(variants: StockLevel[]): StockLevel {
+  if (!variants.length) return { status: 'unknown' };
+  const status = variants.some((stock) => stock.status === 'in_stock') ? 'in_stock'
+    : variants.some((stock) => stock.status === 'backorder') ? 'backorder'
+    : variants.every((stock) => stock.status === 'out_of_stock') ? 'out_of_stock' : 'unknown';
+  const quantity = variants.every((stock) => stock.quantity != null)
+    ? variants.reduce((sum, stock) => sum + stock.quantity!, 0) : undefined;
+  return quantity === undefined ? { status } : { status, quantity };
+}
 
 /**
  * Vendure product trait implementations.
@@ -28,8 +38,7 @@ export const vendureProductTraits: ProductTraits = {
     return [{ amount: variant.priceWithTax, currency, kind: 'base' }];
   },
 
-  getStock: (doc) => {
-    const variant = doc.variants?.[0];
+  getStock: (doc) => productStock((doc.variants ?? []).map((variant: any): StockLevel => {
     if (!variant) return { status: 'unknown' };
     // Admin API: exact stockOnHand. Shop API: only the stockLevel string.
     if (variant.stockOnHand != null) {
@@ -43,7 +52,7 @@ export const vendureProductTraits: ProductTraits = {
     }
     if (variant.stockLevel === 'OUT_OF_STOCK') return { status: 'out_of_stock' };
     return { status: 'unknown' };
-  },
+  })),
 
   getPrice: (doc) => {
     // Vendure stores prices as integers in smallest currency unit (cents)
