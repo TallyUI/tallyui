@@ -27,12 +27,12 @@ const traits: ProductTraits = {
   getCategoryNames: () => [],
 };
 
-const taxContext: TaxContext = { getTaxRate: () => 0.1, pricesIncludeTax: false };
+const taxContext: TaxContext = { getTaxRatePpm: () => 100000, pricesIncludeTax: false };
 const product = { id: 'p1', name: 'Coffee', price: 1000 };
 
 describe('discount engine', () => {
   it('rounds percentage discounts half away from zero to minor units', () => {
-    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRate: () => 0, pricesIncludeTax: false } });
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
     const lineId = builder.addProduct({ ...product, price: 5 }, traits);
     builder.applyLineDiscount(lineId, { type: 'percentage', value: 10 });
     builder.applyOrderDiscount({ type: 'percentage', value: 12.5 });

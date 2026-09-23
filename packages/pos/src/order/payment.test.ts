@@ -27,14 +27,14 @@ const traits: ProductTraits = {
   getCategoryNames: () => [],
 };
 
-const taxContext: TaxContext = { getTaxRate: () => 0, pricesIncludeTax: false };
+const taxContext: TaxContext = { getTaxRatePpm: () => 0, pricesIncludeTax: false };
 
 describe('payment splitting', () => {
   it.each([
     { amountMinor: 3500, balanceDueMinor: 0, changeDueMinor: 49 },
     { amountMinor: 3000, balanceDueMinor: 451, changeDueMinor: 0 },
   ])('tracks payment against Medusa #301: $amountMinor', ({ amountMinor, balanceDueMinor, changeDueMinor }) => {
-    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRate: () => 0.19, pricesIncludeTax: false } });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
     builder.addLine({ productId: 'p1', name: 'Item 1', unitPrice: { amount: 850, currency: 'EUR' }, quantity: 2 });
     builder.addLine({ productId: 'p2', name: 'Item 2', unitPrice: { amount: 1200, currency: 'EUR' } });
     builder.addPayment({ method: 'cash', amountMinor });

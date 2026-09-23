@@ -3,15 +3,15 @@ export { createLogger, consoleSink, callbackSink } from './logging';
 export type { Logger, LogSink, LogEntry, LogLevel } from './logging';
 
 // Currency
-export { formatCurrency, CurrencyProvider, useCurrencyFormatter } from './currency';
+export { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './currency';
 export type { CurrencyProviderProps } from './currency';
 
 // Tax
-export { calculateTax, extractTax, addTax, TaxProvider, useTax } from './tax';
+export { TaxProvider, useTax } from './tax';
 export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, computeOrderTax } from './tax';
 export type { TaxLineInput, OrderTaxTotals } from './tax';
 export type { TaxProviderProps } from './tax';
-export type { TaxResult, TaxRateMap, TaxContext } from './tax';
+export type { TaxRateMap, TaxContext } from './tax';
 
 // Repository
 export { createRepository } from './repository';

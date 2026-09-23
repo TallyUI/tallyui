@@ -4,7 +4,7 @@ import { finalizeOrder } from './finalize';
 import { uuidv7 } from './uuidv7';
 
 function sale() {
-  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRate: () => 0.19, pricesIncludeTax: false } });
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
   builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Item 1', sku: 'SKU1', unitPrice: { amount: 850, currency: 'EUR' }, quantity: 2 });
   builder.addLine({ productId: 'p2', name: 'Item 2', unitPrice: { amount: 1200, currency: 'EUR' } });
   return builder;

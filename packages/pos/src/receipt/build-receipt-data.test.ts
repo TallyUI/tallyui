@@ -66,7 +66,7 @@ describe('buildReceiptData', () => {
     { rates: [190000, 70000, 50000], amount: 5, expected: [1, 1, 0] },
     { rates: [50000, 150000], amount: 10, expected: [0, 2] },
   ])('apportions tax by largest remainder: $rates', ({ rates, amount, expected }) => {
-    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRate: () => 0, pricesIncludeTax: false } });
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
     rates.forEach((ratePpm, index) => builder.addLine({
       productId: `p${index}`, name: 'Item', unitPrice: { amount, currency: 'USD' }, taxRates: [{ ratePpm }],
     }));
@@ -77,7 +77,7 @@ describe('buildReceiptData', () => {
   });
 
   it('groups stacked taxes by code and rate across lines', () => {
-    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRate: () => 0, pricesIncludeTax: false } });
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
     const input = {
       productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'USD' },
       taxRates: [{ code: 'STATE', ratePpm: 60000 }, { code: 'CITY', ratePpm: 25000 }],
@@ -97,7 +97,7 @@ describe('buildReceiptData', () => {
   });
 
   it('keeps fractional percentages in default tax labels', () => {
-    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRate: () => 0.0725, pricesIncludeTax: false } });
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 72500, pricesIncludeTax: false } });
     builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'USD' } });
     expect(buildReceiptData(builder.getSnapshot(), config).totals.taxLines[0].label).toBe('Tax 7.25%');
   });

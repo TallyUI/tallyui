@@ -35,7 +35,7 @@ const traits: ProductTraits = {
   getCategoryNames: () => [],
 };
 
-const taxContext: TaxContext = { getTaxRate: () => 0, pricesIncludeTax: false };
+const taxContext: TaxContext = { getTaxRatePpm: () => 0, pricesIncludeTax: false };
 const product = { id: 'p1', name: 'Coffee', price: 500 };
 
 const draftsSchema = {
