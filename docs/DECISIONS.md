@@ -75,7 +75,7 @@ bodies and design docs, and the source is given for each.
 
 ## ADR-004 Platform storage: IndexedDB on web, own expo-sqlite storage on native
 
-- **Date:** 2026-02-25 · **Status:** Under review · **Source:** PR #1,
+- **Date:** 2026-02-25 · **Status:** Superseded by ADR-031 · **Source:** PR #1,
   b15ed8b
 - **Context:** RxDB's SQLite and OPFS storages are premium (paid). The
   product is open source.
@@ -264,7 +264,7 @@ bodies and design docs, and the source is given for each.
 ## ADR-020 Platform order: Medusa, then Vendure; Shopify parked
 
 - **Date:** 2026-09-23 · **Status:** Accepted (programme lead); Shopify part
-  **Needs Paul** (plan D1) · **Source:** plan §1.4
+  paused by Paul, see ADR-030 · **Source:** plan §1.4
 - **Context:** Medusa has the most sync-ready API (`with_deleted=true` on
   every list route, no maximum page size, barcode filters), MIT licensing,
   a live domain and a seeded dev store. Vendure has no POS today and a clean
@@ -355,7 +355,7 @@ bodies and design docs, and the source is given for each.
 
 ## ADR-025 No RxDB premium or SSPL code in TallyUI library packages
 
-- **Date:** 2026-09-23 · **Status:** Accepted, pending Paul on D2 for apps ·
+- **Date:** 2026-09-23 · **Status:** Superseded by ADR-031 ·
   **Source:** plan §1.5, D2
 - **Decision:** Library packages depend only on Apache-2.0 RxDB. A lint rule
   bans `rxdb-premium` and `rxdb-server` imports there. Storage stays
@@ -396,3 +396,85 @@ bodies and design docs, and the source is given for each.
   draft PR #3 (the Medusa dev store and first app) as the baseline once that
   CI is green. The app is then rebuilt on the M1–M3 packages rather than
   grown from the sample register on `main`.
+
+## ADR-030 Shopify is paused, not dropped (plan D1)
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Paul, via the Front desk) ·
+  **Source:** plan D1
+- **Decision:** No Shopify POS work. The Shopify connector stays as a
+  read-only catalogue example. The legal finding (API Terms §2.3.18 and
+  §2.3.10, App Store requirement 1.1.8, quoted in ADR-020) is kept, in case
+  Paul later asks Shopify for written authorisation. The focus is Medusa,
+  then Vendure.
+
+## ADR-031 RxDB Premium with SQLite storage, as in WCPOS (plan D2)
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Paul, via the Front desk);
+  supersedes ADR-004 and ADR-025 · **Source:** plan D2
+- **Context:** I had recommended open-source storage by default, with
+  premium as an option. Paul overruled that: "Open source is not the
+  priority; good apps are." If premium ever has to go, we write our own
+  adapters, but not now.
+- **Decision:**
+  - TallyUI and its apps target the RxDB premium SQLite storages on web and
+    native, following WCPOS `next` (SQLite-wasm on the web after the OPFS
+    engine's retirement).
+  - `rxdb` and `rxdb-premium` are pinned together at the version WCPOS pins
+    (17.4.0 on 2026-09-23), so fixes and patches are shared.
+  - Library packages may import premium. The lint ban from ADR-025 is
+    withdrawn.
+  - `@tallyui/storage-sqlite` is retired once premium SQLite lands.
+- **Install:**
+  - Local: `RXDB_PREMIUM=<token>` in a git-ignored `.env` at the project
+    root; rxdb-premium's installer searches parent directories.
+  - CI: WCPOS's pattern, which writes the `RXDB_LICENSE_KEY` secret into
+    `package.json` `accessTokens["rxdb-premium"]` before `pnpm install`.
+- **Consequences:**
+  - Installing needs a licence key, in CI and on every developer machine.
+  - The 13-collection cap of open-source RxDB no longer binds.
+  - The MVP may ship on Dexie if the key has not arrived. Storage is
+    injected, so switching is one change.
+
+## ADR-032 How WCPOS code reaches TallyUI (plan D3)
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Front desk, on the MVP
+  criterion) · **Source:** plan D3
+- **Decision:**
+  - Port the neutral payments, tender and register logic from WCPOS `next`
+    into `@tallyui/pos`, carrying the WCPOS tests over.
+  - Copy the stable neutral packages (printer, scanner, receipt schema and
+    renderer) only when a milestone needs them.
+  - Nothing changes in the WCPOS repositories without Paul.
+
+## ADR-033 Business model deferred; hardware drivers kept splittable (plan D4)
+
+- **Date:** 2026-09-23 · **Status:** Accepted as an interim rule (Paul, via
+  the Front desk); the model itself is deferred · **Source:** plan D4
+- **Context:** The model will probably mirror WCPOS: a free core, and a paid
+  Pro tier that keeps the terminal and hardware machinery private.
+- **Decision (until Paul decides):**
+  - Terminal and hardware drivers are not published as MIT in public
+    repositories.
+  - The neutral interfaces (the `PaymentDriver` contract, the receipt
+    schema, the scanner events) and a simulated driver live in TallyUI.
+  - Real drivers live in a separately packaged module that can become a
+    paid tier.
+  - The core library and the Medusa MVP stay open.
+
+## ADR-034 MVP first: the shortest path to a testable Medusa POS
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Paul's overriding priority,
+  via the Front desk) · **Source:** plan §2.2
+- **Decision:** Before anything else, ship a minimal Medusa POS that real
+  people can test. A tester sells offline in a hosted web app, reconnects,
+  and sees every order land in Medusa exactly once.
+- **In scope:**
+  - A command outbox and one idempotent `order.create` endpoint in a small
+    Medusa plugin (the TSP `commands` shape).
+  - `pos` and the cart on integer `Money`.
+  - Login as a Medusa admin user, and cash or recorded-external payments.
+  - Web only.
+- **Deferred until after the MVP:** the conformance suite, the pull, stream
+  and ids side of TSP, registers, split tender, hardware, native builds, the
+  RxDB upgrade and the in-browser demo.
+- **Target:** testable by 2026-10-02, committed by 2026-10-06.

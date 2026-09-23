@@ -31,10 +31,17 @@ is the discovery, Part 2 the plan, Part 3 the decisions that need Paul.*
 4. **Every milestone has numbers.** Examples: initial sync time, zero lost or
    duplicated orders across 1,000 fault-injected replays, and the line count
    of a new backend.
-5. **Four decisions need Paul** (Part 3, D1–D4): the Shopify call; RxDB
-   premium or fully open-source storage; port WCPOS packages into TallyUI
-   or publish them from WCPOS; and open source only or an open core with a
-   paid tier. The Front desk settled D5–D7 on 2026-09-23.
+5. **Decisions (Part 3), all ruled on 2026-09-23:**
+   - D1: Shopify is paused.
+   - D2: RxDB Premium with SQLite storage, like WCPOS.
+   - D3: port the neutral payments, tender and register logic; copy the
+     printer, scanner and receipt packages only when needed.
+   - D4: the business model is deferred. For now, hardware drivers stay out
+     of public MIT repos.
+   - D5–D7: as recommended.
+6. **MVP first** (§2.2): the shortest path to a Medusa POS that real people
+   can test by selling offline and seeing the order land. **Testable by
+   Friday 2026-10-02; committed by Tuesday 2026-10-06.**
 
 ---
 
@@ -429,7 +436,8 @@ DECISIONS.md, and Paul can overturn any of them.
    - We start with full replicas scoped to the POS channel and location.
      WCPOS-style demand-driven partial replicas come only if the M2
      benchmark misses its budget.
-   - At most 11 collections, because of the open-source cap of 13.
+   - Storage is RxDB premium SQLite (D2, Paul). Premium lifts open-source
+     RxDB's cap of 13 collections, but we still keep collections few.
    - `multiInstance: true` with leader election, so only one tab syncs.
 6. **Transport errors are retried, never turned into conflicts.** A command
    is only *rejected* on an explicit server refusal, and it then goes to a
@@ -438,20 +446,125 @@ DECISIONS.md, and Paul can overturn any of them.
 7. **TallyUI is MIT.** A LICENSE file is added to match the package
    manifests.
 
-## 2.2 Milestones (in order, each with measurable acceptance)
+## 2.2 MVP first (re-sequenced 2026-09-23)
 
-**Sequence.** M0 → M1 → M2 → M3 → M4. M5 (hardware) runs alongside M3
-once D3 is answered. M6 (Vendure) starts only after M2's conformance suite is
-green on Medusa. M7 is a decision gate.
+**Overriding priority** (Paul, 2026-09-23): the shortest path to a minimal
+viable Medusa POS that real people can test. Everything in §2.3 that a
+tester doesn't need is deferred until after this.
+
+**The MVP, defined by what a tester can do:**
+1. Open the hosted POS web app, enter their Medusa backend URL, and log in
+   as a Medusa admin user (native email/password auth, so no secret key
+   sits in the browser).
+2. The catalogue syncs. Search, or scan a barcode with a keyboard-wedge
+   scanner, which types into the search box and needs no driver.
+3. Build a cart with correct totals: integer money, and the region's tax.
+4. Take cash (or record an external card payment), and see the change and
+   an on-screen receipt that prints through the browser.
+5. Do all of this with the network off; orders queue.
+6. Reconnect, and every queued order lands in Medusa Admin **exactly
+   once**: at the POS prices, marked paid, with stock decremented.
+
+**MVP acceptance:**
+- Playwright e2e on web against medusa-dev: 25 sales, 20 of them made
+  offline, produce 25 orders in Medusa with 0 duplicates. Totals match to
+  the cent, and stock drops by the quantities sold.
+- Outbox fault test: 200 randomised replays (dropped, duplicated and
+  timed-out requests, and a reload mid-send) end with 0 lost and 0
+  duplicated orders.
+- Initial sync time for the 2,005-product catalogue is measured and
+  reported. It is not a gate.
+- One tester outside this machine completes a sale against their own Medusa
+  2.21 store, following only the quick-start doc.
+
+**MVP scope** (about 20 Codex jobs and one spike):
+
+*TallyUI:*
+
+| Work | Jobs |
+|---|---|
+| Job 1 (DB9, PR #14), Job 2 (pull-only products), Job 3 (benchmark) | In flight |
+| `pos` on `Money`: order builder, tax, receipt data | 1–2 |
+| Cart and checkout components on `Money`, with the currency from the trait context | 1 |
+| Minimal neutral `PosOrder` document and schema (ADR-021): lines, tax lines, cash and external payments, client UUIDv7, `created_at`, register id | 1 |
+| Command outbox: an RxDB collection plus a processor with backoff and a "needs attention" state. `order.create` uses the TSP `commands` envelope, so it is not throwaway | 2 |
+| Medusa connector: map `PosOrder` to the `order.create` payload | 1 |
+| Publishing: make primitives publishable, re-enable Release, align versions, add LICENSE. The hosted app needs TallyUI from npm | 1–2 |
+
+*medusapos/app:*
+
+| Work | Jobs |
+|---|---|
+| Add CI, then merge PR #3 (ADR-029) | 1 |
+| **Spike first:** on medusa-dev, confirm that a draft order keeps as-sold `unit_price` and how tax is applied on convert | Spike |
+| Medusa plugin: a ledger table plus migration, and `POST /tally/v1/commands` handling `order.create` idempotently (ledger → draft order at as-sold prices → mark paid → convert) | 2–3 |
+| POS screen: product grid and search, cart, cash tender, receipt, a pending-orders indicator, and the login screen | 3–4 |
+| Offline e2e test | 1 |
+| Hosting: an Expo web static export on Vercel (a `*.vercel.app` URL first, then app.medusapos.com), plus a quick-start doc (plugin install, CORS, login) | 1 |
+
+**Cut from the MVP (deferred, not dropped):**
+- **From M0:** the RxDB upgrade (Job 4, now aligned with WCPOS under D2);
+  removing the deprecated traits; the discount-before-tax fix (the MVP has
+  no discounts); theme-token drift; the `test-d` type tests; all
+  `storage-sqlite` work (superseded by D2).
+- **From M1:** the conformance suite, the `@tallyui/sync-server` package,
+  the TSP pull, stream and ids endpoints, the high-water-mark checkpoint,
+  SSE, and the 1,000-replay harness (the MVP keeps a 200-replay outbox
+  test).
+- **From M2:** plugin pull routes; separate prices and stock collections;
+  tombstones; a cashier actor with permissions (MVP testers log in as a
+  Medusa admin user); `stock.adjust`; customers (guest sales only); the
+  20k-product gate. Pulls stay on the existing Medusa Admin API adapter.
+  *Known MVP limitation:* a product deleted in Medusa lingers on the POS
+  until the app is reset.
+- **From M3:** split tender, register open and close with X/Z closures,
+  the tender-reducer port, and customers.
+- **From M4:** the in-browser demo (ADR-027) comes after the MVP. The MVP
+  ships the real app, for testers who have their own store.
+- **From M5:** everything except keyboard-wedge scanning and browser print.
+- **Platforms:** native (iOS and Android) and Electron builds. The MVP is
+  web only.
+- **Storage:** RxDB premium SQLite (D2) is the target. The MVP runs on
+  whatever storage is installed when it ships: Dexie on web if the premium
+  key hasn't arrived. Switching is a storage-injection change, so the key is
+  off the critical path.
+
+**Date estimate.**
+- **Testable MVP by Friday 2026-10-02. Committed no later than Tuesday
+  2026-10-06.**
+- The basis is about 20 jobs at today's measured pace: roughly one hour per
+  job for spec, Codex run, review and PR, with one test suite at a time.
+  That is about 4 working days of job time, plus integration, e2e debugging
+  and hosting.
+- The estimate assumes three things:
+  - The Medusa draft-order price override works as documented. The spike on
+    day 1 checks this; if it fails, a custom order workflow adds about a
+    day.
+  - Vercel and npm access for medusapos exist or arrive within 3 days.
+  - PRs are merged within a day of going green.
+
+**Access needed.** None of this blocks the next three days of work:
+- npm publish rights for `@tallyui` (the Release workflow's token), and a
+  package name for the Medusa plugin (for example `@medusapos/plugin`).
+- A Vercel project for the POS web app under the medusapos team.
+- A DNS CNAME for app.medusapos.com. This is Paul's, at Squarespace.
+- The RxDB premium token (see D2). It is not on the MVP's critical path.
+
+## 2.3 After the MVP: completing the platform
+
+The milestones below stay the plan once the MVP is in testers' hands. Each
+one carries only what the MVP did not already deliver.
+
+**Sequence.** M0 → M1 → M2 → M3 → M4. M5 (hardware) runs alongside M3.
+M6 (Vendure) starts only after M2's conformance suite is green on Medusa.
+M7 is a decision gate.
 
 ### M0: Foundation fixes (TallyUI)
 **Goal:** the library can ship a production app.
 - Fix DB9: the database is created with dev mode off.
 - Remove product push (decision 6 above).
-- The RxDB upgrade is its own job (Job 4 in §2.3), bracketed by Job 3's
+- The RxDB upgrade is its own job (Job 4 in §2.4), bracketed by Job 3's
   benchmark, so any regression is visible and revertable.
-- Add a lint rule banning `rxdb-premium` and `rxdb-server` imports in
-  library packages.
 - Make the deprecated traits and `sync` optional in `TallyConnector`.
 - Move `pos` and the cart components onto `Money`, `getPrices` and
   `resolvePrice`.
@@ -513,9 +626,10 @@ green on Medusa. M7 is a decision gate.
 - Initial sync of the 2,005-product / 5,655-variant seed into IndexedDB
   (Chromium, Playwright). **Provisional target: p50 ≤ 30 s**, fixed from
   job 3's baseline.
-- A synthetic 20k-product seed: provisional ≤ 3 min, heap ≤ 300 MB. If this
-  misses, it triggers the D2 revisit (premium storage or SQLite-wasm) or a
-  lazy catalogue. It does not quietly move the target.
+- A synthetic 20k-product seed on premium SQLite storage: provisional
+  ≤ 3 min, heap ≤ 300 MB. If this misses, it triggers WCPOS-style
+  demand-driven partial replicas (a lazy catalogue). It does not quietly
+  move the target.
 - An edit in the Medusa admin reaches the POS in **p95 ≤ poll interval +
   2 s**.
 - Plugin size is recorded: the backend-cost KPI.
@@ -547,12 +661,18 @@ green on Medusa. M7 is a decision gate.
 - Lighthouse performance ≥ 80 and accessibility ≥ 90.
 - No API key in the bundle, checked by a grep in CI.
 
-### M5: Hardware kit (TallyUI)
+### M5: Hardware kit
 **Goal:** printers, scanners and one card terminal through neutral
 interfaces.
-- Per D3: receipt schema and renderer, ESC/POS printer transports, scanner
-  (keyboard wedge and camera), the `PaymentDriver` harness, a simulated
-  driver, and a Stripe Terminal driver.
+- **Licensing (D4, interim ruling):** until Paul decides the business
+  model, terminal and hardware *drivers* are not published as MIT in public
+  repositories. The neutral *interfaces* (the `PaymentDriver` contract, the
+  receipt schema, the scanner event types) and a simulated driver live in
+  TallyUI. Real drivers (ESC/POS transports, Stripe Terminal) go in a
+  separately packaged, private-for-now module, so they can become a paid
+  tier.
+- Per D3, the stable neutral WCPOS packages (printer, scanner, receipts) are
+  copied only when this milestone needs them.
 
 **Acceptance:**
 - Receipt golden-file tests.
@@ -577,7 +697,7 @@ interfaces.
 ### M7: Shopify decision gate
 - Per D1. No build work before then.
 
-## 2.3 The first three Codex-sized jobs
+## 2.4 The first Codex-sized jobs
 
 Each gets a spec from `~/.claude/codex/SPEC-TEMPLATE.md`, runs in its own
 worktree off `main`, and becomes one PR.
@@ -626,23 +746,28 @@ worktree off `main`, and becomes one PR.
 - *Acceptance:* the script exits 0 and prints the JSON line. I run it three
   times and record the median in DECISIONS.md.
 
-**Job 4 (after jobs 1–3): RxDB 16.21.1 → 17.5 as a standalone upgrade.**
-- *Scope:* the RxDB and rxjs pins, `@tallyui/storage-sqlite` (storage
-  interface changes), `createTallyDatabase` (`multiInstance: true` plus
-  leader election), and the 2026-02-25 replication design doc, which names
-  the premium IndexedDB storage.
+**Job 4 (after the MVP): RxDB 16.21.1 → the WCPOS-pinned 17.x, as a
+standalone upgrade, then premium storage.**
+- *Scope:* the RxDB and rxjs pins, set to the version WCPOS `next` pins
+  (17.4.0 today), matched by `rxdb-premium`; `createTallyDatabase`
+  (`multiInstance: true` plus leader election); and the 2026-02-25
+  replication design doc. `@tallyui/storage-sqlite` is not ported. Premium
+  SQLite replaces it in a follow-up job (D2).
 - *Before and after:* run the Job 3 benchmark three times on 16.21.1 and
-  three times on 17.5. Record both medians in the PR.
-- *Acceptance:* the full test suite stays green, with no drop from the
-  current count; the storage-sqlite tests pass on RxDB 17; the benchmark
-  median regresses by no more than 10%. If it regresses by more, the PR
-  stays open and the upgrade is reverted, not patched over.
+  three times on 17.x. Record both medians in the PR.
+- *Acceptance:*
+  - The full test suite stays green, with no drop from the current count.
+  - The benchmark median regresses by no more than 10%. If it regresses by
+    more, the PR stays open and the upgrade is reverted, not patched over.
+  - CI installs premium from the `RXDB_LICENSE_KEY` secret.
 
 ---
 
-# Part 3: Decisions that need Paul
+# Part 3: Decisions that needed Paul
 
-Each has my recommendation. Everything else I decide and log.
+Each carries my recommendation, then the ruling. As of 2026-09-23 evening,
+every one has a ruling except D4, which is deferred with an interim rule.
+Everything else I decide and log.
 
 **D1: Shopify.** Its API Terms and App Store requirements bar a third-party
 POS without Shopify's written authorisation. The exact text, retrieved
@@ -671,8 +796,29 @@ exception, so asking Shopify is a real option.
 - **Recommend:** drop Shopify as a POS target. Keep the connector as a
   read-only catalogue example. Revisit only if Paul wants to ask Shopify for
   authorisation, or wants a POS UI extension pack for Shopify's own POS.
+- ***Decided (Paul, 2026-09-23; ADR-030):*** Shopify is **paused, not
+  dropped**. There is no POS work. The connector stays a read-only
+  catalogue example, and this legal finding is kept for later. The focus is
+  Medusa, then Vendure.
 
 **D2: RxDB premium or fully open-source storage.**
+- ***Decided (Paul, 2026-09-23; ADR-031):*** TallyUI uses **RxDB Premium
+  with SQLite storage**, the same as WCPOS. In Paul's words, open source is
+  not the priority; good apps are. If premium ever has to go, we write our
+  own adapters, but not now. My recommendation below was overruled.
+  - We target the premium SQLite storages on web and native, as WCPOS
+    `next` does.
+  - RxDB and rxdb-premium are pinned to the version WCPOS pins (17.4.0
+    today), so fixes and patches are shared.
+  - The ban on premium imports (ADR-025) is withdrawn.
+  - `@tallyui/storage-sqlite` is retired once premium SQLite lands.
+  - The premium install follows WCPOS: CI writes the key into
+    `package.json` `accessTokens["rxdb-premium"]` from the
+    `RXDB_LICENSE_KEY` secret. Locally, rxdb-premium's installer reads
+    `RXDB_PREMIUM=<token>` from a git-ignored `.env` in the project root or
+    any parent directory.
+
+*My original recommendation, overruled:*
 - WCPOS is moving off the premium OPFS/filesystem engine to SQLite, which
   confirms SQLite as the right substrate. But its SQLite targets are premium
   RxDB storages, and installing them needs a licence key.
@@ -694,6 +840,12 @@ exception, so asking Shopify is a real option.
   register *logic* into `@tallyui/pos` as a neutral re-implementation, with
   the WCPOS tests carried over. Nothing is changed in the WCPOS repos
   without Paul.
+- ***Decided (Front desk, 2026-09-23, on the MVP criterion; ADR-032):***
+  - Port the neutral payments, tender and register logic into
+    `@tallyui/pos`, with the WCPOS tests carried over.
+  - Copy the stable neutral packages (printer, scanner, receipts) only when
+    a milestone needs them.
+  - Nothing changes in the WCPOS repos without Paul.
 
 **D4: Licence and business model for Medusa POS and Vendure POS.**
 - WCPOS keeps terminal machinery private as "the value of Pro".
@@ -701,6 +853,13 @@ exception, so asking Shopify is a real option.
   and apps), including one reference terminal driver (Stripe Terminal).
   Revenue, if any, comes from hosting and support. Say so before M5, because
   it decides whether terminal drivers go in public repos.
+- ***Deferred (Paul, 2026-09-23; ADR-033):*** The business model will
+  probably mirror WCPOS: a free core, and a paid Pro tier that keeps the
+  terminal and hardware machinery private. Until Paul decides:
+  - Terminal and hardware drivers are not published as MIT in public
+    repositories.
+  - That work is structured so it can split into a paid tier.
+  - The core library and the MVP stay open.
 
 **D5: Hosted demo backend.** *Decided 2026-09-23 by the Front desk, as recommended (ADR-027).*
 - **Recommend:** an in-browser demo with a simulated backend (seeded RxDB, no
