@@ -158,7 +158,7 @@ until a discount contract exists.
 - **Overpayment:** accept it; the collection amount = `totalMinor`.
 - **Rejection codes:** `unknown_variant`, `invalid_quantity`, `underpaid`,
   `unsupported_currency`, `unsupported_tax_mode`, `insufficient_stock`,
-  `idempotency_mismatch`.
+  `idempotency_mismatch`, `invalid_payload`.
 
 ## Money and tax rules (TallyUI ADR-037 + ADR-040)
 
