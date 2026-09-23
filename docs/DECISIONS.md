@@ -478,3 +478,21 @@ bodies and design docs, and the source is given for each.
   and ids side of TSP, registers, split tender, hardware, native builds, the
   RxDB upgrade and the in-browser demo.
 - **Target:** testable by 2026-10-02, committed by 2026-10-06.
+
+## ADR-035 Replication baseline; Medusa product pages stay at 100
+
+- **Date:** 2026-09-23 · **Status:** Accepted (programme lead) · **Source:**
+  PR #16 (benchmark harness)
+- **Measurement:** local Medusa 2.21 dev store, 2,005 products with
+  variants, prices and inventory levels, pulled through
+  `medusaProductReplication` into memory-storage RxDB 16.21.1 on the Mac
+  mini. Three runs per batch size:
+  - batch 100: median **12.52 s** (range 12.47–12.63), 160 docs/s,
+    21 requests, 58.2 MB peak heap;
+  - batch 500: median 16.76 s (range 16.64–16.85), 120 docs/s, 5 requests,
+    48.2 MB.
+- **Decision:** keep Medusa product pulls at 100 per page. The Admin API is
+  the bottleneck, at about 600 ms per 100-product page, and its per-page cost
+  grows faster than linearly with the nested fields. So larger pages are
+  slower. The real gain is a plugin-side pull route after the MVP. This
+  12.52 s median is the "before" number for Job 4 (the RxDB upgrade).
