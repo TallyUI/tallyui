@@ -66,6 +66,14 @@ describe('HTTP command transport', () => {
     expect(await transport.send(commands)).toEqual({ kind: 'retry', reason: 'status_429', retryAfterMs: 3000 });
   });
 
+  it.each(['-5', 'abc', 'Infinity', '1e309'])('ignores invalid Retry-After %s', async (retryAfter) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response('', {
+      status: 503, headers: { 'Retry-After': retryAfter },
+    }));
+    const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
+    expect(await transport.send(commands)).toEqual({ kind: 'retry', reason: 'status_503' });
+  });
+
   it.each([undefined, 25])('aborts after the configured timeout (%s)', async (timeoutMs) => {
     vi.useFakeTimers();
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (_url, init) => new Promise((_resolve, reject) => {

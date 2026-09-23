@@ -33,7 +33,7 @@ export function createHttpCommandTransport(options: HttpTransportOptions): Comma
         const retryAfter = response.headers.get('Retry-After');
         const seconds = retryAfter === null ? NaN : Number(retryAfter);
         const retry = (reason: string) => ({ kind: 'retry' as const, reason,
-          ...(Number.isFinite(seconds) ? { retryAfterMs: seconds * 1000 } : {}),
+          ...(Number.isFinite(seconds) && seconds >= 0 ? { retryAfterMs: seconds * 1000 } : {}),
         });
         if (response.status !== 200) return retry(`status_${response.status}`);
         let body: unknown;

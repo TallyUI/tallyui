@@ -77,11 +77,129 @@ describe('order outbox', () => {
     expect(send.mock.calls.flatMap(([batch]) => batch.map((command) => command.id))).toEqual(orders.map((input) => input.commandId));
   });
 
-  it('caps batches at 50', async () => {
-    await collection.bulkInsert(Array.from({ length: 51 }, (_, i) => order(i)));
-    const { outbox, send } = setup({ batchSize: 100 });
+  it('caps batches at 10 when configured for 50', async () => {
+    await collection.bulkInsert(Array.from({ length: 25 }, (_, i) => order(i)));
+    const { outbox, send } = setup({ batchSize: 50 });
     await outbox.flush();
-    expect(send.mock.calls.map(([batch]) => batch.length)).toEqual([50, 1]);
+    expect(send.mock.calls.map(([batch]) => batch.length)).toEqual([10, 10, 5]);
+  });
+
+  it('applies an unknown warning on the oldest order and sends the next order', async () => {
+    const orders = [order(0), order(1)];
+    await collection.bulkInsert(orders);
+    const { outbox, send } = setup({ batchSize: 1 });
+    const warnings = [{ code: 'new_code', foo: 1 }];
+    send.mockImplementationOnce(async (batch) => ({ kind: 'results',
+      results: [{ ...applied(batch)[0], warnings }] as unknown as CommandResult[] }));
+    await outbox.flush();
+    expect((await collection.findOne(orders[0].id).exec())?.toJSON()).toMatchObject({ syncStatus: 'applied', warnings });
+    expect(send.mock.calls.map(([batch]) => batch[0].id)).toEqual(orders.map((input) => input.commandId));
+    expect((await collection.findOne(orders[1].id).exec())?.syncStatus).toBe('applied');
+  });
+
+  it.each(['applied', 'rejected'] as const)('prunes attempts after an order is %s', async (status) => {
+    const doc = await collection.insert(order(0));
+    const { outbox, send } = setup();
+    send.mockResolvedValueOnce({ kind: 'retry', reason: 'network' }).mockResolvedValueOnce({ kind: 'results',
+      results: [{ id: doc.commandId, status, error: { code: 'invalid', message: 'Invalid' } }] });
+    await outbox.flush();
+    await outbox.flush();
+    expect((await collection.findOne(doc.id).exec())?.syncStatus).toBe(status);
+    // Requeue the same command to observe whether its terminal attempt entry was removed.
+    await doc.incrementalPatch({ syncStatus: 'pending' });
+    await collection.insert(order(1));
+    await outbox.flush();
+    expect(send.mock.calls.map(([batch]) => batch.map((command) => command.attempt))).toEqual([[1], [2], [1, 1]]);
+  });
+
+  it('retries after stop and start during an in-flight send', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    await collection.insert(order(0));
+    const { outbox, send } = setup();
+    let resolve!: (outcome: Awaited<ReturnType<CommandTransport['send']>>) => void;
+    send.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    outbox.start();
+    const running = outbox.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(1);
+    outbox.stop();
+    outbox.start();
+    resolve({ kind: 'retry', reason: 'network' });
+    await running;
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect((await collection.findOne().exec())?.syncStatus).toBe('applied');
+  });
+
+  it('resolves and schedules a retry when send throws without unhandled rejections', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    await collection.insert(order(0));
+    const { outbox, send, states } = setup();
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      send.mockImplementationOnce(() => { throw new Error('send failed'); });
+      outbox.start();
+      await expect(outbox.flush()).resolves.toBeUndefined();
+      expect(states.at(-1)).toMatchObject({ lastRetryReason: 'error: send failed', nextAttemptAt: epoch + 1000 });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(send).toHaveBeenCalledTimes(2);
+      expect((await collection.findOne().exec())?.syncStatus).toBe('applied');
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
+  it('re-flushes when start runs during the final state update of a stopped run', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    await collection.bulkInsert([order(0), order(1)]);
+    const { outbox, send } = setup({ batchSize: 1 });
+    send.mockImplementationOnce(async (batch) => {
+      outbox.stop();
+      return { kind: 'results', results: applied(batch) };
+    });
+    const subscription = outbox.state$.subscribe((state) => {
+      if (!state.sending && state.pending === 1) outbox.start();
+    });
+    await outbox.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    subscription.unsubscribe();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(await collection.count({ selector: { syncStatus: 'applied' } }).exec()).toBe(2);
+  });
+
+  it('arms a retry and clears running when updateState throws in run and finally', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const { outbox, send, states } = setup();
+    await outbox.flush();
+    await collection.insert(order(0));
+    const count = vi.spyOn(collection, 'count').mockImplementation(() => { throw new Error('count failed'); });
+    try {
+      await expect(outbox.flush()).resolves.toBeUndefined();
+      expect(states.at(-1)?.lastRetryReason).toBe('error: count failed');
+    } finally {
+      count.mockRestore();
+    }
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((await collection.findOne().exec())?.syncStatus).toBe('applied');
+  });
+
+  it('clamps a 30-day Retry-After without a timer overflow hot loop', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    await collection.insert(order(0));
+    const { outbox, send, states } = setup({ maxBackoffMs: 60000 });
+    send.mockResolvedValueOnce({ kind: 'retry', reason: 'status_503', retryAfterMs: 30 * 86400_000 });
+    await outbox.flush();
+    expect(states.at(-1)!.nextAttemptAt! - epoch).toBeLessThanOrEqual(60000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(send).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(59900);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect((await collection.findOne().exec())?.syncStatus).toBe('applied');
   });
 
   it('rejects with the error and never sends the order again', async () => {

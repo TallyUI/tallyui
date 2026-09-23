@@ -29,6 +29,10 @@ it('inserts a finalised order into an AJV-validated RxDB memory collection', asy
       warnings: [{ code: 'total_mismatch', expectedMinor: 3451, serverMinor: 3452 }, { code: 'insufficient_stock', variantId: 'v1', quantity: 2 }],
     });
     await pos_orders.insert({ ...order, id: uuidv7(), syncStatus: 'rejected', error: { code: 'invalid', message: 'Rejected' } });
+    const warnings = [{ code: 'new_code', foo: 1, nested: { extra: ['accepted'] } }];
+    const unknown = await pos_orders.insert({ ...order, id: uuidv7(), syncStatus: 'applied', warnings });
+    expect(unknown.toJSON().warnings).toEqual(warnings);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), warnings: [{ code: 'x'.repeat(65) }] })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), syncStatus: 'invalid' })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), extra: true })).rejects.toThrow();
     expect(posOrderSchema.indexes).toEqual(['createdAt', 'syncStatus', ['syncStatus', 'createdAt']]);
