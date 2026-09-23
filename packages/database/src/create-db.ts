@@ -1,11 +1,14 @@
 import { createRxDatabase, addRxPlugin, type RxDatabase, type RxCollection } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
+import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 
 import type { TallyConnector } from '@tallyui/core';
 
+const DEV_MODE = process.env.NODE_ENV !== 'production';
+
 // Enable dev mode in non-production
-if (process.env.NODE_ENV !== 'production') {
+if (DEV_MODE) {
   addRxPlugin(RxDBDevModePlugin);
 }
 
@@ -48,7 +51,9 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
 
   const db = await createRxDatabase({
     name,
-    storage,
+    // Dev mode refuses storage without a schema validator (RxDB error DVM1),
+    // and validating is what makes dev mode catch bad connector documents.
+    storage: DEV_MODE ? wrappedValidateAjvStorage({ storage }) : storage,
     multiInstance: false,
     ignoreDuplicate: true,
   });

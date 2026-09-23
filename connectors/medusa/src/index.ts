@@ -38,14 +38,16 @@ export const medusaConnector: TallyConnector = {
       },
       {
         key: 'api_token',
-        label: 'API Token',
+        label: 'Secret API Key',
         type: 'password',
-        placeholder: 'Your admin API token',
+        placeholder: 'sk_...',
         required: true,
       },
     ],
+    // Medusa v2 only accepts secret API keys over HTTP Basic auth, with the
+    // key as the username and an empty password. Bearer is for user JWTs.
     getHeaders: (credentials) => ({
-      Authorization: `Bearer ${credentials.api_token}`,
+      Authorization: `Basic ${btoa(`${credentials.api_token}:`)}`,
     }),
   },
 

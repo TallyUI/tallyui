@@ -1,4 +1,14 @@
-import type { ProductTraits } from '@tallyui/core';
+import type { ProductTraits, StockLevel } from '@tallyui/core';
+
+function productStock(variants: StockLevel[]): StockLevel {
+  if (!variants.length) return { status: 'unknown' };
+  const status = variants.some((stock) => stock.status === 'in_stock') ? 'in_stock'
+    : variants.some((stock) => stock.status === 'backorder') ? 'backorder'
+    : variants.every((stock) => stock.status === 'out_of_stock') ? 'out_of_stock' : 'unknown';
+  const quantity = variants.every((stock) => stock.quantity != null)
+    ? variants.reduce((sum, stock) => sum + stock.quantity!, 0) : undefined;
+  return quantity === undefined ? { status } : { status, quantity };
+}
 
 /**
  * Vendure product trait implementations.
@@ -18,6 +28,31 @@ export const vendureProductTraits: ProductTraits = {
   getName: (doc) => doc.name ?? '',
 
   getSku: (doc) => doc.variants?.[0]?.sku || undefined,
+
+  getPrices: (doc, context) => {
+    const variant = doc.variants?.[0];
+    // priceWithTax is already an integer in minor units.
+    if (variant?.priceWithTax == null) return [];
+    const currency = String(variant.currencyCode ?? context?.currency ?? 'XXX').toUpperCase();
+    // Vendure applies sales as order-level promotions, so there is no sale entry.
+    return [{ amount: variant.priceWithTax, currency, kind: 'base' }];
+  },
+
+  getStock: (doc) => productStock((doc.variants ?? []).map((variant: any): StockLevel => {
+    if (!variant) return { status: 'unknown' };
+    // Admin API: exact stockOnHand. Shop API: only the stockLevel string.
+    if (variant.stockOnHand != null) {
+      return {
+        status: variant.stockOnHand > 0 ? 'in_stock' : 'out_of_stock',
+        quantity: variant.stockOnHand,
+      };
+    }
+    if (variant.stockLevel === 'IN_STOCK' || variant.stockLevel === 'LOW_STOCK') {
+      return { status: 'in_stock' };
+    }
+    if (variant.stockLevel === 'OUT_OF_STOCK') return { status: 'out_of_stock' };
+    return { status: 'unknown' };
+  })),
 
   getPrice: (doc) => {
     // Vendure stores prices as integers in smallest currency unit (cents)
@@ -74,6 +109,10 @@ export const vendureProductTraits: ProductTraits = {
   },
 
   hasVariants: (doc) => (doc.variants?.length ?? 0) > 1,
+
+  isSellable: (doc) => doc.enabled !== false,
+
+  getVariantCount: (doc) => doc.variants?.length ?? 1,
 
   getType: (doc) => {
     // Vendure has no native product type field

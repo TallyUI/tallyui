@@ -26,8 +26,10 @@ export const medusaProductSchema: RxJsonSchema<any> = {
     title: {
       type: 'string',
     },
+    // Indexed fields must be required strings with a maxLength (RxDB SC34).
     handle: {
       type: 'string',
+      maxLength: 255,
     },
     subtitle: {
       type: ['string', 'null'],
@@ -39,6 +41,7 @@ export const medusaProductSchema: RxJsonSchema<any> = {
       type: 'string',
       enum: ['draft', 'proposed', 'published', 'rejected'],
       default: 'draft',
+      maxLength: 20,
     },
     thumbnail: {
       type: ['string', 'null'],
@@ -192,5 +195,5 @@ export const medusaProductSchema: RxJsonSchema<any> = {
     },
   },
   indexes: ['handle', 'status'],
-  required: ['id'],
+  required: ['id', 'handle', 'status'],
 };

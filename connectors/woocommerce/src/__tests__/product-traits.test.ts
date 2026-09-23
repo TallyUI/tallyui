@@ -1,6 +1,35 @@
 import { describe, it, expect } from 'vitest';
 import { wooProductTraits } from '../traits/product';
 
+describe('WooCommerce isSellable / getVariantCount', () => {
+  it('allows published products', () => {
+    expect(wooProductTraits.isSellable({ status: 'publish' })).toBe(true);
+  });
+
+  it.each(['draft', 'pending', 'private'])('rejects %s products', (status) => {
+    expect(wooProductTraits.isSellable({ status })).toBe(false);
+  });
+
+  it('allows products with missing status', () => {
+    expect(wooProductTraits.isSellable({})).toBe(true);
+  });
+
+  it('counts one variant for simple products', () => {
+    expect(wooProductTraits.getVariantCount({ type: 'simple', variations: [1, 2] })).toBe(1);
+  });
+
+  it('counts the variations of variable products', () => {
+    expect(wooProductTraits.getVariantCount({ type: 'variable', variations: [1] })).toBe(1);
+    expect(wooProductTraits.getVariantCount({ type: 'variable', variations: [1, 2, 3] })).toBe(3);
+  });
+
+  it('handles empty and missing variation data', () => {
+    expect(wooProductTraits.getVariantCount({ type: 'variable', variations: [] })).toBe(0);
+    expect(wooProductTraits.getVariantCount({ type: 'variable' })).toBe(0);
+    expect(wooProductTraits.getVariantCount({})).toBe(1);
+  });
+});
+
 /**
  * Realistic WooCommerce product document, shaped like the REST API v3 response.
  */
@@ -187,5 +216,37 @@ describe('WooCommerce product traits', () => {
     it('returns empty array when no categories', () => {
       expect(wooProductTraits.getCategoryNames(minimalProduct)).toEqual([]);
     });
+  });
+});
+
+describe('WooCommerce neutral price and stock', () => {
+  const doc = { regular_price: '20.00', price: '15.99', sale_price: '15.99', on_sale: true,
+    stock_status: 'instock', manage_stock: true, stock_quantity: 4 };
+
+  it('maps regular/sale strings to a price list in the store currency', () => {
+    expect(wooProductTraits.getPrices(doc, { currency: 'eur' })).toEqual([
+      { amount: 2000, currency: 'EUR', kind: 'base' },
+      { amount: 1599, currency: 'EUR', kind: 'sale' },
+    ]);
+  });
+
+  it('has no sale entry when not on sale, and XXX without a store currency', () => {
+    expect(wooProductTraits.getPrices({ ...doc, on_sale: false })).toEqual([
+      { amount: 2000, currency: 'XXX', kind: 'base' },
+    ]);
+  });
+
+  it('maps stock_status strings to the neutral enum', () => {
+    expect(wooProductTraits.getStock(doc)).toEqual({ status: 'in_stock', quantity: 4 });
+    expect(wooProductTraits.getStock({ stock_status: 'outofstock', manage_stock: true, stock_quantity: 0 }))
+      .toEqual({ status: 'out_of_stock', quantity: 0 });
+    expect(wooProductTraits.getStock({ stock_status: 'onbackorder', manage_stock: false }).status)
+      .toBe('backorder');
+    expect(wooProductTraits.getStock({}).status).toBe('unknown');
+  });
+
+  it('leaves quantity undefined when stock is not managed', () => {
+    expect(wooProductTraits.getStock({ stock_status: 'instock', manage_stock: false, stock_quantity: null }))
+      .toEqual({ status: 'in_stock', quantity: undefined });
   });
 });

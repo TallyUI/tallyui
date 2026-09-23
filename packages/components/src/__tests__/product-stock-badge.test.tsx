@@ -36,6 +36,17 @@ describe('ProductStockBadge', () => {
     expect(screen.getByText('Out of Stock')).toBeDefined();
   });
 
+  it('omits the quantity for out-of-stock products even when showQuantity is true', () => {
+    const connector = createTestConnector('woo');
+    const outOfStockDoc = { ...wooDoc, stock_status: 'outofstock', stock_quantity: 0 };
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductStockBadge doc={outOfStockDoc} showQuantity />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('Out of Stock').textContent).toBe('Out of Stock');
+  });
+
   it('shows quantity when showQuantity is true', () => {
     const connector = createTestConnector('woo');
     render(
@@ -54,5 +65,16 @@ describe('ProductStockBadge', () => {
       </ConnectorProvider>
     );
     expect(screen.getByText('Unknown')).toBeDefined();
+  });
+
+  it('renders "On Backorder" for a Medusa variant with none left that allows backorders', () => {
+    const connector = createTestConnector('medusa');
+    const variant = { ...medusaDoc.variants[0], manage_inventory: true, allow_backorder: true, inventory_quantity: 0 };
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductStockBadge doc={{ ...medusaDoc, variants: [variant] }} showQuantity />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('On Backorder (0)')).toBeDefined();
   });
 });

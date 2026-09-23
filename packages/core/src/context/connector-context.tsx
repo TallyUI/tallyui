@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
 
-import type { TallyConnector } from '../types';
+import type { TallyConnector, TraitContext } from '../types';
 
 /**
  * React context that holds the active connector.
@@ -9,15 +9,25 @@ import type { TallyConnector } from '../types';
  */
 const ConnectorContext = createContext<TallyConnector | null>(null);
 
+const EMPTY_TRAIT_CONTEXT: TraitContext = {};
+const TraitContextContext = createContext<TraitContext>(EMPTY_TRAIT_CONTEXT);
+
 export interface ConnectorProviderProps {
   connector: TallyConnector;
+  /**
+   * Store-level facts passed to traits that need them, such as the store
+   * currency for backends whose product documents omit it.
+   */
+  traitContext?: TraitContext;
   children: ReactNode;
 }
 
-export function ConnectorProvider({ connector, children }: ConnectorProviderProps) {
+export function ConnectorProvider({ connector, traitContext, children }: ConnectorProviderProps) {
   return (
     <ConnectorContext.Provider value={connector}>
-      {children}
+      <TraitContextContext.Provider value={traitContext ?? EMPTY_TRAIT_CONTEXT}>
+        {children}
+      </TraitContextContext.Provider>
     </ConnectorContext.Provider>
   );
 }
@@ -42,6 +52,13 @@ export function useConnector(): TallyConnector {
 export function useProductTraits() {
   const connector = useConnector();
   return connector.traits.product;
+}
+
+/**
+ * The store-level TraitContext given to the nearest ConnectorProvider.
+ */
+export function useTraitContext(): TraitContext {
+  return useContext(TraitContextContext);
 }
 
 /**

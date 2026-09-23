@@ -1,6 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { vendureProductTraits } from '../traits/product';
 
+describe('Vendure isSellable / getVariantCount', () => {
+  it('allows enabled products', () => {
+    expect(vendureProductTraits.isSellable({ enabled: true })).toBe(true);
+  });
+
+  it('rejects disabled products', () => {
+    expect(vendureProductTraits.isSellable({ enabled: false })).toBe(false);
+  });
+
+  it('allows products with missing enabled status', () => {
+    expect(vendureProductTraits.isSellable({})).toBe(true);
+  });
+
+  it('counts a single variant', () => {
+    expect(vendureProductTraits.getVariantCount({ variants: [{}] })).toBe(1);
+  });
+
+  it('counts several variants', () => {
+    expect(vendureProductTraits.getVariantCount({ variants: [{}, {}, {}] })).toBe(3);
+  });
+
+  it('distinguishes empty and missing variant data', () => {
+    expect(vendureProductTraits.getVariantCount({ variants: [] })).toBe(0);
+    expect(vendureProductTraits.getVariantCount({})).toBe(1);
+  });
+});
+
 /**
  * Realistic Vendure product document, shaped like the Admin GraphQL API response.
  */
@@ -244,5 +271,60 @@ describe('Vendure product traits', () => {
     it('returns empty array when no collections', () => {
       expect(vendureProductTraits.getCategoryNames(simpleProduct)).toEqual([]);
     });
+  });
+});
+
+describe('product-level getStock', () => {
+  it('sums all tracked variants and uses any in-stock variant', () => {
+    expect(vendureProductTraits.getStock({ variants: [
+      { stockOnHand: 0 }, { stockOnHand: 3 }, { stockOnHand: 5 },
+    ] })).toEqual({ status: 'in_stock', quantity: 8 });
+  });
+
+  it('omits quantity when one variant has only a stock level', () => {
+    expect(vendureProductTraits.getStock({ variants: [
+      { stockOnHand: 0 }, { stockLevel: 'IN_STOCK' },
+    ] })).toEqual({ status: 'in_stock', quantity: undefined });
+  });
+
+  it('sums quantities when all variants are out of stock', () => {
+    expect(vendureProductTraits.getStock({ variants: [
+      { stockOnHand: 0 }, { stockOnHand: -2 },
+    ] })).toEqual({ status: 'out_of_stock', quantity: -2 });
+  });
+
+  it.each([
+    [[], { status: 'unknown' }],
+    [[{ stockOnHand: 3 }, {}], { status: 'in_stock' }],
+    [[{ stockOnHand: 0 }, {}], { status: 'unknown' }],
+    [[{ stockOnHand: 0 }, { stockLevel: 'OUT_OF_STOCK' }], { status: 'out_of_stock' }],
+  ])('handles missing quantities for %j', (variants, expected) => {
+    expect(vendureProductTraits.getStock({ variants })).toEqual(expected);
+  });
+
+  it.each([
+    [{ stockOnHand: 3, stockLevel: 'OUT_OF_STOCK' }, { status: 'in_stock', quantity: 3 }],
+    [{ stockOnHand: 0, stockLevel: 'IN_STOCK' }, { status: 'out_of_stock', quantity: 0 }],
+    [{ stockLevel: 'IN_STOCK' }, { status: 'in_stock' }],
+    [{ stockLevel: 'LOW_STOCK' }, { status: 'in_stock' }],
+    [{ stockLevel: 'OUT_OF_STOCK' }, { status: 'out_of_stock' }],
+    [{}, { status: 'unknown' }],
+  ])('leaves a single variant unchanged: %j', (variant, expected) => {
+    expect(vendureProductTraits.getStock({ variants: [variant] })).toStrictEqual(expected);
+  });
+});
+
+describe('Vendure neutral price and stock', () => {
+  it('passes integer priceWithTax through with the variant currency', () => {
+    expect(vendureProductTraits.getPrices({ variants: [{ priceWithTax: 1299, currencyCode: 'EUR' }] }))
+      .toEqual([{ amount: 1299, currency: 'EUR', kind: 'base' }]);
+    expect(vendureProductTraits.getPrices({})).toEqual([]);
+  });
+
+  it('prefers exact stockOnHand, then the stockLevel string', () => {
+    expect(vendureProductTraits.getStock({ variants: [{ stockOnHand: 5 }] })).toEqual({ status: 'in_stock', quantity: 5 });
+    expect(vendureProductTraits.getStock({ variants: [{ stockLevel: 'LOW_STOCK' }] })).toEqual({ status: 'in_stock' });
+    expect(vendureProductTraits.getStock({ variants: [{ stockLevel: 'OUT_OF_STOCK' }] })).toEqual({ status: 'out_of_stock' });
+    expect(vendureProductTraits.getStock({}).status).toBe('unknown');
   });
 });

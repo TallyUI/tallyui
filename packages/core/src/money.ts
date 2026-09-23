@@ -1,0 +1,81 @@
+import type { Money, ProductPrice, ResolvedPrice } from './types/money';
+
+const digitsCache = new Map<string, number>();
+
+/** Number of minor-unit digits for an ISO 4217 code (2 for EUR, 0 for JPY). */
+export function minorUnitDigits(currency: string): number {
+  const code = currency.toUpperCase();
+  let digits = digitsCache.get(code);
+  if (digits === undefined) {
+    try {
+      digits = new Intl.NumberFormat('en', { style: 'currency', currency: code })
+        .resolvedOptions().maximumFractionDigits ?? 2;
+    } catch {
+      // Unknown or placeholder code (e.g. 'XXX'): assume cents.
+      digits = 2;
+    }
+    digitsCache.set(code, digits);
+  }
+  return digits;
+}
+
+/**
+ * Converts a major-unit amount ('12.50', 12.5) into Money.
+ * Returns undefined for empty or non-numeric input.
+ */
+export function moneyFromMajor(
+  value: string | number | null | undefined,
+  currency: string,
+): Money | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  const major = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(major)) return undefined;
+  const code = currency.toUpperCase();
+  return { amount: Math.round(major * 10 ** minorUnitDigits(code)), currency: code };
+}
+
+/** Converts Money back to a major-unit number, e.g. for Intl formatting. */
+export function moneyToMajor(money: Money): number {
+  return money.amount / 10 ** minorUnitDigits(money.currency);
+}
+
+const formatters = new Map<string, Intl.NumberFormat>();
+
+/**
+ * Formats Money for display with Intl, e.g. '€12.50' or '¥1,200'.
+ * Returns undefined for 'XXX' (currency unknown), so callers can fall back.
+ */
+export function formatMoney(money: Money, locale?: string): string | undefined {
+  if (money.currency === 'XXX') return undefined;
+  const key = `${money.currency}:${locale ?? ''}`;
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    try {
+      formatter = new Intl.NumberFormat(locale, { style: 'currency', currency: money.currency });
+    } catch {
+      return undefined;
+    }
+    formatters.set(key, formatter);
+  }
+  return formatter.format(moneyToMajor(money));
+}
+
+/**
+ * Picks the price to charge from a price list, in `currency` if given, else in
+ * the first currency listed. A sale entry wins over the base entry.
+ */
+export function resolvePrice(
+  prices: ProductPrice[],
+  currency?: string,
+): ResolvedPrice | undefined {
+  const code = (currency ?? prices[0]?.currency)?.toUpperCase();
+  const inCurrency = prices.filter((p) => p.currency === code);
+  const base = inCurrency.find((p) => p.kind === 'base');
+  const sale = inCurrency.find((p) => p.kind === 'sale');
+  const strip = (p: ProductPrice): Money => ({ amount: p.amount, currency: p.currency });
+
+  if (sale && (!base || sale.amount < base.amount)) {
+    return { current: strip(sale), was: base ? strip(base) : undefined };
+  }
+  return base ? { current: strip(base) } : undefined;
+}

@@ -18,11 +18,10 @@ describe('toMedusaProduct', () => {
     expect(medusa.handle).toBe(neutral.slug);
   });
 
-  it('price is stored as integer cents on variants[0].prices[0].amount', () => {
-    expect(medusa.variants[0].prices[0].amount).toBe(129900);
+  it('price is stored in major units on variants[0].prices[0].amount', () => {
+    // Medusa v2 stores 1299 for 1299.00, not cents.
+    expect(medusa.variants[0].prices[0].amount).toBe(1299);
     expect(typeof medusa.variants[0].prices[0].amount).toBe('number');
-    // Must be an integer, not a float
-    expect(Number.isInteger(medusa.variants[0].prices[0].amount)).toBe(true);
   });
 
   it('getPrice returns decimal string via trait', () => {
@@ -129,7 +128,7 @@ describe('toMedusaProduct', () => {
     });
 
     it('getPrice returns first variant price as decimal', () => {
-      // Ethiopian Yirgacheffe 250g = 1800 cents = "18.00"
+      // Ethiopian Yirgacheffe 250g = 18 (major units) = "18.00"
       expect(medusaProductTraits.getPrice(medusaMulti)).toBe('18.00');
     });
   });

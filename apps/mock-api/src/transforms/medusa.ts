@@ -24,7 +24,7 @@ function toMedusaId(neutralId: string): string {
  * - `images[].url` instead of `images[].src`
  * - `tags[].value` instead of `tags[].name`
  * - `categories[].handle` field present
- * - Prices as integer cents on `variants[].prices[].amount`
+ * - Prices in major units on `variants[].prices[].amount` (Medusa v2: 12 = 12.00)
  * - Stock fields (`manage_inventory`, `allow_backorder`, `inventory_quantity`) on variants
  * - `is_giftcard` boolean for gift card products
  */
@@ -67,7 +67,8 @@ export function toMedusaProduct(product: NeutralProduct) {
       inventory_quantity: variant.stockQuantity,
       prices: [
         {
-          amount: variant.price,
+          // The neutral catalogue is in cents; Medusa v2 stores major units.
+          amount: variant.price / 100,
           currency_code: 'usd',
         },
       ],
