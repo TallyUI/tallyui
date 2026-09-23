@@ -6,12 +6,29 @@ on:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
+# The TallyUI org forbids GitHub Actions from opening pull requests, so this
+# workflow never versions. A worker opens the version PR (docs/RELEASING.md);
+# once it is merged and no changesets are pending, this workflow publishes.
 jobs:
+  pending:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changesets: ${{ steps.count.outputs.changesets }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Count pending changesets
+        id: count
+        run: echo "changesets=$(find .changeset -maxdepth 1 -name '*.md' ! -name README.md | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
   release:
+    needs: pending
+    if: needs.pending.outputs.changesets == '0'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
       # npm trusted publishing (OIDC): no npm token exists; each package trusts this workflow file by name.
       id-token: write
     steps:
@@ -32,11 +49,9 @@ jobs:
       - name: Run tests
         run: pnpm test
 
-      - name: Create Release Pull Request or Publish
+      - name: Publish unpublished versions
         uses: changesets/action@v1
         with:
           publish: pnpm changeset publish
-          title: "chore: version packages"
-          commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
