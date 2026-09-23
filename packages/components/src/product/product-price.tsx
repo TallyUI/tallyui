@@ -1,31 +1,40 @@
-import { useProductTraits } from '@tallyui/core';
+import { formatMoney, minorUnitDigits, moneyToMajor, resolvePrice, useProductTraits, useTraitContext } from '@tallyui/core';
+import type { Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, type TextProps } from '../ui';
 
 export interface ProductPriceProps extends Omit<TextProps, 'children'> {
   /** The raw RxDB product document (connector-specific shape) */
   doc: any;
-  /** Currency symbol to prepend (defaults to '$') */
+  /**
+   * Currency to show when the product is priced in several. Defaults to the
+   * provider's store currency, then to the first currency listed.
+   */
+  currency?: string;
+  /** BCP 47 locale for number formatting. Defaults to the runtime locale. */
+  locale?: string;
+  /** Symbol to prepend when the currency is unknown (defaults to '$') */
   currencySymbol?: string;
   className?: string;
 }
 
 /**
- * Displays a product's price.
+ * Displays a product's price, and the price it replaces while on sale.
  *
- * Works with any connector — extracts price via traits regardless
- * of whether it's a string field (WooCommerce) or derived from
- * variant pricing (Medusa).
+ * Reads the backend-neutral price list (`getPrices`), so a WooCommerce sale
+ * price, a Medusa sale price list and a Shopify compare-at price all render
+ * the same way.
  *
  * ```tsx
- * <ProductPrice doc={productDocument} currencySymbol="$" />
+ * <ProductPrice doc={productDocument} currency="EUR" />
  * ```
  */
-export function ProductPrice({ doc, currencySymbol = '$', className, ...textProps }: ProductPriceProps) {
-  const { getPrice, isOnSale, getSalePrice, getRegularPrice } = useProductTraits();
-  const price = getPrice(doc);
+export function ProductPrice({ doc, currency, locale, currencySymbol = '$', className, ...textProps }: ProductPriceProps) {
+  const { getPrices } = useProductTraits();
+  const traitContext = useTraitContext();
+  const resolved = resolvePrice(getPrices(doc, traitContext), currency ?? traitContext.currency);
 
-  if (!price) {
+  if (!resolved) {
     return (
       <Text className={cn('text-sm text-muted-foreground', className)} {...textProps}>
         -
@@ -33,20 +42,31 @@ export function ProductPrice({ doc, currencySymbol = '$', className, ...textProp
     );
   }
 
-  if (isOnSale(doc)) {
-    const salePrice = getSalePrice(doc);
-    const regularPrice = getRegularPrice(doc);
+  // Unknown currency ('XXX'): plain decimal behind the fallback symbol.
+  const format = (money: Money) =>
+    formatMoney(money, locale)
+    ?? `${currencySymbol}${moneyToMajor(money).toFixed(minorUnitDigits(money.currency))}`;
+
+  if (resolved.was) {
     return (
-      <Text className={cn('text-sm font-medium text-sale', className)} {...textProps}>
-        {currencySymbol}{salePrice ?? price}
-        {regularPrice ? ` (was ${currencySymbol}${regularPrice})` : ''}
+      <Text
+        className={cn('text-sm font-semibold text-foreground', className)}
+        {...textProps}
+        style={[{ fontVariant: ['tabular-nums'] }, textProps.style]}
+      >
+        {format(resolved.current)}{' '}
+        <Text className="text-muted-foreground line-through" style={{ textDecorationLine: 'line-through' }}>(was {format(resolved.was)})</Text>
       </Text>
     );
   }
 
   return (
-    <Text className={cn('text-sm font-medium text-price', className)} {...textProps}>
-      {currencySymbol}{price}
+    <Text
+      className={cn('text-sm font-medium text-foreground', className)}
+      {...textProps}
+      style={[{ fontVariant: ['tabular-nums'] }, textProps.style]}
+    >
+      {format(resolved.current)}
     </Text>
   );
 }

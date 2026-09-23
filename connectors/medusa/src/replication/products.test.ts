@@ -73,6 +73,37 @@ describe('medusaProductReplication.pull.handler', () => {
     const result = await medusaProductReplication.pull.handler(undefined, 25, context);
 
     expect(result.checkpoint.offset).toBe(25);
+    // The filter stays put while paging, or the next offset would skip a page.
+    expect(result.checkpoint.updated_at).toBe('');
+    expect(result.checkpoint.pass_max).toBe('2026-01-01T00:00:00Z');
+  });
+
+  it('pages in id order, since many products share an updated_at', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ products: [] }), { status: 200 }),
+    );
+    await medusaProductReplication.pull.handler(undefined, 10, context);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('order=id');
+  });
+
+  it('keeps the updated_at filter while paging through a full pass', async () => {
+    const page = (from: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `prod_${from + i}`,
+        updated_at: `2026-01-01T00:00:${String(from + i).padStart(2, '0')}Z`,
+      }));
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ products: page(0, 10) }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ products: page(10, 4) }), { status: 200 }));
+
+    const first = await medusaProductReplication.pull.handler(undefined, 10, context);
+    const second = await medusaProductReplication.pull.handler(first.checkpoint, 10, context);
+
+    const secondUrl = String(fetchSpy.mock.calls[1][0]);
+    expect(secondUrl).toContain('offset=10');
+    expect(secondUrl).not.toContain('updated_at%5Bgte%5D');
+    // End of pass: advance to the newest change and restart the offset.
+    expect(second.checkpoint).toEqual({ offset: 0, updated_at: '2026-01-01T00:00:13Z' });
   });
 
   it('throws on non-OK response', async () => {

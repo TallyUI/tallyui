@@ -9,7 +9,7 @@ Every POS backend shapes its product data differently. Look at how WooCommerce a
 
 <SchemaComparison />
 
-WooCommerce calls it `name`, Medusa calls it `title`. WooCommerce puts price as a string on the product, Medusa stores it as an integer (in cents) nested inside variants. Images use `src` in one and `url` in the other.
+WooCommerce calls it `name`, Medusa calls it `title`. WooCommerce puts price as a string on the product, Medusa stores it as a number in major units nested inside variants. Images use `src` in one and `url` in the other.
 
 Forcing all this into one universal schema would lose data. Leaving it raw would mean every component needs `if (connector === 'woocommerce')` branches everywhere. Neither works.
 

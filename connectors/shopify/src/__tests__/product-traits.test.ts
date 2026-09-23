@@ -1,6 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { shopifyProductTraits } from '../traits/product';
 
+describe('Shopify isSellable / getVariantCount', () => {
+  it('allows active products', () => {
+    expect(shopifyProductTraits.isSellable({ status: 'active' })).toBe(true);
+  });
+
+  it.each(['draft', 'archived'])('rejects %s products', (status) => {
+    expect(shopifyProductTraits.isSellable({ status })).toBe(false);
+  });
+
+  it('allows products with missing status', () => {
+    expect(shopifyProductTraits.isSellable({})).toBe(true);
+  });
+
+  it('counts a single variant', () => {
+    expect(shopifyProductTraits.getVariantCount({ variants: [{}] })).toBe(1);
+  });
+
+  it('counts several variants', () => {
+    expect(shopifyProductTraits.getVariantCount({ variants: [{}, {}, {}] })).toBe(3);
+  });
+
+  it('distinguishes empty and missing variant data', () => {
+    expect(shopifyProductTraits.getVariantCount({ variants: [] })).toBe(0);
+    expect(shopifyProductTraits.getVariantCount({})).toBe(1);
+  });
+});
+
 /**
  * Realistic Shopify product document, shaped like the Admin REST API response.
  */
@@ -271,5 +298,78 @@ describe('Shopify product traits', () => {
     it('returns empty array when product_type is empty', () => {
       expect(shopifyProductTraits.getCategoryNames(simpleProduct)).toEqual([]);
     });
+  });
+});
+
+describe('product-level getStock', () => {
+  const tracked = { inventory_management: 'shopify', inventory_quantity: 3 };
+
+  it('sums all tracked variants and prefers in_stock over backorder', () => {
+    expect(shopifyProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: -1, inventory_policy: 'continue' }, tracked,
+    ] })).toEqual({ status: 'in_stock', quantity: 2 });
+  });
+
+  it('omits quantity when one variant is untracked', () => {
+    expect(shopifyProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: 0 }, { ...tracked, inventory_management: null },
+    ] })).toEqual({ status: 'in_stock', quantity: undefined });
+  });
+
+  it('sums quantities when all variants are out of stock', () => {
+    expect(shopifyProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: 0 }, { ...tracked, inventory_quantity: -2 },
+    ] })).toEqual({ status: 'out_of_stock', quantity: -2 });
+  });
+
+  it('returns backorder when none are in stock and one allows backorder', () => {
+    expect(shopifyProductTraits.getStock({ variants: [
+      { ...tracked, inventory_quantity: 0 }, { ...tracked, inventory_quantity: -1, inventory_policy: 'continue' },
+    ] })).toEqual({ status: 'backorder', quantity: -1 });
+  });
+
+  it.each([
+    [[], { status: 'unknown' }],
+    [[tracked, { inventory_management: 'shopify' }], { status: 'in_stock' }],
+    [[{ ...tracked, inventory_quantity: 0 }, { inventory_management: 'shopify' }], { status: 'unknown' }],
+  ])('handles missing quantities for %j', (variants, expected) => {
+    expect(shopifyProductTraits.getStock({ variants })).toEqual(expected);
+  });
+
+  it.each([
+    [tracked, { status: 'in_stock', quantity: 3 }],
+    [{ ...tracked, inventory_quantity: 0 }, { status: 'out_of_stock', quantity: 0 }],
+    [{ ...tracked, inventory_quantity: -1, inventory_policy: 'continue' }, { status: 'backorder', quantity: -1 }],
+    [{ ...tracked, inventory_management: null }, { status: 'in_stock' }],
+    [{ inventory_management: 'shopify' }, { status: 'unknown' }],
+  ])('leaves a single variant unchanged: %j', (variant, expected) => {
+    expect(shopifyProductTraits.getStock({ variants: [variant] })).toStrictEqual(expected);
+  });
+});
+
+describe('Shopify neutral price and stock', () => {
+  const variant = { price: '15.00', compare_at_price: '20.00', inventory_management: 'shopify',
+    inventory_policy: 'deny', inventory_quantity: 3 };
+
+  it('treats compare_at_price above price as base, with price as the sale', () => {
+    expect(shopifyProductTraits.getPrices({ variants: [variant] }, { currency: 'USD' })).toEqual([
+      { amount: 2000, currency: 'USD', kind: 'base' },
+      { amount: 1500, currency: 'USD', kind: 'sale' },
+    ]);
+  });
+
+  it('has only a base entry without a higher compare_at_price', () => {
+    expect(shopifyProductTraits.getPrices({ variants: [{ ...variant, compare_at_price: null }] }, { currency: 'USD' }))
+      .toEqual([{ amount: 1500, currency: 'USD', kind: 'base' }]);
+  });
+
+  it('maps inventory to the neutral stock model', () => {
+    expect(shopifyProductTraits.getStock({ variants: [variant] })).toEqual({ status: 'in_stock', quantity: 3 });
+    expect(shopifyProductTraits.getStock({ variants: [{ ...variant, inventory_quantity: 0 }] }))
+      .toEqual({ status: 'out_of_stock', quantity: 0 });
+    expect(shopifyProductTraits.getStock({ variants: [{ ...variant, inventory_quantity: 0, inventory_policy: 'continue' }] }))
+      .toEqual({ status: 'backorder', quantity: 0 });
+    expect(shopifyProductTraits.getStock({ variants: [{ ...variant, inventory_management: null }] }))
+      .toEqual({ status: 'in_stock' });
   });
 });

@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 
 import { useProductTraits } from '@tallyui/core';
+import type { StockStatus } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, HStack, type HStackProps } from '../ui';
 
@@ -12,25 +13,25 @@ export interface ProductStockBadgeProps extends Omit<HStackProps, 'children'> {
   className?: string;
 }
 
-const statusLabels: Record<string, string> = {
-  instock: 'In Stock',
-  outofstock: 'Out of Stock',
-  onbackorder: 'On Backorder',
+const statusLabels: Record<StockStatus, string> = {
+  in_stock: 'In Stock',
+  out_of_stock: 'Out of Stock',
+  backorder: 'On Backorder',
   unknown: 'Unknown',
 };
 
-const STATUS_STYLES: Record<string, { badge: string; dot: string; text: string }> = {
-  instock: {
+const STATUS_STYLES: Record<StockStatus, { badge: string; dot: string; text: string }> = {
+  in_stock: {
     badge: 'bg-success/15',
     dot: 'bg-success',
     text: 'text-success',
   },
-  outofstock: {
+  out_of_stock: {
     badge: 'bg-destructive/15',
     dot: 'bg-destructive',
     text: 'text-destructive',
   },
-  onbackorder: {
+  backorder: {
     badge: 'bg-warning/15',
     dot: 'bg-warning',
     text: 'text-warning',
@@ -53,9 +54,8 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string; text: string }
  * ```
  */
 export function ProductStockBadge({ doc, showQuantity = false, className, ...props }: ProductStockBadgeProps) {
-  const { getStockStatus, getStockQuantity } = useProductTraits();
-  const status = getStockStatus(doc);
-  const quantity = getStockQuantity(doc);
+  const { getStock } = useProductTraits();
+  const { status, quantity } = getStock(doc);
   const label = statusLabels[status] ?? statusLabels.unknown;
   const styles = STATUS_STYLES[status] ?? STATUS_STYLES.unknown;
 
@@ -68,7 +68,7 @@ export function ProductStockBadge({ doc, showQuantity = false, className, ...pro
       <View className={cn('h-1.5 w-1.5 rounded-full', styles.dot)} />
       <Text className={cn('text-xs font-semibold', styles.text)}>
         {label}
-        {showQuantity && quantity != null ? ` (${quantity})` : ''}
+        {status !== 'out_of_stock' && showQuantity && quantity != null ? ` (${quantity})` : ''}
       </Text>
     </HStack>
   );

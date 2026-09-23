@@ -1,4 +1,15 @@
-import type { ProductTraits } from '@tallyui/core';
+import { moneyFromMajor } from '@tallyui/core';
+import type { ProductPrice, ProductTraits, StockLevel } from '@tallyui/core';
+
+function productStock(variants: StockLevel[]): StockLevel {
+  if (!variants.length) return { status: 'unknown' };
+  const status = variants.some((stock) => stock.status === 'in_stock') ? 'in_stock'
+    : variants.some((stock) => stock.status === 'backorder') ? 'backorder'
+    : variants.every((stock) => stock.status === 'out_of_stock') ? 'out_of_stock' : 'unknown';
+  const quantity = variants.every((stock) => stock.quantity != null)
+    ? variants.reduce((sum, stock) => sum + stock.quantity!, 0) : undefined;
+  return quantity === undefined ? { status } : { status, quantity };
+}
 
 /**
  * Shopify product trait implementations.
@@ -17,6 +28,31 @@ export const shopifyProductTraits: ProductTraits = {
   getName: (doc) => doc.title ?? '',
 
   getSku: (doc) => doc.variants?.[0]?.sku || undefined,
+
+  getPrices: (doc, context) => {
+    const variant = doc.variants?.[0];
+    if (!variant) return [];
+    // REST variant prices are decimal strings in the shop currency.
+    const currency = context?.currency ?? 'XXX';
+    const price = moneyFromMajor(variant.price, currency);
+    const compareAt = moneyFromMajor(variant.compare_at_price, currency);
+    if (!price) return [];
+    // compare_at_price above price means `price` is a sale price.
+    if (compareAt && compareAt.amount > price.amount) {
+      return [{ ...compareAt, kind: 'base' }, { ...price, kind: 'sale' }] as ProductPrice[];
+    }
+    return [{ ...price, kind: 'base' }];
+  },
+
+  getStock: (doc) => productStock((doc.variants ?? []).map((variant: any): StockLevel => {
+    if (!variant) return { status: 'unknown' };
+    if (variant.inventory_management == null) return { status: 'in_stock' };
+    const quantity = variant.inventory_quantity ?? undefined;
+    if (quantity == null) return { status: 'unknown' };
+    if (quantity > 0) return { status: 'in_stock', quantity };
+    // inventory_policy 'continue' allows overselling.
+    return { status: variant.inventory_policy === 'continue' ? 'backorder' : 'out_of_stock', quantity };
+  })),
 
   getPrice: (doc) => doc.variants?.[0]?.price || undefined,
 
@@ -73,6 +109,10 @@ export const shopifyProductTraits: ProductTraits = {
   getStockQuantity: (doc) => doc.variants?.[0]?.inventory_quantity ?? null,
 
   hasVariants: (doc) => (doc.variants?.length ?? 0) > 1,
+
+  isSellable: (doc) => doc.status === undefined || doc.status === 'active',
+
+  getVariantCount: (doc) => doc.variants?.length ?? 1,
 
   getType: (doc) => doc.product_type || 'simple',
 

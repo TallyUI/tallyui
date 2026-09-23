@@ -40,6 +40,18 @@ describe('ProductImage', () => {
     expect(img).toBeNull();
   });
 
+  it('renders an initial tile instead when showPlaceholder is set', () => {
+    const connector = createTestConnector('woo');
+    const { container, getByText, getByRole } = render(
+      <ConnectorProvider connector={connector}>
+        <ProductImage doc={{ name: 'oat milk' }} showPlaceholder />
+      </ConnectorProvider>
+    );
+    expect(container.querySelector('img')).toBeNull();
+    expect(getByText('O')).toBeDefined();
+    expect(getByRole('img')).toBeDefined();
+  });
+
   it('renders with custom size prop without crashing', () => {
     const connector = createTestConnector('woo');
     const { container } = render(
