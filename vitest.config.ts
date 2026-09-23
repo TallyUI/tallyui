@@ -27,6 +27,7 @@ export default defineConfig({
       '@tallyui/mock-api': path.resolve(__dirname, 'apps/mock-api/src'),
       // React Native → Web for component rendering in tests
       'react-native': 'react-native-web',
+      'react-native-svg': path.resolve(__dirname, 'packages/components/node_modules/react-native-svg/src/elements.web.ts'),
       // Deduplicate React to a single copy (prevents "multiple copies" errors)
       'react': path.resolve(__dirname, 'node_modules/react'),
       'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),

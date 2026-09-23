@@ -3,6 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { SearchInput } from '../input/search-input';
 
 describe('SearchInput', () => {
+  it('renders an SVG icon inside the search field instead of the text glyph', () => {
+    render(<SearchInput value="" onChangeText={() => {}} />);
+    expect(screen.getByRole('searchbox').parentElement?.querySelector('svg')).not.toBeNull();
+    expect(screen.queryByText('\u2315')).toBeNull();
+  });
+
   it('renders a searchbox without the old magnifier glyph', () => {
     render(<SearchInput value="" onChangeText={() => {}} />);
     const input = screen.getByRole('searchbox');
