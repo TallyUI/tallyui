@@ -1,8 +1,8 @@
 import { useId } from 'react';
-import { TextInput, type TextInputProps } from 'react-native';
+import { TextInput, View, type TextInputProps } from 'react-native';
 import { Label } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
-import { Text, HStack } from '../ui';
+import { SearchIcon, HStack } from '../ui';
 
 export interface SearchInputProps extends Omit<TextInputProps, 'value' | 'onChangeText'> {
   value: string;
@@ -16,7 +16,9 @@ export function SearchInput({ value, onChangeText, className, placeholder = 'Sea
   return (
     <HStack space="sm" className={cn('rounded-lg border border-border bg-card px-3 py-2', className)}>
       <Label.Root nativeID={labelId} asChild>
-        <Text className="text-muted-foreground">{'\u2315'}</Text>
+        <View className="text-muted-foreground">
+          <SearchIcon size={16} />
+        </View>
       </Label.Root>
       <TextInput
         role="searchbox"

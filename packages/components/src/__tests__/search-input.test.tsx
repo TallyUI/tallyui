@@ -3,6 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { SearchInput } from '../input/search-input';
 
 describe('SearchInput', () => {
+  it('renders an SVG icon inside the search field instead of the text glyph', () => {
+    render(<SearchInput value="" onChangeText={() => {}} />);
+    expect(screen.getByRole('searchbox').parentElement?.querySelector('svg')).not.toBeNull();
+    expect(screen.queryByText('\u2315')).toBeNull();
+  });
+
   it('renders with placeholder text', () => {
     render(<SearchInput value="" onChangeText={() => {}} placeholder="Search products..." />);
     expect(screen.getByPlaceholderText('Search products...')).toBeDefined();
