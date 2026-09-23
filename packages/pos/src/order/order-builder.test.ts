@@ -28,7 +28,7 @@ const traits: ProductTraits = {
 };
 
 const taxContext: TaxContext = {
-  getTaxRate: () => 0.1,
+  getTaxRatePpm: () => 100000,
   pricesIncludeTax: false,
 };
 
@@ -40,7 +40,7 @@ describe('OrderBuilder', () => {
     { name: 'Medusa #301', lines: [[850, 2], [1200, 1]], subtotalMinor: 2900, taxMinor: 551, totalMinor: 3451 },
     { name: 'Medusa vector A', lines: [[150, 1], [35, 3], [5, 1]], subtotalMinor: 260, taxMinor: 49, totalMinor: 309 },
   ])('rounds tax once per order: $name', ({ lines, subtotalMinor, taxMinor, totalMinor }) => {
-    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRate: () => 0.19, pricesIncludeTax: false } });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
     lines.forEach(([amount, quantity], index) => builder.addLine({
       productId: `p${index}`, variantId: `v${index}`, name: 'Medusa item',
       unitPrice: { amount, currency: 'EUR' }, quantity,
@@ -51,7 +51,7 @@ describe('OrderBuilder', () => {
   });
 
   it('extracts inclusive 19% tax', () => {
-    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRate: () => 0.19, pricesIncludeTax: true } });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: true } });
     builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1190, currency: 'EUR' } });
     expect(builder.getSnapshot()).toMatchObject({ subtotalMinor: 1000, taxMinor: 190, totalMinor: 1190, pricesIncludeTax: true });
   });
@@ -96,7 +96,7 @@ describe('OrderBuilder', () => {
   });
 
   it.each([false, true])('calculates stacked taxes (inclusive: %s)', (pricesIncludeTax) => {
-    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRate: () => 0.19, pricesIncludeTax } });
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax } });
     builder.addLine({
       productId: 'p1', name: 'Item', unitPrice: { amount: pricesIncludeTax ? 1085 : 1000, currency: 'USD' },
       taxRates: [{ code: 'STATE', ratePpm: 60000 }, { code: 'CITY', ratePpm: 25000 }],
@@ -111,7 +111,7 @@ describe('OrderBuilder', () => {
   });
 
   it('puts the inclusive micro-unit split remainder on the last tax line', () => {
-    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRate: () => 0, pricesIncludeTax: true } });
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: true } });
     builder.addLine({
       productId: 'p1', name: 'Item', unitPrice: { amount: 1, currency: 'USD' },
       taxRates: [{ ratePpm: 60000 }, { ratePpm: 25000 }],
@@ -240,7 +240,7 @@ describe('OrderBuilder', () => {
   });
 
   it('handles tax-inclusive pricing', async () => {
-    const inclTax: TaxContext = { getTaxRate: () => 0.1, pricesIncludeTax: true };
+    const inclTax: TaxContext = { getTaxRatePpm: () => 100000, pricesIncludeTax: true };
     const builder = createOrderBuilder({ currency: 'USD', taxContext: inclTax });
     builder.addProduct(productDoc, traits);
 

@@ -13,7 +13,7 @@ it('inserts a finalised order into an AJV-validated RxDB memory collection', asy
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
     const { pos_orders } = await db.addCollections({ pos_orders: { schema: posOrderSchema } });
-    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRate: () => 0.19, pricesIncludeTax: false } });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
     builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Item 1', unitPrice: { amount: 850, currency: 'EUR' }, quantity: 2,
       taxRates: [{ code: 'VAT', ratePpm: 190000 }] });
     builder.addLine({ productId: 'p2', name: 'Item 2', unitPrice: { amount: 1200, currency: 'EUR' } });

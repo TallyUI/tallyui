@@ -3,10 +3,10 @@ import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { TaxProvider, useTax } from './tax-provider';
 
-function wrapper(rates: Record<string, number>, pricesIncludeTax = false) {
+function wrapper(ratesPpm: Record<string, number>, pricesIncludeTax = false) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <TaxProvider rates={rates} pricesIncludeTax={pricesIncludeTax}>
+      <TaxProvider ratesPpm={ratesPpm} pricesIncludeTax={pricesIncludeTax}>
         {children}
       </TaxProvider>
     );
@@ -16,31 +16,43 @@ function wrapper(rates: Record<string, number>, pricesIncludeTax = false) {
 describe('TaxProvider + useTax', () => {
   it('provides default tax rate', () => {
     const { result } = renderHook(() => useTax(), {
-      wrapper: wrapper({ default: 0.1 }),
+      wrapper: wrapper({ default: 100000 }),
     });
-    expect(result.current.getTaxRate()).toBe(0.1);
+    expect(result.current.getTaxRatePpm()).toBe(100000);
   });
 
   it('provides tax rate by class', () => {
     const { result } = renderHook(() => useTax(), {
-      wrapper: wrapper({ default: 0.2, reduced: 0.05, zero: 0 }),
+      wrapper: wrapper({ default: 200000, reduced: 50000, zero: 0 }),
     });
-    expect(result.current.getTaxRate('reduced')).toBe(0.05);
-    expect(result.current.getTaxRate('zero')).toBe(0);
+    expect(result.current.getTaxRatePpm('reduced')).toBe(50000);
+    expect(result.current.getTaxRatePpm('zero')).toBe(0);
   });
 
   it('falls back to default for unknown tax class', () => {
     const { result } = renderHook(() => useTax(), {
-      wrapper: wrapper({ default: 0.1 }),
+      wrapper: wrapper({ default: 100000 }),
     });
-    expect(result.current.getTaxRate('nonexistent')).toBe(0.1);
+    expect(result.current.getTaxRatePpm('nonexistent')).toBe(100000);
   });
 
   it('provides pricesIncludeTax flag', () => {
     const { result } = renderHook(() => useTax(), {
-      wrapper: wrapper({ default: 0.1 }, true),
+      wrapper: wrapper({ default: 100000 }, true),
     });
     expect(result.current.pricesIncludeTax).toBe(true);
+  });
+
+  it('falls back to zero without a default rate', () => {
+    const { result } = renderHook(() => useTax(), { wrapper: wrapper({}) });
+    expect(result.current.getTaxRatePpm()).toBe(0);
+    expect(result.current.getTaxRatePpm('nonexistent')).toBe(0);
+  });
+
+  it.each([0.19, -1, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity])('rejects invalid ppm rate %s', (rate) => {
+    expect(() => renderHook(() => useTax(), {
+      wrapper: wrapper({ default: 190000, invalid: rate }),
+    })).toThrow(new RangeError('TaxProvider: rates must be integer ppm'));
   });
 
   it('throws when used outside provider', () => {

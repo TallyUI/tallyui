@@ -1,15 +1,11 @@
-export interface TaxResult {
-  priceExclTax: number;
-  priceInclTax: number;
-  taxAmount: number;
-}
-
+/** Tax rates as integer parts per million (19% = 190000). */
 export type TaxRateMap = {
   default: number;
   [taxClass: string]: number;
 };
 
 export interface TaxContext {
-  getTaxRate(taxClass?: string): number;
+  /** Tax rate for a tax class as integer parts per million (19% = 190000); the default class when omitted or unknown. */
+  getTaxRatePpm(taxClass?: string): number;
   pricesIncludeTax: boolean;
 }

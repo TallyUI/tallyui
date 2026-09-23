@@ -5,23 +5,24 @@ import type { TaxContext } from './types';
 const TaxCtx = createContext<TaxContext | null>(null);
 
 export interface TaxProviderProps {
-  rates: Record<string, number>;
+  ratesPpm: Record<string, number>;
   pricesIncludeTax: boolean;
   children: ReactNode;
 }
 
-export function TaxProvider({ rates, pricesIncludeTax, children }: TaxProviderProps) {
+export function TaxProvider({ ratesPpm, pricesIncludeTax, children }: TaxProviderProps) {
   const value = useMemo<TaxContext>(
-    () => ({
-      getTaxRate(taxClass?: string) {
-        if (taxClass && taxClass in rates) {
-          return rates[taxClass];
-        }
-        return rates.default ?? 0;
-      },
-      pricesIncludeTax,
-    }),
-    [rates, pricesIncludeTax],
+    () => {
+      if (Object.values(ratesPpm).some((rate) => !Number.isSafeInteger(rate) || rate < 0)) {
+        throw new RangeError('TaxProvider: rates must be integer ppm');
+      }
+      return {
+        getTaxRatePpm: (taxClass) =>
+          (taxClass === undefined ? undefined : ratesPpm[taxClass]) ?? ratesPpm.default ?? 0,
+        pricesIncludeTax,
+      };
+    },
+    [ratesPpm, pricesIncludeTax],
   );
 
   return <TaxCtx.Provider value={value}>{children}</TaxCtx.Provider>;

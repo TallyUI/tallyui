@@ -151,7 +151,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (unitPrice.currency !== currency) throw new RangeError('Line currency must match ' + currency);
     if (!Number.isInteger(unitPrice.amount)) throw new RangeError('Price must be integer minor units');
     if (!Number.isInteger(quantity) || quantity < 1) throw new RangeError('Quantity must be an integer >= 1');
-    const taxRates = input.taxRates ?? [{ ratePpm: Math.round(taxContext.getTaxRate() * 1_000_000) }];
+    const taxRates = input.taxRates ?? [{ ratePpm: taxContext.getTaxRatePpm() }];
 
     const existing = lineItems.find(
       (li) => li.productId === productId && li.variantId === variantId

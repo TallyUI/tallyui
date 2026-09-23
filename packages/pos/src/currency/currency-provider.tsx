@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { formatCurrency } from './format-currency';
+import { formatMoney, type Money } from '@tallyui/core';
 
 interface CurrencyContext {
   currencyCode: string;
@@ -20,13 +20,21 @@ export function CurrencyProvider({ currencyCode, locale, children }: CurrencyPro
   return <CurrencyCtx.Provider value={value}>{children}</CurrencyCtx.Provider>;
 }
 
-export function useCurrencyFormatter(): (amount: number) => string {
+export function useCurrencyFormatter(): (money: Money) => string {
   const ctx = useContext(CurrencyCtx);
   if (!ctx) {
     throw new Error('useCurrencyFormatter() must be used within a <CurrencyProvider>');
   }
   return useCallback(
-    (amount: number) => formatCurrency(amount, ctx.currencyCode, ctx.locale),
-    [ctx.currencyCode, ctx.locale],
+    (money: Money) => formatMoney(money, ctx.locale) ?? `${money.amount} ${money.currency}`,
+    [ctx.locale],
   );
+}
+
+export function useCurrencyCode(): string {
+  const ctx = useContext(CurrencyCtx);
+  if (!ctx) {
+    throw new Error('useCurrencyCode() must be used within a <CurrencyProvider>');
+  }
+  return ctx.currencyCode;
 }
