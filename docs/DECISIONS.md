@@ -570,9 +570,24 @@ bodies and design docs, and the source is given for each.
     total is formed.
   - Tax-inclusive prices extract tax the same way: exactly, rounded once.
   - No floating-point arithmetic touches money.
-- **Consequences:** `@tallyui/pos` tax functions change signature (job T1).
-  The POS's rounded total equals Medusa's total rounded to the cent. The
-  MVP e2e test ("totals match to the cent") checks this.
+- **Consequences:**
+  - `@tallyui/pos` gets the exact tax API (job T1).
+  - The POS's total equals Medusa's total rounded to the cent. **Medusa's own
+    stored totals keep sub-cent fractions**, for example €3.094 where the
+    customer paid €3.09. So a merchant's Medusa reports will disagree with
+    the POS by up to half a cent per order.
+  - **The authoritative number for the merchant is the amount actually
+    tendered, which is the POS total** (integer minor units). The plugin
+    sets the payment collection amount to exactly that.
+- **MVP guard (job A10):** for every order, |Medusa order total − POS
+  total| ≤ 1 minor unit, and the payment collection amount equals the POS
+  total exactly.
+- **Post-MVP fix, to investigate:** Medusa 2.21 exposes no rounding setting
+  that I know of, and its tax provider interface returns *rates*, not
+  amounts, so a provider cannot post rounded line tax. Two candidates, both
+  unverified: posting explicit rounded tax lines when the plugin creates the
+  order, or a plugin-side totals adjustment. Either must be proven on
+  medusa-dev before we rely on it.
 
 ## ADR-038 The `order.create` command contract (T6/T8 ↔ A3/A4)
 
