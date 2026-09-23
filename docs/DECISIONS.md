@@ -496,3 +496,7 @@ bodies and design docs, and the source is given for each.
   grows faster than linearly with the nested fields. So larger pages are
   slower. The real gain is a plugin-side pull route after the MVP. This
   12.52 s median is the "before" number for Job 4 (the RxDB upgrade).
+- **Note on the M2 target:** M2's p50 ≤ 30 s initial-sync target is
+  measured end to end in the browser. It includes browser storage writes
+  on top of this 12.5 s of network and server time, which leaves about
+  17 s for storage.
