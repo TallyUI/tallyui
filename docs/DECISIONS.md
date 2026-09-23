@@ -500,3 +500,51 @@ bodies and design docs, and the source is given for each.
   measured end to end in the browser. It includes browser storage writes
   on top of this 12.5 s of network and server time, which leaves about
   17 s for storage.
+
+## ADR-036 Medusa `order.create` recipe, verified on medusa-dev (MVP spike)
+
+- **Date:** 2026-09-23 · **Status:** Accepted (programme lead) · **Source:**
+  spike against the local Medusa 2.21 dev store, order `display_id` 301
+- **Question:** Can an offline POS sale land in Medusa at the *as-sold*
+  price, with Medusa's tax, paid, and with stock decremented?
+- **Answer: yes, in six Admin API calls.** The test sale was SHIRT-S-WHITE
+  sold at €8.50 × 2 (list price €10) plus the fixture mug at list €12 × 1,
+  with a temporary DE 19% default tax rate:
+  1. `POST /admin/draft-orders` with `region_id`, `sales_channel_id`,
+     `email`, a shipping and billing address (its country drives tax),
+     `items[{variant_id, quantity, unit_price, metadata}]` and `metadata`.
+     A line without `unit_price` gets the list price. The override is kept:
+     €8.50 per unit, line tax €3.23, draft total €34.51.
+  2. `POST /admin/draft-orders/{id}/convert-to-order`. Prices and tax
+     survive: subtotal €29.00, tax €5.51, total €34.51. Stock is only
+     *reserved* here (reserved 0 → 2). **No payment collection is
+     created.**
+  3. `POST /admin/payment-collections {order_id, amount}`.
+  4. `POST /admin/payment-collections/{id}/mark-as-paid {order_id}`. The
+     collection becomes `completed`, and the order's `payment_status`
+     becomes `captured` with €34.51 paid.
+  5. `POST /admin/orders/{id}/fulfillments {items, location_id,
+     no_notification}`, once per group. Medusa refuses to fulfil items that
+     need shipping together with items that don't. No shipping method is
+     needed. Stock is decremented: stocked 1,000,000 → 999,998, reserved
+     2 → 0.
+  6. `POST /admin/orders/{id}/complete`. Final state: `completed`,
+     `captured`, `fulfilled`.
+
+  Order and line `metadata` (the client UUIDs and `tally_created_at`)
+  round-trip unchanged. The temporary tax rate was deleted afterwards.
+- **Consequences for the plugin and the POS:**
+  - These six calls are not atomic, so the plugin runs them as **one
+    Medusa workflow with compensation**, behind the idempotency ledger. The
+    POS sends one `order.create` command.
+  - `created_at` is server time. The sale time lives in
+    `metadata.tally_created_at`, and POS reports use it.
+  - Medusa computes tax from the address. The plugin uses the **stock
+    location's address** for walk-in sales. The POS's local tax must match
+    Medusa's per-line rounding. The MVP e2e test ("totals match to the
+    cent") guards this.
+  - The dev store seed has **no tax rates** (tax is 0). Its seed gains a
+    rate, so the e2e test exercises tax.
+  - Still open: whether `email` can be omitted for walk-in sales (the spike
+    passed one), and whether price-list prices interact with the override.
+    The override is expected to win; this is checked in the plugin's tests.
