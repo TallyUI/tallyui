@@ -39,3 +39,6 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig } from './receipt';
 
 // Product
 export { searchProducts } from './product';
+
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema } from './pos-order';
+export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';
