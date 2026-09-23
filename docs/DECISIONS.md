@@ -807,8 +807,13 @@ interface OrderCreatePayload {
      with npm 11.5.1+ installed. That means a custom publish script which
      also re-does changesets' "already published?" check and git tags.
 - **Decision:** option 1, as the simpler route. Changes:
-  - `packageManager` moves from pnpm 11.1.1 to 11.27.1 (the latest 11.x; it
-    installs the current lockfile unchanged). The rest of ADR-011 stands.
+  - `packageManager` moves from pnpm 11.1.1 to 11.27.0 (it installs the
+    current lockfile unchanged). The rest of ADR-011 stands. Do not take
+    11.27.1: it changed signal handling in `pnpm exec`, which leaves the
+    Playwright web server (`pnpm --filter @tallyui/demo exec expo start`)
+    orphaned at teardown. `e2e-web` then hangs until it is cancelled.
+    Measured 2026-09-23: 11.27.1 hung past 300 s, while 11.27.0 and 11.1.1
+    passed 9/9 in about 40 s.
   - `release.yml` loses `NPM_TOKEN` and setup-node's `registry-url` (which
     only exists to write a token `.npmrc`). It keeps `id-token: write`, its
     filename, `changesets/action@v1` (v1 writes no `.npmrc` when there is
