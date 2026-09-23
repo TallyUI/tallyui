@@ -32,6 +32,9 @@
     "rxdb": "16.21.1",
     "rxjs": "7.8.2"
   },
+  "devDependencies": {
+    "rxdb-premium": "16.21.1"
+  },
   "peerDependencies": {
     "expo-sqlite": ">=15.0.0"
   }

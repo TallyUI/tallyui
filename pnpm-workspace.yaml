@@ -14,3 +14,8 @@ allowBuilds:
   sharp: false
   unrs-resolver: false
   workerd: false
+  # rxdb-premium's postinstall decrypts the licensed plugins (token: RXDB_PREMIUM env var).
+  rxdb-premium: true
+  core-js: false
+  eccrypto: false
+  secp256k1: false

@@ -20,6 +20,8 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+        env:
+          RXDB_PREMIUM: ${{ secrets.RXDB_PREMIUM }}
 
       - name: Build packages
         run: pnpm build
@@ -47,6 +49,8 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+        env:
+          RXDB_PREMIUM: ${{ secrets.RXDB_PREMIUM }}
 
       - name: Build packages
         run: pnpm build
