@@ -1,19 +1,13 @@
-import { useProductTraits } from '@tallyui/core';
+import { formatMoney, type Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, HStack, VStack, type HStackProps } from '../ui';
 
-export interface CartLineItem {
-  /** The raw product document (connector-specific shape) */
-  doc: any;
-  /** Quantity in cart */
-  quantity: number;
-}
-
 export interface CartLineProps extends Omit<HStackProps, 'children'> {
-  /** The cart line item */
-  item: CartLineItem;
-  /** Currency symbol (defaults to '$') */
-  currencySymbol?: string;
+  name: string;
+  quantity: number;
+  unitPrice: Money;
+  lineTotal: Money;
+  locale?: string;
   className?: string;
 }
 
@@ -21,27 +15,20 @@ export interface CartLineProps extends Omit<HStackProps, 'children'> {
  * Displays a single cart line item: product name, quantity, and line total.
  *
  * ```tsx
- * <CartLine item={{ doc: productDocument, quantity: 2 }} />
+ * <CartLine name="Coffee" quantity={2} unitPrice={unitPrice} lineTotal={lineTotal} />
  * ```
  */
-export function CartLine({ item, currencySymbol = '$', className, ...props }: CartLineProps) {
-  const { getName, getPrice } = useProductTraits();
-  const name = getName(item.doc);
-  const unitPrice = getPrice(item.doc);
-  const lineTotal = unitPrice
-    ? (parseFloat(unitPrice) * item.quantity).toFixed(2)
-    : null;
-
+export function CartLine({ name, quantity, unitPrice, lineTotal, locale, className, ...props }: CartLineProps) {
   return (
     <HStack className={cn('px-3 py-2.5', className)} {...props}>
       <VStack space="none" className="flex-1 gap-0.5">
         <Text className="text-sm font-medium" numberOfLines={1}>{name}</Text>
         <Text className="text-xs text-muted-foreground">
-          {unitPrice ? `${currencySymbol}${unitPrice} × ${item.quantity}` : `× ${item.quantity}`}
+          {`${formatMoney(unitPrice, locale) ?? '—'} × ${quantity}`}
         </Text>
       </VStack>
       <Text className="text-sm font-semibold">
-        {lineTotal ? `${currencySymbol}${lineTotal}` : '—'}
+        {formatMoney(lineTotal, locale) ?? '—'}
       </Text>
     </HStack>
   );

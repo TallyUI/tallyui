@@ -1,14 +1,13 @@
-import type { ReactNode } from 'react';
+import type { JSX, ReactNode } from 'react';
 import { ScrollView, View } from 'react-native';
 import { cn } from '@tallyui/theme';
 import { VStack, type VStackProps } from '../ui';
-import type { CartLineItem } from './cart-line';
 
-export interface CartPanelProps extends Omit<VStackProps, 'children'> {
+export interface CartPanelProps<T> extends Omit<VStackProps, 'children'> {
   /** Cart line items to render */
-  items: CartLineItem[];
+  items: T[];
   /** Render function for each cart line */
-  renderItem: (item: CartLineItem, index: number) => ReactNode;
+  renderItem: (item: T, index: number) => ReactNode;
   /** Header slot (e.g. customer info) */
   header?: ReactNode;
   /** Footer slot (e.g. totals, checkout button) */
@@ -27,13 +26,13 @@ export interface CartPanelProps extends Omit<VStackProps, 'children'> {
  * ```tsx
  * <CartPanel
  *   items={cartItems}
- *   renderItem={(item) => <CartLine item={item} />}
+ *   renderItem={(item) => <CartLine {...item} />}
  *   header={<CustomerCard doc={customer} />}
- *   footer={<CartTotal items={cartItems} />}
+ *   footer={<CartTotal subtotal={subtotal} total={total} />}
  * />
  * ```
  */
-export function CartPanel({
+export function CartPanel<T>({
   items,
   renderItem,
   header,
@@ -41,7 +40,7 @@ export function CartPanel({
   emptyState,
   className,
   ...props
-}: CartPanelProps) {
+}: CartPanelProps<T>): JSX.Element {
   const hasItems = items.length > 0;
 
   return (
@@ -51,7 +50,7 @@ export function CartPanel({
       {hasItems ? (
         <ScrollView className="flex-1">
           {items.map((item, index) => (
-            <View key={item.doc?.id ?? index}>
+            <View key={index}>
               {renderItem(item, index)}
             </View>
           ))}

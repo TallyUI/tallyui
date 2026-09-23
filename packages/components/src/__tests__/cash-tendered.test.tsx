@@ -2,24 +2,116 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CashTendered } from '../checkout/cash-tendered';
 
+const total = { amount: 3451, currency: 'EUR' };
+
 describe('CashTendered', () => {
-  it('renders quick amount buttons', () => {
-    render(<CashTendered total={17.5} onChangeAmount={() => {}} />);
-    expect(screen.getByText('17.50')).toBeDefined();
-    expect(screen.getByText('20.00')).toBeDefined();
+  it('renders sorted, deduplicated quick amounts', () => {
+    const { container } = render(<CashTendered total={total} locale="en" />);
+    expect(Array.from(container.querySelectorAll('[tabindex="0"]'), (button) => button.textContent)).toEqual(['€34.51', '€35.00', '€40.00']);
+    expect(screen.getByRole('textbox').getAttribute('value')).toBe('34.51');
   });
 
-  it('calls onChangeAmount when quick button is pressed', () => {
+  it('calls onChangeAmount with Money when a quick button is pressed', () => {
     const onChange = vi.fn();
-    render(<CashTendered total={17.5} onChangeAmount={onChange} />);
-    fireEvent.click(screen.getByText('20.00'));
-    expect(onChange).toHaveBeenCalledWith(20);
+    render(<CashTendered total={total} locale="en" onChangeAmount={onChange} />);
+    fireEvent.click(screen.getByText('€35.00'));
+    expect(onChange).toHaveBeenCalledWith({ amount: 3500, currency: 'EUR' });
+    expect(screen.getByRole('textbox').getAttribute('value')).toBe('35.00');
   });
 
   it('accepts custom quick amounts', () => {
-    render(<CashTendered total={10} quickAmounts={[10, 15, 25]} onChangeAmount={() => {}} />);
-    expect(screen.getByText('10.00')).toBeDefined();
-    expect(screen.getByText('15.00')).toBeDefined();
-    expect(screen.getByText('25.00')).toBeDefined();
+    render(<CashTendered total={total} quickAmounts={[{ amount: 5000, currency: 'EUR' }]} locale="en" />);
+    expect(screen.getByText('€50.00')).toBeDefined();
+    expect(screen.queryByText('€35.00')).toBeNull();
+  });
+
+  it('parses decimal text and ignores invalid edits', () => {
+    const onChange = vi.fn();
+    render(<CashTendered total={total} locale="en" onChangeAmount={onChange} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: '50' } });
+    expect(onChange).toHaveBeenLastCalledWith({ amount: 5000, currency: 'EUR' });
+    expect(input.getAttribute('value')).toBe('50');
+    fireEvent.change(input, { target: { value: '12.345' } });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect((input as HTMLInputElement).value).toBe('50');
+  });
+
+  it('keeps raw decimal text and emits only complete amounts', () => {
+    const onChange = vi.fn();
+    render(<CashTendered total={total} locale="en" onChangeAmount={onChange} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    for (const [text, calls] of [['3', 1], ['34', 2], ['34.', 2], ['34.5', 3], ['34.51', 4]] as const) {
+      fireEvent.change(input, { target: { value: text } });
+      expect(input.value).toBe(text);
+      expect(onChange).toHaveBeenCalledTimes(calls);
+    }
+    expect(onChange).toHaveBeenLastCalledWith({ amount: 3451, currency: 'EUR' });
+  });
+
+  it('allows clearing the text without emitting and entering a new amount', () => {
+    const onChange = vi.fn();
+    render(<CashTendered total={total} onChangeAmount={onChange} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '3' } });
+    expect(onChange).toHaveBeenLastCalledWith({ amount: 300, currency: 'EUR' });
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.value).toBe('');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    fireEvent.change(input, { target: { value: '5' } });
+    expect(input.value).toBe('5');
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith({ amount: 500, currency: 'EUR' });
+  });
+
+  it('keeps the previous text when precision is exceeded or letters are entered', () => {
+    const onChange = vi.fn();
+    render(<CashTendered total={total} onChangeAmount={onChange} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '12.34' } });
+    for (const text of ['12.345', 'abc']) {
+      fireEvent.change(input, { target: { value: text } });
+      expect(input.value).toBe('12.34');
+      expect(onChange).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('replaces typed text with the formatted quick amount', () => {
+    render(<CashTendered total={total} locale="en" />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '34.' } });
+    expect(input.value).toBe('34.');
+    fireEvent.click(screen.getByText('€40.00'));
+    expect(input.value).toBe('40.00');
+  });
+
+  it('preserves typed text for its controlled amount and resyncs external amounts', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<CashTendered total={total} amount={total} onChangeAmount={onChange} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '34.5' } });
+    expect(onChange).toHaveBeenLastCalledWith({ amount: 3450, currency: 'EUR' });
+    rerender(<CashTendered total={total} amount={{ amount: 3450, currency: 'EUR' }} onChangeAmount={onChange} />);
+    expect(input.value).toBe('34.5');
+    rerender(<CashTendered total={total} amount={{ amount: 4000, currency: 'EUR' }} onChangeAmount={onChange} />);
+    expect(input.value).toBe('40.00');
+  });
+
+  it('supports default and controlled Money amounts', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<CashTendered total={total} defaultAmount={{ amount: 4000, currency: 'EUR' }} locale="en" />);
+    expect(screen.getByRole('textbox').getAttribute('value')).toBe('40.00');
+    rerender(<CashTendered total={total} amount={{ amount: 5000, currency: 'EUR' }} onChangeAmount={onChange} locale="en" />);
+    fireEvent.click(screen.getByText('€35.00'));
+    expect(onChange).toHaveBeenCalledWith({ amount: 3500, currency: 'EUR' });
+    expect(screen.getByRole('textbox').getAttribute('value')).toBe('50.00');
+  });
+
+  it('uses currency minor-unit digits for input and quick amounts', () => {
+    render(<CashTendered total={{ amount: 101, currency: 'JPY' }} locale="en" />);
+    expect(screen.getByRole('textbox').getAttribute('value')).toBe('101');
+    expect(screen.getByText('¥105')).toBeDefined();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1.5' } });
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('101');
   });
 });

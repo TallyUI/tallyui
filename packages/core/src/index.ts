@@ -33,7 +33,7 @@ export {
 } from './commands';
 
 // Money helpers
-export { formatMoney, minorUnitDigits, moneyFromMajor, moneyToMajor, resolvePrice } from './money';
+export { formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice } from './money';
 export { findVariantByCode } from './variants';
 
 // Context & hooks

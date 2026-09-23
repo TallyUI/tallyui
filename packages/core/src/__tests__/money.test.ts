@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { minorUnitDigits, moneyFromMajor, moneyToMajor, resolvePrice } from '../money';
+import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice } from '../money';
 import type { ProductPrice } from '../types';
 
 describe('minorUnitDigits', () => {
@@ -35,6 +35,29 @@ describe('moneyFromMajor / moneyToMajor', () => {
   it('round-trips to major units', () => {
     expect(moneyToMajor({ amount: 1250, currency: 'EUR' })).toBe(12.5);
     expect(moneyToMajor({ amount: 1200, currency: 'JPY' })).toBe(1200);
+  });
+});
+
+describe('moneyFromDecimalString', () => {
+  it.each([
+    ['12', 'EUR', 1200], ['12.5', 'EUR', 1250], ['12.50', 'EUR', 1250],
+    ['0.01', 'EUR', 1], ['0.29', 'EUR', 29], [' 3.00 ', 'EUR', 300],
+    ['100', 'JPY', 100], ['0001.20', 'EUR', 120], ['0', 'EUR', 0],
+    ['90071992547409.91', 'EUR', Number.MAX_SAFE_INTEGER],
+    ['9007199254740991', 'JPY', Number.MAX_SAFE_INTEGER],
+  ])('parses %s in %s exactly', (text, currency, amount) => {
+    expect(moneyFromDecimalString(text, currency)).toEqual({ amount, currency });
+  });
+
+  it.each(['', ' ', '-1', '1e2', '1,00', ' 3,00 ', '12.345', '.5', '1.', '+1', '1 2',
+    '90071992547409.92', '9007199254740991000000'])('rejects invalid EUR text %s', (text) => {
+    expect(moneyFromDecimalString(text, 'EUR')).toBeUndefined();
+  });
+
+  it('rejects fractional yen and unsafe integers', () => {
+    expect(moneyFromDecimalString('1.5', 'JPY')).toBeUndefined();
+    expect(moneyFromDecimalString('1.0', 'JPY')).toBeUndefined();
+    expect(moneyFromDecimalString('9007199254740992', 'JPY')).toBeUndefined();
   });
 });
 
