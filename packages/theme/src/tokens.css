@@ -1,3 +1,8 @@
+/* Uniwind requires every theme to define the same variables in a
+   `@variant <theme>` block. Plain Tailwind 4 has no `light` variant, so
+   declare it; it matches the one Uniwind declares. */
+@custom-variant light (&:where(.light, .light *));
+
 @theme {
   /* Base */
   --color-background: #f8f9fa;
@@ -55,6 +60,61 @@
 
 @layer theme {
   :root {
+    @variant light {
+      /* Base */
+      --color-background: #f8f9fa;
+      --color-foreground: #111827;
+
+      /* Card */
+      --color-card: #ffffff;
+      --color-card-foreground: #111827;
+
+      /* Popover */
+      --color-popover: #ffffff;
+      --color-popover-foreground: #111827;
+
+      /* Primary */
+      --color-primary: #6366f1;
+      --color-primary-foreground: #ffffff;
+
+      /* Secondary */
+      --color-secondary: #f3f4f6;
+      --color-secondary-foreground: #111827;
+
+      /* Muted */
+      --color-muted: #f3f4f6;
+      --color-muted-foreground: #6b7280;
+
+      /* Accent */
+      --color-accent: #f3f4f6;
+      --color-accent-foreground: #111827;
+
+      /* Destructive */
+      --color-destructive: #dc2626;
+      --color-destructive-foreground: #ffffff;
+
+      /* Success */
+      --color-success: #059669;
+      --color-success-foreground: #ffffff;
+
+      /* Warning */
+      --color-warning: #d97706;
+      --color-warning-foreground: #ffffff;
+
+      /* Info */
+      --color-info: #3b82f6;
+      --color-info-foreground: #ffffff;
+
+      /* Border / Input / Ring */
+      --color-border: #e5e7eb;
+      --color-input: #e5e7eb;
+      --color-ring: #6366f1;
+
+      /* Commerce */
+      --color-price: #059669;
+      --color-sale: #dc2626;
+    }
+
     @variant dark {
       /* Base */
       --color-background: #0d1117;
