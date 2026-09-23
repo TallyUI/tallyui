@@ -785,33 +785,34 @@ T1–T11) is complete at `3996453`. The A-track (medusapos) is in progress.
 | 2 | **LICENSE in tarballs plus an install smoke test in Release** | Every tarball contains LICENSE; CI installs the tarballs into a clean project and imports each package |
 | 3 | **Outbox leader election** (`multiInstance: true`) | Two tabs make 50 sales each; 100 orders applied exactly once, and only the leader tab sends |
 | 4 | **Surface permanent 400 and 401 to the cashier** | After three 401s with a failed refresh, the cashier sees a re-login prompt; a 400 lands in needs-attention |
-| 5 | **Fault-test extensions:** an abrupt kill mid-patch, and ADR-039's batch-stopping 409 | The 200-replay test with both still ends with 0 lost and 0 duplicated orders |
-| 6 | **A monotonic in-millisecond counter for `uuidv7`** | 10,000 ids generated in the same millisecond are strictly increasing |
-| 7 | **Tombstones and id reconciliation** (deleted products leave the POS) | A product deleted in Medusa disappears from the POS within one poll; nightly reconciliation removes hard deletes |
-| 8 | **Separate price and stock collections, and a plugin pull route** | A price-only change reaches the POS at p95 ≤ poll + 2 s; initial sync beats the 12.52 s Admin API baseline (ADR-035) |
-| 9 | **Conformance suite, `@tallyui/sync-server`, and the TSP pull, stream and ids endpoints** (ADR-023) | ≥ 40 cases green against the reference server and medusa-dev; 10k out-of-order-commit rows with 0 missed and 0 resurrected |
-| 10 | **Discount contract:** an ADR plus a version bump, fixing the after-tax order-discount basis | A discounted sale lands in Medusa within ≤ 1 minor unit of the POS total |
-| 11 | **Registers, sessions and X/Z closures** (a WCPOS port, ADR-032) | The ported WCPOS tests pass; in the e2e run the Z report equals the sum of the sales |
-| 12 | **Split tender and the tender-reducer port** | WCPOS tender-reducer test parity; a split cash + external sale lands with correct payment rows |
-| 13 | **Customers** (search, attach, create through `customer.create` / `customer.patch` commands) | A sale with a customer lands with that `customer_id`; a field-merge conflict test passes |
-| 14 | **Cashier roles:** an actor type plus permissions (Medusa RBAC is Enterprise) | A cashier without admin rights can sell but gets 403 on admin routes |
-| 15 | **RxDB 17 + premium SQLite storage** (D2, Job 4) | Benchmark median within 10% of 12.52 s; premium installs in CI from `RXDB_LICENSE_KEY`; web SQLite-wasm and native SQLite both pass the storage tests |
-| 16 | **Native apps (Expo iOS and Android), with tokens in SecureStore** | The app runs on a device; the token is in SecureStore; the offline e2e passes on an Android emulator (Maestro) |
-| 17 | **Hardware kit** (D4 interim: interfaces public, drivers private) | A `PaymentDriver` checkout with the simulated driver passes e2e; ESC/POS receipts match golden files; one real print and one Stripe Terminal test payment recorded |
-| 18 | **In-browser demo at demo.medusapos.com** (ADR-027) | The URL returns 200; a Playwright sale passes on the production URL; Lighthouse ≥ 80 performance and ≥ 90 accessibility; no key in the bundle |
-| 19 | **Docs and Snacks for the new component props** | Every component page's example typechecks against current source; Snacks updated at the first publish |
-| 20 | **M0 cleanup:** deprecated traits optional, theme-token drift, `test-d` in CI, connector checkpoint bugs (Vendure skip, WooCommerce ties, Shopify REST) | `ProductTraits` has no required deprecated members; `vitest --typecheck` runs in CI; the connector checkpoint tests cover ties |
-| 21 | **Vendure (M6)** | The same conformance suite is green against vendure-dev; plugin + connector ≤ 50% of Medusa's line count |
+| 5 | **Medusa connector: add a user-JWT (Bearer) credential type alongside secret API keys.** Today `getHeaders` only models HTTP Basic secret keys, so an app that signs in as an admin user and passes the JWT in the api_token slot sends `Basic base64(jwt:)`, gets 401 on /admin/products and signs the cashier out (found by the medusapos A10 e2e harness on 2026-09-24; the app works around it by building Bearer headers itself) | A connector unit test that a Bearer credential produces `Authorization: Bearer <jwt>` on replication requests, and the medusapos workaround can be deleted |
+| 6 | **Fault-test extensions:** an abrupt kill mid-patch, and ADR-039's batch-stopping 409 | The 200-replay test with both still ends with 0 lost and 0 duplicated orders |
+| 7 | **A monotonic in-millisecond counter for `uuidv7`** | 10,000 ids generated in the same millisecond are strictly increasing |
+| 8 | **Tombstones and id reconciliation** (deleted products leave the POS) | A product deleted in Medusa disappears from the POS within one poll; nightly reconciliation removes hard deletes |
+| 9 | **Separate price and stock collections, and a plugin pull route** | A price-only change reaches the POS at p95 ≤ poll + 2 s; initial sync beats the 12.52 s Admin API baseline (ADR-035) |
+| 10 | **Conformance suite, `@tallyui/sync-server`, and the TSP pull, stream and ids endpoints** (ADR-023) | ≥ 40 cases green against the reference server and medusa-dev; 10k out-of-order-commit rows with 0 missed and 0 resurrected |
+| 11 | **Discount contract:** an ADR plus a version bump, fixing the after-tax order-discount basis | A discounted sale lands in Medusa within ≤ 1 minor unit of the POS total |
+| 12 | **Registers, sessions and X/Z closures** (a WCPOS port, ADR-032) | The ported WCPOS tests pass; in the e2e run the Z report equals the sum of the sales |
+| 13 | **Split tender and the tender-reducer port** | WCPOS tender-reducer test parity; a split cash + external sale lands with correct payment rows |
+| 14 | **Customers** (search, attach, create through `customer.create` / `customer.patch` commands) | A sale with a customer lands with that `customer_id`; a field-merge conflict test passes |
+| 15 | **Cashier roles:** an actor type plus permissions (Medusa RBAC is Enterprise) | A cashier without admin rights can sell but gets 403 on admin routes |
+| 16 | **RxDB 17 + premium SQLite storage** (D2, Job 4) | Benchmark median within 10% of 12.52 s; premium installs in CI from `RXDB_LICENSE_KEY`; web SQLite-wasm and native SQLite both pass the storage tests |
+| 17 | **Native apps (Expo iOS and Android), with tokens in SecureStore** | The app runs on a device; the token is in SecureStore; the offline e2e passes on an Android emulator (Maestro) |
+| 18 | **Hardware kit** (D4 interim: interfaces public, drivers private) | A `PaymentDriver` checkout with the simulated driver passes e2e; ESC/POS receipts match golden files; one real print and one Stripe Terminal test payment recorded |
+| 19 | **In-browser demo at demo.medusapos.com** (ADR-027) | The URL returns 200; a Playwright sale passes on the production URL; Lighthouse ≥ 80 performance and ≥ 90 accessibility; no key in the bundle |
+| 20 | **Docs and Snacks for the new component props** | Every component page's example typechecks against current source; Snacks updated at the first publish |
+| 21 | **M0 cleanup:** deprecated traits optional, theme-token drift, `test-d` in CI, connector checkpoint bugs (Vendure skip, WooCommerce ties, Shopify REST) | `ProductTraits` has no required deprecated members; `vitest --typecheck` runs in CI; the connector checkpoint tests cover ties |
+| 22 | **Vendure (M6)** | The same conformance suite is green against vendure-dev; plugin + connector ≤ 50% of Medusa's line count |
 
 **Recommended order**, driven by what testers will hit first:
 1. Items 1–2, so testers install from npm.
-2. Items 3–6, the robustness of the tester-facing sync.
-3. Items 7–9, catalogue fidelity and the contract.
-4. Items 10–14, feature depth.
-5. Item 15, storage.
-6. Items 16–18, platforms, hardware and the demo.
-7. Items 19–20, cleanup, alongside the rest.
-8. Item 21, Vendure, once item 9 is green on Medusa.
+2. Items 3–7, the robustness of the tester-facing sync.
+3. Items 8–10, catalogue fidelity and the contract.
+4. Items 11–15, feature depth.
+5. Item 16, storage.
+6. Items 17–19, platforms, hardware and the demo.
+7. Items 20–21, cleanup, alongside the rest.
+8. Item 22, Vendure, once item 10 is green on Medusa.
 
 ---
 
