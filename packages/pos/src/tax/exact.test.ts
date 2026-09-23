@@ -13,6 +13,9 @@ describe('exact tax', () => {
     expect(ratePpmFromPercent('19')).toBe(190000);
     expect(ratePpmFromPercent(7.25)).toBe(72500);
     expect(ratePpmFromPercent('0.1')).toBe(1000);
+    expect(ratePpmFromPercent('0.0001')).toBe(1);
+    expect(ratePpmFromPercent(100)).toBe(1000000);
+    expect(ratePpmFromPercent('900719925474.0991')).toBe(Number.MAX_SAFE_INTEGER);
     expect(ratePpmFromPercent(0)).toBe(0);
     expect(() => ratePpmFromPercent(-1)).toThrow(RangeError);
     expect(() => ratePpmFromPercent('abc')).toThrow(RangeError);
@@ -108,11 +111,70 @@ describe('exact tax', () => {
     ], false)).toThrow(RangeError);
   });
 
-  it('rounds fractional ppm and rejects non-finite percentages', () => {
-    expect(ratePpmFromPercent('0.00025')).toBe(3);
-    expect(ratePpmFromPercent('0.00016')).toBe(2);
-    for (const percent of [NaN, Infinity, -Infinity, 'Infinity']) {
-      expect(() => ratePpmFromPercent(percent)).toThrow(RangeError);
+  it.each([
+    '', ' ', '0x10', '1e1', '-1', -1, '19%', '0.00001', '0.00025', '0.00016',
+    NaN, Infinity, -Infinity, 'Infinity', 'abc', 1e21, 1e-7,
+    '+1', ' 19', '19 ', '19\n', '.1', '1.', '900719925474.0992',
+  ])('rejects invalid or unrepresentable percentage %s', (percent) => {
+    expect(() => ratePpmFromPercent(percent)).toThrow(RangeError);
+  });
+
+  it('computes inclusive and exclusive tax at 100%', () => {
+    expect(taxMicros(200, 1_000_000, false)).toBe(200_000_000n);
+    expect(taxMicros(200, 1_000_000, true)).toBe(100_000_000n);
+    const lines = [{ unitPriceMinor: 200, quantity: 1, ratePpm: 1_000_000 }];
+    expect(computeOrderTax(lines, true)).toEqual({
+      taxMinor: 100, subtotalMinor: 100, totalMinor: 200, lineTaxMicros: [100_000_000n],
+    });
+    expect(computeOrderTax(lines, false)).toEqual({
+      taxMinor: 200, subtotalMinor: 200, totalMinor: 400, lineTaxMicros: [200_000_000n],
+    });
+  });
+
+  it.each([Number.MAX_SAFE_INTEGER + 1, -Number.MAX_SAFE_INTEGER - 1])(
+    'rejects unsafe number inputs %s', (value) => {
+      for (const inclusive of [false, true]) {
+        expect(() => taxMicros(value, 1, inclusive)).toThrow(RangeError);
+        expect(() => taxMicros(1, value, inclusive)).toThrow(RangeError);
+        for (const field of ['unitPriceMinor', 'quantity', 'ratePpm']) {
+          expect(() => computeOrderTax([
+            { unitPriceMinor: 1, quantity: 1, ratePpm: 1, [field]: value },
+          ], inclusive)).toThrow(RangeError);
+        }
+      }
+    },
+  );
+
+  it('checks the safe integer boundary after rounding micro-minor-units', () => {
+    const limit = BigInt(Number.MAX_SAFE_INTEGER) * MICROS_PER_MINOR;
+    for (const sign of [1n, -1n]) {
+      expect(roundMicrosToMinor(sign * (limit + 499_999n)))
+        .toBe(Number(sign * BigInt(Number.MAX_SAFE_INTEGER)));
+      expect(() => roundMicrosToMinor(sign * (limit + 500_000n))).toThrow(RangeError);
+    }
+  });
+
+  it('checks each final order total against both safe integer bounds', () => {
+    for (const price of [Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER]) {
+      for (const inclusive of [false, true]) {
+        expect(computeOrderTax([{ unitPriceMinor: price, quantity: 1, ratePpm: 0 }], inclusive))
+          .toEqual({ subtotalMinor: price, taxMinor: 0, totalMinor: price, lineTaxMicros: [0n] });
+        for (const lines of [
+          [ // Only subtotal overflows.
+            { unitPriceMinor: price, quantity: 3, ratePpm: 0 },
+            { unitPriceMinor: -price, quantity: inclusive ? 2 : 1, ratePpm: 1_000_000 },
+          ],
+          [ // Only tax overflows.
+            { unitPriceMinor: price, quantity: inclusive ? 4 : 2, ratePpm: 1_000_000 },
+            { unitPriceMinor: -price, quantity: 3, ratePpm: 0 },
+          ],
+          [ // Only total overflows.
+            { unitPriceMinor: price, quantity: inclusive ? 2 : 1, ratePpm: 1_000_000 },
+          ],
+        ]) {
+          expect(() => computeOrderTax(lines, inclusive)).toThrow(RangeError);
+        }
+      }
     }
   });
 

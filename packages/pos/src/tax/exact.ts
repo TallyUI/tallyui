@@ -1,22 +1,27 @@
 /** Micro-minor-units per minor unit. */
 export const MICROS_PER_MINOR = 1_000_000n;
 
-/** Converts a percentage to the nearest integer ppm; rejects non-finite or negative input. */
+/** Converts a plain decimal percentage with at most four fractional digits to safe integer ppm. */
 export function ratePpmFromPercent(percent: number | string): number {
-  const value = Number(percent);
-  if (!Number.isFinite(value) || value < 0) {
-    throw new RangeError('Percent must be finite and non-negative');
+  const value = String(percent);
+  const match = /^(\d+)(?:\.(\d{1,4}))?$/.exec(value);
+  if (!match || match[0] !== value) {
+    throw new RangeError('Percent must be a plain decimal with at most four fractional digits');
   }
-  return Math.round(value * 10000);
+  const ratePpm = BigInt(match[1]) * 10000n + BigInt((match[2] ?? '').padEnd(4, '0'));
+  if (ratePpm > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError('Rate must be a safe integer');
+  }
+  return Number(ratePpm);
 }
 
 /**
  * Exact exclusive tax, or inclusive tax rounded half away from zero to a micro-minor-unit.
- * Throws RangeError for a non-integer amount or a rate that is not a non-negative integer.
+ * Throws RangeError unless amount and rate are safe integers and rate is non-negative.
  */
 export function taxMicros(amountMinor: number, ratePpm: number, pricesIncludeTax: boolean): bigint {
-  if (!Number.isInteger(amountMinor) || !Number.isInteger(ratePpm) || ratePpm < 0) {
-    throw new RangeError('Amount must be an integer and rate a non-negative integer');
+  if (!Number.isSafeInteger(amountMinor) || !Number.isSafeInteger(ratePpm) || ratePpm < 0) {
+    throw new RangeError('Amount must be a safe integer and rate a non-negative safe integer');
   }
   const tax = BigInt(amountMinor) * BigInt(ratePpm);
   if (!pricesIncludeTax) return tax;
@@ -30,7 +35,11 @@ export function taxMicros(amountMinor: number, ratePpm: number, pricesIncludeTax
 /** Rounds micro-minor-units to integer minor units, half away from zero. */
 export function roundMicrosToMinor(micros: bigint): number {
   const sign = micros < 0n ? -1n : 1n;
-  return Number(sign * ((sign * micros + MICROS_PER_MINOR / 2n) / MICROS_PER_MINOR));
+  const minor = sign * ((sign * micros + MICROS_PER_MINOR / 2n) / MICROS_PER_MINOR);
+  if (minor < -BigInt(Number.MAX_SAFE_INTEGER) || minor > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError('Rounded amount must be a safe integer');
+  }
+  return Number(minor);
 }
 
 export interface TaxLineInput {
@@ -50,7 +59,7 @@ export interface OrderTaxTotals {
  * Sums tax on each unit price × quantity and rounds once for the order.
  * Exclusive: total = subtotal + tax. Inclusive: subtotal = total − tax.
  * Empty orders return zeros and an empty lineTaxMicros.
- * Throws RangeError for a non-integer price or a quantity that is not an integer >= 1.
+ * Throws RangeError for unsafe integer inputs or totals, negative rates, or quantity < 1.
  */
 export function computeOrderTax(lines: TaxLineInput[], pricesIncludeTax: boolean): OrderTaxTotals {
   let amountTotal = 0n;
@@ -58,8 +67,8 @@ export function computeOrderTax(lines: TaxLineInput[], pricesIncludeTax: boolean
   const lineTaxMicros: bigint[] = [];
 
   for (const line of lines) {
-    if (!Number.isInteger(line.quantity) || line.quantity < 1) {
-      throw new RangeError('Quantity must be an integer >= 1');
+    if (!Number.isSafeInteger(line.quantity) || line.quantity < 1) {
+      throw new RangeError('Quantity must be a safe integer >= 1');
     }
     let tax = taxMicros(line.unitPriceMinor, line.ratePpm, false) * BigInt(line.quantity);
     const amount = BigInt(line.unitPriceMinor) * BigInt(line.quantity);
@@ -76,10 +85,17 @@ export function computeOrderTax(lines: TaxLineInput[], pricesIncludeTax: boolean
 
   const taxMinor = taxTotal / MICROS_PER_MINOR
     + BigInt(roundMicrosToMinor(taxTotal % MICROS_PER_MINOR));
+  const subtotalMinor = pricesIncludeTax ? amountTotal - taxMinor : amountTotal;
+  const totalMinor = pricesIncludeTax ? amountTotal : amountTotal + taxMinor;
+  for (const value of [subtotalMinor, taxMinor, totalMinor]) {
+    if (value < -BigInt(Number.MAX_SAFE_INTEGER) || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new RangeError('Order totals must be safe integers');
+    }
+  }
   return {
-    subtotalMinor: Number(pricesIncludeTax ? amountTotal - taxMinor : amountTotal),
+    subtotalMinor: Number(subtotalMinor),
     taxMinor: Number(taxMinor),
-    totalMinor: Number(pricesIncludeTax ? amountTotal : amountTotal + taxMinor),
+    totalMinor: Number(totalMinor),
     lineTaxMicros,
   };
 }
