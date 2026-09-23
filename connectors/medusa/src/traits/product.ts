@@ -36,6 +36,44 @@ function variantQuantity(variant: any): number | null {
   );
 }
 
+function variantPrices(variant: any): ProductPrice[] {
+  if (!variant) return [];
+  const prices: ProductPrice[] = [];
+  const seen = new Set<string>();
+  // Medusa v2 amounts are major units (12 = €12.00), not cents.
+  const toMinor = (amount: unknown, currency: string) =>
+    Math.round(Number(amount) * 10 ** minorUnitDigits(currency));
+
+  // Base prices: the variant's own prices, first per currency, skipping
+  // price-list overrides.
+  for (const price of variant.prices ?? []) {
+    if (price?.price_list_id || price?.amount == null || !price.currency_code) continue;
+    const currency = String(price.currency_code).toUpperCase();
+    if (seen.has(currency)) continue;
+    seen.add(currency);
+    prices.push({ amount: toMinor(price.amount, currency), currency, kind: 'base' });
+  }
+
+  // Sale prices come from sale price lists. Medusa resolves them into
+  // `calculated_price` when the product is fetched with a pricing context.
+  const calc = variant.calculated_price;
+  if (calc?.currency_code && calc.calculated_amount != null
+    && calc.calculated_price?.price_list_type === 'sale') {
+    const currency = String(calc.currency_code).toUpperCase();
+    prices.push({ amount: toMinor(calc.calculated_amount, currency), currency, kind: 'sale' });
+  }
+  return prices;
+}
+
+function variantStock(variant: any): StockLevel {
+  if (!variant) return { status: 'unknown' };
+  if (variant.manage_inventory === false) return { status: 'in_stock' };
+  const quantity = variantQuantity(variant);
+  if (quantity == null) return { status: 'unknown' };
+  if (quantity > 0) return { status: 'in_stock', quantity };
+  return { status: variant.allow_backorder ? 'backorder' : 'out_of_stock', quantity };
+}
+
 /**
  * Medusa v2 product trait implementations.
  *
@@ -57,43 +95,17 @@ export const medusaProductTraits: ProductTraits = {
     return doc.variants?.[0]?.sku || undefined;
   },
 
-  getPrices: (doc) => {
-    const variant = doc.variants?.[0];
-    if (!variant) return [];
-    const prices: ProductPrice[] = [];
-    const seen = new Set<string>();
-    // Medusa v2 amounts are major units (12 = €12.00), not cents.
-    const toMinor = (amount: unknown, currency: string) =>
-      Math.round(Number(amount) * 10 ** minorUnitDigits(currency));
+  getPrices: (doc) => variantPrices(doc.variants?.[0]),
 
-    // Base prices: the variant's own prices, first per currency, skipping
-    // price-list overrides.
-    for (const price of variant.prices ?? []) {
-      if (price?.price_list_id || price?.amount == null || !price.currency_code) continue;
-      const currency = String(price.currency_code).toUpperCase();
-      if (seen.has(currency)) continue;
-      seen.add(currency);
-      prices.push({ amount: toMinor(price.amount, currency), currency, kind: 'base' });
-    }
+  getStock: (doc) => productStock((doc.variants ?? []).map(variantStock)),
 
-    // Sale prices come from sale price lists. Medusa resolves them into
-    // `calculated_price` when the product is fetched with a pricing context.
-    const calc = variant.calculated_price;
-    if (calc?.currency_code && calc.calculated_amount != null
-      && calc.calculated_price?.price_list_type === 'sale') {
-      const currency = String(calc.currency_code).toUpperCase();
-      prices.push({ amount: toMinor(calc.calculated_amount, currency), currency, kind: 'sale' });
-    }
-    return prices;
-  },
-
-  getStock: (doc) => productStock((doc.variants ?? []).map((variant: any): StockLevel => {
-    if (!variant) return { status: 'unknown' };
-    if (variant.manage_inventory === false) return { status: 'in_stock' };
-    const quantity = variantQuantity(variant);
-    if (quantity == null) return { status: 'unknown' };
-    if (quantity > 0) return { status: 'in_stock', quantity };
-    return { status: variant.allow_backorder ? 'backorder' : 'out_of_stock', quantity };
+  getVariants: (doc) => (doc.variants ?? []).map((v: any) => ({
+    id: v.id,
+    title: v.title ?? undefined,
+    sku: v.sku || undefined,
+    barcode: v.barcode || v.ean || v.upc || undefined,
+    prices: variantPrices(v),
+    stock: variantStock(v),
   })),
 
   getPrice: (doc) => {

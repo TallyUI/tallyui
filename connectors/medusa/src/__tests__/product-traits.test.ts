@@ -117,6 +117,65 @@ const minimalProduct = {
   id: 'prod_empty',
 };
 
+describe('Medusa variant summaries', () => {
+  it('maps variants in backend order with their own prices and stock', () => {
+    const product = { variants: [
+      {
+        id: 'var_s', title: 'S / White', sku: 'SHIRT-S', barcode: 'BAR-S',
+        manage_inventory: true,
+        inventory_items: [{ required_quantity: 1, inventory: { location_levels: [
+          { stocked_quantity: 10, reserved_quantity: 3 },
+        ] } }],
+        prices: [
+          { currency_code: 'eur', amount: 12 },
+          { currency_code: 'eur', amount: 13 },
+          { currency_code: 'eur', amount: 9, price_list_id: 'plist_1' },
+        ],
+        calculated_price: { currency_code: 'eur', calculated_amount: 9,
+          calculated_price: { price_list_type: 'sale' } },
+      },
+      {
+        id: 'var_l', title: 'L / White', sku: 'SHIRT-L', barcode: '', ean: 'EAN-L', upc: 'UPC-L',
+        manage_inventory: false,
+        prices: [{ currency_code: 'eur', amount: 15 }],
+      },
+    ] };
+    expect(medusaProductTraits.getVariants!(product)).toStrictEqual([
+      {
+        id: 'var_s', title: 'S / White', sku: 'SHIRT-S', barcode: 'BAR-S',
+        prices: [
+          { amount: 1200, currency: 'EUR', kind: 'base' },
+          { amount: 900, currency: 'EUR', kind: 'sale' },
+        ],
+        stock: { status: 'in_stock', quantity: 7 },
+      },
+      {
+        id: 'var_l', title: 'L / White', sku: 'SHIRT-L', barcode: 'EAN-L',
+        prices: [{ amount: 1500, currency: 'EUR', kind: 'base' }],
+        stock: { status: 'in_stock' },
+      },
+    ]);
+  });
+
+  it('returns no summaries without variants', () => {
+    expect(medusaProductTraits.getVariants!({})).toEqual([]);
+    expect(medusaProductTraits.getVariants!({ variants: [] })).toEqual([]);
+  });
+
+  it.each([
+    [fullProduct, [
+      { amount: 89900, currency: 'USD', kind: 'base' },
+      { amount: 82500, currency: 'EUR', kind: 'base' },
+    ], { status: 'in_stock', quantity: 8 }],
+    [multiVariantProduct, [{ amount: 89900, currency: 'USD', kind: 'base' }], { status: 'in_stock', quantity: 3 }],
+    [giftcardProduct, [{ amount: 5000, currency: 'USD', kind: 'base' }], { status: 'in_stock' }],
+    [minimalProduct, [], { status: 'unknown' }],
+  ])('preserves product-level prices and stock for $id', (product, prices, stock) => {
+    expect(medusaProductTraits.getPrices(product)).toStrictEqual(prices);
+    expect(medusaProductTraits.getStock(product)).toStrictEqual(stock);
+  });
+});
+
 describe('Medusa product traits', () => {
   describe('getId', () => {
     it('returns the product id', () => {
