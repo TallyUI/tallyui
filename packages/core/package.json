@@ -18,6 +18,11 @@
     "src"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TallyUI/tallyui.git",
+    "directory": "packages/core"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
