@@ -759,3 +759,20 @@ interface OrderCreatePayload {
   can differ from Medusa's cent-rounded total by up to (rates − 1) units,
   so ADR-037's ≤ 1 unit guard would then allow `rates − 1`. That change
   needs a new ADR.
+
+## ADR-041 Lockstep versions for all published @tallyui packages
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Front desk, 2026-09-23) ·
+  **Source:** publish-readiness PR (MVP T9/T10)
+- **Context:** Package versions had drifted apart (1.0.0 / 0.2.0 / 0.1.0),
+  and the packages depend on each other tightly (components → core,
+  primitives, theme; pos → core). Consumers of a young library shouldn't
+  have to work out which versions go together.
+- **Decision:** changesets `fixed: [["@tallyui/*"]]`. Every published
+  package releases at one shared version. The first release after this
+  takes every package to 2.0.0 together, because majors are pending in
+  components and the connectors. The private apps (demo, web, mock-api) are
+  not published.
+- **Consequences:** a breaking change in any package bumps the major of all
+  of them. The Release workflow stays disabled until Paul supplies npm
+  rights; then it is enabled deliberately, after the majors are cut.
