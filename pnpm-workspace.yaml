@@ -2,3 +2,15 @@ packages:
   - "apps/*"
   - "packages/*"
   - "connectors/*"
+minimumReleaseAge: 1440
+blockExoticSubdeps: true
+minimumReleaseAgeIgnoreMissingTime: true
+# Build-script allowlist moved from package.json for pnpm 11.
+allowBuilds:
+  rxdb: true
+  protobufjs: true
+  "@firebase/util": true
+  esbuild: true
+  sharp: false
+  unrs-resolver: false
+  workerd: false
