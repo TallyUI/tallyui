@@ -11,7 +11,7 @@ export type {
 
 export type { ReplicationAdapter } from './replication';
 
-export type { ProductTraits, TraitContext } from './traits/product';
+export type { ProductTraits, TraitContext, VariantSummary } from './traits/product';
 
 export type { Money, ProductPrice, ResolvedPrice } from './money';
 

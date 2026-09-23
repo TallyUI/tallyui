@@ -1,6 +1,19 @@
 import type { ProductPrice } from '../money';
 import type { StockLevel } from '../stock';
 
+/** One purchasable variant of a product, in backend-neutral terms. */
+export interface VariantSummary {
+  /** Backend variant id; the id sent in order lines. */
+  id: string;
+  /** Variant label, e.g. 'S / White'; undefined when the backend has none. */
+  title?: string;
+  sku?: string;
+  /** First non-empty of the backend's barcode fields. */
+  barcode?: string;
+  prices: ProductPrice[];
+  stock: StockLevel;
+}
+
 /**
  * Store-level facts a connector may need to interpret a raw document, for
  * backends whose documents omit them (WooCommerce product prices carry no
@@ -41,6 +54,9 @@ export interface ProductTraits<Doc = any> {
 
   /** Stock state of the whole product across its variants; `quantity` is the total on hand when every variant is tracked, else undefined. */
   getStock: (doc: Doc) => StockLevel;
+
+  /** All purchasable variants, in backend order. Optional: connectors without variant support omit it. */
+  getVariants?: (doc: Doc, context?: TraitContext) => VariantSummary[];
 
   /** @deprecated Use `getPrices` with `resolvePrice`. */
   getPrice: (doc: Doc) => string | undefined;

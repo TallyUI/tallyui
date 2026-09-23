@@ -11,6 +11,7 @@ export type {
   SyncContext,
   ProductTraits,
   TraitContext,
+  VariantSummary,
   CustomerTraits,
   Money,
   ProductPrice,
@@ -21,6 +22,7 @@ export type {
 
 // Money helpers
 export { formatMoney, minorUnitDigits, moneyFromMajor, moneyToMajor, resolvePrice } from './money';
+export { findVariantByCode } from './variants';
 
 // Context & hooks
 export {
