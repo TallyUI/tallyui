@@ -833,3 +833,36 @@ interface OrderCreatePayload {
   `release.yml` breaks publishing until every package's trusted publisher
   is updated. ADR-041's "npm rights" now means trusted publishers, not a
   token.
+
+## ADR-043 A worker opens the version PR; the Release workflow only publishes
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Front desk, 2026-09-23) ·
+  **Source:** release-publish-only PR, [RELEASING.md](RELEASING.md)
+- **Context:** GitHub's enterprise policy on the TallyUI org forbids
+  GitHub Actions from creating or approving pull requests, and the setting
+  cannot be changed through the API. `changesets/action` opens its
+  "version packages" PR from Actions whenever changesets are pending, so
+  under this policy every push to `main` carrying a changeset would fail.
+  The release would then never reach its publish step.
+- **Decision:** Versioning moves out of Actions. A worker on the agent
+  host runs `pnpm changeset version` on a branch and opens the result as an
+  ordinary PR, which is reviewed and merged like any other. The procedure
+  is in [RELEASING.md](RELEASING.md). `release.yml` gains a `pending` job
+  that counts `.changeset/*.md` files (not `README.md`). The `release`
+  job runs only when that count is 0, and then only publishes:
+  `changesets/action@v1` with `publish: pnpm changeset publish` pushes tags
+  and creates GitHub releases, but it never enters version mode.
+  `pull-requests: write` is dropped. The filename `release.yml`,
+  `id-token: write` and the absence of a GitHub environment are kept, so
+  the npm trusted publishers from ADR-042 stay valid.
+- **Options not taken:** `changesets/action/publish@v2`, a publish-only
+  sub-action, needs Changesets v3; the repo is on `@changesets/cli` 2.29.
+  Calling `changeset publish` directly, without the action, would mean
+  writing our own tag pushing and GitHub releases.
+- **Consequences:** Releasing takes one extra human-reviewed PR, which
+  also puts the changelog in front of a reviewer. If a changeset lands on
+  `main` after the version branch is cut and before it merges, the merge
+  leaves a pending changeset and publishing is skipped. The worker
+  procedure rebases and re-versions to avoid this. `changeset publish` is
+  idempotent, so the next version PR would publish anything that was
+  missed.
