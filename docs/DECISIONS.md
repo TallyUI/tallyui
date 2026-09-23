@@ -781,3 +781,50 @@ interface OrderCreatePayload {
 - **Consequences:** a breaking change in any package bumps the major of all
   of them. The Release workflow stays disabled until Paul supplies npm
   rights; then it is enabled deliberately, after the majors are cut.
+
+## ADR-042 Publish to npm by trusted publishing (OIDC), with no token
+
+- **Date:** 2026-09-23 · **Status:** Accepted (Paul, 2026-09-23) ·
+  **Source:** release-trusted-publishing PR
+- **Context:** Paul decided that the @tallyui packages publish from GitHub
+  Actions through npm trusted publishing. The repo has no `NPM_TOKEN`
+  secret and never will. npm needs npm CLI 11.5.1 or later (or a client that
+  does the same OIDC exchange), `id-token: write`, a GitHub-hosted runner,
+  and a trusted publisher on each package that names the org, repo and
+  workflow file. Under OIDC, a public package from a public repo gets
+  provenance automatically, and the registry then rejects a publish whose
+  `repository.url` is missing or does not match the repo.
+- **Options considered:**
+  1. Keep `changeset publish` and pnpm's own publish. `changeset publish`
+     runs `pnpm publish` per package in a pnpm workspace. pnpm 11 does the
+     OIDC exchange and sets provenance itself, the way npm does. pnpm 11.1.1
+     (pinned by ADR-011) fails with a 404 when `actions/setup-node` has
+     written `_authToken=${NODE_AUTH_TOKEN}` with no token set; 11.1.3 fixed
+     that ([pnpm#11513](https://github.com/pnpm/pnpm/issues/11513)).
+  2. Have changesets call `npm publish --provenance`. Plain `npm publish`
+     ships `workspace:*` ranges verbatim (components, database and pos use
+     them), so this needs `pnpm pack` first, then `npm publish <tarball>`
+     with npm 11.5.1+ installed. That means a custom publish script which
+     also re-does changesets' "already published?" check and git tags.
+- **Decision:** option 1, as the simpler route. Changes:
+  - `packageManager` moves from pnpm 11.1.1 to 11.27.1 (the latest 11.x; it
+    installs the current lockfile unchanged). The rest of ADR-011 stands.
+  - `release.yml` loses `NPM_TOKEN` and setup-node's `registry-url` (which
+    only exists to write a token `.npmrc`). It keeps `id-token: write`, its
+    filename, `changesets/action@v1` (v1 writes no `.npmrc` when there is
+    no `NPM_TOKEN`) and `pnpm changeset publish`. It uses no GitHub
+    environment. Each package's trusted publisher is: org `TallyUI`,
+    repo `tallyui`, workflow `release.yml`, environment blank.
+  - Every publishable manifest declares
+    `repository: git+https://github.com/TallyUI/tallyui.git` with its
+    `directory`.
+- **Consequences:** No publish credential exists to leak or rotate. npm
+  can only set a trusted publisher on a package that already exists, so a
+  package that has never been published needs one bootstrap publish by
+  hand (`@tallyui/primitives` on 2026-09-23). Provenance comes from pnpm's
+  automatic detection. If detection fails, pnpm only warns and still
+  publishes without provenance, so check the first release with
+  `npm view @tallyui/core --json` (look for `dist.attestations`). Renaming
+  `release.yml` breaks publishing until every package's trusted publisher
+  is updated. ADR-041's "npm rights" now means trusted publishers, not a
+  token.
