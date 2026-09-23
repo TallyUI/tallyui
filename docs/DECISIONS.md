@@ -725,3 +725,37 @@ interface OrderCreatePayload {
     released, and the server returns 5xx (retryable).
   - The outbox sends **at most 10 commands per request** (each order is
     about 6 Admin steps), well under `MAX_COMMANDS_PER_BATCH` = 50.
+
+## ADR-040 Several tax rates per line; per-rate receipt breakdown
+
+- **Date:** 2026-09-23 · **Status:** Accepted (programme lead), requested in
+  the Front desk's review of PR #17 · **Source:** ADR-037; Medusa line
+  items carry an array of `tax_lines`
+- **Context:** A Medusa line item can carry several tax lines. A US sale,
+  for example, may have state, county and city rates on the same line. VAT
+  receipts must show tax per rate. ADR-037 rounds tax once per order, while
+  per-rate totals rounded separately need not add up to that figure.
+- **Decision:**
+  1. **Stacked, not compound.** A POS line carries an array of tax lines
+     `{ code?, ratePpm, taxMicros }`. Each is applied to the same net base
+     and the results are added. Tax on tax (compound) is not supported;
+     Medusa does not compute it either. `LineItem.taxMicros` is the sum of
+     the line's tax lines. For the MVP the tax context supplies one rate,
+     so the array has one entry, but the data model is ready for many.
+  2. **The order tax is rounded once** (ADR-037). It is what the customer
+     pays, and Medusa accepts it.
+  3. **The receipt's per-rate breakdown always adds up to the charged tax.**
+     Group the exact micros by `(code, ratePpm)`, floor each group to minor
+     units, and give the leftover units to the largest remainders (ties to
+     the higher rate). A naive per-group rounding can be off by up to
+     (groups − 1) units against the charged tax. For example, three groups
+     at 0.95, 0.35 and 0.25 minor units round naively to [1, 0, 0] = 1,
+     against a charged tax of 2. The receipt shows [1, 1, 0].
+- **Consequences and open point:** some fiscal regimes prescribe rounding
+  VAT *per rate* on the document, rather than once, and some prescribe
+  per-line rounding. The fiscal-compliance work that WCPOS is doing (NF525,
+  VeriFactu) will decide per jurisdiction. If a regime needs per-rate
+  rounding, the order tax becomes Σ of the rounded per-rate amounts. That
+  can differ from Medusa's cent-rounded total by up to (rates − 1) units,
+  so ADR-037's ≤ 1 unit guard would then allow `rates − 1`. That change
+  needs a new ADR.
