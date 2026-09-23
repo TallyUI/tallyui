@@ -28,12 +28,14 @@
     "@tallyui/primitives": "workspace:*",
     "@tallyui/theme": "workspace:*",
     "react": ">=18",
-    "react-native": ">=0.74"
+    "react-native": ">=0.74",
+    "react-native-svg": ">=15"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1"
   },
   "devDependencies": {
-    "@types/react": ">=18"
+    "@types/react": ">=18",
+    "react-native-svg": "15.12.1"
   }
 }
