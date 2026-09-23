@@ -197,3 +197,82 @@ until a discount contract exists.
 ## Appended instructions
 
 *(Dated sections go below this line, newest last.)*
+
+### 2026-09-23 evening — TallyUI pin and the API to use (instruction; no scope change)
+
+**Pin TallyUI to `3996453ef752f246167075d06ca3dcda0b3098fd`**, the #25
+merge on `TallyUI/tallyui` main. It contains every T-track job. Bump your
+`file:` overrides and CI checkout to this commit, and add `react-native-svg`
+(≥ 15) to the app at the same time: components need it since TallyUI #12.
+Packages are **not on npm yet**. Keep `file:` overrides until the Front desk
+says Release is enabled.
+
+**Use these, and nothing older:**
+
+- **Money:** everything is integer minor units, `Money = { amount, currency }`
+  from `@tallyui/core`. Format with `formatMoney(m, locale)`, and parse typed
+  cash with `moneyFromDecimalString(text, currency)`. Never use `parseFloat`
+  or `toFixed` on money.
+- **Catalogue and variants** (`@tallyui/core`, `@tallyui/connector-medusa`):
+  - Replicate products with `medusaConnector.replication.products`
+    (pull-only, 100 per page; the baseline is 2,005 products in about 12.5 s
+    before browser storage).
+  - Read variants with `traits.getVariants(doc)`, which gives
+    `VariantSummary { id, title, sku, barcode, prices, stock }`.
+  - Resolve a variant's price with `resolvePrice(variant.prices, currency)`.
+  - Scan with `findVariantByCode(variants, code)`: barcode first, then SKU.
+- **Tax context** (`@tallyui/pos`):
+  - `<TaxProvider ratesPpm={{ default: 190000 }} pricesIncludeTax={false}>`,
+    or a plain `TaxContext` object with `getTaxRatePpm(taxClass?)`.
+  - Rates are **integer ppm**: 19% = 190000. Convert Medusa's percent rate
+    with `ratePpmFromPercent('19')`. The dev store is tax-exclusive; once
+    A5's rates land, read the rate from the region's tax rate.
+- **Cart** (`@tallyui/pos`):
+  - Create the cart with `createOrderBuilder({ currency, taxContext })`.
+  - Add lines with `builder.addLine({ productId, variantId, name, sku, unitPrice: Money, quantity })`.
+    Use `variantId` from `VariantSummary.id`.
+  - Subscribe to `builder.order$`. Every total is on the `Order`:
+    `subtotalMinor`, `taxMinor`, `totalMinor`, `paidMinor`,
+    `balanceDueMinor`, `changeDueMinor`.
+  - **Do not compute totals in the app.**
+- **Tender:**
+  - Record a tender with `builder.addPayment({ method: 'cash' | 'external', amountMinor })`.
+    For cash, `amountMinor` is the amount **handed over**;
+    `finalizeOrder` works out the change.
+  - Only `cash` and `external` are accepted.
+  - **Discounts are not supported yet:** `finalizeOrder` throws on them.
+    Don't expose discount UI.
+- **Completing the sale:**
+  - `const posOrder = finalizeOrder(builder.getSnapshot(), { registerId, cashierRef })`.
+  - It throws with a stable prefix (`finalize: …`): no lines, underpaid,
+    change exceeds cash, unsupported method, discounts. Show that message
+    to the cashier.
+  - Then `db.pos_orders.insert(posOrder)`, where the collection uses
+    `posOrderSchema`.
+  - **The sale is recorded locally at that point, even offline.** Start a
+    new `createOrderBuilder` for the next sale.
+- **Sync:**
+  - Build the outbox with
+    `createOrderOutbox({ collection: db.pos_orders, transport: createHttpCommandTransport({ baseUrl, getHeaders: () => ({ Authorization: 'Bearer ' + jwt }) }), deviceId })`,
+    then `outbox.start()`.
+  - The outbox is single-tab (no leader election yet), so run one POS tab.
+  - `outbox.state$` gives `{ pending, sending, lastRetryReason, nextAttemptAt }`
+    for the pending indicator.
+  - Orders move `pending` → `applied` (with `serverRefs`, and `warnings`
+    such as `total_mismatch` or `insufficient_stock`) or `rejected` (with
+    `error.code`).
+  - Show `rejected` orders and any warnings in the needs-attention list.
+  - A 401 is retried forever, so `getHeaders` must return a fresh token
+    after refresh.
+- **Receipt:** `buildReceiptData(order, config)` gives `*Minor` fields and
+  per-rate `taxLines` that sum to the charged tax.
+- **Components** (`@tallyui/components`): `CartLine`, `CartTotal`,
+  `CashTendered`, `ChangeDisplay` and `CartPanel<T>` now take `Money`
+  values. Pass the builder's numbers; the components compute nothing.
+
+**Command envelope:** the outbox builds it with
+`toOrderCreateEnvelope(posOrder, deviceId)`. The payload is exactly
+ADR-038's `OrderCreatePayload`. `lines[].variantId` falls back to
+`productId`; `customer` is null unless an email is set. The server (A3/A4)
+must accept exactly this shape. TallyUI's tests prove the envelope survives
+a JSON round trip unchanged.
