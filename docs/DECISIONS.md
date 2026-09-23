@@ -672,6 +672,11 @@ interface OrderCreatePayload {
     than the rounded total) is `rejected` with a stable `error.code`.
 - **Change rule:** changing any of these shapes needs a new ADR and a
   `version` bump, agreed by both tracks.
+- **Amendment (2026-09-24):** a new rejection code `invalid_payload` is
+  returned as `status: 'rejected'` when a command's payload fails shape
+  validation. This check runs before the ledger claim; it is deterministic,
+  so a replay of the same command returns the same rejection. It is not
+  retried. Introduced by medusapos/app ADR 0004.
 
 ## ADR-039 `order.create` edge cases (addendum to ADR-038)
 
