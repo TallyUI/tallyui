@@ -1,25 +1,28 @@
 import { useState } from 'react';
 import { Pressable, Text, TextInput, View, type ViewProps } from 'react-native';
 
+import { formatMoney, minorUnitDigits, moneyFromDecimalString, type Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 
 export interface CashTenderedProps extends Omit<ViewProps, 'children'> {
-  total: number;
-  defaultAmount?: number;
-  amount?: number;
-  onChangeAmount?: (amount: number) => void;
-  quickAmounts?: number[];
+  total: Money;
+  defaultAmount?: Money;
+  amount?: Money;
+  onChangeAmount?: (amount: Money) => void;
+  quickAmounts?: Money[];
+  locale?: string;
   className?: string;
 }
 
-function defaultQuickAmounts(total: number): number[] {
+function defaultQuickAmounts(total: Money): Money[] {
+  const unit = 10 ** minorUnitDigits(total.currency);
   const amounts = [
-    total,
-    Math.ceil(total / 5) * 5,
-    Math.ceil(total / 10) * 10,
-    Math.ceil(total / 20) * 20,
+    total.amount,
+    Math.ceil(total.amount / (5 * unit)) * 5 * unit,
+    Math.ceil(total.amount / (10 * unit)) * 10 * unit,
+    Math.ceil(total.amount / (20 * unit)) * 20 * unit,
   ];
-  return [...new Set(amounts)].sort((a, b) => a - b);
+  return [...new Set(amounts)].sort((a, b) => a - b).map((amount) => ({ amount, currency: total.currency }));
 }
 
 export function CashTendered({
@@ -28,14 +31,19 @@ export function CashTendered({
   amount: controlledAmount,
   onChangeAmount,
   quickAmounts,
+  locale,
   className,
   ...viewProps
 }: CashTenderedProps) {
   const [internalAmount, setInternalAmount] = useState(defaultAmount ?? total);
   const amount = controlledAmount ?? internalAmount;
   const buttons = quickAmounts ?? defaultQuickAmounts(total);
+  const digits = minorUnitDigits(amount.currency);
+  const amountText = String(Math.abs(amount.amount)).padStart(digits + 1, '0');
+  const decimal = (amount.amount < 0 ? '-' : '') + (digits
+    ? `${amountText.slice(0, -digits)}.${amountText.slice(-digits)}` : amountText);
 
-  const handleChange = (value: number) => {
+  const handleChange = (value: Money) => {
     if (controlledAmount === undefined) setInternalAmount(value);
     onChangeAmount?.(value);
   };
@@ -46,29 +54,29 @@ export function CashTendered({
       <View className="flex-row flex-wrap gap-2">
         {buttons.map((val) => (
           <Pressable
-            key={val}
+            key={`${val.currency}:${val.amount}`}
             onPress={() => handleChange(val)}
             className={cn(
               'rounded-lg px-4 py-2',
-              amount === val ? 'bg-primary' : 'bg-surface-alt',
+              amount.amount === val.amount && amount.currency === val.currency ? 'bg-primary' : 'bg-surface-alt',
             )}
           >
             <Text
               className={cn(
                 'text-sm font-semibold',
-                amount === val ? 'text-primary-foreground' : 'text-foreground',
+                amount.amount === val.amount && amount.currency === val.currency ? 'text-primary-foreground' : 'text-foreground',
               )}
             >
-              {val.toFixed(2)}
+              {formatMoney(val, locale) ?? '—'}
             </Text>
           </Pressable>
         ))}
       </View>
       <TextInput
-        value={String(amount.toFixed(2))}
+        value={decimal}
         onChangeText={(text) => {
-          const parsed = parseFloat(text);
-          if (!isNaN(parsed) && parsed >= 0) handleChange(parsed);
+          const parsed = moneyFromDecimalString(text, total.currency);
+          if (parsed) handleChange(parsed);
         }}
         keyboardType="decimal-pad"
         className="rounded-lg border border-border bg-surface px-3 py-2 text-base text-foreground"

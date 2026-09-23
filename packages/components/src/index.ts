@@ -37,7 +37,6 @@ export {
   DiscountBadge,
   CartNoteInput,
   type CartLineProps,
-  type CartLineItem,
   type CartTotalProps,
   type CartPanelProps,
   type DiscountBadgeProps,
