@@ -519,6 +519,10 @@ tester doesn't need is deferred until after this.
   until the app is reset.
 - **From M3:** split tender, register open and close with X/Z closures,
   the tender-reducer port, and customers.
+- **Discounts:** the ADR-038 `order.create` payload has no discount field,
+  so `finalizeOrder` refuses discounted sales until a discount contract ADR
+  is written. That ADR will carry line and order discounts to the backend,
+  and fix the after-tax order-discount basis at the same time.
 - **From M4:** the in-browser demo (ADR-027) comes after the MVP. The MVP
   ships the real app, for testers who have their own store.
 - **From M5:** everything except keyboard-wedge scanning and browser print.
