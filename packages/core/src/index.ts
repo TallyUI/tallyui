@@ -19,6 +19,18 @@ export type {
   StockStatus,
 } from './types';
 
+export type {
+  CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,
+  CommandWarning, CommandError, CommandResult, OrderCreateLine,
+  PaymentMethodKind, OrderCreatePayment, OrderCreatePayload,
+  CommandBatchRequest, CommandBatchResponse,
+} from './types';
+
+export {
+  COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, MAX_COMMANDS_PER_BATCH,
+  isCommandBatchResponse,
+} from './commands';
+
 // Money helpers
 export { formatMoney, minorUnitDigits, moneyFromMajor, moneyToMajor, resolvePrice } from './money';
 
