@@ -55,7 +55,8 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     // and validating is what makes dev mode catch bad connector documents.
     storage: DEV_MODE ? wrappedValidateAjvStorage({ storage }) : storage,
     multiInstance: false,
-    ignoreDuplicate: true,
+    // RxDB rejects this outside dev mode (DB9); in dev it lets hot reload re-create the same database.
+    ignoreDuplicate: DEV_MODE,
   });
 
   // Build collection configs from connector schemas
