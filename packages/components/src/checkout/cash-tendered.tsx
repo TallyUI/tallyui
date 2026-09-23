@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View, type ViewProps } from 'react-native';
 
 import { formatMoney, minorUnitDigits, moneyFromDecimalString, type Money } from '@tallyui/core';
@@ -42,6 +42,15 @@ export function CashTendered({
   const amountText = String(Math.abs(amount.amount)).padStart(digits + 1, '0');
   const decimal = (amount.amount < 0 ? '-' : '') + (digits
     ? `${amountText.slice(0, -digits)}.${amountText.slice(-digits)}` : amountText);
+  const [text, setText] = useState(decimal);
+  const lastTextAmount = useRef(amount);
+
+  useEffect(() => {
+    if (amount.amount !== lastTextAmount.current.amount || amount.currency !== lastTextAmount.current.currency) {
+      setText(decimal);
+      lastTextAmount.current = amount;
+    }
+  }, [amount, decimal]);
 
   const handleChange = (value: Money) => {
     if (controlledAmount === undefined) setInternalAmount(value);
@@ -73,10 +82,16 @@ export function CashTendered({
         ))}
       </View>
       <TextInput
-        value={decimal}
+        value={text}
         onChangeText={(text) => {
           const parsed = moneyFromDecimalString(text, total.currency);
-          if (parsed) handleChange(parsed);
+          if (parsed) {
+            setText(text);
+            lastTextAmount.current = parsed;
+            handleChange(parsed);
+          } else if (/^\d+\.$/.test(text)) {
+            setText(text);
+          }
         }}
         keyboardType="decimal-pad"
         className="rounded-lg border border-border bg-surface px-3 py-2 text-base text-foreground"
