@@ -1785,3 +1785,26 @@ interface OrderCreatePayload {
     the one tab.
   - The cost: a cashier cannot open the POS in two tabs at once. The guard
     must say so plainly.
+- **Amendment 1 (2026-09-24, Front desk): the park order is close, then
+  terminate.** Found while switching the Medusa POS to the new engine.
+  - **The earlier order was wrong.** `live-tab.mdx` told apps to
+    terminate the storage worker and then close the databases.
+    - RxDB's remote `close()` sends `close` to the worker and waits for
+      the reply, and it frees the database name only when the close
+      finishes.
+    - So with the worker terminated first, every close hangs and the name
+      stays taken. The next open fails with `DB8`.
+  - **Decision:**
+    1. `onPark` first stops the runners.
+    2. It then awaits the close of every database with the worker still
+       alive, bounded by a fixed limit: `PARK_CLOSE_LIMIT_MS`, 3 s. That
+       fits the new tab's 13 s "blocked" deadline (`maxDeferMs` 10 s plus
+       `ackTimeoutMs` 3 s) after the longest deferral.
+    3. It then terminates the worker, which releases the opfs-sahpool
+       access handles.
+    4. On timeout it terminates anyway, treats storage as stalled, and
+       prompts a reload.
+  - **One storage for all stores.** An app creates one
+    `getRxStorageSQLiteWasm` storage, in mode `'one'` with one worker
+    holding the exclusive pool, and opens every store's database on it. A
+    second storage would start a second worker, which cannot open the pool.

@@ -25,14 +25,27 @@ After a back or forward navigation restores the page from the browser's cache, t
 import { startLiveTab } from '@tallyui/database';
 import { LiveTabScreen } from '@tallyui/components';
 
+// How long parking waits for the databases to close. 3 s fits the new tab's
+// 13 s "blocked" deadline after the longest deferral (10 s); a healthy close
+// takes milliseconds.
+const PARK_CLOSE_LIMIT_MS = 3_000;
+
 const liveTab = startLiveTab({
   scope: storeId,
-  // Close the database and stop background workers before the other tab takes over.
-  // The worker terminates synchronously first, so a page frozen mid-close still released it.
   onPark: async () => {
-    dbWorker.terminate();
-    await db.close();
     stockReconcile.stop();
+    // 1. Close with the worker still alive. RxDB's remote close() asks the
+    //    worker to close and waits for its reply, and frees the database name
+    //    only when the close finishes.
+    const closed = await Promise.race([
+      Promise.all(databases.map((db) => db.close())).then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), PARK_CLOSE_LIMIT_MS)),
+    ]);
+    // 2. Then terminate the worker, which releases the opfs-sahpool access handles.
+    dbWorker.terminate();
+    // 3. A close that timed out may have left storage inconsistent: treat it
+    //    as stalled, and prompt a reload.
+    if (!closed) showStorageReloadPrompt();
   },
   // The hand-over waits while this returns true: a sale is mid-checkout, or
   // the outbox is sending an order.
@@ -54,7 +67,16 @@ function App() {
 
 The POS, and the database it opens, renders only for `'live'`: an `acquiring` tab must not open storage while another tab still holds it, and the app drops the POS whenever the state leaves `'live'` for any reason, including `pagehide`.
 
-`onPark` must finish closing the database and stop its storage worker before it returns: the lock is released only after it returns, so the new tab never opens storage while the old tab still holds it.
+`onPark` must finish closing the databases and stop its storage worker before it returns. The lock is released only after it returns, so the new tab never opens storage while the old tab still holds it.
+
+**Park in this order: close, then terminate** (ADR-061, amendment 1).
+- **Close every database with the worker alive.** RxDB's remote `close()` sends `close` to the worker and waits for its reply. It frees the database name only when the close finishes.
+- **Why terminating first fails.** If you terminate first, every close hangs, and the name stays taken, so the next open fails with RxDB error `DB8`.
+- **Bound the wait with a fixed limit.**
+- **Then terminate the worker.** Terminating releases the opfs-sahpool access handles.
+- **On timeout,** terminate anyway, treat storage as stalled, and prompt a reload.
+
+**One storage for all stores.** The app creates **one** storage with `getRxStorageSQLiteWasm` and opens every store's database on it. That storage runs in mode `'one'`: one worker, which holds the exclusive opfs-sahpool pool. `databases` in the example means every database opened on that storage. A second storage would start a second worker, and that worker cannot open the pool.
 
 Call `liveTab.stop()` on sign-out or unmount, so the lock and the channel are released.
 
