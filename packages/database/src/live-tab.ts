@@ -83,17 +83,22 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
   let releaseLock: (() => void) | undefined;
   let parking = false;
   let requestCounter = 0;
+  let stopped = false;
+  // Aborts every locks.request() this instance has in flight; stop() is the only trigger.
+  const abortController = new AbortController();
   // Unique per coordinator instance, so two tabs requesting at once never mint the same id
   // (a shared id would let one ack satisfy both waiters).
   const tabToken = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   const ackWaiters = new Map<string, () => void>();
 
   /** Holds the lock (if granted) until `releaseLock()` resolves the held promise. */
-  const requestLock = (lockOptions: LockOptions): Promise<boolean> =>
+  const requestLock = (lockOptions: Omit<LockOptions, 'signal'>): Promise<boolean> =>
     new Promise<boolean>((resolve, reject) => {
       locks
-        .request(name, lockOptions, (lock) => {
-          if (!lock) {
+        .request(name, { ...lockOptions, signal: abortController.signal }, (lock) => {
+          // Stopped in the time it took the grant to arrive: hand the lock straight
+          // back (a non-promise return releases it at once) and never go live.
+          if (!lock || stopped) {
             resolve(false);
             return undefined;
           }
@@ -103,7 +108,7 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
           });
         })
         .catch((error: unknown) => {
-          if (lockOptions.signal?.aborted) resolve(false);
+          if (abortController.signal.aborted) resolve(false);
           else reject(error);
         });
     });
@@ -161,25 +166,26 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
       state.next('live');
       return 'live';
     }
+    if (stopped) return state.value;
 
     const id = `${tabToken}-${++requestCounter}`;
     // Register the waiter before posting: an ack can arrive synchronously.
     const acked = waitForAck(id);
     channel.postMessage({ type: 'handover-request', id });
-    if (!(await acked)) {
-      state.next('blocked');
-      return 'blocked';
-    }
+    if (!(await acked)) state.next('blocked');
+    if (stopped) return state.value;
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), maxDeferMs + ackTimeoutMs);
-    const gotLock = await requestLock({ signal: controller.signal });
-    clearTimeout(timer);
+    // No deadline: the live tab may still be closing or reloading, so the lock
+    // can still come free. Only stop() gives up waiting.
+    const gotLock = await requestLock({});
+    if (stopped) return state.value;
     state.next(gotLock ? 'live' : 'blocked');
     return gotLock ? 'live' : 'blocked';
   };
 
   const takeOver = (): Promise<LiveTabState> => {
+    // Stopped: nothing left to ask for or hold.
+    if (stopped) return Promise.resolve(state.value);
     // Already holding the lock: nothing to ask for, and trying again would
     // fail ifAvailable against our own held lock and post a request nobody answers.
     if (state.value === 'live') return Promise.resolve('live');
@@ -192,12 +198,18 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
   };
 
   const stop = () => {
+    stopped = true;
+    abortController.abort();
+    globalThis.removeEventListener?.('pagehide', stop);
     releaseLock?.();
     releaseLock = undefined;
     channel.onmessage = null;
     channel.close();
     state.complete();
   };
+
+  // A reload or a closing page never sends an ack; treat it the same as stop().
+  globalThis.addEventListener?.('pagehide', stop);
 
   // Start. A rejection here (a real locks.request() error, not an abort) still resolves a state.
   void takeOver().catch((error) => {

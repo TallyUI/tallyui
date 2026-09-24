@@ -15,7 +15,7 @@ On platforms without Web Locks (React Native, Node, tests), a tab is simply live
 - If nothing answers, the new tab tells the user to close the other tab.
 - Reload is the recovery.
 
-`startLiveTab` returns a `state$` observable of `'acquiring' | 'live' | 'parked' | 'blocked'`, a `takeOver()` you call on start (and again from the parked screen's "Use here" button), and a `stop()` for sign-out or unmount.
+`startLiveTab` returns a `state$` observable of `'acquiring' | 'live' | 'parked' | 'blocked'`, a `takeOver()` for the parked screen's "Use here" button, and a `stop()` for sign-out or unmount.
 
 ## Wiring it up
 
@@ -41,11 +41,14 @@ function App() {
   return (
     <>
       <LiveTabScreen state={state} onUseHere={liveTab.takeOver} onReload={() => location.reload()} />
-      {(state === 'acquiring' || state === 'live') && <POS />}
+      {state === 'acquiring' && <Loading />}
+      {state === 'live' && <POS />}
     </>
   );
 }
 ```
+
+The POS, and the database it opens, renders only for `'live'`: an `acquiring` tab must not open storage while another tab still holds it.
 
 `onPark` must finish closing the database and stop its storage worker before it returns: the lock is released only after it returns, so the new tab never opens storage while the old tab still holds it.
 

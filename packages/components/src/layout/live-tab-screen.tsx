@@ -31,7 +31,7 @@ export function LiveTabScreen({
   parkedTitle = 'POS is open in another tab',
   parkedBody = 'This tab stopped so the other one can work. Use it here instead?',
   useHereLabel = 'Use here',
-  blockedBody = "The other tab isn't responding. Close it, then reload this one.",
+  blockedBody = 'The POS is open in another tab. Close that tab to use it here, or reload this one.',
   reloadLabel = 'Reload',
   className,
   ...viewProps

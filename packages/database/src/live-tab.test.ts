@@ -79,6 +79,82 @@ function createChannelHub() {
   return { createChannel, createDroppedChannel };
 }
 
+/**
+ * Same lock semantics as `createFakeLockManager`, but every answer arrives in
+ * a later task (`setTimeout(…, delay)`), like a real browser. An `ifAvailable`
+ * probe honours an already-aborted signal; a request already queued for the
+ * lock is delivered whenever its turn comes regardless of a later abort —
+ * real Web Locks can race the same way, which is exactly why the coordinator
+ * also guards its own grant callback with `stopped` instead of trusting the
+ * signal alone.
+ */
+function createAsyncFakeLockManager(delay = 10): Pick<LockManager, 'request'> {
+  let held = false;
+  type Entry = { callback: (lock: Lock | null) => unknown; resolve: (v: unknown) => void; reject: (e: unknown) => void };
+  const waiters: Entry[] = [];
+
+  const deliver = (entry: Entry) => {
+    held = true;
+    setTimeout(() => {
+      Promise.resolve(entry.callback({} as Lock)).then(
+        (result) => {
+          held = false;
+          entry.resolve(result);
+          const next = waiters.shift();
+          if (next) deliver(next);
+        },
+        (error) => {
+          held = false;
+          entry.reject(error);
+          const next = waiters.shift();
+          if (next) deliver(next);
+        },
+      );
+    }, delay);
+  };
+
+  const request = (_name: string, lockOptions: LockOptions, callback: (lock: Lock | null) => unknown): Promise<unknown> =>
+    new Promise((resolve, reject) => {
+      const entry: Entry = { callback, resolve, reject };
+      if (lockOptions.ifAvailable) {
+        setTimeout(() => {
+          if (lockOptions.signal?.aborted) reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          else if (held) resolve(callback(null));
+          else deliver(entry);
+        }, delay);
+        return;
+      }
+      if (!held) deliver(entry);
+      else waiters.push(entry);
+    });
+
+  return { request } as unknown as Pick<LockManager, 'request'>;
+}
+
+/** Connects fake BroadcastChannels of the same name, delivering each message in a later task. */
+function createAsyncChannelHub(delay = 10) {
+  type FakeChannel = { onmessage: ((event: { data: unknown }) => void) | null; postMessage: (data: unknown) => void; close: () => void };
+  const groups = new Map<string, Set<FakeChannel>>();
+
+  const createChannel = (name: string): FakeChannel => {
+    const peers = groups.get(name) ?? new Set<FakeChannel>();
+    groups.set(name, peers);
+    const self: FakeChannel = {
+      onmessage: null,
+      postMessage: (data) => {
+        for (const peer of peers) if (peer !== self) setTimeout(() => peer.onmessage?.({ data }), delay);
+      },
+      close: () => peers.delete(self),
+    };
+    peers.add(self);
+    return self;
+  };
+
+  const createDroppedChannel = (): FakeChannel => ({ onmessage: null, postMessage: () => {}, close: () => {} });
+
+  return { createChannel, createDroppedChannel };
+}
+
 const currentState = (handle: LiveTabHandle): LiveTabState => {
   let value!: LiveTabState;
   handle.state$.subscribe((v) => { value = v; }).unsubscribe();
@@ -320,5 +396,119 @@ describe('startLiveTab', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(currentState(b)).toBe('live');
     b.stop();
+  });
+
+  // The sync fake above grants locks and delivers channel messages in the same tick,
+  // which hides races that only show up when a grant or a message lands in a later
+  // task, as it does in a real browser. These tests use the async fake for that.
+  describe('with the async fake (real-browser timing)', () => {
+    it('StrictMode: stopping before the grant lands lets the next start become live, and nothing is ever blocked', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      const a = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+      a.stop(); // stopped before its own ifAvailable grant is delivered
+      const a2 = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+      const a2States: LiveTabState[] = [];
+      a2.state$.subscribe((s) => a2States.push(s));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(currentState(a2)).toBe('live');
+      expect(a2States).not.toContain('blocked');
+      a2.stop();
+    });
+
+    it('B stops while queued for the lock after being acked; its late grant releases at once and C becomes live', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      let releaseOnPark: (() => void) | undefined;
+      const onParkA = vi.fn(() => new Promise<void>((resolve) => { releaseOnPark = resolve; }));
+      const a = startLiveTab({ scope: 'store-1', onPark: onParkA, locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(currentState(a)).toBe('live');
+
+      const b = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(100);
+      // B was acked and is now waiting for the lock, with no deadline.
+      expect(currentState(b)).toBe('acquiring');
+      b.stop();
+
+      const c = startLiveTab({ scope: 'store-1', onPark: vi.fn(), ackTimeoutMs: 3_000, locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(3_100);
+      // A is still parking (stuck in onPark), so nothing ever acks C.
+      expect(currentState(c)).toBe('blocked');
+
+      releaseOnPark?.();
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(currentState(a)).toBe('parked');
+      expect(currentState(c)).toBe('live');
+      a.stop();
+      c.stop();
+    });
+
+    it('the live tab closes before it can ack: the new tab is blocked after the ack timeout, then live once the lock frees', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      // A's channel is dropped, modeling a page that closes before it can ack.
+      const a = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createDroppedChannel });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+
+      const b = startLiveTab({ scope: 'store-1', onPark: vi.fn(), ackTimeoutMs: 3_000, locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(3_050);
+      expect(currentState(b)).toBe('blocked');
+
+      a.stop();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(b)).toBe('live');
+      b.stop();
+    });
+
+    it('the old grant-wait deadline is gone: B stays queued through a 10 s defer plus a 4 s onPark and still ends live', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      let resolveOnPark: (() => void) | undefined;
+      const onParkA = vi.fn(() => new Promise<void>((resolve) => { resolveOnPark = resolve; }));
+      const a = startLiveTab({ scope: 'store-1', onPark: onParkA, isBusy: () => true, locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+
+      const b = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+      // A defers the full 10 s (still busy), then onPark runs 4 s more.
+      await vi.advanceTimersByTimeAsync(10_100);
+      expect(onParkA).toHaveBeenCalledTimes(1);
+      expect(currentState(b)).toBe('acquiring');
+
+      // Past the old maxDeferMs + ackTimeoutMs (13 s) cap; B must still be waiting, not blocked.
+      await vi.advanceTimersByTimeAsync(3_900);
+      expect(currentState(b)).toBe('acquiring');
+
+      resolveOnPark?.();
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(currentState(a)).toBe('parked');
+      expect(currentState(b)).toBe('live');
+      a.stop();
+      b.stop();
+    });
+
+    it('pagehide stops the live tab, freeing the lock for the next tab', async () => {
+      // Every coordinator instance in this process shares one real `globalThis`,
+      // so a second startLiveTab() running at pagehide time would stop too (it
+      // registers its own listener); B is started only once A is confirmed gone.
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      const a = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+
+      globalThis.dispatchEvent(new Event('pagehide'));
+      await vi.advanceTimersByTimeAsync(50);
+
+      const b = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(b)).toBe('live');
+      a.stop();
+      b.stop();
+    });
   });
 });

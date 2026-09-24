@@ -26,7 +26,7 @@ describe('LiveTabScreen', () => {
     const onReload = vi.fn();
     render(<LiveTabScreen state="blocked" onUseHere={vi.fn()} onReload={onReload} />);
     expect(screen.getByText('POS is open in another tab')).toBeDefined();
-    expect(screen.getByText("The other tab isn't responding. Close it, then reload this one.")).toBeDefined();
+    expect(screen.getByText('The POS is open in another tab. Close that tab to use it here, or reload this one.')).toBeDefined();
     fireEvent.click(screen.getByText('Reload'));
     expect(onReload).toHaveBeenCalledTimes(1);
   });
