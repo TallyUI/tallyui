@@ -1207,6 +1207,18 @@ interface OrderCreatePayload {
   change to it or the reconcile pass (ADR-060). This is rare and recorded
   here deliberately.
 
+- **Store settings (TV4a, 2026-09-24).** `storeSettings` reads the
+  channel's currency and `pricesIncludeTax`, and the default tax
+  zone's enabled, non-customer-group rates, keyed by tax category
+  id, in integer ppm, rounded once.
+  - The `default` rate is the `isDefault` category's, or, when none
+    is flagged, the first category `taxCategories` lists. That is
+    Vendure's own choice for a new variant
+    (`product-variant.service.js:875`, 3.7.3).
+  - When that category has no rate in the zone, the default is 0, as
+    Vendure charges.
+  - vendure-dev flags no default, so it gets Standard, 25%.
+
 ## ADR-050 The Vendure change feed is a journal written in the transaction
 
 - **Date:** 2026-09-24 · **Status:** Accepted as the post-MVP design for

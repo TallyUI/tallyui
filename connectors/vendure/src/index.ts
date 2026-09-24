@@ -8,6 +8,7 @@ import { createVendureProductReplication } from './replication/products';
 import { createVendureVariantFeedReplication } from './replication/variant-feed';
 import { vendureStockReconcile } from './reconcile/stock';
 import { createFetchByIds, fetchPages, variantIds } from './reconcile/ids';
+import { vendureStoreSettings } from './store-settings';
 
 /**
  * Vendure connector for Tally UI.
@@ -24,8 +25,8 @@ import { createFetchByIds, fetchPages, variantIds } from './reconcile/ids';
  * </ConnectorProvider>
  * ```
  *
- * `pricesIncludeTax` must equal the POS tax setting (`TaxContext.pricesIncludeTax`)
- * until TV4 reads both from one store-settings call.
+ * `pricesIncludeTax` must equal the POS tax setting (`TaxContext.pricesIncludeTax`);
+ * pass `settings.pricesIncludeTax` from `storeSettings`.
  */
 export const createVendureConnector = (options: { barcodeField?: string; stockLocationId?: string; pricesIncludeTax?: boolean; updatedAtSkewMs?: number } = {}): TallyConnector => {
   // The id reconcile's corrections reach `products` only through this pull adapter (ADR-060).
@@ -64,6 +65,8 @@ export const createVendureConnector = (options: { barcodeField?: string; stockLo
       stock: vendureStockReconcile,
       ids: { fetchPages, variantIds, enqueue: idFeed.enqueue },
     },
+
+    storeSettings: vendureStoreSettings,
   };
 };
 
@@ -77,3 +80,4 @@ export { vendureProductSync } from './sync/products';
 export { createVendureProductReplication, vendureProductReplication } from './replication/products';
 export { createVendureVariantFeedReplication } from './replication/variant-feed';
 export { vendureStockReconcile } from './reconcile/stock';
+export { vendureStoreSettings } from './store-settings';
