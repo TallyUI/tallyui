@@ -72,6 +72,24 @@ export async function gql(
   return body;
 }
 
+/** Probes around a pass's high-water mark for the server's updatedAt skew (ADR-060). `fetchTotal(after)` runs the caller's own list query (products, variants) and returns its totalItems. */
+export async function probeUpdatedAtSkew(
+  passHighWater: string,
+  updatedAtSkewMs: number,
+  fetchTotal: (after: string) => Promise<number>,
+): Promise<void> {
+  for (const overlap of [1, 0]) {
+    if (overlap === 0 && updatedAtSkewMs > 0) continue;
+    const total = await fetchTotal(new Date(Date.parse(passHighWater) + (overlap === 0 ? 1 : -1) - updatedAtSkewMs).toISOString());
+    if (overlap === 1 && total === 0) {
+      throw new Error('Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.');
+    }
+    if (overlap === 0 && total > 0) {
+      console.warn('Vendure updatedAt filters over-fetch because the server is not in UTC.');
+    }
+  }
+}
+
 /** Project an API product onto the schema's top-level fields (RxDB rejects undeclared ones). */
 export function toProductDocument(p: any): Record<string, unknown> {
   const doc: Record<string, unknown> = { _deleted: false };
@@ -102,20 +120,12 @@ export const createVendureProductReplication = (barcodeField?: string, updatedAt
         if (!head.data?.products?.items?.length || (lastCheckpoint?.updatedAt && passHighWater === lastCheckpoint.updatedAt)) {
           return { documents: [], checkpoint: lastCheckpoint ?? { skip: 0, updatedAt: '' } };
         }
-        for (const overlap of [1, 0]) {
-          if (overlap === 0 && updatedAtSkewMs > 0) continue;
+        await probeUpdatedAtSkew(passHighWater, updatedAtSkewMs, async (after) => {
           const probe = await gql(context, PRODUCT_LIST_QUERY(barcodeField), {
-            options: { take: 1, sort: { updatedAt: 'DESC' }, filter: {
-              updatedAt: { after: new Date(Date.parse(passHighWater) + (overlap === 0 ? 1 : -1) - updatedAtSkewMs).toISOString() },
-            } },
+            options: { take: 1, sort: { updatedAt: 'DESC' }, filter: { updatedAt: { after } } },
           });
-          if (overlap === 1 && probe.data.products.totalItems === 0) {
-            throw new Error('Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.');
-          }
-          if (overlap === 0 && probe.data.products.totalItems > 0) {
-            console.warn('Vendure updatedAt filters over-fetch because the server is not in UTC.');
-          }
-        }
+          return probe.data.products.totalItems;
+        });
       }
       const options: Record<string, any> = {
         take: batchSize,

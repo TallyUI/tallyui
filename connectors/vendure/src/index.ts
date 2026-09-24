@@ -1,4 +1,4 @@
-import { combinePullAdapters, type TallyConnector } from '@tallyui/core';
+import { combinePullAdapters, createReconcileFeed, type TallyConnector } from '@tallyui/core';
 
 import { vendureAuth } from './auth';
 import { vendureProductSchema } from './schemas/products';
@@ -7,6 +7,7 @@ import { createVendureProductSync } from './sync/products';
 import { createVendureProductReplication } from './replication/products';
 import { createVendureVariantFeedReplication } from './replication/variant-feed';
 import { vendureStockReconcile } from './reconcile/stock';
+import { createFetchByIds, fetchPages, variantIds } from './reconcile/ids';
 
 /**
  * Vendure connector for Tally UI.
@@ -26,39 +27,45 @@ import { vendureStockReconcile } from './reconcile/stock';
  * `pricesIncludeTax` must equal the POS tax setting (`TaxContext.pricesIncludeTax`)
  * until TV4 reads both from one store-settings call.
  */
-export const createVendureConnector = (options: { barcodeField?: string; stockLocationId?: string; pricesIncludeTax?: boolean; updatedAtSkewMs?: number } = {}): TallyConnector => ({
-  id: 'vendure',
-  name: 'Vendure',
-  description: 'Connect to Vendure backends via the Admin GraphQL API',
-  icon: undefined,
+export const createVendureConnector = (options: { barcodeField?: string; stockLocationId?: string; pricesIncludeTax?: boolean; updatedAtSkewMs?: number } = {}): TallyConnector => {
+  // The id reconcile's corrections reach `products` only through this pull adapter (ADR-060).
+  const idFeed = createReconcileFeed({ fetchByIds: createFetchByIds(options.barcodeField) });
+  return {
+    id: 'vendure',
+    name: 'Vendure',
+    description: 'Connect to Vendure backends via the Admin GraphQL API',
+    icon: undefined,
 
-  auth: vendureAuth,
+    auth: vendureAuth,
 
-  schemas: {
-    products: vendureProductSchema,
-  },
+    schemas: {
+      products: vendureProductSchema,
+    },
 
-  traits: {
-    product: createVendureProductTraits(options.barcodeField, options.stockLocationId, options.pricesIncludeTax),
-  },
+    traits: {
+      product: createVendureProductTraits(options.barcodeField, options.stockLocationId, options.pricesIncludeTax),
+    },
 
-  sync: {
-    products: createVendureProductSync(options.barcodeField),
-  },
+    sync: {
+      products: createVendureProductSync(options.barcodeField),
+    },
 
-  replication: {
-    // One replication per collection: the product and variant feeds share it (ADR-060).
-    // legacyKey carries an existing install's product-feed checkpoint over.
-    products: combinePullAdapters({
-      products: createVendureProductReplication(options.barcodeField, options.updatedAtSkewMs),
-      variants: createVendureVariantFeedReplication(options.barcodeField, options.updatedAtSkewMs),
-    }, { legacyKey: 'products' }),
-  },
+    replication: {
+      // One replication per collection: the product, variant and id-reconcile feeds
+      // share it (ADR-060). reconcile is last so its fetch wins duplicates.
+      products: combinePullAdapters({
+        products: createVendureProductReplication(options.barcodeField, options.updatedAtSkewMs),
+        variants: createVendureVariantFeedReplication(options.barcodeField, options.updatedAtSkewMs),
+        reconcile: idFeed.adapter,
+      }, { legacyKey: 'products' }),
+    },
 
-  reconcile: {
-    stock: vendureStockReconcile,
-  },
-});
+    reconcile: {
+      stock: vendureStockReconcile,
+      ids: { fetchPages, variantIds, enqueue: idFeed.enqueue },
+    },
+  };
+};
 
 export const vendureConnector = createVendureConnector();
 

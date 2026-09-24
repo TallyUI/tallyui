@@ -9,6 +9,7 @@ export type {
   RemoteIdEntry,
   ReplicationAdapter,
   StockReconcileAdapter,
+  IdReconcileAdapter,
   SyncContext,
   ProductTraits,
   TraitContext,
@@ -41,6 +42,8 @@ export { formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, m
 export { findVariantByCode } from './variants';
 export { STOCK_LEVELS_LAST_PASS, withStockOverlay, getProductStock } from './stock-overlay';
 export { combinePullAdapters } from './replication/combine';
+export { createReconcileFeed } from './replication/reconcile-feed';
+export type { ReconcileFeed, ReconcileFeedEntry } from './replication/reconcile-feed';
 
 // Context & hooks
 export {
