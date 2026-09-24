@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { vendureProductTraits } from '@tallyui/connector-vendure';
+import { createVendureConnector, vendureProductTraits } from '../../../../connectors/vendure/src';
 import { toVendureProduct } from '../transforms/vendure';
 import { products } from '../data/catalog';
 
@@ -56,7 +56,7 @@ describe('toVendureProduct', () => {
 
   it('barcode in customFields', () => {
     expect(vendure.variants[0].customFields.barcode).toBe(neutral.variants[0].barcode);
-    expect(vendureProductTraits.getBarcode(vendure)).toBe('8901234560001');
+    expect(createVendureConnector({ barcodeField: 'barcode' }).traits.product.getBarcode(vendure)).toBe('8901234560001');
   });
 
   it('stockLevel as SCREAMING_SNAKE_CASE (IN_STOCK)', () => {
@@ -74,6 +74,12 @@ describe('toVendureProduct', () => {
   it('stockOnHand maps from stockQuantity', () => {
     expect(vendure.variants[0].stockOnHand).toBe(neutral.variants[0].stockQuantity);
     expect(vendureProductTraits.getStockQuantity(vendure)).toBe(12);
+  });
+
+  it('supplies stockLevels for the Admin API', () => {
+    expect(vendure.variants[0].stockLevels).toEqual([{
+      stockLocationId: '1', stockOnHand: neutral.variants[0].stockQuantity, stockAllocated: 0,
+    }]);
   });
 
   it('enabled boolean', () => {

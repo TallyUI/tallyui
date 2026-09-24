@@ -15,7 +15,7 @@ const PRODUCT_LIST_QUERY = `
   }
 `;
 
-const PRODUCT_DETAIL_QUERY = `
+const PRODUCT_DETAIL_QUERY = (barcodeField?: string) => `
   query GetProduct($id: ID!) {
     product(id: $id) {
       id
@@ -36,12 +36,11 @@ const PRODUCT_DETAIL_QUERY = `
         price
         priceWithTax
         currencyCode
-        stockLevel
-        stockOnHand
+        stockLevels { stockLocationId stockOnHand stockAllocated }
         trackInventory
         featuredAsset { id preview }
         options { id name code }
-        customFields
+        ${barcodeField ? `customFields { ${barcodeField} }` : ''}
       }
     }
   }
@@ -53,7 +52,7 @@ const PRODUCT_DETAIL_QUERY = `
  * Uses the Admin GraphQL API. Vendure uses offset-based pagination
  * with `take` and `skip` options.
  */
-export const vendureProductSync: CollectionSync = {
+export const createVendureProductSync = (barcodeField?: string): CollectionSync => ({
   fetchAllIds: async (context: SyncContext) => {
     const entries: { id: string; dateModified?: string }[] = [];
     const take = 100;
@@ -86,7 +85,7 @@ export const vendureProductSync: CollectionSync = {
     const products: any[] = [];
     // Vendure doesn't support batch-by-IDs natively, so fetch individually
     for (const id of ids) {
-      const res = await gql(context, PRODUCT_DETAIL_QUERY, { id });
+      const res = await gql(context, PRODUCT_DETAIL_QUERY(barcodeField), { id });
       if (res.data?.product) {
         products.push(res.data.product);
       }
@@ -118,7 +117,7 @@ export const vendureProductSync: CollectionSync = {
 
       // Fetch full details for each modified product
       for (const item of data.items ?? []) {
-        const detail = await gql(context, PRODUCT_DETAIL_QUERY, { id: item.id });
+        const detail = await gql(context, PRODUCT_DETAIL_QUERY(barcodeField), { id: item.id });
         if (detail.data?.product) {
           products.push(detail.data.product);
         }
@@ -129,7 +128,9 @@ export const vendureProductSync: CollectionSync = {
 
     return products;
   },
-};
+});
+
+export const vendureProductSync = createVendureProductSync();
 
 /**
  * Helper to execute a GraphQL query against the Vendure Admin API.

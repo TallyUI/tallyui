@@ -80,6 +80,17 @@ export const vendureProductSchema: RxJsonSchema<any> = {
           currencyCode: { type: 'string' },
           stockLevel: { type: 'string' },
           stockOnHand: { type: 'number' },
+          stockLevels: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                stockLocationId: { type: 'string' },
+                stockOnHand: { type: 'number' },
+                stockAllocated: { type: 'number' },
+              },
+            },
+          },
           trackInventory: { type: 'string' },
           featuredAsset: {
             type: ['object', 'null'],

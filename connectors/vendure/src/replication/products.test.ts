@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SyncContext } from '@tallyui/core';
 
-import { vendureProductReplication } from './products';
+import { vendureProductReplication, type VendureProductCheckpoint } from './products';
+import { createVendureConnector } from '../index';
 
 const context: SyncContext = {
   connectorId: 'vendure',
@@ -34,11 +35,7 @@ describe('vendureProductReplication.pull.handler', () => {
       { id: '2', name: 'Gadget', updatedAt: '2026-01-02T00:00:00Z' },
     ];
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      gqlResponse({
-        products: { items: mockProducts, totalItems: 2 },
-      }),
-    );
+    serveProducts(mockProducts);
 
     const result = await vendureProductReplication.pull.handler(undefined, 100, context);
 
@@ -50,7 +47,7 @@ describe('vendureProductReplication.pull.handler', () => {
     });
 
     // Verify the GraphQL request
-    const [url, opts] = (globalThis.fetch as any).mock.calls[0];
+    const [url, opts] = (globalThis.fetch as any).mock.calls[3];
     expect(url).toContain('/admin-api');
     const body = JSON.parse(opts.body);
     expect(body.variables.options.take).toBe(100);
@@ -75,25 +72,21 @@ describe('vendureProductReplication.pull.handler', () => {
     const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
     expect(body.variables.options.skip).toBe(50);
     expect(body.variables.options.filter).toEqual({
-      updatedAt: { after: '2026-01-15T00:00:00Z' },
+      updatedAt: { after: '2026-01-14T23:59:59.999Z' },
     });
 
-    // Batch smaller than batchSize resets skip to 0
+    // Reaching totalItems resets skip to 0, including legacy checkpoints
     expect(result.checkpoint.skip).toBe(0);
   });
 
-  it('advances skip when batch equals batchSize', async () => {
-    const mockProducts = Array.from({ length: 25 }, (_, i) => ({
+  it('advances skip while more totalItems remain', async () => {
+    const mockProducts = Array.from({ length: 100 }, (_, i) => ({
       id: String(i),
       name: `Product ${i}`,
       updatedAt: '2026-01-01T00:00:00Z',
     }));
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      gqlResponse({
-        products: { items: mockProducts, totalItems: 100 },
-      }),
-    );
+    serveProducts(mockProducts);
 
     const result = await vendureProductReplication.pull.handler(undefined, 25, context);
 
@@ -108,6 +101,14 @@ describe('vendureProductReplication.pull.handler', () => {
     await expect(
       vendureProductReplication.pull.handler(undefined, 100, context),
     ).rejects.toThrow('Vendure API error: 500');
+  });
+
+  it('includes GraphQL errors on non-OK HTTP responses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(
+      JSON.stringify({ errors: [{ message: 'Unknown custom field' }] }), { status: 400 },
+    ));
+    await expect(vendureProductReplication.pull.handler(undefined, 100, context))
+      .rejects.toThrow('Vendure API error: 400: Unknown custom field');
   });
 
   it('throws on GraphQL errors', async () => {
@@ -131,5 +132,122 @@ describe('vendureProductReplication.pull.handler', () => {
     const result = await vendureProductReplication.pull.handler(checkpoint, 100, context);
 
     expect(result.checkpoint).toEqual(checkpoint);
+  });
+});
+
+// Simulate Vendure's strict timestamp filter, followed by sorting and offset paging.
+function serveProducts(products: { id: string; updatedAt: string }[]) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    const { options } = JSON.parse(init!.body as string).variables;
+    expect(options.take).toBeLessThanOrEqual(1000);
+    expect(options.sort).toEqual(options.take === 1 ? { updatedAt: 'DESC' } : { id: 'ASC' });
+    const after = options.filter?.updatedAt?.after;
+    const items = products.filter((p) => !after || Date.parse(p.updatedAt) > Date.parse(after))
+      .sort(options.sort.updatedAt === 'DESC'
+        ? (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
+        : (a, b) => Number(a.id) - Number(b.id));
+    return gqlResponse({ products: {
+      items: items.slice(options.skip ?? 0, (options.skip ?? 0) + options.take), totalItems: items.length,
+    } });
+  });
+}
+
+describe('fixed-window passes', () => {
+  beforeEach(() => vi.restoreAllMocks());
+  const timestamp = '2026-01-01T00:00:00.000Z';
+
+  it('widens the negative probe and page filters, including after an empty-page restart', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = serveProducts([{ id: '1', updatedAt: timestamp }]);
+    fetch.mockResolvedValueOnce(gqlResponse({ products: { items: [], totalItems: 0 } }));
+    const adapter = createVendureConnector({ updatedAtSkewMs: 2 * 3600e3 }).replication!.products!;
+    const result = await adapter.pull.handler({ skip: 50, updatedAt: '2025-12-31T00:00:00.000Z' }, 2, context);
+    const options = fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string).variables.options);
+    expect(options.map((option) => option.filter?.updatedAt.after)).toEqual([
+      '2025-12-30T21:59:59.999Z', undefined,
+      '2025-12-31T21:59:59.999Z', '2025-12-30T21:59:59.999Z',
+    ]);
+    expect(options[2].take).toBe(1);
+    expect(result.documents.map((product) => product.id)).toEqual(['1']);
+    expect(result.checkpoint).toEqual({ skip: 0, updatedAt: timestamp });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('delivers all five tied ids and stops with one high-water read when unchanged', async () => {
+    const products = ['5', '3', '1', '4', '2'].map((id) => ({ id, updatedAt: timestamp }));
+    const fetch = serveProducts(products);
+    let checkpoint: VendureProductCheckpoint | undefined;
+    const ids: string[] = [];
+    for (let page = 0; page < 3; page++) {
+      const result = await vendureProductReplication.pull.handler(checkpoint, 2, context);
+      ids.push(...result.documents.map((p) => p.id));
+      checkpoint = result.checkpoint;
+    }
+    expect(ids).toEqual(['1', '2', '3', '4', '5']);
+    expect(checkpoint).toEqual({ skip: 0, updatedAt: timestamp });
+    fetch.mockClear();
+    const idle = await vendureProductReplication.pull.handler(checkpoint, 2, context);
+    expect(idle).toEqual({ documents: [], checkpoint });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    products[0].updatedAt = '2026-02-01T00:00:00.000Z';
+    const next = await vendureProductReplication.pull.handler(checkpoint, 2, context);
+    expect(next.documents.map((p) => p.id)).toEqual(['1', '2']);
+  });
+
+  it('ends a full final page on totalItems and retains the pass-start high-water mark', async () => {
+    const newer = '2026-02-01T00:00:00.000Z';
+    const products = ['4', '2', '1', '3'].map((id) => ({ id, updatedAt: timestamp }));
+    serveProducts(products);
+    const first = await vendureProductReplication.pull.handler(undefined, 2, context);
+    products.find((p) => p.id === '1')!.updatedAt = newer;
+    products.find((p) => p.id === '3')!.updatedAt = newer;
+    const second = await vendureProductReplication.pull.handler(first.checkpoint, 2, context);
+    expect([...first.documents, ...second.documents].map((p) => p.id)).toEqual(['1', '2', '3', '4']);
+    expect(second.checkpoint).toEqual({ skip: 0, updatedAt: timestamp });
+    const next = await vendureProductReplication.pull.handler(second.checkpoint, 2, context);
+    expect(next.documents.map((p) => [p.id, p.updatedAt])).toEqual([['1', newer], ['2', timestamp]]);
+    expect(next.checkpoint).toEqual({ skip: 2, updatedAt: timestamp, passHighWater: newer, passTotal: 4 });
+  });
+
+  it('allows 1000 rows and rejects larger batches before making a request', async () => {
+    const fetch = serveProducts([]);
+    await vendureProductReplication.pull.handler(undefined, 1000, context);
+    await expect(vendureProductReplication.pull.handler(undefined, 1001, context)).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('restarts at skip zero when totalItems drops from 2500 to 1900', async () => {
+    const lowerBound = '2025-12-31T00:00:00.000Z';
+    const products = Array.from({ length: 2500 }, (_, i) => ({ id: String(i + 1), updatedAt: timestamp }));
+    const fetch = serveProducts(products);
+    const first = await vendureProductReplication.pull.handler({ skip: 0, updatedAt: lowerBound }, 1000, context);
+    expect(first.checkpoint).toEqual({ skip: 1000, updatedAt: lowerBound, passHighWater: timestamp, passTotal: 2500 });
+    products.splice(0, 600);
+    products[0].updatedAt = '2026-02-01T00:00:00.000Z';
+    fetch.mockClear();
+
+    const second = await vendureProductReplication.pull.handler(first.checkpoint, 1000, context);
+
+    expect(fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string).variables.options)).toEqual([
+      { take: 1000, skip: 1000, sort: { id: 'ASC' }, filter: { updatedAt: { after: '2025-12-30T23:59:59.999Z' } } },
+      { take: 1000, skip: 0, sort: { id: 'ASC' }, filter: { updatedAt: { after: '2025-12-30T23:59:59.999Z' } } },
+    ]);
+    expect(second.documents.map((p) => p.id)).toEqual(products.slice(0, 1000).map((p) => p.id));
+    expect(second.checkpoint).toEqual({ skip: 1000, updatedAt: lowerBound, passHighWater: timestamp, passTotal: 1900 });
+  });
+
+  it.each([undefined, 'barcode', 'ean'])('selects only the opted-in barcode field: %s', async (barcodeField) => {
+    const connector = createVendureConnector({ barcodeField });
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => gqlResponse({ products: { items: [] } }));
+    await connector.replication!.products!.pull.handler(undefined, 2, context);
+    await connector.sync.products.fetchByIds(['1'], context);
+    for (const [, init] of fetch.mock.calls) {
+      const { query } = JSON.parse(init!.body as string);
+      if (barcodeField) expect(query).toContain(`customFields { ${barcodeField} }`);
+      else expect(query).not.toContain('customFields');
+      expect(query).toContain('stockLevels { stockLocationId stockOnHand stockAllocated }');
+    }
+    const doc = { variants: [{ customFields: { barcode: '123', ean: '456' } }] };
+    expect(connector.traits.product.getBarcode(doc)).toBe(barcodeField === 'ean' ? '456' : barcodeField ? '123' : undefined);
   });
 });

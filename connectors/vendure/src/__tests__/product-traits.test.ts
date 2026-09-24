@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { vendureProductTraits } from '../traits/product';
+import { createVendureConnector } from '../index';
 
 describe('Vendure isSellable / getVariantCount', () => {
   it('allows enabled products', () => {
@@ -252,7 +253,8 @@ describe('Vendure product traits', () => {
 
   describe('getBarcode', () => {
     it('returns barcode from custom fields', () => {
-      expect(vendureProductTraits.getBarcode(fullProduct)).toBe('5901234123457');
+      expect(createVendureConnector({ barcodeField: 'barcode' }).traits.product.getBarcode(fullProduct)).toBe('5901234123457');
+      expect(vendureProductTraits.getBarcode(fullProduct)).toBeUndefined();
     });
 
     it('returns undefined when no custom barcode', () => {
@@ -326,5 +328,26 @@ describe('Vendure neutral price and stock', () => {
     expect(vendureProductTraits.getStock({ variants: [{ stockLevel: 'LOW_STOCK' }] })).toEqual({ status: 'in_stock' });
     expect(vendureProductTraits.getStock({ variants: [{ stockLevel: 'OUT_OF_STOCK' }] })).toEqual({ status: 'out_of_stock' });
     expect(vendureProductTraits.getStock({}).status).toBe('unknown');
+  });
+});
+
+describe('Vendure stock locations', () => {
+  const doc = { variants: [{ stockOnHand: 99, stockLevel: 'OUT_OF_STOCK', stockLevels: [
+    { stockLocationId: '1', stockOnHand: 10, stockAllocated: 3 },
+    { stockLocationId: '2', stockOnHand: 5, stockAllocated: 0 },
+  ] }] };
+  it.each([['1', 7], [undefined, 12], ['missing', 0]] as const)(
+    'computes available stock for location %s', (stockLocationId, quantity) => {
+      const traits = createVendureConnector({ stockLocationId }).traits.product;
+      expect(traits.getStock(doc)).toEqual({ status: quantity > 0 ? 'in_stock' : 'out_of_stock', quantity });
+      expect(traits.getStockQuantity(doc)).toBe(quantity);
+      expect(traits.getStockStatus(doc)).toBe(quantity > 0 ? 'instock' : 'outofstock');
+    },
+  );
+  it('retains old document fallbacks with a configured location', () => {
+    const traits = createVendureConnector({ stockLocationId: '1' }).traits.product;
+    expect(traits.getStock({ variants: [{ stockOnHand: 4 }] })).toEqual({ status: 'in_stock', quantity: 4 });
+    expect(traits.getStock({ variants: [{ stockLevel: 'LOW_STOCK' }] })).toEqual({ status: 'in_stock' });
+    expect(traits.getStock({ variants: [{ stockLevels: [], stockOnHand: 99 }] })).toEqual({ status: 'out_of_stock', quantity: 0 });
   });
 });
