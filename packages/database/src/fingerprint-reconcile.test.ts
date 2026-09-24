@@ -66,7 +66,7 @@ describe('startFingerprintReconcile', () => {
     const { reconcile, stop } = start(adapter, reSync);
 
     const result = await reconcile();
-    expect(result).toEqual({ pages: 1, compared: 2, queued: 1, truncated: false });
+    expect(result).toEqual({ pages: 1, compared: 2, queued: 1, truncated: false, unreported: 1 });
     expect(enqueue).toHaveBeenCalledTimes(1);
     const [entries] = enqueue.mock.calls[0];
     expect(entries).toEqual([{ id: 'p2', local: { id: 'p2', price: '20' } }]);
@@ -80,7 +80,7 @@ describe('startFingerprintReconcile', () => {
     const reSync = vi.fn();
     const { reconcile, stop } = start(adapter, reSync);
 
-    expect(await reconcile()).toEqual({ pages: 1, compared: 2, queued: 0, truncated: false });
+    expect(await reconcile()).toEqual({ pages: 1, compared: 2, queued: 0, truncated: false, unreported: 1 });
     expect(enqueue).not.toHaveBeenCalled();
     expect(reSync).not.toHaveBeenCalled();
     stop();
@@ -99,6 +99,34 @@ describe('startFingerprintReconcile', () => {
     stop();
   });
 
+  it('counts local products the remote side did not report: 3 of 10 gives unreported 3', async () => {
+    await db.products.bulkInsert(Array.from({ length: 7 }, (_, i) => ({ id: `q${i}`, price: '1' })));
+    // Local: p1-p3 and q0-q6. Remote reports q0-q6 only, so p1, p2 and p3 are unreported.
+    const { adapter } = fakeAdapter([Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`q${i}`, '1']))]);
+    const { reconcile, stop } = start(adapter, vi.fn());
+
+    expect(await reconcile()).toEqual({ pages: 1, compared: 7, queued: 0, truncated: false, unreported: 3 });
+    stop();
+  });
+
+  it('an adapter that yields no pages gives unreported: 0, not the whole catalogue', async () => {
+    const { adapter } = fakeAdapter([]);
+    const { reconcile, stop } = start(adapter, vi.fn());
+
+    expect(await reconcile()).toEqual({ pages: 0, compared: 0, queued: 0, truncated: false, unreported: 0 });
+    stop();
+  });
+
+  it('an adapter that yields a single empty page reports every local product as unreported', async () => {
+    await db.products.bulkInsert(Array.from({ length: 7 }, (_, i) => ({ id: `q${i}`, price: '1' })));
+    // Local: p1-p3 and q0-q6, 10 products. Remote reads one (empty) page, so all 10 are unreported.
+    const { adapter } = fakeAdapter([{}]);
+    const { reconcile, stop } = start(adapter, vi.fn());
+
+    expect(await reconcile()).toEqual({ pages: 1, compared: 0, queued: 0, truncated: false, unreported: 10 });
+    stop();
+  });
+
   it('truncates, warns and queues nothing beyond maxPages', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const before = await revisions();
@@ -106,7 +134,7 @@ describe('startFingerprintReconcile', () => {
     const reSync = vi.fn();
     const { reconcile, stop } = start(adapter, reSync, { maxPages: 1 });
 
-    expect(await reconcile()).toEqual({ pages: 1, compared: 0, queued: 0, truncated: true });
+    expect(await reconcile()).toEqual({ pages: 1, compared: 0, queued: 0, truncated: true, unreported: 0 });
     expect(enqueue).not.toHaveBeenCalled();
     expect(reSync).not.toHaveBeenCalled();
     expect(await revisions()).toEqual(before);

@@ -131,7 +131,8 @@ describe('Medusa variant summaries', () => {
           { currency_code: 'eur', amount: 13 },
           { currency_code: 'eur', amount: 9, price_list_id: 'plist_1' },
         ],
-        calculated_price: { currency_code: 'eur', calculated_amount: 9,
+        // Priced mode (D2b): the store API always sends original_amount beside calculated_amount.
+        calculated_price: { currency_code: 'eur', calculated_amount: 9, original_amount: 12,
           calculated_price: { price_list_type: 'sale' } },
       },
       {

@@ -1,6 +1,8 @@
 import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
 import { fetchByIds } from '../reconcile/ids';
 import { MEDUSA_PRODUCT_FIELDS, toDocument, type MedusaProductCheckpoint } from './products';
+import { withCalculatedPrices } from '../pricing/calculated';
+import type { MedusaProductDocument } from '../schemas/products';
 
 /** Admin API list limit (ADR-060); the default variant page size. */
 const MAX_LIMIT = 1000;
@@ -95,7 +97,8 @@ export const createMedusaVariantFeedReplication = (variantPageSize = MAX_LIMIT):
         .some((key) => checkpoint[key] !== lastCheckpoint?.[key]);
       if (!documents.length && moved) {
         const carrier = await get(`/admin/products?${new URLSearchParams({ limit: '1', fields: MEDUSA_PRODUCT_FIELDS })}`, context);
-        documents.push(...(carrier.products ?? []).map((p: Record<string, unknown>) => ({ ...toDocument(p), _deleted: false })));
+        const priced = await withCalculatedPrices((carrier.products ?? []).map(toDocument) as MedusaProductDocument[], context);
+        documents.push(...priced.map((doc) => ({ ...doc, _deleted: false })));
       }
       return { documents, checkpoint };
     },

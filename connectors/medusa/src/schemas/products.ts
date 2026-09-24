@@ -1,5 +1,31 @@
 import type { RxJsonSchema } from 'rxdb';
 
+/** A store API variant's `calculated_price`: the fields the connector reads. Amounts are major units. */
+export interface MedusaCalculatedPrice {
+  calculated_amount: number | null;
+  original_amount: number | null;
+  currency_code: string;
+  is_calculated_price_tax_inclusive: boolean;
+  is_original_price_tax_inclusive: boolean;
+  calculated_price?: { price_list_id?: string | null; price_list_type?: string | null };
+}
+
+/** A stored variant. `calculated_price`: an object when priced, `null` when not sold here, undefined in base-only mode. */
+export interface MedusaVariantDocument {
+  id: string;
+  prices?: Array<{ amount: number; currency_code: string; price_list_id?: string | null }>;
+  calculated_price?: MedusaCalculatedPrice | null;
+  [field: string]: unknown;
+}
+
+/** A stored product; typed for the fields the pricing code reads. */
+export interface MedusaProductDocument {
+  id: string;
+  status?: string;
+  variants?: MedusaVariantDocument[];
+  [field: string]: unknown;
+}
+
 /**
  * MedusaJS v2 Product RxDB schema.
  * Mirrors the Medusa Admin API product shape.
@@ -171,6 +197,11 @@ export const medusaProductSchema: RxJsonSchema<any> = {
               },
             },
           },
+          // Admin base prices. The store API's `calculated_price` rides beside them as an extra,
+          // undeclared variant property (items set no `additionalProperties`): an object in
+          // priced mode, `null` when the sales channel or region does not sell the variant, and
+          // absent (undefined) in base-only mode, with no pricing context. It moves into the
+          // schema at the next version bump (backlog 44).
           prices: {
             type: 'array',
             items: {

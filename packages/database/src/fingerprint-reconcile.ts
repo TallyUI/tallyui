@@ -18,7 +18,21 @@ export interface StartFingerprintReconcileOptions<Doc> {
   maxPages?: number;
 }
 
-export interface FingerprintReconcileResult { pages: number; compared: number; queued: number; truncated: boolean }
+export interface FingerprintReconcileResult {
+  pages: number;
+  compared: number;
+  queued: number;
+  truncated: boolean;
+  /**
+   * Local products the remote side did not report in a complete pass (they are skipped); 0 on a truncated or failed
+   * pass, and 0 when the adapter yielded no pages at all (e.g. base-only mode, no pricing context) -- that is not
+   * the same as everything being unsellable. A channel that lists nothing still reads one empty page, so it
+   * correctly reports everything as unreported.
+   * For `calculatedPrices`, the products the sales channel does not list, which are not sellable here. A channel
+   * misconfiguration shows up as a large number, not a silent empty till.
+   */
+  unreported: number;
+}
 
 /** The runner's state; entirely in memory. */
 export interface FingerprintReconcileState {
@@ -61,7 +75,7 @@ export function startFingerprintReconcile<Doc>({
       checkAborted();
       if (pages === maxPages) {
         console.warn(`Fingerprint reconcile stopped at the ${maxPages}-page limit; nothing was queued.`);
-        return { pages, compared: 0, queued: 0, truncated: true };
+        return { pages, compared: 0, queued: 0, truncated: true, unreported: 0 };
       }
       pages++;
       for (const [id, fingerprint] of page) remote.set(id, fingerprint);
@@ -72,10 +86,11 @@ export function startFingerprintReconcile<Doc>({
     // remote fingerprint. A product the remote side didn't report is skipped.
     const entries: Array<{ id: string; local: Doc }> = [];
     let compared = 0;
+    let unreported = 0;
     for (const doc of await collection.find().exec()) {
       const id = doc.primary as string;
       const remoteFingerprint = remote.get(id);
-      if (remoteFingerprint === undefined) continue;
+      if (remoteFingerprint === undefined) { if (pages > 0) unreported++; continue; }
       compared++;
       const local = doc.toJSON() as Doc;
       if (adapter.fingerprint(local) !== remoteFingerprint) entries.push({ id, local });
@@ -84,7 +99,7 @@ export function startFingerprintReconcile<Doc>({
     checkAborted();
     // Only touch reSync when there is something for the pull to correct.
     if (entries.length) { adapter.enqueue(entries); reSync(); }
-    return { pages, compared, queued: entries.length, truncated: false };
+    return { pages, compared, queued: entries.length, truncated: false, unreported };
   };
 
   const tracked = async (): Promise<FingerprintReconcileResult> => {

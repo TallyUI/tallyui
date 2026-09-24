@@ -1,5 +1,7 @@
 import type { SyncContext } from '@tallyui/core';
 import { MEDUSA_PRODUCT_FIELDS, toDocument } from '../replication/products';
+import { withCalculatedPrices } from '../pricing/calculated';
+import type { MedusaProductDocument } from '../schemas/products';
 
 /** Admin API list limit; also the id-listing page size (ADR-060). */
 const PAGE_SIZE = 1000;
@@ -49,5 +51,6 @@ export async function fetchByIds(ids: string[], context: SyncContext): Promise<R
     const products: Array<Record<string, unknown>> = data.products ?? [];
     results.push(...products.map(toDocument));
   }
-  return results;
+  // Priced through the store API when the context carries a pricing context (D2b); the variant and reconcile feeds both build here.
+  return withCalculatedPrices(results as MedusaProductDocument[], context);
 }
