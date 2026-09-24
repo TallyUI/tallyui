@@ -8,7 +8,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { TallyConnector } from '@tallyui/core';
 
 import { STOCK_LEVELS_COLLECTION, stockLevelsCollection } from './stock-levels';
-import { WEB_STORAGE_ENGINE, REQUIRED_MULTI_INSTANCE_BY_ENGINE, assertMultiInstanceAllowed } from './engine';
+import { WEB_STORAGE_ENGINE } from './engine';
 import { withStorageWatchdog, type StorageHealth } from './storage-watchdog';
 
 const DEV_MODE = process.env.NODE_ENV !== 'production';
@@ -33,9 +33,6 @@ export interface CreateDatabaseOptions {
   name?: string;
   /** RxDB storage adapter (defaults to in-memory for dev/demo) */
   storage?: any;
-  /** Share the database between browser tabs (default false).
-   * With true, the order outbox sends only from the RxDB-elected leader tab. */
-  multiInstance?: boolean;
 }
 
 /**
@@ -58,10 +55,8 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     connector,
     name = `tally_${connector.id}`,
     storage = getRxStorageMemory(),
-    multiInstance = REQUIRED_MULTI_INSTANCE_BY_ENGINE[WEB_STORAGE_ENGINE],
   } = options;
 
-  assertMultiInstanceAllowed(storage, multiInstance);
   // ADR-061's storage watchdog applies only to the pinned web engine; every other storage is untouched.
   const watched = storage?.tallyEngine === WEB_STORAGE_ENGINE ? withStorageWatchdog(storage) : undefined;
   const effectiveStorage = watched ?? storage;
@@ -84,8 +79,7 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     // Dev mode refuses storage without a schema validator (RxDB error DVM1),
     // and validating is what makes dev mode catch bad connector documents.
     storage: DEV_MODE ? wrappedValidateAjvStorage({ storage: effectiveStorage }) : effectiveStorage,
-    multiInstance,
-    localDocuments: multiInstance,
+    multiInstance: false,
     // RxDB rejects this outside dev mode (DB9); in dev it lets hot reload re-create the same database.
     ignoreDuplicate: DEV_MODE,
   });

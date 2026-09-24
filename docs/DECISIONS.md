@@ -1696,6 +1696,8 @@ interface OrderCreatePayload {
      forwarding). With a single-instance database, `isLeader()` is always
      true, so it does nothing. After the SQLite-wasm engine lands, one PR
      removes it, together with the `multiInstance` option.
+
+     Done in this PR.
   6. **Job order, one small spec each:**
      1. Take-over and the parked tab in TallyUI, independent of the engine:
         - a Web Lock per store;

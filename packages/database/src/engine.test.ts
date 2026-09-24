@@ -27,29 +27,21 @@ function sqliteSahpoolStorage() {
 }
 
 describe('the engine pin (ADR-061)', () => {
-  it('defaults multiInstance to REQUIRED_MULTI_INSTANCE_BY_ENGINE[WEB_STORAGE_ENGINE]', async () => {
+  it.each([
+    ['a storage marked tallyEngine: sqlite-sahpool', sqliteSahpoolStorage],
+    ['memory storage', getRxStorageMemory],
+  ])('creates a single-instance database with %s', async (_label, makeStorage) => {
     expect(REQUIRED_MULTI_INSTANCE_BY_ENGINE[WEB_STORAGE_ENGINE]).toBe(false);
     const db = await createTallyDatabase({
       connector,
-      storage: getRxStorageMemory(),
+      storage: makeStorage(),
       name: `engine_default_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     });
     try {
+      expect(db.multiInstance).toBe(false);
       expect(db.multiInstance).toBe(REQUIRED_MULTI_INSTANCE_BY_ENGINE[WEB_STORAGE_ENGINE]);
     } finally {
       await db.close();
     }
-  });
-
-  it.each([
-    ['a storage marked tallyEngine: sqlite-sahpool', sqliteSahpoolStorage],
-    ['memory storage', getRxStorageMemory],
-  ])('throws the ADR-061 error when multiInstance: true is passed with %s', async (_label, makeStorage) => {
-    await expect(createTallyDatabase({
-      connector,
-      storage: makeStorage(),
-      multiInstance: true,
-      name: `engine_throw_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-    })).rejects.toThrow(/ADR-061/);
   });
 });

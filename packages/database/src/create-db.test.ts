@@ -9,7 +9,7 @@ describe('createTallyDatabase', () => {
     vi.unstubAllEnvs();
   });
 
-  it('defaults multiInstance to false (ADR-061: multiInstance: true now throws, see engine.test.ts)', async () => {
+  it('creates a single-instance database with no database-level local documents', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.resetModules();
     const { createTallyDatabase } = await import('./create-db');

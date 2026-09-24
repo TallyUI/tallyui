@@ -524,6 +524,17 @@ describe('order outbox', () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
 
+  it('sends a pending order already in the collection on start(), with no flush() call', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send } = setup();
+    outbox.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('applied');
+  });
+
   it('finishes applying an in-flight send after stop', async () => {
     await collection.insert(order(0));
     const { outbox, send } = setup();

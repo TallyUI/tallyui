@@ -103,4 +103,21 @@ describe('web worker entry', () => {
     });
     expect(realCreateStorageInstance).not.toHaveBeenCalled();
   });
+
+  it('raises no unhandled rejection when the pool install fails and createStorageInstance is never called', async () => {
+    const cause = new Error('no OPFS in this browser');
+    sqlite3InitModule.mockResolvedValue({ installOpfsSAHPoolVfs });
+    installOpfsSAHPoolVfs.mockRejectedValue(cause);
+
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      await import('./worker');
+      // Let the rejected `ready` promise settle before checking for an unhandled rejection.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
 });

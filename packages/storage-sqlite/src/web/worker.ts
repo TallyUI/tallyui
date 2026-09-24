@@ -35,6 +35,8 @@ const ready: Promise<RxStorage<any, any>> = sqlite3InitModule()
       }),
     })
   );
+// A pool install failure before any createStorageInstance call would otherwise be an unhandled rejection; createStorageInstance below still surfaces it as StorageWorkerStartError.
+ready.catch(() => {});
 
 const storage: RxStorage<any, any> = {
   name,
