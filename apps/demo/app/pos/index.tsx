@@ -23,6 +23,7 @@ const screens = [
   // Settings
   { href: '/pos/connector-status', label: 'ConnectorStatus' },
   { href: '/pos/settings-group', label: 'SettingsGroup' },
+  { href: '/pos/store-settings-choice', label: 'StoreSettingsChoiceScreen' },
 ] as const;
 
 export default function POSIndex() {
