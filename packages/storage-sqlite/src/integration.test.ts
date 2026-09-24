@@ -1,16 +1,14 @@
-/**
- * Integration test: RxDB -> SQLite storage round-trip.
- *
- * Creates a real RxDB database backed by the SQLite storage adapter
- * (using the mock in-memory SQLite) and proves that documents can
- * be inserted, queried, and updated through the full RxDB pipeline.
- */
+// @vitest-environment node
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRxDatabase, addRxPlugin, type RxDatabase, type RxCollection } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { createMockSQLiteDatabase } from './mock-sqlite';
-import { getRxStorageSQLite } from './rx-storage-sqlite';
+import { loadSQLiteStorage, openNodeSQLite } from './node-sqlite.test-helper';
+
+const getRxStorageSQLite = await loadSQLiteStorage();
+if (!getRxStorageSQLite && process.env.CI) {
+  it('requires rxdb-premium in CI', () => { throw new Error('rxdb-premium is missing in CI'); });
+}
 
 // Enable dev mode for better error messages in tests
 addRxPlugin(RxDBDevModePlugin);
@@ -36,12 +34,13 @@ const heroSchema = {
   required: ['id', 'name', 'power'] as const,
 };
 
-describe('RxDB + SQLite storage integration', () => {
+(getRxStorageSQLite ? describe : describe.skip)('RxDB + SQLite storage integration', () => {
   let db: HeroDatabase;
+  let sqlite: ReturnType<typeof openNodeSQLite>;
 
   beforeEach(async () => {
-    const mockDb = createMockSQLiteDatabase();
-    const baseStorage = getRxStorageSQLite(mockDb);
+    sqlite = openNodeSQLite();
+    const baseStorage = getRxStorageSQLite!(sqlite.database);
     // Wrap with ajv validator to satisfy dev-mode requirements
     const storage = wrappedValidateAjvStorage({ storage: baseStorage });
 
@@ -61,6 +60,7 @@ describe('RxDB + SQLite storage integration', () => {
     if (db) {
       await db.close();
     }
+    sqlite.raw.close();
   });
 
   it('should insert a document and query it back', async () => {
@@ -131,7 +131,6 @@ describe('RxDB + SQLite storage integration', () => {
     ]);
 
     // Query for heroes with power > 85
-    // Use in-memory fallback since mock doesn't support json_extract
     const powerful = await db.heroes.find({
       selector: { power: { $gt: 85 } },
     }).exec();
@@ -165,5 +164,37 @@ describe('RxDB + SQLite storage integration', () => {
     await found!.remove();
     found = await db.heroes.findOne('lifecycle').exec();
     expect(found).toBeNull();
+  });
+
+  it('should preserve persistence after closing and reopening the database', async () => {
+    await db.heroes.insert({ id: 'persisted', name: 'Superman', power: 100 });
+    const { name, storage } = db;
+    await db.close();
+    db = await createRxDatabase<{ heroes: HeroCollection }>({ name, storage, multiInstance: false });
+    await db.addCollections({ heroes: { schema: heroSchema } });
+
+    const found = await db.heroes.findOne('persisted').exec();
+    expect(found?.toJSON()).toEqual({ id: 'persisted', name: 'Superman', power: 100 });
+  });
+
+  it('should count documents matching a selector', async () => {
+    await db.heroes.bulkInsert([
+      { id: 'h1', name: 'Batman', power: 80 },
+      { id: 'h2', name: 'Superman', power: 100 },
+      { id: 'h3', name: 'Flash', power: 90 },
+    ]);
+
+    expect(await db.heroes.count({ selector: { id: { $gt: 'h1' } } }).exec()).toBe(2);
+  });
+
+  it('should return a sorted query in descending power order', async () => {
+    await db.heroes.bulkInsert([
+      { id: 'h1', name: 'Batman', power: 80 },
+      { id: 'h2', name: 'Superman', power: 100 },
+      { id: 'h3', name: 'Flash', power: 90 },
+    ]);
+
+    const sorted = await db.heroes.find({ sort: [{ power: 'desc' }] }).exec();
+    expect(sorted.map((doc) => doc.power)).toEqual([100, 90, 80]);
   });
 });
