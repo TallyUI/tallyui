@@ -90,7 +90,7 @@ export function StoreSettingsChoiceScreen({
   };
 
   return (
-    <View className={cn('flex-1 gap-6 bg-bg p-6', className)} {...viewProps}>
+    <View className={cn('w-full max-w-[560px] flex-1 self-center gap-6 bg-bg p-6', className)} {...viewProps}>
       <View className="gap-2">
         <Text className="text-lg font-bold text-foreground">{title}</Text>
         <Text className="text-sm text-muted-foreground">{body}</Text>
@@ -125,8 +125,13 @@ function ChoiceSection({ label, options, selected, onSelect }: ChoiceSectionProp
               onPress={() => onSelect(option.value)}
               accessibilityRole="radio"
               aria-checked={checked}
-              className={cn('px-4 py-3', index > 0 && 'border-t border-border', checked && 'bg-primary/10')}
+              testID={`choice-option-${option.value}`}
+              className={cn('flex-row items-center gap-3 px-4 py-3', index > 0 && 'border-t border-border', checked && 'bg-primary/10')}
             >
+              {/* Same radio visual as @tallyui/components/ui/radio-group: ring + dot, so the choice reads without colour. */}
+              <View className="h-4 w-4 items-center justify-center rounded-full border border-primary">
+                {checked && <View testID={`choice-option-${option.value}-dot`} className="h-2.5 w-2.5 rounded-full bg-primary" />}
+              </View>
               <Text className={cn('text-sm', checked ? 'font-semibold text-primary' : 'text-foreground')}>{option.label}</Text>
             </Pressable>
           );

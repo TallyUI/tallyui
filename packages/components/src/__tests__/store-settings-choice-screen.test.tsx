@@ -111,6 +111,12 @@ describe('StoreSettingsChoiceScreen', () => {
     expect(screen.getByText('Save')).toBeDefined();
   });
 
+  it('renders a filled indicator on the selected row and an empty one on the rest', () => {
+    render(<StoreSettingsChoiceScreen choices={{ countries: ['de', 'fr'] }} initial={{ country: 'de' }} onSubmit={vi.fn()} />);
+    expect(screen.getByTestId('choice-option-de-dot')).toBeDefined();
+    expect(screen.queryByTestId('choice-option-fr-dot')).toBeNull();
+  });
+
   it('exposes checked state on every radio row', () => {
     render(<StoreSettingsChoiceScreen choices={{ countries: ['de', 'fr'] }} onSubmit={vi.fn()} />);
     const radios = screen.getAllByRole('radio');
