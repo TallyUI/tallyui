@@ -34,7 +34,7 @@ export const vendureStockReconcile: StockReconcileAdapter = {
       yield new Map(items.map((v) => [v.id, v.stockLevels]));
     }
   },
-  patch(doc, stock) {
+  overlay(doc, stock) {
     const variants: any[] = doc.variants ?? [];
     let changed = false;
     const next = variants.map((v) => {

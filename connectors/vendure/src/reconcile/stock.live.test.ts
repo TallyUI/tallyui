@@ -5,7 +5,8 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { startStockReconcile } from '@tallyui/database';
+import { STOCK_LEVELS_COLLECTION, startStockReconcile, stockLevelsSchema } from '@tallyui/database';
+import { getProductStock } from '@tallyui/pos';
 import { createVendureConnector } from '../index';
 import { vendureProductSchema } from '../schemas/products';
 import type { VendureProductCheckpoint } from '../replication/products';
@@ -19,7 +20,7 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure stock reconcile', ()
     await db?.close();
   });
 
-  it('patches a stock change that replication does not see', async () => {
+  it('overlays a stock change that replication does not see, leaving the product untouched', async () => {
     const baseUrl = process.env.VENDURE_DEV_URL!;
     const endpoint = `${baseUrl}/admin-api`;
     const login = await fetch(endpoint, {
@@ -44,7 +45,10 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure stock reconcile', ()
       name: 'vendurestocklive', multiInstance: false,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ products: { schema: vendureProductSchema } });
+    await db.addCollections({
+      products: { schema: vendureProductSchema },
+      [STOCK_LEVELS_COLLECTION]: { schema: stockLevelsSchema },
+    });
     const connector = createVendureConnector();
     const adapter = connector.replication!.products!;
     const replication = replicateRxCollection<any, VendureProductCheckpoint>({
@@ -77,14 +81,21 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure stock reconcile', ()
         .find((l: any) => l.stockLocationId === stockLocationId).stockOnHand).toBe(value);
     };
 
-    const reconcile = startStockReconcile({ collection: db.products, adapter: connector.reconcile!.stock!, context });
+    const stockAdapter = connector.reconcile!.stock!;
+    const reconcile = startStockReconcile({ collection: db[STOCK_LEVELS_COLLECTION], adapter: stockAdapter, context });
+    const localDoc = async () => (await db.products.findOne(product.id).exec())!;
+    const rev = (await localDoc()).revision;
+    const replicated = connector.traits.product.getStock(product).quantity;
+    expect(replicated).toBeTypeOf('number');
     try {
       await setStock(stockOnHand + 7);
       const result = await reconcile.reconcileStock();
-      expect(result).toMatchObject({ patched: 1, truncated: false });
-      const local = (await db.products.findOne(product.id).exec())!.toJSON() as any;
-      const levels = local.variants.find((v: any) => v.id === variant.id).stockLevels;
-      expect(levels.find((l: any) => l.stockLocationId === stockLocationId).stockOnHand).toBe(stockOnHand + 7);
+      expect(result.truncated).toBe(false);
+      expect(result.written).toBeGreaterThanOrEqual(1);
+      const overlay = new Map((await db[STOCK_LEVELS_COLLECTION].find().exec()).map((row) => [row.primary, row.get('value')]));
+      const local = await localDoc();
+      expect(getProductStock(local.toJSON(), connector.traits.product, stockAdapter, overlay).quantity).toBe(replicated! + 7);
+      expect(local.revision).toBe(rev);
     } finally {
       reconcile.stop();
       await setStock(stockOnHand);

@@ -210,6 +210,15 @@ should follow them.
   unless the process and database session both run in UTC. The Vendure
   connector guards against it and offers `updatedAtSkewMs`.
 
+**Local writes:**
+- **Never write locally into a replicated collection.** While a local
+  write to a document is in flight, RxDB's downstream skips the next
+  version it pulls for that document, so a concurrent server change
+  can be lost until the document changes again. Keep derived or
+  corrected data in a separate, non-replicated collection and merge
+  it when reading, as the stock reconcile does with `stock_levels`
+  (ADR-060).
+
 **Proving it:**
 - A handler unit test is not enough. Add a test that runs the real
   `replicateRxCollection` against an in-memory server with the backend's

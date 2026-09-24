@@ -58,18 +58,18 @@ describe('medusaStockReconcile', () => {
   };
   const levels = (pairs: Array<[number, number]>) => pairs.map(([stocked_quantity, reserved_quantity]) => ({ stocked_quantity, reserved_quantity }));
 
-  it('patches an inventory item whose reserved quantity changed', () => {
+  it('overlays an inventory item whose reserved quantity changed', () => {
     const stock = new Map<string, unknown>([['iitem_1', levels([[10, 2], [4, 0]])], ['iitem_2', levels([[3, 0]])]]);
-    const patch = medusaStockReconcile.patch(doc, stock);
-    expect(patch).toEqual({
+    const overlay = medusaStockReconcile.overlay(doc, stock);
+    expect(overlay).toEqual({
       variants: [{ id: 'var_1', inventory_items: [item('iitem_1', [[10, 2], [4, 0]])] }, doc.variants[1]],
     });
-    expect(patch!.variants[1]).toBe(doc.variants[1]);
+    expect(overlay!.variants[1]).toBe(doc.variants[1]);
     expect(doc.variants[0].inventory_items[0].inventory.location_levels[0].reserved_quantity).toBe(1);
   });
 
   it('returns undefined for identical quantities in a different order', () => {
     const stock = new Map<string, unknown>([['iitem_1', levels([[4, 0], [10, 1]])], ['iitem_other', levels([[0, 0]])]]);
-    expect(medusaStockReconcile.patch(doc, stock)).toBeUndefined();
+    expect(medusaStockReconcile.overlay(doc, stock)).toBeUndefined();
   });
 });

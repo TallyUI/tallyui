@@ -54,9 +54,9 @@ describe('vendureStockReconcile', () => {
 
   it('replaces only the changed variant stockLevels', () => {
     const stock = new Map<string, unknown>([['v1', [level(5, 1)]], ['v2', [level(3, 2)]]]);
-    const patch = vendureStockReconcile.patch(doc, stock);
-    expect(patch).toEqual({ variants: [doc.variants[0], { ...doc.variants[1], stockLevels: [level(3, 2)] }, doc.variants[2]] });
-    expect(patch!.variants).not.toBe(doc.variants);
+    const overlay = vendureStockReconcile.overlay(doc, stock);
+    expect(overlay).toEqual({ variants: [doc.variants[0], { ...doc.variants[1], stockLevels: [level(3, 2)] }, doc.variants[2]] });
+    expect(overlay!.variants).not.toBe(doc.variants);
     expect(doc.variants[1].stockLevels).toEqual([level(3)]);
   });
 
@@ -66,12 +66,12 @@ describe('vendureStockReconcile', () => {
       ['v2', [level(3)]],
       ['other', [level(0)]],
     ]);
-    expect(vendureStockReconcile.patch(doc, stock)).toBeUndefined();
+    expect(vendureStockReconcile.overlay(doc, stock)).toBeUndefined();
   });
 
   it('returns undefined for the same levels in a different order', () => {
     const second = { stockLocationId: '2', stockOnHand: 4, stockAllocated: 0 };
     const multi = { id: 'p2', variants: [{ id: 'v1', stockLevels: [level(5, 1), second] }] };
-    expect(vendureStockReconcile.patch(multi, new Map([['v1', [second, level(5, 1)]]]))).toBeUndefined();
+    expect(vendureStockReconcile.overlay(multi, new Map([['v1', [second, level(5, 1)]]]))).toBeUndefined();
   });
 });

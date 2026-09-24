@@ -5,9 +5,9 @@ import { addRxPlugin, createRxDatabase, type RxDatabase } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { startStockReconcile } from '@tallyui/database';
+import { STOCK_LEVELS_COLLECTION, startStockReconcile, stockLevelsSchema } from '@tallyui/database';
+import { getProductStock } from '@tallyui/pos';
 import { medusaAdminUserAuth, medusaAdminUserConnector } from '../index';
-import { medusaProductSchema } from '../schemas/products';
 
 addRxPlugin(RxDBDevModePlugin);
 
@@ -20,7 +20,7 @@ describe.skipIf(!MEDUSA_DEV_URL || !MEDUSA_DEV_EMAIL || !MEDUSA_DEV_PASSWORD)('l
     await db?.close();
   });
 
-  it('reads every inventory page and patches nothing on fresh copies', async () => {
+  it('reads every inventory page into stock_levels and agrees with fresh copies', async () => {
     const baseUrl = MEDUSA_DEV_URL!;
     const signIn = await fetch(`${baseUrl}/auth/user/emailpass`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -35,18 +35,27 @@ describe.skipIf(!MEDUSA_DEV_URL || !MEDUSA_DEV_EMAIL || !MEDUSA_DEV_PASSWORD)('l
       name: 'medusastocklive', multiInstance: false,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ products: { schema: medusaProductSchema } });
+    await db.addCollections({ [STOCK_LEVELS_COLLECTION]: { schema: stockLevelsSchema } });
     const { documents } = await medusaAdminUserConnector.replication!.products!.pull.handler(undefined, 50, context);
     expect(documents.length).toBeGreaterThan(0);
-    await db.products.bulkInsert(documents.map(({ _deleted, ...doc }) => doc));
 
     const head = await fetch(`${baseUrl}/admin/inventory-items?limit=1&fields=id`, { headers: context.headers });
     expect(head.ok).toBe(true);
     const { count } = await head.json();
 
-    const reconcile = startStockReconcile({ collection: db.products, adapter: medusaAdminUserConnector.reconcile!.stock!, context });
+    const adapter = medusaAdminUserConnector.reconcile!.stock!;
+    const traits = medusaAdminUserConnector.traits.product;
+    const reconcile = startStockReconcile({ collection: db[STOCK_LEVELS_COLLECTION], adapter, context });
     try {
-      expect(await reconcile.reconcileStock()).toEqual({ pages: Math.ceil(count / 1000), patched: 0, truncated: false });
+      const first = await reconcile.reconcileStock();
+      expect(first).toMatchObject({ pages: Math.ceil(count / 1000), truncated: false });
+      expect(first.written).toBeGreaterThan(0);
+      expect(await reconcile.reconcileStock()).toMatchObject({ written: 0, removed: 0, truncated: false });
+      // Freshly fetched products already carry current stock, so the overlay agrees with them.
+      const overlay = new Map((await db[STOCK_LEVELS_COLLECTION].find().exec()).map((row) => [row.primary, row.get('value')]));
+      for (const { _deleted, ...doc } of documents) {
+        expect(getProductStock(doc, traits, adapter, overlay)).toEqual(traits.getStock(doc));
+      }
     } finally {
       reconcile.stop();
     }

@@ -37,7 +37,7 @@ export const medusaStockReconcile: StockReconcileAdapter = {
         .map(({ stocked_quantity, reserved_quantity }) => ({ stocked_quantity, reserved_quantity }))]));
     }
   },
-  patch(doc, stock) {
+  overlay(doc, stock) {
     let changed = false;
     const variants = (doc.variants ?? []).map((variant: any) => {
       let variantChanged = false;
