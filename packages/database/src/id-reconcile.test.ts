@@ -271,5 +271,43 @@ describe('startIdReconcile', () => {
       expect(reSync).toHaveBeenCalledTimes(1);
       stop();
     });
+
+    it('brakes when all 5 of a 5-product shop are missing, even under the minimum: nothing queued, reSync skipped', async () => {
+      await seed(5);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { adapter, enqueue } = missingAdapter(5, 5);
+      const reSync = vi.fn();
+      const { reconcileIds, stop } = start(adapter, reSync);
+
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(reSync).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/5 of 5.*allowMassDelete/));
+      stop();
+    });
+
+    it('brakes when all 8 of an 8-product shop are missing', async () => {
+      await seed(8);
+      const { adapter, enqueue } = missingAdapter(8, 8);
+      const reSync = vi.fn();
+      const { reconcileIds, stop } = start(adapter, reSync);
+
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(reSync).not.toHaveBeenCalled();
+      stop();
+    });
+
+    it('allowMassDelete: true queues all 5 when every product is missing', async () => {
+      await seed(5);
+      const { adapter, enqueue } = missingAdapter(5, 5);
+      const reSync = vi.fn();
+      const { reconcileIds, stop } = start(adapter, reSync, { allowMassDelete: true });
+
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 5, truncated: false, braked: false });
+      expect(enqueue).toHaveBeenCalledTimes(1);
+      expect(reSync).toHaveBeenCalledTimes(1);
+      stop();
+    });
   });
 });

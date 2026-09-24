@@ -84,14 +84,16 @@ export function startIdReconcile<Doc>({
 
     checkAborted();
     // The brake: a wrong channel token or a permissions change must never
-    // empty a shop's catalogue. Apply only when tombstones are both a large
-    // share of the local catalogue and more than the minimum that a small
-    // shop's normal churn can explain.
-    if (tombstones > MASS_DELETE_MINIMUM && tombstones > maxDeleteShare * localCount && !allowMassDelete) {
+    // empty a shop's catalogue. A catalogue that would vanish completely is
+    // always suspicious, whatever its size. Otherwise, apply only when
+    // tombstones are both a large share of the local catalogue and more than
+    // the minimum that a small shop's normal churn can explain.
+    if (!allowMassDelete && localCount > 0
+      && (tombstones === localCount || (tombstones > MASS_DELETE_MINIMUM && tombstones > maxDeleteShare * localCount))) {
       const share = localCount ? tombstones / localCount : 1;
       console.warn(
         `Id reconcile braked: ${tombstones} of ${localCount} local products `
-        + `(${(share * 100).toFixed(1)}%), over maxDeleteShare; nothing was queued. Pass allowMassDelete: true to override.`,
+        + `(${(share * 100).toFixed(1)}%); nothing was queued. Pass allowMassDelete: true to override.`,
       );
       return { pages, queued: 0, truncated: false, braked: true };
     }
