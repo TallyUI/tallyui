@@ -9,6 +9,42 @@ describe('createTallyDatabase', () => {
     vi.unstubAllEnvs();
   });
 
+  it.each([undefined, true])('sets multiInstance to %s, defaulting to false', async (multiInstance) => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.resetModules();
+    const { createTallyDatabase } = await import('./create-db');
+    const schema = {
+      version: 0,
+      primaryKey: 'id',
+      type: 'object',
+      properties: {
+        id: { type: 'string', maxLength: 100 },
+        name: { type: 'string' },
+      },
+      required: ['id'],
+    };
+    const connector = {
+      id: 'test',
+      schemas: { products: schema },
+    } as unknown as TallyConnector;
+    const db = await createTallyDatabase({
+      connector, multiInstance,
+      name: `multi_test_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      storage: getRxStorageMemory(),
+    });
+    try {
+      expect(db.multiInstance).toBe(multiInstance ?? false);
+      if (multiInstance) {
+        await db.upsertLocal('outbox-test', { authRequired: true });
+        expect((await db.getLocal('outbox-test'))?.get('authRequired')).toBe(true);
+      } else {
+        await expect(db.getLocal('outbox-test')).rejects.toThrow();
+      }
+    } finally {
+      await db.close();
+    }
+  });
+
   it('creates a database and round-trips a document when NODE_ENV is production', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.resetModules();
