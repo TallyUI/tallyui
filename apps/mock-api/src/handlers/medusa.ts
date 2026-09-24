@@ -16,7 +16,8 @@ const app = new Hono();
 app.get('/admin/products', (c) => {
   const offset = parseInt(c.req.query('offset') ?? '0', 10);
   const limit = parseInt(c.req.query('limit') ?? '20', 10);
-  const updatedAtGte = c.req.query('updated_at[gte]');
+  // Medusa 2.21 honours only the operator form; `updated_at[gte]` is silently dropped.
+  const updatedAtGte = c.req.query('updated_at[$gte]');
 
   let filtered = medusaProducts;
 

@@ -1,6 +1,12 @@
 import type { RxCollection } from 'rxdb';
 import type { IdReconcileAdapter, SyncContext } from '@tallyui/core';
 
+/**
+ * Below this count of would-be tombstones, the brake never applies, whatever
+ * `maxDeleteShare` says: in a small shop, deleting 2 of 5 products is normal.
+ */
+const MASS_DELETE_MINIMUM = 10;
+
 export interface StartIdReconcileOptions<Doc> {
   /** The replicated products collection. Read only. */
   collection: RxCollection<Doc>;
@@ -14,19 +20,28 @@ export interface StartIdReconcileOptions<Doc> {
   intervalMs?: number;
   /** Pages read before a pass is truncated (default 100). */
   maxPages?: number;
+  /**
+   * The brake applies once would-be tombstones exceed this share of local
+   * products (default 0.2), unless `allowMassDelete` is set.
+   */
+  maxDeleteShare?: number;
+  /** Explicit override for a genuine purge; disables the mass-delete brake. */
+  allowMassDelete?: boolean;
 }
 
-export interface IdReconcileResult { pages: number; queued: number; truncated: boolean }
+export interface IdReconcileResult { pages: number; queued: number; truncated: boolean; braked: boolean }
 
 /**
  * Compares live product/variant ids against the local `products` collection
  * and queues disagreeing documents for the collection's pull (ADR-060). Only
- * reads `collection`. A throw, abort or truncation queues nothing and skips
- * `reSync`; only a complete pass acts. One pass runs `startDelayMs` after
- * start, then every `intervalMs`; concurrent calls share one pass.
+ * reads `collection`. A throw, abort, truncation or the mass-delete brake
+ * (below) queues nothing and skips `reSync`; only a complete, un-braked pass
+ * acts. One pass runs `startDelayMs` after start, then every `intervalMs`;
+ * concurrent calls share one pass.
  */
 export function startIdReconcile<Doc>({
   collection, adapter, context, reSync, startDelayMs = 5_000, intervalMs = 86_400_000, maxPages = 100,
+  maxDeleteShare = 0.2, allowMassDelete = false,
 }: StartIdReconcileOptions<Doc>): { reconcileIds(): Promise<IdReconcileResult>; stop(): void } {
   const controller = new AbortController();
   const { signal } = controller;
@@ -44,7 +59,7 @@ export function startIdReconcile<Doc>({
       checkAborted();
       if (pages === maxPages) {
         console.warn(`Id reconcile stopped at the ${maxPages}-page limit; nothing was queued.`);
-        return { pages, queued: 0, truncated: true };
+        return { pages, queued: 0, truncated: true, braked: false };
       }
       pages++;
       for (const row of page) remote.set(row.id, row.variantIds);
@@ -52,20 +67,38 @@ export function startIdReconcile<Doc>({
 
     checkAborted();
     // Phase 2: queue local documents the backend no longer agrees with, either
-    // missing entirely or listing a variant id that vanished remotely.
+    // missing entirely (a tombstone) or listing a variant id that vanished
+    // remotely. Tombstones are counted separately for the mass-delete brake.
     const entries: Array<{ id: string; local: Doc }> = [];
+    let localCount = 0;
+    let tombstones = 0;
     for (const doc of await collection.find().exec()) {
+      localCount++;
       const id = doc.primary as string;
       const remoteVariantIds = remote.get(id);
       const local = doc.toJSON() as Doc;
       const vanished = remoteVariantIds && adapter.variantIds(local).some((v) => !remoteVariantIds.includes(v));
+      if (!remoteVariantIds) tombstones++;
       if (!remoteVariantIds || vanished) entries.push({ id, local });
     }
 
     checkAborted();
+    // The brake: a wrong channel token or a permissions change must never
+    // empty a shop's catalogue. Apply only when tombstones are both a large
+    // share of the local catalogue and more than the minimum that a small
+    // shop's normal churn can explain.
+    if (tombstones > MASS_DELETE_MINIMUM && tombstones > maxDeleteShare * localCount && !allowMassDelete) {
+      const share = localCount ? tombstones / localCount : 1;
+      console.warn(
+        `Id reconcile braked: ${tombstones} of ${localCount} local products `
+        + `(${(share * 100).toFixed(1)}%), over maxDeleteShare; nothing was queued. Pass allowMassDelete: true to override.`,
+      );
+      return { pages, queued: 0, truncated: false, braked: true };
+    }
+
     // Only touch reSync when there is something for the pull to correct.
     if (entries.length) { adapter.enqueue(entries); reSync(); }
-    return { pages, queued: entries.length, truncated: false };
+    return { pages, queued: entries.length, truncated: false, braked: false };
   };
 
   const reconcileIds = () => (running ??= pass().finally(() => { running = undefined; }));

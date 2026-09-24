@@ -5,8 +5,8 @@ import { medusaProductSchema } from '../schemas/products';
 /** Top-level fields the RxDB schema declares; RxDB rejects any others. */
 const SCHEMA_FIELDS = Object.keys(medusaProductSchema.properties);
 
-/** Keeps only schema fields, so new Medusa API fields never fail validation. */
-function toDocument(product: Record<string, unknown>) {
+/** Keeps only schema fields, so new Medusa API fields never fail validation. Also used by the id reconcile's `fetchByIds`, for an identical document shape. */
+export function toDocument(product: Record<string, unknown>) {
   const doc: Record<string, unknown> = {};
   for (const field of SCHEMA_FIELDS) {
     if (product[field] !== undefined) doc[field] = product[field];
@@ -28,7 +28,7 @@ export type MedusaProductCheckpoint = {
 
 // The Admin API does not compute variants.inventory_quantity (only the Store
 // API does), so fetch the inventory levels the traits sum instead.
-const MEDUSA_PRODUCT_FIELDS = [
+export const MEDUSA_PRODUCT_FIELDS = [
   '*variants',
   '*variants.prices',
   '+variants.inventory_items.required_quantity',
@@ -79,7 +79,8 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
       });
 
       if (lastCheckpoint?.updated_at) {
-        params.set('updated_at[gte]', lastCheckpoint.updated_at);
+        // Medusa 2.21 honours only the operator form; `updated_at[gte]` is silently dropped.
+        params.set('updated_at[$gte]', lastCheckpoint.updated_at);
       }
 
       const response = await fetch(

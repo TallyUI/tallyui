@@ -30,7 +30,7 @@ async function setup(size: number, tied = false, afterFirstPage?: (rows: Map<str
     requests.push(params);
     const offset = Number(params.get('offset') ?? 0);
     const limit = Number(params.get('limit'));
-    const bound = params.get('updated_at[gte]') ?? '';
+    const bound = params.get('updated_at[$gte]') ?? '';
     const byId = params.get('order') === 'id';
     const matches = [...rows.values()].filter(p => p.updated_at >= bound).sort((a, b) =>
       byId ? a.id.localeCompare(b.id) : b.updated_at.localeCompare(a.updated_at));
