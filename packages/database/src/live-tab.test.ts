@@ -191,7 +191,9 @@ const currentState = (handle: LiveTabHandle): LiveTabState => {
 
 describe('startLiveTab', () => {
   beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    // Date is faked too so the default `now` (Date.now) tracks the same virtual clock as
+    // setTimeout, matching an unthrottled foreground tab.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   });
 
   afterEach(() => {
@@ -285,6 +287,34 @@ describe('startLiveTab', () => {
 
     const b = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
     await vi.advanceTimersByTimeAsync(500);
+
+    expect(onParkA).toHaveBeenCalledTimes(1);
+    expect(currentState(a)).toBe('parked');
+    expect(currentState(b)).toBe('live');
+    a.stop();
+    b.stop();
+  });
+
+  it('defers by wall-clock time, not by counting throttled sleeps (the live tab is backgrounded, so real browsers throttle its setTimeout)', async () => {
+    const locks = createFakeLockManager();
+    const hub = createChannelHub();
+    const onParkA = vi.fn();
+    // A background tab's setTimeout is throttled to ~1 s or more per callback, so a
+    // requested 100 ms sleep really costs about 1 s of wall clock. Simulate that by
+    // having the injected `now` jump 1 s per call, decoupled from the fake timer's own
+    // 100 ms sleep ticks (the alternative of scaling every sleep's fake-timer delay was
+    // not used, since it would also need faking `Date` in lockstep with a patched `setTimeout`).
+    let calls = 0;
+    const now = () => (calls++) * 1_000;
+    const a = startLiveTab({ scope: 'store-1', onPark: onParkA, isBusy: () => true, now, locks, createChannel: hub.createChannel });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const b = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+    // The wall clock caps the loop at maxDeferMs (10 s of simulated wall time), needing
+    // only ~9 sleeps, i.e. ~900 ms of fake (timer) time. Counting sleeps as literal 100 ms
+    // instead would need the full 10 s of fake time (maxDeferMs / 100 sleeps) to reach the
+    // same cap -- over 10x longer -- so 2 s of fake time here already tells them apart.
+    await vi.advanceTimersByTimeAsync(2_000);
 
     expect(onParkA).toHaveBeenCalledTimes(1);
     expect(currentState(a)).toBe('parked');

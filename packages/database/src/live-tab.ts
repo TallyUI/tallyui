@@ -43,6 +43,8 @@ export interface LiveTabOptions {
   createChannel?: (name: string) => LiveTabChannel;
   /** Injection for tests; default globalThis. Source of `pagehide`/`pageshow`. */
   events?: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
+  /** Injection for tests; default Date.now. Wall clock for the busy-defer cap below. */
+  now?: () => number;
 }
 
 export interface LiveTabHandle {
@@ -73,6 +75,7 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
     locks = globalThis.navigator?.locks,
     createChannel = (name) => new BroadcastChannel(name) as unknown as LiveTabChannel,
     events = globalThis,
+    now = Date.now,
   } = options;
   const state = new BehaviorSubject<LiveTabState>('acquiring');
 
@@ -136,11 +139,11 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
     parking = true;
     channel.postMessage({ type: 'handover-ack', id });
     try {
-      let waited = 0;
-      while (isBusy?.() && waited < maxDeferMs) {
-        await sleep(100);
-        waited += 100;
-      }
+      // Wall clock, not a count of sleeps: this tab is in the background right now, and
+      // browsers throttle background timers to ~1 s or more, so each sleep(100) can take
+      // far longer than requested and a sleep count would blow well past maxDeferMs.
+      const start = now();
+      while (isBusy?.() && now() - start < maxDeferMs) await sleep(100);
       try {
         await onPark();
       } catch (error) {

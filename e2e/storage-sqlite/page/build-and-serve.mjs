@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// Playwright's webServer command for the `storage-sqlite` project. Bundles
-// the test page and the real worker entry (`packages/storage-sqlite/src/web
-// /worker.ts`) with esbuild, copies `sqlite3.wasm` next to the bundled
-// worker (the sqlite-wasm module fetches it relative to its own URL), then
-// serves the result as a static site. `tallyui-build-sqlite-worker` (the
-// package's own bin, see PR #71) doesn't exist on `main` yet, so this
-// bundles with esbuild directly instead, per the spec. It uses esbuild's JS
-// API, resolved from `@tallyui/storage-sqlite`'s own `esbuild` devDependency
-// (added in #71), rather than shelling out to a CLI binary.
+// Playwright's webServer command for the `storage-sqlite` project. Builds
+// the worker the same way a consuming app does, with the package's own bin
+// (`tallyui-build-sqlite-worker`, see PR #71), which bundles the worker from
+// the package's *built* entry (`dist/web/worker.js`, through the package
+// exports) and copies `sqlite3.wasm` next to it. Bundles the test page
+// separately with esbuild's JS API, resolved from `@tallyui/storage-sqlite`'s
+// own `esbuild` devDependency, then serves the result as a static site.
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile, copyFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,10 +35,17 @@ function bundle(entry, outfile, alias = {}) {
 async function build() {
   await mkdir(outDir, { recursive: true });
 
-  // The worker's own bare imports (rxdb-premium, @sqlite.org/sqlite-wasm)
-  // resolve naturally: node resolution walks up from worker.ts's own
-  // directory to `packages/storage-sqlite/node_modules`, which has them.
-  bundle(path.join(storageSqlite, 'src/web/worker.ts'), path.join(outDir, 'worker.js'));
+  const builtWorkerEntry = path.join(storageSqlite, 'dist/web/worker.js');
+  if (!existsSync(builtWorkerEntry)) {
+    throw new Error(`${builtWorkerEntry} is missing: run pnpm build first`);
+  }
+  // Run the package's own bin, the same way a consuming app's build step
+  // does, with cwd set to the package so it resolves
+  // `@tallyui/storage-sqlite/web-worker` through the package's own
+  // self-reference (the same way the bin's own test runs it). Writes
+  // `tallyui-sqlite-worker.js` and `sqlite3.wasm` into outDir.
+  const bin = path.join(storageSqlite, 'scripts/build-web-worker.mjs');
+  execFileSync(process.execPath, [bin, outDir], { cwd: storageSqlite, stdio: 'inherit' });
 
   // The page imports `rxdb` directly, but its own directory (this one) has
   // no ancestor node_modules with rxdb in pnpm's isolated layout, so alias
@@ -47,10 +54,6 @@ async function build() {
     rxdb: path.join(storageSqlite, 'node_modules/rxdb'),
   });
 
-  await copyFile(
-    path.join(storageSqlite, 'node_modules/@sqlite.org/sqlite-wasm/dist/sqlite3.wasm'),
-    path.join(outDir, 'sqlite3.wasm')
-  );
   await copyFile(path.join(here, 'index.html'), path.join(outDir, 'index.html'));
 }
 

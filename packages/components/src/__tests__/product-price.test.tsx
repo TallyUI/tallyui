@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ConnectorProvider } from '@tallyui/core';
@@ -134,6 +136,34 @@ describe('ProductPrice', () => {
     expect(screen.getByText('ab €10.00')).toBeDefined();
   });
 
+  it('uses formatFrom for a price-after word order', () => {
+    const connector = createTestConnector('medusa');
+    const variants = [
+      { ...medusaDoc.variants[0], id: 'var-1', prices: [{ amount: 10, currency_code: 'eur' }] },
+      { ...medusaDoc.variants[0], id: 'var-2', prices: [{ amount: 11, currency_code: 'eur' }] },
+    ];
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductPrice doc={{ ...medusaDoc, variants }} locale="en-US" formatFrom={(p) => `${p} ab`} />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('€10.00 ab')).toBeDefined();
+  });
+
+  it('prefers formatFrom over fromLabel when both are given', () => {
+    const connector = createTestConnector('medusa');
+    const variants = [
+      { ...medusaDoc.variants[0], id: 'var-1', prices: [{ amount: 10, currency_code: 'eur' }] },
+      { ...medusaDoc.variants[0], id: 'var-2', prices: [{ amount: 11, currency_code: 'eur' }] },
+    ];
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductPrice doc={{ ...medusaDoc, variants }} locale="en-US" fromLabel="ab" formatFrom={(p) => `${p} zu`} />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('€10.00 zu')).toBeDefined();
+  });
+
   it('shows the range even when the default variant has no price in that currency', () => {
     const connector = createTestConnector('medusa');
     const variants = [
@@ -182,5 +212,15 @@ describe('ProductPrice', () => {
     expect(el).toBeDefined();
     expect(el.textContent).toContain('was');
     expect(el.textContent).toContain('599.99');
+  });
+
+  it('uses the theme price token for regular and range prices, and the sale token for the sale price', () => {
+    // react-native-web atomizes className into a hashed class at render time, so the
+    // Tailwind class names aren't present on the rendered DOM node (see theme-classes.test.ts
+    // for this codebase's convention of asserting class names from source instead).
+    const source = readFileSync(join(process.cwd(), 'packages/components/src/product/product-price.tsx'), 'utf8');
+    expect(source).not.toMatch(/text-foreground/);
+    expect(source.match(/text-price/g)?.length).toBe(2);
+    expect(source).toContain('text-sale');
   });
 });
