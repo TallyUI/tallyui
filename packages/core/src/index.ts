@@ -10,6 +10,7 @@ export type {
   ReplicationAdapter,
   StockReconcileAdapter,
   IdReconcileAdapter,
+  FingerprintReconcileAdapter,
   SyncContext,
   ProductTraits,
   TraitContext,

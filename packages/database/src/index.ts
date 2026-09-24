@@ -17,5 +17,7 @@ export { startStockReconcile } from './reconcile';
 export type { StartStockReconcileOptions, StockReconcileResult, StockReconcileState } from './reconcile';
 export { startIdReconcile } from './id-reconcile';
 export type { StartIdReconcileOptions, IdReconcileResult } from './id-reconcile';
+export { startFingerprintReconcile } from './fingerprint-reconcile';
+export type { StartFingerprintReconcileOptions, FingerprintReconcileResult, FingerprintReconcileState } from './fingerprint-reconcile';
 export { STOCK_LEVELS_COLLECTION, STOCK_LEVELS_LAST_PASS, stockLevelsCollection, stockLevelsSchema } from './stock-levels';
 export type { StockLevelRow } from './stock-levels';

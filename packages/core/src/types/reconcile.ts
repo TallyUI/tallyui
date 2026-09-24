@@ -27,3 +27,13 @@ export interface IdReconcileAdapter<Doc = any> {
   /** Hand local documents that disagree with the backend to the collection's pull (see createReconcileFeed). */
   enqueue(entries: Array<{ id: string; local: Doc }>): void;
 }
+
+/** Re-delivers products whose remote fingerprint differs from the local one (ADR-060). */
+export interface FingerprintReconcileAdapter<Doc = any> {
+  /** Remote fingerprints by product id, one backend request per page. Products the backend doesn't report are left alone. */
+  fetchPages(context: SyncContext): AsyncIterable<Map<string, string>>;
+  /** The same fingerprint computed from a local product document. */
+  fingerprint(doc: Doc): string;
+  /** Hands products to the collection's pull (the reconcile feed). */
+  enqueue(entries: Array<{ id: string; local: Doc }>): void;
+}

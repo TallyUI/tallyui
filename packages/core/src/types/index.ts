@@ -11,7 +11,7 @@ export type {
 
 export type { ReplicationAdapter } from './replication';
 
-export type { IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
+export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 
 export type { ProductTraits, TraitContext, VariantSummary } from './traits/product';
 
