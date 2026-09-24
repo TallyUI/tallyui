@@ -70,6 +70,22 @@ describe('finalizeOrder', () => {
     expect(finalizeOrder(builder.getSnapshot()).payments[0]).toMatchObject({ amountMinor: 3451, tenderedMinor: 3451, changeMinor: 0 });
   });
 
+  it('rejects an order with a converted line', () => {
+    const builder = sale();
+    builder.addLine({ productId: 'p3', name: 'Item 3', unitPrice: { amount: 500, currency: 'EUR', taxInclusive: true } });
+    builder.addPayment({ method: 'cash', amountMinor: 10000 });
+    const order = builder.getSnapshot();
+    expect(() => finalizeOrder(order)).toThrow(
+      "finalize: a line's price has a different tax mode from the store; refresh the store settings and try again",
+    );
+  });
+
+  it('finalizes an order whose lines all agree with the store tax mode', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 3451 });
+    expect(() => finalizeOrder(builder.getSnapshot())).not.toThrow();
+  });
+
   it.each(['no lines', 'underpaid', 'unsupported payment method voucher', 'change exceeds cash', 'discounts not supported yet', 'payments do not reconcile'])(
     'rejects %s', (reason) => {
       const builder = sale();
