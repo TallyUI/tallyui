@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { createVendureConnector, vendureProductTraits } from '../../../../connectors/vendure/src';
+import { createVendureConnector } from '../../../../connectors/vendure/src';
 import { toVendureProduct } from '../transforms/vendure';
 import { products } from '../data/catalog';
 
 describe('toVendureProduct', () => {
+  const vendureProductTraits = createVendureConnector({ pricesIncludeTax: true }).traits.product;
   const neutral = products[0]; // Espresso Machine Pro
   const vendure = toVendureProduct(neutral);
 

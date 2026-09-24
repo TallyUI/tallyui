@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { findVariantByCode } from '@tallyui/core';
 import { vendureProductTraits } from '../traits/product';
 import { createVendureConnector } from '../index';
 
@@ -147,12 +148,12 @@ describe('Vendure product traits', () => {
   });
 
   describe('getPrice', () => {
-    it('converts priceWithTax cents to decimal string', () => {
-      expect(vendureProductTraits.getPrice(fullProduct)).toBe('5341.91');
+    it('converts net price cents to decimal string by default', () => {
+      expect(vendureProductTraits.getPrice(fullProduct)).toBe('4899.00');
     });
 
     it('handles smaller prices', () => {
-      expect(vendureProductTraits.getPrice(simpleProduct)).toBe('14.99');
+      expect(vendureProductTraits.getPrice(simpleProduct)).toBe('12.99');
     });
 
     it('returns undefined when no variants', () => {
@@ -162,7 +163,7 @@ describe('Vendure product traits', () => {
 
   describe('getRegularPrice / getSalePrice / isOnSale', () => {
     it('regular price matches price (Vendure uses promotions, not product-level sales)', () => {
-      expect(vendureProductTraits.getRegularPrice(fullProduct)).toBe('5341.91');
+      expect(vendureProductTraits.getRegularPrice(fullProduct)).toBe('4899.00');
     });
 
     it('sale price is always undefined', () => {
@@ -317,8 +318,8 @@ describe('product-level getStock', () => {
 });
 
 describe('Vendure neutral price and stock', () => {
-  it('passes integer priceWithTax through with the variant currency', () => {
-    expect(vendureProductTraits.getPrices({ variants: [{ priceWithTax: 1299, currencyCode: 'EUR' }] }))
+  it('passes integer net price through with the variant currency', () => {
+    expect(vendureProductTraits.getPrices({ variants: [{ price: 1299, currencyCode: 'EUR' }] }))
       .toEqual([{ amount: 1299, currency: 'EUR', kind: 'base' }]);
     expect(vendureProductTraits.getPrices({})).toEqual([]);
   });
@@ -328,6 +329,77 @@ describe('Vendure neutral price and stock', () => {
     expect(vendureProductTraits.getStock({ variants: [{ stockLevel: 'LOW_STOCK' }] })).toEqual({ status: 'in_stock' });
     expect(vendureProductTraits.getStock({ variants: [{ stockLevel: 'OUT_OF_STOCK' }] })).toEqual({ status: 'out_of_stock' });
     expect(vendureProductTraits.getStock({}).status).toBe('unknown');
+  });
+});
+
+describe('Vendure variants and channel prices', () => {
+  const doc = { variants: [
+    { id: 1, name: 'Small', sku: 'SKU-S', price: 1000, priceWithTax: 1200, currencyCode: 'eur',
+      stockLevels: [{ stockLocationId: '1', stockOnHand: 5, stockAllocated: 2 },
+        { stockLocationId: '2', stockOnHand: 8, stockAllocated: 1 }] },
+    { id: 2, name: 'Medium', sku: 'SKU-M', price: 2000, priceWithTax: 2400,
+      stockOnHand: 0, customFields: { barcode: 'BAR-M' } },
+    { id: 3, name: 'Large', sku: 'SKU-L', price: 3000, priceWithTax: 3600, stockLevel: 'LOW_STOCK' },
+  ] };
+
+  it('returns every variant with its own details, prices and stock', () => {
+    const traits = createVendureConnector({ barcodeField: 'barcode', stockLocationId: '1' }).traits.product;
+    const variants = traits.getVariants!(doc, { currency: 'usd' });
+    expect(variants).toEqual([
+      { id: '1', title: 'Small', sku: 'SKU-S', barcode: undefined,
+        prices: [{ amount: 1000, currency: 'EUR', kind: 'base' }], stock: { status: 'in_stock', quantity: 3 } },
+      { id: '2', title: 'Medium', sku: 'SKU-M', barcode: 'BAR-M',
+        prices: [{ amount: 2000, currency: 'USD', kind: 'base' }], stock: { status: 'out_of_stock', quantity: 0 } },
+      { id: '3', title: 'Large', sku: 'SKU-L', barcode: undefined,
+        prices: [{ amount: 3000, currency: 'USD', kind: 'base' }], stock: { status: 'in_stock' } },
+    ]);
+    expect(findVariantByCode(variants, 'BAR-M')).toBe(variants[1]);
+  });
+
+  it('finds a SKU without a barcode option and sums variant stock across locations', () => {
+    const variants = createVendureConnector().traits.product.getVariants!(doc);
+    expect(findVariantByCode(variants, 'SKU-L')).toBe(variants[2]);
+    expect(variants[1].barcode).toBeUndefined();
+    expect(variants[0].stock).toEqual({ status: 'in_stock', quantity: 10 });
+  });
+
+  it.each([[undefined, 1000], [false, 1000], [true, 1200]] as const)(
+    'selects the channel price with pricesIncludeTax=%s', (pricesIncludeTax, amount) => {
+      const traits = createVendureConnector({ pricesIncludeTax }).traits.product;
+      const prices = [{ amount, currency: 'EUR', kind: 'base' }];
+      expect(traits.getPrices(doc)).toEqual(prices);
+      expect(traits.getVariants!(doc)[0].prices).toEqual(prices);
+      expect(traits.getPrice(doc)).toBe((amount / 100).toFixed(2));
+      expect(traits.getRegularPrice(doc)).toBe((amount / 100).toFixed(2));
+    },
+  );
+
+  it.each([['gbp', 'GBP'], [undefined, 'XXX']])('falls back to currency %s', (currency, expected) => {
+    const product = { variants: [{ id: 1, price: 1000 }] };
+    const prices = [{ amount: 1000, currency: expected, kind: 'base' }];
+    expect(vendureProductTraits.getPrices(product, { currency })).toEqual(prices);
+    expect(vendureProductTraits.getVariants!(product, { currency })[0].prices).toEqual(prices);
+  });
+
+  it.each([false, true])('keeps missing selected prices empty and preserves zero (%s)', (pricesIncludeTax) => {
+    const traits = createVendureConnector({ pricesIncludeTax }).traits.product;
+    const field = pricesIncludeTax ? 'priceWithTax' : 'price';
+    for (const amount of [null, undefined, 0]) {
+      const product = { variants: [{ id: 1, price: 1000, priceWithTax: 1200, [field]: amount }] };
+      const prices = amount == null ? [] : [{ amount: 0, currency: 'XXX', kind: 'base' }];
+      expect(traits.getPrices(product)).toEqual(prices);
+      expect(traits.getVariants!(product)[0].prices).toEqual(prices);
+      expect(traits.getPrice(product)).toBe(amount == null ? undefined : '0.00');
+      expect(traits.getRegularPrice(product)).toBe(amount == null ? undefined : '0.00');
+    }
+  });
+
+  it('handles missing variant details and empty products', () => {
+    expect(vendureProductTraits.getVariants!({ variants: [{ id: 1, sku: '' }] })).toEqual([
+      { id: '1', title: undefined, sku: undefined, barcode: undefined, prices: [], stock: { status: 'unknown' } },
+    ]);
+    expect(vendureProductTraits.getVariants!({})).toEqual([]);
+    expect(vendureProductTraits.getVariants!({ variants: [] })).toEqual([]);
   });
 });
 
