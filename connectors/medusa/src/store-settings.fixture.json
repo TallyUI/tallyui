@@ -1,5 +1,5 @@
 {
-  "_recorded": "Recorded read-only from medusa-dev (Medusa 2.21, http://127.0.0.1:9000) on 2026-09-24 with the exact requests medusaStoreSettings sends. The publishable key token is replaced with pk_test_fixture.",
+  "_recorded": "Recorded read-only from medusa-dev (Medusa 2.21, http://127.0.0.1:9000) on 2026-09-25 with the exact requests medusaStoreSettings sends. The publishable key token is replaced with pk_test_fixture.",
   "stores": {
     "stores": [
       {
@@ -149,7 +149,13 @@
         "id": "apk_01M35QW18NZZWSJGQ5XSPND3AJ",
         "title": "Default Publishable API Key",
         "token": "pk_test_fixture",
-        "revoked_at": null
+        "revoked_at": null,
+        "sales_channels": [
+          {
+            "id": "sc_01M35QW18CGY1QJF494E3F2MTC",
+            "name": "Default Sales Channel"
+          }
+        ]
       }
     ],
     "count": 1,

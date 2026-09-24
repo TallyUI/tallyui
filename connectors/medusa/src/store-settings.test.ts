@@ -13,8 +13,9 @@ const store = (default_region_id: string | null = null, id = 'store_1') => ok({ 
 const regions = (list: Array<{ id: string; name?: string; currency_code?: string; countries?: Array<{ iso_2: string }> }>) =>
   ok({ regions: list.map((r) => ({ name: 'Region', currency_code: 'eur', countries: [{ iso_2: 'de' }], ...r })) });
 const pricePreferences = (list: Array<Record<string, unknown>> = []) => ok({ price_preferences: list });
-const apiKeys = (list: Array<{ id: string; title?: string; token?: string; revoked_at?: string | null }>) =>
-  ok({ api_keys: list.map((k) => ({ title: 'Key', token: 'pk_x', revoked_at: null, ...k })) });
+const apiKeys = (
+  list: Array<{ id: string; title?: string; token?: string; revoked_at?: string | null; sales_channels?: Array<{ id: string; name: string }> }>,
+) => ok({ api_keys: list.map((k) => ({ title: 'Key', token: 'pk_x', revoked_at: null, ...k })) });
 const taxRegions = (list: Array<Record<string, unknown>> = []) => ok({ tax_regions: list });
 
 /** Mocks the two-phase request sequence: the four parallel reads, then (only if a country resolves) the tax-regions read. */
@@ -38,7 +39,7 @@ describe('medusaStoreSettings', () => {
       code: 'choice_required',
       choices: {
         countries: ['dk', 'fr', 'de', 'it', 'es', 'se', 'gb'],
-        channels: [{ id: 'apk_01M35QW18NZZWSJGQ5XSPND3AJ', name: 'Default Publishable API Key' }],
+        channels: [{ id: 'apk_01M35QW18NZZWSJGQ5XSPND3AJ', name: 'Default Sales Channel' }],
       },
     });
   });
@@ -151,6 +152,48 @@ describe('medusaStoreSettings', () => {
     await expect(medusaStoreSettings(context)).rejects.toMatchObject({
       code: 'choice_required',
       choices: { channels: [{ id: 'k1', name: 'One' }, { id: 'k2', name: 'Two' }] },
+    });
+  });
+
+  it('a key with two sales channels joins their names with ", "', async () => {
+    mockFetch(
+      store(null),
+      regions([{ id: 'reg_a', countries: [{ iso_2: 'de' }] }]),
+      pricePreferences(),
+      apiKeys([{ id: 'k1', sales_channels: [{ id: 'sc_a', name: 'A' }, { id: 'sc_b', name: 'B' }] }, { id: 'k2', title: 'Two' }]),
+      taxRegions(),
+    );
+
+    await expect(medusaStoreSettings(context)).rejects.toMatchObject({
+      choices: { channels: [{ id: 'k1', name: 'A, B' }, { id: 'k2', name: 'Two' }] },
+    });
+  });
+
+  it('a key with no sales channels falls back to its title', async () => {
+    mockFetch(
+      store(null),
+      regions([{ id: 'reg_a', countries: [{ iso_2: 'de' }] }]),
+      pricePreferences(),
+      apiKeys([{ id: 'k1', title: 'Fallback Title', sales_channels: [] }, { id: 'k2', title: 'Two' }]),
+      taxRegions(),
+    );
+
+    await expect(medusaStoreSettings(context)).rejects.toMatchObject({
+      choices: { channels: [{ id: 'k1', name: 'Fallback Title' }, { id: 'k2', name: 'Two' }] },
+    });
+  });
+
+  it('a key with a blank channel name falls back to its title', async () => {
+    mockFetch(
+      store(null),
+      regions([{ id: 'reg_a', countries: [{ iso_2: 'de' }] }]),
+      pricePreferences(),
+      apiKeys([{ id: 'k1', title: 'Fallback Title', sales_channels: [{ id: 'sc_a', name: '  ' }] }, { id: 'k2', title: 'Two' }]),
+      taxRegions(),
+    );
+
+    await expect(medusaStoreSettings(context)).rejects.toMatchObject({
+      choices: { channels: [{ id: 'k1', name: 'Fallback Title' }, { id: 'k2', name: 'Two' }] },
     });
   });
 

@@ -18,6 +18,7 @@ describe.skipIf(!baseUrl || !email || !password)('live Medusa store settings', (
     const error = await medusaStoreSettings(context).catch((e) => e);
     expect(error).toMatchObject({ code: 'choice_required' });
     expect(error.choices?.countries).toHaveLength(7);
+    expect(error.choices?.channels?.[0]?.name).toBe('Default Sales Channel');
   }, 30000);
 
   it('reads with { country: "de" }, then prices through the store API with the resulting pricingContext', async () => {

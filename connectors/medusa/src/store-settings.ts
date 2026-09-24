@@ -5,7 +5,8 @@ type Store = { id: string; default_region_id: string | null };
 type Country = { iso_2: string };
 type Region = { id: string; name: string; currency_code: string; countries?: Country[] };
 type PricePreference = { attribute: string; value: string; is_tax_inclusive: boolean };
-type ApiKey = { id: string; title: string; token: string; revoked_at: string | null };
+type SalesChannel = { id: string; name: string };
+type ApiKey = { id: string; title: string; token: string; revoked_at: string | null; sales_channels?: SalesChannel[] };
 type TaxRate = { rate: number | null; is_default: boolean; rules?: unknown[] };
 type TaxRegion = { country_code: string; province_code: string | null; tax_rates?: TaxRate[] };
 
@@ -32,6 +33,13 @@ function resolveRegion(regions: Region[], store: Store | undefined, choice?: Sto
   return region;
 }
 
+// A cashier-facing name, never the key's own token: its sales channel names (blank ones don't
+// count), joined in order; a key with none falls back to its (developer-facing) title.
+function channelName(key: ApiKey): string {
+  const names = (key.sales_channels ?? []).map((c) => c.name).filter((name) => name?.trim());
+  return names.length > 0 ? names.join(', ') : key.title;
+}
+
 /**
  * Reads the store's currency, tax inclusivity and location tax rate, and the
  * publishable-key channel, from Medusa's admin API only (TV4b). Read-only
@@ -44,7 +52,7 @@ export const medusaStoreSettings = async (context: SyncContext, choice?: StoreSe
     get(context, '/admin/stores?fields=id,default_region_id'),
     get(context, '/admin/regions?limit=1000&fields=id,name,currency_code,*countries'),
     get(context, '/admin/price-preferences?limit=1000'),
-    get(context, '/admin/api-keys?type=publishable&limit=1000&fields=id,title,token,revoked_at'),
+    get(context, '/admin/api-keys?type=publishable&limit=1000&fields=id,title,token,revoked_at,sales_channels.id,sales_channels.name'),
   ]);
 
   const region = resolveRegion(regionsRes.regions ?? [], storeRes.stores?.[0], choice);
@@ -79,7 +87,7 @@ export const medusaStoreSettings = async (context: SyncContext, choice?: StoreSe
   if (countryCode === undefined || !channelKey) {
     throw new StoreSettingsError('choice_required', 'Medusa needs a country and/or sales channel choice', {
       countries: countries.map((c) => c.iso_2.toLowerCase()),
-      channels: availableKeys.map((k) => ({ id: k.id, name: k.title })),
+      channels: availableKeys.map((k) => ({ id: k.id, name: channelName(k) })),
     });
   }
 
