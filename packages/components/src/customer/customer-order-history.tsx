@@ -19,7 +19,7 @@ export function CustomerOrderHistory({
 }: CustomerOrderHistoryProps) {
   return (
     <View className={cn('flex-1', className)} {...viewProps}>
-      <Text className="px-3 py-2 text-xs font-semibold text-muted">Order History</Text>
+      <Text className="px-3 py-2 text-xs font-semibold text-muted-foreground">Order History</Text>
       {orders.length > 0 ? (
         <ScrollView contentContainerClassName="gap-2 px-3 pb-3">
           {orders.map((order, index) => (

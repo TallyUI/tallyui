@@ -41,7 +41,7 @@ export function POSLayout({
               onPress={() => setActiveTab('browse')}
               className={cn('flex-1 py-3', activeTab === 'browse' && 'border-b-2 border-primary')}
             >
-              <Text className={cn('text-center text-sm font-semibold', activeTab === 'browse' ? 'text-primary' : 'text-muted')}>
+              <Text className={cn('text-center text-sm font-semibold', activeTab === 'browse' ? 'text-primary' : 'text-muted-foreground')}>
                 Browse
               </Text>
             </Pressable>
@@ -49,7 +49,7 @@ export function POSLayout({
               onPress={() => setActiveTab('cart')}
               className={cn('flex-1 py-3', activeTab === 'cart' && 'border-b-2 border-primary')}
             >
-              <Text className={cn('text-center text-sm font-semibold', activeTab === 'cart' ? 'text-primary' : 'text-muted')}>
+              <Text className={cn('text-center text-sm font-semibold', activeTab === 'cart' ? 'text-primary' : 'text-muted-foreground')}>
                 Cart
               </Text>
             </Pressable>

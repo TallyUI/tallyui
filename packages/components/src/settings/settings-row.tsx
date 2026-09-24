@@ -15,7 +15,7 @@ export function SettingsRow({ label, description, action, className, ...viewProp
     <View className={cn('flex-row items-center gap-3 px-4 py-3', className)} {...viewProps}>
       <View className="flex-1 gap-0.5">
         <Text className="text-sm font-medium text-foreground">{label}</Text>
-        {description && <Text className="text-xs text-muted">{description}</Text>}
+        {description && <Text className="text-xs text-muted-foreground">{description}</Text>}
       </View>
       {action && <View>{action}</View>}
     </View>

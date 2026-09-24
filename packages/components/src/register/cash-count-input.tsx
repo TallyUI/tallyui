@@ -70,7 +70,7 @@ export function CashCountInput({
             min={0}
             onChangeQuantity={(qty) => handleCountChange(d.value, qty)}
           />
-          <Text className="w-20 text-right text-sm text-muted">
+          <Text className="w-20 text-right text-sm text-muted-foreground">
             {(d.value * (counts[d.value] ?? 0)).toFixed(2)}
           </Text>
         </View>

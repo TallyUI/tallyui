@@ -14,7 +14,7 @@ export interface ConnectorStatusProps extends Omit<ViewProps, 'children'> {
 
 const STATUS_CONFIG: Record<ConnectionStatus, { label: string; dot: string; text: string }> = {
   connected: { label: 'Connected', dot: 'bg-success', text: 'text-success' },
-  disconnected: { label: 'Disconnected', dot: 'bg-muted', text: 'text-muted' },
+  disconnected: { label: 'Disconnected', dot: 'bg-muted', text: 'text-muted-foreground' },
   syncing: { label: 'Syncing...', dot: 'bg-info', text: 'text-info' },
   error: { label: 'Error', dot: 'bg-danger', text: 'text-danger' },
 };
@@ -38,7 +38,7 @@ export function ConnectorStatus({
           <Text className={cn('text-xs font-medium', config.text)}>{config.label}</Text>
         </View>
       </View>
-      {lastSync && <Text className="text-xs text-muted">Last sync: {lastSync}</Text>}
+      {lastSync && <Text className="text-xs text-muted-foreground">Last sync: {lastSync}</Text>}
       {error && <Text className="text-xs text-danger">{error}</Text>}
     </View>
   );

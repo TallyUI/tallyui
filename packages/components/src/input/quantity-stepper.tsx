@@ -37,10 +37,10 @@ export function QuantityStepper({
         disabled={quantity <= min}
         className={cn(
           'h-8 w-8 items-center justify-center rounded-lg',
-          quantity <= min ? 'bg-surface-alt/50' : 'bg-surface-alt',
+          quantity <= min ? 'bg-muted/50' : 'bg-muted',
         )}
       >
-        <Text className={cn('text-base font-semibold', quantity <= min ? 'text-muted' : 'text-foreground')}>
+        <Text className={cn('text-base font-semibold', quantity <= min ? 'text-muted-foreground' : 'text-foreground')}>
           {'\u2212'}
         </Text>
       </Pressable>
@@ -52,10 +52,10 @@ export function QuantityStepper({
         disabled={quantity >= max}
         className={cn(
           'h-8 w-8 items-center justify-center rounded-lg',
-          quantity >= max ? 'bg-surface-alt/50' : 'bg-surface-alt',
+          quantity >= max ? 'bg-muted/50' : 'bg-muted',
         )}
       >
-        <Text className={cn('text-base font-semibold', quantity >= max ? 'text-muted' : 'text-foreground')}>
+        <Text className={cn('text-base font-semibold', quantity >= max ? 'text-muted-foreground' : 'text-foreground')}>
           +
         </Text>
       </Pressable>

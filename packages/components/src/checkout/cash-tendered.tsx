@@ -66,8 +66,8 @@ export function CashTendered({
             key={`${val.currency}:${val.amount}`}
             onPress={() => handleChange(val)}
             className={cn(
-              'rounded-lg px-4 py-2',
-              amount.amount === val.amount && amount.currency === val.currency ? 'bg-primary' : 'bg-surface-alt',
+              'rounded-lg border px-4 py-2',
+              amount.amount === val.amount && amount.currency === val.currency ? 'border-primary bg-primary' : 'border-input bg-card',
             )}
           >
             <Text

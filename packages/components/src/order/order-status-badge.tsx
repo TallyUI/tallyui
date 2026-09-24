@@ -14,7 +14,7 @@ const STATUS_CONFIG: Record<OrderStatus, { label: string; badge: string; dot: st
   processing: { label: 'Processing', badge: 'bg-info/15', dot: 'bg-info', text: 'text-info' },
   completed: { label: 'Completed', badge: 'bg-success/15', dot: 'bg-success', text: 'text-success' },
   refunded: { label: 'Refunded', badge: 'bg-danger/15', dot: 'bg-danger', text: 'text-danger' },
-  cancelled: { label: 'Cancelled', badge: 'bg-muted/15', dot: 'bg-muted', text: 'text-muted' },
+  cancelled: { label: 'Cancelled', badge: 'bg-muted/15', dot: 'bg-muted', text: 'text-muted-foreground' },
 };
 
 export function OrderStatusBadge({ status, className, ...viewProps }: OrderStatusBadgeProps) {

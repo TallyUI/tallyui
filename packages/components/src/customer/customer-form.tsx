@@ -26,7 +26,7 @@ function FormField({
 }: { label: string; value: string; onChangeText: (t: string) => void } & Record<string, any>) {
   return (
     <View className="gap-1">
-      <Text className="text-xs font-medium text-muted">{label}</Text>
+      <Text className="text-xs font-medium text-muted-foreground">{label}</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}

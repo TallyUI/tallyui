@@ -34,7 +34,7 @@ export function RegisterSummary({
       {headerSlot}
 
       <View className="gap-2">
-        <Text className="text-xs font-semibold text-muted">Cash Drawer</Text>
+        <Text className="text-xs font-semibold text-muted-foreground">Cash Drawer</Text>
         <View className="flex-row justify-between">
           <Text className="text-sm text-foreground">Expected</Text>
           <Text className="text-sm text-foreground">{expectedCash.toFixed(2)}</Text>
@@ -53,12 +53,12 @@ export function RegisterSummary({
 
       {transactions.length > 0 && (
         <View className="gap-2">
-          <Text className="text-xs font-semibold text-muted">Transactions</Text>
+          <Text className="text-xs font-semibold text-muted-foreground">Transactions</Text>
           {transactions.map((t) => (
             <View key={t.method} className="flex-row items-center justify-between">
               <View className="gap-0.5">
                 <Text className="text-sm text-foreground">{t.method}</Text>
-                <Text className="text-xs text-muted">{t.count} transactions</Text>
+                <Text className="text-xs text-muted-foreground">{t.count} transactions</Text>
               </View>
               <Text className="text-sm font-semibold text-foreground">{t.total.toFixed(2)}</Text>
             </View>

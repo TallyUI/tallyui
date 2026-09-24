@@ -48,7 +48,7 @@ export function OrderDetail({
         {customerSlot && <View className="border-b border-border pb-3">{customerSlot}</View>}
 
         <View className="gap-1">
-          <Text className="text-xs font-semibold text-muted">Items</Text>
+          <Text className="text-xs font-semibold text-muted-foreground">Items</Text>
           {lineItems.map((item, i) => (
             <View key={i} className="flex-row items-center justify-between py-1">
               <Text className="flex-1 text-sm text-foreground">
@@ -61,11 +61,11 @@ export function OrderDetail({
 
         <View className="gap-1 border-t border-border pt-3">
           <View className="flex-row justify-between">
-            <Text className="text-sm text-muted">Subtotal</Text>
+            <Text className="text-sm text-muted-foreground">Subtotal</Text>
             <Text className="text-sm text-foreground">{subtotal}</Text>
           </View>
           <View className="flex-row justify-between">
-            <Text className="text-sm text-muted">Tax</Text>
+            <Text className="text-sm text-muted-foreground">Tax</Text>
             <Text className="text-sm text-foreground">{tax}</Text>
           </View>
           <View className="flex-row justify-between pt-1">

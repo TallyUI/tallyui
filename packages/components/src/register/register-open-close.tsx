@@ -30,8 +30,8 @@ export function RegisterOpenClose({
       </Text>
 
       {isOpen && expectedBalance != null && (
-        <View className="flex-row justify-between rounded-lg bg-surface-alt px-3 py-2">
-          <Text className="text-sm text-muted">Expected Balance</Text>
+        <View className="flex-row justify-between rounded-lg bg-muted px-3 py-2">
+          <Text className="text-sm text-muted-foreground">Expected Balance</Text>
           <Text className="text-sm font-semibold text-foreground">{expectedBalance.toFixed(2)}</Text>
         </View>
       )}
