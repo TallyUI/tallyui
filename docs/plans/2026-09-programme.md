@@ -806,16 +806,20 @@ T1–T11) is complete at `3996453`. The A-track (medusapos) is in progress.
 | 20 | **Docs and Snacks for the new component props** | Every component page's example typechecks against current source; Snacks updated at the first publish |
 | 21 | **M0 cleanup:** deprecated traits optional, theme-token drift, `test-d` in CI, connector checkpoint bugs (Vendure skip, WooCommerce ties, Shopify REST) | `ProductTraits` has no required deprecated members; `vitest --typecheck` runs in CI; the connector checkpoint tests cover ties |
 | 22 | **Vendure (M6)** | The same conformance suite is green against vendure-dev; plugin + connector ≤ 50% of Medusa's line count |
+| 23 | **Outbox: a 404 is visible, not silent.** After item 4 (#39), a `404` from `POST /tally/v1/commands` still retries forever, and `lastRetryReason: 'status_404'` is the only signal. The usual causes are a wrong backend URL or a plugin that isn't installed (added 2026-09-24, from the #39 review) | After N consecutive 404s the outbox pauses with a visible state, as it does for `refused`, and the app shows "backend not found or plugin missing"; a 404 during a deploy blip still recovers without the cashier doing anything |
+| 24 | **Outbox: isolate a poisoned order in a refused batch.** After item 4, a batch-level refusal pauses the whole queue and changes no order. If one malformed order causes the 400, every sale behind it waits (added 2026-09-24, from the #39 review) | With one poisoned order among 25, the outbox bisects down to batch size 1, and that one order lands in needs-attention while the other 24 are applied; a steady refusal of every batch still only pauses |
 
 **Recommended order**, driven by what testers will hit first:
 1. Items 1–2, so testers install from npm.
-2. Items 3–7, the robustness of the tester-facing sync.
+2. Items 3–7, the robustness of the tester-facing sync, followed by items
+   23–24, which harden the same outbox.
 3. Items 8–10, catalogue fidelity and the contract.
 4. Items 11–15, feature depth.
 5. Item 16, storage.
 6. Items 17–19, platforms, hardware and the demo.
 7. Items 20–21, cleanup, alongside the rest.
-8. Item 22, Vendure, once item 10 is green on Medusa.
+8. Item 22, Vendure. Its MVP starts once items 1–5 and 7 have merged
+   (ADR-053). Its M6 proper still waits for item 10 to be green on Medusa.
 
 ---
 
