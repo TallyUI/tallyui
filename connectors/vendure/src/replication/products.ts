@@ -4,6 +4,8 @@ export type VendureProductCheckpoint = {
   skip: number;
   updatedAt: string;
   passMax?: string;
+  passHighWater?: string;
+  passTotal?: number;
 };
 
 const PRODUCT_LIST_QUERY = (barcodeField?: string) => `
@@ -58,8 +60,14 @@ async function gql(
     signal: context.signal,
   });
 
-  if (!res.ok) throw new Error(`Vendure API error: ${res.status}`);
-  return res.json();
+  if (!res.ok) {
+    const body = await res.json().catch(() => undefined);
+    const message = body?.errors?.[0]?.message;
+    throw new Error(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`);
+  }
+  const body = await res.json();
+  if (body.errors?.length) throw new Error(`Vendure GraphQL error: ${body.errors[0].message}`);
+  return body;
 }
 
 /**
@@ -73,6 +81,17 @@ export const createVendureProductReplication = (barcodeField?: string): Replicat
   pull: {
     async handler(lastCheckpoint, batchSize, context) {
       if (batchSize > 1000) throw new Error('Vendure Admin API take must not exceed 1000');
+      let passHighWater = lastCheckpoint?.passHighWater ?? lastCheckpoint?.updatedAt ?? '';
+      if (!lastCheckpoint?.skip) {
+        const head = await gql(context, PRODUCT_LIST_QUERY(barcodeField), {
+          options: { take: 1, sort: { updatedAt: 'DESC' } },
+        });
+        passHighWater = head.data?.products?.items?.[0]?.updatedAt ?? lastCheckpoint?.updatedAt ?? '';
+        // Same-ms writes after this read wait for a newer mark or periodic reconcile (ADR-060, to come).
+        if (!head.data?.products?.items?.length || (lastCheckpoint?.updatedAt && passHighWater === lastCheckpoint.updatedAt)) {
+          return { documents: [], checkpoint: lastCheckpoint ?? { skip: 0, updatedAt: '' } };
+        }
+      }
       const options: Record<string, any> = {
         take: batchSize,
         skip: lastCheckpoint?.skip ?? 0,
@@ -88,23 +107,27 @@ export const createVendureProductReplication = (barcodeField?: string): Replicat
 
       const res = await gql(context, PRODUCT_LIST_QUERY(barcodeField), { options });
 
-      if (res.errors?.length) {
-        throw new Error(`Vendure GraphQL error: ${res.errors[0].message}`);
+      let data = res.data?.products;
+      let passTotal = lastCheckpoint?.passTotal ?? data.totalItems;
+      if (options.skip > 0 && data.totalItems < passTotal) {
+        options.skip = 0;
+        const restarted = await gql(context, PRODUCT_LIST_QUERY(barcodeField), { options });
+        data = restarted.data?.products;
+        passTotal = data.totalItems;
       }
-
-      const data = res.data?.products;
       const products: any[] = data?.items ?? [];
+      if (!products.length && options.skip > 0) {
+        return createVendureProductReplication(barcodeField).pull.handler(
+          { skip: 0, updatedAt: lastCheckpoint?.updatedAt ?? '' }, batchSize, context,
+        );
+      }
       const documents = products.map((p) => ({ ...p, _deleted: false }));
 
       // Keep the lower bound fixed while paging by id; advance it only at pass end.
-      const passMax = products.reduce(
-        (max, p) => p.updatedAt > max ? p.updatedAt : max,
-        lastCheckpoint?.passMax ?? lastCheckpoint?.updatedAt ?? '',
-      );
-      const checkpoint: VendureProductCheckpoint = products.length >= batchSize
-        ? { skip: (lastCheckpoint?.skip ?? 0) + products.length,
-            updatedAt: lastCheckpoint?.updatedAt ?? '', passMax }
-        : { skip: 0, updatedAt: passMax };
+      const checkpoint: VendureProductCheckpoint = options.skip + products.length >= data.totalItems
+        ? { skip: 0, updatedAt: passHighWater }
+        : { skip: options.skip + products.length,
+            updatedAt: lastCheckpoint?.updatedAt ?? '', passHighWater, passTotal };
 
       return { documents, checkpoint };
     },
