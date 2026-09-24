@@ -7,6 +7,8 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { TallyConnector } from '@tallyui/core';
 
 import { STOCK_LEVELS_COLLECTION, stockLevelsCollection } from './stock-levels';
+import { WEB_STORAGE_ENGINE, REQUIRED_MULTI_INSTANCE_BY_ENGINE, assertMultiInstanceAllowed } from './engine';
+import { withWriteDeadline } from './storage-deadline';
 
 const DEV_MODE = process.env.NODE_ENV !== 'production';
 addRxPlugin(RxDBLocalDocumentsPlugin);
@@ -55,8 +57,12 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     connector,
     name = `tally_${connector.id}`,
     storage = getRxStorageMemory(),
-    multiInstance = false,
+    multiInstance = REQUIRED_MULTI_INSTANCE_BY_ENGINE[WEB_STORAGE_ENGINE],
   } = options;
+
+  assertMultiInstanceAllowed(storage, multiInstance);
+  // ADR-061's write deadline applies only to the pinned web engine; every other storage is untouched.
+  const effectiveStorage = storage?.tallyEngine === WEB_STORAGE_ENGINE ? withWriteDeadline(storage) : storage;
 
   const collectionConfigs: Record<string, { schema: any; localDocuments?: boolean }> = {};
   for (const [collectionName, schema] of Object.entries(connector.schemas)) {
@@ -75,7 +81,7 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     name,
     // Dev mode refuses storage without a schema validator (RxDB error DVM1),
     // and validating is what makes dev mode catch bad connector documents.
-    storage: DEV_MODE ? wrappedValidateAjvStorage({ storage }) : storage,
+    storage: DEV_MODE ? wrappedValidateAjvStorage({ storage: effectiveStorage }) : effectiveStorage,
     multiInstance,
     localDocuments: multiInstance,
     // RxDB rejects this outside dev mode (DB9); in dev it lets hot reload re-create the same database.

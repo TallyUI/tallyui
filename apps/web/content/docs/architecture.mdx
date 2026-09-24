@@ -88,7 +88,7 @@ When you need connector-specific fields that aren't covered by traits, you can a
 ┌──────────────────▼──────────────────────┐
 │  RxDB (Local Database)                  │
 │  Connector-specific schemas             │
-│  IndexedDB (web) / SQLite (mobile)      │
+│  SQLite-wasm (web) / SQLite (mobile)    │
 └──────────────────┬──────────────────────┘
                    │ documents
 ┌──────────────────▼──────────────────────┐
@@ -116,15 +116,19 @@ The replication layer handles:
 
 ### Platform Storage
 
-Storage is platform-aware. The `getStorage()` factory returns the right adapter automatically:
+Storage is platform-aware. The `getStorage()` factory returns the right
+adapter for Node/SSR/tests automatically. On the web and React Native it
+throws with guidance instead: both need a storage built and bundled outside
+`@tallyui/database` (ADR-061, ADR-031).
 
 | Platform | Storage | Package |
 |----------|---------|---------|
-| Web browser | IndexedDB (via Dexie) | Built into `@tallyui/database` |
+| Web browser | RxDB Premium SQLite-wasm (opfs-sahpool), one live tab | `@tallyui/storage-sqlite` |
 | React Native | RxDB Premium SQLite (via expo-sqlite) | `@tallyui/storage-sqlite` |
 | Node / SSR / tests | In-memory | Built into `@tallyui/database` |
 
-See the [Replication guide](/docs/replication) for setup and usage details.
+See the [Replication guide](/docs/replication) for setup and usage details,
+including the web storage's breaking change from Dexie.
 
 ## Packages
 
@@ -132,7 +136,7 @@ See the [Replication guide](/docs/replication) for setup and usage details.
 |---------|---------|
 | `@tallyui/core` | Connector interfaces, trait types, React context |
 | `@tallyui/database` | RxDB factory, replication orchestrator, platform storage |
-| `@tallyui/storage-sqlite` | RxDB Premium SQLite storage for React Native (expo-sqlite) |
+| `@tallyui/storage-sqlite` | RxDB Premium SQLite storage: expo-sqlite on native, sqlite-wasm (opfs-sahpool) on the web |
 | `@tallyui/components` | UI primitives (ProductTitle, ProductPrice, etc.) |
 | `@tallyui/pos` | POS business logic — tax, currency, orders, receipts, logging |
 | `@tallyui/theme` | Shared design tokens, theming, and `cn()` utility |
