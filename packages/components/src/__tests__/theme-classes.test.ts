@@ -20,6 +20,21 @@ const sources = [root, join(repoRoot, 'apps/demo/app'), join(repoRoot, 'apps/dem
   source: readFileSync(path, 'utf8'),
 }));
 
+const docsRoot = join(repoRoot, 'apps/web/content/docs');
+const docs = readdirSync(docsRoot, { recursive: true, encoding: 'utf8' }).filter((file) => file.endsWith('.mdx')).map((file) => ({
+  file: relative(repoRoot, join(docsRoot, file)),
+  source: readFileSync(join(docsRoot, file), 'utf8'),
+}));
+
+it.each([
+  /\b(bg|text|border)-danger\b/,
+  /\btext-muted(?!-)/,
+  /\bbg-surface\b|surface-alt|--color-surface/,
+  /6366f1|6b7280/i,
+])('has no stale theme tokens in docs matching %s', (pattern) => {
+  expect(docs.filter(({ source }) => pattern.test(source)).map(({ file }) => file)).toEqual([]);
+});
+
 it('has no undefined surface-alt classes', () => {
   expect(sources.filter(({ source }) => source.includes('surface-alt')).map(({ file }) => file)).toEqual([]);
 });
