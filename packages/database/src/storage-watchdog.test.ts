@@ -232,6 +232,19 @@ describe('storage-watchdog', () => {
     expect(typeof storage.health$.subscribe).toBe('function');
   });
 
+  it('keeps prototype methods (e.g. a remote storage\'s customRequest) on the wrapped storage', () => {
+    class FakeRemoteStorage {
+      name = 'fake-remote';
+      rxdbVersion = '0.0.0';
+      tallyEngine = 'sqlite-sahpool';
+      async createStorageInstance(_params: any) { return {} as any; }
+      customRequest(msg: unknown) { return Promise.resolve(msg); }
+    }
+    const storage = withStorageWatchdog(new FakeRemoteStorage() as unknown as RxStorage<any, any>);
+    expect(typeof (storage as any).customRequest).toBe('function');
+    expect((storage as any).tallyEngine).toBe('sqlite-sahpool');
+  });
+
   it('isStorageWorkerFailure recognises a StorageWorkerStartError rejection', () => {
     const startError = new Error('StorageWorkerStartError: the opfs-sahpool worker failed to start its pool');
     startError.name = 'StorageWorkerStartError';

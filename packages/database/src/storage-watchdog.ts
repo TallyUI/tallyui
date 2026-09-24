@@ -117,7 +117,7 @@ export function withStorageWatchdog(
     return promise;
   };
 
-  return Object.assign({}, storage, {
+  return Object.assign(Object.create(storage), {
     health$: health$.asObservable(),
     async createStorageInstance(params: any) {
       const instance: any = await storage.createStorageInstance(params);

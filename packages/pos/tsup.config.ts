@@ -9,7 +9,6 @@ export default defineConfig({
     '@tallyui/core',
     'rxdb',
     'rxdb/plugins/storage-memory',
-    'rxdb/plugins/leader-election',
     'rxdb/plugins/local-documents',
     'rxjs',
   ],
