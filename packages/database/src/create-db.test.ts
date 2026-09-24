@@ -101,6 +101,8 @@ describe('createTallyDatabase', () => {
       if (stock) {
         await db.stock_levels.insert({ id: 'v1', value: [{ onHand: 3 }], updatedAt: new Date().toISOString() });
         expect((await db.stock_levels.findOne('v1').exec())?.get('value')).toEqual([{ onHand: 3 }]);
+        await db.stock_levels.upsertLocal('last-pass', { completedAt: 'x' });
+        expect((await db.stock_levels.getLocal('last-pass'))?.get('completedAt')).toBe('x');
       }
     } finally {
       await db.close();

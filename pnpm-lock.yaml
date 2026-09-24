@@ -78,6 +78,9 @@ importers:
       '@tallyui/mock-api':
         specifier: workspace:*
         version: link:../mock-api
+      '@tallyui/pos':
+        specifier: workspace:*
+        version: link:../../packages/pos
       '@tallyui/primitives':
         specifier: workspace:*
         version: link:../../packages/primitives

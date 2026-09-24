@@ -38,7 +38,7 @@ export { buildReceiptData } from './receipt';
 export type { ReceiptData, ReceiptLineItem, ReceiptConfig } from './receipt';
 
 // Product
-export { searchProducts, withStockOverlay, getProductStock, stockOverlay$ } from './product';
+export { searchProducts, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$ } from './product';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';

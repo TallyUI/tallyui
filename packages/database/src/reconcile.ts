@@ -1,6 +1,7 @@
 import type { RxCollection } from 'rxdb';
+import { BehaviorSubject, type Observable } from 'rxjs';
 
-import type { StockReconcileAdapter, SyncContext } from '@tallyui/core';
+import { STOCK_LEVELS_LAST_PASS, type StockReconcileAdapter, type SyncContext } from '@tallyui/core';
 
 import type { StockLevelRow } from './stock-levels';
 
@@ -22,6 +23,16 @@ export interface StockReconcileResult {
   /** Rows whose key the backend no longer returns */
   removed: number;
   truncated: boolean;
+  /** ISO time of a successful pass; also stored in the `last-pass` local document. */
+  completedAt?: string;
+}
+
+/** The runner's state. `lastCompletedAt` survives restarts; the rest is in memory. */
+export interface StockReconcileState {
+  lastCompletedAt?: string;
+  running: boolean;
+  truncated: boolean;
+  lastError?: unknown;
 }
 
 /**
@@ -40,7 +51,11 @@ export function startStockReconcile({
   context,
   intervalMs = 300_000,
   maxPages = 100,
-}: StartStockReconcileOptions): { reconcileStock(): Promise<StockReconcileResult>; stop(): void } {
+}: StartStockReconcileOptions): {
+  reconcileStock(): Promise<StockReconcileResult>;
+  stop(): void;
+  state$: Observable<StockReconcileState>;
+} {
   const controller = new AbortController();
   const { signal } = controller;
   // React Native's AbortController polyfill has no throwIfAborted() and may have no reason.
@@ -48,9 +63,21 @@ export function startStockReconcile({
     if (signal.aborted) throw signal.reason ?? new Error('Stock reconcile stopped');
   };
   let running: Promise<StockReconcileResult> | undefined;
+  const state = new BehaviorSubject<StockReconcileState>({ running: false, truncated: false });
+  const update = (patch: Partial<StockReconcileState>) => state.next({ ...state.value, ...patch });
+  // Every pass awaits this, so a collection without local documents (RxDB LD8) fails before fetching.
+  const lastPass = collection.getLocal<{ completedAt: string }>(STOCK_LEVELS_LAST_PASS).catch((error) => {
+    if (error?.code !== 'LD8') return null;
+    throw new Error(`Create "${collection.name}" with stockLevelsCollection (localDocuments: true); stock reconcile stores its last pass there.`, { cause: error });
+  });
+  // Seed "as of" from the last successful pass before this start, unless a pass already set it.
+  lastPass.then((doc) => {
+    if (doc && !state.value.lastCompletedAt) update({ lastCompletedAt: doc.get('completedAt') });
+  }, () => {});
 
   const pass = async (): Promise<StockReconcileResult> => {
     checkAborted();
+    await lastPass;
     // Phase 1: read every page. A fetch that throws, is truncated or is
     // aborted writes nothing, so a partial snapshot never removes rows.
     const stock = new Map<string, unknown>();
@@ -83,10 +110,26 @@ export function startStockReconcile({
       const { error } = await collection.bulkRemove(removals);
       if (error.length) throw error[0];
     }
-    return { pages, written: upserts.length, removed: removals.length, truncated: false };
+    // Rows written by this pass carry the same time.
+    const completedAt = updatedAt;
+    checkAborted();
+    await collection.upsertLocal(STOCK_LEVELS_LAST_PASS, { completedAt });
+    return { pages, written: upserts.length, removed: removals.length, truncated: false, completedAt };
   };
 
-  const reconcileStock = () => (running ??= pass().finally(() => { running = undefined; }));
+  const tracked = async (): Promise<StockReconcileResult> => {
+    update({ running: true });
+    try {
+      const result = await pass();
+      if (result.truncated) update({ running: false, truncated: true });
+      else state.next({ running: false, truncated: false, lastCompletedAt: result.completedAt });
+      return result;
+    } catch (error) {
+      update({ running: false, lastError: error });
+      throw error;
+    }
+  };
+  const reconcileStock = () => (running ??= tracked().finally(() => { running = undefined; }));
   const timer = setInterval(() => {
     reconcileStock().catch((error) => console.warn('Stock reconcile failed:', error));
   }, intervalMs);
@@ -96,9 +139,10 @@ export function startStockReconcile({
     clearInterval(timer);
     context.signal?.removeEventListener('abort', stop);
     controller.abort();
+    state.complete();
   };
   if (context.signal?.aborted) stop();
   else context.signal?.addEventListener('abort', stop);
 
-  return { reconcileStock, stop };
+  return { reconcileStock, stop, state$: state.asObservable() };
 }

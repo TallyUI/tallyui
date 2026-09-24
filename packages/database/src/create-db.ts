@@ -6,7 +6,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 
 import type { TallyConnector } from '@tallyui/core';
 
-import { STOCK_LEVELS_COLLECTION, stockLevelsSchema } from './stock-levels';
+import { STOCK_LEVELS_COLLECTION, stockLevelsCollection } from './stock-levels';
 
 const DEV_MODE = process.env.NODE_ENV !== 'production';
 addRxPlugin(RxDBLocalDocumentsPlugin);
@@ -58,16 +58,17 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     multiInstance = false,
   } = options;
 
-  const collectionConfigs: Record<string, { schema: any }> = {};
+  const collectionConfigs: Record<string, { schema: any; localDocuments?: boolean }> = {};
   for (const [collectionName, schema] of Object.entries(connector.schemas)) {
     collectionConfigs[collectionName] = { schema };
   }
-  // The stock reconcile overlay (ADR-060): local only, never replicated.
+  // The stock reconcile overlay (ADR-060): local only, never replicated. Its
+  // local documents hold the time of the last successful pass.
   if (connector.reconcile?.stock) {
     if (STOCK_LEVELS_COLLECTION in collectionConfigs) {
       throw new Error(`Connector "${connector.id}" defines a "${STOCK_LEVELS_COLLECTION}" collection; that name is reserved for the stock reconcile overlay.`);
     }
-    collectionConfigs[STOCK_LEVELS_COLLECTION] = { schema: stockLevelsSchema };
+    collectionConfigs[STOCK_LEVELS_COLLECTION] = stockLevelsCollection;
   }
 
   const db = await createRxDatabase({

@@ -3,6 +3,9 @@ import type { RxJsonSchema } from 'rxdb';
 /** Collection holding the stock reconcile overlay (ADR-060). Local only: never replicated. */
 export const STOCK_LEVELS_COLLECTION = 'stock_levels';
 
+/** Local document in `stock_levels` holding `{ completedAt }` of the last successful pass. */
+export { STOCK_LEVELS_LAST_PASS } from '@tallyui/core';
+
 /** One overlay row: the connector's stock value for one key (Vendure variant id, Medusa inventory item id). */
 export interface StockLevelRow {
   id: string;
@@ -24,3 +27,6 @@ export const stockLevelsSchema: RxJsonSchema<StockLevelRow> = {
   },
   required: ['id', 'value', 'updatedAt'],
 };
+
+/** Use this whenever you create `stock_levels` yourself: the runner stores its last pass in local documents. */
+export const stockLevelsCollection = { schema: stockLevelsSchema, localDocuments: true } as const;

@@ -2,16 +2,18 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createRxDatabase, addRxPlugin } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
+import { RxDBLocalDocumentsPlugin } from 'rxdb/plugins/local-documents';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { Subject } from 'rxjs';
 
 import { startStockReconcile } from './reconcile';
 import { startReplication } from './replication';
-import { STOCK_LEVELS_COLLECTION, stockLevelsSchema } from './stock-levels';
+import { STOCK_LEVELS_COLLECTION, stockLevelsCollection } from './stock-levels';
 import type { ReplicationAdapter, StockReconcileAdapter, SyncContext } from '@tallyui/core';
 
 addRxPlugin(RxDBDevModePlugin);
+addRxPlugin(RxDBLocalDocumentsPlugin);
 
 const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
 const productSchema = {
@@ -73,7 +75,7 @@ describe('stock reconcile beside real replication', () => {
   async function setup() {
     if (db) await db.close();
     db = await createRxDatabase({ name: `rr_${Math.random().toString(36).slice(2)}`, storage, multiInstance: false });
-    await db.addCollections({ products: { schema: productSchema }, [STOCK_LEVELS_COLLECTION]: { schema: stockLevelsSchema } });
+    await db.addCollections({ products: { schema: productSchema }, [STOCK_LEVELS_COLLECTION]: stockLevelsCollection });
     const server = makeServer();
     server.put({ id: 'p1', variants: [{ id: 'v1', stock: 5, price: 100 }] });
     server.put({ id: 'p2', variants: [{ id: 'v2', stock: 1, price: 50 }] });
