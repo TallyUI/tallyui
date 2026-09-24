@@ -29,7 +29,7 @@
   "files": [
     "dist",
     "src",
-    "scripts"
+    "scripts/*.mjs"
   ],
   "license": "MIT",
   "repository": {

@@ -1,4 +1,5 @@
 import { createRxDatabase, addRxPlugin, type RxDatabase, type RxCollection } from 'rxdb';
+import type { Observable } from 'rxjs';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { RxDBLocalDocumentsPlugin } from 'rxdb/plugins/local-documents';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
@@ -8,7 +9,7 @@ import type { TallyConnector } from '@tallyui/core';
 
 import { STOCK_LEVELS_COLLECTION, stockLevelsCollection } from './stock-levels';
 import { WEB_STORAGE_ENGINE, REQUIRED_MULTI_INSTANCE_BY_ENGINE, assertMultiInstanceAllowed } from './engine';
-import { withWriteDeadline } from './storage-deadline';
+import { withStorageWatchdog, type StorageHealth } from './storage-watchdog';
 
 const DEV_MODE = process.env.NODE_ENV !== 'production';
 addRxPlugin(RxDBLocalDocumentsPlugin);
@@ -61,8 +62,9 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
   } = options;
 
   assertMultiInstanceAllowed(storage, multiInstance);
-  // ADR-061's write deadline applies only to the pinned web engine; every other storage is untouched.
-  const effectiveStorage = storage?.tallyEngine === WEB_STORAGE_ENGINE ? withWriteDeadline(storage) : storage;
+  // ADR-061's storage watchdog applies only to the pinned web engine; every other storage is untouched.
+  const watched = storage?.tallyEngine === WEB_STORAGE_ENGINE ? withStorageWatchdog(storage) : undefined;
+  const effectiveStorage = watched ?? storage;
 
   const collectionConfigs: Record<string, { schema: any; localDocuments?: boolean }> = {};
   for (const [collectionName, schema] of Object.entries(connector.schemas)) {
@@ -88,7 +90,20 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     ignoreDuplicate: DEV_MODE,
   });
 
+  if (watched) healthByDatabase.set(db, watched.health$);
+
   await db.addCollections(collectionConfigs);
 
   return db as TallyDatabase;
+}
+
+const healthByDatabase = new WeakMap<object, Observable<StorageHealth>>();
+
+/**
+ * The storage health of a database on the web engine (ADR-061), so an app can
+ * show "saving is slow…" (`stalled`) or "storage stopped, reload" (`dead`).
+ * `undefined` for any other storage, which has no watchdog.
+ */
+export function getStorageHealth(db: TallyDatabase): Observable<StorageHealth> | undefined {
+  return healthByDatabase.get(db);
 }

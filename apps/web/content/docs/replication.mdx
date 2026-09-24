@@ -73,9 +73,21 @@ bundler can emit, and passes that as `workerInput`.
 
 This is [RxDB Premium](https://rxdb.info/premium/)'s SQLite on `sqlite-wasm`'s
 `opfs-sahpool` VFS, so your app needs a Premium licence key (ADR-031). It runs
-**one live tab per store** (see [Live tab](/docs/live-tab)), and every write
-races a 10s deadline: a dead or hung storage worker surfaces as a clear error,
-and the app's recovery is to reload.
+**one live tab per store** (see [Live tab](/docs/live-tab)), and a watchdog
+reports the storage worker's health. No storage call is ever failed on a timer,
+because a timed-out write may still commit. A write pending for more than 10s is
+flagged as `stalled`, and its promise stays pending until the worker answers.
+Reads are watched too: two silent 30s windows, with reads pending and nothing
+settling, mean the worker is `dead`, and the app's recovery is to reload.
+
+```tsx
+import { getStorageHealth } from '@tallyui/database';
+
+getStorageHealth(db)?.subscribe(({ status }) => {
+  if (status === 'stalled') showBanner('Saving is slow…');
+  if (status === 'dead') showBanner('Storage stopped. Reload the app.');
+});
+```
 
 **Switching from the previous Dexie storage is a cold resync**, not a data
 migration — the SQLite database starts empty and replicates fresh. Once the
