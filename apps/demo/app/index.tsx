@@ -40,7 +40,7 @@ function ProductList({ connector }: { connector: TallyConnector }) {
   if (error) {
     return (
       <View className="flex-1 items-center justify-center p-5">
-        <Text className="text-sm text-danger">Error: {error}</Text>
+        <Text className="text-sm text-destructive">Error: {error}</Text>
       </View>
     );
   }

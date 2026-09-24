@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { RadioGroup } from '@tallyui/primitives';
-import { PRIMARY } from '../../lib/theme-colors';
+import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 const plans = [
   { value: 'free', label: 'Free', desc: 'Basic features for personal use' },
@@ -90,7 +90,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  info: { fontSize: 14, color: '#6b7280' },
+  info: { fontSize: 14, color: MUTED_FOREGROUND },
   group: { gap: 8 },
   item: {
     flexDirection: 'row',
@@ -106,7 +106,7 @@ const s = StyleSheet.create({
   },
   itemContent: { flex: 1, gap: 2 },
   itemLabel: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  itemDesc: { fontSize: 13, color: '#6b7280' },
+  itemDesc: { fontSize: 13, color: MUTED_FOREGROUND },
   disabledText: { color: '#9ca3af' },
   radioOuter: {
     width: 20,

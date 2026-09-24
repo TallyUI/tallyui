@@ -37,7 +37,7 @@ export function CartNoteInput({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#9ca3af"
+        placeholderTextColorClassName="accent-muted-foreground"
         multiline
         className="min-h-[3rem] rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
       />

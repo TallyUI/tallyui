@@ -1,7 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { HoverCard, PortalHost } from '@tallyui/primitives';
-import { PRIMARY } from '../../lib/theme-colors';
+import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function HoverCardScreen() {
   return (
@@ -63,7 +63,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  info: { fontSize: 14, color: '#6b7280', lineHeight: 20 },
+  info: { fontSize: 14, color: MUTED_FOREGROUND, lineHeight: 20 },
   btn: {
     backgroundColor: PRIMARY,
     color: '#fff',
@@ -105,6 +105,6 @@ const s = StyleSheet.create({
   },
   avatarText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  cardDesc: { fontSize: 14, color: '#6b7280', lineHeight: 20 },
-  cardMeta: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
+  cardDesc: { fontSize: 14, color: MUTED_FOREGROUND, lineHeight: 20 },
+  cardMeta: { fontSize: 12, color: MUTED_FOREGROUND, marginTop: 4 },
 });

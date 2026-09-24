@@ -29,7 +29,7 @@ export function CartLineActions({ children, actions, className, ...viewProps }: 
             className="rounded-md px-2 py-1.5"
           >
             {action.iconSlot}
-            <Text className={cn('text-xs font-medium', action.color ?? 'text-danger')}>
+            <Text className={cn('text-xs font-medium', action.color ?? 'text-destructive')}>
               {action.label}
             </Text>
           </Pressable>

@@ -30,7 +30,7 @@ function FormField({
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholderTextColor="#9ca3af"
+        placeholderTextColorClassName="accent-muted-foreground"
         className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
         {...props}
       />

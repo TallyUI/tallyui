@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { DropdownMenu, PortalHost } from '@tallyui/primitives';
-import { PRIMARY } from '../../lib/theme-colors';
+import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function DropdownMenuScreen() {
   const [showBookmarks, setShowBookmarks] = useState(true);
@@ -130,7 +130,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  info: { fontSize: 14, color: '#6b7280' },
+  info: { fontSize: 14, color: MUTED_FOREGROUND },
   btn: {
     backgroundColor: PRIMARY,
     color: '#fff',
@@ -164,7 +164,7 @@ const s = StyleSheet.create({
   label: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#9ca3af',
+    color: MUTED_FOREGROUND,
     paddingHorizontal: 10,
     paddingTop: 6,
     paddingBottom: 2,

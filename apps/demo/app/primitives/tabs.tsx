@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Tabs } from '@tallyui/primitives';
+import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function TabsScreen() {
   return (
@@ -78,5 +79,5 @@ const s = StyleSheet.create({
     gap: 6,
   },
   panelTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  panelDesc: { fontSize: 14, color: '#6b7280', lineHeight: 20 },
+  panelDesc: { fontSize: 14, color: MUTED_FOREGROUND, lineHeight: 20 },
 });

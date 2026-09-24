@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Select, PortalHost } from '@tallyui/primitives';
-import { PRIMARY } from '../../lib/theme-colors';
+import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 const fruits = [
   { value: 'apple', label: 'Apple' },
@@ -85,7 +85,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  info: { fontSize: 14, color: '#6b7280' },
+  info: { fontSize: 14, color: MUTED_FOREGROUND },
   trigger: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -97,7 +97,7 @@ const s = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   triggerText: { fontSize: 15, color: '#111827' },
-  chevron: { fontSize: 14, color: '#6b7280' },
+  chevron: { fontSize: 14, color: MUTED_FOREGROUND },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.2)',

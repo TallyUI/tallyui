@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Slider } from '@tallyui/primitives';
-import { PRIMARY } from '../../lib/theme-colors';
+import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function SliderScreen() {
   const [defaultVal, setDefaultVal] = useState(50);
@@ -73,7 +73,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  info: { fontSize: 14, color: '#6b7280' },
+  info: { fontSize: 14, color: MUTED_FOREGROUND },
   slider: {
     height: 40,
     justifyContent: 'center',
@@ -115,5 +115,5 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 2,
   },
-  scaleLabel: { fontSize: 11, color: '#9ca3af' },
+  scaleLabel: { fontSize: 11, color: MUTED_FOREGROUND },
 });

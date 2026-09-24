@@ -19,6 +19,7 @@ declare module 'react-native' {
   }
   interface TextInputProps {
     className?: string;
+    placeholderTextColorClassName?: string;
   }
   interface FlatListProps<ItemT> {
     contentContainerClassName?: string;

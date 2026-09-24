@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { ContextMenu, PortalHost } from '@tallyui/primitives';
-import { PRIMARY } from '../../lib/theme-colors';
+import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function ContextMenuScreen() {
   const [showGrid, setShowGrid] = useState(true);
@@ -131,7 +131,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  info: { fontSize: 14, color: '#6b7280' },
+  info: { fontSize: 14, color: MUTED_FOREGROUND },
   triggerArea: {
     backgroundColor: '#f3f4f6',
     padding: 24,
@@ -141,7 +141,7 @@ const s = StyleSheet.create({
     borderStyle: 'dashed',
     alignItems: 'center',
   },
-  triggerText: { fontSize: 15, fontWeight: '600', color: '#6b7280' },
+  triggerText: { fontSize: 15, fontWeight: '600', color: MUTED_FOREGROUND },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.2)',
@@ -164,7 +164,7 @@ const s = StyleSheet.create({
   label: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#9ca3af',
+    color: MUTED_FOREGROUND,
     paddingHorizontal: 10,
     paddingTop: 6,
     paddingBottom: 2,
