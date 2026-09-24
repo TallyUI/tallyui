@@ -63,7 +63,7 @@ describe('startIdReconcile', () => {
   const revisions = async () => Object.fromEntries(
     (await db.products.find().exec()).map((d: any) => [d.id, d.revision]),
   );
-  const start = (adapter: IdReconcileAdapter<Doc>, reSync: () => void, options: { startDelayMs?: number | null; intervalMs?: number; maxPages?: number } = {}) =>
+  const start = (adapter: IdReconcileAdapter<Doc>, reSync: () => void, options: { startDelayMs?: number | null; intervalMs?: number; maxPages?: number; maxDeleteShare?: number; allowMassDelete?: boolean } = {}) =>
     startIdReconcile({ collection: db.products, adapter, context, reSync, startDelayMs: null, ...options });
 
   it('queues products missing remotely or listing a vanished variant, and calls reSync once', async () => {
@@ -76,7 +76,7 @@ describe('startIdReconcile', () => {
     const { reconcileIds, stop } = start(adapter, reSync);
 
     const result = await reconcileIds();
-    expect(result).toEqual({ pages: 1, queued: 2, truncated: false });
+    expect(result).toEqual({ pages: 1, queued: 2, truncated: false, braked: false });
     expect(enqueue).toHaveBeenCalledTimes(1);
     const [entries] = enqueue.mock.calls[0];
     expect(new Set(entries.map((e: any) => e.id))).toEqual(new Set(['p2', 'p3']));
@@ -108,7 +108,7 @@ describe('startIdReconcile', () => {
     const reSync = vi.fn();
     const { reconcileIds, stop } = start(adapter, reSync, { maxPages: 1 });
 
-    expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: true });
+    expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: true, braked: false });
     expect(enqueue).not.toHaveBeenCalled();
     expect(reSync).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/1-page limit.*nothing was queued/));
@@ -193,5 +193,83 @@ describe('startIdReconcile', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
     stop();
+  });
+
+  describe('the mass-delete brake', () => {
+    // p1, p2, p3 are already inserted by the outer beforeEach; fill up to `total`.
+    async function seed(total: number) {
+      const extra = Array.from({ length: total - 3 }, (_, i) => ({ id: `p${4 + i}`, variants: [{ id: `v${4 + i}` }] }));
+      if (extra.length) await db.products.bulkInsert(extra);
+    }
+
+    // Remote agrees on p1..p(total-missing); the rest never appear, so they're tombstones.
+    const localVariants: Record<string, string[]> = { p1: ['v1', 'v2'], p2: ['v3'], p3: ['v4', 'v5'] };
+    function missingAdapter(total: number, missing: number) {
+      const present = total - missing;
+      const page = Array.from({ length: present }, (_, i) => {
+        const id = `p${i + 1}`;
+        return { id, variantIds: localVariants[id] ?? [`v${i + 1}`] };
+      });
+      return fakeAdapter([page]);
+    }
+
+    it('brakes at 25 of 100 missing: nothing queued, reSync skipped, a warning', async () => {
+      await seed(100);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { adapter, enqueue } = missingAdapter(100, 25);
+      const reSync = vi.fn();
+      const { reconcileIds, stop } = start(adapter, reSync);
+
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(reSync).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/25 of 100.*allowMassDelete/));
+      stop();
+    });
+
+    it('allowMassDelete: true queues the same 25', async () => {
+      await seed(100);
+      const { adapter, enqueue } = missingAdapter(100, 25);
+      const reSync = vi.fn();
+      const { reconcileIds, stop } = start(adapter, reSync, { allowMassDelete: true });
+
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 25, truncated: false, braked: false });
+      expect(enqueue).toHaveBeenCalledTimes(1);
+      expect(reSync).toHaveBeenCalledTimes(1);
+      stop();
+    });
+
+    it('15 of 100 missing (under the 20% default share) queues all 15', async () => {
+      await seed(100);
+      const { adapter } = missingAdapter(100, 15);
+      const reSync = vi.fn();
+      const { reconcileIds, stop } = start(adapter, reSync);
+
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 15, truncated: false, braked: false });
+      expect(reSync).toHaveBeenCalledTimes(1);
+      stop();
+    });
+
+    it('3 of 5 missing (at or under the 10-product minimum) queues all 3', async () => {
+      await seed(5);
+      const { adapter } = missingAdapter(5, 3);
+      const reSync = vi.fn();
+      const { reconcileIds, stop } = start(adapter, reSync);
+
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 3, truncated: false, braked: false });
+      expect(reSync).toHaveBeenCalledTimes(1);
+      stop();
+    });
+
+    it('maxDeleteShare: 0.5 with 25 of 100 missing queues all 25', async () => {
+      await seed(100);
+      const { adapter } = missingAdapter(100, 25);
+      const reSync = vi.fn();
+      const { reconcileIds, stop } = start(adapter, reSync, { maxDeleteShare: 0.5 });
+
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 25, truncated: false, braked: false });
+      expect(reSync).toHaveBeenCalledTimes(1);
+      stop();
+    });
   });
 });

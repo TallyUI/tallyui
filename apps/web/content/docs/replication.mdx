@@ -157,7 +157,7 @@ Each connector uses a checkpoint format that matches its API's pagination model:
 |-----------|-----------|---------------|
 | WooCommerce | `{ id, modified }` | `?modified_after=` ordered by date |
 | Shopify | `{ updated_at }` | `?updated_at_min=` with Link header cursors |
-| Medusa | `{ offset, updated_at, pass_mark?, pass_count? }` | Pass-based: `?updated_at[gte]=` from a high-water mark, `order=id`, offset pages, ends on `count` |
+| Medusa | `{ offset, updated_at, pass_mark?, pass_count? }` | Pass-based: `?updated_at[$gte]=` from a high-water mark, `order=id`, offset pages, ends on `count` |
 | Vendure | `{ skip, updatedAt, passHighWater?, passTotal? }` | Pass-based: `updatedAt.after` from a high-water mark (−1 ms), `sort: { id: ASC }`, take/skip, ends on `totalItems` |
 
 ## Writing a Pull Adapter
@@ -231,3 +231,8 @@ should follow them.
   exact filter semantics: exact multiples of the batch size, mid-pass
   updates, mid-pass deletions, and ties.
 - Also add an env-gated live test against the backend's dev store.
+- **Prove every incremental filter live with a future-dated mark.** A
+  fake server honours whatever it is sent, so a misspelt filter passes
+  every unit test. Medusa 2.21 silently ignored `updated_at[gte]` and
+  returned the whole catalogue; only `updated_at[$gte]` filters. A
+  live test asserts that a mark in the future returns nothing.

@@ -74,7 +74,8 @@ export const medusaProductSync: CollectionSync = {
 
   async fetchModifiedAfter(date: string, context: SyncContext): Promise<any[]> {
     const response = await fetch(
-      `${context.baseUrl}/admin/products?updated_at[gte]=${date}&limit=100&fields=*variants,*variants.prices,*images,*categories,*tags,*options,*options.values`,
+      // Medusa 2.21 honours only the operator form; `updated_at[gte]` is silently dropped.
+      `${context.baseUrl}/admin/products?updated_at[$gte]=${date}&limit=100&fields=*variants,*variants.prices,*images,*categories,*tags,*options,*options.values`,
       {
         headers: {
           ...context.headers,

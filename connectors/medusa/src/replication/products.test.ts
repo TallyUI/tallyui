@@ -59,7 +59,8 @@ describe('medusaProductReplication.pull.handler', () => {
 
     const calledUrl = (globalThis.fetch as any).mock.calls[0][0];
     expect(calledUrl).toContain('offset=50');
-    expect(calledUrl).toContain('updated_at%5Bgte%5D=2026-01-15T00%3A00%3A00Z');
+    expect(calledUrl).toContain('updated_at%5B%24gte%5D=2026-01-15T00%3A00%3A00Z');
+    expect(calledUrl).not.toContain('updated_at%5Bgte%5D=');
 
     // Finish at count; a legacy pass must not advance past its known lower bound.
     expect(result.checkpoint).toEqual({ offset: 0, updated_at: checkpoint.updated_at });
@@ -162,6 +163,7 @@ describe('medusaProductReplication.pull.handler', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     const restarted = new URL(String(fetchSpy.mock.calls[1][0])).searchParams;
     expect(restarted.get('offset')).toBe('0');
-    expect(restarted.get('updated_at[gte]')).toBe(checkpoint.updated_at);
+    expect(restarted.get('updated_at[$gte]')).toBe(checkpoint.updated_at);
+    expect(restarted.has('updated_at[gte]')).toBe(false);
   });
 });

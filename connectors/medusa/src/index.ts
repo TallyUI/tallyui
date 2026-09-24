@@ -1,10 +1,14 @@
-import { SignInError, type ConnectorAuth, type TallyConnector } from '@tallyui/core';
+import { combinePullAdapters, createReconcileFeed, SignInError, type ConnectorAuth, type TallyConnector } from '@tallyui/core';
 
 import { medusaProductSchema } from './schemas/products';
 import { medusaProductTraits } from './traits/product';
 import { medusaProductSync } from './sync/products';
 import { medusaProductReplication } from './replication/products';
 import { medusaStockReconcile } from './reconcile/stock';
+import { fetchByIds, fetchPages, variantIds } from './reconcile/ids';
+
+// The id reconcile's corrections reach `products` only through this pull adapter (ADR-060).
+const idFeed = createReconcileFeed({ fetchByIds });
 
 export const medusaSecretKeyAuth: ConnectorAuth = {
   type: 'Medusa Admin API',
@@ -109,11 +113,17 @@ export const medusaConnector: TallyConnector = {
   },
 
   replication: {
-    products: medusaProductReplication,
+    // One replication per collection: the product and id-reconcile feeds
+    // share it (ADR-060). reconcile is last so its fetch wins duplicates.
+    products: combinePullAdapters({
+      products: medusaProductReplication,
+      reconcile: idFeed.adapter,
+    }, { legacyKey: 'products' }),
   },
 
   reconcile: {
     stock: medusaStockReconcile,
+    ids: { fetchPages, variantIds, enqueue: idFeed.enqueue },
   },
 };
 
