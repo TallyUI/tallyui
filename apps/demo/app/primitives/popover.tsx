@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Popover, PortalHost } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function PopoverScreen() {
   return (
@@ -67,7 +68,7 @@ const s = StyleSheet.create({
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
   info: { fontSize: 14, color: '#6b7280', lineHeight: 20 },
   btn: {
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
     color: '#fff',
     paddingVertical: 10,
     paddingHorizontal: 16,

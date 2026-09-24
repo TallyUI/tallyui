@@ -29,7 +29,7 @@ export function OrderCard({
   return (
     <Wrapper
       onPress={onPress}
-      className={cn('gap-2 rounded-lg border border-border bg-surface p-3', className)}
+      className={cn('gap-2 rounded-lg border border-border bg-card p-3', className)}
       {...viewProps}
     >
       <View className="flex-row items-center justify-between">

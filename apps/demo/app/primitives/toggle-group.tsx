@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { ToggleGroup } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function ToggleGroupScreen() {
   const [singleValue, setSingleValue] = useState<string | undefined>('center');
@@ -101,7 +102,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   itemActive: {
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
   },
   itemText: { fontSize: 14, fontWeight: '600', color: '#374151' },
   itemTextActive: { color: '#fff' },

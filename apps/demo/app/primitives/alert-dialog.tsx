@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { AlertDialog, PortalHost } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function AlertDialogScreen() {
   const [controlled, setControlled] = useState(false);
@@ -79,7 +80,7 @@ const s = StyleSheet.create({
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
   info: { fontSize: 14, color: '#6b7280' },
   btn: {
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
     color: '#fff',
     paddingVertical: 10,
     paddingHorizontal: 16,

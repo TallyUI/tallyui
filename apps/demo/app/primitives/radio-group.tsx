@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { RadioGroup } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 const plans = [
   { value: 'free', label: 'Free', desc: 'Basic features for personal use' },
@@ -112,7 +113,7 @@ const s = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#6366f1',
+    borderColor: PRIMARY,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -123,6 +124,6 @@ const s = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
   },
 });

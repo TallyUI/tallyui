@@ -17,45 +17,49 @@ pnpm add @tallyui/theme
 
 Tokens are defined in `@tallyui/theme/tokens.css` using Tailwind 4's `@theme` directive. They map to semantic Tailwind classes:
 
-### Backgrounds
+Each colour token becomes Tailwind classes such as `bg-<name>`, `text-<name>` and `border-<name>`. A `-foreground` token is the text colour to use on its base colour. Contrast is checked by `packages/theme/src/contrast.test.ts`: 4.5:1 for text and 3:1 for control borders (WCAG 2.x AA).
 
-| Token | Class | Light | Dark |
-|-------|-------|-------|------|
-| `--color-bg` | `bg-bg` | `#f8f9fa` | `#0d1117` |
-| `--color-surface` | `bg-surface` | `#ffffff` | `#161b22` |
-| `--color-surface-alt` | `bg-surface-alt` | `#f3f4f6` | `#1c2128` |
+### Surfaces and text
 
-### Text
+| Token | Light | Dark | Use |
+|-------|-------|------|-----|
+| `--color-background` | `#f8f9fa` | `#0d1117` | Page background |
+| `--color-foreground` | `#111827` | `#c9d1d9` | Body text |
+| `--color-card` | `#ffffff` | `#161b22` | Cards and tiles |
+| `--color-card-foreground` | `#111827` | `#c9d1d9` | Text on cards |
+| `--color-popover` | `#ffffff` | `#1c2128` | Popovers and menus |
+| `--color-popover-foreground` | `#111827` | `#c9d1d9` | Text in popovers |
+| `--color-muted` | `#f3f4f6` | `#1c2128` | Subtle panels (a background, never a text colour) |
+| `--color-muted-foreground` | `#656c79` | `#8b949e` | Secondary text and labels |
+| `--color-secondary` | `#f3f4f6` | `#1c2128` | Secondary buttons |
+| `--color-secondary-foreground` | `#111827` | `#c9d1d9` | Text on secondary |
+| `--color-accent` | `#f3f4f6` | `#1c2128` | Hover and inactive chips |
+| `--color-accent-foreground` | `#111827` | `#c9d1d9` | Text on accent |
 
-| Token | Class | Light | Dark |
-|-------|-------|-------|------|
-| `--color-foreground` | `text-foreground` | `#111827` | `#c9d1d9` |
-| `--color-muted` | `text-muted` | `#6b7280` | `#8b949e` |
-| `--color-bright` | `text-bright` | `#f9fafb` | `#f0f6fc` |
+### Actions and status
 
-### Status
+| Token | Light | Dark | Foreground (light / dark) |
+|-------|-------|------|---------------------------|
+| `--color-primary` | `#5b5ef0` | `#818cf8` | `#ffffff` / `#1e1b4b` |
+| `--color-destructive` | `#dc2626` | `#f85149` | `#ffffff` / `#0d1117` |
+| `--color-success` | `#047857` | `#3fb950` | `#ffffff` / `#0d1117` |
+| `--color-warning` | `#b45309` | `#d29922` | `#ffffff` / `#0d1117` |
+| `--color-info` | `#2563eb` | `#58a6ff` | `#ffffff` / `#0d1117` |
 
-| Token | Class | Light | Dark |
-|-------|-------|-------|------|
-| `--color-success` | `text-success` | `#059669` | `#3fb950` |
-| `--color-danger` | `text-danger` | `#dc2626` | `#f85149` |
-| `--color-warning` | `text-warning` | `#d97706` | `#d29922` |
-| `--color-info` | `text-info` | `#3b82f6` | `#58a6ff` |
+### Borders
+
+| Token | Light | Dark | Use |
+|-------|-------|------|-----|
+| `--color-border` | `#e5e7eb` | `#3d444d` | Card edges and dividers |
+| `--color-input` | `#848a94` | `#636c76` | Borders of inputs and buttons (≥ 3:1) |
+| `--color-ring` | `#5b5ef0` | `#818cf8` | Focus ring |
 
 ### Commerce
 
-| Token | Class | Light | Dark |
-|-------|-------|-------|------|
-| `--color-price` | `text-price` | `#059669` | `#3fb950` |
-| `--color-sale` | `text-sale` | `#dc2626` | `#f85149` |
-
-### Other
-
-| Token | Class | Light | Dark |
-|-------|-------|-------|------|
-| `--color-border` | `border-border` | `#e5e7eb` | `#30363d` |
-| `--color-primary` | `bg-primary` | `#6366f1` | `#818cf8` |
-| `--color-primary-foreground` | `text-primary-foreground` | `#ffffff` | `#1e1b4b` |
+| Token | Light | Dark | Use |
+|-------|-------|------|-----|
+| `--color-price` | `#047857` | `#3fb950` | Prices |
+| `--color-sale` | `#dc2626` | `#f85149` | Sale prices |
 
 ## Theming
 
@@ -79,7 +83,7 @@ Uniwind.setTheme('system');
 You can also use Tailwind's `dark:` prefix for one-off overrides:
 
 ```tsx
-<View className="bg-surface dark:bg-surface-alt">
+<View className="bg-card dark:bg-muted">
   <Text className="text-foreground">Adapts to theme</Text>
 </View>
 ```

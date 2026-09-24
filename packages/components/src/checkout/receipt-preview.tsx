@@ -32,7 +32,7 @@ export function ReceiptPreview({
   ...viewProps
 }: ReceiptPreviewProps) {
   return (
-    <View className={cn('rounded-lg border border-border bg-surface p-4', className)} {...viewProps}>
+    <View className={cn('rounded-lg border border-border bg-card p-4', className)} {...viewProps}>
       {headerSlot && <View className="mb-3 items-center border-b border-dashed border-border pb-3">{headerSlot}</View>}
 
       <View className="gap-1">

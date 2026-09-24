@@ -16,6 +16,7 @@ import { medusaConnector } from '@tallyui/connector-medusa';
 import type { TallyConnector } from '@tallyui/core';
 
 import { useDemoDatabase } from '../lib/use-demo-database';
+import { PRIMARY } from '../lib/theme-colors';
 
 const connectors = [woocommerceConnector, medusaConnector];
 
@@ -30,8 +31,8 @@ function ProductList({ connector }: { connector: TallyConnector }) {
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center p-5">
-        <ActivityIndicator size="large" color="#6366f1" />
-        <Text className="mt-3 text-sm text-muted">Setting up {connector.name} database...</Text>
+        <ActivityIndicator size="large" color={PRIMARY} />
+        <Text className="mt-3 text-sm text-muted-foreground">Setting up {connector.name} database...</Text>
       </View>
     );
   }
@@ -51,19 +52,19 @@ function ProductList({ connector }: { connector: TallyConnector }) {
         keyExtractor={(item) => traits.getId(item)}
         contentContainerClassName="gap-2 p-4"
         renderItem={({ item }) => (
-          <View className="flex-row gap-3 rounded-lg bg-surface p-3 shadow-sm">
+          <View className="flex-row gap-3 rounded-lg bg-card p-3 shadow-sm">
             <ProductImage doc={item} size={60} />
             <View className="flex-1 justify-center gap-0.5">
               <ProductTitle doc={item} className="text-base font-semibold" numberOfLines={1} />
               <ProductPrice doc={item} className="text-[15px] font-medium" />
-              <Text className="mt-0.5 text-xs text-muted">
+              <Text className="mt-0.5 text-xs text-muted-foreground">
                 SKU: {traits.getSku(item) ?? '—'} · {traits.getStockStatus(item)}
               </Text>
             </View>
           </View>
         )}
         ListEmptyComponent={
-          <Text className="mt-10 text-center text-sm text-muted">No products found.</Text>
+          <Text className="mt-10 text-center text-sm text-muted-foreground">No products found.</Text>
         }
       />
     </ConnectorProvider>
@@ -111,7 +112,7 @@ export default function DemoScreen() {
 
         {/* Connector picker */}
         <View className="px-4 pb-2 pt-4">
-          <Text className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-muted">
+          <Text className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
             Active Connector:
           </Text>
           <View className="flex-row gap-2">

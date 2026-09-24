@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Slider } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function SliderScreen() {
   const [defaultVal, setDefaultVal] = useState(50);
@@ -84,7 +85,7 @@ const s = StyleSheet.create({
   },
   range: {
     height: '100%',
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
     borderRadius: 3,
   },
   thumb: {
@@ -92,7 +93,7 @@ const s = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
     marginLeft: -12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },

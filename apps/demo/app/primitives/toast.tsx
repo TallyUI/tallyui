@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Toast } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function ToastScreen() {
   const [fgOpen, setFgOpen] = useState(false);
@@ -99,7 +100,7 @@ const s = StyleSheet.create({
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
   info: { fontSize: 14, color: '#6b7280', lineHeight: 20 },
   btn: {
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
     color: '#fff',
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -131,7 +132,7 @@ const s = StyleSheet.create({
     marginTop: 6,
   },
   actionBtn: {
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
     color: '#fff',
     paddingVertical: 6,
     paddingHorizontal: 12,

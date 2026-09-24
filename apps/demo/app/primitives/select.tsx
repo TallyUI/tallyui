@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Select, PortalHost } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 const fruits = [
   { value: 'apple', label: 'Apple' },
@@ -123,7 +124,7 @@ const s = StyleSheet.create({
     borderRadius: 6,
   },
   itemText: { fontSize: 15, color: '#111827' },
-  check: { color: '#6366f1', fontWeight: '700', fontSize: 16 },
+  check: { color: PRIMARY, fontWeight: '700', fontSize: 16 },
   btn: {
     backgroundColor: '#e5e7eb',
     color: '#374151',

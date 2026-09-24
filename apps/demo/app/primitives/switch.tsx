@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Switch } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function SwitchScreen() {
   const [controlled, setControlled] = useState(false);
@@ -76,7 +77,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   trackOn: {
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
   },
   disabledTrack: {
     backgroundColor: '#f3f4f6',

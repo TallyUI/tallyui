@@ -9,6 +9,7 @@ const tokens = (block: string) => Object.fromEntries(
 );
 const base = tokens(css.match(/@theme\s*\{([^}]*)\}/)![1]);
 const light = tokens(css.match(/@variant light\s*\{([^}]*)\}/)![1]);
+const dark = tokens(css.match(/@variant dark\s*\{([^}]*)\}/)![1]);
 
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map((offset) => {
@@ -44,6 +45,12 @@ describe.each([['base', base], ['light', light]] as const)('%s theme contrast', 
     ['muted-foreground', 'card', 4.5],
     ['muted-foreground', 'muted', 4.5],
     ['primary', 'background', 4.5],
+    ['destructive-foreground', 'destructive', 4.5],
+    ['success-foreground', 'success', 4.5],
+    ['warning-foreground', 'warning', 4.5],
+    ['info-foreground', 'info', 4.5],
+    ['price', 'card', 4.5],
+    ['sale', 'card', 4.5],
     ['success', 'muted', 3.0],
     ['input', 'background', 3.0],
     ['input', 'card', 3.0],
@@ -53,6 +60,30 @@ describe.each([['base', base], ['light', light]] as const)('%s theme contrast', 
   });
 });
 
-it.each(['primary', 'ring', 'muted-foreground', 'input'])('%s matches in both light blocks', (name) => {
+describe('dark theme contrast', () => {
+  it.each([
+    ['foreground', 'background', 4.5],
+    ['foreground', 'card', 4.5],
+    ['foreground', 'muted', 4.5],
+    ['muted-foreground', 'background', 4.5],
+    ['muted-foreground', 'card', 4.5],
+    ['muted-foreground', 'muted', 4.5],
+    ['primary-foreground', 'primary', 4.5],
+    ['primary', 'background', 4.5],
+    ['destructive-foreground', 'destructive', 4.5],
+    ['success-foreground', 'success', 4.5],
+    ['warning-foreground', 'warning', 4.5],
+    ['info-foreground', 'info', 4.5],
+    ['price', 'card', 4.5],
+    ['sale', 'card', 4.5],
+    ['input', 'background', 3.0],
+    ['input', 'card', 3.0],
+    ['input', 'muted', 3.0],
+  ] as const)('%s on %s meets %s:1', (foreground, background, minimum) => {
+    expect(contrast(dark[foreground], dark[background])).toBeGreaterThanOrEqual(minimum);
+  });
+});
+
+it.each(['primary', 'ring', 'muted-foreground', 'input', 'success', 'warning', 'info', 'price'])('%s matches in both light blocks', (name) => {
   expect(base[name]).toBe(light[name]);
 });
