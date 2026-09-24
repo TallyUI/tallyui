@@ -17,7 +17,7 @@ export function SettingsGroup({ title, description, children, className, ...view
         <Text className="text-sm font-semibold text-foreground">{title}</Text>
         {description && <Text className="text-xs text-muted-foreground">{description}</Text>}
       </View>
-      <View className="rounded-lg border border-border bg-surface">{children}</View>
+      <View className="rounded-lg border border-border bg-card">{children}</View>
     </View>
   );
 }

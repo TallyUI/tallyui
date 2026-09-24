@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Toggle } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function ToggleScreen() {
   const [controlled, setControlled] = useState(false);
@@ -73,8 +74,8 @@ const s = StyleSheet.create({
     backgroundColor: '#fff',
   },
   togglePressed: {
-    backgroundColor: '#6366f1',
-    borderColor: '#6366f1',
+    backgroundColor: PRIMARY,
+    borderColor: PRIMARY,
   },
   toggleText: { fontSize: 15, fontWeight: '600', color: '#374151' },
   toggleTextPressed: { color: '#fff' },

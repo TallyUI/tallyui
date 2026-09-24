@@ -30,7 +30,7 @@ export function ConnectorStatus({
   const config = STATUS_CONFIG[status];
 
   return (
-    <View className={cn('gap-2 rounded-lg border border-border bg-surface p-3', className)} {...viewProps}>
+    <View className={cn('gap-2 rounded-lg border border-border bg-card p-3', className)} {...viewProps}>
       <View className="flex-row items-center justify-between">
         <Text className="text-sm font-semibold text-foreground">{name}</Text>
         <View className="flex-row items-center gap-1.5">

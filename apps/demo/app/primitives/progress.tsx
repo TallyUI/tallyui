@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Progress } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function ProgressScreen() {
   return (
@@ -65,7 +66,7 @@ const s = StyleSheet.create({
   },
   indicator: {
     height: '100%',
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
     borderRadius: 5,
   },
   indeterminate: {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Checkbox } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function CheckboxScreen() {
   const [controlled, setControlled] = useState(false);
@@ -80,7 +81,7 @@ const s = StyleSheet.create({
     width: 24,
     height: 24,
     borderWidth: 2,
-    borderColor: '#6366f1',
+    borderColor: PRIMARY,
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
@@ -89,7 +90,7 @@ const s = StyleSheet.create({
     borderColor: '#d1d5db',
     backgroundColor: '#f3f4f6',
   },
-  check: { color: '#6366f1', fontWeight: '700', fontSize: 14 },
+  check: { color: PRIMARY, fontWeight: '700', fontSize: 14 },
   label: { fontSize: 15, color: '#111827' },
   disabledLabel: { color: '#9ca3af' },
 });

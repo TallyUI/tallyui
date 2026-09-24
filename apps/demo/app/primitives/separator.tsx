@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Separator } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 export default function SeparatorScreen() {
   return (
@@ -91,7 +92,7 @@ const s = StyleSheet.create({
   },
   decorative: {
     height: 2,
-    backgroundColor: '#6366f1',
+    backgroundColor: PRIMARY,
     borderRadius: 1,
     opacity: 0.3,
   },

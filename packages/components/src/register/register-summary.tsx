@@ -30,7 +30,7 @@ export function RegisterSummary({
   const discrepancy = actualCash - expectedCash;
 
   return (
-    <View className={cn('gap-4 rounded-lg border border-border bg-surface p-4', className)} {...viewProps}>
+    <View className={cn('gap-4 rounded-lg border border-border bg-card p-4', className)} {...viewProps}>
       {headerSlot}
 
       <View className="gap-2">

@@ -39,7 +39,7 @@ export function CartNoteInput({
         placeholder={placeholder}
         placeholderTextColor="#9ca3af"
         multiline
-        className="min-h-[3rem] rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
+        className="min-h-[3rem] rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
       />
     </View>
   );

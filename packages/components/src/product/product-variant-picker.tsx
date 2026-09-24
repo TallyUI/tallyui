@@ -39,7 +39,7 @@ export function ProductVariantPicker({
                   onPress={() => handleSelect(option.name, value)}
                   className={cn(
                     'rounded-lg border px-3 py-1.5',
-                    active ? 'border-primary bg-primary/10' : 'border-border bg-surface',
+                    active ? 'border-primary bg-primary/10' : 'border-border bg-card',
                   )}
                 >
                   <Text

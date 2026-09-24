@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Image as PrimitiveImage } from '@tallyui/primitives';
+import { PRIMARY } from '../../lib/theme-colors';
 
 const modes = ['cover', 'contain', 'fill'] as const;
 
@@ -60,7 +61,7 @@ const s = StyleSheet.create({
   modeLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#6366f1',
+    color: PRIMARY,
     fontFamily: 'monospace',
   },
   imageWrap: {
