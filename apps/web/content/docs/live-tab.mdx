@@ -1,0 +1,72 @@
+---
+title: Live Tab
+description: Exactly one live tab per store, with the take-over and the parked screen
+---
+
+ADR-061 decides that there is exactly one **live** tab per store, and that a second tab never opens storage. `startLiveTab` from `@tallyui/database` coordinates this over a Web Lock and a `BroadcastChannel`, and `LiveTabScreen` from `@tallyui/components` renders what a tab shows once it is no longer the live one.
+
+On platforms without Web Locks (React Native, Node, tests), a tab is simply live: native and Electron have one window per store.
+
+## The protocol
+
+- A new tab asks the current live tab to hand over.
+- The live tab closes its storage, releases the lock and parks on a "POS is open in another tab" screen.
+- The live tab may delay the hand-over only while a sale or a write is in flight, and only up to a limit.
+- If nothing answers, the new tab tells the user to close the other tab.
+- Reload is the recovery.
+
+`startLiveTab` returns a `state$` observable of `'acquiring' | 'live' | 'parked' | 'blocked'`, a `takeOver()` for the parked screen's "Use here" button, and a `stop()` for sign-out or unmount.
+
+After a back or forward navigation restores the page from the browser's cache, the coordinator re-acquires by itself (`acquiring`, then `live` or `blocked`), so the app needs no extra handling. `onPark` already ran (best-effort) when the page was cached, so this `live` is a **fresh open**, not a continuation: the app re-creates its database exactly as it does on the wiring example's first `live`.
+
+## Wiring it up
+
+```tsx
+import { startLiveTab } from '@tallyui/database';
+import { LiveTabScreen } from '@tallyui/components';
+
+const liveTab = startLiveTab({
+  scope: storeId,
+  // Close the database and stop background workers before the other tab takes over.
+  // The worker terminates synchronously first, so a page frozen mid-close still released it.
+  onPark: async () => {
+    dbWorker.terminate();
+    await db.close();
+    stockReconcile.stop();
+  },
+  // The hand-over waits while this returns true: a sale is mid-checkout, or
+  // the outbox is sending an order.
+  isBusy: () => outbox.state$.value.sending || checkout.step !== 'idle',
+});
+
+function App() {
+  const state = useObservable(liveTab.state$, 'acquiring');
+
+  return (
+    <>
+      <LiveTabScreen state={state} onUseHere={liveTab.takeOver} onReload={() => location.reload()} />
+      {state === 'acquiring' && <Loading />}
+      {state === 'live' && <POS />}
+    </>
+  );
+}
+```
+
+The POS, and the database it opens, renders only for `'live'`: an `acquiring` tab must not open storage while another tab still holds it, and the app drops the POS whenever the state leaves `'live'` for any reason, including `pagehide`.
+
+`onPark` must finish closing the database and stop its storage worker before it returns: the lock is released only after it returns, so the new tab never opens storage while the old tab still holds it.
+
+Call `liveTab.stop()` on sign-out or unmount, so the lock and the channel are released.
+
+## Translating the screen
+
+Every string on `LiveTabScreen` is a prop with an English default, so an app can translate them: `parkedTitle`, `parkedBody`, `useHereLabel`, `blockedBody` and `reloadLabel`.
+
+```tsx
+<LiveTabScreen
+  state={state}
+  onUseHere={liveTab.takeOver}
+  onReload={() => location.reload()}
+  parkedTitle="POS ist in einem anderen Tab geöffnet"
+/>
+```

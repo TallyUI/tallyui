@@ -6,9 +6,9 @@ worker on the web (ADR-061 in `docs/DECISIONS.md`).
 
 `rxdb-premium` needs a licence key to install (ADR-031). Locally, set
 `RXDB_PREMIUM=<token>`, see `docs/CONTRIBUTING.md`; in CI it comes from the
-`RXDB_LICENSE_KEY` secret. `@sqlite.org/sqlite-wasm` and `expo-sqlite` are
-both optional peer dependencies: a native app installs only the first, a web
-app only the second.
+`RXDB_PREMIUM` secret. `expo-sqlite` and `@sqlite.org/sqlite-wasm` are both
+optional peer dependencies: a native app installs only the first, a web app
+only the second.
 
 ## Web (SQLite-wasm)
 
@@ -54,15 +54,29 @@ export default defineConfig({
 
 Metro cannot bundle a module worker, so a Metro app prebuilds the
 `@tallyui/storage-sqlite/web-worker` entry, together with `sqlite3.wasm`,
-into the app's `public/` folder — for example with a small esbuild script —
-and passes that built file's string URL as `workerInput`:
+into the app's `public/` folder, as part of the app's own build:
 
-```ts
-const storage = getRxStorageSQLiteWasm({ workerInput: '/tallyui-storage-worker.js' });
+```sh
+npm install --save-dev esbuild
+npx tallyui-build-sqlite-worker public/
 ```
 
-WCPOS `next` prebuilds its own worker the same way; point an esbuild script
-at it for the exact build step.
+Add the built files to the app's `.gitignore` (they link rxdb-premium code
+under the app's own licence, so they must never be committed or published):
+
+```
+public/tallyui-sqlite-worker.js
+public/sqlite3.wasm
+```
+
+and pass the built file's string URL as `workerInput`:
+
+```ts
+const storage = getRxStorageSQLiteWasm({ workerInput: '/tallyui-sqlite-worker.js' });
+```
+
+WCPOS `next` prebuilds its own worker the same way, as part of its own build
+step.
 
 `workerOptions` (the module type and the worker's debug name) only applies
 when `workerInput` is a string or URL — RxDB Premium then constructs the

@@ -9,7 +9,7 @@ describe('createTallyDatabase', () => {
     vi.unstubAllEnvs();
   });
 
-  it.each([undefined, true])('sets multiInstance to %s, defaulting to false', async (multiInstance) => {
+  it('defaults multiInstance to false (ADR-061: multiInstance: true now throws, see engine.test.ts)', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.resetModules();
     const { createTallyDatabase } = await import('./create-db');
@@ -28,18 +28,13 @@ describe('createTallyDatabase', () => {
       schemas: { products: schema },
     } as unknown as TallyConnector;
     const db = await createTallyDatabase({
-      connector, multiInstance,
+      connector,
       name: `multi_test_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       storage: getRxStorageMemory(),
     });
     try {
-      expect(db.multiInstance).toBe(multiInstance ?? false);
-      if (multiInstance) {
-        await db.upsertLocal('outbox-test', { authRequired: true });
-        expect((await db.getLocal('outbox-test'))?.get('authRequired')).toBe(true);
-      } else {
-        await expect(db.getLocal('outbox-test')).rejects.toThrow();
-      }
+      expect(db.multiInstance).toBe(false);
+      await expect(db.getLocal('outbox-test')).rejects.toThrow();
     } finally {
       await db.close();
     }
