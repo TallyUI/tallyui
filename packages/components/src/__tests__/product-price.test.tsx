@@ -92,6 +92,77 @@ describe('ProductPrice', () => {
     expect(screen.getByText('-')).toBeDefined();
   });
 
+  it('shows "from" the lowest price when variant prices differ', () => {
+    const connector = createTestConnector('medusa');
+    const variants = [
+      { ...medusaDoc.variants[0], id: 'var-1', prices: [{ amount: 10, currency_code: 'eur' }] },
+      { ...medusaDoc.variants[0], id: 'var-2', prices: [{ amount: 11, currency_code: 'eur' }] },
+    ];
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductPrice doc={{ ...medusaDoc, variants }} locale="en-US" />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('from €10.00')).toBeDefined();
+  });
+
+  it('renders the default variant\'s price when showFromPrice is false', () => {
+    const connector = createTestConnector('medusa');
+    const variants = [
+      { ...medusaDoc.variants[0], id: 'var-1', prices: [{ amount: 10, currency_code: 'eur' }] },
+      { ...medusaDoc.variants[0], id: 'var-2', prices: [{ amount: 11, currency_code: 'eur' }] },
+    ];
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductPrice doc={{ ...medusaDoc, variants }} locale="en-US" showFromPrice={false} />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('€10.00')).toBeDefined();
+  });
+
+  it('uses a custom fromLabel', () => {
+    const connector = createTestConnector('medusa');
+    const variants = [
+      { ...medusaDoc.variants[0], id: 'var-1', prices: [{ amount: 10, currency_code: 'eur' }] },
+      { ...medusaDoc.variants[0], id: 'var-2', prices: [{ amount: 11, currency_code: 'eur' }] },
+    ];
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductPrice doc={{ ...medusaDoc, variants }} locale="en-US" fromLabel="ab" />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('ab €10.00')).toBeDefined();
+  });
+
+  it('shows the range even when the default variant has no price in that currency', () => {
+    const connector = createTestConnector('medusa');
+    const variants = [
+      { ...medusaDoc.variants[0], id: 'var-0', prices: [{ amount: 5, currency_code: 'usd' }] },
+      { ...medusaDoc.variants[0], id: 'var-1', prices: [{ amount: 10, currency_code: 'eur' }] },
+      { ...medusaDoc.variants[0], id: 'var-2', prices: [{ amount: 11, currency_code: 'eur' }] },
+    ];
+    render(
+      <ConnectorProvider connector={connector} traitContext={{ currency: 'EUR' }}>
+        <ProductPrice doc={{ ...medusaDoc, variants }} locale="en-US" />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('from €10.00')).toBeDefined();
+  });
+
+  it('renders the shared price with no "from" when variants match', () => {
+    const connector = createTestConnector('medusa');
+    const variants = [
+      { ...medusaDoc.variants[0], id: 'var-1', prices: [{ amount: 10, currency_code: 'eur' }] },
+      { ...medusaDoc.variants[0], id: 'var-2', prices: [{ amount: 10, currency_code: 'eur' }] },
+    ];
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductPrice doc={{ ...medusaDoc, variants }} locale="en-US" />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('€10.00')).toBeDefined();
+  });
+
   it('shows sale price with "was" indicator for on-sale WooCommerce product', () => {
     const connector = createTestConnector('woo');
     const saleDoc = {
