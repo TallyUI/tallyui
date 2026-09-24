@@ -1,5 +1,9 @@
 # Draft upstream issue: closing a `multiInstance` database leaves an unhandled "Cannot post message after channel has closed"
 
+> **Not pursued: single instance.** TallyUI databases are single-instance
+> (ADR-061, 2026-09-24), following WCPOS v1.11.0, so this bug no longer
+> affects us. This draft is kept as a record and **will not be posted**.
+
 *Draft for Paul, 2026-09-24. **Not posted.** Filing it with RxDB is a
 public post, so it goes out only on Paul's go-ahead. The text below is
 written to be pasted into a new issue at
