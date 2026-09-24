@@ -51,6 +51,7 @@ export interface CreateDatabaseOptions {
  * ```
  */
 export async function createTallyDatabase(options: CreateDatabaseOptions): Promise<TallyDatabase> {
+  if ((options as { multiInstance?: unknown }).multiInstance === true) throw new Error('multiInstance: true is unsupported: TallyUI databases are single-instance (ADR-061).');
   const {
     connector,
     name = `tally_${connector.id}`,

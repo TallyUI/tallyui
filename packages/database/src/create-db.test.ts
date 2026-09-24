@@ -104,6 +104,23 @@ describe('createTallyDatabase', () => {
     }
   });
 
+  it('throws when a caller passes multiInstance: true', async () => {
+    vi.resetModules();
+    const { createTallyDatabase } = await import('./create-db');
+    const connector = {
+      id: 'test',
+      schemas: { products: productSchema },
+    } as unknown as TallyConnector;
+    await expect(createTallyDatabase({
+      connector,
+      name: `multi_true_test_${Date.now()}`,
+      storage: getRxStorageMemory(),
+      multiInstance: true,
+    } as unknown as Parameters<typeof createTallyDatabase>[0])).rejects.toThrow(
+      'multiInstance: true is unsupported: TallyUI databases are single-instance (ADR-061).'
+    );
+  });
+
   it('throws when the connector already defines stock_levels', async () => {
     vi.resetModules();
     const { createTallyDatabase } = await import('./create-db');
