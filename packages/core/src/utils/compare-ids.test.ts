@@ -32,6 +32,17 @@ describe('compareIds', () => {
       expect([...ids].sort(compareIds)).toEqual(['9', '10', '1a', 'b']);
     }
   });
+
+  it('breaks ties in numeric value by string order, so equal-value ids are never conflated', () => {
+    expect(compareIds('01', '1')).not.toBe(0);
+  });
+
+  it('gives a consistent total order for every input order, including ties in numeric value', () => {
+    // '0' < '00' and '01' < '1' by plain string order: those ties in BigInt value break by string.
+    for (const ids of permutations(['10', '9', '01', '1', '0', '00', '1a', 'b'])) {
+      expect([...ids].sort(compareIds)).toEqual(['0', '00', '01', '1', '9', '10', '1a', 'b']);
+    }
+  });
 });
 
 function permutations<T>(items: T[]): T[][] {
