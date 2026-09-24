@@ -196,9 +196,11 @@ describe('medusaStoreSettings', () => {
     expect(choiceError.message).not.toContain(token);
     expect(JSON.stringify(choiceError.choices)).not.toContain(token);
 
-    // failed: no publishable key at all, even though the store otherwise has one with a token elsewhere in scope.
-    mockFetch(store(null), regions([{ id: 'reg_a', countries: [{ iso_2: 'de' }] }]), pricePreferences(), apiKeys([]), taxRegions());
+    // failed while the key is loaded: the tax-region request fails after the keys were read.
+    const failing = new Response(JSON.stringify({ message: 'tax regions unavailable' }), { status: 500 });
+    mockFetch(store(null), regions([{ id: 'reg_a', countries: [{ iso_2: 'de' }] }]), pricePreferences(), apiKeys([{ id: 'k1', token }]), failing);
     const failedError = await medusaStoreSettings(context).catch((e) => e);
+    expect(failedError).toMatchObject({ code: 'failed' });
     expect(failedError).toBeInstanceOf(StoreSettingsError);
     expect(failedError.message).not.toContain(token);
 
