@@ -50,6 +50,7 @@ async function gql(
   query: string,
   variables?: Record<string, any>,
 ): Promise<any> {
+  type GqlBody = { data?: any; errors?: Array<{ message?: string }> };
   const res = await fetch(`${context.baseUrl}/admin-api`, {
     method: 'POST',
     headers: {
@@ -61,11 +62,11 @@ async function gql(
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => undefined);
+    const body = await res.json().catch(() => undefined) as GqlBody | undefined;
     const message = body?.errors?.[0]?.message;
     throw new Error(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`);
   }
-  const body = await res.json();
+  const body = await res.json() as GqlBody;
   if (body.errors?.length) throw new Error(`Vendure GraphQL error: ${body.errors[0].message}`);
   return body;
 }
