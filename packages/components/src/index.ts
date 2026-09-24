@@ -141,4 +141,6 @@ export {
   LiveTabScreen,
   type LiveTabScreenProps,
   type LiveTabScreenState,
+  StoreSettingsChoiceScreen,
+  type StoreSettingsChoiceScreenProps,
 } from './layout';
