@@ -195,13 +195,17 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     addProduct(doc, traits, opts) {
       const productId = traits.getId(doc);
-      const unitPrice = resolvePrice(traits.getPrices(doc, { currency }), currency)?.current;
+      const variant = opts?.variantId !== undefined && traits.getVariants
+        ? traits.getVariants(doc, { currency }).find((variant) => variant.id === opts.variantId) : undefined;
+      if (opts?.variantId !== undefined && traits.getVariants && !variant)
+        throw new Error(`Unknown variant ${opts.variantId} for product ${productId}`);
+      const unitPrice = resolvePrice(variant ? variant.prices : traits.getPrices(doc, { currency }), currency)?.current;
       if (!unitPrice) throw new Error('No price in ' + currency + ' for product ' + productId);
       return addLine({
         productId,
         variantId: opts?.variantId,
         name: traits.getName(doc),
-        sku: traits.getSku(doc),
+        sku: variant?.sku ?? traits.getSku(doc),
         imageUrl: traits.getImageUrl(doc),
         unitPrice,
         quantity: opts?.quantity,

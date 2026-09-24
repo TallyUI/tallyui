@@ -82,6 +82,32 @@ describe('OrderBuilder', () => {
     expect(builder.getSnapshot().lineItems[0].unitPriceMinor).toBe(400);
   });
 
+  it.each(['L', 'S', undefined, 'unknown'])('prices the selected variant: %s', (variantId) => {
+    const doc = { id: 'shirt', name: 'Shirt', sku: 'SHIRT-S', price: 1000 };
+    const variantTraits: ProductTraits = { ...traits, getVariants: () => [
+      { id: 'S', sku: 'SHIRT-S', prices: [{ amount: 1000, currency: 'USD', kind: 'base' }], stock: { status: 'in_stock' } },
+      { id: 'L', sku: 'SHIRT-L', prices: [{ amount: 1500, currency: 'USD', kind: 'base' }], stock: { status: 'in_stock' } },
+    ] };
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    if (variantId === 'unknown') {
+      expect(() => builder.addProduct(doc, variantTraits, { variantId }))
+        .toThrow('Unknown variant unknown for product shirt');
+      expect(builder.getSnapshot().lineItems).toHaveLength(0);
+    } else {
+      builder.addProduct(doc, variantTraits, { variantId });
+      expect(builder.getSnapshot().lineItems[0]).toMatchObject({
+        name: 'Shirt', variantId, unitPriceMinor: variantId === 'L' ? 1500 : 1000,
+        sku: variantId === 'L' ? 'SHIRT-L' : 'SHIRT-S',
+      });
+    }
+  });
+
+  it('keeps product pricing when getVariants is absent', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct(productDoc, traits, { variantId: 'L' });
+    expect(builder.getSnapshot().lineItems[0]).toMatchObject({ unitPriceMinor: 450, sku: 'ESP-001', variantId: 'L' });
+  });
+
   it('merges only matching products, variants, prices and tax rates', () => {
     const builder = createOrderBuilder({ currency: 'USD', taxContext });
     const input = { productId: 'p1', variantId: 'v1', name: 'Item', unitPrice: { amount: 1000, currency: 'USD' }, taxRates: [{ code: 'STATE', ratePpm: 60000 }] };
