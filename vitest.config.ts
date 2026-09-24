@@ -5,7 +5,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['packages/**/*.test.{ts,tsx}', 'connectors/**/*.test.{ts,tsx}', 'apps/mock-api/**/*.test.ts'],
+    include: [
+      'packages/**/*.test.{ts,tsx}',
+      'connectors/**/*.test.{ts,tsx}',
+      'apps/mock-api/**/*.test.ts',
+      'apps/demo/**/*.test.ts',
+    ],
     typecheck: {
       include: ['packages/**/*.test-d.ts', 'connectors/**/*.test-d.ts'],
     },

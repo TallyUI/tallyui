@@ -10,5 +10,8 @@ export const wooSampleProducts = products.slice(0, 6).map((p, i) => toWooProduct
 /**
  * Sample Medusa product documents.
  * Generated from the shared mock catalog via mock-api transforms.
+ *
+ * The 7th product (the first coffee bean, sold in 250g/500g/1kg variants at
+ * different prices) shows the demo's "from" price.
  */
-export const medusaSampleProducts = products.slice(0, 6).map(toMedusaProduct);
+export const medusaSampleProducts = products.slice(0, 7).map(toMedusaProduct);

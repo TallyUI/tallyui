@@ -72,7 +72,9 @@ export function toMedusaProduct(product: NeutralProduct) {
           currency_code: 'usd',
         },
       ],
-      options: variant.options,
+      // The schema's variant.options is an array of {id, value} option
+      // selections, not the neutral catalog's Record<string, string>.
+      options: Object.entries(variant.options).map(([id, value]) => ({ id, value })),
     })),
 
     created_at: product.createdAt,
