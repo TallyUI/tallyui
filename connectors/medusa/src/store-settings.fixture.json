@@ -1,0 +1,172 @@
+{
+  "_recorded": "Recorded read-only from medusa-dev (Medusa 2.21, http://127.0.0.1:9000) on 2026-09-24 with the exact requests medusaStoreSettings sends. The publishable key token is replaced with pk_test_fixture.",
+  "stores": {
+    "stores": [
+      {
+        "id": "store_01M35QW19KT8XD6FC19MMJJAH5",
+        "default_region_id": null
+      }
+    ],
+    "count": 1,
+    "offset": 0,
+    "limit": 50
+  },
+  "regions": {
+    "regions": [
+      {
+        "id": "reg_01M35QW1ACR84WNR3T0SVK6M1C",
+        "name": "Europe",
+        "currency_code": "eur",
+        "countries": [
+          {
+            "iso_2": "dk",
+            "iso_3": "dnk",
+            "num_code": "208",
+            "name": "DENMARK",
+            "display_name": "Denmark",
+            "region_id": "reg_01M35QW1ACR84WNR3T0SVK6M1C",
+            "metadata": null,
+            "created_at": "2026-09-22T23:40:21.991Z",
+            "updated_at": "2026-09-22T23:40:28.885Z",
+            "deleted_at": null
+          },
+          {
+            "iso_2": "fr",
+            "iso_3": "fra",
+            "num_code": "250",
+            "name": "FRANCE",
+            "display_name": "France",
+            "region_id": "reg_01M35QW1ACR84WNR3T0SVK6M1C",
+            "metadata": null,
+            "created_at": "2026-09-22T23:40:21.991Z",
+            "updated_at": "2026-09-22T23:40:28.885Z",
+            "deleted_at": null
+          },
+          {
+            "iso_2": "de",
+            "iso_3": "deu",
+            "num_code": "276",
+            "name": "GERMANY",
+            "display_name": "Germany",
+            "region_id": "reg_01M35QW1ACR84WNR3T0SVK6M1C",
+            "metadata": null,
+            "created_at": "2026-09-22T23:40:21.991Z",
+            "updated_at": "2026-09-22T23:40:28.885Z",
+            "deleted_at": null
+          },
+          {
+            "iso_2": "it",
+            "iso_3": "ita",
+            "num_code": "380",
+            "name": "ITALY",
+            "display_name": "Italy",
+            "region_id": "reg_01M35QW1ACR84WNR3T0SVK6M1C",
+            "metadata": null,
+            "created_at": "2026-09-22T23:40:21.991Z",
+            "updated_at": "2026-09-22T23:40:28.885Z",
+            "deleted_at": null
+          },
+          {
+            "iso_2": "es",
+            "iso_3": "esp",
+            "num_code": "724",
+            "name": "SPAIN",
+            "display_name": "Spain",
+            "region_id": "reg_01M35QW1ACR84WNR3T0SVK6M1C",
+            "metadata": null,
+            "created_at": "2026-09-22T23:40:21.993Z",
+            "updated_at": "2026-09-22T23:40:28.885Z",
+            "deleted_at": null
+          },
+          {
+            "iso_2": "se",
+            "iso_3": "swe",
+            "num_code": "752",
+            "name": "SWEDEN",
+            "display_name": "Sweden",
+            "region_id": "reg_01M35QW1ACR84WNR3T0SVK6M1C",
+            "metadata": null,
+            "created_at": "2026-09-22T23:40:21.993Z",
+            "updated_at": "2026-09-22T23:40:28.885Z",
+            "deleted_at": null
+          },
+          {
+            "iso_2": "gb",
+            "iso_3": "gbr",
+            "num_code": "826",
+            "name": "UNITED KINGDOM",
+            "display_name": "United Kingdom",
+            "region_id": "reg_01M35QW1ACR84WNR3T0SVK6M1C",
+            "metadata": null,
+            "created_at": "2026-09-22T23:40:21.993Z",
+            "updated_at": "2026-09-22T23:40:28.885Z",
+            "deleted_at": null
+          }
+        ]
+      }
+    ],
+    "count": 1,
+    "offset": 0,
+    "limit": 1000
+  },
+  "pricePreferences": {
+    "price_preferences": [
+      {
+        "id": "prpref_01M35QW1A3A67SKYV4R131K19R",
+        "attribute": "currency_code",
+        "value": "eur",
+        "is_tax_inclusive": false,
+        "created_at": "2026-09-22T23:40:28.868Z",
+        "deleted_at": null,
+        "updated_at": "2026-09-22T23:40:28.868Z"
+      },
+      {
+        "id": "prpref_01M35QW1A4KZDXF8ZC85FRSMQR",
+        "attribute": "currency_code",
+        "value": "usd",
+        "is_tax_inclusive": false,
+        "created_at": "2026-09-22T23:40:28.868Z",
+        "deleted_at": null,
+        "updated_at": "2026-09-22T23:40:28.868Z"
+      },
+      {
+        "id": "prpref_01M35QW1B8J7G2EQ3QFAWXCXSJ",
+        "attribute": "region_id",
+        "value": "reg_01M35QW1ACR84WNR3T0SVK6M1C",
+        "is_tax_inclusive": false,
+        "created_at": "2026-09-22T23:40:28.905Z",
+        "deleted_at": null,
+        "updated_at": "2026-09-22T23:40:28.905Z"
+      }
+    ],
+    "count": 3,
+    "offset": 0,
+    "limit": 1000
+  },
+  "apiKeys": {
+    "api_keys": [
+      {
+        "id": "apk_01M35QW18NZZWSJGQ5XSPND3AJ",
+        "title": "Default Publishable API Key",
+        "token": "pk_test_fixture",
+        "revoked_at": null
+      }
+    ],
+    "count": 1,
+    "offset": 0,
+    "limit": 1000
+  },
+  "taxRegionsDe": {
+    "tax_regions": [
+      {
+        "id": "txreg_01M35QW1BNCRJSG1AAQWQ39C8P",
+        "country_code": "de",
+        "province_code": null,
+        "tax_rates": []
+      }
+    ],
+    "count": 1,
+    "offset": 0,
+    "limit": 1000
+  }
+}
