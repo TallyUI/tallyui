@@ -14,7 +14,7 @@ import { woocommerceConnector } from '@tallyui/connector-woocommerce';
 // Create a persistent database
 const db = await createTallyDatabase({
   connector: woocommerceConnector,
-  storage: getStorage(), // IndexedDB on web, in-memory in Node
+  storage: getStorage(), // in-memory in Node; on the web, pass getRxStorageSQLiteWasm explicitly -- see Storage below
 });
 
 // Start replicating products
@@ -48,17 +48,54 @@ RxDB's `replicateRxCollection` orchestrates the cycle: pull remote changes, appl
 
 ## Storage
 
-### Web (IndexedDB)
+### Web (SQLite-wasm)
 
-On the web, `getStorage()` returns IndexedDB storage via Dexie. No extra setup needed:
+**Breaking:** `getStorage()` on the web no longer returns Dexie. It throws with
+guidance — pass the storage explicitly, bundling the worker entry:
 
 ```tsx
-import { getStorage } from '@tallyui/database';
+import { createTallyDatabase } from '@tallyui/database';
+import { getRxStorageSQLiteWasm } from '@tallyui/storage-sqlite/web';
+
+// Vite (and most bundlers): a factory the bundler can statically detect and bundle
+const workerInput = () =>
+  new Worker(new URL('@tallyui/storage-sqlite/web-worker', import.meta.url), { type: 'module' });
 
 const db = await createTallyDatabase({
   connector: myConnector,
-  storage: getStorage(), // auto-detects IndexedDB
+  storage: getRxStorageSQLiteWasm({ workerInput }),
 });
+```
+
+On Expo web there is no single import path across bundlers: your app supplies
+its own worker file, built from `@tallyui/storage-sqlite/web-worker`, that its
+bundler can emit, and passes that as `workerInput`.
+
+This is [RxDB Premium](https://rxdb.info/premium/)'s SQLite on `sqlite-wasm`'s
+`opfs-sahpool` VFS, so your app needs a Premium licence key (ADR-031). It runs
+**one live tab per store** (see [Live tab](/docs/live-tab)), and a watchdog
+reports the storage worker's health. No storage call is ever failed on a timer,
+because a timed-out write may still commit. A write pending for more than 10s is
+flagged as `stalled`, and its promise stays pending until the worker answers.
+Reads are watched too: two silent 30s windows, with reads pending and nothing
+settling, mean the worker is `dead`, and the app's recovery is to reload.
+
+```tsx
+import { getStorageHealth } from '@tallyui/database';
+
+getStorageHealth(db)?.subscribe(({ status }) => {
+  if (status === 'stalled') showBanner('Saving is slow…');
+  if (status === 'dead') showBanner('Storage stopped. Reload the app.');
+});
+```
+
+**Switching from the previous Dexie storage is a cold resync**, not a data
+migration — the SQLite database starts empty and replicates fresh. Once the
+new database has synced, delete the old one (the name depends on your app's
+database name):
+
+```tsx
+indexedDB.deleteDatabase('tally_' + connector.id); // the old Dexie database
 ```
 
 ### React Native (SQLite)
