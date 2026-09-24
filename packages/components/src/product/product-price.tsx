@@ -1,4 +1,4 @@
-import { formatMoney, minorUnitDigits, moneyToMajor, resolvePrice, useProductTraits, useTraitContext } from '@tallyui/core';
+import { formatMoney, minorUnitDigits, moneyToMajor, resolvePrice, resolvePriceRange, useProductTraits, useTraitContext } from '@tallyui/core';
 import type { Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, type TextProps } from '../ui';
@@ -15,6 +15,14 @@ export interface ProductPriceProps extends Omit<TextProps, 'children'> {
   locale?: string;
   /** Symbol to prepend when the currency is unknown (defaults to '$') */
   currencySymbol?: string;
+  /**
+   * When the connector's variants have differing prices, show
+   * `{fromLabel} <lowest price>` instead of the default variant's price.
+   * Defaults to true.
+   */
+  showFromPrice?: boolean;
+  /** Label shown before the lowest price when variant prices differ. Defaults to 'from'. */
+  fromLabel?: string;
   className?: string;
 }
 
@@ -29,10 +37,32 @@ export interface ProductPriceProps extends Omit<TextProps, 'children'> {
  * <ProductPrice doc={productDocument} currency="EUR" />
  * ```
  */
-export function ProductPrice({ doc, currency, locale, currencySymbol = '$', className, ...textProps }: ProductPriceProps) {
-  const { getPrices } = useProductTraits();
+export function ProductPrice({ doc, currency, locale, currencySymbol = '$', className, showFromPrice = true, fromLabel = 'from', ...textProps }: ProductPriceProps) {
+  const { getPrices, getVariants } = useProductTraits();
   const traitContext = useTraitContext();
-  const resolved = resolvePrice(getPrices(doc, traitContext), currency ?? traitContext.currency);
+  const effectiveCurrency = currency ?? traitContext.currency;
+
+  // Unknown currency ('XXX'): plain decimal behind the fallback symbol.
+  const format = (money: Money) =>
+    formatMoney(money, locale)
+    ?? `${currencySymbol}${moneyToMajor(money).toFixed(minorUnitDigits(money.currency))}`;
+
+  const variants = showFromPrice ? getVariants?.(doc, traitContext) : undefined;
+  const range = variants && variants.length >= 2 ? resolvePriceRange(variants, effectiveCurrency) : undefined;
+
+  if (range && range.min.amount !== range.max.amount) {
+    return (
+      <Text
+        className={cn('text-sm font-medium text-foreground', className)}
+        {...textProps}
+        style={[{ fontVariant: ['tabular-nums'] }, textProps.style]}
+      >
+        {fromLabel} {format(range.min)}
+      </Text>
+    );
+  }
+
+  const resolved = resolvePrice(getPrices(doc, traitContext), effectiveCurrency);
 
   if (!resolved) {
     return (
@@ -41,11 +71,6 @@ export function ProductPrice({ doc, currency, locale, currencySymbol = '$', clas
       </Text>
     );
   }
-
-  // Unknown currency ('XXX'): plain decimal behind the fallback symbol.
-  const format = (money: Money) =>
-    formatMoney(money, locale)
-    ?? `${currencySymbol}${moneyToMajor(money).toFixed(minorUnitDigits(money.currency))}`;
 
   if (resolved.was) {
     return (

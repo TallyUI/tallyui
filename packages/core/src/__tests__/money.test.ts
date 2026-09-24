@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice } from '../money';
+import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from '../money';
 import type { ProductPrice } from '../types';
 
 describe('minorUnitDigits', () => {
@@ -94,5 +94,51 @@ describe('resolvePrice', () => {
   it('returns undefined for an empty list or missing currency', () => {
     expect(resolvePrice([])).toBeUndefined();
     expect(resolvePrice(prices, 'GBP')).toBeUndefined();
+  });
+});
+
+describe('resolvePriceRange', () => {
+  it('gives the min and max current price across variants', () => {
+    const variants = [
+      { prices: [{ amount: 1000, currency: 'EUR', kind: 'base' as const }] },
+      { prices: [{ amount: 1100, currency: 'EUR', kind: 'base' as const }] },
+      { prices: [{ amount: 1000, currency: 'EUR', kind: 'base' as const }] },
+    ];
+    expect(resolvePriceRange(variants)).toEqual({
+      min: { amount: 1000, currency: 'EUR' },
+      max: { amount: 1100, currency: 'EUR' },
+    });
+  });
+
+  it('counts a sale price as that variant\'s current price', () => {
+    const variants = [
+      { prices: [{ amount: 2000, currency: 'EUR', kind: 'base' as const }] },
+      {
+        prices: [
+          { amount: 2000, currency: 'EUR', kind: 'base' as const },
+          { amount: 1500, currency: 'EUR', kind: 'sale' as const },
+        ],
+      },
+    ];
+    expect(resolvePriceRange(variants)).toEqual({
+      min: { amount: 1500, currency: 'EUR' },
+      max: { amount: 2000, currency: 'EUR' },
+    });
+  });
+
+  it('skips a variant priced only in another currency', () => {
+    const variants = [
+      { prices: [{ amount: 1000, currency: 'EUR', kind: 'base' as const }] },
+      { prices: [{ amount: 2000, currency: 'USD', kind: 'base' as const }] },
+      { prices: [{ amount: 1100, currency: 'EUR', kind: 'base' as const }] },
+    ];
+    expect(resolvePriceRange(variants)).toEqual({
+      min: { amount: 1000, currency: 'EUR' },
+      max: { amount: 1100, currency: 'EUR' },
+    });
+  });
+
+  it('returns undefined when no variant resolves', () => {
+    expect(resolvePriceRange([{ prices: [] }, { prices: [] }])).toBeUndefined();
   });
 });

@@ -91,3 +91,28 @@ export function resolvePrice(
   }
   return base ? { current: strip(base) } : undefined;
 }
+
+/**
+ * The lowest and highest price to charge across variants, in `currency` if
+ * given, else each variant's first currency; undefined when no variant
+ * resolves. Only amounts in the first resolved variant's currency are
+ * compared; a variant that resolves to another currency is skipped.
+ */
+export function resolvePriceRange(
+  variants: Array<{ prices: ProductPrice[] }>,
+  currency?: string,
+): { min: Money; max: Money } | undefined {
+  let range: { min: Money; max: Money } | undefined;
+  for (const variant of variants) {
+    const resolved = resolvePrice(variant.prices, currency);
+    if (!resolved) continue;
+    const money = resolved.current;
+    if (!range) {
+      range = { min: money, max: money };
+    } else if (money.currency === range.min.currency) {
+      if (money.amount < range.min.amount) range.min = money;
+      if (money.amount > range.max.amount) range.max = money;
+    }
+  }
+  return range;
+}

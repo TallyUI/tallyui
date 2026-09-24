@@ -23,9 +23,33 @@ Handles sale prices automatically — regular prices use `text-price`, sale pric
 |------|------|---------|-------------|
 | `doc` | `any` | required | RxDB product document |
 | `currencySymbol` | `string` | `'$'` | Currency symbol to prepend |
+| `showFromPrice` | `boolean` | `true` | Show `{fromLabel} <lowest price>` when variant prices differ |
+| `fromLabel` | `string` | `'from'` | Label shown before the lowest price, for translation |
 | `className` | `string` | — | Override default styles |
 
 **Default classes:** `text-sm font-medium text-price` (or `text-sale` when on sale)
+
+## Products with several variants
+
+When the connector implements `getVariants` and the document has two or more
+variants, `ProductPrice` compares each variant's resolved price. If they
+differ, it shows the lowest price with a `from` prefix instead of the default
+variant's price — a range has no single sale price, so no "was" price is
+shown in that case.
+
+```tsx
+// Variants priced €10.00 and €11.00 render "from €10.00"
+<ProductPrice doc={productDocument} />
+
+// Opt out and always show the default variant's price
+<ProductPrice doc={productDocument} showFromPrice={false} />
+
+// Translate the label
+<ProductPrice doc={productDocument} fromLabel="ab" />
+```
+
+A product with fewer than two variants, or without `getVariants`, renders
+exactly as it did before.
 
 ## Trait mapping
 
