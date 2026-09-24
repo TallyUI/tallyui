@@ -17,3 +17,13 @@ export interface StockReconcileAdapter<Doc = any> {
    */
   overlay(doc: Doc, stock: Map<string, unknown>): Partial<Doc> | undefined;
 }
+
+/** Catches a deleted product or a deleted variant that replication misses (ADR-060). Nothing is written locally: `enqueue` hands disagreeing documents to a `createReconcileFeed` pull adapter instead. */
+export interface IdReconcileAdapter<Doc = any> {
+  /** Every live product with its live variant ids, one backend request per page. */
+  fetchPages(context: SyncContext): AsyncIterable<Array<{ id: string; variantIds: string[] }>>;
+  /** The variant ids a local product document lists. */
+  variantIds(doc: Doc): string[];
+  /** Hand local documents that disagree with the backend to the collection's pull (see createReconcileFeed). */
+  enqueue(entries: Array<{ id: string; local: Doc }>): void;
+}

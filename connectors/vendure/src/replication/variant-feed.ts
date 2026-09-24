@@ -1,5 +1,5 @@
 import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
-import { gql, PRODUCT_LIST_QUERY, toProductDocument, type VendureProductCheckpoint } from './products';
+import { gql, PRODUCT_LIST_QUERY, probeUpdatedAtSkew, toProductDocument, type VendureProductCheckpoint } from './products';
 
 /** Vendure Admin API maximum `take`; variant pages and parent re-fetch chunks use it. */
 const MAX_TAKE = 1000;
@@ -41,18 +41,10 @@ export const createVendureVariantFeedReplication = (barcodeField?: string, updat
         if (!head.items.length || (lastCheckpoint?.updatedAt && passHighWater === lastCheckpoint.updatedAt)) {
           return { documents: [], checkpoint: lastCheckpoint ?? { skip: 0, updatedAt: '' } };
         }
-        for (const overlap of [1, 0]) {
-          if (overlap === 0 && updatedAtSkewMs > 0) continue;
-          const probe = await variants(context, 'id updatedAt', { take: 1, sort: { updatedAt: 'DESC' }, filter: {
-            updatedAt: { after: new Date(Date.parse(passHighWater) + (overlap === 0 ? 1 : -1) - updatedAtSkewMs).toISOString() },
-          } });
-          if (overlap === 1 && probe.totalItems === 0) {
-            throw new Error('Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.');
-          }
-          if (overlap === 0 && probe.totalItems > 0) {
-            console.warn('Vendure updatedAt filters over-fetch because the server is not in UTC.');
-          }
-        }
+        await probeUpdatedAtSkew(passHighWater, updatedAtSkewMs, async (after) => {
+          const probe = await variants(context, 'id updatedAt', { take: 1, sort: { updatedAt: 'DESC' }, filter: { updatedAt: { after } } });
+          return probe.totalItems;
+        });
       }
       const filter = lastCheckpoint?.updatedAt
         // Vendure after is strict; overlap by 1 ms to include timestamp ties.
