@@ -20,7 +20,7 @@ import { createVendureProductReplication } from './replication/products';
  * </ConnectorProvider>
  * ```
  */
-export const createVendureConnector = (options: { barcodeField?: string; stockLocationId?: string } = {}): TallyConnector => ({
+export const createVendureConnector = (options: { barcodeField?: string; stockLocationId?: string; pricesIncludeTax?: boolean } = {}): TallyConnector => ({
   id: 'vendure',
   name: 'Vendure',
   description: 'Connect to Vendure backends via the Admin GraphQL API',
@@ -54,7 +54,7 @@ export const createVendureConnector = (options: { barcodeField?: string; stockLo
   },
 
   traits: {
-    product: createVendureProductTraits(options.barcodeField, options.stockLocationId),
+    product: createVendureProductTraits(options.barcodeField, options.stockLocationId, options.pricesIncludeTax),
   },
 
   sync: {
