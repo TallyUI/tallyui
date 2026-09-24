@@ -70,10 +70,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const discountMinor = Math.min(grossMinor, recalcedDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const netMinor = grossMinor - discountMinor;
     const combinedRate = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
-    const inclusiveTax = taxContext.pricesIncludeTax ? taxMicros(netMinor, combinedRate, true) : 0n;
+    // Tax in the line's own mode, from its own unit price × quantity: never re-tax a rounded base.
+    const inclusiveTax = line.taxInclusive ? taxMicros(netMinor, combinedRate, true) : 0n;
     let allocatedTax = 0n;
     const taxLines = line.taxLines.map((tax, index) => {
-      const micros = taxContext.pricesIncludeTax
+      const micros = line.taxInclusive
         ? index === line.taxLines.length - 1
           ? inclusiveTax - allocatedTax
           : combinedRate === 0 ? 0n : inclusiveTax * BigInt(tax.ratePpm) / BigInt(combinedRate)
@@ -103,9 +104,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   function buildOrder(): Order {
     const netMinor = lineItems.reduce((sum, li) => sum + li.netMinor, 0);
     const lineTaxMicros = lineItems.reduce((sum, li) => sum + BigInt(li.taxMicros), 0n);
+    const exclusiveTaxMicros = lineItems.reduce((sum, li) => li.taxInclusive ? sum : sum + BigInt(li.taxMicros), 0n);
     const taxMinor = roundMicrosToMinor(lineTaxMicros);
-    const subtotalMinor = taxContext.pricesIncludeTax ? netMinor - taxMinor : netMinor;
-    const preOrderDiscountTotal = taxContext.pricesIncludeTax ? netMinor : subtotalMinor + taxMinor;
+    // Each line pays in its own mode: an inclusive line its gross, an exclusive line its net plus tax.
+    const preOrderDiscountTotal = netMinor + roundMicrosToMinor(exclusiveTaxMicros);
+    const subtotalMinor = preOrderDiscountTotal - taxMinor;
     let remaining = preOrderDiscountTotal;
     const recalcedOrderDiscounts = orderDiscounts.map((d) => {
       const amountMinor = computeDiscountAmount(d, d.type === 'percentage' ? subtotalMinor : remaining);
@@ -152,9 +155,10 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (!Number.isInteger(unitPrice.amount)) throw new RangeError('Price must be integer minor units');
     if (!Number.isInteger(quantity) || quantity < 1) throw new RangeError('Quantity must be an integer >= 1');
     const taxRates = input.taxRates ?? [{ ratePpm: taxContext.getTaxRatePpm() }];
+    const taxInclusive = unitPrice.taxInclusive ?? taxContext.pricesIncludeTax;
 
     const existing = lineItems.find(
-      (li) => li.productId === productId && li.variantId === variantId
+      (li) => li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
         && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length
         && li.taxLines.every((tax, index) => tax.code === taxRates[index].code && tax.ratePpm === taxRates[index].ratePpm),
     );
@@ -182,6 +186,15 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       discountMinor: 0,
       netMinor: 0,
       taxMicros: '0',
+      taxInclusive,
+      // TV4b derives the store-level flag with Medusa's own precedence (region
+      // preference, then currency), so a disagreement should be rare. It can
+      // still happen, for example when a price preference changes after the
+      // settings were read. Keeping the line in its own mode means the customer
+      // pays exactly the shelf price, as Medusa's checkout would.
+      ...(taxInclusive !== taxContext.pricesIncludeTax
+        ? { priceTaxModeConverted: taxInclusive ? 'inclusive-to-exclusive' as const : 'exclusive-to-inclusive' as const }
+        : {}),
     };
 
     lineItems = [...lineItems, recalculateLine(line)];

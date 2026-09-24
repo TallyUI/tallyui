@@ -153,7 +153,8 @@ async function start(context: SyncContext) {
 
 const docOf = async (productId: string) => (await db.products.findOne(productId).exec())!.toJSON() as any;
 const snapshot = async () => Object.fromEntries((await db.products.find().exec()).map((d: any) => [d.id, d.revision]));
-const eur = (amount: number) => ({ amount, currency: 'EUR' });
+// A resolved price keeps its tax flag; every price these expectations read is tax-exclusive.
+const eur = (amount: number) => ({ amount, currency: 'EUR', taxInclusive: false });
 
 describe('Medusa calculated prices, run against a real RxDB replication', () => {
   it('1. initial sync: a sale resolves with the base as was; a draft and an outside-channel product are null, unsellable and unpriced', async () => {

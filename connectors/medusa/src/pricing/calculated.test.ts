@@ -133,7 +133,7 @@ describe('Medusa price traits in priced mode', () => {
       { amount: 800, currency: 'EUR', kind: 'sale', taxInclusive: true },
     ]);
     expect(resolvePrice(medusaProductTraits.getPrices(doc), 'EUR')).toEqual({
-      current: { amount: 800, currency: 'EUR' }, was: { amount: 1000, currency: 'EUR' },
+      current: { amount: 800, currency: 'EUR', taxInclusive: true }, was: { amount: 1000, currency: 'EUR', taxInclusive: false },
     });
   });
 

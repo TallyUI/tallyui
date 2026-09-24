@@ -35,6 +35,9 @@ export interface LineItem {
   discountMinor: number;
   netMinor: number;           // unitPriceMinor × quantity − discountMinor
   taxMicros: string;          // Σ taxLines[].taxMicros, decimal string of a bigint
+  taxInclusive: boolean;      // the price's own tax mode; the order's when the price has none
+  /** Set only when the price's tax mode differs from the order's; named price mode → order mode. */
+  priceTaxModeConverted?: 'inclusive-to-exclusive' | 'exclusive-to-inclusive';
 }
 
 export interface LineTaxLine {
@@ -83,7 +86,7 @@ export interface AddLineInput {
   name: string;
   sku?: string;
   imageUrl?: string;
-  unitPrice: Money;           // currency must equal the order currency
+  unitPrice: Money & { taxInclusive?: boolean }; // currency must equal the order currency; taxInclusive wins over the order's pricesIncludeTax
   quantity?: number;          // default 1
   taxRates?: Array<{ code?: string; ratePpm: number }>; // default: [{ ratePpm: from taxContext }]
 }

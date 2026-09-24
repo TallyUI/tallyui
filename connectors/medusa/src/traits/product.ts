@@ -1,4 +1,4 @@
-import { minorUnitDigits } from '@tallyui/core';
+import { minorUnitDigits, moneyToMajor, resolvePrice } from '@tallyui/core';
 import type { ProductPrice, ProductTraits, StockLevel } from '@tallyui/core';
 import type { MedusaCalculatedPrice, MedusaProductDocument, MedusaVariantDocument } from '../schemas/products';
 
@@ -85,6 +85,13 @@ function variantPrices(variant: MedusaVariantDocument | undefined): ProductPrice
 /** Priced mode: the store API has priced this document (any variant carries `calculated_price`, even `null`). */
 const isPriced = (doc: MedusaProductDocument) => (doc.variants ?? []).some((v) => v.calculated_price !== undefined);
 
+/** Priced mode: what `getPrices` plus `resolvePrice` give, the current or the base ('was' when a sale applies), as a major-unit string. */
+function pricedMajor(doc: MedusaProductDocument, which: 'current' | 'base'): string | undefined {
+  const resolved = resolvePrice(variantPrices(doc.variants?.[0]));
+  const money = which === 'base' ? resolved?.was ?? resolved?.current : resolved?.current;
+  return money ? moneyToMajor(money).toFixed(2) : undefined;
+}
+
 function variantStock(variant: any): StockLevel {
   if (!variant) return { status: 'unknown' };
   if (variant.manage_inventory === false) return { status: 'in_stock' };
@@ -128,8 +135,10 @@ export const medusaProductTraits: ProductTraits = {
     stock: variantStock(v),
   })),
 
-  // getPrice, getRegularPrice and getSalePrice: base-only; use `getPrices`.
+  // getPrice, getRegularPrice and getSalePrice: deprecated; use `getPrices`. In priced mode the
+  // first two give what `getPrices` resolves to, never the admin prices.
   getPrice: (doc) => {
+    if (isPriced(doc)) return pricedMajor(doc, 'current');
     // Medusa v2 amounts are already major units (not cents).
     const amount = doc.variants?.[0]?.prices?.[0]?.amount;
     if (amount == null) return undefined;
@@ -137,6 +146,7 @@ export const medusaProductTraits: ProductTraits = {
   },
 
   getRegularPrice: (doc) => {
+    if (isPriced(doc)) return pricedMajor(doc, 'base');
     // Medusa doesn't have a separate regular/sale price on the product level
     // The pricing engine handles this via price lists
     const amount = doc.variants?.[0]?.prices?.[0]?.amount;
@@ -190,9 +200,10 @@ export const medusaProductTraits: ProductTraits = {
     return (doc.variants?.length ?? 0) > 1;
   },
 
-  // In priced mode, a product whose every variant has a null calculated price is not sold in this channel or region.
+  // In priced mode, a product with no variant that yields a price (a null calculated price, or null
+  // amounts) is not sold in this channel or region.
   isSellable: (doc: MedusaProductDocument) => (doc.status === undefined || doc.status === 'published')
-    && (!isPriced(doc) || doc.variants!.some((v) => v.calculated_price != null)),
+    && (!isPriced(doc) || doc.variants!.some((v) => variantPrices(v).length > 0)),
 
   getVariantCount: (doc) => doc.variants?.length ?? 1,
 

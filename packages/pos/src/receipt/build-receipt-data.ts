@@ -1,5 +1,5 @@
 import type { Order } from '../order/types';
-import { MICROS_PER_MINOR } from '../tax/exact';
+import { MICROS_PER_MINOR, roundMicrosToMinor } from '../tax/exact';
 import type { ReceiptConfig, ReceiptData } from './types';
 
 export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptData {
@@ -25,6 +25,18 @@ export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptDa
   for (const group of ranked.slice(0, leftover)) group.line.amountMinor += 1;
   const taxLines = groups.map((group) => group.line);
 
+  // Every receipt line is shown in the order's mode. A line whose price had the other mode is
+  // converted by its tax share as the order total rounds it: the rounded running tax sum,
+  // started from the exclusive lines the order already rounds, so the shares add up exactly.
+  let taxSoFar = order.lineItems.reduce(
+    (sum, li) => li.taxInclusive || li.priceTaxModeConverted ? sum : sum + BigInt(li.taxMicros), 0n);
+  const lineTotals = order.lineItems.map((li) => {
+    if (!li.priceTaxModeConverted) return li.netMinor;
+    const share = roundMicrosToMinor(taxSoFar + BigInt(li.taxMicros)) - roundMicrosToMinor(taxSoFar);
+    taxSoFar += BigInt(li.taxMicros);
+    return li.taxInclusive ? li.netMinor - share : li.netMinor + share;
+  });
+
   return {
     header: {
       storeName: config.storeName,
@@ -34,12 +46,12 @@ export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptDa
       cashier: config.cashier,
       register: config.register,
     },
-    lineItems: order.lineItems.map((li) => ({
+    lineItems: order.lineItems.map((li, index) => ({
       name: li.name,
       sku: li.sku,
       quantity: li.quantity,
       unitPriceMinor: li.unitPriceMinor,
-      lineTotalMinor: li.netMinor,
+      lineTotalMinor: lineTotals[index],
     })),
     discounts: order.discounts.map((d) => ({
       label: d.label ?? d.couponCode ?? `${d.type} discount`,

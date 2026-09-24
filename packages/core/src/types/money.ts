@@ -25,9 +25,9 @@ export interface ProductPrice extends Money {
   taxInclusive?: boolean;
 }
 
-/** The price to charge, and the price it replaces when a sale applies. */
+/** The price to charge, and the price it replaces when a sale applies; each keeps its source's `taxInclusive` when set. */
 export interface ResolvedPrice {
-  current: Money;
+  current: Money & { taxInclusive?: boolean };
   /** Set only when a sale price applies: the base price it replaces. */
-  was?: Money;
+  was?: Money & { taxInclusive?: boolean };
 }
