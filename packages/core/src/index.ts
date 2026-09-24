@@ -20,6 +20,9 @@ export type {
   StockLevel,
   StockStatus,
 } from './types';
+export type { SignInResult } from './types/connector';
+export { SignInError } from './sign-in';
+export type { SignInErrorCode } from './sign-in';
 
 export type {
   CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,

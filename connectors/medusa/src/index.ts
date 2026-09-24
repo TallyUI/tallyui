@@ -1,4 +1,4 @@
-import type { ConnectorAuth, TallyConnector } from '@tallyui/core';
+import { SignInError, type ConnectorAuth, type TallyConnector } from '@tallyui/core';
 
 import { medusaProductSchema } from './schemas/products';
 import { medusaProductTraits } from './traits/product';
@@ -17,6 +17,35 @@ export const medusaSecretKeyAuth: ConnectorAuth = {
   getHeaders: (credentials) => ({ Authorization: `Basic ${btoa(`${credentials.api_token}:`)}` }),
 };
 
+// Reads exp from a JWT payload without verifying it: for display and refresh timing only.
+const jwtExpiresAt = (token: string): string | undefined => {
+  try {
+    const part = token.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/');
+    const { exp } = JSON.parse(atob(part.padEnd(Math.ceil(part.length / 4) * 4, '=')));
+    return typeof exp === 'number' ? new Date(exp * 1000).toISOString() : undefined;
+  } catch { return undefined; }
+};
+
+export const medusaSignIn: NonNullable<ConnectorAuth['signIn']> = async (baseUrl, { email, password }, init = {}) => {
+  const doFetch = init.fetch ?? fetch;
+  let res: Response;
+  try {
+    res = await doFetch(`${baseUrl}/auth/user/emailpass`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: init.signal,
+      body: JSON.stringify({ email, password }),
+    });
+  } catch (error) {
+    if ((error as { name?: unknown })?.name === 'AbortError' || init.signal?.aborted) throw error;
+    throw new SignInError('failed', `Could not reach Medusa at ${baseUrl}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const body = await res.json().catch(() => ({})) as { token?: unknown; location?: string; message?: string };
+  if (res.status === 401) throw new SignInError('invalid_credentials', body.message ?? 'Invalid email or password');
+  // A location means a redirect or MFA flow, which the POS does not support.
+  if (body.location) throw new SignInError('unsupported', `Medusa wants to continue sign-in at ${body.location}; only email and password are supported`);
+  if (!res.ok || typeof body.token !== 'string') throw new SignInError('failed', body.message ?? `Medusa sign-in failed (HTTP ${res.status})`);
+  return { token: body.token, expiresAt: jwtExpiresAt(body.token) };
+};
+
 // The JWT from Medusa's emailpass sign-in (POST /auth/user/emailpass) is stored as token.
 // email and password are only sign-in form fields and are never sent as headers.
 export const medusaAdminUserAuth: ConnectorAuth = {
@@ -28,6 +57,7 @@ export const medusaAdminUserAuth: ConnectorAuth = {
   ],
   getHeaders: (credentials): Record<string, string> => typeof credentials.token === 'string' && credentials.token.length > 0
     ? { Authorization: `Bearer ${credentials.token}` } : {},
+  signIn: medusaSignIn,
 };
 
 /**
