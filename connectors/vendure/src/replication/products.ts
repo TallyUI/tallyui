@@ -109,7 +109,7 @@ export const createVendureProductReplication = (barcodeField?: string): Replicat
       const res = await gql(context, PRODUCT_LIST_QUERY(barcodeField), { options });
 
       let data = res.data?.products;
-      let passTotal = lastCheckpoint?.passTotal ?? data.totalItems;
+      let passTotal = options.skip === 0 ? data.totalItems : lastCheckpoint?.passTotal ?? data.totalItems;
       if (options.skip > 0 && data.totalItems < passTotal) {
         options.skip = 0;
         const restarted = await gql(context, PRODUCT_LIST_QUERY(barcodeField), { options });
@@ -125,8 +125,9 @@ export const createVendureProductReplication = (barcodeField?: string): Replicat
       const documents = products.map((p) => ({ ...p, _deleted: false }));
 
       // Keep the lower bound fixed while paging by id; advance it only at pass end.
+      // RxDB merges checkpoints, so explicitly clear pass state at completion.
       const checkpoint: VendureProductCheckpoint = options.skip + products.length >= data.totalItems
-        ? { skip: 0, updatedAt: passHighWater }
+        ? { skip: 0, updatedAt: passHighWater, passHighWater: undefined, passTotal: undefined }
         : { skip: options.skip + products.length,
             updatedAt: lastCheckpoint?.updatedAt ?? '', passHighWater, passTotal };
 

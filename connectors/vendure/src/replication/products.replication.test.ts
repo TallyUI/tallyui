@@ -62,7 +62,10 @@ async function start(count: number, afterPage?: (products: Product[]) => void, t
     },
   });
   await replication.awaitInSync();
-  return { products, requests };
+  return { products, requests, afterNextPage: (callback: (rows: Product[]) => void) => {
+    afterPage = callback;
+    hooked = false;
+  } };
 }
 
 async function expectUpdate(products: Product[], id = '5') {
@@ -106,6 +109,28 @@ describe('Vendure pull in the real RxDB replication loop', () => {
     expect(requests).toContainEqual({ skip: 1000, length: 900, totalItems: 1900 });
     expect(requests).toContainEqual({ skip: 0, length: 1000, totalItems: 1900 });
     await expectUpdate(products, '605');
+  });
+
+  it('keeps every survivor current when a larger second pass loses already-read rows', async () => {
+    const { products, requests, afterNextPage } = await start(1500, undefined, true);
+    expect(await db.products.find().exec()).toHaveLength(1500);
+    for (const product of products) {
+      Object.assign(product, { name: `Updated ${product.id}`, updatedAt: timestamp(1500) });
+    }
+    products.push(...Array.from({ length: 500 }, (_, i) => ({
+      id: String(1501 + i), name: `Product ${1501 + i}`, slug: `product-${1501 + i}`,
+      updatedAt: timestamp(1501 + i),
+    })));
+    requests.length = 0;
+    afterNextPage((rows) => { rows.splice(0, 300); });
+    replication.reSync();
+    await replication.awaitInSync();
+    expect(products).toHaveLength(1700);
+    const localNames = new Map((await db.products.find().exec()).map((p) => [p.id, p.name]));
+    for (const product of products) expect(localNames.get(product.id), `Stale or missing ${product.id}`).toBe(product.name);
+    expect(requests).toContainEqual({ skip: 0, length: 1000, totalItems: 2000 });
+    expect(requests).toContainEqual({ skip: 1000, length: 700, totalItems: 1700 });
+    expect(requests).toContainEqual({ skip: 0, length: 1000, totalItems: 1700 });
   });
 
   it('completes with 1500 tied timestamps and completes a later sync', async () => {
