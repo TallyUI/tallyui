@@ -21,8 +21,17 @@ export interface ProductPriceProps extends Omit<TextProps, 'children'> {
    * Defaults to true.
    */
   showFromPrice?: boolean;
-  /** Label shown before the lowest price when variant prices differ. Defaults to 'from'. */
+  /**
+   * Label shown before the lowest price when variant prices differ.
+   * @deprecated Use formatFrom.
+   */
   fromLabel?: string;
+  /**
+   * Formats the lowest price when variant prices differ, for languages
+   * whose word order puts the label after the price. Defaults to
+   * `` (price) => `from ${price}` ``. Wins over `fromLabel` when both are given.
+   */
+  formatFrom?: (price: string) => string;
   className?: string;
 }
 
@@ -37,7 +46,7 @@ export interface ProductPriceProps extends Omit<TextProps, 'children'> {
  * <ProductPrice doc={productDocument} currency="EUR" />
  * ```
  */
-export function ProductPrice({ doc, currency, locale, currencySymbol = '$', className, showFromPrice = true, fromLabel = 'from', ...textProps }: ProductPriceProps) {
+export function ProductPrice({ doc, currency, locale, currencySymbol = '$', className, showFromPrice = true, fromLabel, formatFrom, ...textProps }: ProductPriceProps) {
   const { getPrices, getVariants } = useProductTraits();
   const traitContext = useTraitContext();
   const effectiveCurrency = currency ?? traitContext.currency;
@@ -50,14 +59,16 @@ export function ProductPrice({ doc, currency, locale, currencySymbol = '$', clas
   const variants = showFromPrice ? getVariants?.(doc, traitContext) : undefined;
   const range = variants && variants.length >= 2 ? resolvePriceRange(variants, effectiveCurrency) : undefined;
 
+  const applyFormatFrom = formatFrom ?? (fromLabel !== undefined ? (price: string) => `${fromLabel} ${price}` : (price: string) => `from ${price}`);
+
   if (range && range.min.amount !== range.max.amount) {
     return (
       <Text
-        className={cn('text-sm font-medium text-foreground', className)}
+        className={cn('text-sm font-medium text-price', className)}
         {...textProps}
         style={[{ fontVariant: ['tabular-nums'] }, textProps.style]}
       >
-        {fromLabel} {format(range.min)}
+        {applyFormatFrom(format(range.min))}
       </Text>
     );
   }
@@ -75,7 +86,7 @@ export function ProductPrice({ doc, currency, locale, currencySymbol = '$', clas
   if (resolved.was) {
     return (
       <Text
-        className={cn('text-sm font-semibold text-foreground', className)}
+        className={cn('text-sm font-semibold text-sale', className)}
         {...textProps}
         style={[{ fontVariant: ['tabular-nums'] }, textProps.style]}
       >
@@ -87,7 +98,7 @@ export function ProductPrice({ doc, currency, locale, currencySymbol = '$', clas
 
   return (
     <Text
-      className={cn('text-sm font-medium text-foreground', className)}
+      className={cn('text-sm font-medium text-price', className)}
       {...textProps}
       style={[{ fontVariant: ['tabular-nums'] }, textProps.style]}
     >

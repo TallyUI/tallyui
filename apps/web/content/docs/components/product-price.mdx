@@ -23,8 +23,9 @@ Handles sale prices automatically — regular prices use `text-price`, sale pric
 |------|------|---------|-------------|
 | `doc` | `any` | required | RxDB product document |
 | `currencySymbol` | `string` | `'$'` | Currency symbol to prepend |
-| `showFromPrice` | `boolean` | `true` | Show `{fromLabel} <lowest price>` when variant prices differ |
-| `fromLabel` | `string` | `'from'` | Label shown before the lowest price, for translation |
+| `showFromPrice` | `boolean` | `true` | Show the lowest price, formatted by `formatFrom`, when variant prices differ |
+| `formatFrom` | `(price: string) => string` | `` (price) => `from ${price}` `` | Formats the lowest price when variant prices differ, for languages whose word order puts the label after the price |
+| `fromLabel` | `string` | — | **Deprecated.** Use `formatFrom`. Label shown before the lowest price when given and `formatFrom` is not |
 | `className` | `string` | — | Override default styles |
 
 **Default classes:** `text-sm font-medium text-price` (or `text-sale` when on sale)
@@ -44,7 +45,10 @@ shown in that case.
 // Opt out and always show the default variant's price
 <ProductPrice doc={productDocument} showFromPrice={false} />
 
-// Translate the label
+// Put the price first, for languages whose word order needs it
+<ProductPrice doc={productDocument} formatFrom={(p) => `${p} ab`} />
+
+// Deprecated: use formatFrom instead
 <ProductPrice doc={productDocument} fromLabel="ab" />
 ```
 
