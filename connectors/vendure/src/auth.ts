@@ -24,13 +24,21 @@ export const vendureSignIn: NonNullable<ConnectorAuth['signIn']> = async (baseUr
     if ((error as { name?: unknown })?.name === 'AbortError' || init.signal?.aborted) throw error;
     throw new SignInError('failed', `Could not reach Vendure at ${baseUrl}: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const body = await res.json().catch(() => undefined) as LoginBody | undefined;
+  let body: LoginBody;
+  try {
+    body = await res.json();
+  } catch {
+    throw new SignInError('server_error', `Vendure sent an unreadable response (HTTP ${res.status})`, res.status);
+  }
+  if (!res.ok) throw new SignInError('server_error', body?.errors?.[0]?.message ?? `Vendure sign-in failed (HTTP ${res.status})`, res.status);
   const login = body?.data?.login;
-  if (!res.ok || body?.errors?.length || !login) {
-    throw new SignInError('failed', body?.errors?.[0]?.message ?? `Vendure sign-in failed (HTTP ${res.status})`);
+  if (body?.errors?.length || !login) {
+    throw new SignInError('server_error', body?.errors?.[0]?.message ?? `Vendure sign-in failed (HTTP ${res.status})`, res.status);
   }
   if (login.errorCode === 'INVALID_CREDENTIALS_ERROR') throw new SignInError('invalid_credentials', login.message ?? 'Invalid email or password');
-  if (login.__typename !== 'CurrentUser') throw new SignInError('failed', login.message ?? `Vendure sign-in failed (${login.__typename})`);
+  // Native email/password auth is disabled on the server, so it needs a sign-in flow this connector can't do.
+  if (login.errorCode === 'NATIVE_AUTH_STRATEGY_ERROR') throw new SignInError('unsupported', login.message ?? 'Native email and password sign-in is disabled on this Vendure server');
+  if (login.__typename !== 'CurrentUser') throw new SignInError('server_error', login.message ?? `Vendure sign-in failed (${login.__typename})`, res.status);
   const token = res.headers.get('vendure-auth-token');
   if (!token) {
     throw new SignInError('unsupported', "Vendure signed in but sent no 'vendure-auth-token' header. Add 'bearer' to the server's authOptions.tokenMethod. This connector reads the default header name, so a server that renames authOptions.authTokenHeaderKey also gives this error.");

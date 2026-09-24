@@ -88,13 +88,47 @@ describe('Medusa sign-in', () => {
     await expect(result).rejects.toMatchObject({ code: 'invalid_credentials', message: 'Invalid email or password' });
   });
 
+  it('rejects a 401 with a plain-text body as invalid_credentials, not server_error', async () => {
+    const fetch = vi.fn(async () => new Response('Unauthorized', { status: 401 }));
+    const result = medusaAdminUserAuth.signIn!('https://medusa.test', { email: 'admin@test.com', password: 'pw' }, { fetch });
+    await expect(result).rejects.toBeInstanceOf(SignInError);
+    await expect(result).rejects.toMatchObject({ code: 'invalid_credentials' });
+  });
+
   it('rejects a location body as unsupported', async () => {
     await expect(signIn({ location: 'https://idp.test/authorize' }).result).rejects.toMatchObject({ code: 'unsupported' });
   });
 
-  it('rejects other failures as failed with the Medusa message', async () => {
-    await expect(signIn({ type: 'invalid_data', message: 'Email is required' }, 400).result)
-      .rejects.toMatchObject({ code: 'failed', message: 'Email is required' });
+  it('rejects mfa_required as unsupported and never returns the token', async () => {
+    await expect(signIn({ mfa_required: true, token: 'sneaky' }).result)
+      .rejects.toMatchObject({ code: 'unsupported' });
+  });
+
+  it('rejects verification_required as unsupported', async () => {
+    await expect(signIn({ verification_required: true }).result).rejects.toMatchObject({ code: 'unsupported' });
+  });
+
+  it('rejects other non-OK statuses as server_error with the status and the Medusa message', async () => {
+    await expect(signIn({ type: 'server_error', message: 'Something went wrong' }, 500).result)
+      .rejects.toMatchObject({ code: 'server_error', status: 500, message: 'Something went wrong' });
+  });
+
+  it('rejects a malformed JSON body as server_error with the status', async () => {
+    const fetch = vi.fn(async () => new Response('not json', { status: 200 }));
+    const result = medusaAdminUserAuth.signIn!('https://medusa.test', { email: 'admin@test.com', password: 'pw' }, { fetch });
+    await expect(result).rejects.toMatchObject({ code: 'server_error', status: 200 });
+  });
+
+  it('rejects a 200 with a null body as server_error', async () => {
+    await expect(signIn(null).result).rejects.toMatchObject({ code: 'server_error', status: 200 });
+  });
+
+  it('rejects a 200 with no token as server_error', async () => {
+    await expect(signIn({}).result).rejects.toMatchObject({ code: 'server_error', status: 200 });
+  });
+
+  it('rejects a 200 with a numeric token as server_error', async () => {
+    await expect(signIn({ token: 12345 }).result).rejects.toMatchObject({ code: 'server_error', status: 200 });
   });
 
   it('has no sign-in for secret API keys', () => {
