@@ -35,10 +35,11 @@ function serve(variants: Variant[], productIds: Set<string>) {
 describe('createVendureVariantFeedReplication', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('is wired as replication.productVariantFeed and is pull-only', () => {
-    const feed = createVendureConnector().replication!.productVariantFeed!;
-    expect(feed.pull.handler).toBeTypeOf('function');
-    expect(feed.push).toBeUndefined();
+  it('runs inside the pull-only replication.products, not as its own replication', () => {
+    const { replication } = createVendureConnector();
+    expect(replication!.products!.pull.handler).toBeTypeOf('function');
+    expect(replication!.products!.push).toBeUndefined();
+    expect(replication).not.toHaveProperty('productVariantFeed');
   });
 
   it('selects only id and updatedAt for the mark and the skew probes', async () => {

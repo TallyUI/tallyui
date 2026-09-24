@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SyncContext } from '@tallyui/core';
 
-import { vendureProductReplication, type VendureProductCheckpoint } from './products';
+import { createVendureProductReplication, vendureProductReplication, type VendureProductCheckpoint } from './products';
 import { createVendureConnector } from '../index';
 
 const context: SyncContext = {
@@ -160,7 +160,7 @@ describe('fixed-window passes', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const fetch = serveProducts([{ id: '1', updatedAt: timestamp }]);
     fetch.mockResolvedValueOnce(gqlResponse({ products: { items: [], totalItems: 0 } }));
-    const adapter = createVendureConnector({ updatedAtSkewMs: 2 * 3600e3 }).replication!.products!;
+    const adapter = createVendureProductReplication(undefined, 2 * 3600e3);
     const result = await adapter.pull.handler({ skip: 50, updatedAt: '2025-12-31T00:00:00.000Z' }, 2, context);
     const options = fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string).variables.options);
     expect(options.map((option) => option.filter?.updatedAt.after)).toEqual([
@@ -239,7 +239,7 @@ describe('fixed-window passes', () => {
   it.each([undefined, 'barcode', 'ean'])('selects only the opted-in barcode field: %s', async (barcodeField) => {
     const connector = createVendureConnector({ barcodeField });
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => gqlResponse({ products: { items: [] } }));
-    await connector.replication!.products!.pull.handler(undefined, 2, context);
+    await createVendureProductReplication(barcodeField).pull.handler(undefined, 2, context);
     await connector.sync.products.fetchByIds(['1'], context);
     for (const [, init] of fetch.mock.calls) {
       const { query } = JSON.parse(init!.body as string);

@@ -17,9 +17,10 @@ const variants = (context: SyncContext, fields: string, options: Record<string, 
  * `Product.updatedAt`, so the product feed never sees it. This pull adapter
  * pages changed variants with the same pass and high-water design as
  * `createVendureProductReplication` and re-delivers their parent products,
- * in the same document shape, into the `products` collection. Run it as a
- * second replication with its own identifier. Parents that no longer exist
- * are skipped; deletions are the id reconcile's job.
+ * in the same document shape, into the `products` collection. It runs as a
+ * sub-adapter of the connector's combined `replication.products` adapter
+ * (`combinePullAdapters`), not as its own replication. Parents that no longer
+ * exist are skipped; deletions are the id reconcile's job.
  *
  * With no checkpoint, the first pass re-delivers every product that has
  * variants, once. That is deliberate: it heals any price or stock change the
@@ -88,6 +89,16 @@ export const createVendureVariantFeedReplication = (barcodeField?: string, updat
       const checkpoint: VendureProductCheckpoint = complete
         ? { skip: 0, updatedAt: passHighWater, passHighWater: undefined, passTotal: undefined }
         : { skip, updatedAt: lastCheckpoint?.updatedAt ?? '', passHighWater, passTotal };
+      // RxDB saves no checkpoint from an empty page. If this call's variant
+      // pages mapped to no live parents but the cursor moved, the cursor would
+      // stick mid-pass and a later change below it would be lost. Carry the
+      // checkpoint on one current product; re-delivering it is harmless.
+      const moved = (['skip', 'updatedAt', 'passHighWater', 'passTotal'] as const)
+        .some((key) => checkpoint[key] !== lastCheckpoint?.[key]);
+      if (!documents.length && moved) {
+        const res = await gql(context, PRODUCT_LIST_QUERY(barcodeField), { options: { take: 1 } });
+        documents.push(...(res.data?.products?.items ?? []).map(toProductDocument));
+      }
       return { documents, checkpoint };
     },
   },

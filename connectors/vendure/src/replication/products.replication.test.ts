@@ -6,8 +6,7 @@ import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/rep
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { vendureProductSchema } from '../schemas/products';
-import { createVendureConnector } from '../index';
-import type { VendureProductCheckpoint } from './products';
+import { createVendureProductReplication, type VendureProductCheckpoint } from './products';
 
 addRxPlugin(RxDBDevModePlugin);
 const context = { connectorId: 'vendure', baseUrl: 'https://vendure.test', headers: {} };
@@ -25,7 +24,7 @@ afterEach(async () => {
 
 async function start(count: number, afterPage?: (products: Product[]) => void, tied = false,
   server: { skew?: number; updatedAtSkewMs?: number; fractionMs?: number } = {}) {
-  const adapter = createVendureConnector({ updatedAtSkewMs: server.updatedAtSkewMs }).replication!.products!;
+  const adapter = createVendureProductReplication(undefined, server.updatedAtSkewMs);
   const products = Array.from({ length: count }, (_, i) => ({
     id: String(i + 1), name: `Product ${i + 1}`, slug: `product-${i + 1}`,
     updatedAt: timestamp(tied ? 0 : i) + (server.fractionMs ?? 0),

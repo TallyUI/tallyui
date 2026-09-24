@@ -1,4 +1,4 @@
-import type { TallyConnector } from '@tallyui/core';
+import { combinePullAdapters, type TallyConnector } from '@tallyui/core';
 
 import { vendureAuth } from './auth';
 import { vendureProductSchema } from './schemas/products';
@@ -47,9 +47,12 @@ export const createVendureConnector = (options: { barcodeField?: string; stockLo
   },
 
   replication: {
-    products: createVendureProductReplication(options.barcodeField, options.updatedAtSkewMs),
-    // Second pull on the products collection, with its own replicationIdentifier (ADR-060).
-    productVariantFeed: createVendureVariantFeedReplication(options.barcodeField, options.updatedAtSkewMs),
+    // One replication per collection: the product and variant feeds share it (ADR-060).
+    // legacyKey carries an existing install's product-feed checkpoint over.
+    products: combinePullAdapters({
+      products: createVendureProductReplication(options.barcodeField, options.updatedAtSkewMs),
+      variants: createVendureVariantFeedReplication(options.barcodeField, options.updatedAtSkewMs),
+    }, { legacyKey: 'products' }),
   },
 
   reconcile: {
@@ -64,6 +67,6 @@ export { vendureAuth, vendureSignIn } from './auth';
 export { vendureProductSchema } from './schemas/products';
 export { vendureProductTraits } from './traits/product';
 export { vendureProductSync } from './sync/products';
-export { vendureProductReplication } from './replication/products';
+export { createVendureProductReplication, vendureProductReplication } from './replication/products';
 export { createVendureVariantFeedReplication } from './replication/variant-feed';
 export { vendureStockReconcile } from './reconcile/stock';

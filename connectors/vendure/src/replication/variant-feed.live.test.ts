@@ -5,15 +5,16 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import type { ReplicationAdapter } from '@tallyui/core';
 import { createVendureConnector } from '../index';
 import { vendureProductSchema } from '../schemas/products';
-import type { VendureProductCheckpoint } from './products';
+import { createVendureProductReplication } from './products';
 
 addRxPlugin(RxDBDevModePlugin);
 
 describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure variant feed', () => {
   let db: RxDatabase;
-  let replication: RxReplicationState<any, VendureProductCheckpoint> | undefined;
+  let replication: RxReplicationState<any, any> | undefined;
 
   afterEach(async () => {
     await replication?.cancel();
@@ -58,15 +59,19 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure variant feed', () =>
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
     await db.addCollections({ products: { schema: vendureProductSchema } });
-    const connector = createVendureConnector({ barcodeField: 'barcode' });
-    const run = async (feed: 'products' | 'productVariantFeed') => {
-      replication = replicateRxCollection<any, VendureProductCheckpoint>({
+    // The product feed alone, to show it misses the change, and the connector's one replication.
+    const feeds: Record<string, ReplicationAdapter<any>> = {
+      productFeed: createVendureProductReplication('barcode'),
+      products: createVendureConnector({ barcodeField: 'barcode' }).replication!.products!,
+    };
+    const run = async (feed: 'productFeed' | 'products') => {
+      replication = replicateRxCollection<any, any>({
         collection: db.products, replicationIdentifier: `vendure-${feed}-live`,
         live: false, waitForLeadership: false,
         pull: {
           batchSize: 100,
           handler: (checkpoint, batchSize) =>
-            connector.replication![feed]!.pull.handler(checkpoint, batchSize, { connectorId: 'vendure', baseUrl, headers }),
+            feeds[feed].pull.handler(checkpoint, batchSize, { connectorId: 'vendure', baseUrl, headers }),
         },
       });
       await replication.awaitInitialReplication();
@@ -78,11 +83,12 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure variant feed', () =>
       updateProductVariants(input: $input) { id price }
     }`, { input: [{ id: variant.id, price }] });
 
+    expect(await run('productFeed')).toBe(variant.price);
     expect(await run('products')).toBe(variant.price);
     try {
       await setPrice(variant.price + 1);
-      expect(await run('products')).toBe(variant.price);
-      expect(await run('productVariantFeed')).toBe(variant.price + 1);
+      expect(await run('productFeed')).toBe(variant.price);
+      expect(await run('products')).toBe(variant.price + 1);
       expect(warn).not.toHaveBeenCalled();
     } finally {
       const [restored] = (await setPrice(variant.price)).updateProductVariants;
