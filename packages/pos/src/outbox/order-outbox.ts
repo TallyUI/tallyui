@@ -1,6 +1,6 @@
 import type { RxCollection } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
-import { toOrderCreateEnvelope, type PosOrder } from '../pos-order';
+import { toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import type { CommandTransport, OutboxState } from './types';
 
 // Pause after three 401s since the server last accepted credentials.
@@ -20,6 +20,8 @@ export interface OrderOutboxOptions {
 export interface OrderOutbox {
   /** Sends pending orders until empty or retrying. Concurrent calls share one run. */
   flush(): Promise<void>;
+  /** Moves rejected orders (all, or those whose id is listed) back to pending with a new commandId, then flushes. Resolves to the number requeued. */
+  requeue(orderIds?: string[]): Promise<number>;
   start(): void;
   stop(): void;
   state$: Observable<OutboxState>;
@@ -83,21 +85,13 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         return;
       }
       if (outcome.kind === 'refused') {
-        for (const order of orders) {
-          const current = await collection.findOne(order.id).exec();
-          if (!current || current.syncStatus !== 'pending') continue;
-          await current.incrementalPatch({ syncStatus: 'rejected',
-            error: { code: `http_${outcome.status}`, message: outcome.reason }, updatedAt: new Date(now()).toISOString() });
-          attempts.delete(order.commandId);
-        }
         unauthorizedSinceAccepted = 0;
-        backoff = initialBackoff;
-        state$.next({ ...state$.value, lastRetryReason: undefined });
-        await updateState();
-        continue;
+        state$.next({ ...state$.value, refused: { status: outcome.status, reason: outcome.reason },
+          authRequired: false, lastRetryReason: 'refused', sending: false, nextAttemptAt: undefined });
+        return;
       }
       unauthorizedSinceAccepted = 0;
-      state$.next({ ...state$.value, authRequired: false });
+      state$.next({ ...state$.value, authRequired: false, refused: undefined });
       let progressed = false;
       for (const order of orders) {
         const result = outcome.results.find((entry) => entry.id === order.commandId);
@@ -140,6 +134,26 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   return {
     state$,
     flush,
+    async requeue(orderIds) {
+      const orders = await collection.find({ selector: { syncStatus: 'rejected',
+        ...(orderIds ? { id: { $in: orderIds } } : {}) } }).exec();
+      for (const order of orders) {
+        const oldCommandId = order.commandId;
+        await order.incrementalModify((data) => {
+          data.syncStatus = 'pending';
+          delete data.error;
+          // The server ledger stored the rejection under the old id; replaying it returns that rejection.
+          // A rejected command created no order, so a fresh id cannot duplicate one.
+          data.commandId = uuidv7();
+          data.updatedAt = new Date(now()).toISOString();
+          return data;
+        });
+        attempts.delete(oldCommandId);
+      }
+      await updateState();
+      if (orders.length && !stopped) flush().catch(() => {});
+      return orders.length;
+    },
     start() {
       stopped = false;
       if (subscription) return;

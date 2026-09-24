@@ -17,4 +17,6 @@ export interface OutboxState {
   nextAttemptAt?: number;
   /** Set after 3 consecutive 401s; the app should ask the cashier to sign in, then call flush(). */
   authRequired?: boolean;
+  /** Set when the server refused a whole batch (HTTP 400, 403, 413, 415, 422). No order is changed; sending pauses until the next flush(). */
+  refused?: { status: number; reason: string };
 }
