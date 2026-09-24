@@ -2,8 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync } from 'node:fs';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -22,12 +21,11 @@ function resolvable(specifier: string): boolean {
 }
 
 // The script needs esbuild and rxdb-premium (RXDB Premium needs a licence
-// token to install, see docs/CONTRIBUTING.md) resolvable, and the package
-// already built, since it bundles the real, built worker entry.
+// token to install, see docs/CONTRIBUTING.md) resolvable. It bundles from
+// this checkout's own src/web/worker.ts, so no `dist` build is needed.
 const missing = [
   !resolvable('esbuild') && 'esbuild',
   !resolvable('rxdb-premium') && 'rxdb-premium',
-  !existsSync(path.join(packageDir, 'dist/web/worker.js')) && 'the built package (run `pnpm --filter @tallyui/storage-sqlite build`)',
 ].filter((reason): reason is string => reason !== false);
 
 if (missing.length > 0 && !process.env.CI) {
@@ -47,6 +45,35 @@ if (missing.length > 0 && !process.env.CI) {
       const wasmStat = await stat(path.join(outDir, 'sqlite3.wasm'));
       expect(workerStat.size).toBeGreaterThan(0);
       expect(wasmStat.size).toBeGreaterThan(0);
+    } finally {
+      await rm(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("builds from this checkout's src/web/worker.ts, with no dist file as an input", async () => {
+    const outDir = await mkdtemp(path.join(tmpdir(), 'tallyui-sqlite-worker-'));
+    const metafilePath = path.join(outDir, 'metafile.json');
+    try {
+      const output = execFileSync(process.execPath, [scriptPath, outDir], {
+        cwd: packageDir,
+        stdio: 'pipe',
+        env: { ...process.env, TALLYUI_WORKER_METAFILE: metafilePath },
+      }).toString();
+
+      const workerStat = await stat(path.join(outDir, 'tallyui-sqlite-worker.js'));
+      const wasmStat = await stat(path.join(outDir, 'sqlite3.wasm'));
+      expect(workerStat.size).toBeGreaterThan(0);
+      expect(wasmStat.size).toBeGreaterThan(0);
+      expect(output).toContain('src/web/worker.ts');
+
+      // Metafile input keys are relative to `cwd` (packageDir here, via
+      // absWorkingDir). Only this package's OWN dist is the bug under test:
+      // third-party deps (rxdb, sqlite-wasm) legitimately ship a dist/ and
+      // are expected among the inputs.
+      const metafile = JSON.parse(await readFile(metafilePath, 'utf8'));
+      const inputPaths = Object.keys(metafile.inputs);
+      expect(inputPaths.length).toBeGreaterThan(0);
+      expect(inputPaths.some((input) => input === 'dist' || input.startsWith('dist/'))).toBe(false);
     } finally {
       await rm(outDir, { recursive: true, force: true });
     }
