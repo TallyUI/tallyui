@@ -46,7 +46,7 @@ const PRODUCT_LIST_QUERY = (barcodeField?: string) => `
 /**
  * Helper to execute a GraphQL query against the Vendure Admin API.
  */
-async function gql(
+export async function gql(
   context: SyncContext,
   query: string,
   variables?: Record<string, any>,

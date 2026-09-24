@@ -6,6 +6,8 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 
 import type { TallyConnector } from '@tallyui/core';
 
+import { STOCK_LEVELS_COLLECTION, stockLevelsSchema } from './stock-levels';
+
 const DEV_MODE = process.env.NODE_ENV !== 'production';
 addRxPlugin(RxDBLocalDocumentsPlugin);
 
@@ -37,7 +39,8 @@ export interface CreateDatabaseOptions {
  * Create an RxDB database from a connector's schemas.
  *
  * This is the main entry point — give it a connector and it builds
- * the database with the right collections and schemas.
+ * the database with the right collections and schemas. A connector with
+ * `reconcile.stock` also gets the `stock_levels` overlay collection.
  *
  * ```ts
  * import { woocommerceConnector } from '@tallyui/connector-woocommerce';
@@ -55,6 +58,18 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     multiInstance = false,
   } = options;
 
+  const collectionConfigs: Record<string, { schema: any }> = {};
+  for (const [collectionName, schema] of Object.entries(connector.schemas)) {
+    collectionConfigs[collectionName] = { schema };
+  }
+  // The stock reconcile overlay (ADR-060): local only, never replicated.
+  if (connector.reconcile?.stock) {
+    if (STOCK_LEVELS_COLLECTION in collectionConfigs) {
+      throw new Error(`Connector "${connector.id}" defines a "${STOCK_LEVELS_COLLECTION}" collection; that name is reserved for the stock reconcile overlay.`);
+    }
+    collectionConfigs[STOCK_LEVELS_COLLECTION] = { schema: stockLevelsSchema };
+  }
+
   const db = await createRxDatabase({
     name,
     // Dev mode refuses storage without a schema validator (RxDB error DVM1),
@@ -65,12 +80,6 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     // RxDB rejects this outside dev mode (DB9); in dev it lets hot reload re-create the same database.
     ignoreDuplicate: DEV_MODE,
   });
-
-  // Build collection configs from connector schemas
-  const collectionConfigs: Record<string, { schema: any }> = {};
-  for (const [collectionName, schema] of Object.entries(connector.schemas)) {
-    collectionConfigs[collectionName] = { schema };
-  }
 
   await db.addCollections(collectionConfigs);
 

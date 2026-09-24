@@ -4,6 +4,7 @@ import { vendureProductSchema } from './schemas/products';
 import { createVendureProductTraits } from './traits/product';
 import { createVendureProductSync } from './sync/products';
 import { createVendureProductReplication } from './replication/products';
+import { vendureStockReconcile } from './reconcile/stock';
 
 /**
  * Vendure connector for Tally UI.
@@ -19,6 +20,9 @@ import { createVendureProductReplication } from './replication/products';
  *   <App />
  * </ConnectorProvider>
  * ```
+ *
+ * `pricesIncludeTax` must equal the POS tax setting (`TaxContext.pricesIncludeTax`)
+ * until TV4 reads both from one store-settings call.
  */
 export const createVendureConnector = (options: { barcodeField?: string; stockLocationId?: string; pricesIncludeTax?: boolean; updatedAtSkewMs?: number } = {}): TallyConnector => ({
   id: 'vendure',
@@ -64,6 +68,10 @@ export const createVendureConnector = (options: { barcodeField?: string; stockLo
   replication: {
     products: createVendureProductReplication(options.barcodeField, options.updatedAtSkewMs),
   },
+
+  reconcile: {
+    stock: vendureStockReconcile,
+  },
 });
 
 export const vendureConnector = createVendureConnector();
@@ -73,3 +81,4 @@ export { vendureProductSchema } from './schemas/products';
 export { vendureProductTraits } from './traits/product';
 export { vendureProductSync } from './sync/products';
 export { vendureProductReplication } from './replication/products';
+export { vendureStockReconcile } from './reconcile/stock';

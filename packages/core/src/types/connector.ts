@@ -3,6 +3,7 @@ import type { RxJsonSchema } from 'rxdb';
 import type { ProductTraits } from './traits/product';
 import type { CustomerTraits } from './traits/customer';
 import type { ReplicationAdapter } from './replication';
+import type { StockReconcileAdapter } from './reconcile';
 
 /**
  * Authentication configuration for a connector.
@@ -122,4 +123,7 @@ export interface TallyConnector {
     products?: ReplicationAdapter<any>;
     [key: string]: ReplicationAdapter<any> | undefined;
   };
+
+  /** Periodic re-reads of state that replication misses (ADR-060) */
+  reconcile?: { stock?: StockReconcileAdapter };
 }

@@ -78,4 +78,42 @@ describe('createTallyDatabase', () => {
       await db.remove();
     }
   });
+
+  const stockConnector = (schemas: Record<string, unknown>, stock: boolean) => ({
+    id: 'test', schemas, reconcile: stock ? { stock: { fetchPages: async function* () {}, overlay: () => undefined } } : undefined,
+  }) as unknown as TallyConnector;
+  const productSchema = {
+    version: 0, primaryKey: 'id', type: 'object',
+    properties: { id: { type: 'string', maxLength: 100 } }, required: ['id'],
+  };
+
+  // Dev mode with ajv, so the untyped `value` property is validated too.
+  it.each([true, false])('adds stock_levels only when the connector has reconcile.stock (%s)', async (stock) => {
+    vi.resetModules();
+    const { createTallyDatabase } = await import('./create-db');
+    const db = await createTallyDatabase({
+      connector: stockConnector({ products: productSchema }, stock),
+      name: `stock_test_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      storage: getRxStorageMemory(),
+    });
+    try {
+      expect(Object.keys(db.collections).sort()).toEqual(stock ? ['products', 'stock_levels'] : ['products']);
+      if (stock) {
+        await db.stock_levels.insert({ id: 'v1', value: [{ onHand: 3 }], updatedAt: new Date().toISOString() });
+        expect((await db.stock_levels.findOne('v1').exec())?.get('value')).toEqual([{ onHand: 3 }]);
+      }
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('throws when the connector already defines stock_levels', async () => {
+    vi.resetModules();
+    const { createTallyDatabase } = await import('./create-db');
+    await expect(createTallyDatabase({
+      connector: stockConnector({ products: productSchema, stock_levels: productSchema }, true),
+      name: `clash_test_${Date.now()}`,
+      storage: getRxStorageMemory(),
+    })).rejects.toThrow(/"stock_levels" collection; that name is reserved/);
+  });
 });

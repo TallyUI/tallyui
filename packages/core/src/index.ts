@@ -8,6 +8,7 @@ export type {
   CollectionSync,
   RemoteIdEntry,
   ReplicationAdapter,
+  StockReconcileAdapter,
   SyncContext,
   ProductTraits,
   TraitContext,
