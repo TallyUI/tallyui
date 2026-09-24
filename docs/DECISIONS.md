@@ -1445,7 +1445,7 @@ interface OrderCreatePayload {
 ## ADR-060 Catalogue freshness: variant-level incremental pulls plus reconcile passes (Vendure and Medusa)
 
 - **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24), with
-  four amendments, which are folded into the decision below · **Source:**
+  seven amendments, which are folded into the decision below · **Source:**
   probes and measurements on the local
   Vendure 3.7.3 dev store (`~/Projects/vendure-dev`, UTC, 2,000 products and
   3,334 variants); Medusa 2.21 source and schema (read-only)
@@ -1529,12 +1529,78 @@ interface OrderCreatePayload {
      id, so documents keep today's product-with-variants shape. This covers
      price and variant edits for 4–23 ms per poll. The product feed stays
      for product-level fields.
+     - **It runs inside the product replication, not beside it**
+       (amendment 5, from the #58 review). Two pull replications on one
+       collection interfere in two ways:
+       - **Skipped pulls.** Each sees the other's writes as local writes,
+         and skips a pulled version until its own no-op upstream catches
+         up. Measured: 0 lost in 60 single-document probes, 0 lost in
+         5,000 bulk documents, and one loss on CI.
+       - **Stale re-puts.** Both write whole product documents with no
+         ordering. A variant-feed fetch made before a product-feed rename
+         can land after it and put the old name back, and neither
+         checkpoint ever revisits it. The reviewer reproduced this with a
+         gated test.
+       - **The fix.** `combinePullAdapters` (`@tallyui/core`) runs the
+         product pass and then the variant pass, **strictly in sequence
+         within one handler call**, and keeps the latest fetch per id. The
+         collection has one replication. This is the rule for every
+         connector: **one replication per collection, with every feed
+         going through the combiner.**
+     - **A carrier document keeps the cursor moving.** Suppose a call's
+       variant pages map to no live parents. It would return an empty page,
+       and RxDB discards an empty page's checkpoint, so the cursor would
+       stick mid-pass. Instead, such a call re-delivers one live product so
+       the checkpoint persists.
+     - **The first sync costs roughly double, once.** With no checkpoint,
+       the variant pass re-delivers every product that has variants. The
+       reviewer measured 12.2 s + 13.5 s at 2,000 products. This is
+       accepted, because it heals changes missed before the feed existed.
+       On upgrade, there is no re-download through the product feed: its
+       old checkpoint carries over (`legacyKey`) and it resumes with one
+       mark read. Only the variant pass runs in full.
   4. **An id reconcile pass** at app start and nightly: ids only (0.9 s at
      2,000 products). It also covers the same-millisecond high-water gap
      and ADR-049's known gap.
      - **It tombstones local documents only after a complete, successful
        pass** (amendment 2). A pass that fails or is cut short deletes
        nothing.
+     - **It covers variant ids too, on both platforms** (amendment 6).
+       Deleting a variant never touches its parent's timestamp:
+       - on Vendure, the variant just disappears from `productVariants`;
+       - on Medusa, `deleteProductVariantsWorkflow` soft-deletes the
+         variant and its inventory items and leaves the product's
+         `updated_at` alone. This was confirmed by an executed probe on
+         medusapos's disposable e2e store.
+
+       So a deleted variant stays sellable locally. On Medusa it gets
+       worse: the stock reconcile removes the item's overlay row, so the
+       overlay falls back to the replicated product's old stock.
+     - **Corrections reach the collection only through the pull.**
+       - After a complete pass, the id reconcile queues every local product
+         that is missing on the server, or that lists a vanished variant.
+       - A reconcile feed, the **last** key in the combined adapter,
+         re-fetches the queued products fresh:
+         - a product that still exists arrives as it is now, with its
+           deleted variants gone;
+         - a product that no longer exists arrives as a tombstone built
+           from the local document, which keeps required fields valid.
+       - Because the reconcile feed runs last, its fetch is the freshest in
+         the call and wins duplicates. Nothing ever writes locally into
+         the replicated collection.
+       - It runs once shortly after start (a device that was off overnight
+         needs a pass on wake), then nightly.
+     - **Medusa's incremental filter was being ignored** (amendment 7, from
+       the medusapos probe; reproduced read-only on medusa-dev). Medusa
+       2.21 honours only the operator form `updated_at[$gte]`. With a 2099
+       mark, `updated_at[gte]` returned all 2,005 products, and
+       `updated_at[$gte]` returned 0.
+       - So every Medusa pass that ran at all was a full catalogue read.
+         That also hid the deleted-variant bug, which appears as soon as
+         the filter works.
+       - Job C2 fixes the filter and adds the id reconcile together. Every
+         incremental filter is proven live with a future-dated mark,
+         because fake servers honour whatever they are sent.
   5. **Medusa prices:** price-set changes need a price reconcile pass at a
      slower default cadence, or a variant-price feed if Medusa's
      variant-price routes support an `updated_at` filter. This is decided
@@ -1547,7 +1613,10 @@ interface OrderCreatePayload {
     **both** connectors in one job. It includes measuring Medusa inventory
     levels on medusa-dev (127.0.0.1:9000).
   - **B.** The Vendure variant feed.
-  - **C.** The id reconcile.
+  - **C.** The id reconcile, covering products and variants. It is split
+    into two jobs: **C1**, the neutral contract, the runner and the
+    reconcile feed, plus Vendure; and **C2**, Medusa, together with the
+    `updated_at[$gte]` filter fix.
   - **D.** The Medusa price reconcile, after measurement.
 
   TV3 (sign-in) follows these jobs.
