@@ -10,6 +10,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       lines: order.lines.map((line) => ({
         clientLineId: line.id, variantId: line.variantId ?? line.productId, title: line.name,
         quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
+        ...(line.taxInclusive !== undefined ? { taxInclusive: line.taxInclusive } : {}),
       })),
       payments: order.payments.map((payment) => ({
         clientPaymentId: payment.id, method: payment.method, amountMinor: payment.amountMinor,

@@ -50,4 +50,17 @@ describe('toOrderCreateEnvelope', () => {
     for (const key of ['tenderedMinor', 'changeMinor', 'reference']) expect(envelope.payload.payments[0]).not.toHaveProperty(key);
     expect(JSON.parse(JSON.stringify(envelope))).toStrictEqual(envelope);
   });
+
+  it("a single-mode order's payload has no taxInclusive key on any line (ADR-038 amendment)", () => {
+    const envelope = toOrderCreateEnvelope(order, 'device1');
+    for (const line of envelope.payload.lines) expect(line).not.toHaveProperty('taxInclusive');
+  });
+
+  it('a converted line carries its own taxInclusive, the rest are unchanged', () => {
+    const converted: PosOrder = { ...order, lines: [{ ...order.lines[0], taxInclusive: true }, order.lines[1]] };
+    const envelope = toOrderCreateEnvelope(converted, 'device1');
+    expect(envelope.payload.lines[0]).toStrictEqual({ clientLineId: 'line1', variantId: 'v1', title: 'Item 1', quantity: 2, unitPriceMinor: 850, taxInclusive: true });
+    expect(envelope.payload.lines[1]).not.toHaveProperty('taxInclusive');
+    expect(JSON.parse(JSON.stringify(envelope))).toStrictEqual(envelope);
+  });
 });

@@ -13,6 +13,8 @@ export interface PosOrderLine {
   discountMinor: number;
   netMinor: number;
   taxLines: Array<{ code?: string; ratePpm: number; taxMicros: string }>;
+  /** This line's own tax mode; set only when it was converted from the store's (ADR-038 amendment). */
+  taxInclusive?: boolean;
 }
 
 export interface PosOrderPayment {

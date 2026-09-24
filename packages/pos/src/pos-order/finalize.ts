@@ -35,6 +35,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
     discountMinor: line.discountMinor, netMinor: line.netMinor,
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
+    ...(line.priceTaxModeConverted ? { taxInclusive: line.taxInclusive } : {}),
   }));
   const payments: PosOrderPayment[] = order.payments.map((payment) => ({
     id: newId(), method: payment.method as PosOrderPayment['method'], amountMinor: payment.amountMinor,
