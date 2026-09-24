@@ -4,6 +4,7 @@ import { medusaProductSchema } from './schemas/products';
 import { medusaProductTraits } from './traits/product';
 import { medusaProductSync } from './sync/products';
 import { medusaProductReplication } from './replication/products';
+import { medusaStockReconcile } from './reconcile/stock';
 
 export const medusaSecretKeyAuth: ConnectorAuth = {
   type: 'Medusa Admin API',
@@ -67,6 +68,10 @@ export const medusaConnector: TallyConnector = {
   replication: {
     products: medusaProductReplication,
   },
+
+  reconcile: {
+    stock: medusaStockReconcile,
+  },
 };
 
 /** Medusa connector using an admin user's Bearer JWT. */
@@ -77,3 +82,4 @@ export { medusaProductSchema } from './schemas/products';
 export { medusaProductTraits } from './traits/product';
 export { medusaProductSync } from './sync/products';
 export { medusaProductReplication } from './replication/products';
+export { medusaStockReconcile } from './reconcile/stock';

@@ -5,3 +5,6 @@ export { getStorage } from './storage';
 
 export { startReplication } from './replication';
 export type { StartReplicationOptions } from './replication';
+
+export { startStockReconcile } from './reconcile';
+export type { StartStockReconcileOptions, StockReconcileResult } from './reconcile';
