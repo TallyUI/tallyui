@@ -17,7 +17,8 @@
     "dist",
     "src",
     "!src/**/*.test.ts",
-    "!src/**/*.test.tsx"
+    "!src/**/*.test.tsx",
+    "!src/**/*.fixture.json"
   ],
   "license": "MIT",
   "repository": {
