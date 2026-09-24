@@ -1187,6 +1187,23 @@ interface OrderCreatePayload {
 - **Consequences:** The mock API needs an `/admin-api` handler. A
   cookie-only store must add `bearer` to `tokenMethod`. The quick-start
   says so, and the plugin warns at start-up.
+- **Amendment (2026-09-24, #45 and #48 reviews):** the checkpoint in both
+  connectors is now pass-based and proven inside RxDB's real
+  `replicateRxCollection` loop:
+  - a pass ends on the list total;
+  - the next pass's lower bound is a high-water mark read at the pass
+    start;
+  - an unchanged mark returns an empty page and ends the loop;
+  - an empty page, or a shrinking total mid-pass, restarts the pass from
+    zero;
+  - pass state is cleared at completion, because RxDB merges checkpoints
+    (`stackCheckpoints`).
+
+  **Known gap, not fixed:** if a row that was already read is deleted and
+  a new row enters the window in the same pass, the total is unchanged. The
+  shrink check then misses it, and one row can be skipped until the next
+  change to it or the reconcile pass (ADR-060). This is rare and recorded
+  here deliberately.
 
 ## ADR-050 The Vendure change feed is a journal written in the transaction
 
@@ -1424,3 +1441,116 @@ interface OrderCreatePayload {
 - **Consequences:** A store that keeps its barcode in a differently named
   field just passes that name. A store with no barcode field still syncs;
   scanning then matches on SKU only.
+
+## ADR-060 Catalogue freshness: variant-level incremental pulls plus reconcile passes (Vendure and Medusa)
+
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24), with
+  four amendments, which are folded into the decision below · **Source:**
+  probes and measurements on the local
+  Vendure 3.7.3 dev store (`~/Projects/vendure-dev`, UTC, 2,000 products and
+  3,334 variants); Medusa 2.21 source and schema (read-only)
+- **Context.** Both connectors pull products incrementally by the product's
+  own `updated_at`. That misses most of what a POS needs to stay fresh:
+  - **Vendure, probed:**
+    - A price edit and a stock edit on a variant bump
+      `ProductVariant.updatedAt` but not `Product.updatedAt`. The product
+      stayed at `06:23:37.108Z` while the variant moved to `06:57:39` and
+      then `06:57:41`.
+    - An order allocation at `PaymentSettled` moved `stockAllocated` from
+      0 to 1, and **neither timestamp changed**.
+  - **Medusa, from source:** `updateInventoryLevelsWorkflow` writes only
+    inventory levels. Price sets live in the pricing module. Neither
+    touches the product module's `updated_at`.
+  - So after the first pass, price and stock changes never arrive through
+    the product feed. Stock changes from orders are invisible even to a
+    variant-level feed on Vendure, and prices and stock are invisible on
+    Medusa.
+- **Other findings behind this ADR:**
+  - **Vendure filter skew.** Vendure's `updatedAt` columns are `timestamp
+    without time zone` in server-local time, but its list filters compare
+    them against ISO UTC strings.
+    - At UTC+2, `after(<newest updatedAt>)` returned all 2,000 rows.
+    - West of UTC, it would silently miss the latest changes.
+    - A consistent store needs both the Node process (`TZ=UTC`) and the
+      database session (`TimeZone=UTC`) in UTC. With the process alone,
+      `now()` defaults are stored in local wall time and read back as UTC,
+      2 hours ahead.
+    - Medusa's columns are `timestamptz` (checked in medusa-dev's schema),
+      so it is immune.
+    - #45 guards against the skew: it throws on a negative offset, warns
+      on a positive one, and offers `updatedAtSkewMs`. An upstream issue is
+      drafted in `docs/vendure/upstream-issue-updatedat-timezone.md` for
+      Paul.
+  - **Microsecond timestamps.** Postgres stores microseconds, and the API
+    returns milliseconds, so `after(mark)` returns the mark's own row.
+    Probes and bounds must allow ±1 ms.
+  - **Why live tests exist.** The live test against the dev store found
+    that RxDB had rejected **every** Vendure batch
+    (`createdAt: must NOT have additional properties`), so the connector had
+    never stored a product. Fake-server tests hid it. Every connector gets
+    an env-gated live test against its dev store (Vendure in #45; Medusa is
+    backlog item 27).
+- **Measurements** (Vendure dev store; median of 3 runs; local machine
+  shared with other workers):
+
+  | Request | Median | Requests | Transfer |
+  |---|---|---|---|
+  | Full product pass, 100 per page (products with variants, stock, barcode) | 8.2–10.1 s | 20 | 1.7 MB |
+  | Full product pass, 1,000 per page | 10.8–11.0 s | 2 | 1.7 MB |
+  | High-water check (1 product, `updatedAt DESC`) | 8 ms in a quiet run; one 2.3 s outlier under load | 1 | < 1 KB |
+  | Variant incremental, idle | 4 ms | 1 | < 1 KB |
+  | Variant incremental, 10 variants changed | 23 ms | 1 | 2 KB |
+  | Stock reconcile pass (all variants: `id` + `stockLevels`) | 3.7–3.8 s | 4 | 292 KB |
+  | Id reconcile pass (all products: `id`) | 0.9 s | 2 | 26 KB |
+
+  The live test replicated all 2,000 products in about 10.5 s. Medusa's
+  equivalents still need measuring on medusa-dev, by a worker with its
+  admin credentials.
+- **Decision:**
+  1. **The target is the plugin journal (ADR-050).** When it lands, it
+     replaces the incremental feeds. The reconcile passes below **stay after
+     it lands, as the backstop**. Everything else here is TallyUI-side and
+     is the interim design until then.
+  2. **A stock reconcile pass for both connectors:**
+     - It reads only ids and stock: Vendure `productVariants { id
+       stockLevels }` at 1,000 per page; Medusa inventory levels.
+     - It patches a local document only when its stock differs.
+     - **Cadence is a connector option, defaulting to 5 minutes**, run
+       after first paint, one pass at a time, with a request cap per tick
+       (the WCPOS politeness rules). At 3,334 variants that is 4 requests
+       and 292 KB every 5 minutes.
+     - **There is also an on-demand trigger, `reconcileStock()`** (amendment
+       1). The app calls it on foreground and resume, and after a sale is
+       refused for stock.
+  3. **A Vendure variant feed.** A second incremental pull over
+     `productVariants`, with the same pass and high-water design (sort by
+     id, filter `updatedAt`, a total, and the unchanged-mark early return).
+     For each changed variant, its parent product is re-fetched, batched by
+     id, so documents keep today's product-with-variants shape. This covers
+     price and variant edits for 4–23 ms per poll. The product feed stays
+     for product-level fields.
+  4. **An id reconcile pass** at app start and nightly: ids only (0.9 s at
+     2,000 products). It also covers the same-millisecond high-water gap
+     and ADR-049's known gap.
+     - **It tombstones local documents only after a complete, successful
+       pass** (amendment 2). A pass that fails or is cut short deletes
+       nothing.
+  5. **Medusa prices:** price-set changes need a price reconcile pass at a
+     slower default cadence, or a variant-price feed if Medusa's
+     variant-price routes support an `updated_at` filter. This is decided
+     after measuring on medusa-dev.
+  6. **Vendure servers run in UTC**, both the process and the database
+     session, or set `updatedAtSkewMs`. The Vendure quick-start says so.
+- **Job order**, decided by value to the shipping product (amendment 3).
+  Each job is one Codex spec, with a real-loop or live test as its proof:
+  - **A.** The shared reconcile runner, with the stock reconcile for
+    **both** connectors in one job. It includes measuring Medusa inventory
+    levels on medusa-dev (127.0.0.1:9000).
+  - **B.** The Vendure variant feed.
+  - **C.** The id reconcile.
+  - **D.** The Medusa price reconcile, after measurement.
+
+  TV3 (sign-in) follows these jobs.
+- **Until job A lands, neither POS (medusapos or vendurepos) treats
+  replicated stock as live.** The connectors' stock is only as fresh as the
+  last product-level change.
