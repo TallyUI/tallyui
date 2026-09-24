@@ -47,6 +47,26 @@ describe('Vendure sign-in', () => {
     await expect(signIn(new Response('Bad gateway', { status: 502 })).result)
       .rejects.toMatchObject({ code: 'failed', message: expect.stringContaining('502') });
   });
+
+  it('names the default header and a renamed authTokenHeaderKey when the token header is missing', async () => {
+    const { result } = signIn(loginResponse({ __typename: 'CurrentUser', id: '1' }));
+    await expect(result).rejects.toMatchObject({ code: 'unsupported', message: expect.stringContaining('authTokenHeaderKey') });
+    await expect(result).rejects.toMatchObject({ message: expect.stringContaining('vendure-auth-token') });
+  });
+
+  it('maps a network failure to a failed SignInError naming the base URL', async () => {
+    const fetch = vi.fn(async () => { throw new TypeError('fetch failed'); });
+    const result = vendureAuth.signIn!('https://vendure.test', { email: 'superadmin', password: 'pw' }, { fetch });
+    await expect(result).rejects.toBeInstanceOf(SignInError);
+    await expect(result).rejects.toMatchObject({ code: 'failed', message: expect.stringContaining('https://vendure.test') });
+  });
+
+  it('rethrows an abort unchanged instead of wrapping it', async () => {
+    const abortError = new DOMException('The operation was aborted', 'AbortError');
+    const fetch = vi.fn(async () => { throw abortError; });
+    const result = vendureAuth.signIn!('https://vendure.test', { email: 'superadmin', password: 'pw' }, { fetch });
+    await expect(result).rejects.toBe(abortError);
+  });
 });
 
 describe('Vendure getHeaders', () => {
@@ -72,5 +92,24 @@ describe('Vendure getHeaders', () => {
   it('sends no auth headers without credentials', () => {
     expect(vendureAuth.getHeaders({})).toEqual({});
     expect(vendureAuth.getHeaders({ token: '', channel_token: '' })).toEqual({});
+  });
+
+  it('warns once per module lifetime when auth_token is used, and never when token is set', async () => {
+    vi.resetModules();
+    const { vendureAuth: freshVendureAuth } = await import('./index');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    freshVendureAuth.getHeaders({ auth_token: 'x' });
+    freshVendureAuth.getHeaders({ auth_token: 'x' });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    warnSpy.mockRestore();
+    vi.resetModules();
+    const { vendureAuth: anotherFreshVendureAuth } = await import('./index');
+    const warnSpy2 = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    anotherFreshVendureAuth.getHeaders({ token: 'x' });
+    expect(warnSpy2).not.toHaveBeenCalled();
+    warnSpy2.mockRestore();
   });
 });

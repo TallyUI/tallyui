@@ -100,4 +100,18 @@ describe('Medusa sign-in', () => {
   it('has no sign-in for secret API keys', () => {
     expect(medusaSecretKeyAuth.signIn).toBeUndefined();
   });
+
+  it('maps a network failure to a failed SignInError naming the base URL', async () => {
+    const fetch = vi.fn(async () => { throw new TypeError('fetch failed'); });
+    const result = medusaAdminUserAuth.signIn!('https://medusa.test', { email: 'admin@test.com', password: 'pw' }, { fetch });
+    await expect(result).rejects.toBeInstanceOf(SignInError);
+    await expect(result).rejects.toMatchObject({ code: 'failed', message: expect.stringContaining('https://medusa.test') });
+  });
+
+  it('rethrows an abort unchanged instead of wrapping it', async () => {
+    const abortError = new DOMException('The operation was aborted', 'AbortError');
+    const fetch = vi.fn(async () => { throw abortError; });
+    const result = medusaAdminUserAuth.signIn!('https://medusa.test', { email: 'admin@test.com', password: 'pw' }, { fetch });
+    await expect(result).rejects.toBe(abortError);
+  });
 });

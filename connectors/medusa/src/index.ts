@@ -27,10 +27,16 @@ const jwtExpiresAt = (token: string): string | undefined => {
 
 export const medusaSignIn: NonNullable<ConnectorAuth['signIn']> = async (baseUrl, { email, password }, init = {}) => {
   const doFetch = init.fetch ?? fetch;
-  const res = await doFetch(`${baseUrl}/auth/user/emailpass`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: init.signal,
-    body: JSON.stringify({ email, password }),
-  });
+  let res: Response;
+  try {
+    res = await doFetch(`${baseUrl}/auth/user/emailpass`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: init.signal,
+      body: JSON.stringify({ email, password }),
+    });
+  } catch (error) {
+    if ((error as { name?: unknown })?.name === 'AbortError' || init.signal?.aborted) throw error;
+    throw new SignInError('failed', `Could not reach Medusa at ${baseUrl}: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const body = await res.json().catch(() => ({})) as { token?: unknown; location?: string; message?: string };
   if (res.status === 401) throw new SignInError('invalid_credentials', body.message ?? 'Invalid email or password');
   // A location means a redirect or MFA flow, which the POS does not support.
