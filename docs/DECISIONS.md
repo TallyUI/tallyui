@@ -1444,8 +1444,9 @@ interface OrderCreatePayload {
 
 ## ADR-060 Catalogue freshness: variant-level incremental pulls plus reconcile passes (Vendure and Medusa)
 
-- **Date:** 2026-09-24 · **Status:** Proposed; for Front-desk review before
-  any implementation · **Source:** probes and measurements on the local
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24), with
+  four amendments, which are folded into the decision below · **Source:**
+  probes and measurements on the local
   Vendure 3.7.3 dev store (`~/Projects/vendure-dev`, UTC, 2,000 products and
   3,334 variants); Medusa 2.21 source and schema (read-only)
 - **Context.** Both connectors pull products incrementally by the product's
@@ -1505,37 +1506,51 @@ interface OrderCreatePayload {
   The live test replicated all 2,000 products in about 10.5 s. Medusa's
   equivalents still need measuring on medusa-dev, by a worker with its
   admin credentials.
-- **Proposal:**
-  1. **Vendure variant feed.** A second incremental pull over
-     `productVariants`, with the same pass and high-water design (sort by
-     id, filter `updatedAt`, a total, and the unchanged-mark early return).
-     For each changed variant, re-fetch its parent product, batched by id,
-     so documents keep today's product-with-variants shape. This covers
-     price and variant edits for 4–23 ms per poll. The product feed stays
-     for product-level fields.
-  2. **A stock reconcile pass for both connectors**:
+- **Decision:**
+  1. **The target is the plugin journal (ADR-050).** When it lands, it
+     replaces the incremental feeds. The reconcile passes below **stay after
+     it lands, as the backstop**. Everything else here is TallyUI-side and
+     is the interim design until then.
+  2. **A stock reconcile pass for both connectors:**
      - It reads only ids and stock: Vendure `productVariants { id
        stockLevels }` at 1,000 per page; Medusa inventory levels.
      - It patches a local document only when its stock differs.
-     - It runs every 5 minutes by default, after first paint, one pass at
-       a time, with a request cap per tick (the WCPOS politeness rules).
-     - At 3,334 variants that is 4 requests and 292 KB every 5 minutes.
-  3. **Medusa prices:** price-set changes need a price reconcile pass at a
-     slower default cadence, or a variant-price feed if Medusa's
-     variant-price routes support an `updated_at` filter. To be measured.
+     - **Cadence is a connector option, defaulting to 5 minutes**, run
+       after first paint, one pass at a time, with a request cap per tick
+       (the WCPOS politeness rules). At 3,334 variants that is 4 requests
+       and 292 KB every 5 minutes.
+     - **There is also an on-demand trigger, `reconcileStock()`** (amendment
+       1). The app calls it on foreground and resume, and after a sale is
+       refused for stock.
+  3. **A Vendure variant feed.** A second incremental pull over
+     `productVariants`, with the same pass and high-water design (sort by
+     id, filter `updatedAt`, a total, and the unchanged-mark early return).
+     For each changed variant, its parent product is re-fetched, batched by
+     id, so documents keep today's product-with-variants shape. This covers
+     price and variant edits for 4–23 ms per poll. The product feed stays
+     for product-level fields.
   4. **An id reconcile pass** at app start and nightly: ids only (0.9 s at
-     2,000 products), with local documents missing on the server
-     tombstoned. It also covers the same-millisecond high-water gap and
-     ADR-049's known gap.
-  5. **All of this is TallyUI-side and interim.** The plugin journal
-     (ADR-050) replaces the feeds when it lands; the reconcile passes stay
-     as a cheap backstop.
+     2,000 products). It also covers the same-millisecond high-water gap
+     and ADR-049's known gap.
+     - **It tombstones local documents only after a complete, successful
+       pass** (amendment 2). A pass that fails or is cut short deletes
+       nothing.
+  5. **Medusa prices:** price-set changes need a price reconcile pass at a
+     slower default cadence, or a variant-price feed if Medusa's
+     variant-price routes support an `updated_at` filter. This is decided
+     after measuring on medusa-dev.
   6. **Vendure servers run in UTC**, both the process and the database
      session, or set `updatedAtSkewMs`. The Vendure quick-start says so.
-- **Until this lands:** the POS must not treat replicated stock as live.
-  That applies to medusapos too: the connectors' stock is only as fresh as
-  the last product-level change.
-- **Cost if accepted:** about 4 Codex jobs. The Vendure variant feed, the
-  shared stock reconcile runner and the id reconcile are one each. The
-  Medusa inventory and price reconcile is one more, after measuring on
-  medusa-dev.
+- **Job order**, decided by value to the shipping product (amendment 3).
+  Each job is one Codex spec, with a real-loop or live test as its proof:
+  - **A.** The shared reconcile runner, with the stock reconcile for
+    **both** connectors in one job. It includes measuring Medusa inventory
+    levels on medusa-dev (127.0.0.1:9000).
+  - **B.** The Vendure variant feed.
+  - **C.** The id reconcile.
+  - **D.** The Medusa price reconcile, after measurement.
+
+  TV3 (sign-in) follows these jobs.
+- **Until job A lands, neither POS (medusapos or vendurepos) treats
+  replicated stock as live.** The connectors' stock is only as fresh as the
+  last product-level change.
