@@ -34,6 +34,10 @@ export interface FingerprintReconcileAdapter<Doc = any> {
   fetchPages(context: SyncContext): AsyncIterable<Map<string, string>>;
   /** The same fingerprint computed from a local product document. */
   fingerprint(doc: Doc): string;
-  /** Hands products to the collection's pull (the reconcile feed). */
-  enqueue(entries: Array<{ id: string; local: Doc }>): void;
+  /**
+   * Hands products to the collection's pull (the reconcile feed). `refreshOnly`
+   * marks an entry so a missing product is skipped, never tombstoned: only the
+   * id reconcile, with its mass-delete brake, may delete.
+   */
+  enqueue(entries: Array<{ id: string; local: Doc; refreshOnly?: boolean }>): void;
 }

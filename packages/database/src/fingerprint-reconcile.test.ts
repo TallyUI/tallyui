@@ -4,7 +4,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 
-import { startFingerprintReconcile, type FingerprintReconcileState } from './fingerprint-reconcile';
+import { startFingerprintReconcile, isFingerprintResultCurrent, type FingerprintReconcileState } from './fingerprint-reconcile';
 import type { FingerprintReconcileAdapter, SyncContext } from '@tallyui/core';
 
 addRxPlugin(RxDBDevModePlugin);
@@ -56,7 +56,7 @@ describe('startFingerprintReconcile', () => {
   const revisions = async () => Object.fromEntries(
     (await db.products.find().exec()).map((d: any) => [d.id, d.revision]),
   );
-  const start = (adapter: FingerprintReconcileAdapter<Doc>, reSync: () => void, options: { startDelayMs?: number | null; intervalMs?: number; maxPages?: number } = {}) =>
+  const start = (adapter: FingerprintReconcileAdapter<Doc>, reSync: () => void, options: { startDelayMs?: number | null; intervalMs?: number; maxPages?: number; now?: () => number } = {}) =>
     startFingerprintReconcile({ collection: db.products, adapter, context, reSync, ...options });
 
   it('queues exactly the mismatched products, skips ones the remote side does not report, and calls reSync once', async () => {
@@ -69,7 +69,7 @@ describe('startFingerprintReconcile', () => {
     expect(result).toEqual({ pages: 1, compared: 2, queued: 1, truncated: false, unreported: 1 });
     expect(enqueue).toHaveBeenCalledTimes(1);
     const [entries] = enqueue.mock.calls[0];
-    expect(entries).toEqual([{ id: 'p2', local: { id: 'p2', price: '20' } }]);
+    expect(entries).toEqual([{ id: 'p2', local: { id: 'p2', price: '20' }, refreshOnly: true }]);
     expect(reSync).toHaveBeenCalledTimes(1);
     expect(await revisions()).toEqual(before); // never writes the collection
     stop();
@@ -243,12 +243,49 @@ describe('startFingerprintReconcile', () => {
     expect(seen).toEqual([
       { running: false },
       { running: true },
-      { running: false, lastResult: ok },
+      { running: false, lastResult: ok, lastResultAt: expect.any(Number) },
     ]);
 
     fail = new Error('boom');
     await expect(reconcile()).rejects.toThrow('boom');
-    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok, lastError: fail });
+    expect(seen.at(-1)).toEqual({
+      running: false, lastResult: ok, lastResultAt: expect.any(Number), lastError: fail, lastErrorAt: expect.any(Number),
+    });
+    stop();
+  });
+
+  it('lastResultAt/lastErrorAt (from a fake now): a failed pass keeps lastResult but makes it stale; a later good pass makes it current again', async () => {
+    const pages = [{ p1: '10', p2: '20' }];
+    const boom = new Error('boom');
+    let fail: Error | undefined;
+    const adapter: FingerprintReconcileAdapter<Doc> = {
+      async *fetchPages() {
+        for (const page of pages) yield new Map(Object.entries(page));
+        if (fail) throw fail;
+      },
+      fingerprint: (doc) => doc.price,
+      enqueue: vi.fn(),
+    };
+    let clock = 1000;
+    const { reconcile, stop, state$ } = start(adapter, vi.fn(), { now: () => clock });
+    const seen: FingerprintReconcileState[] = [];
+    state$.subscribe((s) => seen.push(s));
+
+    const ok = await reconcile();
+    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok, lastResultAt: 1000 });
+    expect(isFingerprintResultCurrent(seen.at(-1)!)).toBe(true);
+
+    clock = 2000;
+    fail = boom;
+    await expect(reconcile()).rejects.toThrow('boom');
+    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok, lastResultAt: 1000, lastError: boom, lastErrorAt: 2000 });
+    expect(isFingerprintResultCurrent(seen.at(-1)!)).toBe(false);
+
+    clock = 3000;
+    fail = undefined;
+    const ok2 = await reconcile();
+    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok2, lastResultAt: 3000, lastError: boom, lastErrorAt: 2000 });
+    expect(isFingerprintResultCurrent(seen.at(-1)!)).toBe(true);
     stop();
   });
 });

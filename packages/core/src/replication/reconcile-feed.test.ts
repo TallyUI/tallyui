@@ -87,4 +87,62 @@ describe('createReconcileFeed', () => {
     const { documents } = await adapter.pull.handler(undefined, 100, context);
     expect(documents).toEqual([{ id: '1', name: 'local-1-newer', _deleted: true }]);
   });
+
+  it('skips a missing refreshOnly entry -- no document at all, never a tombstone', async () => {
+    const fetchByIds = vi.fn(async () => []);
+    const { adapter, enqueue } = createReconcileFeed<Doc>({ fetchByIds });
+    enqueue([{ id: '1', local: local('1'), refreshOnly: true }]);
+    const { documents } = await adapter.pull.handler(undefined, 100, context);
+    expect(documents).toEqual([]);
+  });
+
+  it('re-delivers an existing refreshOnly entry like any other', async () => {
+    const fetchByIds = vi.fn(async () => [{ id: '1', name: 'remote-1' }]);
+    const { adapter, enqueue } = createReconcileFeed<Doc>({ fetchByIds });
+    enqueue([{ id: '1', local: local('1'), refreshOnly: true }]);
+    const { documents } = await adapter.pull.handler(undefined, 100, context);
+    expect(documents).toEqual([{ id: '1', name: 'remote-1', _deleted: false }]);
+  });
+
+  describe('merging refreshOnly on a repeated id', () => {
+    it('a plain entry then a refreshOnly one still tombstones -- never downgraded', async () => {
+      const fetchByIds = vi.fn(async () => []);
+      const { adapter, enqueue } = createReconcileFeed<Doc>({ fetchByIds });
+      enqueue([{ id: '1', local: local('1') }]);
+      enqueue([{ id: '1', local: local('1'), refreshOnly: true }]);
+      const { documents } = await adapter.pull.handler(undefined, 100, context);
+      expect(documents).toEqual([{ id: '1', name: 'local-1', _deleted: true }]);
+    });
+
+    it('a refreshOnly entry then a plain one tombstones', async () => {
+      const fetchByIds = vi.fn(async () => []);
+      const { adapter, enqueue } = createReconcileFeed<Doc>({ fetchByIds });
+      enqueue([{ id: '1', local: local('1'), refreshOnly: true }]);
+      enqueue([{ id: '1', local: local('1') }]);
+      const { documents } = await adapter.pull.handler(undefined, 100, context);
+      expect(documents).toEqual([{ id: '1', name: 'local-1', _deleted: true }]);
+    });
+
+    it('a failed fetch never downgrades: a plain entry restored after a mid-fetch refreshOnly one still tombstones', async () => {
+      let enqueueMidFetch = () => {};
+      const fetchByIds = vi.fn()
+        .mockImplementationOnce(async () => { enqueueMidFetch(); throw new Error('network'); })
+        .mockImplementation(async () => []);
+      const { adapter, enqueue } = createReconcileFeed<Doc>({ fetchByIds });
+      enqueueMidFetch = () => enqueue([{ id: '1', local: local('1'), refreshOnly: true }]);
+      enqueue([{ id: '1', local: local('1') }]);
+      await expect(adapter.pull.handler(undefined, 100, context)).rejects.toThrow('network');
+      const { documents } = await adapter.pull.handler(undefined, 100, context);
+      expect(documents).toEqual([{ id: '1', name: 'local-1', _deleted: true }]);
+    });
+
+    it('two refreshOnly entries skip', async () => {
+      const fetchByIds = vi.fn(async () => []);
+      const { adapter, enqueue } = createReconcileFeed<Doc>({ fetchByIds });
+      enqueue([{ id: '1', local: local('1'), refreshOnly: true }]);
+      enqueue([{ id: '1', local: local('1'), refreshOnly: true }]);
+      const { documents } = await adapter.pull.handler(undefined, 100, context);
+      expect(documents).toEqual([]);
+    });
+  });
 });
