@@ -4,6 +4,7 @@ import { medusaProductSchema } from './schemas/products';
 import { medusaProductTraits } from './traits/product';
 import { medusaProductSync } from './sync/products';
 import { medusaProductReplication } from './replication/products';
+import { createMedusaVariantFeedReplication } from './replication/variant-feed';
 import { medusaStockReconcile } from './reconcile/stock';
 import { fetchByIds, fetchPages, variantIds } from './reconcile/ids';
 
@@ -113,10 +114,12 @@ export const medusaConnector: TallyConnector = {
   },
 
   replication: {
-    // One replication per collection: the product and id-reconcile feeds
-    // share it (ADR-060). reconcile is last so its fetch wins duplicates.
+    // One replication per collection: the product, variant and id-reconcile
+    // feeds share it (ADR-060). The variant feed catches price-only edits,
+    // which bump only the variant. reconcile is last so its fetch wins duplicates.
     products: combinePullAdapters({
       products: medusaProductReplication,
+      variants: createMedusaVariantFeedReplication(),
       reconcile: idFeed.adapter,
     }, { legacyKey: 'products' }),
   },
@@ -135,4 +138,5 @@ export { medusaProductSchema } from './schemas/products';
 export { medusaProductTraits } from './traits/product';
 export { medusaProductSync } from './sync/products';
 export { medusaProductReplication } from './replication/products';
+export { createMedusaVariantFeedReplication } from './replication/variant-feed';
 export { medusaStockReconcile } from './reconcile/stock';
