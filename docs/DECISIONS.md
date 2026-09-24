@@ -1447,7 +1447,7 @@ interface OrderCreatePayload {
 ## ADR-060 Catalogue freshness: variant-level incremental pulls plus reconcile passes (Vendure and Medusa)
 
 - **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24), with
-  seven amendments, which are folded into the decision below · **Source:**
+  eight amendments, which are folded into the decision below · **Source:**
   probes and measurements on the local
   Vendure 3.7.3 dev store (`~/Projects/vendure-dev`, UTC, 2,000 products and
   3,334 variants); Medusa 2.21 source and schema (read-only)
@@ -1607,6 +1607,36 @@ interface OrderCreatePayload {
      slower default cadence, or a variant-price feed if Medusa's
      variant-price routes support an `updated_at` filter. This is decided
      after measuring on medusa-dev.
+     - **Measured** (amendment 8, read-only on medusa-dev, 2026-09-24):
+       - `GET /admin/product-variants` lists all 5,655 variants with their
+         prices.
+       - A full price pass takes **6 requests** at 1,000 per page and
+         **2.7 MB**, or about 1.9 MB when only `id`, `prices.amount` and
+         `prices.currency_code` are selected. It took about 3–10 s on a
+         loaded machine.
+       - Sale prices live in price lists: 1,386 prices, one request,
+         57 KB.
+       - `updated_at[$gte]` on the variant route is honoured (a
+         future-dated mark returns 0).
+       - `prices.updated_at[$gte]` is rejected with 400.
+     - **Probed** on medusapos's disposable e2e store (Medusa 2.21.0, the
+       medusapos script `variant-price-edit.sh`):
+       - **a price-only edit bumps the variant's `updated_at` and not the
+         product's**, through both the admin dashboard's batch route
+         (`POST /admin/products/:id/variants/batch`) and the single-variant
+         route (`POST /admin/products/:id/variants/:variant_id`);
+       - the variant went from 17:40:25.954 to 28.872, then to 31.272;
+       - the product stayed at 17:40:25.802.
+     - **Decision (front desk):**
+       - **A Medusa variant feed catches price edits incrementally.** It
+         works like Vendure's: pass-based on the variant's `updated_at`,
+         re-fetching parent products as a sub-adapter of the combined pull,
+         with the carrier.
+       - A price-list check covers sale prices every 30 minutes.
+       - A full variant-price pass with the trimmed fields runs nightly as
+         the backstop.
+       - All of them deliver through the pull, never as local writes, and
+         their cadences are options.
   6. **Vendure servers run in UTC**, both the process and the database
      session, or set `updatedAtSkewMs`. The Vendure quick-start says so.
 - **Job order**, decided by value to the shipping product (amendment 3).
