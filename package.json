@@ -8,6 +8,7 @@
     "dev:mock-api": "turbo dev --filter=@tallyui/mock-api",
     "build": "turbo build",
     "test": "vitest run",
+    "smoke:pack": "node scripts/pack-smoke.mjs",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "clean": "turbo clean",

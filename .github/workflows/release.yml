@@ -51,6 +51,9 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      - name: Pack and install smoke test
+        run: pnpm smoke:pack
+
       - name: Publish unpublished versions
         uses: changesets/action@v1
         with:

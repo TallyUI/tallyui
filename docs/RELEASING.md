@@ -46,10 +46,12 @@ pnpm changeset version
 pnpm install --frozen-lockfile
 pnpm build
 pnpm test
+pnpm smoke:pack
 ```
 
 Check the result before committing:
 
+- `pnpm smoke:pack` passes: every tarball has LICENSE, its entry files and no `workspace:` ranges, and installs and imports in a clean project.
 - `.changeset/` holds only `config.json` (and `README.md`, if present). Every
   pending changeset is consumed.
 - All 11 packages have the same new version, and each one's `CHANGELOG.md`
