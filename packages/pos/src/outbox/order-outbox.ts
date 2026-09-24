@@ -1,7 +1,11 @@
-import type { RxCollection } from 'rxdb';
+import { addRxPlugin, type RxCollection } from 'rxdb';
+import { RxDBLeaderElectionPlugin } from 'rxdb/plugins/leader-election';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import type { CommandTransport, OutboxState } from './types';
+
+// The outbox relies on isLeader() and waitForLeadership(), which RxDB treats as always-leader for a single instance.
+addRxPlugin(RxDBLeaderElectionPlugin);
 
 // Pause after three 401s since the server last accepted credentials.
 const AUTH_FAILURES_BEFORE_PROMPT = 3;
@@ -34,6 +38,7 @@ export interface OrderOutbox {
 
 export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const { collection, transport, deviceId } = options;
+  const database = collection.database;
   const batchSize = Math.min(options.batchSize ?? 10, 10);
   const initialBackoff = options.initialBackoffMs ?? 1000;
   const maxBackoff = options.maxBackoffMs ?? 60000;
@@ -123,6 +128,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   }
 
   function flush(): Promise<void> {
+    if (!database.isLeader()) return Promise.resolve();
     if (running) return running;
     stopped = false;
     clearTimeout(timer);
@@ -162,14 +168,15 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     },
     start() {
       stopped = false;
-      if (subscription) return;
-      subscription = collection.insert$.subscribe((event) => {
-        if (event.documentData.syncStatus === 'pending') {
+      if (!subscription) subscription = collection.$.subscribe((event) => {
+        if (!database.isLeader()) updateState().catch(() => {});
+        if (event.documentData?.syncStatus === 'pending' &&
+          (event.operation === 'INSERT' || event.operation === 'UPDATE')) {
           insertedDuringRun = true;
           flush().catch(() => {});
         }
       });
-      flush().catch(() => {});
+      database.waitForLeadership().then(() => { if (!stopped) flush().catch(() => {}); }).catch(() => {});
     },
     stop() {
       stopped = true;

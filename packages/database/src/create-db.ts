@@ -26,6 +26,9 @@ export interface CreateDatabaseOptions {
   name?: string;
   /** RxDB storage adapter (defaults to in-memory for dev/demo) */
   storage?: any;
+  /** Share the database between browser tabs (default false).
+   * With true, the order outbox sends only from the RxDB-elected leader tab. */
+  multiInstance?: boolean;
 }
 
 /**
@@ -47,6 +50,7 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     connector,
     name = `tally_${connector.id}`,
     storage = getRxStorageMemory(),
+    multiInstance = false,
   } = options;
 
   const db = await createRxDatabase({
@@ -54,7 +58,7 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     // Dev mode refuses storage without a schema validator (RxDB error DVM1),
     // and validating is what makes dev mode catch bad connector documents.
     storage: DEV_MODE ? wrappedValidateAjvStorage({ storage }) : storage,
-    multiInstance: false,
+    multiInstance,
     // RxDB rejects this outside dev mode (DB9); in dev it lets hot reload re-create the same database.
     ignoreDuplicate: DEV_MODE,
   });
