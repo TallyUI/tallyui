@@ -166,6 +166,39 @@ describe('order outbox', () => {
     expect(send.mock.calls[1][0][0]).toMatchObject({ id: requeued.commandId, attempt: 1 });
   });
 
+  it('leaves idempotency_mismatch rejections for reconciliation when requeueing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const input = order(0);
+    const mismatch = order(1);
+    const error = { code: 'idempotency_mismatch', message: 'y' };
+    await collection.bulkInsert([input, mismatch]);
+    const { outbox, send } = setup();
+    send.mockResolvedValueOnce({ kind: 'results', results: [
+      { id: input.commandId, status: 'rejected', error: { code: 'unknown_variant', message: 'x' } },
+      { id: mismatch.commandId, status: 'rejected', error },
+    ] });
+    await outbox.flush();
+    expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('rejected');
+    expect((await collection.findOne(mismatch.id).exec())?.syncStatus).toBe('rejected');
+    send.mockResolvedValue({ kind: 'refused', status: 400, reason: 'bad' });
+    await expect(outbox.requeue()).resolves.toBe(1);
+    const requeued = (await collection.findOne(input.id).exec())!;
+    expect(requeued.syncStatus).toBe('pending');
+    expect(requeued.commandId).not.toBe(input.commandId);
+    expect(requeued.error).toBeUndefined();
+    expect((await collection.findOne(mismatch.id).exec())?.toJSON()).toMatchObject({
+      syncStatus: 'rejected', commandId: mismatch.commandId, error,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(2);
+    await expect(outbox.requeue([mismatch.id])).resolves.toBe(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect((await collection.findOne(mismatch.id).exec())?.toJSON()).toMatchObject({
+      syncStatus: 'rejected', commandId: mismatch.commandId, error,
+    });
+  });
+
   it('keeps a 409 pending and retries', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     await collection.insert(order(0));

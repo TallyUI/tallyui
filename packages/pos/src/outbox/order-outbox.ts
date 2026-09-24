@@ -6,6 +6,10 @@ import type { CommandTransport, OutboxState } from './types';
 // Pause after three 401s since the server last accepted credentials.
 const AUTH_FAILURES_BEFORE_PROMPT = 3;
 
+// Rejections that may hide an order the server already created: resending under a new
+// command id could duplicate it, so requeue() leaves these for manual reconciliation.
+const NOT_REQUEUEABLE = new Set(['idempotency_mismatch']);
+
 export interface OrderOutboxOptions {
   collection: RxCollection<PosOrder>;
   transport: CommandTransport;
@@ -20,7 +24,8 @@ export interface OrderOutboxOptions {
 export interface OrderOutbox {
   /** Sends pending orders until empty or retrying. Concurrent calls share one run. */
   flush(): Promise<void>;
-  /** Moves rejected orders (all, or those whose id is listed) back to pending with a new commandId, then flushes. Resolves to the number requeued. */
+  /** Moves rejected orders (all, or those whose id is listed) back to pending with a new commandId, then flushes.
+   * Orders rejected with idempotency_mismatch are left for reconciliation. Resolves to the number requeued. */
   requeue(orderIds?: string[]): Promise<number>;
   start(): void;
   stop(): void;
@@ -135,15 +140,16 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     state$,
     flush,
     async requeue(orderIds) {
-      const orders = await collection.find({ selector: { syncStatus: 'rejected',
-        ...(orderIds ? { id: { $in: orderIds } } : {}) } }).exec();
+      const orders = (await collection.find({ selector: { syncStatus: 'rejected',
+        ...(orderIds ? { id: { $in: orderIds } } : {}) } }).exec())
+        .filter((order) => !NOT_REQUEUEABLE.has(order.error?.code ?? ''));
       for (const order of orders) {
         const oldCommandId = order.commandId;
         await order.incrementalModify((data) => {
           data.syncStatus = 'pending';
           delete data.error;
           // The server ledger stored the rejection under the old id; replaying it returns that rejection.
-          // A rejected command created no order, so a fresh id cannot duplicate one.
+          // For the codes requeue() accepts, the server created no order, so a fresh id cannot duplicate one.
           data.commandId = uuidv7();
           data.updatedAt = new Date(now()).toISOString();
           return data;
