@@ -42,10 +42,31 @@ describe('HTTP command transport', () => {
     expect(fetch).toHaveBeenCalledWith('http://x/tally/v1/commands', expect.objectContaining({ method: 'POST' }));
   });
 
-  it.each([500, 409, 401, 429, 400])('retries status %i', async (status) => {
+  it.each([500, 409, 429, 404, 408])('retries status %i', async (status) => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ code: 'in_progress' }, { status }));
     const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
     expect(await transport.send(commands)).toEqual({ kind: 'retry', reason: `status_${status}` });
+  });
+
+  it('reports unauthorized for 401', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response('', { status: 401 }));
+    const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
+    expect(await transport.send(commands)).toEqual({ kind: 'unauthorized' });
+  });
+
+  it.each([400, 403, 413, 415, 422])('refuses status %i with an empty body', async (status) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response('', { status }));
+    const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
+    expect(await transport.send(commands)).toEqual({ kind: 'refused', status, reason: `status_${status}` });
+  });
+
+  it.each([
+    [{ code: 'bad_envelope', message: 'nope' }, 'nope'],
+    [{ code: 'bad_envelope' }, 'bad_envelope'],
+  ])('reads the refusal reason from %j', async (body, reason) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(body, { status: 400 }));
+    const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
+    expect(await transport.send(commands)).toEqual({ kind: 'refused', status: 400, reason });
   });
 
   it('retries a thrown fetch', async () => {

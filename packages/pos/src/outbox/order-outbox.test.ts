@@ -52,6 +52,165 @@ afterEach(async () => {
 });
 
 describe('order outbox', () => {
+  it.each([false, true])('pauses after three 401s, with intervening 500: %s, and resumes on flush', async (interleave) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue({ kind: 'unauthorized' });
+    await outbox.flush();
+    expect(states.at(-1)?.authRequired).not.toBe(true);
+    if (interleave) send.mockResolvedValueOnce({ kind: 'retry', reason: 'status_500' });
+    for (let i = 0; i < (interleave ? 3 : 2); i++) {
+      await vi.advanceTimersByTimeAsync(states.at(-1)!.nextAttemptAt! - Date.now());
+    }
+    expect(states.at(-1)).toMatchObject({ authRequired: true, lastRetryReason: 'unauthorized',
+      sending: false, nextAttemptAt: undefined, pending: 1 });
+    expect(send).toHaveBeenCalledTimes(interleave ? 4 : 3);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(send).toHaveBeenCalledTimes(interleave ? 4 : 3);
+    expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('pending');
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
+    await outbox.flush();
+    expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('applied');
+    expect(states.at(-1)?.authRequired).toBe(false);
+  });
+
+  it.each(['results', 'refused'] as const)('resets the 401 counter on %s, even without applied orders', async (kind) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    await collection.insert(order(0));
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue({ kind: 'unauthorized' });
+    for (let i = 0; i < 3; i++) await outbox.flush();
+    expect(states.at(-1)?.authRequired).toBe(true);
+    send.mockResolvedValueOnce(kind === 'results' ? { kind, results: [] } : { kind, status: 400, reason: 'bad' });
+    await outbox.flush();
+    if (kind === 'results') {
+      expect(states.at(-1)).toMatchObject({ authRequired: false, lastRetryReason: 'no_progress' });
+    } else {
+      expect(states.at(-1)).toMatchObject({ authRequired: false,
+        refused: { status: 400, reason: 'bad' }, nextAttemptAt: undefined });
+      expect((await collection.findOne().exec())?.syncStatus).toBe('pending');
+    }
+    for (let i = 0; i < 2; i++) {
+      await outbox.flush();
+      expect(states.at(-1)?.nextAttemptAt).toBeDefined();
+    }
+    await outbox.flush();
+    expect(states.at(-1)).toMatchObject({ authRequired: true, nextAttemptAt: undefined });
+  });
+
+  it('never prompts after two 401s followed by success', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    await collection.insert(order(0));
+    const { outbox, send, states } = setup();
+    send.mockResolvedValueOnce({ kind: 'unauthorized' }).mockResolvedValueOnce({ kind: 'unauthorized' });
+    await outbox.flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(states.some((state) => state.authRequired === true)).toBe(false);
+    expect((await collection.findOne().exec())?.syncStatus).toBe('applied');
+  });
+
+  it('keeps all 25 refused orders pending and pauses until the next flush', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const inputs = Array.from({ length: 25 }, (_, i) => order(i));
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue({ kind: 'refused', status: 400, reason: 'unsupported_protocol' });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(await collection.count().exec()).toBe(25);
+    for (const doc of await collection.find().exec()) {
+      expect(doc.syncStatus).toBe('pending');
+      expect(doc.error).toBeUndefined();
+      expect(doc.toJSON()).toEqual(inputs.find((input) => input.id === doc.id));
+    }
+    expect(states.at(-1)).toMatchObject({ pending: 25, sending: false, lastRetryReason: 'refused',
+      refused: { status: 400, reason: 'unsupported_protocol' }, nextAttemptAt: undefined });
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(send).toHaveBeenCalledTimes(1);
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
+    await outbox.flush();
+    expect(await collection.count({ selector: { syncStatus: 'applied' } }).exec()).toBe(25);
+    expect(states.at(-1)?.refused).toBeUndefined();
+  });
+
+  it.each([false, true])('requeues rejected orders with fresh command IDs, stopped: %s', async (stopped) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: input.commandId,
+      status: 'rejected', error: { code: 'unknown_variant', message: 'x' } }] });
+    await outbox.flush();
+    expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('rejected');
+    await expect(outbox.requeue(['no-such-id'])).resolves.toBe(0);
+    expect(send).toHaveBeenCalledTimes(1);
+    if (stopped) outbox.stop();
+    vi.setSystemTime(epoch + 1000);
+    send.mockResolvedValue({ kind: 'refused', status: 400, reason: 'bad' });
+    await expect(outbox.requeue(stopped ? [input.id] : undefined)).resolves.toBe(1);
+    const requeued = (await collection.findOne(input.id).exec())!;
+    expect(requeued.syncStatus).toBe('pending');
+    expect(requeued.error).toBeUndefined();
+    expect(requeued.commandId).not.toBe(input.commandId);
+    expect(requeued.updatedAt).toBe(new Date(epoch + 1000).toISOString());
+    expect(states.at(-1)?.pending).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(stopped ? 1 : 2);
+    await outbox.flush();
+    expect(send.mock.calls[1][0][0]).toMatchObject({ id: requeued.commandId, attempt: 1 });
+  });
+
+  it('leaves idempotency_mismatch rejections for reconciliation when requeueing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const input = order(0);
+    const mismatch = order(1);
+    const error = { code: 'idempotency_mismatch', message: 'y' };
+    await collection.bulkInsert([input, mismatch]);
+    const { outbox, send } = setup();
+    send.mockResolvedValueOnce({ kind: 'results', results: [
+      { id: input.commandId, status: 'rejected', error: { code: 'unknown_variant', message: 'x' } },
+      { id: mismatch.commandId, status: 'rejected', error },
+    ] });
+    await outbox.flush();
+    expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('rejected');
+    expect((await collection.findOne(mismatch.id).exec())?.syncStatus).toBe('rejected');
+    send.mockResolvedValue({ kind: 'refused', status: 400, reason: 'bad' });
+    await expect(outbox.requeue()).resolves.toBe(1);
+    const requeued = (await collection.findOne(input.id).exec())!;
+    expect(requeued.syncStatus).toBe('pending');
+    expect(requeued.commandId).not.toBe(input.commandId);
+    expect(requeued.error).toBeUndefined();
+    expect((await collection.findOne(mismatch.id).exec())?.toJSON()).toMatchObject({
+      syncStatus: 'rejected', commandId: mismatch.commandId, error,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(2);
+    await expect(outbox.requeue([mismatch.id])).resolves.toBe(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect((await collection.findOne(mismatch.id).exec())?.toJSON()).toMatchObject({
+      syncStatus: 'rejected', commandId: mismatch.commandId, error,
+    });
+  });
+
+  it('keeps a 409 pending and retries', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    await collection.insert(order(0));
+    const { outbox, send } = setup();
+    send.mockResolvedValue({ kind: 'retry', reason: 'status_409' });
+    await outbox.flush();
+    expect((await collection.findOne().exec())?.syncStatus).toBe('pending');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect((await collection.findOne().exec())?.syncStatus).toBe('pending');
+  });
+
   it('applies three orders in one send and publishes each patch', async () => {
     const orders = Array.from({ length: 3 }, (_, i) => order(i));
     await collection.bulkInsert(orders);
@@ -254,12 +413,12 @@ describe('order outbox', () => {
     send.mockResolvedValue({ kind: 'results', results: [] });
     await outbox.flush();
     expect(send).toHaveBeenCalledTimes(1);
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
+    expect(states.at(-1)).toEqual({ pending: 1, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
     await vi.advanceTimersByTimeAsync(999);
     expect(send).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(send).toHaveBeenCalledTimes(2);
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 3000 });
+    expect(states.at(-1)).toEqual({ pending: 1, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 3000 });
     await vi.advanceTimersByTimeAsync(1999);
     expect(send).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
@@ -282,7 +441,7 @@ describe('order outbox', () => {
     expect(Date.now()).toBe(epoch);
     expect((await collection.findOne(orders[0].id).exec())?.syncStatus).toBe('applied');
     expect((await collection.findOne(orders[1].id).exec())?.syncStatus).toBe('pending');
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
+    expect(states.at(-1)).toEqual({ pending: 1, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
   });
 
   it('shares the same promise between concurrent flush calls', async () => {
