@@ -59,6 +59,50 @@ describe('combinePullAdapters', () => {
     expect(products.handler).toHaveBeenLastCalledWith(undefined, 100, context);
   });
 
+  describe('seedCheckpoint', () => {
+    const seeded = () => {
+      const calls: string[] = [];
+      const feed = (key: string, seed?: object) => {
+        const handler = vi.fn(async () => { calls.push(`${key}.handler`); return { documents: [], checkpoint: { skip: 1 } }; });
+        const seedCheckpoint = seed && vi.fn(async () => { calls.push(`${key}.seed`); return seed; });
+        return { adapter: { pull: { handler, seedCheckpoint } } as ReplicationAdapter<Doc, any>, handler, seedCheckpoint };
+      };
+      const products = feed('products');
+      const variants = feed('variants', { skip: 0, updatedAt: 'mark' });
+      const prices = feed('prices', { skip: 0, updatedAt: 'price-mark' });
+      const combined = combinePullAdapters(
+        { products: products.adapter, variants: variants.adapter, prices: prices.adapter }, { legacyKey: 'products' },
+      );
+      return { calls, products, variants, prices, combined };
+    };
+
+    it.each([undefined, null, {}])('seeds a fresh install (%o) before any handler, in key order', async (stored) => {
+      const { calls, products, variants, prices, combined } = seeded();
+      const { checkpoint } = await combined.pull.handler(stored as any, 100, context);
+      expect(calls).toEqual(['variants.seed', 'prices.seed', 'products.handler', 'variants.handler', 'prices.handler']);
+      expect(variants.seedCheckpoint).toHaveBeenCalledWith(context);
+      expect(variants.handler).toHaveBeenLastCalledWith({ skip: 0, updatedAt: 'mark' }, 100, context);
+      expect(prices.handler).toHaveBeenLastCalledWith({ skip: 0, updatedAt: 'price-mark' }, 100, context);
+      // A sub-adapter without a seed starts as before.
+      expect(products.handler).toHaveBeenLastCalledWith(undefined, 100, context);
+      // The seed is saved with this call's checkpoint, under the handler's result.
+      expect(checkpoint).toEqual({
+        products: { skip: 1 }, variants: { skip: 1, updatedAt: 'mark' }, prices: { skip: 1, updatedAt: 'price-mark' },
+      });
+    });
+
+    it.each([
+      ['a stored combined checkpoint', { products: { skip: 0, updatedAt: 'p' } }],
+      ['a legacy flat checkpoint', { skip: 0, updatedAt: 'p' }],
+    ])('never seeds %s', async (_name, stored) => {
+      const { calls, variants, combined } = seeded();
+      await combined.pull.handler(stored, 100, context);
+      expect(calls).toEqual(['products.handler', 'variants.handler', 'prices.handler']);
+      // The upgrade keeps the variant feed's full healing pass.
+      expect(variants.handler).toHaveBeenLastCalledWith(undefined, 100, context);
+    });
+  });
+
   it.each([
     [100, 0, 100],
     [30, 100, 130],

@@ -150,6 +150,17 @@ const range = (from: number, to: number) => Array.from({ length: to - from + 1 }
 const overlap = ['1333', '1334'];
 
 describe('Vendure products and variant feeds in one real RxDB replication', () => {
+  it('fetches each product once on a fresh install: the variant feed starts from its seeded high water', async () => {
+    const { delivered, count, checkpoints } = await start();
+    const fetched = [...delivered('productPage'), ...delivered('parents'), ...delivered('carrier')];
+    expect(fetched.length, 'product documents fetched').toBe(2000);
+    expect(new Set(fetched).size).toBe(2000);
+    expect(delivered('parents'), 'products the variant feed re-delivered').toEqual([]);
+    expect(count('variantPage')).toBe(0);
+    // The seed was stored with the first call's checkpoint.
+    expect(checkpoints[1].variants).toMatchObject({ skip: 0, updatedAt: iso(timestamp(3333)) });
+  });
+
   it('delivers the parents of 30 variants whose prices changed across 25 products', async () => {
     const { variants, delivered, reset } = await start();
     reset();
@@ -174,7 +185,8 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
   });
 
   it('keeps both early and late variant changes made after page one', async () => {
-    const { variants } = await start({ afterFirstVariantPage: (rows) => {
+    // An upgrade, so the variant feed runs a full multi-page pass (a fresh install is seeded).
+    const { variants } = await start({ legacy: () => {}, afterFirstVariantPage: (rows) => {
       change(rows, [5], 3000 + 1000);
       change(rows, [3300], 3000 + 2000);
     } });
