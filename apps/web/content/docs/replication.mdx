@@ -218,6 +218,12 @@ should follow them.
   corrected data in a separate, non-replicated collection and merge
   it when reading, as the stock reconcile does with `stock_levels`
   (ADR-060).
+- **One replication per collection.** Two replications on one
+  collection each see the other's writes as local writes, so either
+  can skip a pulled version the same way. Give a collection several
+  feeds (products and variants, say) by combining their pull adapters
+  with `combinePullAdapters` into the one adapter the collection
+  replicates with.
 
 **Proving it:**
 - A handler unit test is not enough. Add a test that runs the real

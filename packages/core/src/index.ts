@@ -40,6 +40,7 @@ export {
 export { formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice } from './money';
 export { findVariantByCode } from './variants';
 export { STOCK_LEVELS_LAST_PASS, withStockOverlay, getProductStock } from './stock-overlay';
+export { combinePullAdapters } from './replication/combine';
 
 // Context & hooks
 export {

@@ -9,7 +9,7 @@ export type VendureProductCheckpoint = {
   passTotal?: number;
 };
 
-const PRODUCT_LIST_QUERY = (barcodeField?: string) => `
+export const PRODUCT_LIST_QUERY = (barcodeField?: string) => `
   query GetProducts($options: ProductListOptions) {
     products(options: $options) {
       items {
@@ -70,6 +70,15 @@ export async function gql(
   const body = await res.json() as GqlBody;
   if (body.errors?.length) throw new Error(`Vendure GraphQL error: ${body.errors[0].message}`);
   return body;
+}
+
+/** Project an API product onto the schema's top-level fields (RxDB rejects undeclared ones). */
+export function toProductDocument(p: any): Record<string, unknown> {
+  const doc: Record<string, unknown> = { _deleted: false };
+  for (const field of Object.keys(vendureProductSchema.properties)) {
+    if (p[field] !== undefined) doc[field] = p[field];
+  }
+  return doc;
 }
 
 /**
@@ -137,13 +146,7 @@ export const createVendureProductReplication = (barcodeField?: string, updatedAt
           { skip: 0, updatedAt: lastCheckpoint?.updatedAt ?? '' }, batchSize, context,
         );
       }
-      const documents = products.map((p) => {
-        const doc: Record<string, unknown> = { _deleted: false };
-        for (const field of Object.keys(vendureProductSchema.properties)) {
-          if (p[field] !== undefined) doc[field] = p[field];
-        }
-        return doc;
-      });
+      const documents = products.map(toProductDocument);
 
       // Keep the lower bound fixed while paging by id; advance it only at pass end.
       // RxDB merges checkpoints, so explicitly clear pass state at completion.
