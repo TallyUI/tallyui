@@ -38,11 +38,24 @@ export const medusaSignIn: NonNullable<ConnectorAuth['signIn']> = async (baseUrl
     if ((error as { name?: unknown })?.name === 'AbortError' || init.signal?.aborted) throw error;
     throw new SignInError('failed', `Could not reach Medusa at ${baseUrl}: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const body = await res.json().catch(() => ({})) as { token?: unknown; location?: string; message?: string };
+  let body: { token?: unknown; location?: string; message?: string; mfa_required?: unknown; verification_required?: unknown } = {};
+  let bodyUnparseable = false;
+  try {
+    const parsed: unknown = await res.json();
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed;
+    else bodyUnparseable = true;
+  } catch {
+    bodyUnparseable = true;
+  }
   if (res.status === 401) throw new SignInError('invalid_credentials', body.message ?? 'Invalid email or password');
-  // A location means a redirect or MFA flow, which the POS does not support.
+  if (bodyUnparseable) throw new SignInError('server_error', `Medusa sent an unreadable response (HTTP ${res.status})`, res.status);
+  // A location, MFA or verification requirement is a sign-in flow this connector can't do.
+  // Never return a token from a body like this, even if one is present.
   if (body.location) throw new SignInError('unsupported', `Medusa wants to continue sign-in at ${body.location}; only email and password are supported`);
-  if (!res.ok || typeof body.token !== 'string') throw new SignInError('failed', body.message ?? `Medusa sign-in failed (HTTP ${res.status})`);
+  if (body.mfa_required === true) throw new SignInError('unsupported', 'Medusa requires multi-factor authentication, which this connector does not support');
+  if (body.verification_required === true) throw new SignInError('unsupported', 'Medusa requires email verification, which this connector does not support');
+  if (!res.ok) throw new SignInError('server_error', body.message ?? `Medusa sign-in failed (HTTP ${res.status})`, res.status);
+  if (typeof body.token !== 'string') throw new SignInError('server_error', `Medusa sign-in response had no token (HTTP ${res.status})`, res.status);
   return { token: body.token, expiresAt: jwtExpiresAt(body.token) };
 };
 

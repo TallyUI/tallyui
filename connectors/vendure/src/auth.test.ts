@@ -39,13 +39,29 @@ describe('Vendure sign-in', () => {
     await expect(result).rejects.toMatchObject({ code: 'unsupported', message: expect.stringContaining('bearer') });
   });
 
-  it('rejects other error results, GraphQL errors and HTTP errors as failed', async () => {
+  it('rejects NATIVE_AUTH_STRATEGY_ERROR as unsupported', async () => {
     await expect(signIn(loginResponse({ __typename: 'NativeAuthStrategyError', errorCode: 'NATIVE_AUTH_STRATEGY_ERROR', message: 'No native auth' })).result)
-      .rejects.toMatchObject({ code: 'failed', message: 'No native auth' });
+      .rejects.toMatchObject({ code: 'unsupported', message: 'No native auth' });
+  });
+
+  it('rejects an unknown ErrorResult as server_error', async () => {
+    await expect(signIn(loginResponse({ __typename: 'SomethingElseError', errorCode: 'SOME_OTHER_ERROR', message: 'Unexpected' })).result)
+      .rejects.toMatchObject({ code: 'server_error', status: 200, message: 'Unexpected' });
+  });
+
+  it('rejects GraphQL errors as server_error', async () => {
     await expect(signIn(new Response(JSON.stringify({ errors: [{ message: 'Cannot query field' }] }), { status: 200 })).result)
-      .rejects.toMatchObject({ code: 'failed', message: 'Cannot query field' });
-    await expect(signIn(new Response('Bad gateway', { status: 502 })).result)
-      .rejects.toMatchObject({ code: 'failed', message: expect.stringContaining('502') });
+      .rejects.toMatchObject({ code: 'server_error', status: 200, message: 'Cannot query field' });
+  });
+
+  it('rejects a non-OK status as server_error with the status', async () => {
+    await expect(signIn(new Response(JSON.stringify({ data: {} }), { status: 502 })).result)
+      .rejects.toMatchObject({ code: 'server_error', status: 502 });
+  });
+
+  it('rejects a malformed JSON body as server_error with the status', async () => {
+    await expect(signIn(new Response('Bad gateway', { status: 200 })).result)
+      .rejects.toMatchObject({ code: 'server_error', status: 200 });
   });
 
   it('names the default header and a renamed authTokenHeaderKey when the token header is missing', async () => {
