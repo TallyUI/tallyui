@@ -63,7 +63,9 @@ const db = await createTallyDatabase({
 
 ### React Native (SQLite)
 
-On React Native, provide the SQLite adapter explicitly:
+On React Native, provide the SQLite adapter explicitly. It runs on
+[RxDB Premium](https://rxdb.info/premium/)'s SQLite storage, so your app installs
+`rxdb-premium` (the same version as `rxdb`) under its own RxDB Premium licence:
 
 ```tsx
 import { createTallyDatabase } from '@tallyui/database';
@@ -74,9 +76,12 @@ const sqliteDb = openDatabaseSync('tally.db');
 
 const db = await createTallyDatabase({
   connector: myConnector,
-  storage: getRxStorageSQLite({ database: sqliteDb }),
+  storage: getRxStorageSQLite(sqliteDb),
 });
 ```
+
+Use one SQLite handle per RxDB database. The storage never closes the handle;
+your app does.
 
 ### Tests and SSR
 

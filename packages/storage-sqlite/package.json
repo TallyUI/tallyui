@@ -2,7 +2,7 @@
   "name": "@tallyui/storage-sqlite",
   "version": "0.2.0",
   "type": "module",
-  "description": "RxDB storage adapter for SQLite via expo-sqlite",
+  "description": "RxDB Premium SQLite storage for a synchronous SQLite handle (expo-sqlite)",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "source": "./src/index.ts",
@@ -36,6 +36,7 @@
     "rxdb-premium": "16.21.1"
   },
   "peerDependencies": {
-    "expo-sqlite": ">=15.0.0"
+    "expo-sqlite": ">=15.0.0",
+    "rxdb-premium": "16.21.1"
   }
 }

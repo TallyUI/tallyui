@@ -4,5 +4,5 @@ export default defineConfig({
   entry: ['src/index.ts'],
   format: ['esm'],
   dts: true,
-  external: ['rxdb', 'rxjs', 'expo-sqlite'],
+  external: ['rxdb', 'rxjs', 'expo-sqlite', /^rxdb-premium(\/|$)/],
 });

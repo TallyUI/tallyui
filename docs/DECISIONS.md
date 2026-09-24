@@ -914,3 +914,49 @@ interface OrderCreatePayload {
     `actions/setup-node`'s `cache: pnpm` saves that store to the Actions
     cache. Revisit this if the repo starts running untrusted fork
     workflows.
+
+## ADR-045 `@tallyui/storage-sqlite` wraps RxDB Premium SQLite; premium is a peer
+
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk brief, 2026-09-24);
+  amends ADR-031 and ADR-044 · **Source:** storage-sqlite premium PR
+- **Context:** ADR-031 moved TallyUI to RxDB Premium's SQLite storage and
+  said `@tallyui/storage-sqlite` would be retired. The package's own engine
+  (a mango-to-SQL translator and storage instance, about 1,200 lines) was
+  not atomic and had only ever run against a regex mock of SQLite (ADR-004).
+  Premium's `getRxStorageSQLite({ sqliteBasics })` needs an `SQLiteBasics`
+  adapter for the SQLite library in use.
+- **Decision:**
+  - The package is kept as a thin adapter instead of retired. Its public API
+    is unchanged: `getRxStorageSQLite(database)` still takes a synchronous
+    SQLite handle (the expo-sqlite `execSync`/`getAllSync`/`runSync` shape)
+    and now returns premium's SQLite storage, driven through an
+    `SQLiteBasics` built around that handle. The hand-written engine and
+    its mock are deleted.
+  - `rxdb-premium` is a **peer dependency** (exact `16.21.1`, because
+    premium checks that its version equals `rxdb`'s) and stays a
+    devDependency for this repo's tests. It is not a dependency, is not
+    re-exported, and is not bundled: tsup marks `rxdb-premium` and its
+    subpaths external, so `dist` only contains the import. Why a peer: RxDB
+    Premium is licensed per project and its install needs a licence token,
+    so the app that uses the storage installs it under its own licence. A
+    hard dependency would make every install of the MIT package fail
+    without a token. This amends ADR-044's "no published package depends on
+    it" to "no published package has it as a dependency".
+  - One SQLite handle serves exactly one RxDB database. Premium names its
+    tables by collection, not by database, so the adapter rejects a second
+    database name on the same handle rather than mixing their tables. The
+    app owns the handle: closing the RxDB database does not close it.
+  - Tests run on real SQLite: Node's built-in `node:sqlite`, adapted to the
+    same synchronous shape. They run whenever `rxdb-premium` is installed,
+    which is always in CI because the CI install has the token. Without
+    premium they are skipped with a message, except under `CI`, where they
+    fail.
+- **Consequences:**
+  - Apps using `@tallyui/storage-sqlite` must install `rxdb-premium@16.21.1`
+    themselves, with an RxDB Premium licence.
+  - The adapter uses the synchronous expo-sqlite API, which blocks the JS
+    thread for each statement. Premium also ships an async expo adapter
+    (`getSQLiteBasicsExpoSQLiteAsync`); moving to it would change the public
+    API and is left for when an app measures a need.
+  - Web SQLite-wasm and the rxdb 16 → 17 upgrade (ADR-031's 17.4.0 pin)
+    are still separate jobs.
