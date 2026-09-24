@@ -1,7 +1,8 @@
 // The storage-sqlite Playwright test page (real Chromium, ADR-061). Bundled
-// by build-and-serve.mjs with the worker into a static page that exercises
+// by build-and-serve.mjs into a static page that exercises
 // `getRxStorageSQLiteWasm` the way an app would: one RxDB database, backed
-// by the dedicated opfs-sahpool worker at `/worker.js`.
+// by the dedicated opfs-sahpool worker at `/tallyui-sqlite-worker.js`, built
+// by the package's own bin (`tallyui-build-sqlite-worker`).
 import { createRxDatabase, type RxDatabase, type RxCollection } from 'rxdb';
 import { getRxStorageSQLiteWasm, isStorageWorkerStartError } from '../../../packages/storage-sqlite/src/web/index';
 
@@ -35,7 +36,7 @@ async function open(name: string): Promise<OpenResult> {
   try {
     db = await createRxDatabase<{ items: ItemCollection }>({
       name,
-      storage: getRxStorageSQLiteWasm({ workerInput: '/worker.js' }),
+      storage: getRxStorageSQLiteWasm({ workerInput: '/tallyui-sqlite-worker.js' }),
       multiInstance: false,
     });
     await db.addCollections({ items: { schema } });
