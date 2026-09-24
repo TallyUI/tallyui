@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ConnectorProvider } from '@tallyui/core';
@@ -218,7 +219,11 @@ describe('ProductPrice', () => {
     // react-native-web atomizes className into a hashed class at render time, so the
     // Tailwind class names aren't present on the rendered DOM node (see theme-classes.test.ts
     // for this codebase's convention of asserting class names from source instead).
-    const source = readFileSync(join(process.cwd(), 'packages/components/src/product/product-price.tsx'), 'utf8');
+    // jsdom (this file's test environment) rebases the two-argument
+    // `new URL(relative, import.meta.url)` against its fake `location`
+    // instead of the given base, so resolve the directory first.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(here, '../product/product-price.tsx'), 'utf8');
     expect(source).not.toMatch(/text-foreground/);
     expect(source.match(/text-price/g)?.length).toBe(2);
     expect(source).toContain('text-sale');

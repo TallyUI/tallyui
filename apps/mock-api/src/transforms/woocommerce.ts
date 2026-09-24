@@ -18,6 +18,22 @@ function mapType(type: NeutralProduct['type']): string {
 }
 
 /**
+ * The WooCommerce schema requires integer category ids, but the neutral
+ * catalog's category ids are slugs (e.g. `cat-equipment`). Assign each a
+ * stable integer, first-seen order, so the same category always maps to
+ * the same id within a process.
+ */
+const wooCategoryIds = new Map<string, number>();
+function wooCategoryId(neutralId: string): number {
+  let id = wooCategoryIds.get(neutralId);
+  if (id === undefined) {
+    id = wooCategoryIds.size + 1;
+    wooCategoryIds.set(neutralId, id);
+  }
+  return id;
+}
+
+/**
  * Transform a NeutralProduct into a WooCommerce REST API product shape.
  *
  * The resulting object is designed to pass through `wooProductTraits`
@@ -41,6 +57,9 @@ export function toWooProduct(product: NeutralProduct, wooId: number) {
   const salePrice = hasCompareAt ? price : '';
 
   return {
+    // The WooCommerce RxDB schema keys on the string `uuid`, and the
+    // connector's pull stores REST rows unchanged, so the mock serves one.
+    uuid: `woo-${wooId}`,
     id: wooId,
     name: product.name,
     slug: product.slug,
@@ -58,18 +77,16 @@ export function toWooProduct(product: NeutralProduct, wooId: number) {
       alt: img.alt,
     })),
     categories: product.categories.map((cat) => ({
-      id: cat.id,
+      id: wooCategoryId(cat.id),
       name: cat.name,
       slug: cat.slug,
     })),
     stock_status: primaryVariant.stockStatus,
     stock_quantity: primaryVariant.stockQuantity,
     manage_stock: primaryVariant.trackInventory,
-    weight: primaryVariant.weight ? String(primaryVariant.weight) : '',
     barcode: primaryVariant.barcode,
-    date_created: product.createdAt,
-    date_created_gmt: product.createdAt,
-    date_modified: product.updatedAt,
+    // `weight`, `date_created(_gmt)` and `date_modified` aren't in the
+    // WooCommerce RxDB schema — only `date_modified_gmt` is.
     date_modified_gmt: product.updatedAt,
   };
 }
