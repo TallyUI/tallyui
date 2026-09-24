@@ -19,12 +19,25 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'storage-sqlite',
+      testDir: './e2e/storage-sqlite',
+      use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:8090' },
+    },
   ],
 
-  webServer: {
-    command: 'pnpm --filter @tallyui/demo exec expo start --web --port 8081',
-    url: 'http://localhost:8081',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: 'pnpm --filter @tallyui/demo exec expo start --web --port 8081',
+      url: 'http://localhost:8081',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command: 'node e2e/storage-sqlite/page/build-and-serve.mjs',
+      url: 'http://localhost:8090',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 });
