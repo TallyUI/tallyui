@@ -5,7 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { combinePullAdapters } from '@tallyui/core';
+import { combinePullAdapters, type ReplicationAdapter } from '@tallyui/core';
 import { medusaProductSchema } from '../schemas/products';
 import { medusaConnector } from '../index';
 import { medusaProductReplication } from './products';
@@ -44,10 +44,13 @@ function project(row: Record<string, unknown>, fields: string | null) {
  * An in-memory Medusa Admin API for `/admin/products` and `/admin/product-variants`,
  * honouring `updated_at[$gte]` (ties included), `order=id`, `order=-updated_at`,
  * `offset`, `limit`, `count`, `fields` and `id[]`. 2,000 products and 3,334
- * variants: variant n belongs to product ((n - 1) % 2000) + 1.
+ * variants: variant n belongs to product ((n - 1) % 2000) + 1. One replication
+ * on `products`, as the app runs it. `legacy` first syncs with the product feed
+ * alone under the same identifier, as an install from before the variant feed.
  */
-async function start({ variantPageSize, afterVariantPage }: {
+async function start({ variantPageSize, afterVariantPage, afterProductPage, legacy }: {
   variantPageSize?: number; afterVariantPage?: (offset: number, variants: Variant[]) => void;
+  afterProductPage?: (offset: number, variants: Variant[]) => void; legacy?: boolean;
 } = {}) {
   const products: Product[] = Array.from({ length: 2000 }, (_, i) => ({
     id: productId(i + 1), handle: `product-${i + 1}`, status: 'published', title: `Product ${i + 1}`, updated_at: timestamp(i + 1),
@@ -84,6 +87,7 @@ async function start({ variantPageSize, afterVariantPage }: {
         variants: (byProduct.get(p.id) ?? []).map((v) => ({ id: v.id, prices: [{ id: `price_${v.id}`, currency_code: 'usd', amount: v.amount }] })),
       }, fields)) };
     if (kind === 'variantPage') afterVariantPage?.(offset, variants);
+    if (kind === 'productPage') afterProductPage?.(offset, variants);
     return new Response(JSON.stringify({ ...body, count: matching.length, offset, limit: page.length }));
   });
   db = await createRxDatabase({
@@ -101,7 +105,7 @@ async function start({ variantPageSize, afterVariantPage }: {
   const variantPagesPerCall: number[] = [];
   const errors: unknown[] = [];
   const count = (kind: Kind) => requests.filter((r) => r.kind === kind).length;
-  replication = replicateRxCollection<any, any>({
+  const replicate = (feed: ReplicationAdapter<any>) => replicateRxCollection<any, any>({
     collection: db.products, replicationIdentifier: 'medusa-products-proof',
     live: true, waitForLeadership: false, retryTime: 10,
     pull: {
@@ -109,12 +113,20 @@ async function start({ variantPageSize, afterVariantPage }: {
       handler: async (checkpoint, batchSize) => {
         checkpoints.push(checkpoint);
         const pagesBefore = count('variantPage');
-        const result = await adapter.pull.handler(checkpoint, batchSize, context);
+        const result = await feed.pull.handler(checkpoint, batchSize, context);
         variantPagesPerCall.push(count('variantPage') - pagesBefore);
         return result;
       },
     },
   });
+  if (legacy) {
+    replication = replicate(medusaProductReplication);
+    await replication.awaitInSync();
+    await replication.cancel();
+    requests.length = 0;
+    checkpoints.length = 0;
+  }
+  replication = replicate(adapter);
   replication.error$.subscribe((error) => errors.push(error));
   await replication.awaitInSync();
   expect(errors).toEqual([]);
@@ -147,6 +159,40 @@ const productIds = (ns: number[]) => ns.map(productId);
 const overlap = [productId(1334)];
 
 describe('Medusa product and variant feeds in one real RxDB replication', () => {
+  it('fetches each product once on a fresh install: the variant feed starts from its seeded mark', async () => {
+    const { delivered, count, checkpoints } = await start();
+    const fetched = [...delivered('productPage'), ...delivered('parents'), ...delivered('carrier')];
+    expect(fetched.length, 'product documents fetched').toBe(2000);
+    expect(new Set(fetched).size).toBe(2000);
+    expect(delivered('parents'), 'products the variant feed re-delivered').toEqual([]);
+    expect(count('variantPage')).toBe(0);
+    // The seed was stored with the first call's checkpoint.
+    expect(checkpoints[1].variants).toMatchObject({ offset: 0, updated_at: iso(timestamp(3334)) });
+  });
+
+  it('keeps variant edits made during the first product pass, on and after its first page', async () => {
+    let edited = false;
+    const { variants } = await start({ afterProductPage: (offset, rows) => {
+      if (edited || offset !== 0) return;
+      edited = true;
+      change(rows, [5], 10000); // Edit A, t1: product 5 was on the page just served.
+      change(rows, [3300], 10001); // Edit B, t2 > t1: product 1300, on a later page.
+    } });
+    expect(edited).toBe(true);
+    await sync();
+    await expectPrices(variants, [5, 3300]);
+  });
+
+  it('keeps the full healing variant pass on an upgrade from a flat product checkpoint', async () => {
+    const { checkpoints, delivered, count } = await start({ legacy: true });
+    // The old flat checkpoint of a completed pass, as the product feed alone left it.
+    expect(checkpoints[0]).toMatchObject({ offset: 0, updated_at: iso(timestamp(2000)) });
+    expect(checkpoints[0]).not.toHaveProperty('products');
+    expect(count('productPage')).toBe(0);
+    // Every product has a variant, so the variant feed's full pass re-delivers them all.
+    expect(new Set(delivered('parents')).size).toBe(2000);
+  });
+
   it('delivers the parents of 30 variants whose prices changed across 25 products, product updated_at untouched', async () => {
     const { variants, delivered, errors, reset } = await start();
     reset();
@@ -173,7 +219,8 @@ describe('Medusa product and variant feeds in one real RxDB replication', () => 
 
   it('keeps a variant changed below the current offset mid-pass (Bug B), and a later one', async () => {
     let changed = false;
-    const { variants } = await start({ afterVariantPage: (offset, rows) => {
+    // An upgrade, so the variant feed runs a full multi-page pass (a fresh install is seeded).
+    const { variants } = await start({ legacy: true, afterVariantPage: (offset, rows) => {
       if (changed || offset !== 0) return;
       changed = true;
       change(rows, [5], 4000);

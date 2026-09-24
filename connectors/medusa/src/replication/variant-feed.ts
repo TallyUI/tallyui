@@ -6,6 +6,8 @@ import type { MedusaProductDocument } from '../schemas/products';
 
 /** Admin API list limit (ADR-060); the default variant page size. */
 const MAX_LIMIT = 1000;
+/** The newest variant's `updated_at`: each pass's mark, and a fresh install's seed. */
+const MARK_PATH = '/admin/product-variants?limit=1&order=-updated_at&fields=id,updated_at';
 
 async function get(path: string, context: SyncContext) {
   const response = await fetch(`${context.baseUrl}${path}`, {
@@ -32,20 +34,29 @@ async function get(path: string, context: SyncContext) {
  * adapter (`combinePullAdapters`), not as its own replication. Parents that
  * no longer exist are skipped; deletions are the id reconcile's job.
  *
- * With no checkpoint, the first pass re-delivers every product that has
- * variants, once. That is deliberate: it heals any price change the product
- * feed missed before this feed existed.
+ * On a fresh install `seedCheckpoint` starts the cursor at the variant mark,
+ * read before the product feed's first pass, so the catalogue downloads once.
+ * An upgrade (a stored product checkpoint, none for this feed) is not seeded:
+ * its first pass re-delivers every product that has variants, once. That is
+ * deliberate: it heals any price change the product feed missed before this
+ * feed existed.
  *
  * `variantPageSize` (the variant page `limit`) is for tests and tuning.
  */
 export const createMedusaVariantFeedReplication = (variantPageSize = MAX_LIMIT): ReplicationAdapter<any, MedusaProductCheckpoint> => ({
   pull: {
+    // The next call's unchanged-mark check then ends at one mark read, unless
+    // a variant changed since.
+    async seedCheckpoint(context) {
+      const markData = await get(MARK_PATH, context);
+      return { offset: 0, updated_at: markData.variants?.[0]?.updated_at ?? '', pass_mark: undefined, pass_count: undefined };
+    },
     async handler(lastCheckpoint, batchSize, context) {
       let offset = lastCheckpoint?.offset ?? 0;
       let passMark = lastCheckpoint?.pass_mark ?? lastCheckpoint?.updated_at ?? '';
       let passCount = lastCheckpoint?.pass_count;
       if (offset === 0 && lastCheckpoint?.pass_mark === undefined) {
-        const markData = await get('/admin/product-variants?limit=1&order=-updated_at&fields=id,updated_at', context);
+        const markData = await get(MARK_PATH, context);
         passMark = markData.variants?.[0]?.updated_at ?? passMark;
         if (lastCheckpoint?.updated_at && passMark === lastCheckpoint.updated_at) {
           return { documents: [], checkpoint: lastCheckpoint };

@@ -27,6 +27,12 @@ export interface ReplicationAdapter<RxDocType, CheckpointType = any> {
     }>;
 
     /**
+     * Fresh install only: the checkpoint this feed starts from instead of a full first pass,
+     * read before any feed runs (combinePullAdapters). Absent: a full first pass, as today.
+     */
+    seedCheckpoint?: (context: SyncContext) => Promise<CheckpointType>;
+
+    /**
      * Optional real-time event stream.
      * Emit { documents, checkpoint } for live updates,
      * or 'RESYNC' to trigger a full pull cycle.

@@ -9,6 +9,8 @@ const variants = (context: SyncContext, fields: string, options: Record<string, 
     productVariants(options: $options) { items { ${fields} } totalItems }
   }
 `, { options }).then((res) => res.data.productVariants as { items: any[]; totalItems: number });
+/** The newest variant: each pass's high water, and a fresh install's seed. */
+const newest = (context: SyncContext) => variants(context, 'id updatedAt', { take: 1, sort: { updatedAt: 'DESC' } });
 
 /**
  * Variant feed for Vendure products (ADR-060, decision 3).
@@ -22,21 +24,30 @@ const variants = (context: SyncContext, fields: string, options: Record<string, 
  * (`combinePullAdapters`), not as its own replication. Parents that no longer
  * exist are skipped; deletions are the id reconcile's job.
  *
- * With no checkpoint, the first pass re-delivers every product that has
- * variants, once. That is deliberate: it heals any price or stock change the
- * product feed missed before this feed existed.
+ * On a fresh install `seedCheckpoint` starts the cursor at the variant high
+ * water, read before the product feed's first pass, so the catalogue downloads
+ * once. An upgrade (a stored product checkpoint, none for this feed) is not
+ * seeded: its first pass re-delivers every product that has variants, once.
+ * That is deliberate: it heals any price or stock change the product feed
+ * missed before this feed existed.
  *
  * `variantPageSize` (the variant page `take`) is for tests and tuning.
  */
 export const createVendureVariantFeedReplication = (barcodeField?: string, updatedAtSkewMs = 0, variantPageSize = MAX_TAKE): ReplicationAdapter<any, VendureProductCheckpoint> => ({
   pull: {
+    // The next call's unchanged-high-water check then ends at one read, unless
+    // a variant changed since. The skew probe runs when a pass starts from it.
+    async seedCheckpoint(context) {
+      const head = await newest(context);
+      return { skip: 0, updatedAt: head.items[0]?.updatedAt ?? '', passHighWater: undefined, passTotal: undefined };
+    },
     async handler(lastCheckpoint, batchSize, context) {
       if (batchSize > MAX_TAKE || variantPageSize > MAX_TAKE) throw new Error('Vendure Admin API take must not exceed 1000');
       let passHighWater = lastCheckpoint?.passHighWater ?? lastCheckpoint?.updatedAt ?? '';
       let skip = lastCheckpoint?.skip ?? 0;
       let passTotal = lastCheckpoint?.passTotal;
       if (!skip) {
-        const head = await variants(context, 'id updatedAt', { take: 1, sort: { updatedAt: 'DESC' } });
+        const head = await newest(context);
         passHighWater = head.items[0]?.updatedAt ?? lastCheckpoint?.updatedAt ?? '';
         if (!head.items.length || (lastCheckpoint?.updatedAt && passHighWater === lastCheckpoint.updatedAt)) {
           return { documents: [], checkpoint: lastCheckpoint ?? { skip: 0, updatedAt: '' } };
