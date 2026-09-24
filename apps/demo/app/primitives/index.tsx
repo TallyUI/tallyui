@@ -1,5 +1,6 @@
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { Link, Stack } from 'expo-router';
+import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 const screens = [
   { href: '/primitives/accordion', label: 'Accordion' },
@@ -35,7 +36,7 @@ export default function PrimitivesIndex() {
         style={{ flex: 1, backgroundColor: '#fff' }}
         contentContainerStyle={{ padding: 16, gap: 8 }}
       >
-        <Text style={{ fontSize: 13, fontWeight: '600', color: '#6b7280', marginBottom: 4 }}>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: MUTED_FOREGROUND, marginBottom: 4 }}>
           Tap a primitive to open its test screen.
         </Text>
         {screens.map(({ href, label }) => (

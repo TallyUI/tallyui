@@ -87,3 +87,27 @@ describe('dark theme contrast', () => {
 it.each(['primary', 'ring', 'muted-foreground', 'input', 'success', 'warning', 'info', 'price'])('%s matches in both light blocks', (name) => {
   expect(base[name]).toBe(light[name]);
 });
+
+function over(fg: string, bg: string, alpha: number): string {
+  return '#' + [1, 3, 5].map((offset) => {
+    const foreground = parseInt(fg.slice(offset, offset + 2), 16);
+    const background = parseInt(bg.slice(offset, offset + 2), 16);
+    return Math.round(alpha * foreground + (1 - alpha) * background).toString(16).padStart(2, '0');
+  }).join('');
+}
+
+describe.each([['light', light], ['dark', dark]] as const)('%s badge tint contrast', (_, colors) => {
+  describe.each(['background', 'card'])('on %s', (surface) => {
+    it.each(['success', 'info', 'warning', 'destructive'])('foreground on a 15%% %s tint meets AA', (status) => {
+      expect(contrast(colors.foreground, over(colors[status], colors[surface], 0.15))).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('muted-foreground on a 15% muted tint meets AA', () => {
+      expect(contrast(colors['muted-foreground'], over(colors.muted, colors[surface], 0.15))).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+});
+
+it('documents why badge text uses foreground: success on its own light tint fails AA', () => {
+  expect(contrast(light.success, over(light.success, light.card, 0.15))).toBeLessThan(4.5);
+});

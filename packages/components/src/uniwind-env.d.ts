@@ -13,6 +13,11 @@ declare module 'react-native' {
     className?: string;
   }
 
+  interface TextInputProps {
+    // Uniwind reads an accent-* class for the placeholder colour.
+    placeholderTextColorClassName?: string;
+  }
+
   interface ImagePropsBase {
     className?: string;
   }

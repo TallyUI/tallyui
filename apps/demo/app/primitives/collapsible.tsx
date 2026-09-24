@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Collapsible } from '@tallyui/primitives';
+import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function CollapsibleScreen() {
   const [controlled, setControlled] = useState(false);
@@ -75,7 +76,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  info: { fontSize: 14, color: '#6b7280' },
+  info: { fontSize: 14, color: MUTED_FOREGROUND },
   collapsible: {
     borderWidth: 1,
     borderColor: '#e5e7eb',
@@ -96,5 +97,5 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#e5e7eb',
   },
-  contentText: { fontSize: 14, color: '#6b7280', lineHeight: 20 },
+  contentText: { fontSize: 14, color: MUTED_FOREGROUND, lineHeight: 20 },
 });

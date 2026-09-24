@@ -45,7 +45,7 @@ export function RegisterSummary({
         </View>
         <View className="flex-row justify-between border-t border-border pt-1">
           <Text className="text-sm font-semibold text-foreground">Discrepancy</Text>
-          <Text className={cn('text-sm font-semibold', discrepancy === 0 ? 'text-success' : 'text-danger')}>
+          <Text className={cn('text-sm font-semibold', discrepancy === 0 ? 'text-success' : 'text-destructive')}>
             {discrepancy >= 0 ? '' : '-'}{Math.abs(discrepancy).toFixed(2)}
           </Text>
         </View>
