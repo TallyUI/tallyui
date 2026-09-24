@@ -47,6 +47,10 @@ try {
       const packed = JSON.parse(read('package.json').toString('utf8'));
       const checkFiles = value => {
         if (typeof value === 'string') {
+          if (value.includes('*')) {
+            check(false, `wildcard exports aren't checked; the script needs extending: ${value}`);
+            return;
+          }
           check(files.has(`package/${value.replace(/^\.\//, '')}`), `missing entry file ${value}`);
         } else if (value && typeof value === 'object') {
           for (const child of Object.values(value)) checkFiles(child);
@@ -54,7 +58,7 @@ try {
       };
       checkFiles(packed.main);
       checkFiles(packed.types);
-      checkFiles(packed.exports?.['.']);
+      checkFiles(packed.exports);
       for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
         for (const [dependency, range] of Object.entries(packed[field] ?? {})) {
           check(!range.includes('workspace:'), `${field}.${dependency} contains workspace: (${range})`);

@@ -32,6 +32,9 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      - name: Pack and install smoke test
+        run: pnpm smoke:pack
+
       - name: Build docs site
         run: cd apps/web && npx next build
 
