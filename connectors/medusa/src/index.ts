@@ -7,6 +7,7 @@ import { medusaProductReplication } from './replication/products';
 import { createMedusaVariantFeedReplication } from './replication/variant-feed';
 import { medusaStockReconcile } from './reconcile/stock';
 import { fetchByIds, fetchPages, variantIds } from './reconcile/ids';
+import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from './reconcile/prices';
 
 // The id reconcile's corrections reach `products` only through this pull adapter (ADR-060).
 const idFeed = createReconcileFeed({ fetchByIds });
@@ -127,6 +128,7 @@ export const medusaConnector: TallyConnector = {
   reconcile: {
     stock: medusaStockReconcile,
     ids: { fetchPages, variantIds, enqueue: idFeed.enqueue },
+    prices: { fetchPages: fetchPricePages, fingerprint: priceFingerprint, enqueue: idFeed.enqueue },
   },
 };
 

@@ -1637,6 +1637,20 @@ interface OrderCreatePayload {
          the backstop.
        - All of them deliver through the pull, never as local writes, and
          their cadences are options.
+       - **Replicated Medusa documents carry no sale prices today**
+         (measured read-only on medusa-dev, 2026-09-24).
+         - Scanning 1,161 variants fetched with the replication's fields
+           found no price with a `price_list_id` or `price_set_id`, and no
+           `calculated_price`. The sale prices exist only under
+           `/admin/price-lists`, keyed by `price_set_id`.
+         - **Decision (front desk):** the replication will fetch with a
+           pricing context from the store settings (TV4), so Medusa itself
+           fills in `calculated_price`, and the traits read it. A POS that
+           re-implemented price-list rules, dates and customer groups would
+           drift from the store.
+         - The 30-minute price-list check then re-delivers products whose
+           sale prices changed (job D2b, after TV4).
+         - The nightly base-price pass (D2a) comes first.
   6. **Vendure servers run in UTC**, both the process and the database
      session, or set `updatedAtSkewMs`. The Vendure quick-start says so.
 - **Job order**, decided by value to the shipping product (amendment 3).
