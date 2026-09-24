@@ -157,5 +157,62 @@ Each connector uses a checkpoint format that matches its API's pagination model:
 |-----------|-----------|---------------|
 | WooCommerce | `{ id, modified }` | `?modified_after=` ordered by date |
 | Shopify | `{ updated_at }` | `?updated_at_min=` with Link header cursors |
-| Medusa | `{ offset, updated_at }` | `?updated_at[gte]=` with offset pagination |
-| Vendure | `{ skip, updatedAt }` | GraphQL filter with take/skip |
+| Medusa | `{ offset, updated_at, pass_mark?, pass_count? }` | Pass-based: `?updated_at[gte]=` from a high-water mark, `order=id`, offset pages, ends on `count` |
+| Vendure | `{ skip, updatedAt, passHighWater?, passTotal? }` | Pass-based: `updatedAt.after` from a high-water mark (−1 ms), `sort: { id: ASC }`, take/skip, ends on `totalItems` |
+
+## Writing a Pull Adapter
+
+These rules come from bugs that only showed up inside RxDB's real
+`replicateRxCollection` loop, or against a real backend (TallyUI #45, #48;
+ADR-049, ADR-060). A new adapter, such as a variant feed or a new backend,
+should follow them.
+
+**How RxDB's pull loop behaves** (RxDB 16, `replication-protocol/downstream.js`):
+- **It stops on a short page.** RxDB keeps pulling only while a handler
+  returns at least `batchSize` documents. A short page ends the cycle,
+  even mid-pass, until the next `reSync()` or stream event. An adapter
+  whose pages can shrink (a variant feed that re-delivers parent products,
+  say) must keep reading source pages inside the same handler call until
+  it has at least `batchSize` documents, or its pass has ended.
+- **It discards an empty page's checkpoint.** If a pass ends on an empty
+  page, the cursor stays wherever the last full page left it. With a
+  catalogue that is an exact multiple of the batch size, the cursor sticks
+  at the end, and every later sync returns nothing. End a pass on the list
+  **total** (`skip + page >= total`), never on an empty page.
+- **It merges checkpoints.** Each new checkpoint is `Object.assign`ed onto
+  the previous one (`stackCheckpoints`). Fields you drop are not removed;
+  clear per-pass state explicitly with `undefined` when a pass completes.
+
+**Cursor design:**
+- **Keep the pass window fixed.** Keep the lower bound fixed for the whole
+  pass, and page by a stable key (id order).
+- **Take the next lower bound from a high-water mark read at pass start.**
+  Read the newest `updated_at` with one small request. Don't use the
+  newest timestamp seen *during* the pass, or an early row updated
+  mid-pass is lost.
+- **Return early when nothing changed.** If the mark equals the stored
+  bound, return an empty page with the checkpoint unchanged. This ends the
+  loop even when a full batch of rows shares the mark's timestamp, and it
+  makes an idle poll one request.
+- **Restart the pass if rows vanish.** If a later page is empty, or the
+  total shrank (rows already read were deleted, shifting later rows left),
+  restart from zero inside the same call. Re-reads are harmless; skips are
+  not.
+
+**Documents and timestamps:**
+- **Project documents onto the schema's top-level fields.** RxDB rejects
+  undeclared top-level properties. One extra field (`createdAt`) made every
+  Vendure batch fail, so nothing was ever stored.
+- **Allow ±1 ms around timestamps.** Postgres stores microseconds, and APIs
+  return milliseconds, so `after(t)` matches the row stamped `t`.
+- **Know the backend's time zone behaviour.** Vendure's `timestamp without
+  time zone` columns skew `updatedAt` filters by the server's UTC offset,
+  unless the process and database session both run in UTC. The Vendure
+  connector guards against it and offers `updatedAtSkewMs`.
+
+**Proving it:**
+- A handler unit test is not enough. Add a test that runs the real
+  `replicateRxCollection` against an in-memory server with the backend's
+  exact filter semantics: exact multiples of the batch size, mid-pass
+  updates, mid-pass deletions, and ties.
+- Also add an env-gated live test against the backend's dev store.
