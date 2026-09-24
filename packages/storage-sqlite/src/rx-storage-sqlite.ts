@@ -1,6 +1,7 @@
 import type { RxStorage } from 'rxdb';
 import type { SQLiteBasics } from 'rxdb/plugins/storage-sqlite';
 import { getRxStorageSQLite as getPremiumRxStorageSQLite } from 'rxdb-premium/plugins/storage-sqlite';
+import { sqliteBoolParams } from './params';
 import type { SQLiteDatabase } from './types';
 
 /**
@@ -21,12 +22,10 @@ export function getRxStorageSQLite(database: SQLiteDatabase): RxStorage<any, any
       return Promise.resolve(database);
     },
     all: async (db, q) => {
-      const params = q.params.map((param) => typeof param === 'boolean' ? Number(param) : param);
-      return db.getAllSync(q.query, params);
+      return db.getAllSync(q.query, sqliteBoolParams(q.params));
     },
     run: async (db, q) => {
-      const params = q.params.map((param) => typeof param === 'boolean' ? Number(param) : param);
-      db.runSync(q.query, params);
+      db.runSync(q.query, sqliteBoolParams(q.params));
     },
     setPragma: async (db, key, value) => {
       db.execSync('pragma ' + key + ' = ' + value + ';');
