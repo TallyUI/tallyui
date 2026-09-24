@@ -47,7 +47,7 @@ describe('vendureProductReplication.pull.handler', () => {
     });
 
     // Verify the GraphQL request
-    const [url, opts] = (globalThis.fetch as any).mock.calls[1];
+    const [url, opts] = (globalThis.fetch as any).mock.calls[3];
     expect(url).toContain('/admin-api');
     const body = JSON.parse(opts.body);
     expect(body.variables.options.take).toBe(100);
@@ -80,15 +80,13 @@ describe('vendureProductReplication.pull.handler', () => {
   });
 
   it('advances skip while more totalItems remain', async () => {
-    const mockProducts = Array.from({ length: 25 }, (_, i) => ({
+    const mockProducts = Array.from({ length: 100 }, (_, i) => ({
       id: String(i),
       name: `Product ${i}`,
       updatedAt: '2026-01-01T00:00:00Z',
     }));
 
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
-      gqlResponse({ products: { items: mockProducts, totalItems: 100 } }),
-    );
+    serveProducts(mockProducts);
 
     const result = await vendureProductReplication.pull.handler(undefined, 25, context);
 
@@ -157,6 +155,23 @@ function serveProducts(products: { id: string; updatedAt: string }[]) {
 describe('fixed-window passes', () => {
   beforeEach(() => vi.restoreAllMocks());
   const timestamp = '2026-01-01T00:00:00.000Z';
+
+  it('widens the negative probe and page filters, including after an empty-page restart', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = serveProducts([{ id: '1', updatedAt: timestamp }]);
+    fetch.mockResolvedValueOnce(gqlResponse({ products: { items: [], totalItems: 0 } }));
+    const adapter = createVendureConnector({ updatedAtSkewMs: 2 * 3600e3 }).replication!.products!;
+    const result = await adapter.pull.handler({ skip: 50, updatedAt: '2025-12-31T00:00:00.000Z' }, 2, context);
+    const options = fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string).variables.options);
+    expect(options.map((option) => option.filter?.updatedAt.after)).toEqual([
+      '2025-12-30T21:59:59.999Z', undefined,
+      '2025-12-31T21:59:59.999Z', '2025-12-30T21:59:59.999Z',
+    ]);
+    expect(options[2].take).toBe(1);
+    expect(result.documents.map((product) => product.id)).toEqual(['1']);
+    expect(result.checkpoint).toEqual({ skip: 0, updatedAt: timestamp });
+    expect(warn).not.toHaveBeenCalled();
+  });
 
   it('delivers all five tied ids and stops with one high-water read when unchanged', async () => {
     const products = ['5', '3', '1', '4', '2'].map((id) => ({ id, updatedAt: timestamp }));

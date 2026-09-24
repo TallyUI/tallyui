@@ -1,4 +1,5 @@
 import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
+import { vendureProductSchema } from '../schemas/products';
 
 export type VendureProductCheckpoint = {
   skip: number;
@@ -78,7 +79,7 @@ async function gql(
  * for RxDB's replicateRxCollection. Catalogue data is server-owned; the
  * POS never writes products.
  */
-export const createVendureProductReplication = (barcodeField?: string): ReplicationAdapter<any, VendureProductCheckpoint> => ({
+export const createVendureProductReplication = (barcodeField?: string, updatedAtSkewMs = 0): ReplicationAdapter<any, VendureProductCheckpoint> => ({
   pull: {
     async handler(lastCheckpoint, batchSize, context) {
       if (batchSize > 1000) throw new Error('Vendure Admin API take must not exceed 1000');
@@ -92,6 +93,20 @@ export const createVendureProductReplication = (barcodeField?: string): Replicat
         if (!head.data?.products?.items?.length || (lastCheckpoint?.updatedAt && passHighWater === lastCheckpoint.updatedAt)) {
           return { documents: [], checkpoint: lastCheckpoint ?? { skip: 0, updatedAt: '' } };
         }
+        for (const overlap of [1, 0]) {
+          if (overlap === 0 && updatedAtSkewMs > 0) continue;
+          const probe = await gql(context, PRODUCT_LIST_QUERY(barcodeField), {
+            options: { take: 1, sort: { updatedAt: 'DESC' }, filter: {
+              updatedAt: { after: new Date(Date.parse(passHighWater) + (overlap === 0 ? 1 : -1) - updatedAtSkewMs).toISOString() },
+            } },
+          });
+          if (overlap === 1 && probe.data.products.totalItems === 0) {
+            throw new Error('Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.');
+          }
+          if (overlap === 0 && probe.data.products.totalItems > 0) {
+            console.warn('Vendure updatedAt filters over-fetch because the server is not in UTC.');
+          }
+        }
       }
       const options: Record<string, any> = {
         take: batchSize,
@@ -102,7 +117,7 @@ export const createVendureProductReplication = (barcodeField?: string): Replicat
       if (lastCheckpoint?.updatedAt) {
         options.filter = {
           // Vendure after is strict; overlap by 1 ms to include timestamp ties.
-          updatedAt: { after: new Date(Date.parse(lastCheckpoint.updatedAt) - 1).toISOString() },
+          updatedAt: { after: new Date(Date.parse(lastCheckpoint.updatedAt) - 1 - updatedAtSkewMs).toISOString() },
         };
       }
 
@@ -118,11 +133,17 @@ export const createVendureProductReplication = (barcodeField?: string): Replicat
       }
       const products: any[] = data?.items ?? [];
       if (!products.length && options.skip > 0) {
-        return createVendureProductReplication(barcodeField).pull.handler(
+        return createVendureProductReplication(barcodeField, updatedAtSkewMs).pull.handler(
           { skip: 0, updatedAt: lastCheckpoint?.updatedAt ?? '' }, batchSize, context,
         );
       }
-      const documents = products.map((p) => ({ ...p, _deleted: false }));
+      const documents = products.map((p) => {
+        const doc: Record<string, unknown> = { _deleted: false };
+        for (const field of Object.keys(vendureProductSchema.properties)) {
+          if (p[field] !== undefined) doc[field] = p[field];
+        }
+        return doc;
+      });
 
       // Keep the lower bound fixed while paging by id; advance it only at pass end.
       // RxDB merges checkpoints, so explicitly clear pass state at completion.

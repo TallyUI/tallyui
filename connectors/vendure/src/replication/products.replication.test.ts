@@ -6,12 +6,13 @@ import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/rep
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { vendureProductSchema } from '../schemas/products';
-import { vendureProductReplication, type VendureProductCheckpoint } from './products';
+import { createVendureConnector } from '../index';
+import type { VendureProductCheckpoint } from './products';
 
 addRxPlugin(RxDBDevModePlugin);
 const context = { connectorId: 'vendure', baseUrl: 'https://vendure.test', headers: {} };
-const timestamp = (offset: number) => new Date(Date.UTC(2026, 0, 1) + offset).toISOString();
-type Product = { id: string; name: string; slug: string; updatedAt: string };
+const timestamp = (offset: number) => Date.UTC(2026, 0, 1) + offset;
+type Product = { id: string; name: string; slug: string; updatedAt: number };
 let db: RxDatabase;
 let replication: RxReplicationState<any, VendureProductCheckpoint>;
 let databaseNumber = 0;
@@ -22,22 +23,26 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function start(count: number, afterPage?: (products: Product[]) => void, tied = false) {
+async function start(count: number, afterPage?: (products: Product[]) => void, tied = false,
+  server: { skew?: number; updatedAtSkewMs?: number; fractionMs?: number } = {}) {
+  const adapter = createVendureConnector({ updatedAtSkewMs: server.updatedAtSkewMs }).replication!.products!;
   const products = Array.from({ length: count }, (_, i) => ({
     id: String(i + 1), name: `Product ${i + 1}`, slug: `product-${i + 1}`,
-    updatedAt: timestamp(tied ? 0 : i),
+    updatedAt: timestamp(tied ? 0 : i) + (server.fractionMs ?? 0),
   }));
   const requests: { skip: number; length: number; totalItems: number }[] = [];
   let hooked = false;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
     const { options } = JSON.parse(init!.body as string).variables;
     const after = options.filter?.updatedAt?.after;
-    const matching = products.filter((p) => !after || Date.parse(p.updatedAt) > Date.parse(after))
+    // Stored timestamps retain sub-ms precision; API output stays ms-truncated UTC.
+    const matching = products.filter((p) => !after || p.updatedAt + (server.skew ?? 0) > Date.parse(after))
       .sort(options.sort.updatedAt === 'DESC'
-        ? (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
+        ? (a, b) => b.updatedAt - a.updatedAt
         : (a, b) => Number(a.id) - Number(b.id));
     const skip = options.skip ?? 0;
-    const items = matching.slice(skip, skip + options.take);
+    const items = matching.slice(skip, skip + options.take)
+      .map((p) => ({ ...p, createdAt: new Date(timestamp(0)).toISOString(), updatedAt: new Date(p.updatedAt).toISOString() }));
     const response = new Response(JSON.stringify({ data: { products: { items, totalItems: matching.length } } }));
     if (options.sort.id === 'ASC') {
       requests.push({ skip, length: items.length, totalItems: matching.length });
@@ -55,10 +60,10 @@ async function start(count: number, afterPage?: (products: Product[]) => void, t
   await db.addCollections({ products: { schema: vendureProductSchema } });
   replication = replicateRxCollection<any, VendureProductCheckpoint>({
     collection: db.products, replicationIdentifier: 'vendure-products-proof',
-    live: true, waitForLeadership: false,
+    live: true, waitForLeadership: false, retryTime: 10,
     pull: {
       batchSize: 1000,
-      handler: (checkpoint, batchSize) => vendureProductReplication.pull.handler(checkpoint, batchSize, context),
+      handler: (checkpoint, batchSize) => adapter.pull.handler(checkpoint, batchSize, context),
     },
   });
   await replication.awaitInSync();
@@ -71,15 +76,70 @@ async function start(count: number, afterPage?: (products: Product[]) => void, t
 async function expectUpdate(products: Product[], id = '5') {
   const product = products.find((p) => p.id === id)!;
   product.name = 'Updated product';
-  product.updatedAt = timestamp(10000);
+  product.updatedAt = timestamp(10000) + product.updatedAt % 1;
   replication.reSync();
   await replication.awaitInSync();
   const local = await db.products.findOne(id).exec();
   expect(local?.name).toBe(product.name);
-  expect(local?.updatedAt).toBe(product.updatedAt);
+  expect(local?.updatedAt).toBe(new Date(product.updatedAt).toISOString());
+  expect(local!.toJSON()).not.toHaveProperty('createdAt');
 }
 
 describe('Vendure pull in the real RxDB replication loop', () => {
+  it('delivers updates without warnings on an unskewed server with sub-ms timestamps', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { products } = await start(10, undefined, false, { fractionMs: 0.5 });
+    expect(await db.products.find().exec()).toHaveLength(10);
+    await expectUpdate(products);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('throws with both remedies when the server moves to UTC-2 before the second sync', async () => {
+    const options = { skew: 0 };
+    const { products } = await start(10, undefined, false, options);
+    options.skew = -2 * 3600e3;
+    Object.assign(products[4], { name: 'Updated product', updatedAt: timestamp(10000) });
+    const failure = new Promise<any>((resolve) => {
+      const subscription = replication.error$.subscribe((error) => {
+        subscription.unsubscribe();
+        resolve(error);
+      });
+    });
+    replication.reSync();
+    const error = await Promise.race([failure, replication.awaitInSync().then(() => undefined)]);
+    expect(error?.parameters.errors[0].message).toMatch(/TZ=UTC.*updatedAtSkewMs/);
+  });
+
+  it.each([
+    { skew: -2 * 3600e3, updatedAtSkewMs: 2 * 3600e3, warnings: 0 },
+    { skew: 2 * 3600e3, updatedAtSkewMs: 0, warnings: 1 },
+  ])('delivers updates with skew $skew and widening $updatedAtSkewMs', async (options) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { products } = await start(2500, undefined, false, options);
+    expect(await db.products.find().exec()).toHaveLength(2500);
+    expect(warn).toHaveBeenCalledTimes(options.warnings);
+    await expectUpdate(products);
+    expect(warn).toHaveBeenCalledTimes(options.warnings * 2);
+    if (options.warnings) expect(warn).toHaveBeenLastCalledWith(expect.stringMatching(/over-fetch.*UTC/));
+  });
+
+  it('delivers updates without warnings when widening is set on an unskewed server', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { products } = await start(10, undefined, false, { skew: 0, updatedAtSkewMs: 2 * 3600e3 });
+    await expectUpdate(products);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('does not warn or probe on an unskewed idle poll', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await start(10);
+    vi.mocked(globalThis.fetch).mockClear();
+    replication.reSync();
+    await replication.awaitInSync();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it.each([2000, 2500])('syncs %i products and a later update', async (count) => {
     const { products } = await start(count);
     expect(await db.products.find().exec()).toHaveLength(count);
@@ -98,7 +158,7 @@ describe('Vendure pull in the real RxDB replication loop', () => {
     for (const id of ['5', '2400']) {
       const local = await db.products.findOne(id).exec();
       expect(local?.name).toBe(`Updated ${id}`);
-      expect(local?.updatedAt).toBe(products.find((p) => p.id === id)!.updatedAt);
+      expect(local?.updatedAt).toBe(new Date(products.find((p) => p.id === id)!.updatedAt).toISOString());
     }
   });
 
