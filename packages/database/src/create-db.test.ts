@@ -34,6 +34,12 @@ describe('createTallyDatabase', () => {
     });
     try {
       expect(db.multiInstance).toBe(multiInstance ?? false);
+      if (multiInstance) {
+        await db.upsertLocal('outbox-test', { authRequired: true });
+        expect((await db.getLocal('outbox-test'))?.get('authRequired')).toBe(true);
+      } else {
+        await expect(db.getLocal('outbox-test')).rejects.toThrow();
+      }
     } finally {
       await db.close();
     }

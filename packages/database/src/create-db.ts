@@ -1,11 +1,13 @@
 import { createRxDatabase, addRxPlugin, type RxDatabase, type RxCollection } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
+import { RxDBLocalDocumentsPlugin } from 'rxdb/plugins/local-documents';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 
 import type { TallyConnector } from '@tallyui/core';
 
 const DEV_MODE = process.env.NODE_ENV !== 'production';
+addRxPlugin(RxDBLocalDocumentsPlugin);
 
 // Enable dev mode in non-production
 if (DEV_MODE) {
@@ -59,6 +61,7 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
     // and validating is what makes dev mode catch bad connector documents.
     storage: DEV_MODE ? wrappedValidateAjvStorage({ storage }) : storage,
     multiInstance,
+    localDocuments: multiInstance,
     // RxDB rejects this outside dev mode (DB9); in dev it lets hot reload re-create the same database.
     ignoreDuplicate: DEV_MODE,
   });

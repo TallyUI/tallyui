@@ -10,6 +10,7 @@ export default defineConfig({
     'rxdb',
     'rxdb/plugins/storage-memory',
     'rxdb/plugins/leader-election',
+    'rxdb/plugins/local-documents',
     'rxjs',
   ],
 });
