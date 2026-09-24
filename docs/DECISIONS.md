@@ -960,3 +960,329 @@ interface OrderCreatePayload {
     API and is left for when an app measures a need.
   - Web SQLite-wasm and the rxdb 16 → 17 upgrade (ADR-031's 17.4.0 pin)
     are still separate jobs.
+
+## ADR-046 Vendure baseline: 3.7, Admin API only, dev store on the agent host
+
+- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
+  programme lead) · **Source:**
+  [vendure/DISCOVERY.md](vendure/DISCOVERY.md) §1–2
+- **Context:** Vendure's npm `latest` is 3.7.3 (released 2026-09-01), and
+  3.8.0 is due 2026-09-30. Two features the POS relies on arrived in 3.6.0
+  (2026-03-31): API keys (PR #3815) and `OrderLevelTaxCalculationStrategy`.
+  The Shop API caps lists at 100, hides stock numbers and is built around
+  one customer's session. The Admin API allows `take` ≤ 1,000 and is
+  permissioned per channel. `@vendure/create`'s sample data has only 54
+  products and 88 variants.
+- **Decision:**
+  - TallyUI targets Vendure **3.7.x**, and the plugin declares
+    `compatibility: '^3.6.0'`.
+  - The connector and plugin use the **Admin API only**.
+  - The dev store (`vendure-dev`) is a `@vendure/create` 3.7.3 project on
+    Postgres 17, with its own 2,000-product seed.
+  - **Where it runs is not decided here.** `~/Projects/CLAUDE.md` gives
+    test stores to "a separate machine chosen by the front desk with Paul".
+    PLAN §5 (V-D6) proposes this Mac mini, bound to 127.0.0.1, following
+    the medusa-dev precedent. It never runs on the production VPS.
+  - Its source lives in `vendurepos/app` `dev/vendure-store` (ADR-014).
+  - The plugin is MIT, which Vendure's plugin exception allows
+    (`license/plugin-exception.txt`: a separately distributed plugin may
+    use "terms of your choice").
+- **Consequences:**
+  - A 3.5 store is not supported.
+  - Re-read DISCOVERY §2 when 3.8 ships.
+  - The e2e and the demo use Postgres, not SQLite. Search, locking and
+    unique-index behaviour differ between the two, and merchants run
+    Postgres or MySQL in production.
+
+## ADR-047 Vendure `order.create` recipe: one transaction in a plugin
+
+- **Date:** 2026-09-24 · **Status:** Accepted as the design; spike S1 in
+  [vendure/PLAN.md](vendure/PLAN.md) must prove it on vendure-dev before VP3
+  · **Source:** DISCOVERY §2.3–2.4, Vendure 3.7.3 source
+- **Context:** The Admin API can't carry an offline POS sale as it stands:
+  - `AddItemToDraftOrderInput` is `{productVariantId, quantity}`, so there
+    is no as-sold price;
+  - `addManualPaymentToOrder` takes no amount and always pays
+    `totalWithTax − covered` (`order.service.js:1327-1349`);
+  - `orderPlacedAt` is hard-set to `new Date()`
+    (`default-order-process.js:266-269`);
+  - no mutation is idempotent;
+  - `ArrangingPayment` requires a customer, a shipping line and saleable
+    stock (`default-order-process.js:187-212`). Switching those checks off
+    with `configureDefaultOrderProcess` is global and would change the
+    merchant's web checkout.
+
+  Medusa needed six Admin calls, compensation, resume logic and an
+  advisory lock (ADR-036; the medusapos workflow is about 600 lines). A
+  Vendure plugin can call the services directly inside one
+  `TransactionalConnection` transaction.
+- **Decision:** `POST /tally/v1/commands` (ADR-038, unchanged) is a Nest
+  controller in the plugin. Each `order.create` runs in **one transaction**:
+  1. Validate the payload (`invalid_payload`, before the claim). Then claim
+     the command, with ADR-039's fingerprint:
+     - Run `SET LOCAL lock_timeout = '5s'`, then
+       `INSERT … ON CONFLICT (id) DO NOTHING RETURNING id`.
+     - A plain insert is not enough. On Postgres a unique violation aborts
+       the whole transaction, and `lock_timeout` defaults to 0 (wait
+       forever). Vendure's transaction wrapper retries only deadlocks
+       (`transaction-wrapper.js:104-107`).
+     - **A concurrent duplicate waits on the first transaction.**
+       - If the first transaction commits, the insert returns no row. The
+         stored result is then visible under READ COMMITTED and is
+         returned as `duplicate`, or as `idempotency_mismatch` if the
+         fingerprint differs.
+       - If the first transaction rolls back, the insert wins and this
+         command runs.
+       - If the 5 s timeout fires, the transaction rolls back and the
+         client gets `409 in_progress`.
+     - A replay after commit is a plain read.
+     - MySQL/MariaDB need the equivalent (`INSERT IGNORE` with
+       `innodb_lock_wait_timeout`). The MVP tests Postgres only.
+  2. Create the draft order in the request's channel (`vendure-token`).
+     Set the Order custom field `tallyClientOrderId` (with `unique: true`,
+     which backs up the ledger) and `tallySaleAt` = `payload.createdAt`.
+  3. Add each line with the **readonly** OrderLine custom field
+     `tallyUnitPrice`. The plugin's `OrderItemPriceCalculationStrategy`
+     returns it as `{price, priceIncludesTax: payload.pricesIncludeTax}`,
+     and delegates to the previously configured strategy for every other
+     order. The field must be readonly, or a Shop API customer could set
+     their own price.
+  4. Set the customer.
+     - With an email, look the customer up. If there is one, attach it
+       unchanged. `setCustomerForDraftOrder`'s path would refuse a
+       registered customer's email (`EmailAddressConflictError`) or
+       overwrite their name.
+     - With an email and no existing customer, create a guest with
+       `createOrUpdate`. Never use `createCustomer`, which makes a login
+       User and publishes a registration event.
+     - With no email, use the configured placeholder, `walk-in@pos.invalid`
+       by default (ADR-039).
+  5. Set the in-store shipping method. It costs zero, and its eligibility
+     checker accepts only orders that have a `tallyClientOrderId`, so the
+     web shop never offers it.
+  6. If saleable stock is short, top up by the shortfall and record an
+     `insufficient_stock` warning. Then transition to `ArrangingPayment`.
+  7. Add the rounding surcharge, if any (ADR-048). Then add one payment
+     through the plugin's `tally-pos` `PaymentMethodHandler`: the amount is
+     the POS total, it is created Settled, and the method and reference go
+     in its metadata. Vendure moves the order to `PaymentSettled` and
+     allocates the stock.
+  8. Add a manual fulfilment for every line. That records the SALE
+     movement, so on-hand stock drops. Take back any top-up from step 6.
+     Store the result in the ledger, then commit.
+
+  A thrown error rolls everything back, including the ledger claim, and
+  the controller returns `503`, which the client retries. The plugin never
+  changes the order process, the tax strategy or the checks of the
+  merchant's other orders.
+- **Consequences:**
+  - No compensation or resume code, which is the main saving against
+    Medusa.
+  - The merchant runs one migration for the custom fields and the ledger.
+  - The plugin creates a `tally-pos` PaymentMethod and an in-store
+    ShippingMethod per channel if they are missing.
+  - The same `tally-pos` handler supports split tender later, because it
+    takes amounts.
+  - EventBus events (`OrderPlacedEvent` and so on) still fire after
+    commit, so email and other plugins behave as for any order.
+    `no_notification` has no Vendure equivalent: stores whose EmailPlugin
+    mails on `OrderPlacedEvent` will email the placeholder address, which
+    `.invalid` makes undeliverable.
+  - **Unverified until S1:** that `OrderService` accepts a readonly custom
+    field from inside the plugin, and that one transaction covers draft,
+    payment and fulfilment. PLAN §4 has the fallbacks.
+
+## ADR-048 Tax parity on Vendure: a rounding surcharge, never a config change
+
+- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
+  programme lead); to be checked in spike S1 · **Source:** DISCOVERY
+  §2.4.1; ADR-037, ADR-040
+- **Evidence (Vendure 3.7.3 source):**
+  - `DefaultMoneyStrategy.round` is `Math.round(value × quantity)`, and
+    `taxPayableOn` is an unrounded float.
+  - `DefaultOrderTaxCalculationStrategy` sums each line's rounded
+    `proratedLinePriceWithTax`, so each line is rounded once.
+  - `OrderLevelTaxCalculationStrategy` (added in 3.6.0) rounds
+    `taxPayableOn(netBase, rate)` once per `(description, rate)` group.
+  - The strategy is a store-wide `taxOptions` setting, so it also governs
+    the web shop.
+  - `addManualPaymentToOrder` cannot pay less than Vendure's total
+    (ADR-047).
+- **What differs from the POS:**
+  - With the default strategy and tax-exclusive prices, an *n*-line order
+    can differ from the POS's round-once total (ADR-037) by up to about
+    ⌈*n*/2⌉ minor units.
+  - With tax-exclusive prices and `OrderLevelTaxCalculationStrategy`, a
+    single-rate order matches exactly: for positive amounts, `Math.round`
+    equals half away from zero.
+  - With tax-inclusive prices and the default strategy, the order total is
+    the sum of integer gross lines, so the totals match. Only the tax split
+    can differ.
+  - With tax-inclusive prices and `OrderLevelTaxCalculationStrategy`, the
+    totals **do not** match. It rounds each line's net price before adding
+    tax. At 25%, two lines at gross 998 give 1,995 against a POS total of
+    1,996 (order-line.entity.js:193-196). The gap is up to about ⌈*n*/2⌉.
+  - So for single-rate orders, each pricing mode has exactly one strategy
+    that matches.
+- **Decision:**
+  - The POS total stays authoritative (ADR-037). If Vendure's
+    `totalWithTax` differs from `totalMinor`, the plugin adds **one
+    Surcharge** for the difference, which may be negative. Its description
+    is "POS rounding", its SKU is `TALLY-ROUNDING`, and it has **no tax
+    lines** (the `addSurchargeToOrder` default). The plugin then records
+    the payment at exactly `totalMinor`.
+  - The result carries the existing `total_mismatch` warning, with
+    `expectedMinor` and the pre-surcharge `serverMinor`, so the POS still
+    shows it.
+  - The plugin **never changes the merchant's tax strategy.** The
+    quick-start recommends one, depending on the channel:
+    - tax-exclusive channels: `OrderLevelTaxCalculationStrategy`;
+    - tax-inclusive channels: the default strategy.
+  - **Guard for the e2e (job VA7):** vendure-dev's e2e seed is
+    tax-exclusive and runs the order-level strategy, so the surcharge is 0
+    on every single-rate order. A unit test covers the other three
+    combinations with |surcharge| ≤ the number of lines.
+- **Consequences:**
+  - The order total in Vendure equals the tendered amount to the minor
+    unit. That is stricter than Medusa's ≤ 1 unit (ADR-037).
+  - Both strategies skip lines that have no tax lines, so the surcharge
+    adds no row to `taxSummary`.
+  - The same surcharge mechanism can later carry cash rounding (for
+    example 5-cent rounding in Australia or Switzerland) without a new
+    contract.
+  - A surcharge far above the guard means the POS and Vendure disagree
+    about rates. The warning makes that visible, and the order is still
+    recorded (ADR-038: the ledger records facts).
+
+## ADR-049 Vendure connector conventions
+
+- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
+  programme lead); implemented by TV1–TV4 · **Source:** DISCOVERY §2.1,
+  §2.5, §3; ADR-015
+- **Context:** The current connector has four defects: no `sort`; offset
+  paging under a moving `updatedAt.after` bound; a bare `customFields`
+  selection that fails once a variant custom field exists
+  (`graphql-custom-fields.js:85` vs `:92`); and a mock on `/shop-api`.
+  Vendure's `IDOperators` have no `gt`, so a `(updatedAt, id)` keyset is
+  impossible through the API. `stockOnHand` is deprecated in favour of
+  `stockLevels`.
+- **Decision:**
+  - **Checkpoint:** Medusa's pattern (ADR-015).
+    - Each pass reads `filter: {updatedAt: {after: since − 1 ms}}` (an
+      inclusive bound, because `after` is strict), with `sort: {id: ASC}`,
+      offset pages of 100, and a `pass_max`.
+    - Default `AutoIncrementIdStrategy` ids sort by creation, so a row
+      created mid-pass lands at the end.
+    - Out-of-order commits and a UUID id strategy remain MVP limits,
+      removed by the TSP pull (ADR-050).
+  - **Barcode:** a connector option names the `ProductVariant` custom
+    field, `barcode` by default. The query selects
+    `customFields { <that field> }`, never `customFields` bare.
+  - **Stock:** `stockLevels` for the configured stock location, falling
+    back to the sum over all locations.
+  - **Auth:** credential kinds `bearer` (from the `login` mutation, read
+    from the `vendure-auth-token` response header) and `api-key` (the
+    `vendure-api-key` header). An optional channel token is sent as
+    `vendure-token`.
+  - **Documents:** products with nested variants, as today. A document
+    carries only fields the schema declares, as in Medusa's `toDocument`.
+- **Consequences:** The mock API needs an `/admin-api` handler. A
+  cookie-only store must add `bearer` to `tokenMethod`. The quick-start
+  says so, and the plugin warns at start-up.
+
+## ADR-050 The Vendure change feed is a journal written in the transaction
+
+- **Date:** 2026-09-24 · **Status:** Accepted as the post-MVP design (M6
+  proper) · **Source:** DISCOVERY §2.6, §4, §5; ADR-023
+- **Context:**
+  - Vendure soft-deletes products, variants and customers, and every list
+    hides them. `deletedAt` is not in the schema.
+  - Removing a product from a channel leaves no trace in the API.
+  - There are no core webhooks and no GraphQL subscriptions (#2369 is open
+    but backlogged).
+  - The EventBus publishes after commit, in-process, with no replay. A
+    crash between commit and a handler loses the event, and the worker
+    process never sees the server's events.
+- **Decision:** The Vendure plugin's TSP `pull` reads a journal table that
+  a **TypeORM entity subscriber** writes in the same transaction as the
+  change. It covers Product, ProductVariant, ProductVariantPrice,
+  StockLevel, Customer and channel membership.
+  - Each row is a pointer, `{seq, type, id, channelId, deleted}`, as in
+    WCPOS.
+  - It is read below a high-water mark by `@tallyui/sync-server`.
+  - Removal from a channel is a tombstone in that channel's scope.
+  - EventBus events are used only as SSE wake-up hints.
+- **Consequences:**
+  - The conformance suite's guarantees (no missed or resurrected rows
+    under out-of-order commits, ties and deletes) hold on Vendure for the
+    same reason they hold on the reference server.
+  - Raw SQL imports bypass subscribers; nightly `ids` reconciliation
+    catches those.
+  - Separate `prices` and `stock` collections follow directly from the
+    journal types.
+
+## ADR-051 The "small backend" KPI is reported in lines and bytes
+
+- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
+  programme lead) · **Source:** DISCOVERY §6
+- **Evidence:**
+  - Medusa plugin: 988 non-test lines (medusapos/app `e06f477`,
+    `packages/medusa-plugin`, excluding `jest.config.js`).
+  - Medusa connector: 667. Together they are 1,655, so M6's "≤ 50%" is
+    about **828 lines**.
+  - The Vendure connector is 578 lines today, including 154 of deprecated
+    `sync`.
+  - My estimate for Vendure plugin + connector at the MVP is 1,050–1,350
+    lines, roughly 65–80% of Medusa's. The plugin adds checkout
+    configuration Medusa did not need: a price strategy, a payment
+    handler, a shipping checker and custom fields.
+  - medusapos code averages 55–60 characters per line, so line counts
+    reward dense code.
+- **Decision:**
+  - The target stays at 50%.
+  - It is judged like-for-like at the end of M6 proper, when both
+    backends carry sign-in, store settings and the TSP pull.
+  - It is measured on non-test source, in both lines and bytes, at the end
+    of each Vendure milestone, and recorded in DECISIONS.md.
+  - A miss is reported, not squeezed: specs never ask Codex to compress
+    code to meet it.
+- **Consequences:** If the MVP lands above 50%, the report says which part
+  (for example checkout configuration) is Vendure-specific, and whether
+  the excess belongs in `@tallyui/sync-server`.
+
+## ADR-052 Neutral POS app pieces move from medusapos/app into TallyUI
+
+- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
+  programme lead); implemented by TV5–TV7 · **Source:** medusapos/app
+  origin/main `e06f477`, `apps/expo`; ADR-014
+- **Evidence:** `apps/expo` has 1,165 lines of `.ts`/`.tsx` source outside
+  tests and type stubs.
+  - **About 560 are platform-neutral and move:** `use-sale` (79),
+    `catalogue` (71), `receipt` (41), `cart` (35), `tender` (29),
+    `sync-status` (20), `print-style` (14), `order-store` (54),
+    `use-outbox` (61), `outbox-context` (20), `product-cache` (46),
+    `register` (18), `orders` (32), `lib/cart` (22) and `lib/catalogue`
+    (21).
+  - **About 350 are Medusa-specific:** `session` (111), `store-settings`
+    (108), `session-context` (63) and `login` (64).
+  - `use-replicated-products` (106) is mixed. It contains the bearer
+    workaround from medusapos #16.
+  - The `index` screen (121), `_layout` and `config` (29) are app wiring
+    and stay in each app.
+- **Decision:**
+  - Before the Vendure app is built, the neutral pieces move into
+    `@tallyui/pos` (sale state, order store, outbox wiring, device id) and
+    `@tallyui/components` (catalogue, cart, tender, receipt, sync status,
+    orders / needs attention).
+  - Sign-in and store settings become optional connector capabilities in
+    core (TV3, TV4), each implemented per connector.
+  - The Vendure app consumes all of these. medusapos/app switches to them
+    in its own job, when convenient.
+  - If the move slips, the fallback is copying the files into
+    `vendurepos/app` and recording the duplication.
+- **Consequences:**
+  - The second app costs about half the first.
+  - A third backend (WooCommerce, or Shopify if it is unparked) gets the
+    same screens.
+  - TallyUI takes on UI that was app-local, so it must stay neutral: no
+    `'$'`, no Medusa field names, currency only from the trait context.

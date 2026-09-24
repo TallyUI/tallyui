@@ -693,6 +693,9 @@ interfaces.
 
 ### M6: Vendure
 **Goal:** prove the connector contract with a second backend.
+*The Vendure discovery and an MVP-first plan are in
+[vendure/DISCOVERY.md](../vendure/DISCOVERY.md) and
+[vendure/PLAN.md](../vendure/PLAN.md) (2026-09-24).*
 - A seeded vendure-dev store; the Vendure connector rebuilt on
   `/admin-api` with API keys; a Vendure plugin (tombstone feed, barcode
   custom field, order import, stock delta) that reuses `@tallyui/sync-server`;
