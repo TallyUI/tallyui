@@ -5,11 +5,10 @@
 // worker (the sqlite-wasm module fetches it relative to its own URL), then
 // serves the result as a static site. `tallyui-build-sqlite-worker` (the
 // package's own bin, see PR #71) doesn't exist on `main` yet, so this
-// bundles with esbuild directly instead, per the spec. esbuild is never a
-// declared dependency here: it already ships in the pnpm store as tsup's
-// bundler, and its CLI is reachable at the store's shared bin folder below,
-// so no dependency is added to run it.
-import { execFileSync } from 'node:child_process';
+// bundles with esbuild directly instead, per the spec. It uses esbuild's JS
+// API, resolved from `@tallyui/storage-sqlite`'s own `esbuild` devDependency
+// (added in #71), rather than shelling out to a CLI binary.
+import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { readFile, copyFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -19,14 +18,18 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 const storageSqlite = path.join(repoRoot, 'packages/storage-sqlite');
 const outDir = path.join(here, 'dist');
-const esbuild = path.join(repoRoot, 'node_modules/.pnpm/node_modules/.bin/esbuild');
+const esbuild = createRequire(path.join(storageSqlite, 'package.json'))('esbuild');
 
-function bundle(entry, outfile, extraArgs = []) {
-  execFileSync(
-    esbuild,
-    [entry, '--bundle', '--format=esm', '--platform=browser', '--target=es2022', `--outfile=${outfile}`, ...extraArgs],
-    { stdio: 'inherit' }
-  );
+function bundle(entry, outfile, alias = {}) {
+  esbuild.buildSync({
+    entryPoints: [entry],
+    bundle: true,
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2022',
+    outfile,
+    alias,
+  });
 }
 
 async function build() {
@@ -40,9 +43,9 @@ async function build() {
   // The page imports `rxdb` directly, but its own directory (this one) has
   // no ancestor node_modules with rxdb in pnpm's isolated layout, so alias
   // it to the copy `storage-sqlite` already depends on.
-  bundle(path.join(here, 'index.ts'), path.join(outDir, 'index.js'), [
-    `--alias:rxdb=${path.join(storageSqlite, 'node_modules/rxdb')}`,
-  ]);
+  bundle(path.join(here, 'index.ts'), path.join(outDir, 'index.js'), {
+    rxdb: path.join(storageSqlite, 'node_modules/rxdb'),
+  });
 
   await copyFile(
     path.join(storageSqlite, 'node_modules/@sqlite.org/sqlite-wasm/dist/sqlite3.wasm'),
