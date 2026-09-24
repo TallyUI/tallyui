@@ -5,6 +5,7 @@ import { vendureProductSchema } from './schemas/products';
 import { createVendureProductTraits } from './traits/product';
 import { createVendureProductSync } from './sync/products';
 import { createVendureProductReplication } from './replication/products';
+import { createVendureVariantFeedReplication } from './replication/variant-feed';
 import { vendureStockReconcile } from './reconcile/stock';
 
 /**
@@ -47,6 +48,8 @@ export const createVendureConnector = (options: { barcodeField?: string; stockLo
 
   replication: {
     products: createVendureProductReplication(options.barcodeField, options.updatedAtSkewMs),
+    // Second pull on the products collection, with its own replicationIdentifier (ADR-060).
+    productVariantFeed: createVendureVariantFeedReplication(options.barcodeField, options.updatedAtSkewMs),
   },
 
   reconcile: {
@@ -62,4 +65,5 @@ export { vendureProductSchema } from './schemas/products';
 export { vendureProductTraits } from './traits/product';
 export { vendureProductSync } from './sync/products';
 export { vendureProductReplication } from './replication/products';
+export { createVendureVariantFeedReplication } from './replication/variant-feed';
 export { vendureStockReconcile } from './reconcile/stock';
