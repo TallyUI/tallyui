@@ -349,6 +349,8 @@ bodies and design docs, and the source is given for each.
   overwrites a record with pending commands. Full replicas are scoped to the
   POS channel and location, with at most 11 collections (open-source RxDB 17
   caps a realm at 13), and `multiInstance` with leader election.
+  **Amended by ADR-061:** databases are single-instance, and
+  `multiInstance` with leader election is unsupported.
 - **Consequences:** Product push handlers are removed from every connector.
   Demand-driven partial replicas (the WCPOS approach) are adopted only if
   the M2 benchmark misses its budget.
@@ -1623,3 +1625,105 @@ interface OrderCreatePayload {
 - **Until job A lands, neither POS (medusapos or vendurepos) treats
   replicated stock as live.** The connectors' stock is only as fresh as the
   last product-level change.
+
+## ADR-061 TallyUI databases are single-instance; web storage is RxDB Premium SQLite-wasm
+
+- **Date:** 2026-09-24 · **Status:** Accepted (Paul's ruling, via the
+  Front desk); amends ADR-024 and ADR-031 · **Source:** WCPOS v1.11.0 web
+  storage. WCPOS moves browser storage from the retired OPFS engine to
+  SQLite-wasm (`opfs-sahpool`, WAL mode, one live tab). Sources:
+  - monorepo#2146, the owner ruling closed on 2026-09-21: "web multi-tab
+    ends at 2.0, as a consequence of the engine" and "one live tab, one
+    dedicated worker, reload as the recovery";
+  - its parent, monorepo#2137;
+  - the WCPOS roadmap, `docs/research/2026-09-17-filesystem-storage-durability.md`
+    §11–18;
+  - monorepo PR #2190 on `next`: `adapters/default/README.md`,
+    `storage-engines.ts` and `multi-instance-ruling.test.ts`;
+  - in this repo, the programme plan §1.3 and `docs/vendure/DISCOVERY.md`
+    ("One tab on web").
+- **Context:**
+  - ADR-024 assumed `multiInstance: true` with leader election, so that
+    several tabs of one POS could share a database. #42 built that for the
+    outbox: an RxDB-elected leader sends, and followers forward `flush()`
+    through a local document.
+  - On SQLite-wasm with `opfs-sahpool`, a second tab cannot open the
+    storage at all, so WCPOS v1.11.0 runs one tab and has no multi-instance.
+    WCPOS's earlier multi-tab write plane (wiki
+    `architecture/client/web-write-leader.md`, 2026-09-22) belongs to the
+    OPFS engine that v1.11.0 retires.
+  - Two multi-instance defects were found on 2026-09-24:
+    - RxDB 16.21.1 closes the shared BroadcastChannel before its
+      leader-election `die()` posts, so every `db.close()` leaves an
+      unhandled rejection;
+    - follower `flush()` forwards race on their local document.
+
+    Fixing them, and the leader-only reconcile runners planned as backlog
+    item 34, would have been work for a topology WCPOS is leaving.
+- **Decision:**
+  1. **TallyUI databases are single-instance.** `createTallyDatabase` keeps
+     `multiInstance: false` as its default, and `multiInstance: true` is
+     **unsupported**: no fixes, tests or features target it.
+  2. **Exactly one live tab per store; a second tab never opens storage.**
+     This is how WCPOS works, where it is "forced by the engine, not
+     chosen": opfs-sahpool takes exclusive OPFS access handles for the
+     whole origin. Paul chose single tab over the alternatives:
+     - multi-tab by routing, "the most failure-prone machinery";
+     - premium IndexedDB, which measured 220–750 ms against SQLite's
+       1.2–6.2 ms.
+
+     Recovery from a dead or hung storage worker is a reload.
+  3. **Web storage targets RxDB Premium SQLite, like native** (ADR-031):
+     - `@sqlite.org/sqlite-wasm` on opfs-sahpool;
+     - WAL, with `locking_mode` exclusive;
+     - one dedicated worker owned by the live tab, through premium's
+       `getRxStorageWorker` in mode `'one'`.
+
+     `multiInstance: false` changes together with the engine, and a test
+     pins the pair, as in WCPOS. The switch from today's Dexie web storage
+     is a **cold resync under a new database name**, not a data migration.
+  4. **Taking over from another tab** follows WCPOS:
+     - A new tab asks the live tab, over a BroadcastChannel, to hand over.
+     - The live tab closes its storage, stops its worker, releases the
+       lock, and parks on a "POS is open in another tab" screen.
+     - The live tab may delay the hand-over only while a payment or a
+       storage write is in flight, and only up to a limit.
+     - With no answer within a few seconds, the new tab tells the user to
+       close the other one.
+  5. **#42's leader-election code stays, inert, until the engine lands.**
+     It lives in `packages/pos/src/outbox/order-outbox.ts`
+     (`database.multiInstance` branches, and the `tally-outbox-flush`
+     forwarding). With a single-instance database, `isLeader()` is always
+     true, so it does nothing. After the SQLite-wasm engine lands, one PR
+     removes it, together with the `multiInstance` option.
+  6. **Job order, one small spec each:**
+     1. Take-over and the parked tab in TallyUI, independent of the engine:
+        - a Web Lock per store;
+        - the BroadcastChannel hand-over with a timeout;
+        - the parked "POS is open in another tab" component;
+        - deferral while a sale or a write is in flight;
+        - Reload as recovery.
+
+        Apps get this before the engine.
+     2. The premium SQLite-wasm opfs-sahpool worker storage as the web
+        storage, gated on the licence key (ADR-031), with WCPOS's
+        storage-call deadline and worker error handling. Today's Dexie
+        stays until this job lands.
+     3. Removing #42's multi-instance machinery and the `multiInstance`
+        option.
+  7. **Cancelled:**
+     - backlog item 34 (leader-only runners and follower forwarding of the
+       id reconcile);
+     - the multi-instance close and follower-flush fixes (their work was
+       discarded, never merged);
+     - the RxDB upstream issue draft
+       (`docs/rxdb/upstream-issue-leader-election-close-order.md`), which is
+       kept as a record, marked "not pursued", and will not be posted.
+- **Consequences:**
+  - The reconcile runners (ADR-060) need no leadership gating: the one tab
+    runs them.
+  - Every tab-coordination question goes away. For example, "which tab
+    sends the outbox" and "which tab replicates" both have the same answer:
+    the one tab.
+  - The cost: a cashier cannot open the POS in two tabs at once. The guard
+    must say so plainly.
