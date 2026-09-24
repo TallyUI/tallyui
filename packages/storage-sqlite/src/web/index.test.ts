@@ -8,7 +8,7 @@ const { getRxStorageWorker, fakeStorage } = vi.hoisted(() => {
 
 vi.mock('rxdb-premium/plugins/storage-worker', () => ({ getRxStorageWorker }));
 
-import { getRxStorageSQLiteWasm, SQLITE_SAHPOOL_ENGINE } from './index';
+import { getRxStorageSQLiteWasm, SQLITE_SAHPOOL_ENGINE, StorageWorkerStartError, isStorageWorkerStartError } from './index';
 
 describe('getRxStorageSQLiteWasm', () => {
   it('passes mode: one and type: module to getRxStorageWorker', () => {
@@ -37,5 +37,10 @@ describe('getRxStorageSQLiteWasm', () => {
       workerOptions: { type: 'module', name: 'custom' },
       mode: 'one',
     });
+  });
+
+  it('re-exports the worker start error helpers', () => {
+    expect(typeof StorageWorkerStartError).toBe('function');
+    expect(typeof isStorageWorkerStartError).toBe('function');
   });
 });

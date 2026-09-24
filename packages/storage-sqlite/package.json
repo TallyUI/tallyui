@@ -50,5 +50,9 @@
     "@sqlite.org/sqlite-wasm": "^3.53.4-build1",
     "expo-sqlite": ">=15.0.0",
     "rxdb-premium": "16.21.1"
+  },
+  "peerDependenciesMeta": {
+    "@sqlite.org/sqlite-wasm": { "optional": true },
+    "expo-sqlite": { "optional": true }
   }
 }

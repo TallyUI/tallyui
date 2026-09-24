@@ -1,6 +1,8 @@
 import type { RxStorage } from 'rxdb';
 import { getRxStorageWorker } from 'rxdb-premium/plugins/storage-worker';
 
+export { StorageWorkerStartError, isStorageWorkerStartError } from './errors';
+
 /** Marks a storage as this package's web engine (ADR-061), for job 2b to recognise. */
 export const SQLITE_SAHPOOL_ENGINE = 'sqlite-sahpool';
 

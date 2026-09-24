@@ -18,13 +18,16 @@ async function loadRealSQLiteStorage() {
     return undefined;
   }
   const sqlite3 = await sqlite3InitModule();
-  return () => {
-    const openDb = async (_name: string) => new sqlite3.oo1.DB(':memory:') as unknown as Oo1Db;
-    return getRxStorageSQLite({ sqliteBasics: getSQLiteBasicsOpfsSahPool({ openDb }) });
+  const defaultOpenDb = async (_name: string) => new sqlite3.oo1.DB(':memory:') as unknown as Oo1Db;
+  return {
+    sqlite3,
+    makeStorage: (openDb: (name: string) => Promise<Oo1Db> = defaultOpenDb) =>
+      getRxStorageSQLite({ sqliteBasics: getSQLiteBasicsOpfsSahPool({ openDb }) }),
   };
 }
 
-const makeStorage = await loadRealSQLiteStorage();
+const sqliteEnv = await loadRealSQLiteStorage();
+const makeStorage = sqliteEnv?.makeStorage;
 if (!makeStorage && process.env.CI) {
   it('requires rxdb-premium in CI', () => { throw new Error('rxdb-premium is missing in CI'); });
 }
@@ -51,6 +54,18 @@ const heroSchema = {
   },
   required: ['id', 'name', 'power'] as const,
 };
+
+async function openHeroDatabase(name: string, openDb?: (name: string) => Promise<Oo1Db>): Promise<HeroDatabase> {
+  const storage = wrappedValidateAjvStorage({ storage: makeStorage!(openDb) });
+  const db = await createRxDatabase<{ heroes: HeroCollection }>({
+    name,
+    storage,
+    multiInstance: false,
+    ignoreDuplicate: true,
+  });
+  await db.addCollections({ heroes: { schema: heroSchema } });
+  return db;
+}
 
 (makeStorage ? describe : describe.skip)('sqlite-wasm storage in Node (no OPFS)', () => {
   let db: HeroDatabase;
@@ -107,5 +122,125 @@ const heroSchema = {
 
     const powerful = await db.heroes.find({ selector: { power: { $gt: 85 } } }).exec();
     expect(powerful.map((d) => d.name).sort()).toEqual(['Flash', 'Superman']);
+  });
+});
+
+(makeStorage ? describe : describe.skip)('sqlite-wasm storage in Node: compound index', () => {
+  interface OrderDocType {
+    id: string;
+    customerId: string;
+    createdAt: number;
+  }
+  type OrderCollection = RxCollection<OrderDocType>;
+
+  it('queries through a compound index', async () => {
+    const storage = wrappedValidateAjvStorage({ storage: makeStorage!() });
+    const db = await createRxDatabase<{ orders: OrderCollection }>({
+      name: 'sqlite_wasm_node_test_index_' + Date.now(),
+      storage,
+      multiInstance: false,
+      ignoreDuplicate: true,
+    });
+
+    await db.addCollections({
+      orders: {
+        schema: {
+          version: 0,
+          primaryKey: 'id',
+          type: 'object' as const,
+          properties: {
+            id: { type: 'string' as const, maxLength: 100 },
+            customerId: { type: 'string' as const, maxLength: 100 },
+            // Numeric index fields need multipleOf/minimum/maximum (RxDB SC35/SC37).
+            createdAt: { type: 'number' as const, multipleOf: 1, minimum: 0, maximum: 1e9 },
+          },
+          required: ['id', 'customerId', 'createdAt'] as const,
+          indexes: [['customerId', 'createdAt']],
+        },
+      },
+    });
+
+    try {
+      await db.orders.bulkInsert([
+        { id: 'o1', customerId: 'c1', createdAt: 2 },
+        { id: 'o2', customerId: 'c1', createdAt: 1 },
+        { id: 'o3', customerId: 'c2', createdAt: 1 },
+      ]);
+
+      const found = await db.orders
+        .find({ selector: { customerId: 'c1' }, sort: [{ customerId: 'asc' }, { createdAt: 'asc' }] })
+        .exec();
+
+      expect(found.map((d) => d.id)).toEqual(['o2', 'o1']);
+    } finally {
+      await db.close();
+    }
+  });
+});
+
+(makeStorage ? describe : describe.skip)('sqlite-wasm storage in Node: file-backed persistence', () => {
+  it('keeps documents across a close and reopen of the same database', async () => {
+    // sqlite-wasm in Node has no persistent VFS: keep one real `oo1.DB` per
+    // name in this map, shared across a close and reopen of the RxDB
+    // database, and make the storage's own `close()` a no-op so RxDB never
+    // actually destroys it.
+    const realDbs = new Map<string, Oo1Db>();
+    const openDb = async (name: string): Promise<Oo1Db> => {
+      const existing = realDbs.get(name);
+      if (existing) return existing;
+      const real = new sqliteEnv!.sqlite3.oo1.DB(':memory:') as unknown as Oo1Db;
+      const persisting: Oo1Db = { exec: (opts) => real.exec(opts), close: () => {} };
+      realDbs.set(name, persisting);
+      return persisting;
+    };
+
+    const name = 'sqlite_wasm_node_test_reopen_' + Date.now();
+
+    const first = await openHeroDatabase(name, openDb);
+    await first.heroes.insert({ id: 'hero1', name: 'Superman', power: 100 });
+    await first.close();
+
+    const second = await openHeroDatabase(name, openDb);
+    try {
+      const found = await second.heroes.findOne('hero1').exec();
+      expect(found?.name).toBe('Superman');
+    } finally {
+      await second.close();
+    }
+  });
+
+  it('serves two databases with different names on one storage at once', async () => {
+    const storage = wrappedValidateAjvStorage({ storage: makeStorage!() });
+
+    const nameA = 'sqlite_wasm_node_test_two_a_' + Date.now();
+    const nameB = 'sqlite_wasm_node_test_two_b_' + Date.now();
+
+    const openOn = async (name: string) => {
+      const db = await createRxDatabase<{ heroes: HeroCollection }>({
+        name,
+        storage,
+        multiInstance: false,
+        ignoreDuplicate: true,
+      });
+      await db.addCollections({ heroes: { schema: heroSchema } });
+      return db;
+    };
+
+    const dbA = await openOn(nameA);
+    const dbB = await openOn(nameB);
+
+    try {
+      await dbA.heroes.insert({ id: 'hero1', name: 'Superman', power: 100 });
+      await dbB.heroes.insert({ id: 'hero2', name: 'Batman', power: 80 });
+
+      const foundInA = await dbA.heroes.find().exec();
+      const foundInB = await dbB.heroes.find().exec();
+
+      expect(foundInA.map((d) => d.id)).toEqual(['hero1']);
+      expect(foundInB.map((d) => d.id)).toEqual(['hero2']);
+    } finally {
+      await dbA.close();
+      await dbB.close();
+    }
   });
 });
