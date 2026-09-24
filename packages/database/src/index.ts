@@ -6,6 +6,9 @@ export { getStorage } from './storage';
 export { startReplication } from './replication';
 export type { StartReplicationOptions } from './replication';
 
+export { startLiveTab } from './live-tab';
+export type { LiveTabState, LiveTabOptions, LiveTabHandle } from './live-tab';
+
 export { startStockReconcile } from './reconcile';
 export type { StartStockReconcileOptions, StockReconcileResult, StockReconcileState } from './reconcile';
 export { startIdReconcile } from './id-reconcile';
