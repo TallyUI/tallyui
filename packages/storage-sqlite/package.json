@@ -11,6 +11,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "source": "./src/index.ts"
+    },
+    "./web": {
+      "types": "./dist/web/index.d.ts",
+      "import": "./dist/web/index.js",
+      "source": "./src/web/index.ts"
+    },
+    "./web-worker": {
+      "types": "./dist/web/worker.d.ts",
+      "import": "./dist/web/worker.js",
+      "source": "./src/web/worker.ts"
     }
   },
   "files": [
@@ -33,10 +43,16 @@
     "rxjs": "7.8.2"
   },
   "devDependencies": {
+    "@sqlite.org/sqlite-wasm": "3.53.4-build1",
     "rxdb-premium": "16.21.1"
   },
   "peerDependencies": {
+    "@sqlite.org/sqlite-wasm": "^3.53.4-build1",
     "expo-sqlite": ">=15.0.0",
     "rxdb-premium": "16.21.1"
+  },
+  "peerDependenciesMeta": {
+    "@sqlite.org/sqlite-wasm": { "optional": true },
+    "expo-sqlite": { "optional": true }
   }
 }
