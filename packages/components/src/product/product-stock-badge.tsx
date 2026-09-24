@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 
-import { useProductTraits } from '@tallyui/core';
+import { useProductStock } from '@tallyui/core';
 import type { StockStatus } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, HStack, type HStackProps } from '../ui';
@@ -10,6 +10,8 @@ export interface ProductStockBadgeProps extends Omit<HStackProps, 'children'> {
   doc: any;
   /** Whether to show the quantity alongside the status */
   showQuantity?: boolean;
+  /** Append when reconciled stock was last confirmed, if the provider gives it (default true) */
+  showAsOf?: boolean;
   className?: string;
 }
 
@@ -43,19 +45,27 @@ const STATUS_STYLES: Record<StockStatus, { badge: string; dot: string; text: str
   },
 };
 
+/** Local HH:MM when `iso` is today, otherwise a short local date. */
+function formatAsOf(iso: string): string {
+  const date = new Date(iso);
+  return date.toDateString() === new Date().toDateString()
+    ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    : date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
 /**
  * Displays a visual stock status badge for a product.
  *
  * Shows a label (In Stock / Out of Stock / On Backorder) with a dot carrying the colour
- * with an optional quantity count.
+ * with an optional quantity count. When the ConnectorProvider is given a
+ * reconciled stock overlay, it shows that stock and when it was confirmed.
  *
  * ```tsx
  * <ProductStockBadge doc={productDocument} showQuantity />
  * ```
  */
-export function ProductStockBadge({ doc, showQuantity = false, className, ...props }: ProductStockBadgeProps) {
-  const { getStock } = useProductTraits();
-  const { status, quantity } = getStock(doc);
+export function ProductStockBadge({ doc, showQuantity = false, showAsOf = true, className, ...props }: ProductStockBadgeProps) {
+  const { status, quantity, asOf } = useProductStock(doc);
   const label = statusLabels[status] ?? statusLabels.unknown;
   const styles = STATUS_STYLES[status] ?? STATUS_STYLES.unknown;
 
@@ -69,6 +79,7 @@ export function ProductStockBadge({ doc, showQuantity = false, className, ...pro
       <Text className={cn('text-xs font-semibold', styles.text)}>
         {label}
         {status !== 'out_of_stock' && showQuantity && quantity != null ? ` (${quantity})` : ''}
+        {asOf && showAsOf ? <Text className="text-xs font-normal text-muted-foreground">{` · as of ${formatAsOf(asOf)}`}</Text> : null}
       </Text>
     </HStack>
   );

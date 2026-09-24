@@ -28,7 +28,23 @@ Renders a pill-shaped badge with status-appropriate colors:
 |------|------|---------|-------------|
 | `doc` | `any` | required | RxDB product document |
 | `showQuantity` | `boolean` | `false` | Show quantity alongside status |
+| `showAsOf` | `boolean` | `true` | Show when reconciled stock was last confirmed |
 | `className` | `string` | — | Override badge container styles |
+
+## Reconciled stock
+
+When the connector reconciles stock (`reconcile.stock`), pass the overlay and its "as of" time to `ConnectorProvider`. The badge then shows reconciled stock, followed by ` · as of 14:05`.
+
+```tsx
+const overlay = useObservable(stockOverlay$(db.stock_levels));
+const asOf = useObservable(stockOverlayAsOf$(db.stock_levels));
+
+<ConnectorProvider connector={connector} stockOverlay={overlay} stockOverlayAsOf={asOf}>
+  <ProductStockBadge doc={productDocument} />
+</ConnectorProvider>
+```
+
+`stockOverlay$` and `stockOverlayAsOf$` come from `@tallyui/pos`; `useObservable` stands for any hook that subscribes to an observable.
 
 ## Trait mapping
 

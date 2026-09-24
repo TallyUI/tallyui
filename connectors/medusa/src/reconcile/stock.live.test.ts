@@ -5,7 +5,7 @@ import { addRxPlugin, createRxDatabase, type RxDatabase } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { STOCK_LEVELS_COLLECTION, startStockReconcile, stockLevelsSchema } from '@tallyui/database';
+import { STOCK_LEVELS_COLLECTION, startStockReconcile, stockLevelsCollection } from '@tallyui/database';
 import { getProductStock } from '@tallyui/pos';
 import { medusaAdminUserAuth, medusaAdminUserConnector } from '../index';
 
@@ -35,7 +35,7 @@ describe.skipIf(!MEDUSA_DEV_URL || !MEDUSA_DEV_EMAIL || !MEDUSA_DEV_PASSWORD)('l
       name: 'medusastocklive', multiInstance: false,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ [STOCK_LEVELS_COLLECTION]: { schema: stockLevelsSchema } });
+    await db.addCollections({ [STOCK_LEVELS_COLLECTION]: stockLevelsCollection });
     const { documents } = await medusaAdminUserConnector.replication!.products!.pull.handler(undefined, 50, context);
     expect(documents.length).toBeGreaterThan(0);
 

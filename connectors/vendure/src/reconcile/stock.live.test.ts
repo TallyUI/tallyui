@@ -5,7 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { STOCK_LEVELS_COLLECTION, startStockReconcile, stockLevelsSchema } from '@tallyui/database';
+import { STOCK_LEVELS_COLLECTION, startStockReconcile, stockLevelsCollection } from '@tallyui/database';
 import { getProductStock } from '@tallyui/pos';
 import { createVendureConnector } from '../index';
 import { vendureProductSchema } from '../schemas/products';
@@ -47,7 +47,7 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure stock reconcile', ()
     });
     await db.addCollections({
       products: { schema: vendureProductSchema },
-      [STOCK_LEVELS_COLLECTION]: { schema: stockLevelsSchema },
+      [STOCK_LEVELS_COLLECTION]: stockLevelsCollection,
     });
     const connector = createVendureConnector();
     const adapter = connector.replication!.products!;

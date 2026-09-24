@@ -1,38 +1,25 @@
 import type { RxCollection } from 'rxdb';
 import { map, type Observable } from 'rxjs';
 
-import type { ProductTraits, StockLevel, StockReconcileAdapter } from '@tallyui/core';
+import { STOCK_LEVELS_LAST_PASS } from '@tallyui/core';
 
-/**
- * A read-only view of `doc` with reconciled stock merged in (ADR-060).
- * Returns `doc` itself when there is nothing to merge; never mutates it.
- */
-export function withStockOverlay<Doc>(
-  doc: Doc,
-  adapter: StockReconcileAdapter<Doc> | undefined,
-  overlay: Map<string, unknown> | undefined,
-): Doc {
-  if (!adapter || !overlay) return doc;
-  const fields = adapter.overlay(doc, overlay);
-  return fields ? { ...doc, ...fields } : doc;
-}
-
-/**
- * The product's stock, from the overlay where it has an entry for a variant
- * or item, otherwise from the replicated document.
- */
-export function getProductStock<Doc>(
-  doc: Doc,
-  traits: ProductTraits<Doc>,
-  adapter: StockReconcileAdapter<Doc> | undefined,
-  overlay: Map<string, unknown> | undefined,
-): StockLevel {
-  return traits.getStock(withStockOverlay(doc, adapter, overlay));
-}
+// The pure helpers live in core so components can use them without RxDB.
+export { withStockOverlay, getProductStock } from '@tallyui/core';
 
 /** The `stock_levels` collection as a live map of key to stock value. */
 export function stockOverlay$(collection: RxCollection): Observable<Map<string, unknown>> {
   return collection.find().$.pipe(
     map((rows) => new Map(rows.map((row) => [row.primary, row.get('value')] as [string, unknown]))),
+  );
+}
+
+/**
+ * When the overlay was last confirmed by a successful pass (ISO 8601), or
+ * undefined before any pass. Read from the collection's local document, so a
+ * tab or screen that does not hold the runner can show it too.
+ */
+export function stockOverlayAsOf$(collection: RxCollection): Observable<string | undefined> {
+  return collection.getLocal$<{ completedAt: string }>(STOCK_LEVELS_LAST_PASS).pipe(
+    map((doc) => doc?.get('completedAt') as string | undefined),
   );
 }

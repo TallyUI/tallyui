@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,11 @@ import {
 import { Link, Stack } from 'expo-router';
 
 import { cn } from '@tallyui/theme';
-import { ConnectorProvider, useProductTraits } from '@tallyui/core';
+import { ConnectorProvider } from '@tallyui/core';
 import { ProductTitle, ProductPrice, ProductImage } from '@tallyui/components';
 import { woocommerceConnector } from '@tallyui/connector-woocommerce';
 import { medusaConnector } from '@tallyui/connector-medusa';
+import { getProductStock, stockOverlay$, stockOverlayAsOf$ } from '@tallyui/pos';
 import type { TallyConnector } from '@tallyui/core';
 
 import { useDemoDatabase } from '../lib/use-demo-database';
@@ -27,6 +28,17 @@ const connectors = [woocommerceConnector, medusaConnector];
 function ProductList({ connector }: { connector: TallyConnector }) {
   const { db, products, loading, error } = useDemoDatabase(connector);
   const traits = connector.traits.product;
+  const [overlay, setOverlay] = useState<Map<string, unknown>>();
+  const [asOf, setAsOf] = useState<string>();
+
+  // The demo starts no reconcile runner, so the overlay stays empty and
+  // stock falls back to the product documents.
+  useEffect(() => {
+    const collection = db?.stock_levels;
+    if (!collection) return;
+    const subs = [stockOverlay$(collection).subscribe(setOverlay), stockOverlayAsOf$(collection).subscribe(setAsOf)];
+    return () => subs.forEach((sub) => sub.unsubscribe());
+  }, [db]);
 
   if (loading) {
     return (
@@ -46,7 +58,7 @@ function ProductList({ connector }: { connector: TallyConnector }) {
   }
 
   return (
-    <ConnectorProvider connector={connector}>
+    <ConnectorProvider connector={connector} stockOverlay={overlay} stockOverlayAsOf={asOf}>
       <FlatList
         data={products}
         keyExtractor={(item) => traits.getId(item)}
@@ -58,7 +70,7 @@ function ProductList({ connector }: { connector: TallyConnector }) {
               <ProductTitle doc={item} className="text-base font-semibold" numberOfLines={1} />
               <ProductPrice doc={item} className="text-[15px] font-medium" />
               <Text className="mt-0.5 text-xs text-muted-foreground">
-                SKU: {traits.getSku(item) ?? '—'} · {traits.getStockStatus(item)}
+                SKU: {traits.getSku(item) ?? '—'} · {getProductStock(item, traits, connector.reconcile?.stock, overlay).status}
               </Text>
             </View>
           </View>

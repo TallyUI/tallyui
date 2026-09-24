@@ -39,6 +39,7 @@ export {
 // Money helpers
 export { formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice } from './money';
 export { findVariantByCode } from './variants';
+export { STOCK_LEVELS_LAST_PASS, withStockOverlay, getProductStock } from './stock-overlay';
 
 // Context & hooks
 export {
@@ -47,5 +48,6 @@ export {
   useProductTraits,
   useCustomerTraits,
   useTraitContext,
+  useProductStock,
 } from './context/connector-context';
 export type { ConnectorProviderProps } from './context/connector-context';
