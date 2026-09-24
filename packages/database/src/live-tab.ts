@@ -41,6 +41,8 @@ export interface LiveTabOptions {
   /** Injection for tests and non-browser hosts; default globalThis.navigator?.locks and globalThis.BroadcastChannel. */
   locks?: Pick<LockManager, 'request'>;
   createChannel?: (name: string) => LiveTabChannel;
+  /** Injection for tests; default globalThis. Source of `pagehide`/`pageshow`. */
+  events?: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 }
 
 export interface LiveTabHandle {
@@ -70,6 +72,7 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
     ackTimeoutMs = 3_000,
     locks = globalThis.navigator?.locks,
     createChannel = (name) => new BroadcastChannel(name) as unknown as LiveTabChannel,
+    events = globalThis,
   } = options;
   const state = new BehaviorSubject<LiveTabState>('acquiring');
 
@@ -79,26 +82,28 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
   }
 
   const name = `tally-live-tab:${scope}`;
-  const channel = createChannel(name);
+  let channel = createChannel(name);
   let releaseLock: (() => void) | undefined;
   let parking = false;
   let requestCounter = 0;
   let stopped = false;
-  // Aborts every locks.request() this instance has in flight; stop() is the only trigger.
-  const abortController = new AbortController();
+  let deferBlockedTimer: ReturnType<typeof setTimeout> | undefined;
+  // Aborts every locks.request() in flight; resume() swaps in a fresh one for the next round.
+  let abortController = new AbortController();
   // Unique per coordinator instance, so two tabs requesting at once never mint the same id
   // (a shared id would let one ack satisfy both waiters).
   const tabToken = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   const ackWaiters = new Map<string, () => void>();
 
   /** Holds the lock (if granted) until `releaseLock()` resolves the held promise. */
-  const requestLock = (lockOptions: Omit<LockOptions, 'signal'>): Promise<boolean> =>
+  // `controller` defaults to the one current when called, so a late grant for a round before a resume is told apart from the current round.
+  const requestLock = (lockOptions: Omit<LockOptions, 'signal'>, controller = abortController): Promise<boolean> =>
     new Promise<boolean>((resolve, reject) => {
+      // Browsers reject `signal` with `ifAvailable` (NotSupportedError), so the probe carries none; a late probe grant is still caught below by `stopped`/the stale-controller check.
       locks
-        .request(name, { ...lockOptions, signal: abortController.signal }, (lock) => {
-          // Stopped in the time it took the grant to arrive: hand the lock straight
-          // back (a non-promise return releases it at once) and never go live.
-          if (!lock || stopped) {
+        .request(name, lockOptions.ifAvailable ? lockOptions : { ...lockOptions, signal: controller.signal }, (lock) => {
+          // Stopped, or a stale grant from before a suspend/resume: hand the lock straight back (a non-promise return releases it at once) and never go live.
+          if (!lock || stopped || controller !== abortController) {
             resolve(false);
             return undefined;
           }
@@ -108,7 +113,7 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
           });
         })
         .catch((error: unknown) => {
-          if (abortController.signal.aborted) resolve(false);
+          if (controller.signal.aborted) resolve(false);
           else reject(error);
         });
     });
@@ -150,11 +155,12 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
     }
   };
 
-  channel.onmessage = (event) => {
+  const handleChannelMessage = (event: { data: unknown }) => {
     if (!isHandoverMessage(event.data)) return;
     if (event.data.type === 'handover-ack') ackWaiters.get(event.data.id)?.();
     else void handleHandoverRequest(event.data.id);
   };
+  channel.onmessage = handleChannelMessage;
 
   // Shared by overlapping takeOver() calls, so a double tap doesn't race two
   // hand-over requests against each other (like runners sharing a relay pass).
@@ -172,12 +178,26 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
     // Register the waiter before posting: an ack can arrive synchronously.
     const acked = waitForAck(id);
     channel.postMessage({ type: 'handover-request', id });
-    if (!(await acked)) state.next('blocked');
+    // Queue for the lock at once, racing the ack: the live tab may already be closing
+    // (StrictMode's stop-then-restart, a closing page), so a lock that frees within
+    // milliseconds is taken straight away instead of waiting out ackTimeoutMs.
+    // No deadline on the request itself: only stop() gives up waiting.
+    const gotLockPromise = requestLock({});
+    const lockFirst = await Promise.race([gotLockPromise.then(() => true), acked.then(() => false)]);
+
+    if (lockFirst) {
+      ackWaiters.delete(id);
+    } else if (await acked) {
+      // Acked: shown as blocked once the old defer+ack deadline passes, but keeps waiting.
+      deferBlockedTimer = setTimeout(() => state.next('blocked'), maxDeferMs + ackTimeoutMs);
+    } else {
+      state.next('blocked');
+    }
     if (stopped) return state.value;
 
-    // No deadline: the live tab may still be closing or reloading, so the lock
-    // can still come free. Only stop() gives up waiting.
-    const gotLock = await requestLock({});
+    const gotLock = await gotLockPromise;
+    clearTimeout(deferBlockedTimer);
+    deferBlockedTimer = undefined;
     if (stopped) return state.value;
     state.next(gotLock ? 'live' : 'blocked');
     return gotLock ? 'live' : 'blocked';
@@ -197,19 +217,55 @@ export function startLiveTab(options: LiveTabOptions): LiveTabHandle {
     return inFlightTakeOver;
   };
 
-  const stop = () => {
+  // pagehide: release the lock and park, but never complete state$ or touch the listeners.
+  const suspend = () => {
     stopped = true;
     abortController.abort();
-    globalThis.removeEventListener?.('pagehide', stop);
     releaseLock?.();
     releaseLock = undefined;
+    ackWaiters.clear();
+    clearTimeout(deferBlockedTimer);
+    deferBlockedTimer = undefined;
     channel.onmessage = null;
     channel.close();
+    state.next('parked');
+  };
+
+  // bfcache restore: fresh controller and channel for a clean round, then re-acquire.
+  const resume = () => {
+    abortController = new AbortController();
+    channel = createChannel(name);
+    channel.onmessage = handleChannelMessage;
+    stopped = false;
+    void takeOver().catch((error) => {
+      console.warn(`live-tab: takeOver failed for scope "${scope}".`, error);
+      state.next('blocked');
+    });
+  };
+
+  const handlePageShow = (event: Event) => {
+    if ((event as PageTransitionEvent).persisted && stopped) resume();
+  };
+
+  const handlePageHide = () => {
+    suspend();
+    // Best-effort, not awaited (pagehide can't wait): frees the OPFS handles for another
+    // tab while this page sits in the bfcache; reload is still the recovery if it fails.
+    void Promise.resolve().then(onPark).catch((error: unknown) => {
+      console.warn(`live-tab: onPark failed for scope "${scope}" on pagehide.`, error);
+    });
+  };
+
+  const stop = () => {
+    suspend();
+    events.removeEventListener?.('pagehide', handlePageHide);
+    events.removeEventListener?.('pageshow', handlePageShow);
     state.complete();
   };
 
-  // A reload or a closing page never sends an ack; treat it the same as stop().
-  globalThis.addEventListener?.('pagehide', stop);
+  // A reload or a closing page never sends an ack; pageshow recovers after a bfcache restore.
+  events.addEventListener?.('pagehide', handlePageHide);
+  events.addEventListener?.('pageshow', handlePageShow);
 
   // Start. A rejection here (a real locks.request() error, not an abort) still resolves a state.
   void takeOver().catch((error) => {

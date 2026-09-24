@@ -17,6 +17,8 @@ On platforms without Web Locks (React Native, Node, tests), a tab is simply live
 
 `startLiveTab` returns a `state$` observable of `'acquiring' | 'live' | 'parked' | 'blocked'`, a `takeOver()` for the parked screen's "Use here" button, and a `stop()` for sign-out or unmount.
 
+After a back or forward navigation restores the page from the browser's cache, the coordinator re-acquires by itself (`acquiring`, then `live` or `blocked`), so the app needs no extra handling. `onPark` already ran (best-effort) when the page was cached, so this `live` is a **fresh open**, not a continuation: the app re-creates its database exactly as it does on the wiring example's first `live`.
+
 ## Wiring it up
 
 ```tsx
@@ -26,7 +28,9 @@ import { LiveTabScreen } from '@tallyui/components';
 const liveTab = startLiveTab({
   scope: storeId,
   // Close the database and stop background workers before the other tab takes over.
+  // The worker terminates synchronously first, so a page frozen mid-close still released it.
   onPark: async () => {
+    dbWorker.terminate();
     await db.close();
     stockReconcile.stop();
   },
@@ -48,7 +52,7 @@ function App() {
 }
 ```
 
-The POS, and the database it opens, renders only for `'live'`: an `acquiring` tab must not open storage while another tab still holds it.
+The POS, and the database it opens, renders only for `'live'`: an `acquiring` tab must not open storage while another tab still holds it, and the app drops the POS whenever the state leaves `'live'` for any reason, including `pagehide`.
 
 `onPark` must finish closing the database and stop its storage worker before it returns: the lock is released only after it returns, so the new tab never opens storage while the old tab still holds it.
 

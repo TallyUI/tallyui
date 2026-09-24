@@ -12,6 +12,10 @@ function createFakeLockManager(): Pick<LockManager, 'request'> {
   let waiters: Array<() => void> = [];
 
   const request = (name: string, lockOptions: LockOptions, callback: (lock: Lock | null) => unknown): Promise<unknown> => {
+    // Real browsers reject this combination outright (NotSupportedError).
+    if (lockOptions.ifAvailable && lockOptions.signal) {
+      return Promise.reject(new DOMException("'signal' and 'ifAvailable' options cannot be used together", 'NotSupportedError'));
+    }
     return new Promise((resolve, reject) => {
       const grant = () => {
         held = true;
@@ -115,6 +119,11 @@ function createAsyncFakeLockManager(delay = 10): Pick<LockManager, 'request'> {
 
   const request = (_name: string, lockOptions: LockOptions, callback: (lock: Lock | null) => unknown): Promise<unknown> =>
     new Promise((resolve, reject) => {
+      // Real browsers reject this combination outright (NotSupportedError).
+      if (lockOptions.ifAvailable && lockOptions.signal) {
+        reject(new DOMException("'signal' and 'ifAvailable' options cannot be used together", 'NotSupportedError'));
+        return;
+      }
       const entry: Entry = { callback, resolve, reject };
       if (lockOptions.ifAvailable) {
         setTimeout(() => {
@@ -155,6 +164,25 @@ function createAsyncChannelHub(delay = 10) {
   return { createChannel, createDroppedChannel };
 }
 
+/** A fake `globalThis`-shaped event target for `pagehide`/`pageshow`, with a `dispatch` helper. */
+function createFakeEvents() {
+  type Listener = (event: { type: string; persisted?: boolean }) => void;
+  const listeners = new Map<string, Set<Listener>>();
+  const addEventListener = (type: string, listener: Listener) => {
+    (listeners.get(type) ?? listeners.set(type, new Set()).get(type)!).add(listener);
+  };
+  const removeEventListener = (type: string, listener: Listener) => {
+    listeners.get(type)?.delete(listener);
+  };
+  const dispatch = (type: string, persisted?: boolean) => {
+    for (const listener of listeners.get(type) ?? []) listener({ type, persisted });
+  };
+  return { addEventListener, removeEventListener, dispatch } as unknown as Pick<
+    EventTarget,
+    'addEventListener' | 'removeEventListener'
+  > & { dispatch: (type: string, persisted?: boolean) => void };
+}
+
 const currentState = (handle: LiveTabHandle): LiveTabState => {
   let value!: LiveTabState;
   handle.state$.subscribe((v) => { value = v; }).unsubscribe();
@@ -178,6 +206,23 @@ describe('startLiveTab', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(currentState(a)).toBe('live');
     a.stop();
+  });
+
+  it('B: the ifAvailable probe carries no signal, so a lone tab still goes live and the hand-over still works with the fake enforcing the rule', async () => {
+    const locks = createAsyncFakeLockManager();
+    const hub = createAsyncChannelHub();
+    const onParkA = vi.fn();
+    const a = startLiveTab({ scope: 'store-1', onPark: onParkA, locks, createChannel: hub.createChannel });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(currentState(a)).toBe('live');
+
+    const b = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onParkA).toHaveBeenCalledTimes(1);
+    expect(currentState(a)).toBe('parked');
+    expect(currentState(b)).toBe('live');
+    a.stop();
+    b.stop();
   });
 
   it('is live at once with no Web Locks, and takeOver() does nothing else', async () => {
@@ -398,6 +443,21 @@ describe('startLiveTab', () => {
     b.stop();
   });
 
+  it('D: stop() emits a final parked before completing state$', async () => {
+    const locks = createFakeLockManager();
+    const hub = createChannelHub();
+    const a = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(currentState(a)).toBe('live');
+
+    const states: LiveTabState[] = [];
+    let completed = false;
+    a.state$.subscribe({ next: (s) => states.push(s), complete: () => { completed = true; } });
+    a.stop();
+    expect(completed).toBe(true);
+    expect(states[states.length - 1]).toBe('parked');
+  });
+
   // The sync fake above grants locks and delivers channel messages in the same tick,
   // which hides races that only show up when a grant or a message lands in a later
   // task, as it does in a real browser. These tests use the async fake for that.
@@ -410,6 +470,10 @@ describe('startLiveTab', () => {
       const a2 = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
       const a2States: LiveTabState[] = [];
       a2.state$.subscribe((s) => a2States.push(s));
+      // Amendment E: a2 queues for the lock at once, in parallel with its (never-answered,
+      // since a's channel is already closed) ack. a's stale probe still wins the race first
+      // and is released at once by the stopped check, but a2's own queued request then wins
+      // the freed lock well within ackTimeoutMs, never sitting through it.
       await vi.advanceTimersByTimeAsync(100);
       expect(currentState(a2)).toBe('live');
       expect(a2States).not.toContain('blocked');
@@ -445,7 +509,7 @@ describe('startLiveTab', () => {
       c.stop();
     });
 
-    it('the live tab closes before it can ack: the new tab is blocked after the ack timeout, then live once the lock frees', async () => {
+    it('the live tab closes before it can ack: the new tab goes live as soon as the lock frees, without ever showing blocked', async () => {
       const locks = createAsyncFakeLockManager();
       const hub = createAsyncChannelHub();
       // A's channel is dropped, modeling a page that closes before it can ack.
@@ -454,12 +518,16 @@ describe('startLiveTab', () => {
       expect(currentState(a)).toBe('live');
 
       const b = startLiveTab({ scope: 'store-1', onPark: vi.fn(), ackTimeoutMs: 3_000, locks, createChannel: hub.createChannel });
-      await vi.advanceTimersByTimeAsync(3_050);
-      expect(currentState(b)).toBe('blocked');
+      const bStates: LiveTabState[] = [];
+      b.state$.subscribe((s) => bStates.push(s));
 
+      // A closes well inside the 3 s ack timeout; B was already queued for the lock in
+      // parallel with its (never-arriving) ack, so it wins the lock instead of waiting.
+      await vi.advanceTimersByTimeAsync(500);
       a.stop();
       await vi.advanceTimersByTimeAsync(50);
       expect(currentState(b)).toBe('live');
+      expect(bStates).not.toContain('blocked');
       b.stop();
     });
 
@@ -478,14 +546,38 @@ describe('startLiveTab', () => {
       expect(onParkA).toHaveBeenCalledTimes(1);
       expect(currentState(b)).toBe('acquiring');
 
-      // Past the old maxDeferMs + ackTimeoutMs (13 s) cap; B must still be waiting, not blocked.
+      // Past maxDeferMs + ackTimeoutMs (13 s): B is now shown blocked, but the request
+      // underneath keeps waiting (amendment C) rather than giving up.
       await vi.advanceTimersByTimeAsync(3_900);
-      expect(currentState(b)).toBe('acquiring');
+      expect(currentState(b)).toBe('blocked');
 
       resolveOnPark?.();
       await vi.advanceTimersByTimeAsync(100);
 
       expect(currentState(a)).toBe('parked');
+      expect(currentState(b)).toBe('live');
+      a.stop();
+      b.stop();
+    });
+
+    it('C: an acked tab shows blocked after maxDeferMs + ackTimeoutMs, but keeps waiting and can still go live', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      let releaseOnPark: (() => void) | undefined;
+      const onParkA = vi.fn(() => new Promise<void>((resolve) => { releaseOnPark = resolve; }));
+      const a = startLiveTab({ scope: 'store-1', onPark: onParkA, locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+
+      const b = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(b)).toBe('acquiring');
+
+      await vi.advanceTimersByTimeAsync(13_000);
+      expect(currentState(b)).toBe('blocked');
+
+      releaseOnPark?.();
+      await vi.advanceTimersByTimeAsync(100);
       expect(currentState(b)).toBe('live');
       a.stop();
       b.stop();
@@ -509,6 +601,152 @@ describe('startLiveTab', () => {
       expect(currentState(b)).toBe('live');
       a.stop();
       b.stop();
+    });
+  });
+
+  describe('recovering after the back/forward cache', () => {
+    it('A: pagehide fires onPark once, best-effort; a rejection does not stop the suspend and is warned', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      const events = createFakeEvents();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const onPark = vi.fn(() => Promise.reject(new Error('boom')));
+      const a = startLiveTab({ scope: 'store-1', onPark, locks, createChannel: hub.createChannel, events });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+
+      events.dispatch('pagehide');
+      // suspend() is synchronous and never waits on onPark; onPark itself is only
+      // scheduled (fire-and-forget), so it hasn't run until the microtask queue drains.
+      expect(currentState(a)).toBe('parked');
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onPark).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalled();
+      a.stop();
+    });
+
+    it('round trip: pagehide parks without completing state$, pageshow re-acquires', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      const events = createFakeEvents();
+      const a = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel, events });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+
+      let completed = false;
+      a.state$.subscribe({ complete: () => { completed = true; } });
+
+      events.dispatch('pagehide');
+      expect(currentState(a)).toBe('parked');
+      expect(completed).toBe(false);
+
+      events.dispatch('pageshow', true);
+      expect(currentState(a)).toBe('acquiring');
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+      expect(completed).toBe(false);
+      a.stop();
+    });
+
+    it('another tab takes over while A is suspended; on resume A asks, B hands over, A ends live', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      const events = createFakeEvents();
+      const a = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel, events });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+
+      events.dispatch('pagehide');
+      expect(currentState(a)).toBe('parked');
+
+      const onParkB = vi.fn();
+      const b = startLiveTab({ scope: 'store-1', onPark: onParkB, locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(b)).toBe('live');
+
+      events.dispatch('pageshow', true);
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(onParkB).toHaveBeenCalledTimes(1);
+      expect(currentState(b)).toBe('parked');
+      expect(currentState(a)).toBe('live');
+      a.stop();
+      b.stop();
+    });
+
+    it('a stale grant from before the suspend is released at once and never makes A live', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      const events = createFakeEvents();
+      let releaseB: (() => void) | undefined;
+      const onParkB = vi.fn(() => new Promise<void>((resolve) => { releaseB = resolve; }));
+      const b = startLiveTab({ scope: 'store-1', onPark: onParkB, locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(b)).toBe('live');
+
+      const a = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel, events });
+      await vi.advanceTimersByTimeAsync(50);
+      // Acked by B, now queued (no deadline) for the lock B still holds.
+      expect(currentState(a)).toBe('acquiring');
+      const aStates: LiveTabState[] = [];
+      a.state$.subscribe((s) => aStates.push(s));
+
+      events.dispatch('pagehide');
+      expect(currentState(a)).toBe('parked');
+      events.dispatch('pageshow', true);
+
+      // B finally parks and frees the lock; the queued grant belongs to A's round before the suspend.
+      releaseB?.();
+      await vi.advanceTimersByTimeAsync(50);
+
+      expect(aStates).not.toContain('live');
+      a.stop();
+      b.stop();
+
+      // The stale grant released the lock at once rather than holding it: a fresh tab gets it straight away.
+      const c = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(c)).toBe('live');
+      c.stop();
+    });
+
+    it('after stop(), a bfcache pageshow does nothing and state$ stays complete', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      const events = createFakeEvents();
+      const a = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel, events });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+
+      const states: LiveTabState[] = [];
+      let completed = false;
+      a.state$.subscribe({ next: (s) => states.push(s), complete: () => { completed = true; } });
+      a.stop();
+      expect(completed).toBe(true);
+      const emittedBeforePageshow = states.length;
+
+      events.dispatch('pageshow', true);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(states.length).toBe(emittedBeforePageshow);
+      expect(completed).toBe(true);
+    });
+
+    it('pageshow with persisted false (a normal load) does nothing', async () => {
+      const locks = createAsyncFakeLockManager();
+      const hub = createAsyncChannelHub();
+      const events = createFakeEvents();
+      const a = startLiveTab({ scope: 'store-1', onPark: vi.fn(), locks, createChannel: hub.createChannel, events });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('live');
+
+      events.dispatch('pagehide');
+      expect(currentState(a)).toBe('parked');
+
+      events.dispatch('pageshow', false);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(currentState(a)).toBe('parked');
+      a.stop();
     });
   });
 });
