@@ -1,3 +1,4 @@
+import { compareIds } from '@tallyui/core';
 import type { ReplicationAdapter } from '@tallyui/core';
 
 import { medusaProductSchema } from '../schemas/products';
@@ -5,11 +6,14 @@ import { medusaProductSchema } from '../schemas/products';
 /** Top-level fields the RxDB schema declares; RxDB rejects any others. */
 const SCHEMA_FIELDS = Object.keys(medusaProductSchema.properties);
 
-/** Keeps only schema fields, so new Medusa API fields never fail validation. Also used by the id reconcile's `fetchByIds`, for an identical document shape. */
+/** Keeps only schema fields, so new Medusa API fields never fail validation. Also used by the id reconcile's `fetchByIds`, for an identical document shape. Sorts `variants` by id (a stable copy; the input is not mutated), since Medusa does not guarantee variant order. */
 export function toDocument(product: Record<string, unknown>) {
   const doc: Record<string, unknown> = {};
   for (const field of SCHEMA_FIELDS) {
     if (product[field] !== undefined) doc[field] = product[field];
+  }
+  if (Array.isArray(doc.variants)) {
+    doc.variants = [...doc.variants].sort((a: any, b: any) => compareIds(a.id, b.id));
   }
   return doc;
 }

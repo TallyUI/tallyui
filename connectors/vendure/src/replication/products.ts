@@ -1,3 +1,4 @@
+import { compareIds } from '@tallyui/core';
 import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
 import { vendureProductSchema } from '../schemas/products';
 
@@ -90,11 +91,14 @@ export async function probeUpdatedAtSkew(
   }
 }
 
-/** Project an API product onto the schema's top-level fields (RxDB rejects undeclared ones). */
+/** Project an API product onto the schema's top-level fields (RxDB rejects undeclared ones). Sorts `variants` by id (a stable copy; the input is not mutated), since Vendure does not guarantee variant order. */
 export function toProductDocument(p: any): Record<string, unknown> {
   const doc: Record<string, unknown> = { _deleted: false };
   for (const field of Object.keys(vendureProductSchema.properties)) {
     if (p[field] !== undefined) doc[field] = p[field];
+  }
+  if (Array.isArray(doc.variants)) {
+    doc.variants = [...doc.variants].sort((a: any, b: any) => compareIds(a.id, b.id));
   }
   return doc;
 }

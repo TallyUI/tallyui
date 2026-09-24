@@ -55,7 +55,7 @@ export interface ProductTraits<Doc = any> {
   /** Stock state of the whole product across its variants; `quantity` is the total on hand when every variant is tracked, else undefined. */
   getStock: (doc: Doc) => StockLevel;
 
-  /** All purchasable variants, in backend order. Optional: connectors without variant support omit it. */
+  /** All purchasable variants, in id order (connectors store variants sorted by id). Optional: connectors without variant support omit it. */
   getVariants?: (doc: Doc, context?: TraitContext) => VariantSummary[];
 
   /** @deprecated Use `getPrices` with `resolvePrice`. */
