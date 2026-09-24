@@ -72,4 +72,33 @@ test.describe('storage-sqlite worker cold start (real Chromium, ADR-061)', () =>
     await page.evaluate(() => (window as any).tally.insertMany(3));
     expect(await page.evaluate(() => (window as any).tally.count())).toBe(3);
   });
+
+  test('close, storage.terminate(), then a new storage reopens the database within 10s', async ({ page }) => {
+    await page.goto('/');
+    expect((await openDb(page, DB_NAME)).ok).toBe(true);
+    await page.evaluate(() => (window as any).tally.insertMany(1));
+
+    // The park order (ADR-061, amendment 1): close with the worker alive, then terminate.
+    await page.evaluate(() => (window as any).tally.close());
+    await page.evaluate(() => (window as any).tally.terminate());
+
+    // A fresh open builds a new storage from the same workerInput. Without the
+    // cache eviction it reuses the terminated worker's channel and hangs.
+    const { value: reopened, ms } = await timed(() =>
+      page.evaluate(async (name) => {
+        const tally = (window as any).tally;
+        const reopen = async () => {
+          const result = await tally.open(name);
+          return result.ok ? tally.queryByIndex('even') : result;
+        };
+        const deadline = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('the reopen after terminate() hung past 10s')), 10_000),
+        );
+        return Promise.race([reopen(), deadline]);
+      }, DB_NAME),
+    );
+    // eslint-disable-next-line no-console
+    console.log(`[storage-sqlite e2e] reopen after terminate: ${ms}ms`);
+    expect(reopened).toEqual(['item-0000']);
+  });
 });

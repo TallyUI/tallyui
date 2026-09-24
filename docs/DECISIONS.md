@@ -1832,6 +1832,9 @@ interface OrderCreatePayload {
        `ackTimeoutMs` 3 s) after the longest deferral.
     3. It then terminates the worker, which releases the opfs-sahpool
        access handles.
+       - `storage.terminate()` (storage-sqlite) replaces a raw
+         `worker.terminate()`: in mode `'one'`, rxdb's storage-remote caches the channel
+         by `workerInput`, so a raw terminate left the next open hanging.
     4. On timeout it terminates anyway, treats storage as stalled, and
        prompts a reload.
   - **One storage for all stores.** An app creates one

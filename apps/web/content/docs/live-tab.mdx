@@ -41,8 +41,9 @@ const liveTab = startLiveTab({
       Promise.all(databases.map((db) => db.close())).then(() => true),
       new Promise<false>((resolve) => setTimeout(() => resolve(false), PARK_CLOSE_LIMIT_MS)),
     ]);
-    // 2. Then terminate the worker, which releases the opfs-sahpool access handles.
-    dbWorker.terminate();
+    // 2. Then terminate the storage's worker, which releases the opfs-sahpool
+    //    access handles and clears rxdb's cached channel for a fresh open.
+    storage.terminate();
     // 3. A close that timed out may have left storage inconsistent: treat it
     //    as stalled, and prompt a reload.
     if (!closed) showStorageReloadPrompt();
@@ -73,7 +74,7 @@ The POS, and the database it opens, renders only for `'live'`: an `acquiring` ta
 - **Close every database with the worker alive.** RxDB's remote `close()` sends `close` to the worker and waits for its reply. It frees the database name only when the close finishes.
 - **Why terminating first fails.** If you terminate first, every close hangs, and the name stays taken, so the next open fails with RxDB error `DB8`.
 - **Bound the wait with a fixed limit.**
-- **Then terminate the worker.** Terminating releases the opfs-sahpool access handles.
+- **Then terminate the worker with `storage.terminate()`.** Terminating releases the opfs-sahpool access handles. It also clears rxdb's cached channel for that worker, so a fresh open works: a raw `worker.terminate()` leaves the next storage reusing the dead worker's channel, and every call hangs.
 - **On timeout,** terminate anyway, treat storage as stalled, and prompt a reload.
 
 **One storage for all stores.** The app creates **one** storage with `getRxStorageSQLiteWasm` and opens every store's database on it. That storage runs in mode `'one'`: one worker, which holds the exclusive opfs-sahpool pool. `databases` in the example means every database opened on that storage. A second storage would start a second worker, and that worker cannot open the pool.
