@@ -1663,6 +1663,20 @@ interface OrderCreatePayload {
          - The 30-minute price-list check then re-delivers products whose
            sale prices changed (job D2b, after TV4).
          - The nightly base-price pass (D2a) comes first.
+         - D2b: prices come from the store API with the pricing context.
+           The enrichment runs on every document build, `null` means not
+           sellable, and the 30-minute calculated-price check covers edits
+           that bump no timestamp.
+           - **Measured** (one full calculated-price pass on medusa-dev,
+             read-only, 2026-09-24, from
+             `pricing/calculated.live.test.ts`): 20 requests, 2.5 s and
+             4.2 MB over 2,005 products.
+             - It compared 1,951 products and queued 0.
+             - `unreported` was 54, exactly medusa-dev's 54 draft
+               products.
+             - Priced documents show a sale on 242 products (684
+               variants).
+             - D2a's nightly base-price pass still finds no drift.
   6. **Vendure servers run in UTC**, both the process and the database
      session, or set `updatedAtSkewMs`. The Vendure quick-start says so.
 - **Job order**, decided by value to the shipping product (amendment 3).

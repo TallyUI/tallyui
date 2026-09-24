@@ -21,6 +21,8 @@ export interface Money {
  */
 export interface ProductPrice extends Money {
   kind: 'base' | 'sale';
+  /** Set when the backend says so for this price; it wins over the store-level `pricesIncludeTax`. Undefined: use the store-level setting. */
+  taxInclusive?: boolean;
 }
 
 /** The price to charge, and the price it replaces when a sale applies. */

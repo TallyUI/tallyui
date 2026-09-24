@@ -1,7 +1,8 @@
 import { compareIds } from '@tallyui/core';
 import type { ReplicationAdapter } from '@tallyui/core';
 
-import { medusaProductSchema } from '../schemas/products';
+import { medusaProductSchema, type MedusaProductDocument } from '../schemas/products';
+import { withCalculatedPrices } from '../pricing/calculated';
 
 /** Top-level fields the RxDB schema declares; RxDB rejects any others. */
 const SCHEMA_FIELDS = Object.keys(medusaProductSchema.properties);
@@ -110,7 +111,9 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
           offset: 0, updated_at: lastCheckpoint?.updated_at ?? '', pass_mark: passMark,
         }, batchSize, context);
       }
-      const documents = products.map((p) => ({ ...toDocument(p), _deleted: false }));
+      // Priced through the store API when the context carries a pricing context (D2b).
+      const priced = await withCalculatedPrices(products.map(toDocument) as MedusaProductDocument[], context);
+      const documents = priced.map((doc) => ({ ...doc, _deleted: false }));
 
       // RxDB merges checkpoints, so clear pass state explicitly at completion.
       const checkpoint: MedusaProductCheckpoint = offset + products.length >= data.count

@@ -58,9 +58,12 @@ describe('ProductPrice', () => {
     const variant = {
       ...medusaDoc.variants[0],
       prices: [{ amount: 20, currency_code: 'eur' }],
+      // Priced mode (D2b): the store API's calculated price carries both the
+      // sale amount and the original amount it replaces.
       calculated_price: {
         currency_code: 'eur',
         calculated_amount: 16,
+        original_amount: 20,
         calculated_price: { price_list_type: 'sale' },
       },
     };

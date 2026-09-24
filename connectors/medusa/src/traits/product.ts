@@ -1,5 +1,6 @@
 import { minorUnitDigits } from '@tallyui/core';
 import type { ProductPrice, ProductTraits, StockLevel } from '@tallyui/core';
+import type { MedusaCalculatedPrice, MedusaProductDocument, MedusaVariantDocument } from '../schemas/products';
 
 function productStock(variants: StockLevel[]): StockLevel {
   if (!variants.length) return { status: 'unknown' };
@@ -36,15 +37,40 @@ function variantQuantity(variant: any): number | null {
   );
 }
 
-function variantPrices(variant: any): ProductPrice[] {
+// Medusa v2 amounts are major units (12 = €12.00), not cents.
+const toMinor = (amount: unknown, currency: string) =>
+  Math.round(Number(amount) * 10 ** minorUnitDigits(currency));
+
+const taxFlag = (flag: unknown) => (typeof flag === 'boolean' ? { taxInclusive: flag } : {});
+
+/**
+ * Priced mode (D2b): the store API's calculated price, in the pricing
+ * context's currency, is what Medusa charges. `null` (not sold in this
+ * channel or region) gives no price. A sale list adds a sale entry below the
+ * original price; an override list replaces the base price.
+ */
+function calculatedPrices(calc: MedusaCalculatedPrice | null): ProductPrice[] {
+  if (!calc?.currency_code || calc.original_amount == null || calc.calculated_amount == null) return [];
+  const currency = calc.currency_code.toUpperCase();
+  const type = calc.calculated_price?.price_list_type;
+  if (type === 'override') {
+    return [{ amount: toMinor(calc.calculated_amount, currency), currency, kind: 'base', ...taxFlag(calc.is_calculated_price_tax_inclusive) }];
+  }
+  const prices: ProductPrice[] = [{ amount: toMinor(calc.original_amount, currency), currency, kind: 'base', ...taxFlag(calc.is_original_price_tax_inclusive) }];
+  if (type === 'sale' && calc.calculated_amount < calc.original_amount) {
+    prices.push({ amount: toMinor(calc.calculated_amount, currency), currency, kind: 'sale', ...taxFlag(calc.is_calculated_price_tax_inclusive) });
+  }
+  return prices;
+}
+
+function variantPrices(variant: MedusaVariantDocument | undefined): ProductPrice[] {
   if (!variant) return [];
+  // Priced mode never falls back to the admin prices.
+  if (variant.calculated_price !== undefined) return calculatedPrices(variant.calculated_price);
   const prices: ProductPrice[] = [];
   const seen = new Set<string>();
-  // Medusa v2 amounts are major units (12 = €12.00), not cents.
-  const toMinor = (amount: unknown, currency: string) =>
-    Math.round(Number(amount) * 10 ** minorUnitDigits(currency));
 
-  // Base prices: the variant's own prices, first per currency, skipping
+  // Base-only mode. Base prices: the variant's own prices, first per currency, skipping
   // price-list overrides.
   for (const price of variant.prices ?? []) {
     if (price?.price_list_id || price?.amount == null || !price.currency_code) continue;
@@ -53,17 +79,11 @@ function variantPrices(variant: any): ProductPrice[] {
     seen.add(currency);
     prices.push({ amount: toMinor(price.amount, currency), currency, kind: 'base' });
   }
-
-  // Sale prices come from sale price lists. Medusa resolves them into
-  // `calculated_price` when the product is fetched with a pricing context.
-  const calc = variant.calculated_price;
-  if (calc?.currency_code && calc.calculated_amount != null
-    && calc.calculated_price?.price_list_type === 'sale') {
-    const currency = String(calc.currency_code).toUpperCase();
-    prices.push({ amount: toMinor(calc.calculated_amount, currency), currency, kind: 'sale' });
-  }
   return prices;
 }
+
+/** Priced mode: the store API has priced this document (any variant carries `calculated_price`, even `null`). */
+const isPriced = (doc: MedusaProductDocument) => (doc.variants ?? []).some((v) => v.calculated_price !== undefined);
 
 function variantStock(variant: any): StockLevel {
   if (!variant) return { status: 'unknown' };
@@ -108,6 +128,7 @@ export const medusaProductTraits: ProductTraits = {
     stock: variantStock(v),
   })),
 
+  // getPrice, getRegularPrice and getSalePrice: base-only; use `getPrices`.
   getPrice: (doc) => {
     // Medusa v2 amounts are already major units (not cents).
     const amount = doc.variants?.[0]?.prices?.[0]?.amount;
@@ -169,7 +190,9 @@ export const medusaProductTraits: ProductTraits = {
     return (doc.variants?.length ?? 0) > 1;
   },
 
-  isSellable: (doc) => doc.status === undefined || doc.status === 'published',
+  // In priced mode, a product whose every variant has a null calculated price is not sold in this channel or region.
+  isSellable: (doc: MedusaProductDocument) => (doc.status === undefined || doc.status === 'published')
+    && (!isPriced(doc) || doc.variants!.some((v) => v.calculated_price != null)),
 
   getVariantCount: (doc) => doc.variants?.length ?? 1,
 

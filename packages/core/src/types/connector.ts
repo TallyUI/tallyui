@@ -77,6 +77,8 @@ export interface SyncContext {
   headers: Record<string, string>;
   /** Optional abort signal */
   signal?: AbortSignal;
+  /** From `storeSettings().pricingContext`; opaque to the app; the connector prices documents with it. Never logged. */
+  pricingContext?: Record<string, string>;
 }
 
 /**
@@ -137,7 +139,13 @@ export interface TallyConnector {
   };
 
   /** Periodic re-reads of state that replication misses (ADR-060) */
-  reconcile?: { stock?: StockReconcileAdapter; ids?: IdReconcileAdapter; prices?: FingerprintReconcileAdapter };
+  reconcile?: {
+    stock?: StockReconcileAdapter;
+    ids?: IdReconcileAdapter;
+    prices?: FingerprintReconcileAdapter;
+    /** Prices the backend calculates for the sales context (price lists, sale dates), which change without a timestamp bump. */
+    calculatedPrices?: FingerprintReconcileAdapter;
+  };
 
   /**
    * Reads the store's own settings (TV4): currency, tax inclusivity, tax

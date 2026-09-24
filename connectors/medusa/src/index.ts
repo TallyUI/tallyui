@@ -8,6 +8,7 @@ import { createMedusaVariantFeedReplication } from './replication/variant-feed';
 import { medusaStockReconcile } from './reconcile/stock';
 import { fetchByIds, fetchPages, variantIds } from './reconcile/ids';
 import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from './reconcile/prices';
+import { fetchPages as fetchCalculatedPricePages, fingerprint as calculatedPriceFingerprint } from './reconcile/calculated-prices';
 import { medusaStoreSettings } from './store-settings';
 
 // The id reconcile's corrections reach `products` only through this pull adapter (ADR-060).
@@ -130,6 +131,8 @@ export const medusaConnector: TallyConnector = {
     stock: medusaStockReconcile,
     ids: { fetchPages, variantIds, enqueue: idFeed.enqueue },
     prices: { fetchPages: fetchPricePages, fingerprint: priceFingerprint, enqueue: idFeed.enqueue },
+    // Re-fetched through the enriched fetchByIds, so the corrected document carries the new calculated prices (D2b).
+    calculatedPrices: { fetchPages: fetchCalculatedPricePages, fingerprint: calculatedPriceFingerprint, enqueue: idFeed.enqueue },
   },
 
   storeSettings: medusaStoreSettings,
@@ -146,3 +149,6 @@ export { medusaProductReplication } from './replication/products';
 export { createMedusaVariantFeedReplication } from './replication/variant-feed';
 export { medusaStockReconcile } from './reconcile/stock';
 export { medusaStoreSettings } from './store-settings';
+export { withCalculatedPrices } from './pricing/calculated';
+export { MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS } from './reconcile/calculated-prices';
+export type { MedusaCalculatedPrice, MedusaProductDocument, MedusaVariantDocument } from './schemas/products';
