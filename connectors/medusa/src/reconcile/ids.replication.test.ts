@@ -16,7 +16,7 @@ const id = (n: number) => `prod_${String(n).padStart(4, '0')}`;
 const BATCH_SIZE = 300;
 // More than the id reconcile's 1000-row page size, so a real sync reads two id-listing pages.
 const TOTAL = 1050;
-type Variant = { id: string };
+type Variant = { id: string; updated_at: string };
 type Product = { id: string; handle: string; status: string; title: string; updated_at: string; variants: Variant[] };
 
 /** Each product has two variants, `<id>-v1` and `<id>-v2`. */
@@ -25,7 +25,7 @@ function makeProducts(): Product[] {
     const n = i + 1;
     return {
       id: id(n), handle: `product-${n}`, status: 'published', title: `Product ${n}`, updated_at: stamp(n),
-      variants: [{ id: `${id(n)}-v1` }, { id: `${id(n)}-v2` }],
+      variants: [{ id: `${id(n)}-v1`, updated_at: stamp(n) }, { id: `${id(n)}-v2`, updated_at: stamp(n) }],
     };
   });
 }
@@ -40,14 +40,16 @@ afterEach(async () => {
 });
 
 /**
- * A fake Medusa server for the mark check, the id-ordered product listing and
- * the id listing, from one mutable `products` array. `failIdPageAt` fails the
- * id listing once its offset reaches it, to prove "act only after a complete
- * pass". Every request is tracked in `requests`.
+ * A fake Medusa server for the mark check, the id-ordered product listing,
+ * the variant listing (for the variant feed, each variant with its own
+ * `updated_at`) and the id listing, from one mutable `products` array.
+ * `failIdPageAt` fails the id listing once its offset reaches it, to prove
+ * "act only after a complete pass". Every request is tracked in `requests`.
  */
 function serve(products: Product[], failIdPageAt?: number, requests: URLSearchParams[] = []) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-    const params = new URL(String(input)).searchParams;
+    const url = new URL(String(input));
+    const params = url.searchParams;
     requests.push(params);
     const offset = Number(params.get('offset') ?? 0);
     const limit = Number(params.get('limit') ?? 20);
@@ -65,6 +67,13 @@ function serve(products: Product[], failIdPageAt?: number, requests: URLSearchPa
         products: page.map((p) => ({ id: p.id, variants: p.variants.map((v) => ({ id: v.id })) })),
         count: sorted.length,
       }));
+    }
+
+    if (url.pathname === '/admin/product-variants') {
+      const variants = products.flatMap((p) => p.variants.map((v) => ({ ...v, product_id: p.id })))
+        .filter((v) => !bound || v.updated_at >= bound)
+        .sort(order === 'id' ? (a, b) => a.id.localeCompare(b.id) : (a, b) => b.updated_at.localeCompare(a.updated_at));
+      return new Response(JSON.stringify({ variants: variants.slice(offset, offset + limit), count: variants.length, offset, limit }));
     }
 
     let matching = products;
@@ -164,9 +173,12 @@ describe('Medusa id reconcile, run against a real RxDB replication', () => {
     requests.length = 0;
     replication!.reSync();
     await replication!.awaitInSync();
-    expect(requests).toHaveLength(1);
-    expect(requests[0].get('limit')).toBe('1');
-    expect(requests[0].get('order')).toBe('-updated_at');
+    // One mark per feed that polls: the product feed and the variant feed.
+    expect(requests).toHaveLength(2);
+    for (const params of requests) {
+      expect(params.get('limit')).toBe('1');
+      expect(params.get('order')).toBe('-updated_at');
+    }
 
     requests.length = 0;
     const changed = products.find((p) => p.id === id(5))!;

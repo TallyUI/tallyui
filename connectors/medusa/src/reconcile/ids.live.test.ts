@@ -2,7 +2,7 @@
 // Read-only: changes nothing on the server.
 import { describe, expect, it } from 'vitest';
 import type { SyncContext } from '@tallyui/core';
-import { medusaAdminUserAuth, medusaConnector } from '../index';
+import { medusaAdminUserAuth, medusaProductReplication } from '../index';
 import { fetchByIds, fetchPages } from './ids';
 
 const { MEDUSA_DEV_URL, MEDUSA_DEV_EMAIL, MEDUSA_DEV_PASSWORD } = process.env;
@@ -21,7 +21,11 @@ describe.skipIf(!MEDUSA_DEV_URL || !MEDUSA_DEV_EMAIL || !MEDUSA_DEV_PASSWORD)('l
     expect(futureResponse.ok).toBe(true);
     expect((await futureResponse.json()).count).toBe(0);
 
-    const futurePull = await medusaConnector.replication!.products!.pull.handler(
+    // Call the product feed's own adapter directly: `replication.products` is
+    // now combinePullAdapters({ products, variants, reconcile }), and the
+    // variant sub-feed starts with no checkpoint and re-delivers every
+    // product on its deliberate first pass, which would swamp this assertion.
+    const futurePull = await medusaProductReplication.pull.handler(
       { offset: 0, updated_at: futureMark }, 50, context,
     );
     expect(futurePull.documents).toEqual([]);
@@ -42,7 +46,7 @@ describe.skipIf(!MEDUSA_DEV_URL || !MEDUSA_DEV_EMAIL || !MEDUSA_DEV_PASSWORD)('l
     // first, and a checkpoint equal to that mark takes the "unchanged
     // mark, nothing new" early return, so the bound must be strictly older.
     const sinceMark = new Date(Date.parse(newestMark) - 1).toISOString();
-    const newestPull = await medusaConnector.replication!.products!.pull.handler(
+    const newestPull = await medusaProductReplication.pull.handler(
       { offset: 0, updated_at: sinceMark }, 50, context,
     );
     expect(newestPull.documents.length).toBeGreaterThan(0);
