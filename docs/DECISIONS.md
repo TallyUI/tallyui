@@ -1401,3 +1401,26 @@ interface OrderCreatePayload {
   - Only one test suite runs at a time.
   - CI e2e runs on GitHub Actions with a Postgres service.
 - **Consequences:** Plan job VA1 can start as soon as ADR-054 is accepted.
+
+## ADR-059 The Vendure barcode custom field is opt-in (amends ADR-049)
+
+- **Date:** 2026-09-24 · **Status:** Accepted (implemented in TV1, #45) ·
+  **Source:** Vendure 3.7.3 `graphql-custom-fields.js:85` vs `:92`;
+  DISCOVERY §2.1
+- **Context:** ADR-049 said the barcode custom field would default to
+  `barcode`. But the query can only name a field that exists:
+  - on a store with no `ProductVariant` custom fields, `customFields` is a
+    `JSON` scalar, and selecting `customFields { barcode }` fails GraphQL
+    validation;
+  - on a store with custom fields, selecting `customFields` bare fails.
+
+  So no default works for every store.
+- **Decision:**
+  - `createVendureConnector({ barcodeField })` names the field. Without it,
+    no custom fields are queried and `getBarcode` returns `undefined`.
+  - The Vendure plugin (job VP1) adds the barcode custom field, and the
+    Vendure app passes `barcodeField: 'barcode'`.
+  - The rest of ADR-049 stands.
+- **Consequences:** A store that keeps its barcode in a differently named
+  field just passes that name. A store with no barcode field still syncs;
+  scanning then matches on SKU only.
