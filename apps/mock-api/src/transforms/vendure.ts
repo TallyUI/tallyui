@@ -93,6 +93,7 @@ export function toVendureProduct(product: NeutralProduct) {
         currencyCode: 'USD',
         stockLevel: mapStockLevel(variant.stockStatus),
         stockOnHand: variant.stockQuantity,
+        stockLevels: [{ stockLocationId: '1', stockOnHand: variant.stockQuantity, stockAllocated: 0 }],
         trackInventory: variant.trackInventory ? 'TRUE' : 'FALSE',
         customFields: {
           barcode: variant.barcode,

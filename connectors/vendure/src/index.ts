@@ -1,9 +1,9 @@
 import type { TallyConnector } from '@tallyui/core';
 
 import { vendureProductSchema } from './schemas/products';
-import { vendureProductTraits } from './traits/product';
-import { vendureProductSync } from './sync/products';
-import { vendureProductReplication } from './replication/products';
+import { createVendureProductTraits } from './traits/product';
+import { createVendureProductSync } from './sync/products';
+import { createVendureProductReplication } from './replication/products';
 
 /**
  * Vendure connector for Tally UI.
@@ -20,7 +20,7 @@ import { vendureProductReplication } from './replication/products';
  * </ConnectorProvider>
  * ```
  */
-export const vendureConnector: TallyConnector = {
+export const createVendureConnector = (options: { barcodeField?: string; stockLocationId?: string } = {}): TallyConnector => ({
   id: 'vendure',
   name: 'Vendure',
   description: 'Connect to Vendure backends via the Admin GraphQL API',
@@ -54,17 +54,19 @@ export const vendureConnector: TallyConnector = {
   },
 
   traits: {
-    product: vendureProductTraits,
+    product: createVendureProductTraits(options.barcodeField, options.stockLocationId),
   },
 
   sync: {
-    products: vendureProductSync,
+    products: createVendureProductSync(options.barcodeField),
   },
 
   replication: {
-    products: vendureProductReplication,
+    products: createVendureProductReplication(options.barcodeField),
   },
-};
+});
+
+export const vendureConnector = createVendureConnector();
 
 // Re-export pieces for advanced usage
 export { vendureProductSchema } from './schemas/products';

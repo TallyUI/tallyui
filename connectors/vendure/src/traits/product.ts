@@ -22,7 +22,8 @@ function productStock(variants: StockLevel[]): StockLevel {
  * - No native sale price — Vendure handles sales via promotions at checkout
  * - No native barcode field — uses custom fields if configured
  */
-export const vendureProductTraits: ProductTraits = {
+export function createVendureProductTraits(barcodeField?: string, stockLocationId?: string): ProductTraits {
+const traits: ProductTraits = {
   getId: (doc) => String(doc.id),
 
   getName: (doc) => doc.name ?? '',
@@ -40,6 +41,12 @@ export const vendureProductTraits: ProductTraits = {
 
   getStock: (doc) => productStock((doc.variants ?? []).map((variant: any): StockLevel => {
     if (!variant) return { status: 'unknown' };
+    if (variant.stockLevels != null) {
+      const quantity = variant.stockLevels
+        .filter((level: any) => stockLocationId == null || String(level.stockLocationId) === stockLocationId)
+        .reduce((sum: number, level: any) => sum + level.stockOnHand - level.stockAllocated, 0);
+      return { status: quantity > 0 ? 'in_stock' : 'out_of_stock', quantity };
+    }
     // Admin API: exact stockOnHand. Shop API: only the stockLevel string.
     if (variant.stockOnHand != null) {
       return {
@@ -89,6 +96,9 @@ export const vendureProductTraits: ProductTraits = {
   getStockStatus: (doc) => {
     const variant = doc.variants?.[0];
     if (!variant) return 'unknown';
+    if (variant.stockLevels != null) {
+      return traits.getStock({ variants: [variant] }).quantity! > 0 ? 'instock' : 'outofstock';
+    }
 
     // Vendure Shop API returns stockLevel as a string
     const level = variant.stockLevel;
@@ -104,6 +114,9 @@ export const vendureProductTraits: ProductTraits = {
   },
 
   getStockQuantity: (doc) => {
+    if (doc.variants?.[0]?.stockLevels != null) {
+      return traits.getStock({ variants: [doc.variants[0]] }).quantity ?? null;
+    }
     // stockOnHand is available from Admin API; Shop API only has the string stockLevel
     return doc.variants?.[0]?.stockOnHand ?? null;
   },
@@ -122,9 +135,13 @@ export const vendureProductTraits: ProductTraits = {
 
   getBarcode: (doc) => {
     // Vendure has no native barcode — check custom fields
-    return doc.variants?.[0]?.customFields?.barcode || undefined;
+    return barcodeField ? doc.variants?.[0]?.customFields?.[barcodeField] || undefined : undefined;
   },
 
   getCategoryNames: (doc) =>
     (doc.collections ?? []).map((c: any) => c.name).filter(Boolean),
 };
+return traits;
+}
+
+export const vendureProductTraits = createVendureProductTraits();

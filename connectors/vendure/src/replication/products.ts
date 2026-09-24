@@ -3,9 +3,10 @@ import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
 export type VendureProductCheckpoint = {
   skip: number;
   updatedAt: string;
+  passMax?: string;
 };
 
-const PRODUCT_LIST_QUERY = `
+const PRODUCT_LIST_QUERY = (barcodeField?: string) => `
   query GetProducts($options: ProductListOptions) {
     products(options: $options) {
       items {
@@ -27,12 +28,11 @@ const PRODUCT_LIST_QUERY = `
           price
           priceWithTax
           currencyCode
-          stockLevel
-          stockOnHand
+          stockLevels { stockLocationId stockOnHand stockAllocated }
           trackInventory
           featuredAsset { id preview }
           options { id name code }
-          customFields
+          ${barcodeField ? `customFields { ${barcodeField} }` : ''}
         }
       }
       totalItems
@@ -69,21 +69,24 @@ async function gql(
  * for RxDB's replicateRxCollection. Catalogue data is server-owned; the
  * POS never writes products.
  */
-export const vendureProductReplication: ReplicationAdapter<any, VendureProductCheckpoint> = {
+export const createVendureProductReplication = (barcodeField?: string): ReplicationAdapter<any, VendureProductCheckpoint> => ({
   pull: {
     async handler(lastCheckpoint, batchSize, context) {
+      if (batchSize > 1000) throw new Error('Vendure Admin API take must not exceed 1000');
       const options: Record<string, any> = {
         take: batchSize,
         skip: lastCheckpoint?.skip ?? 0,
+        sort: { id: 'ASC' },
       };
 
       if (lastCheckpoint?.updatedAt) {
         options.filter = {
-          updatedAt: { after: lastCheckpoint.updatedAt },
+          // Vendure after is strict; overlap by 1 ms to include timestamp ties.
+          updatedAt: { after: new Date(Date.parse(lastCheckpoint.updatedAt) - 1).toISOString() },
         };
       }
 
-      const res = await gql(context, PRODUCT_LIST_QUERY, { options });
+      const res = await gql(context, PRODUCT_LIST_QUERY(barcodeField), { options });
 
       if (res.errors?.length) {
         throw new Error(`Vendure GraphQL error: ${res.errors[0].message}`);
@@ -93,19 +96,19 @@ export const vendureProductReplication: ReplicationAdapter<any, VendureProductCh
       const products: any[] = data?.items ?? [];
       const documents = products.map((p) => ({ ...p, _deleted: false }));
 
-      // Reset skip when batch is smaller than batchSize (end of page)
-      const nextSkip = products.length < batchSize
-        ? 0
-        : (lastCheckpoint?.skip ?? 0) + products.length;
-
-      const checkpoint: VendureProductCheckpoint = products.length > 0
-        ? {
-            skip: nextSkip,
-            updatedAt: products[products.length - 1].updatedAt,
-          }
-        : lastCheckpoint ?? { skip: 0, updatedAt: '' };
+      // Keep the lower bound fixed while paging by id; advance it only at pass end.
+      const passMax = products.reduce(
+        (max, p) => p.updatedAt > max ? p.updatedAt : max,
+        lastCheckpoint?.passMax ?? lastCheckpoint?.updatedAt ?? '',
+      );
+      const checkpoint: VendureProductCheckpoint = products.length >= batchSize
+        ? { skip: (lastCheckpoint?.skip ?? 0) + products.length,
+            updatedAt: lastCheckpoint?.updatedAt ?? '', passMax }
+        : { skip: 0, updatedAt: passMax };
 
       return { documents, checkpoint };
     },
   },
-};
+});
+
+export const vendureProductReplication = createVendureProductReplication();

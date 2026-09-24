@@ -12,7 +12,7 @@ const vendureCustomers = customers.map(toVendureCustomer);
 
 const app = new Hono();
 
-app.post('/shop-api', async (c) => {
+app.on('POST', ['/shop-api', '/admin-api'], async (c) => {
   const body = await c.req.json();
   const { query, variables } = body;
 
@@ -65,6 +65,10 @@ function handleProductList(c: any, variables: any = {}) {
     filtered = filtered.filter(
       (p) => new Date(p.updatedAt).getTime() > cutoff
     );
+  }
+
+  if (variables?.options?.sort?.id === 'ASC') {
+    filtered = [...filtered].sort((a, b) => a.id.localeCompare(b.id));
   }
 
   const items = filtered.slice(skip, skip + take);
