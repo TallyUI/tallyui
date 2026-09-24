@@ -166,6 +166,48 @@ describe('order outbox', () => {
     expect(send.mock.calls[1][0][0]).toMatchObject({ id: requeued.commandId, attempt: 1 });
   });
 
+  it('requeues once when two calls find the same rejected order', async () => {
+    const input = { ...order(0), syncStatus: 'rejected' as const, error: { code: 'unknown_variant', message: 'x' } };
+    const doc = await collection.insert(input);
+    const { outbox } = setup();
+    outbox.stop();
+    const modify = doc.incrementalModify.bind(doc);
+    const commandIds = new Set<string>();
+    let release!: () => void;
+    const bothFound = new Promise<void>((resolve) => { release = resolve; });
+    let calls = 0;
+    const spy = vi.spyOn(doc, 'incrementalModify').mockImplementation(async (modifier) => {
+      if (++calls === 2) release();
+      await bothFound;
+      const result = await modify(modifier);
+      commandIds.add(result.commandId);
+      return result;
+    });
+    const counts = await Promise.all([outbox.requeue(), outbox.requeue()]);
+    spy.mockRestore();
+    expect(counts.reduce((sum, count) => sum + count, 0)).toBe(1);
+    expect(commandIds.size).toBe(1);
+    expect(commandIds.has(input.commandId)).toBe(false);
+    expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('pending');
+  });
+
+  it.each(['applied', 'idempotency_mismatch'])('leaves a stale requeue unchanged after %s', async (change) => {
+    const input = { ...order(0), syncStatus: 'rejected' as const, error: { code: 'unknown_variant', message: 'x' } };
+    const doc = await collection.insert(input);
+    const { outbox, send } = setup();
+    const modify = doc.incrementalModify.bind(doc);
+    const patch = change === 'applied' ? { syncStatus: 'applied' as const }
+      : { error: { code: 'idempotency_mismatch', message: 'x' } };
+    const spy = vi.spyOn(doc, 'incrementalModify').mockImplementationOnce(async (modifier) => {
+      await modify((data) => ({ ...data, ...patch }));
+      return modify(modifier);
+    });
+    await expect(outbox.requeue()).resolves.toBe(0);
+    spy.mockRestore();
+    expect((await collection.findOne(input.id).exec())?.toJSON()).toMatchObject({ ...input, ...patch });
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('leaves idempotency_mismatch rejections for reconciliation when requeueing', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const input = order(0);

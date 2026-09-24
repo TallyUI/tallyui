@@ -161,9 +161,13 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       const orders = (await collection.find({ selector: { syncStatus: 'rejected',
         ...(orderIds ? { id: { $in: orderIds } } : {}) } }).exec())
         .filter((order) => !NOT_REQUEUEABLE.has(order.error?.code ?? ''));
+      let count = 0;
       for (const order of orders) {
         const oldCommandId = order.commandId;
+        let changed = false;
         await order.incrementalModify((data) => {
+          changed = data.syncStatus === 'rejected' && !NOT_REQUEUEABLE.has(data.error?.code ?? '');
+          if (!changed) return data;
           data.syncStatus = 'pending';
           delete data.error;
           // The server ledger stored the rejection under the old id; replaying it returns that rejection.
@@ -172,11 +176,11 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           data.updatedAt = new Date(now()).toISOString();
           return data;
         });
-        attempts.delete(oldCommandId);
+        if (changed) { count++; attempts.delete(oldCommandId); }
       }
       await updateState();
-      if (orders.length && !stopped) flush().catch(() => {});
-      return orders.length;
+      if (count && !stopped) flush().catch(() => {});
+      return count;
     },
     start() {
       stopped = false;
