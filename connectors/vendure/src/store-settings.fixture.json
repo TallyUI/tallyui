@@ -1,0 +1,28 @@
+{
+  "_recorded": "2026-09-24, read-only against vendure-dev (http://127.0.0.1:3000), Vendure 3.7.3",
+  "channelAndCategories": {
+    "data": {
+      "activeChannel": {
+        "defaultCurrencyCode": "USD",
+        "pricesIncludeTax": false,
+        "defaultTaxZone": { "id": "1" }
+      },
+      "taxCategories": {
+        "items": [
+          { "id": "1", "isDefault": false },
+          { "id": "2", "isDefault": false }
+        ]
+      }
+    }
+  },
+  "taxRates": {
+    "data": {
+      "taxRates": {
+        "items": [
+          { "enabled": true, "value": 25, "category": { "id": "1" }, "customerGroup": null },
+          { "enabled": true, "value": 7, "category": { "id": "2" }, "customerGroup": null }
+        ]
+      }
+    }
+  }
+}

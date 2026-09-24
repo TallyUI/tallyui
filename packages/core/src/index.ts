@@ -21,10 +21,14 @@ export type {
   ResolvedPrice,
   StockLevel,
   StockStatus,
+  StoreSettings,
+  StoreSettingsChoice,
 } from './types';
 export type { SignInResult } from './types/connector';
 export { SignInError } from './sign-in';
 export type { SignInErrorCode } from './sign-in';
+export { StoreSettingsError } from './store-settings';
+export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 
 export type {
   CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,

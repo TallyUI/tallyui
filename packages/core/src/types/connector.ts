@@ -4,6 +4,7 @@ import type { ProductTraits } from './traits/product';
 import type { CustomerTraits } from './traits/customer';
 import type { ReplicationAdapter } from './replication';
 import type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
+import type { StoreSettings, StoreSettingsChoice } from './store-settings';
 
 /**
  * Authentication configuration for a connector.
@@ -137,4 +138,12 @@ export interface TallyConnector {
 
   /** Periodic re-reads of state that replication misses (ADR-060) */
   reconcile?: { stock?: StockReconcileAdapter; ids?: IdReconcileAdapter; prices?: FingerprintReconcileAdapter };
+
+  /**
+   * Reads the store's own settings (TV4): currency, tax inclusivity, tax
+   * rates and a connector-specific pricing context. Read once after
+   * sign-in; the app feeds all three consumers from the result. Read-only,
+   * never writes to the store (ADR-048).
+   */
+  storeSettings?: (context: SyncContext, choice?: StoreSettingsChoice) => Promise<StoreSettings>;
 }

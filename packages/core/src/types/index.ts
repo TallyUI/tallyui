@@ -13,6 +13,8 @@ export type { ReplicationAdapter } from './replication';
 
 export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 
+export type { StoreSettings, StoreSettingsChoice } from './store-settings';
+
 export type { ProductTraits, TraitContext, VariantSummary } from './traits/product';
 
 export type { Money, ProductPrice, ResolvedPrice } from './money';
