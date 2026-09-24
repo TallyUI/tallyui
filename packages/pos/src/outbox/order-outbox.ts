@@ -3,6 +3,9 @@ import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { toOrderCreateEnvelope, type PosOrder } from '../pos-order';
 import type { CommandTransport, OutboxState } from './types';
 
+// Pause after three 401s since the server last accepted credentials.
+const AUTH_FAILURES_BEFORE_PROMPT = 3;
+
 export interface OrderOutboxOptions {
   collection: RxCollection<PosOrder>;
   transport: CommandTransport;
@@ -32,6 +35,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const state$ = new BehaviorSubject<OutboxState>({ pending: 0, sending: false });
   const attempts = new Map<string, number>();
   let backoff = initialBackoff;
+  let unauthorizedSinceAccepted = 0;
   let running: Promise<void> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let subscription: Subscription | undefined;
@@ -71,6 +75,29 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       if (outcome.kind === 'retry') {
         return scheduleRetry(outcome.reason, outcome.retryAfterMs);
       }
+      if (outcome.kind === 'unauthorized') {
+        unauthorizedSinceAccepted++;
+        if (unauthorizedSinceAccepted < AUTH_FAILURES_BEFORE_PROMPT) return scheduleRetry('unauthorized');
+        state$.next({ ...state$.value, authRequired: true, lastRetryReason: 'unauthorized',
+          sending: false, nextAttemptAt: undefined });
+        return;
+      }
+      if (outcome.kind === 'refused') {
+        for (const order of orders) {
+          const current = await collection.findOne(order.id).exec();
+          if (!current || current.syncStatus !== 'pending') continue;
+          await current.incrementalPatch({ syncStatus: 'rejected',
+            error: { code: `http_${outcome.status}`, message: outcome.reason }, updatedAt: new Date(now()).toISOString() });
+          attempts.delete(order.commandId);
+        }
+        unauthorizedSinceAccepted = 0;
+        backoff = initialBackoff;
+        state$.next({ ...state$.value, lastRetryReason: undefined });
+        await updateState();
+        continue;
+      }
+      unauthorizedSinceAccepted = 0;
+      state$.next({ ...state$.value, authRequired: false });
       let progressed = false;
       for (const order of orders) {
         const result = outcome.results.find((entry) => entry.id === order.commandId);

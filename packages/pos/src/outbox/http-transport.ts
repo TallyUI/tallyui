@@ -1,6 +1,9 @@
 import { COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, isCommandBatchResponse } from '@tallyui/core';
 import type { CommandTransport } from './types';
 
+// These HTTP statuses permanently refuse the entire command batch.
+const PERMANENT_STATUSES = new Set([400, 403, 413, 415, 422]);
+
 export interface HttpTransportOptions {
   baseUrl: string;
   getHeaders: () => Record<string, string> | Promise<Record<string, string>>;
@@ -35,6 +38,16 @@ export function createHttpCommandTransport(options: HttpTransportOptions): Comma
         const retry = (reason: string) => ({ kind: 'retry' as const, reason,
           ...(Number.isFinite(seconds) && seconds >= 0 ? { retryAfterMs: seconds * 1000 } : {}),
         });
+        if (response.status === 401) return { kind: 'unauthorized' };
+        if (PERMANENT_STATUSES.has(response.status)) {
+          let reason = `status_${response.status}`;
+          try {
+            const body = await response.json();
+            if (typeof body?.message === 'string') reason = body.message;
+            else if (typeof body?.code === 'string') reason = body.code;
+          } catch {}
+          return { kind: 'refused', status: response.status, reason };
+        }
         if (response.status !== 200) return retry(`status_${response.status}`);
         let body: unknown;
         try {
