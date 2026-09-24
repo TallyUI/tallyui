@@ -363,6 +363,13 @@ The concepts come from the WCPOS wiki (`architecture/client.md`,
 `architecture/plugin-free.md` and their spokes), judged on `next`. The
 capability numbers are the contract in plan §1.3.
 
+This section inherits the WCPOS baseline set in
+[programme plan §1.3](../plans/2026-09-programme.md): `main` is the 1.10.x
+release and `next` is the 2.0 target (ADR-019). It re-checks that baseline
+only where the wiki has moved on. On `next`, for example, the `changes/tick`
+304 path does not fire yet, and web storage moves to SQLite-wasm with one
+live tab.
+
 | # | WCPOS concept (wiki page) | What WooCommerce provides | Vendure natively | Vendure with the TallyUI plugin |
 |---|---|---|---|---|
 | C1 | **Change journal** of pointers `{sequence, type, id, deleted, revision}`, checkpoint `{since, head, horizon, epoch}` (`plugin-free/v2-change-log-and-integrity.md`) | A journal table fed by about 30 hooks | `updatedAt` filters only. Deletes are invisible, and removal from a channel is not visible either | A journal table written **inside the same transaction** by a TypeORM entity subscriber, read below a high-water mark. `ProductChannelEvent` removals become per-channel tombstones (ADR-050) |

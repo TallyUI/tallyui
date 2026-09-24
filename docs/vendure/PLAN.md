@@ -1,7 +1,7 @@
 # Vendure POS plan: MVP first
 
 *Written 2026-09-24 by a TallyUI research worker (Opus). It builds on
-[DISCOVERY.md](DISCOVERY.md) and on ADR-046 to ADR-052 in
+[DISCOVERY.md](DISCOVERY.md) and on ADR-046 to ADR-058 in
 [DECISIONS.md](../DECISIONS.md). It mirrors the Medusa POS MVP
 ([programme plan §2.2](../plans/2026-09-programme.md)). No code has been
 written yet, and every job below is one Codex spec (ADR-018).*
@@ -21,8 +21,8 @@ written yet, and every job below is one Codex spec (ADR-018).*
 
    The Medusa MVP took about 20 jobs, and its A-track merged 11 jobs in
    19 PRs on one day (medusapos `docs/A-TRACK.md`). At about one hour per
-   job, that is **4–5 working days of job time** once Paul's decisions in
-   §5 are made.
+   job, that is **4–5 working days of job time** once V-D2 is granted
+   and the V-D1 items have merged (§5).
 3. **The first TallyUI jobs make the second app cheap.** About 560 of the
    1,165 source lines in the Medusa app are platform-neutral: catalogue,
    cart, tender, receipt, sale state, outbox wiring, the order store and
@@ -32,12 +32,13 @@ written yet, and every job below is one Codex spec (ADR-018).*
    than Medusa's.** `order.create` is one database transaction (ADR-047).
    But Vendure needs a price strategy, a payment handler, an in-store
    shipping method and custom fields to get there.
-5. **Six decisions need Paul** (§5). Three block day one:
-   - **V-D1:** start now, or wait for the Medusa conformance gate;
-   - **V-D2:** create the `vendurepos` GitHub and npm organisations;
-   - **V-D6:** where the Vendure dev store runs.
-
-   My recommendation for each is in §5.
+5. **Decisions** (§5; ADR-053 to ADR-058). The Front desk ruled on V-D1,
+   V-D4 and V-D6 on 2026-09-24, and Paul ruled on V-D3. Two still wait
+   for Paul:
+   - **V-D2:** the `vendurepos` GitHub and npm organisations, which
+     blocks V0;
+   - **V-D5:** whether the RxDB Premium licence covers vendurepos, which
+     does not block.
 
 ---
 
@@ -95,9 +96,9 @@ written yet, and every job below is one Codex spec (ADR-018).*
 |---|---|---|
 | Connector fixes, sign-in and store-settings capabilities, neutral POS screen pieces | `TallyUI/tallyui` | Platform-neutral by the "would Woo, Medusa, Shopify use it unchanged?" test |
 | Vendure plugin `@vendurepos/plugin` | `vendurepos/app` `packages/vendure-plugin` | MIT under Vendure's plugin exception |
-| Vendure dev store and e2e seed | `vendurepos/app` `dev/vendure-store` | Host is Paul's decision V-D6; proposed: this Mac mini on 127.0.0.1:3000. **Never on the production VPS** (ADR-046) |
+| Vendure dev store and e2e seed | `vendurepos/app` `dev/vendure-store` | This Mac mini on 127.0.0.1:3000 (ADR-058). **Never on the production VPS** |
 | POS web app | `vendurepos/app` `apps/expo` | Vercel project `vendurepos` on the WCPOS team |
-| Public demo backend | A separate server, still to be chosen | Paul's decision V-D3 |
+| Public demo backend | The Coolify VPS, as a follow-up after the MVP | ADR-055: `vpdemo-` resources under the demo rules. Provisioned by the Front desk only |
 
 The repo layout copies `medusapos/app`: pnpm workspace `apps/*`; a
 standalone plugin and dev store installed with `npm ci`; CI jobs `app`,
@@ -112,7 +113,7 @@ own worktree and one PR. The line budgets are for non-test code.
 
 ### V0: Foundations and the spike
 
-Needs V-D1 and V-D2.
+Needs V-D2 (Paul) and the items that V-D1 names. V-D6 is decided.
 
 | Job | Scope | Budget | Acceptance |
 |---|---|---|---|
@@ -166,10 +167,17 @@ own.
 
 - **VA9:** an in-browser demo at demo.vendurepos.com, with seeded RxDB and
   a simulated `commands` transport (ADR-027's pattern). About 2 jobs.
-- **A public backend,** if V-D3 chooses one: a demo Vendure on a separate
-  server, reset nightly, with a demo channel and an API key limited to POS
-  permissions. About 2 jobs, plus infrastructure applied by the Front desk
-  or Paul, never by a worker.
+- **A public backend on the Coolify VPS** (ADR-055), mirroring the Medusa
+  demo plan:
+  - a Vendure `Dockerfile` and a GHCR image workflow in `vendurepos/app`
+    (a prebuilt image; no build on the VPS);
+  - `postgres:16-alpine`, never the production image tags, with `vpdemo-`
+    names and resource limits;
+  - a nightly reset from a golden database;
+  - a demo channel and an API key limited to POS permissions.
+
+  That is about 2 worker jobs. Every Coolify write is the Front desk's,
+  and no worker makes one.
 
 ### M6 proper: the Vendure platform (after the MVP)
 
@@ -187,7 +195,7 @@ These make Vendure pass the same contract as Medusa. Each is 1–3 jobs:
 ### Sequence and critical path
 
 ```
-V-D1, V-D2, V-D6 ─▶ VA0 ─▶ VA1 ─▶ VA2 ─▶ S1 ─▶ VP1 ─▶ VP2 ─▶ VP3 ─▶ VP4 ─▶ VP5 ─┐
+V-D1 items, V-D2 ─▶ VA0 ─▶ VA1 ─▶ VA2 ─▶ S1 ─▶ VP1 ─▶ VP2 ─▶ VP3 ─▶ VP4 ─▶ VP5 ─┐
 TV1 ─▶ TV2 ─▶ TV3 ─▶ TV4 ─▶ TV5 ─▶ TV6 ─▶ TV7 ─▶ VA3 ─▶ VA4 ─▶ VA5 ──────┴▶ VA6 ─▶ VA7 ─▶ VA8
                                                           (V-D4 before VA8)
 ```
@@ -197,8 +205,8 @@ TV1 ─▶ TV2 ─▶ TV3 ─▶ TV4 ─▶ TV5 ─▶ TV6 ─▶ TV7 ─▶ VA3
 - **Count:** TallyUI 8 jobs, plugin 5, app 9 (VA0–VA8). That is **22 jobs
   plus spike S1**: 21 firm, with TV8 optional.
 - **Date estimate.**
-  - The MVP is testable about **5 working days** after V-D1, V-D2 and
-    V-D6.
+  - The MVP is testable about **5 working days** after V-D2 is granted
+    and the V-D1 items have merged.
   - That assumes S1 confirms the recipe in one day. If the readonly line
     price cannot be set through `OrderService`, a custom `OrderLine`
     price path adds about a day.
@@ -215,72 +223,69 @@ TV1 ─▶ TV2 ─▶ TV3 ─▶ TV4 ─▶ TV5 ─▶ TV6 ─▶ TV7 ─▶ VA3
 | Plugin + connector over 828 lines. **Likely at the MVP:** the estimate is 1,050–1,350 (DISCOVERY §6) | ADR-051 measures lines and bytes at the end of each milestone | Report it honestly; don't compress code to hit it. Judge it like-for-like at the end of M6 proper |
 | Vendure 3.8 (due 2026-09-30) changes draft orders or tax | Its changelog | Re-read §2 of the discovery; `compatibility` pins `^3.6.0` until tested |
 
-## 5. Decisions for Paul
+## 5. Decisions
 
-Each has my recommendation. Everything else is decided in DECISIONS.md
-(ADR-046 to ADR-052), and Paul can overturn any of those.
+Each was put to Paul with a recommendation. The rulings are recorded as
+ADR-053 to ADR-058; ADR-046 to ADR-052 cover everything else.
 
-**V-D1: When does the Vendure MVP start?** ADR-020 says Vendure starts
-once the sync conformance suite is green on Medusa (backlog item 10). The
-MVP needs none of that suite, just as the Medusa MVP didn't.
-- **Recommend:** start the Vendure MVP once post-MVP items 1–5 have
-  merged. Those are the npm release, outbox leader election, surfacing
-  400/401 errors, the `uuidv7` counter and bearer credentials, all shared
-  code the Vendure app inherits. Keep the conformance gate for *M6
-  proper*, not the MVP.
-- This amends ADR-020's sequencing for the MVP only.
+**V-D1: When the Vendure MVP starts.** *Accepted (Front desk, 2026-09-24;
+ADR-053).*
+- The MVP starts once post-MVP backlog items 1–5 and 7 (programme plan
+  §2.5) have merged. That shared code is the npm release, LICENSE in the
+  tarballs, outbox leader election, surfacing 400/401 errors, the Medusa
+  Bearer credential (merged in #35) and the `uuidv7` counter.
+- ADR-020's conformance gate stays for *M6 proper*.
 
-**V-D2: Create the `vendurepos` GitHub organisation, the `vendurepos/app`
-repository and the `@vendurepos` npm scope.** ADR-028 said at the start of
-M6, and Paul's go-ahead is required (ADR-014).
-- **Recommend:** yes, now. Mirror medusapos: a public MIT repository, with
-  the plugin published to npm as `@vendurepos/plugin` under trusted
-  publishing (ADR-042's pattern). Plan V0 cannot start without this.
+**V-D2: The `vendurepos` GitHub organisation, the `vendurepos/app`
+repository and the `@vendurepos` npm scope.** *Proposed; waiting for Paul
+(ADR-054).*
+- **Recommend:** create them now. Mirror medusapos: a public MIT
+  repository, with the plugin published to npm as `@vendurepos/plugin`
+  under trusted publishing (ADR-042's pattern).
+- Plan V0, and the plugin and app tracks after it, cannot start without
+  this. The TallyUI track can.
 
-**V-D3: Where the public demo backend runs.**
-- **Options:**
-  - (a) **No public backend for the MVP.** Testers bring their own
-    Vendure, and the marketing demo is in-browser (ADR-027's pattern), at
-    no running cost.
-  - (b) **A small dedicated VM, separate from production.** For example a
-    Hetzner Cloud VM with about 4 GB of RAM, running Vendure's server and
-    worker plus Postgres under docker compose, reset nightly. I estimate
-    about €5–10 a month; check current pricing. It could later host a
-    Medusa demo too.
-  - (c) This Mac mini behind a tunnel. It is the shared agent host, with
-    24 GB and no uptime promise.
-  - Never the Coolify VPS (the 2026-09-24 incident).
-- **Recommend:** (a) for the MVP. Add (b) when you want "try it against a
-  real backend". The Front desk would plan it in writing and you would
-  apply it: which provider and account, who pays, and the name checks.
+**V-D3: The public demo backend.** *Decided (Paul, 2026-09-24;
+ADR-055).*
+- There is no separate server. The Vendure MVP keeps the in-browser demo
+  (ADR-027's pattern), and testers bring their own Vendure.
+- A demo backend on the existing Coolify VPS is a follow-up (§3 V4). It
+  mirrors Medusa's under the rules in `~/agent/plans/medusapos-demo-backend.md`:
+  - `vpdemo-` names;
+  - never the production image tags;
+  - resource limits;
+  - a prebuilt image;
+  - the Front desk executes every Coolify write.
 
-**V-D4: Vercel and the domain.**
-- **Recommend:** a Vercel project `vendurepos` on the WCPOS team (Git
-  integration, no token). Point `app.vendurepos.com` at it with a CNAME,
-  and later move the vendurepos.com parking page to Vercel.
-- The registrar (Squarespace) is yours to change, and so is adding
-  `RXDB_PREMIUM` to the project's environment if the app ships Premium
-  storage.
+**V-D4: Vercel and the domain.** *Accepted (Front desk, 2026-09-24;
+ADR-056).*
+- A Vercel project `vendurepos` on the WCPOS team, using the Git
+  integration, with a CNAME for `app.vendurepos.com`.
+- **This machine can do most of it:**
+  - The Vercel CLI is logged in as `kilbot` with the `wcpos` Pro team,
+    where it already created `medusapos`. So it can create `vendurepos`
+    and add `RXDB_PREMIUM` to its environment.
+  - The Git link waits for V-D2.
+  - Squarespace DNS goes through computer use with the keychain login.
+    That needed Paul's Google step-up for medusapos, so expect one prompt
+    to him.
 - Needed before VA8.
 
-**V-D5: Does the RxDB Premium licence cover vendurepos?** ADR-045 notes
-that Premium is licensed per project. The Vendure app would be the first
-app to install Premium in a hosted build.
-- **Recommend:** confirm with RxDB whether the licence already covers
-  medusapos and vendurepos. Until then, the Vendure app runs on Dexie on
-  web. Storage is injected, so switching is one change (ADR-031), and
-  this does not block the MVP.
+**V-D5: Does the RxDB Premium licence cover vendurepos?** *Proposed;
+waiting for Paul (ADR-057).*
+- ADR-045 notes that Premium is licensed per project.
+- Until Paul confirms, the Vendure web app runs on Dexie. Storage is
+  injected (ADR-031), so this does not block the MVP.
 
-**V-D6: Where the Vendure dev store and e2e store run.**
-`~/Projects/CLAUDE.md` gives "demo backends, test stores and builds" to "a
-separate machine chosen by the front desk with Paul". medusa-dev predates
-that rule and runs on this Mac mini.
-- **Recommend:** this Mac mini, like medusa-dev: Postgres 17 from brew,
-  Vendure bound to 127.0.0.1:3000, and the e2e store on :3100 with its own
-  database, one test suite at a time. It needs no public exposure, and I
-  expect it to use about 1 GB of RAM (Vendure's docs give 512 MB per
-  process for the server and worker).
-- CI e2e runs on GitHub Actions with a Postgres service, as medusapos's
-  does, so it needs no machine of ours.
-- If you prefer a separate machine, the same scripts target it. VA1 then
-  waits for its address.
+**V-D6: Where the Vendure dev store and e2e store run.** *Accepted (Front
+desk, 2026-09-24; ADR-058).*
+- On this Mac mini, bound to 127.0.0.1, like medusa-dev: vendure-dev on
+  :3000 and the e2e store on :3100, with its own database.
+- One test suite runs at a time. CI e2e runs on GitHub Actions.
+
+**Note for medusapos.** medusapos/app #23 is in main with its own Bearer
+shim (`apps/expo/lib/pos-connector.ts`). TallyUI #35 has since shipped
+`medusaAdminUserAuth` and `medusaAdminUserConnector`. At its next
+`TALLYUI_REF` bump, medusapos switches to the upstream export and deletes
+the shim. The Vendure connector's own credential types (TV3) follow the
+same shape.

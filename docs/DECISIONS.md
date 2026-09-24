@@ -961,11 +961,10 @@ interface OrderCreatePayload {
   - Web SQLite-wasm and the rxdb 16 → 17 upgrade (ADR-031's 17.4.0 pin)
     are still separate jobs.
 
-## ADR-046 Vendure baseline: 3.7, Admin API only, dev store on the agent host
+## ADR-046 Vendure baseline: 3.7, Admin API only, a seeded Postgres dev store
 
-- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
-  programme lead) · **Source:**
-  [vendure/DISCOVERY.md](vendure/DISCOVERY.md) §1–2
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24) ·
+  **Source:** [vendure/DISCOVERY.md](vendure/DISCOVERY.md) §1–2
 - **Context:** Vendure's npm `latest` is 3.7.3 (released 2026-09-01), and
   3.8.0 is due 2026-09-30. Two features the POS relies on arrived in 3.6.0
   (2026-03-31): API keys (PR #3815) and `OrderLevelTaxCalculationStrategy`.
@@ -979,10 +978,8 @@ interface OrderCreatePayload {
   - The connector and plugin use the **Admin API only**.
   - The dev store (`vendure-dev`) is a `@vendure/create` 3.7.3 project on
     Postgres 17, with its own 2,000-product seed.
-  - **Where it runs is not decided here.** `~/Projects/CLAUDE.md` gives
-    test stores to "a separate machine chosen by the front desk with Paul".
-    PLAN §5 (V-D6) proposes this Mac mini, bound to 127.0.0.1, following
-    the medusa-dev precedent. It never runs on the production VPS.
+  - Where it runs is decided separately, in ADR-058 (V-D6): this Mac
+    mini, bound to 127.0.0.1.
   - Its source lives in `vendurepos/app` `dev/vendure-store` (ADR-014).
   - The plugin is MIT, which Vendure's plugin exception allows
     (`license/plugin-exception.txt`: a separately distributed plugin may
@@ -996,8 +993,9 @@ interface OrderCreatePayload {
 
 ## ADR-047 Vendure `order.create` recipe: one transaction in a plugin
 
-- **Date:** 2026-09-24 · **Status:** Accepted as the design; spike S1 in
-  [vendure/PLAN.md](vendure/PLAN.md) must prove it on vendure-dev before VP3
+- **Date:** 2026-09-24 · **Status:** Accepted as the design (Front desk,
+  2026-09-24). Spike S1 in [vendure/PLAN.md](vendure/PLAN.md) must prove it
+  on vendure-dev before VP3
   · **Source:** DISCOVERY §2.3–2.4, Vendure 3.7.3 source
 - **Context:** The Admin API can't carry an offline POS sale as it stands:
   - `AddItemToDraftOrderInput` is `{productVariantId, quantity}`, so there
@@ -1094,8 +1092,8 @@ interface OrderCreatePayload {
 
 ## ADR-048 Tax parity on Vendure: a rounding surcharge, never a config change
 
-- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
-  programme lead); to be checked in spike S1 · **Source:** DISCOVERY
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24);
+  to be checked in spike S1 · **Source:** DISCOVERY
   §2.4.1; ADR-037, ADR-040
 - **Evidence (Vendure 3.7.3 source):**
   - `DefaultMoneyStrategy.round` is `Math.round(value × quantity)`, and
@@ -1156,8 +1154,8 @@ interface OrderCreatePayload {
 
 ## ADR-049 Vendure connector conventions
 
-- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
-  programme lead); implemented by TV1–TV4 · **Source:** DISCOVERY §2.1,
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24);
+  implemented by TV1–TV4 · **Source:** DISCOVERY §2.1,
   §2.5, §3; ADR-015
 - **Context:** The current connector has four defects: no `sort`; offset
   paging under a moving `updatedAt.after` bound; a bare `customFields`
@@ -1192,8 +1190,9 @@ interface OrderCreatePayload {
 
 ## ADR-050 The Vendure change feed is a journal written in the transaction
 
-- **Date:** 2026-09-24 · **Status:** Accepted as the post-MVP design (M6
-  proper) · **Source:** DISCOVERY §2.6, §4, §5; ADR-023
+- **Date:** 2026-09-24 · **Status:** Accepted as the post-MVP design for
+  M6 proper (Front desk, 2026-09-24) · **Source:** DISCOVERY §2.6, §4, §5;
+  ADR-023
 - **Context:**
   - Vendure soft-deletes products, variants and customers, and every list
     hides them. `deletedAt` is not in the schema.
@@ -1223,8 +1222,8 @@ interface OrderCreatePayload {
 
 ## ADR-051 The "small backend" KPI is reported in lines and bytes
 
-- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
-  programme lead) · **Source:** DISCOVERY §6
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24) ·
+  **Source:** DISCOVERY §6
 - **Evidence:**
   - Medusa plugin: 988 non-test lines (medusapos/app `e06f477`,
     `packages/medusa-plugin`, excluding `jest.config.js`).
@@ -1252,8 +1251,8 @@ interface OrderCreatePayload {
 
 ## ADR-052 Neutral POS app pieces move from medusapos/app into TallyUI
 
-- **Date:** 2026-09-24 · **Status:** Accepted (research worker, for the
-  programme lead); implemented by TV5–TV7 · **Source:** medusapos/app
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24);
+  implemented by TV5–TV7 · **Source:** medusapos/app
   origin/main `e06f477`, `apps/expo`; ADR-014
 - **Evidence:** `apps/expo` has 1,165 lines of `.ts`/`.tsx` source outside
   tests and type stubs.
@@ -1286,3 +1285,119 @@ interface OrderCreatePayload {
     same screens.
   - TallyUI takes on UI that was app-local, so it must stay neutral: no
     `'$'`, no Medusa field names, currency only from the trait context.
+
+## ADR-053 The Vendure MVP starts before the conformance gate (plan V-D1)
+
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24);
+  amends ADR-020's sequencing for the MVP only · **Source:**
+  [vendure/PLAN.md](vendure/PLAN.md) §5 V-D1
+- **Decision:**
+  - The Vendure MVP starts once post-MVP backlog items 1–5 and 7
+    ([programme plan §2.5](plans/2026-09-programme.md)) have merged:
+    - 1: npm release;
+    - 2: LICENSE in the tarballs, with an install smoke test;
+    - 3: outbox leader election;
+    - 4: surfacing 400 and 401 errors;
+    - 5: the Medusa Bearer credential (merged in #35);
+    - 7: the `uuidv7` in-millisecond counter.
+  - ADR-020's gate, "the conformance suite is green on Medusa", stays in
+    force for *M6 proper*.
+- **Consequences:** The Vendure app inherits the shared outbox and
+  publishing fixes, but not the TSP pull. Its MVP limits (no tombstones,
+  stale prices until the next pass) match the Medusa MVP's.
+
+## ADR-054 The vendurepos organisation, repository and npm scope (plan V-D2)
+
+- **Date:** 2026-09-24 · **Status:** Proposed; **Needs Paul** (the Front
+  desk is asking him). It would amend ADR-028's timing · **Source:**
+  PLAN §5 V-D2
+- **Proposal:** Create the `vendurepos` GitHub organisation, the
+  `vendurepos/app` repository and the `@vendurepos` npm scope now, rather
+  than when M6 starts. The repository mirrors medusapos/app and is public
+  and MIT. The plugin is published as `@vendurepos/plugin` by trusted
+  publishing (ADR-042's pattern).
+- **Consequences if accepted:** Plan V0 can start. Until then, V0 and the
+  plugin and app tracks are blocked. The TallyUI track (TV1–TV8) is not
+  blocked.
+
+## ADR-055 Demo backends run on the Coolify VPS under the demo rules (plan V-D3)
+
+- **Date:** 2026-09-24 · **Status:** Accepted (Paul, 2026-09-24, via the
+  Front desk). This replaces the plan's first V-D3 options, which proposed
+  a separate VM and "never the Coolify VPS" · **Source:** Paul's
+  no-new-server ruling; `~/agent/plans/medusapos-demo-backend.md`
+- **Decision:**
+  - **No separate server.** The Vendure MVP keeps option (a): testers
+    bring their own Vendure, and the marketing demo is in-browser
+    (ADR-027's pattern).
+  - A Coolify-hosted demo backend is a planned follow-up, mirroring
+    Medusa's under the same rules:
+    - resources prefixed `vpdemo-`;
+    - never the production image tags. `postgres:17-alpine`, `redis:7.2`,
+      `mongo:7` and `mariadb:11` are excluded because a host cron attaches
+      the production network aliases by image, so Vendure's database uses
+      `postgres:16-alpine`;
+    - no existing `coolify`-network alias and no WCPOS resource names;
+    - memory and CPU limits;
+    - a prebuilt image from GitHub Actions (GHCR), with no build on the
+      VPS;
+    - a nightly reset from a golden database.
+  - **The Front desk executes every Coolify write,** one at a time, with
+    the rollback in hand. Workers do not touch that server (see
+    `~/Projects/CLAUDE.md`).
+- **Consequences:**
+  - The follow-up needs a Vendure `Dockerfile` and a GHCR workflow in
+    `vendurepos/app`, both worker jobs. Coolify provisioning is the Front
+    desk's job.
+  - The host was already at a load of about 11 on 12 cores when the Medusa
+    demo was planned, and Vendure runs two processes (server and worker).
+    Check the load before adding it.
+
+## ADR-056 Vercel project and domain for the Vendure POS (plan V-D4)
+
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24) ·
+  **Source:** PLAN §5 V-D4; read-only checks on this machine, 2026-09-24
+- **Decision:** A Vercel project `vendurepos` on the WCPOS (Pro) team,
+  deployed through the Git integration. `app.vendurepos.com` points at it
+  by CNAME.
+- **What this machine can do itself** (checked read-only; nothing was
+  created):
+  - `vercel whoami` returns `kilbot`, and `vercel teams ls` shows the
+    `wcpos` team (Pro) next to the personal Hobby scope.
+  - `vercel project ls --scope wcpos` lists `medusapos`
+    (https://app.medusapos.com), which a worker created through this CLI
+    login. So creating `vendurepos` in the same scope with the CLI is
+    within reach.
+  - Linking it to GitHub needs `vendurepos/app` to exist first (ADR-054),
+    and the Vercel GitHub app must have access to that organisation.
+  - Squarespace DNS has no API. The medusapos CNAME was added by Codex
+    computer use with the keychain item `squarespace-domains`. The ledger
+    records that it needed Paul's Google step-up sign-in, so expect one
+    prompt to Paul.
+  - `RXDB_PREMIUM` can be set in the project's environment with
+    `vercel env add`, once ADR-057 allows Premium in that build.
+- **Consequences:** Paul's part shrinks to the Google step-up during the
+  DNS change and to ADR-054.
+
+## ADR-057 RxDB Premium licence coverage for vendurepos (plan V-D5)
+
+- **Date:** 2026-09-24 · **Status:** Proposed; **Needs Paul** (the Front
+  desk is asking him) · **Source:** PLAN §5 V-D5; ADR-045
+- **Question:** RxDB Premium is licensed per project. Does the licence
+  cover medusapos and vendurepos as well as TallyUI?
+- **Proposal:** Until Paul confirms, the Vendure web app runs on Dexie.
+  Storage is injected, so switching is one change (ADR-031), and this does
+  not block the MVP.
+
+## ADR-058 Vendure dev and e2e stores on the Mac mini (plan V-D6)
+
+- **Date:** 2026-09-24 · **Status:** Accepted (Front desk, 2026-09-24) ·
+  **Source:** PLAN §5 V-D6; `~/Projects/CLAUDE.md` (test stores are
+  placed by the Front desk with Paul)
+- **Decision:**
+  - vendure-dev (127.0.0.1:3000) and the e2e store (:3100, with its own
+    database) run on this Mac mini, bound to 127.0.0.1, on Postgres 17
+    from brew, like medusa-dev. Neither is exposed publicly.
+  - Only one test suite runs at a time.
+  - CI e2e runs on GitHub Actions with a Postgres service.
+- **Consequences:** Plan job VA1 can start as soon as ADR-054 is accepted.
