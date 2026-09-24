@@ -121,7 +121,7 @@ Storage is platform-aware. The `getStorage()` factory returns the right adapter 
 | Platform | Storage | Package |
 |----------|---------|---------|
 | Web browser | IndexedDB (via Dexie) | Built into `@tallyui/database` |
-| React Native | SQLite (via expo-sqlite) | `@tallyui/storage-sqlite` |
+| React Native | RxDB Premium SQLite (via expo-sqlite) | `@tallyui/storage-sqlite` |
 | Node / SSR / tests | In-memory | Built into `@tallyui/database` |
 
 See the [Replication guide](/docs/replication) for setup and usage details.
@@ -132,7 +132,7 @@ See the [Replication guide](/docs/replication) for setup and usage details.
 |---------|---------|
 | `@tallyui/core` | Connector interfaces, trait types, React context |
 | `@tallyui/database` | RxDB factory, replication orchestrator, platform storage |
-| `@tallyui/storage-sqlite` | RxDB storage adapter for React Native (expo-sqlite) |
+| `@tallyui/storage-sqlite` | RxDB Premium SQLite storage for React Native (expo-sqlite) |
 | `@tallyui/components` | UI primitives (ProductTitle, ProductPrice, etc.) |
 | `@tallyui/pos` | POS business logic — tax, currency, orders, receipts, logging |
 | `@tallyui/theme` | Shared design tokens, theming, and `cn()` utility |
