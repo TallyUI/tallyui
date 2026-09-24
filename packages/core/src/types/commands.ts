@@ -49,6 +49,12 @@ export interface OrderCreateLine {
   title?: string;
   quantity: number;
   unitPriceMinor: number;
+  /**
+   * This line's own tax mode, when it differs from the order's `pricesIncludeTax`
+   * (a price that carries its own flag, D2c). Absent means the order's flag, so
+   * older clients and single-mode orders are unchanged.
+   */
+  taxInclusive?: boolean;
 }
 
 /** Supported order payment method. */

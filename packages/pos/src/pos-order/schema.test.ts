@@ -40,3 +40,25 @@ it('inserts a finalised order into an AJV-validated RxDB memory collection', asy
     await db.remove();
   }
 });
+
+it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bump, because lines.items already accepts unknown properties", async () => {
+  // posOrderSchema.version stays 0: the `lines` item schema never set additionalProperties to
+  // false, so it already accepts (and round-trips) a property it does not declare — the same as
+  // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
+  // needs no matching schema edit, so there is nothing to migrate.
+  expect(posOrderSchema.version).toBe(0);
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: { schema: posOrderSchema } });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item 1', unitPrice: { amount: 850, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 2000 });
+    const order = finalizeOrder(builder.getSnapshot());
+    const withLineTaxMode = { ...order, lines: [{ ...order.lines[0], taxInclusive: true }] };
+    const doc = await pos_orders.insert(withLineTaxMode);
+    expect(doc.toJSON().lines[0].taxInclusive).toBe(true);
+  } finally {
+    await db.remove();
+  }
+});

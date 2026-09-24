@@ -679,6 +679,22 @@ interface OrderCreatePayload {
   validation. This check runs before the ledger claim; it is deterministic,
   so a replay of the same command returns the same rejection. It is not
   retried. Introduced by medusapos/app ADR 0004.
+- **Amendment 2 (2026-09-24):** `OrderCreateLine` gains an optional
+  `taxInclusive?: boolean` — this line's own tax mode, when it differs from
+  the order's `pricesIncludeTax` (a price that carries its own flag, D2c).
+  Absent means the order's flag, so single-mode orders, which is every
+  order today, produce byte-identical payloads, and older clients are
+  unaffected. **Server rule:** the plugin uses
+  `line.taxInclusive ?? payload.pricesIncludeTax` as that item's tax mode;
+  everything else in this ADR and ADR-039 still applies per item — ADR-039's
+  paths 1 to 3, ADR-037's ≤ 1 minor-unit guard, and `total_mismatch`. An old
+  plugin that receives the field ignores it: it charges in the order's mode
+  and returns `total_mismatch`, exactly today's behaviour, which is why
+  `finalize` rejects a converted line (the #94 guard) until the plugin
+  honours the field. **Rollout order:** T1 (tallyui: the client can send the
+  field, guard stays) → M (the Medusa plugin honours it) → T2 (tallyui
+  removes the guard). The Vendure plugin honours the field from its first
+  `order.create` commit, so there is no older-Vendure-plugin case to gate on.
 
 ## ADR-039 `order.create` edge cases (addendum to ADR-038)
 
