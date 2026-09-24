@@ -19,6 +19,17 @@ export interface ConnectorAuth {
   getHeaders: (credentials: Record<string, string>) => Record<string, string>;
   /** Optional: validate that credentials work (e.g., test API call) */
   validate?: (credentials: Record<string, string>) => Promise<boolean>;
+  /**
+   * Exchanges a user's email and password for a credential (token) to store and pass back to getHeaders as `token`.
+   * Rejects with a `SignInError`: `invalid_credentials`, `unsupported` or `failed`.
+   */
+  signIn?: (baseUrl: string, login: { email: string; password: string }, init?: { signal?: AbortSignal; fetch?: typeof fetch }) => Promise<SignInResult>;
+}
+
+export interface SignInResult {
+  token: string;
+  /** ISO 8601, when the backend says when the token expires */
+  expiresAt?: string;
 }
 
 export interface AuthField {
