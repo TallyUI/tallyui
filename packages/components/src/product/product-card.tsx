@@ -15,7 +15,7 @@ export interface ProductCardProps extends Omit<VStackProps, 'children'> {
 
 export function ProductCard({ doc, onPress, imageSize = 80, currencySymbol, className, ...props }: ProductCardProps) {
   const content = (
-    <VStack space="sm" className={cn('items-center rounded-lg bg-card p-3', className)} {...props}>
+    <VStack space="sm" className={cn('items-center rounded-lg border border-border bg-card p-3', className)} {...props}>
       <ProductImage doc={doc} size={imageSize} className="rounded-md" />
       <ProductTitle doc={doc} className="text-sm" numberOfLines={2} />
       <ProductPrice doc={doc} currencySymbol={currencySymbol} />

@@ -48,11 +48,11 @@ export function ReceiptPreview({
 
       <View className="mt-3 gap-1 border-t border-dashed border-border pt-3">
         <View className="flex-row justify-between">
-          <Text className="text-sm text-muted">Subtotal</Text>
+          <Text className="text-sm text-muted-foreground">Subtotal</Text>
           <Text className="text-sm text-foreground">{subtotal}</Text>
         </View>
         <View className="flex-row justify-between">
-          <Text className="text-sm text-muted">Tax</Text>
+          <Text className="text-sm text-muted-foreground">Tax</Text>
           <Text className="text-sm text-foreground">{tax}</Text>
         </View>
         <View className="flex-row justify-between border-t border-border pt-1">
@@ -65,7 +65,7 @@ export function ReceiptPreview({
         <View className="mt-3 gap-1 border-t border-dashed border-border pt-3">
           {payments.map((p, i) => (
             <View key={i} className="flex-row justify-between">
-              <Text className="text-sm text-muted">{p.method}</Text>
+              <Text className="text-sm text-muted-foreground">{p.method}</Text>
               <Text className="text-sm text-foreground">{p.amount}</Text>
             </View>
           ))}

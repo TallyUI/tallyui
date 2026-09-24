@@ -15,7 +15,7 @@ export function SettingsGroup({ title, description, children, className, ...view
     <View className={cn('gap-1', className)} {...viewProps}>
       <View className="px-4 py-2">
         <Text className="text-sm font-semibold text-foreground">{title}</Text>
-        {description && <Text className="text-xs text-muted">{description}</Text>}
+        {description && <Text className="text-xs text-muted-foreground">{description}</Text>}
       </View>
       <View className="rounded-lg border border-border bg-surface">{children}</View>
     </View>

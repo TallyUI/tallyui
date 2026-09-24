@@ -33,7 +33,7 @@ export function CategoryNav({
         onPress={() => onSelect(cat.id)}
         className={cn(
           'rounded-full px-3 py-1.5',
-          active ? 'bg-primary' : 'bg-surface-alt',
+          active ? 'bg-primary' : 'bg-muted',
         )}
       >
         <Text

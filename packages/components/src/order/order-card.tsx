@@ -38,8 +38,8 @@ export function OrderCard({
       </View>
       <View className="flex-row items-center justify-between">
         <View className="gap-0.5">
-          <Text className="text-xs text-muted">{date}</Text>
-          {customerName && <Text className="text-xs text-muted">{customerName}</Text>}
+          <Text className="text-xs text-muted-foreground">{date}</Text>
+          {customerName && <Text className="text-xs text-muted-foreground">{customerName}</Text>}
         </View>
         <Text className="text-sm font-semibold text-foreground">{total}</Text>
       </View>

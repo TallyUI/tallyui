@@ -17,7 +17,7 @@
   --color-popover-foreground: #111827;
 
   /* Primary */
-  --color-primary: #6366f1;
+  --color-primary: #5b5ef0;
   --color-primary-foreground: #ffffff;
 
   /* Secondary */
@@ -26,7 +26,7 @@
 
   /* Muted */
   --color-muted: #f3f4f6;
-  --color-muted-foreground: #6b7280;
+  --color-muted-foreground: #656c79;
 
   /* Accent */
   --color-accent: #f3f4f6;
@@ -50,8 +50,8 @@
 
   /* Border / Input / Ring */
   --color-border: #e5e7eb;
-  --color-input: #e5e7eb;
-  --color-ring: #6366f1;
+  --color-input: #848a94;
+  --color-ring: #5b5ef0;
 
   /* Commerce */
   --color-price: #059669;
@@ -74,7 +74,7 @@
       --color-popover-foreground: #111827;
 
       /* Primary */
-      --color-primary: #6366f1;
+      --color-primary: #5b5ef0;
       --color-primary-foreground: #ffffff;
 
       /* Secondary */
@@ -83,7 +83,7 @@
 
       /* Muted */
       --color-muted: #f3f4f6;
-      --color-muted-foreground: #6b7280;
+      --color-muted-foreground: #656c79;
 
       /* Accent */
       --color-accent: #f3f4f6;
@@ -107,8 +107,8 @@
 
       /* Border / Input / Ring */
       --color-border: #e5e7eb;
-      --color-input: #e5e7eb;
-      --color-ring: #6366f1;
+      --color-input: #848a94;
+      --color-ring: #5b5ef0;
 
       /* Commerce */
       --color-price: #059669;

@@ -29,7 +29,7 @@ export function ProductVariantPicker({
     <View className={cn('gap-3', className)} {...viewProps}>
       {options.map((option) => (
         <View key={option.name} className="gap-1.5">
-          <Text className="text-xs font-semibold text-muted">{option.name}</Text>
+          <Text className="text-xs font-semibold text-muted-foreground">{option.name}</Text>
           <View className="flex-row flex-wrap gap-2">
             {option.values.map((value) => {
               const active = selected[option.name] === value;
