@@ -95,6 +95,24 @@ describe('resolvePrice', () => {
     expect(resolvePrice([])).toBeUndefined();
     expect(resolvePrice(prices, 'GBP')).toBeUndefined();
   });
+
+  it('keeps each price\'s own taxInclusive on current and was', () => {
+    const flagged: ProductPrice[] = [
+      { amount: 1200, currency: 'EUR', kind: 'base', taxInclusive: false },
+      { amount: 1000, currency: 'EUR', kind: 'sale', taxInclusive: true },
+    ];
+    expect(resolvePrice(flagged)).toEqual({
+      current: { amount: 1000, currency: 'EUR', taxInclusive: true },
+      was: { amount: 1200, currency: 'EUR', taxInclusive: false },
+    });
+    expect(resolvePrice([flagged[0]])).toEqual({ current: { amount: 1200, currency: 'EUR', taxInclusive: false } });
+  });
+
+  it('omits taxInclusive when the source price has none', () => {
+    const resolved = resolvePrice(prices, 'EUR')!;
+    expect('taxInclusive' in resolved.current).toBe(false);
+    expect('taxInclusive' in resolved.was!).toBe(false);
+  });
 });
 
 describe('resolvePriceRange', () => {

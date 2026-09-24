@@ -84,7 +84,10 @@ export function resolvePrice(
   const inCurrency = prices.filter((p) => p.currency === code);
   const base = inCurrency.find((p) => p.kind === 'base');
   const sale = inCurrency.find((p) => p.kind === 'sale');
-  const strip = (p: ProductPrice): Money => ({ amount: p.amount, currency: p.currency });
+  const strip = (p: ProductPrice): ResolvedPrice['current'] => ({
+    amount: p.amount, currency: p.currency,
+    ...(p.taxInclusive !== undefined ? { taxInclusive: p.taxInclusive } : {}),
+  });
 
   if (sale && (!base || sale.amount < base.amount)) {
     return { current: strip(sale), was: base ? strip(base) : undefined };

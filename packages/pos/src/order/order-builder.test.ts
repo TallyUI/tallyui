@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { firstValueFrom } from 'rxjs';
 import { createOrderBuilder } from './order-builder';
 import type { ProductTraits } from '@tallyui/core';
+import { medusaProductTraits } from '@tallyui/connector-medusa';
 import type { TaxContext } from '../tax/types';
+import { roundMicrosToMinor } from '../tax/exact';
 
 const traits: ProductTraits = {
   getId: (doc) => doc.id,
@@ -359,5 +361,116 @@ describe('OrderBuilder', () => {
     const order = await firstValueFrom(builder.order$);
     expect(order.lineItems).toHaveLength(1);
     expect(order.lineItems[0].quantity).toBe(2);
+  });
+});
+
+describe('per-price tax mode', () => {
+  const store = (pricesIncludeTax: boolean, ratePpm = 190000): TaxContext => ({ getTaxRatePpm: () => ratePpm, pricesIncludeTax });
+
+  // The Front desk's cases: €10.00 in the price's own mode, in a store of the other mode.
+  // Paid (total) = displayed price × quantity to the cent; tax is the exact remainder.
+  it.each([
+    { taxInclusive: true, ratePpm: 190000, quantity: 1, totalMinor: 1000, taxMinor: 160, subtotalMinor: 840, taxMicros: '159663866' },
+    { taxInclusive: true, ratePpm: 190000, quantity: 3, totalMinor: 3000, taxMinor: 479, subtotalMinor: 2521, taxMicros: '478991597' },
+    { taxInclusive: true, ratePpm: 83750, quantity: 1, totalMinor: 1000, taxMinor: 77, subtotalMinor: 923, taxMicros: '77277970' },
+    { taxInclusive: true, ratePpm: 83750, quantity: 3, totalMinor: 3000, taxMinor: 232, subtotalMinor: 2768, taxMicros: '231833910' },
+    { taxInclusive: false, ratePpm: 190000, quantity: 1, totalMinor: 1190, taxMinor: 190, subtotalMinor: 1000, taxMicros: '190000000' },
+    { taxInclusive: false, ratePpm: 190000, quantity: 3, totalMinor: 3570, taxMinor: 570, subtotalMinor: 3000, taxMicros: '570000000' },
+    { taxInclusive: false, ratePpm: 83750, quantity: 1, totalMinor: 1084, taxMinor: 84, subtotalMinor: 1000, taxMicros: '83750000' },
+    { taxInclusive: false, ratePpm: 83750, quantity: 3, totalMinor: 3251, taxMinor: 251, subtotalMinor: 3000, taxMicros: '251250000' },
+  ])('charges €10.00 (inclusive: $taxInclusive) at $ratePpm ppm × $quantity as displayed', (row) => {
+    const { taxInclusive, ratePpm, quantity, totalMinor, taxMinor, subtotalMinor, taxMicros } = row;
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(!taxInclusive) });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive }, taxRates: [{ ratePpm }], quantity });
+    const order = builder.getSnapshot();
+    const line = order.lineItems[0];
+    expect(order).toMatchObject({ totalMinor, taxMinor, subtotalMinor, pricesIncludeTax: !taxInclusive });
+    expect(line).toMatchObject({
+      taxInclusive, netMinor: 1000 * quantity, taxMicros,
+      priceTaxModeConverted: taxInclusive ? 'inclusive-to-exclusive' : 'exclusive-to-inclusive',
+    });
+    // Inclusive: paid = €10.00 × qty. Exclusive: paid = €10.00 × qty + its exact exclusive tax.
+    expect(totalMinor).toBe(1000 * quantity + (taxInclusive ? 0 : roundMicrosToMinor(BigInt(1000 * quantity * ratePpm))));
+    expect(roundMicrosToMinor(BigInt(line.taxMicros))).toBe(order.taxMinor);
+    expect(order.subtotalMinor + order.taxMinor).toBe(order.totalMinor);
+  });
+
+  it.each([
+    { pricesIncludeTax: false, subtotalMinor: 3000, taxMinor: 251, totalMinor: 3251 },
+    { pricesIncludeTax: true, subtotalMinor: 2768, taxMinor: 232, totalMinor: 3000 },
+  ])('an agreeing or missing flag gives today\'s numbers, with no marker (inclusive store: $pricesIncludeTax)', (row) => {
+    const { pricesIncludeTax, subtotalMinor, taxMinor, totalMinor } = row;
+    for (const flag of [{}, { taxInclusive: pricesIncludeTax }]) {
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(pricesIncludeTax, 83750) });
+      builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR', ...flag }, quantity: 3 });
+      const order = builder.getSnapshot();
+      expect(order).toMatchObject({ subtotalMinor, taxMinor, totalMinor });
+      expect(order.lineItems[0].taxInclusive).toBe(pricesIncludeTax);
+      expect('priceTaxModeConverted' in order.lineItems[0]).toBe(false);
+    }
+  });
+
+  it.each([
+    { amount: 1085, quantity: 1, totalMinor: 1085, taxMinor: 85, taxMicros: ['60000000', '25000000'] },
+    { amount: 1000, quantity: 3, totalMinor: 3000, taxMinor: 235, taxMicros: ['165898617', '69124424'] },
+  ])('an inclusive multi-rate line follows the rule on the combined rate: $amount × $quantity', (row) => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: store(false) });
+    builder.addLine({
+      productId: 'p1', name: 'Item', unitPrice: { amount: row.amount, currency: 'USD', taxInclusive: true }, quantity: row.quantity,
+      taxRates: [{ code: 'STATE', ratePpm: 60000 }, { code: 'CITY', ratePpm: 25000 }],
+    });
+    const order = builder.getSnapshot();
+    expect(order).toMatchObject({ totalMinor: row.totalMinor, taxMinor: row.taxMinor, subtotalMinor: row.totalMinor - row.taxMinor });
+    expect(order.lineItems[0].taxLines.map((tax) => tax.taxMicros)).toEqual(row.taxMicros);
+    expect(order.lineItems[0].taxMicros).toBe(String(BigInt(row.taxMicros[0]) + BigInt(row.taxMicros[1])));
+  });
+
+  it('keeps each line in its own mode in a mixed order, with an order discount after tax', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    builder.addLine({ productId: 'a', name: 'Inclusive', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: true }, quantity: 3 });
+    builder.addLine({ productId: 'b', name: 'Store mode', unitPrice: { amount: 1000, currency: 'EUR' } });
+    const before = builder.getSnapshot();
+    const [a, b] = before.lineItems;
+    expect(a).toMatchObject({ netMinor: 3000, taxMicros: '478991597', taxInclusive: true, priceTaxModeConverted: 'inclusive-to-exclusive' });
+    expect(b).toMatchObject({ netMinor: 1000, taxMicros: '190000000', taxInclusive: false });
+    expect('priceTaxModeConverted' in b).toBe(false);
+    // Line A pays €30.00 (its shelf price), line B €10.00 + €1.90; tax is rounded once for the order.
+    expect(before).toMatchObject({ totalMinor: 4190, taxMinor: 669, subtotalMinor: 3521 });
+    expect(before.taxMinor).toBe(roundMicrosToMinor(BigInt(a.taxMicros) + BigInt(b.taxMicros)));
+    expect(before.subtotalMinor + before.taxMinor).toBe(before.totalMinor);
+
+    // Today's order discounts are not allocated to lines: they come off the total, after tax.
+    builder.applyOrderDiscount({ type: 'fixed', value: 100 });
+    const after = builder.getSnapshot();
+    expect(after).toMatchObject({ totalMinor: 4090, taxMinor: 669, subtotalMinor: 3521, discountMinor: 100 });
+    expect(after.lineItems).toEqual(before.lineItems);
+  });
+
+  it('does not merge a flagged price into an unflagged line', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: true } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: true } });
+    expect(builder.getSnapshot().lineItems.map((li) => [li.taxInclusive, li.quantity])).toEqual([[true, 2], [false, 1]]);
+  });
+
+  it('charges a Medusa inclusive sale price once in an exclusive store', () => {
+    const doc = {
+      id: 'prod_1', title: 'Mug', variants: [{
+        id: 'variant_1', sku: 'MUG-1',
+        calculated_price: {
+          currency_code: 'eur', original_amount: 12, calculated_amount: 10,
+          is_original_price_tax_inclusive: true, is_calculated_price_tax_inclusive: true,
+          calculated_price: { price_list_type: 'sale' },
+        },
+      }],
+    };
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    builder.addProduct(doc, medusaProductTraits, { variantId: 'variant_1' });
+    const order = builder.getSnapshot();
+    expect(order.lineItems[0]).toMatchObject({
+      unitPriceMinor: 1000, sku: 'MUG-1', taxInclusive: true, priceTaxModeConverted: 'inclusive-to-exclusive',
+    });
+    expect(order).toMatchObject({ totalMinor: 1000, taxMinor: 160, subtotalMinor: 840, pricesIncludeTax: false });
   });
 });

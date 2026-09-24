@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createOrderBuilder } from '../order/order-builder';
 import { buildReceiptData } from './build-receipt-data';
+import { roundMicrosToMinor } from '../tax/exact';
 import type { Order } from '../order/types';
 import type { ReceiptConfig } from './types';
 
@@ -20,6 +21,7 @@ const baseOrder: Order = {
       discounts: [],
       discountMinor: 0,
       netMinor: 900,
+      taxInclusive: false,
     },
     {
       id: 'li2',
@@ -33,6 +35,7 @@ const baseOrder: Order = {
       discounts: [],
       discountMinor: 0,
       netMinor: 300,
+      taxInclusive: false,
     },
   ],
   discounts: [{ id: 'd1', type: 'fixed', value: 100, amountMinor: 100, label: 'Loyalty' }],
@@ -207,5 +210,33 @@ describe('buildReceiptData', () => {
     };
     const receipt = buildReceiptData(orderWithUnlabeledDiscount, config);
     expect(receipt.discounts[0].label).toBe('percentage discount');
+  });
+
+  // A: the line whose price has the other mode, converted; B: a line in the store's mode.
+  it.each([
+    { name: 'inclusive price, exclusive store', storeInclusive: false, ratePpm: 190000, a: 1000, aQty: 3, b: 1000,
+      lineTotals: [2521, 1000], subtotalMinor: 3521, taxMinor: 669, totalMinor: 4190 },
+    { name: 'exclusive price, inclusive store', storeInclusive: true, ratePpm: 190000, a: 1000, aQty: 3, b: 1000,
+      lineTotals: [3570, 1000], subtotalMinor: 3840, taxMinor: 730, totalMinor: 4570 },
+    // Per-line rounding would show A as 4 (tax 0.36¢ rounds to 0), but the order's one rounding of 0.76¢ gives 1¢.
+    { name: 'sub-cent taxes, exclusive store', storeInclusive: false, ratePpm: 100000, a: 4, aQty: 1, b: 4,
+      lineTotals: [3, 4], subtotalMinor: 7, taxMinor: 1, totalMinor: 8 },
+  ])('shows a mixed-mode order\'s lines in the order\'s mode: $name', (row) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => row.ratePpm, pricesIncludeTax: row.storeInclusive } });
+    builder.addLine({ productId: 'a', name: 'A', unitPrice: { amount: row.a, currency: 'EUR', taxInclusive: !row.storeInclusive }, quantity: row.aQty });
+    builder.addLine({ productId: 'b', name: 'B', unitPrice: { amount: row.b, currency: 'EUR' } });
+    const receipt = buildReceiptData(builder.getSnapshot(), config);
+    const lineTotals = receipt.lineItems.map((line) => line.lineTotalMinor);
+    expect(lineTotals).toEqual(row.lineTotals);
+    expect(receipt.totals).toMatchObject({ subtotalMinor: row.subtotalMinor, taxMinor: row.taxMinor, totalMinor: row.totalMinor });
+    // Exclusive receipts list lines before tax, so they add up to the subtotal; inclusive ones after tax, to the total.
+    const sum = lineTotals.reduce((total, amount) => total + amount, 0);
+    expect(sum).toBe(row.storeInclusive ? receipt.totals.totalMinor : receipt.totals.subtotalMinor);
+    expect(receipt.totals.subtotalMinor + receipt.totals.taxMinor).toBe(receipt.totals.totalMinor);
+    // The customer still pays each shelf amount in full: A's gross, or A's net plus its exact tax, plus B in the store's mode.
+    const exclusiveTax = (amount: number) => roundMicrosToMinor(BigInt(amount * row.ratePpm));
+    const shelfA = row.storeInclusive ? row.a * row.aQty + exclusiveTax(row.a * row.aQty) : row.a * row.aQty;
+    const shelfB = row.storeInclusive ? row.b : row.b + exclusiveTax(row.b);
+    expect(receipt.totals.totalMinor).toBe(shelfA + shelfB);
   });
 });

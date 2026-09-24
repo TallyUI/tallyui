@@ -14,6 +14,15 @@ describe('Medusa isSellable / getVariantCount', () => {
     expect(medusaProductTraits.isSellable({})).toBe(true);
   });
 
+  it('rejects a priced product whose calculated price has null amounts', () => {
+    const calc = { currency_code: 'eur', original_amount: 12, calculated_amount: null,
+      is_calculated_price_tax_inclusive: false, is_original_price_tax_inclusive: false };
+    expect(medusaProductTraits.isSellable({ status: 'published', variants: [{ id: 'v1', calculated_price: calc }] })).toBe(false);
+    expect(medusaProductTraits.isSellable({ status: 'published', variants: [
+      { id: 'v1', calculated_price: calc }, { id: 'v2', calculated_price: { ...calc, calculated_amount: 12 } },
+    ] })).toBe(true);
+  });
+
   it('counts a single variant', () => {
     expect(medusaProductTraits.getVariantCount({ variants: [{}] })).toBe(1);
   });
@@ -225,6 +234,29 @@ describe('Medusa product traits', () => {
 
     it('isOnSale is always false (no product-level sale flag)', () => {
       expect(medusaProductTraits.isOnSale(fullProduct)).toBe(false);
+    });
+  });
+
+  describe('getPrice / getRegularPrice in priced mode', () => {
+    const priced = (calculated_price: object | null) => ({
+      id: 'prod_1', variants: [{ id: 'v1', prices: [{ amount: 99, currency_code: 'eur' }], calculated_price }],
+    });
+    const calc = { currency_code: 'eur', original_amount: 12, calculated_amount: 9.5,
+      is_calculated_price_tax_inclusive: true, is_original_price_tax_inclusive: true };
+
+    it.each([
+      { name: 'a sale', list: { price_list_type: 'sale' }, price: '9.50', regular: '12.00' },
+      { name: 'an override', list: { price_list_type: 'override' }, price: '9.50', regular: '9.50' },
+      { name: 'no price list', list: undefined, price: '12.00', regular: '12.00' },
+    ])('gives the resolved calculated price, never the admin prices: $name', ({ list, price, regular }) => {
+      const doc = priced({ ...calc, ...(list ? { calculated_price: list } : {}) });
+      expect(medusaProductTraits.getPrice(doc)).toBe(price);
+      expect(medusaProductTraits.getRegularPrice(doc)).toBe(regular);
+    });
+
+    it('gives undefined when the product is not priced here', () => {
+      expect(medusaProductTraits.getPrice(priced(null))).toBeUndefined();
+      expect(medusaProductTraits.getRegularPrice(priced(null))).toBeUndefined();
     });
   });
 
