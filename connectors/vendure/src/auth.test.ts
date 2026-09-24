@@ -1,0 +1,76 @@
+import { describe, expect, it, vi } from 'vitest';
+import { SignInError } from '@tallyui/core';
+import { vendureAuth, vendureConnector } from './index';
+
+const loginResponse = (login: unknown, headers: Record<string, string> = {}, status = 200) =>
+  new Response(JSON.stringify({ data: { login } }), { status, headers: { 'Content-Type': 'application/json', ...headers } });
+
+const signIn = (response: Response) => {
+  const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => response);
+  const result = vendureAuth.signIn!('https://vendure.test', { email: 'superadmin', password: 'pw' }, { fetch });
+  return { fetch, result };
+};
+
+describe('Vendure sign-in', () => {
+  it('is the auth of the Vendure connector', () => {
+    expect(vendureConnector.auth).toBe(vendureAuth);
+    expect(vendureAuth.fields.map((f) => f.key)).toEqual(['url', 'email', 'password', 'channel_token']);
+  });
+
+  it('posts the login mutation and returns the token from the vendure-auth-token header', async () => {
+    const { fetch, result } = signIn(loginResponse({ __typename: 'CurrentUser', id: '1' }, { 'vendure-auth-token': 'tok_123' }));
+    await expect(result).resolves.toEqual({ token: 'tok_123', expiresAt: undefined });
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe('https://vendure.test/admin-api');
+    expect(init?.method).toBe('POST');
+    const body = JSON.parse(init!.body as string);
+    expect(body.query).toContain('login(username: $email, password: $password)');
+    expect(body.variables).toEqual({ email: 'superadmin', password: 'pw' });
+  });
+
+  it('rejects INVALID_CREDENTIALS_ERROR as invalid_credentials', async () => {
+    const { result } = signIn(loginResponse({ __typename: 'InvalidCredentialsError', errorCode: 'INVALID_CREDENTIALS_ERROR', message: 'The provided credentials are invalid' }));
+    await expect(result).rejects.toBeInstanceOf(SignInError);
+    await expect(result).rejects.toMatchObject({ code: 'invalid_credentials', message: 'The provided credentials are invalid' });
+  });
+
+  it('rejects a CurrentUser without the token header as unsupported', async () => {
+    const { result } = signIn(loginResponse({ __typename: 'CurrentUser', id: '1' }));
+    await expect(result).rejects.toMatchObject({ code: 'unsupported', message: expect.stringContaining('bearer') });
+  });
+
+  it('rejects other error results, GraphQL errors and HTTP errors as failed', async () => {
+    await expect(signIn(loginResponse({ __typename: 'NativeAuthStrategyError', errorCode: 'NATIVE_AUTH_STRATEGY_ERROR', message: 'No native auth' })).result)
+      .rejects.toMatchObject({ code: 'failed', message: 'No native auth' });
+    await expect(signIn(new Response(JSON.stringify({ errors: [{ message: 'Cannot query field' }] }), { status: 200 })).result)
+      .rejects.toMatchObject({ code: 'failed', message: 'Cannot query field' });
+    await expect(signIn(new Response('Bad gateway', { status: 502 })).result)
+      .rejects.toMatchObject({ code: 'failed', message: expect.stringContaining('502') });
+  });
+});
+
+describe('Vendure getHeaders', () => {
+  it('sends a signed-in token as Bearer auth', () => {
+    expect(vendureAuth.getHeaders({ url: 'https://vendure.test', token: 'tok_123' })).toEqual({ Authorization: 'Bearer tok_123' });
+  });
+
+  it('accepts the deprecated auth_token as a fallback for token', () => {
+    expect(vendureAuth.getHeaders({ auth_token: 'old_1' })).toEqual({ Authorization: 'Bearer old_1' });
+    expect(vendureAuth.getHeaders({ token: 'tok_123', auth_token: 'old_1' })).toEqual({ Authorization: 'Bearer tok_123' });
+    expect(vendureAuth.getHeaders({ api_key: 'key_1', auth_token: 'old_1' })).toEqual({ 'vendure-api-key': 'key_1' });
+  });
+
+  it('prefers an API key over a token', () => {
+    expect(vendureAuth.getHeaders({ api_key: 'key_1', token: 'tok_123' })).toEqual({ 'vendure-api-key': 'key_1' });
+  });
+
+  it('adds the channel token when set', () => {
+    expect(vendureAuth.getHeaders({ token: 'tok_123', channel_token: 'ch_1' })).toEqual({ Authorization: 'Bearer tok_123', 'vendure-token': 'ch_1' });
+    expect(vendureAuth.getHeaders({ api_key: 'key_1', channel_token: 'ch_1' })).toEqual({ 'vendure-api-key': 'key_1', 'vendure-token': 'ch_1' });
+  });
+
+  it('sends no auth headers without credentials', () => {
+    expect(vendureAuth.getHeaders({})).toEqual({});
+    expect(vendureAuth.getHeaders({ token: '', channel_token: '' })).toEqual({});
+  });
+});

@@ -1,5 +1,6 @@
 import type { TallyConnector } from '@tallyui/core';
 
+import { vendureAuth } from './auth';
 import { vendureProductSchema } from './schemas/products';
 import { createVendureProductTraits } from './traits/product';
 import { createVendureProductSync } from './sync/products';
@@ -26,28 +27,7 @@ export const createVendureConnector = (options: { barcodeField?: string; stockLo
   description: 'Connect to Vendure backends via the Admin GraphQL API',
   icon: undefined,
 
-  auth: {
-    type: 'Vendure Admin API',
-    fields: [
-      {
-        key: 'url',
-        label: 'Backend URL',
-        type: 'url',
-        placeholder: 'https://my-vendure-server.com',
-        required: true,
-      },
-      {
-        key: 'auth_token',
-        label: 'Auth Token',
-        type: 'password',
-        placeholder: 'vendure-auth-token from login',
-        required: true,
-      },
-    ],
-    getHeaders: (credentials) => ({
-      Authorization: `Bearer ${credentials.auth_token}`,
-    }),
-  },
+  auth: vendureAuth,
 
   schemas: {
     products: vendureProductSchema,
@@ -69,6 +49,7 @@ export const createVendureConnector = (options: { barcodeField?: string; stockLo
 export const vendureConnector = createVendureConnector();
 
 // Re-export pieces for advanced usage
+export { vendureAuth, vendureSignIn } from './auth';
 export { vendureProductSchema } from './schemas/products';
 export { vendureProductTraits } from './traits/product';
 export { vendureProductSync } from './sync/products';
