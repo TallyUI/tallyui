@@ -1,7 +1,13 @@
-import type { RxCollection } from 'rxdb';
-import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
+import { addRxPlugin, type RxCollection } from 'rxdb';
+import { RxDBLeaderElectionPlugin } from 'rxdb/plugins/leader-election';
+import { getLocalDocStateByParent, RxDBLocalDocumentsPlugin } from 'rxdb/plugins/local-documents';
+import { BehaviorSubject, concatMap, distinctUntilChanged, filter, map, type Observable, type Subscription } from 'rxjs';
 import { toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import type { CommandTransport, OutboxState } from './types';
+
+// The outbox relies on isLeader() and waitForLeadership(), which RxDB treats as always-leader for a single instance.
+addRxPlugin(RxDBLeaderElectionPlugin);
+addRxPlugin(RxDBLocalDocumentsPlugin);
 
 // Pause after three 401s since the server last accepted credentials.
 const AUTH_FAILURES_BEFORE_PROMPT = 3;
@@ -27,13 +33,22 @@ export interface OrderOutbox {
   /** Moves rejected orders (all, or those whose id is listed) back to pending with a new commandId, then flushes.
    * Orders rejected with idempotency_mismatch are left for reconciliation. Resolves to the number requeued. */
   requeue(orderIds?: string[]): Promise<number>;
+  /** Joins the leadership election and watches for pending orders and flush requests. */
   start(): void;
+  /** Stops watching and retrying. A stopped leader with its database open retains leadership:
+   * no tab sends until that database closes. A tab joins the election only through start(). */
   stop(): void;
   state$: Observable<OutboxState>;
 }
 
 export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const { collection, transport, deviceId } = options;
+  const database = collection.database;
+  if (database.multiInstance) {
+    try { getLocalDocStateByParent(database); } catch {
+      throw new Error('Multi-tab outboxes need localDocuments: true on the database.');
+    }
+  }
   const batchSize = Math.min(options.batchSize ?? 10, 10);
   const initialBackoff = options.initialBackoffMs ?? 1000;
   const maxBackoff = options.maxBackoffMs ?? 60000;
@@ -123,6 +138,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   }
 
   function flush(): Promise<void> {
+    if (!database.isLeader()) {
+      return database.upsertLocal('tally-outbox-flush', { id: uuidv7() }).then(() => {});
+    }
     if (running) return running;
     stopped = false;
     clearTimeout(timer);
@@ -162,14 +180,39 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     },
     start() {
       stopped = false;
-      if (subscription) return;
-      subscription = collection.insert$.subscribe((event) => {
-        if (event.documentData.syncStatus === 'pending') {
+      const alreadyStarted = !!subscription;
+      if (!subscription) subscription = collection.$.subscribe((event) => {
+        if (!database.isLeader()) updateState().catch(() => {});
+        if (event.documentData?.syncStatus === 'pending' &&
+          (event.operation === 'INSERT' || event.operation === 'UPDATE')) {
           insertedDuringRun = true;
           flush().catch(() => {});
         }
       });
-      flush().catch(() => {});
+      if (database.multiInstance && !alreadyStarted) {
+        subscription.add(state$.pipe(
+          filter(() => database.isLeader()),
+          map(({ authRequired, refused, sending, lastRetryReason, nextAttemptAt }) =>
+            ({ authRequired, refused, sending, lastRetryReason, nextAttemptAt })),
+          distinctUntilChanged((a, b) => a.authRequired === b.authRequired &&
+            a.refused?.status === b.refused?.status && a.refused?.reason === b.refused?.reason &&
+            a.sending === b.sending && a.lastRetryReason === b.lastRetryReason && a.nextAttemptAt === b.nextAttemptAt),
+          concatMap(({ authRequired, refused, sending, lastRetryReason, nextAttemptAt }) =>
+            database.upsertLocal('tally-outbox-state', { authRequired, refused, sending, lastRetryReason, nextAttemptAt })),
+        ).subscribe());
+        subscription.add(database.getLocal$('tally-outbox-state').subscribe((doc) => {
+          if (!doc || database.isLeader()) return;
+          state$.next({ ...state$.value, authRequired: doc.get('authRequired'), refused: doc.get('refused'),
+            sending: doc.get('sending'), lastRetryReason: doc.get('lastRetryReason'), nextAttemptAt: doc.get('nextAttemptAt') });
+        }));
+        subscription.add(database.getLocal$('tally-outbox-flush').subscribe((doc) => {
+          if (doc && database.isLeader() && !stopped) flush().catch(() => {});
+        }));
+      }
+      const started = subscription;
+      database.waitForLeadership().then(() => {
+        if (!started.closed && !stopped) flush().catch(() => {});
+      }).catch(() => {});
     },
     stop() {
       stopped = true;

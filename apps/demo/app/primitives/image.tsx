@@ -1,7 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Image as PrimitiveImage } from '@tallyui/primitives';
-import { PRIMARY } from '../../lib/theme-colors';
+import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 const modes = ['cover', 'contain', 'fill'] as const;
 
@@ -72,5 +72,5 @@ const s = StyleSheet.create({
   },
   image: { width: '100%', height: '100%' },
   imageSmall: { width: 120, height: 120, alignSelf: 'center', margin: 20 },
-  info: { fontSize: 13, color: '#6b7280', lineHeight: 18 },
+  info: { fontSize: 13, color: MUTED_FOREGROUND, lineHeight: 18 },
 });

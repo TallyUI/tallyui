@@ -16,13 +16,14 @@ function toDocument(product: Record<string, unknown>) {
 
 /**
  * A pass pages through every product with updated_at >= `updated_at`, in id
- * order, `offset` rows in. `pass_max` is the newest updated_at seen so far
- * this pass, and becomes the next pass's `updated_at`.
+ * order, `offset` rows in. The pass-start mark becomes the next lower bound.
  */
 export type MedusaProductCheckpoint = {
   offset: number;
   updated_at: string;
   pass_max?: string;
+  pass_mark?: string;
+  pass_count?: number;
 };
 
 // The Admin API does not compute variants.inventory_quantity (only the Store
@@ -50,6 +51,23 @@ const MEDUSA_PRODUCT_FIELDS = [
 export const medusaProductReplication: ReplicationAdapter<any, MedusaProductCheckpoint> = {
   pull: {
     async handler(lastCheckpoint, batchSize, context) {
+      const offset = lastCheckpoint?.offset ?? 0;
+      let passMark = lastCheckpoint?.pass_mark ?? lastCheckpoint?.updated_at ?? '';
+      if (offset === 0 && lastCheckpoint?.pass_mark === undefined) {
+        const markResponse = await fetch(
+          `${context.baseUrl}/admin/products?limit=1&order=-updated_at&fields=id,updated_at`,
+          { headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal },
+        );
+        if (!markResponse.ok) {
+          const error = await markResponse.json().catch(() => ({}));
+          throw new Error(`Medusa API error: ${markResponse.status}${error?.message ? `: ${error.message}` : ''}`);
+        }
+        const markData = await markResponse.json();
+        passMark = markData.products?.[0]?.updated_at ?? passMark;
+        if (lastCheckpoint?.updated_at && passMark === lastCheckpoint.updated_at) {
+          return { documents: [], checkpoint: lastCheckpoint };
+        }
+      }
       const params = new URLSearchParams({
         limit: String(batchSize),
         offset: String(lastCheckpoint?.offset ?? 0),
@@ -76,31 +94,28 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
       );
 
       if (!response.ok) {
-        throw new Error(`Medusa API error: ${response.status}`);
+        const error = await response.json().catch(() => ({}));
+        throw new Error(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`);
       }
 
       const data = await response.json();
       const products: any[] = data.products ?? [];
+      if (offset > 0 && (products.length === 0 || data.count < (lastCheckpoint?.pass_count ?? data.count))) {
+        return medusaProductReplication.pull.handler({
+          offset: 0, updated_at: lastCheckpoint?.updated_at ?? '', pass_mark: passMark,
+        }, batchSize, context);
+      }
       const documents = products.map((p) => ({ ...toDocument(p), _deleted: false }));
 
-      // The updated_at window stays fixed for the whole pass, or the offset
-      // would count from a different set. A short page ends the pass; the
-      // next pass starts from the newest updated_at this pass saw.
-      const passMax = products.reduce(
-        (max, p) => (p.updated_at && p.updated_at > max ? p.updated_at : max),
-        lastCheckpoint?.pass_max ?? lastCheckpoint?.updated_at ?? '',
-      );
-      const checkpoint: MedusaProductCheckpoint = products.length === 0
-        ? lastCheckpoint?.pass_max
-          ? { offset: 0, updated_at: lastCheckpoint.pass_max }
-          : lastCheckpoint ?? { offset: 0, updated_at: '' }
-        : products.length >= batchSize
-          ? {
-              offset: (lastCheckpoint?.offset ?? 0) + products.length,
-              updated_at: lastCheckpoint?.updated_at ?? '',
-              pass_max: passMax,
-            }
-          : { offset: 0, updated_at: passMax };
+      // RxDB merges checkpoints, so clear pass state explicitly at completion.
+      const checkpoint: MedusaProductCheckpoint = offset + products.length >= data.count
+        ? { offset: 0, updated_at: passMark, pass_mark: undefined, pass_count: undefined }
+        : {
+            offset: offset + products.length,
+            updated_at: lastCheckpoint?.updated_at ?? '',
+            pass_mark: passMark,
+            pass_count: offset === 0 ? data.count : lastCheckpoint?.pass_count ?? data.count,
+          };
 
       return { documents, checkpoint };
     },

@@ -1,7 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Progress } from '@tallyui/primitives';
-import { PRIMARY } from '../../lib/theme-colors';
+import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function ProgressScreen() {
   return (
@@ -56,8 +56,8 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 16, gap: 8 },
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  info: { fontSize: 14, color: '#6b7280', lineHeight: 20 },
-  label: { fontSize: 13, fontWeight: '600', color: '#6b7280', marginTop: 4 },
+  info: { fontSize: 14, color: MUTED_FOREGROUND, lineHeight: 20 },
+  label: { fontSize: 13, fontWeight: '600', color: MUTED_FOREGROUND, marginTop: 4 },
   track: {
     height: 10,
     backgroundColor: '#e5e7eb',

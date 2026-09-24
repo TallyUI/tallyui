@@ -16,7 +16,7 @@ const STATUS_CONFIG: Record<ConnectionStatus, { label: string; dot: string; text
   connected: { label: 'Connected', dot: 'bg-success', text: 'text-success' },
   disconnected: { label: 'Disconnected', dot: 'bg-muted', text: 'text-muted-foreground' },
   syncing: { label: 'Syncing...', dot: 'bg-info', text: 'text-info' },
-  error: { label: 'Error', dot: 'bg-danger', text: 'text-danger' },
+  error: { label: 'Error', dot: 'bg-destructive', text: 'text-destructive' },
 };
 
 export function ConnectorStatus({
@@ -39,7 +39,7 @@ export function ConnectorStatus({
         </View>
       </View>
       {lastSync && <Text className="text-xs text-muted-foreground">Last sync: {lastSync}</Text>}
-      {error && <Text className="text-xs text-danger">{error}</Text>}
+      {error && <Text className="text-xs text-destructive">{error}</Text>}
     </View>
   );
 }

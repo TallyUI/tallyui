@@ -42,13 +42,18 @@ describe('Medusa auth', () => {
       headers: medusaAdminUserConnector.auth.getHeaders({ token: 'jwt_abc' }),
     };
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ products: [] }), { status: 200 }),
+      new Response(JSON.stringify({ products: [], count: 0 }), { status: 200 }),
+    ).mockResolvedValueOnce(
+      new Response(JSON.stringify({ products: [], count: 0, offset: 0, limit: 100 }), { status: 200 }),
     );
 
     await medusaAdminUserConnector.replication!.products!.pull!.handler(undefined, 100, context);
 
-    expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({
-      Authorization: 'Bearer jwt_abc',
-    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    for (const [, options] of fetchSpy.mock.calls) {
+      expect(options?.headers).toMatchObject({
+        Authorization: 'Bearer jwt_abc',
+      });
+    }
   });
 });

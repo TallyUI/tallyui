@@ -1,7 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Separator } from '@tallyui/primitives';
-import { PRIMARY } from '../../lib/theme-colors';
+import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function SeparatorScreen() {
   return (
@@ -59,7 +59,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  info: { fontSize: 14, color: '#6b7280', lineHeight: 20 },
+  info: { fontSize: 14, color: MUTED_FOREGROUND, lineHeight: 20 },
   card: {
     borderWidth: 1,
     borderColor: '#e5e7eb',
@@ -68,7 +68,7 @@ const s = StyleSheet.create({
     gap: 8,
   },
   cardTitle: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  cardText: { fontSize: 14, color: '#6b7280', lineHeight: 20 },
+  cardText: { fontSize: 14, color: MUTED_FOREGROUND, lineHeight: 20 },
   horizontal: {
     height: 1,
     backgroundColor: '#e5e7eb',

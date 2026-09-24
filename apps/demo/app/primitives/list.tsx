@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { List } from '@tallyui/primitives';
+import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 type Item = { id: string; title: string; subtitle: string };
 
@@ -50,7 +51,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   header: { padding: 16, gap: 4 },
   heading: { fontSize: 18, fontWeight: '700' },
-  info: { fontSize: 14, color: '#6b7280' },
+  info: { fontSize: 14, color: MUTED_FOREGROUND },
   listContent: { paddingHorizontal: 16, paddingBottom: 16 },
   item: {
     height: ITEM_HEIGHT,
@@ -60,5 +61,5 @@ const s = StyleSheet.create({
     paddingHorizontal: 4,
   },
   itemTitle: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  itemSub: { fontSize: 13, color: '#6b7280', marginTop: 2 },
+  itemSub: { fontSize: 13, color: MUTED_FOREGROUND, marginTop: 2 },
 });

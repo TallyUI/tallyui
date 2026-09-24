@@ -31,7 +31,7 @@ export function SearchInput({ value, onChangeText, className, placeholder = 'Sea
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#9ca3af"
+        placeholderTextColorClassName="accent-muted-foreground"
         className="flex-1 text-sm text-foreground"
         style={[{ outlineStyle: 'none' } as any, style]}
         onFocus={(event) => {

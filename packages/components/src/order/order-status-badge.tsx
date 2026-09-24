@@ -10,10 +10,10 @@ export interface OrderStatusBadgeProps extends Omit<ViewProps, 'children'> {
 }
 
 const STATUS_CONFIG: Record<OrderStatus, { label: string; badge: string; dot: string; text: string }> = {
-  pending: { label: 'Pending', badge: 'bg-warning/15', dot: 'bg-warning', text: 'text-warning' },
-  processing: { label: 'Processing', badge: 'bg-info/15', dot: 'bg-info', text: 'text-info' },
-  completed: { label: 'Completed', badge: 'bg-success/15', dot: 'bg-success', text: 'text-success' },
-  refunded: { label: 'Refunded', badge: 'bg-danger/15', dot: 'bg-danger', text: 'text-danger' },
+  pending: { label: 'Pending', badge: 'bg-warning/15', dot: 'bg-warning', text: 'text-foreground' },
+  processing: { label: 'Processing', badge: 'bg-info/15', dot: 'bg-info', text: 'text-foreground' },
+  completed: { label: 'Completed', badge: 'bg-success/15', dot: 'bg-success', text: 'text-foreground' },
+  refunded: { label: 'Refunded', badge: 'bg-destructive/15', dot: 'bg-destructive', text: 'text-foreground' },
   cancelled: { label: 'Cancelled', badge: 'bg-muted/15', dot: 'bg-muted', text: 'text-muted-foreground' },
 };
 

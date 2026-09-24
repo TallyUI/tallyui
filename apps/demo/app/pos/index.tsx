@@ -1,5 +1,6 @@
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { Link, Stack } from 'expo-router';
+import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 const screens = [
   // Input
@@ -32,7 +33,7 @@ export default function POSIndex() {
         style={{ flex: 1, backgroundColor: '#fff' }}
         contentContainerStyle={{ padding: 16, gap: 8 }}
       >
-        <Text style={{ fontSize: 13, fontWeight: '600', color: '#6b7280', marginBottom: 4 }}>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: MUTED_FOREGROUND, marginBottom: 4 }}>
           POS-specific components from @tallyui/components. Tap to see demos.
         </Text>
         {screens.map(({ href, label }) => (

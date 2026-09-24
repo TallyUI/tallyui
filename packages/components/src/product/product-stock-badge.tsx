@@ -24,17 +24,17 @@ const STATUS_STYLES: Record<StockStatus, { badge: string; dot: string; text: str
   in_stock: {
     badge: 'bg-success/15',
     dot: 'bg-success',
-    text: 'text-success',
+    text: 'text-foreground',
   },
   out_of_stock: {
     badge: 'bg-destructive/15',
     dot: 'bg-destructive',
-    text: 'text-destructive',
+    text: 'text-foreground',
   },
   backorder: {
     badge: 'bg-warning/15',
     dot: 'bg-warning',
-    text: 'text-warning',
+    text: 'text-foreground',
   },
   unknown: {
     badge: 'bg-muted/15',
@@ -46,7 +46,7 @@ const STATUS_STYLES: Record<StockStatus, { badge: string; dot: string; text: str
 /**
  * Displays a visual stock status badge for a product.
  *
- * Shows a colored label (In Stock / Out of Stock / On Backorder)
+ * Shows a label (In Stock / Out of Stock / On Backorder) with a dot carrying the colour
  * with an optional quantity count.
  *
  * ```tsx

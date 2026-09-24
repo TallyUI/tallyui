@@ -808,11 +808,13 @@ T1–T11) is complete at `3996453`. The A-track (medusapos) is in progress.
 | 22 | **Vendure (M6)** | The same conformance suite is green against vendure-dev; plugin + connector ≤ 50% of Medusa's line count |
 | 23 | **Outbox: a 404 is visible, not silent.** After item 4 (#39), a `404` from `POST /tally/v1/commands` still retries forever, and `lastRetryReason: 'status_404'` is the only signal. The usual causes are a wrong backend URL or a plugin that isn't installed (added 2026-09-24, from the #39 review) | After N consecutive 404s the outbox pauses with a visible state, as it does for `refused`, and the app shows "backend not found or plugin missing"; a 404 during a deploy blip still recovers without the cashier doing anything |
 | 24 | **Outbox: isolate a poisoned order in a refused batch.** After item 4, a batch-level refusal pauses the whole queue and changes no order. If one malformed order causes the 400, every sale behind it waits (added 2026-09-24, from the #39 review) | With one poisoned order among 25, the outbox bisects down to batch size 1, and that one order lands in needs-attention while the other 24 are applied; a steady refusal of every batch still only pauses |
+| 25 | **Outbox takeover: a stale `authRequired` from the dead leader.** After a takeover, the new leader keeps showing the dead leader's shared `authRequired` until the server answers one of its own requests. If its first sends only get network retries, the stale prompt stays (added 2026-09-24, from the #42 review) | After a takeover, the new leader clears or re-derives the shared pause state before its first send; a test with network retries after a takeover never shows a stale `authRequired` |
+| 26 | **Outbox: a flush request during a send is lost.** A follower's flush request that arrives while the leader is mid-send joins that run instead of queuing another. So signing in while the third 401 is still in flight can leave the outbox paused until the next sale (added 2026-09-24, from the #42 review) | A flush request received during a run triggers one more run after it ends; a test that signs in during an in-flight third 401 ends with the orders applied, without a new sale |
 
 **Recommended order**, driven by what testers will hit first:
 1. Items 1–2, so testers install from npm.
 2. Items 3–7, the robustness of the tester-facing sync, followed by items
-   23–24, which harden the same outbox.
+   23–26, which harden the same outbox.
 3. Items 8–10, catalogue fidelity and the contract.
 4. Items 11–15, feature depth.
 5. Item 16, storage.

@@ -20,6 +20,21 @@ const sources = [root, join(repoRoot, 'apps/demo/app'), join(repoRoot, 'apps/dem
   source: readFileSync(path, 'utf8'),
 }));
 
+const docsRoot = join(repoRoot, 'apps/web/content/docs');
+const docs = readdirSync(docsRoot, { recursive: true, encoding: 'utf8' }).filter((file) => file.endsWith('.mdx')).map((file) => ({
+  file: relative(repoRoot, join(docsRoot, file)),
+  source: readFileSync(join(docsRoot, file), 'utf8'),
+}));
+
+it.each([
+  /\b(bg|text|border)-danger\b/,
+  /\btext-muted(?!-)/,
+  /\bbg-surface\b|surface-alt|--color-surface/,
+  /6366f1|6b7280/i,
+])('has no stale theme tokens in docs matching %s', (pattern) => {
+  expect(docs.filter(({ source }) => pattern.test(source)).map(({ file }) => file)).toEqual([]);
+});
+
 it('has no undefined surface-alt classes', () => {
   expect(sources.filter(({ source }) => source.includes('surface-alt')).map(({ file }) => file)).toEqual([]);
 });
@@ -52,4 +67,30 @@ it('gives product cards a border', () => {
 
 it('gives quick-tender buttons an input border', () => {
   expect(readFileSync(join(root, 'checkout/cash-tendered.tsx'), 'utf8')).toContain('border-input');
+});
+
+it('has no undefined danger classes', () => {
+  expect(sources.filter(({ source }) => /\b(bg|text|border)-danger\b/.test(source)).map(({ file }) => file)).toEqual([]);
+});
+
+it.each(['order/order-status-badge.tsx', 'product/product-stock-badge.tsx'])('%s uses foreground text on status tints', (file) => {
+  expect(readFileSync(join(root, file), 'utf8')).not.toMatch(/text-(success|info|warning|destructive)\b/);
+});
+
+it('has no hard-coded placeholder colour props', () => {
+  expect(sources.filter(({ source }) => /placeholderTextColor=["']#/.test(source)).map(({ file }) => file)).toEqual([]);
+});
+
+it('has no old demo secondary text colour literals', () => {
+  expect(sources.filter(({ source }) => /6b7280/i.test(source)).map(({ file }) => file)).toEqual([]);
+});
+
+it('keeps the demo muted foreground colour equal to the theme token', () => {
+  const tokens = readFileSync(join(repoRoot, 'packages/theme/src/tokens.css'), 'utf8');
+  const theme = tokens.match(/@theme\s*\{([^}]+)\}/)?.[1];
+  const mutedForeground = theme?.match(/--color-muted-foreground:\s*([^;]+);/)?.[1].trim();
+  const demo = readFileSync(join(repoRoot, 'apps/demo/lib/theme-colors.ts'), 'utf8');
+  const demoMutedForeground = demo.match(/export const MUTED_FOREGROUND = ['"]([^'"]+)['"];/)?.[1];
+  expect(mutedForeground).toBeDefined();
+  expect(demoMutedForeground).toBe(mutedForeground);
 });
