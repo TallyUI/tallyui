@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SyncContext } from '@tallyui/core';
 
-import { createVendureProductReplication, vendureProductReplication, type VendureProductCheckpoint } from './products';
+import { createVendureProductReplication, vendureProductReplication, toProductDocument, type VendureProductCheckpoint } from './products';
 import { createVendureConnector } from '../index';
+import { vendureProductTraits } from '../traits/product';
 
 const context: SyncContext = {
   connectorId: 'vendure',
@@ -133,6 +134,17 @@ describe('vendureProductReplication.pull.handler', () => {
 
     expect(result.checkpoint).toEqual(checkpoint);
   });
+
+  it('delivers variants in ascending id order from a shuffled server response', async () => {
+    const shuffled = [{ id: '10' }, { id: '2' }, { id: '9' }];
+    const mockProducts = [{ id: '1', updatedAt: '2026-01-01T00:00:00Z', variants: shuffled }];
+
+    serveProducts(mockProducts as any);
+
+    const result = await vendureProductReplication.pull.handler(undefined, 100, context);
+
+    expect((result.documents[0].variants as any[]).map((v) => v.id)).toEqual(['2', '9', '10']);
+  });
 });
 
 // Simulate Vendure's strict timestamp filter, followed by sorting and offset paging.
@@ -249,5 +261,27 @@ describe('fixed-window passes', () => {
     }
     const doc = { variants: [{ customFields: { barcode: '123', ean: '456' } }] };
     expect(connector.traits.product.getBarcode(doc)).toBe(barcodeField === 'ean' ? '456' : barcodeField ? '123' : undefined);
+  });
+});
+
+describe('toProductDocument variant order', () => {
+  const shuffled = [
+    { id: '10', price: 30, currencyCode: 'EUR' },
+    { id: '2', price: 10, currencyCode: 'EUR' },
+    { id: '9', price: 20, currencyCode: 'EUR' },
+  ];
+
+  it('sorts numeric-id variants by id without mutating the input', () => {
+    const input = [...shuffled];
+    const doc = toProductDocument({ id: '1', variants: input });
+    expect((doc.variants as any[]).map((v) => v.id)).toEqual(['2', '9', '10']);
+    expect(input).toEqual(shuffled);
+  });
+
+  it('gives getPrices the same result regardless of arrival order', () => {
+    const forward = toProductDocument({ id: '1', variants: shuffled });
+    const reversed = toProductDocument({ id: '1', variants: [...shuffled].reverse() });
+    expect(vendureProductTraits.getPrices(forward)).toEqual(vendureProductTraits.getPrices(reversed));
+    expect(vendureProductTraits.getPrices(forward)).toEqual([{ amount: 10, currency: 'EUR', kind: 'base' }]);
   });
 });

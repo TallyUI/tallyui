@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SyncContext } from '@tallyui/core';
 
-import { medusaProductReplication } from './products';
+import { medusaProductReplication, toDocument } from './products';
+import { medusaProductTraits } from '../traits/product';
 
 const context: SyncContext = {
   connectorId: 'medusa',
@@ -113,6 +114,19 @@ describe('medusaProductReplication.pull.handler', () => {
     expect(second.checkpoint).toEqual({ offset: 0, updated_at: '2026-01-01T00:00:13Z' });
   });
 
+  it('delivers variants in ascending id order from a shuffled server response', async () => {
+    const shuffled = [{ id: 'variant_3' }, { id: 'variant_1' }, { id: 'variant_2' }];
+    const mockProducts = [{ id: 'prod_01', updated_at: '2026-01-01T00:00:00Z', variants: shuffled }];
+
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ products: mockProducts })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ products: mockProducts, count: 1 }), { status: 200 }));
+
+    const result = await medusaProductReplication.pull.handler(undefined, 100, context);
+
+    expect((result.documents[0].variants as any[]).map((v) => v.id)).toEqual(['variant_1', 'variant_2', 'variant_3']);
+  });
+
   it.each([0, 50])('throws on non-OK response at offset %i', async (offset) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response('Internal Server Error', { status: 500 }),
@@ -165,5 +179,27 @@ describe('medusaProductReplication.pull.handler', () => {
     expect(restarted.get('offset')).toBe('0');
     expect(restarted.get('updated_at[$gte]')).toBe(checkpoint.updated_at);
     expect(restarted.has('updated_at[gte]')).toBe(false);
+  });
+});
+
+describe('toDocument variant order', () => {
+  const shuffled = [
+    { id: 'variant_3', prices: [{ amount: 30, currency_code: 'eur' }] },
+    { id: 'variant_1', prices: [{ amount: 10, currency_code: 'eur' }] },
+    { id: 'variant_2', prices: [{ amount: 20, currency_code: 'eur' }] },
+  ];
+
+  it('sorts variants by id without mutating the input', () => {
+    const input = [...shuffled];
+    const doc = toDocument({ id: 'prod_01', variants: input });
+    expect((doc.variants as any[]).map((v) => v.id)).toEqual(['variant_1', 'variant_2', 'variant_3']);
+    expect(input).toEqual(shuffled);
+  });
+
+  it('gives getPrices the same result regardless of arrival order', () => {
+    const forward = toDocument({ id: 'prod_01', variants: shuffled });
+    const reversed = toDocument({ id: 'prod_01', variants: [...shuffled].reverse() });
+    expect(medusaProductTraits.getPrices(forward)).toEqual(medusaProductTraits.getPrices(reversed));
+    expect(medusaProductTraits.getPrices(forward)).toEqual([{ amount: 1000, currency: 'EUR', kind: 'base' }]);
   });
 });
