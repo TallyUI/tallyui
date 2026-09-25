@@ -90,6 +90,12 @@ export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollectio
     // once the run has settled. And RxDB never overwrites a version-1 copy (it drops the assumed
     // state): a stale copy wins its conflict, or 16.21 loops on it. Yet a copy is only ever an earlier
     // version-0 state (the collection opens only once version 0 is gone), so the newer state goes first.
+    // A rare exception: after a rollback, an older build's one-time carry-over (for example medusapos's
+    // Dexie import, run again from a leftover Dexie database, after a failed removal or from an old tab)
+    // can bulk-insert an older state of order A into an empty version 0 while version 1 holds A as sent.
+    // This overwrite then makes A pending again, and it is sent twice; the server's commandId idempotency
+    // is what stops a double charge. Also, a deleted version-0 order that has a copy is skipped in
+    // writeOverStaleCopies, so RxDB would still loop on it if anything ever deleted a pos_orders document.
     const settled = new Subject<void>();
     const migrateStorage = state.migrateStorage.bind(state);
     state.migrateStorage = async (from, to, batchSize) => {
