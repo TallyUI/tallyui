@@ -112,6 +112,57 @@ describe('OrderManager', () => {
     expect(resumed.payments[0]).toMatchObject(payment);
   });
 
+  it('keeps a mixed cart\'s per-line tax mode through park/resume (ADR-062 fixture, plus a line discount)', async () => {
+    const mixedTaxContext: TaxContext = { getTaxRatePpm: () => 190000, pricesIncludeTax: false };
+    const mgr = createOrderManager({ currency: 'EUR', taxContext: mixedTaxContext, draftsCollection: db.pos_drafts });
+    const builder = await firstValueFrom(mgr.activeOrder$);
+    const aId = builder.addLine({
+      productId: 'a', name: 'Inclusive', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: true }, quantity: 3,
+    });
+    builder.addLine({ productId: 'b', name: 'Store mode', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyLineDiscount(aId, { type: 'fixed', value: 100, label: 'Line offer' });
+    builder.applyOrderDiscount({ type: 'fixed', value: 50 });
+    const parked = builder.getSnapshot();
+
+    await mgr.parkCurrentOrder();
+    const resumed = (await mgr.resumeOrder(parked.id)).getSnapshot();
+
+    expect(resumed).toMatchObject({
+      subtotalMinor: parked.subtotalMinor, discountMinor: parked.discountMinor,
+      taxMinor: parked.taxMinor, totalMinor: parked.totalMinor,
+    });
+    expect(resumed.display).toEqual(parked.display);
+    resumed.lineItems.forEach((line, index) => {
+      expect(line.taxInclusive).toBe(parked.lineItems[index].taxInclusive);
+      expect(line.priceTaxModeConverted).toBe(parked.lineItems[index].priceTaxModeConverted);
+    });
+  });
+
+  it.each([
+    { taxInclusive: true, label: 'all-inclusive' },
+    { taxInclusive: false, label: 'all-exclusive' },
+  ])('keeps a $label cart identical through park/resume', async ({ taxInclusive }) => {
+    const singleModeTaxContext: TaxContext = { getTaxRatePpm: () => 190000, pricesIncludeTax: taxInclusive };
+    const mgr = createOrderManager({ currency: 'EUR', taxContext: singleModeTaxContext, draftsCollection: db.pos_drafts });
+    const builder = await firstValueFrom(mgr.activeOrder$);
+    builder.addLine({ productId: 'a', name: 'Item A', unitPrice: { amount: 1000, currency: 'EUR' }, quantity: 3 });
+    builder.addLine({ productId: 'b', name: 'Item B', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyOrderDiscount({ type: 'fixed', value: 50 });
+    const parked = builder.getSnapshot();
+
+    await mgr.parkCurrentOrder();
+    const resumed = (await mgr.resumeOrder(parked.id)).getSnapshot();
+
+    expect(resumed).toMatchObject({
+      subtotalMinor: parked.subtotalMinor, discountMinor: parked.discountMinor,
+      taxMinor: parked.taxMinor, totalMinor: parked.totalMinor,
+    });
+    expect(resumed.display).toEqual(parked.display);
+    resumed.lineItems.forEach((line, index) => {
+      expect(line.taxInclusive).toBe(parked.lineItems[index].taxInclusive);
+    });
+  });
+
   it('starts with an active order', async () => {
     const mgr = createOrderManager({ currency: 'USD', taxContext, draftsCollection: db.pos_drafts });
     const builder = await firstValueFrom(mgr.activeOrder$);

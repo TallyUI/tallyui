@@ -106,7 +106,7 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
           name: line.name,
           sku: line.sku,
           imageUrl: line.imageUrl,
-          unitPrice: { amount: line.unitPriceMinor, currency },
+          unitPrice: { amount: line.unitPriceMinor, currency, taxInclusive: line.taxInclusive },
           quantity: line.quantity,
           taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })),
         });
