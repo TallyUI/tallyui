@@ -40,7 +40,8 @@
     "react-native-svg": ">=15"
   },
   "dependencies": {
-    "class-variance-authority": "^0.7.1"
+    "class-variance-authority": "^0.7.1",
+    "@tallyui/pos": "workspace:*"
   },
   "devDependencies": {
     "@tallyui/connector-medusa": "workspace:*",
