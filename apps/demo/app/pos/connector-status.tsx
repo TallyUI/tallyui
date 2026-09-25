@@ -30,6 +30,12 @@ export default function ConnectorStatusScreen() {
             lastSync="1 hour ago"
           />
         </View>
+        <View className="gap-3">
+          <Text className="text-lg font-bold">Unsold Products</Text>
+          <ConnectorStatus name="Medusa" status="connected" lastSync="2 minutes ago" unsoldCount={54} />
+          <ConnectorStatus name="Medusa" status="connected" lastSync="2 minutes ago" unsoldCount={54} unsoldStale />
+          <ConnectorStatus name="Medusa" status="connected" lastSync="2 minutes ago" unsoldCount={1} />
+        </View>
       </ScrollView>
     </>
   );
