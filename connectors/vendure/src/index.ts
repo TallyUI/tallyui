@@ -8,6 +8,7 @@ import { createVendureProductReplication } from './replication/products';
 import { createVendureVariantFeedReplication } from './replication/variant-feed';
 import { vendureStockReconcile } from './reconcile/stock';
 import { createFetchByIds, fetchPages, variantIds } from './reconcile/ids';
+import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from './reconcile/prices';
 import { vendureStoreSettings } from './store-settings';
 import { vendureGlobalStockSettings } from './global-settings';
 
@@ -74,6 +75,7 @@ export const createVendureConnector = (options: {
     reconcile: {
       stock: vendureStockReconcile,
       ids: { fetchPages, variantIds, enqueue: idFeed.enqueue },
+      prices: { fetchPages: fetchPricePages, fingerprint: priceFingerprint, enqueue: idFeed.enqueue },
     },
 
     storeSettings: vendureStoreSettings,

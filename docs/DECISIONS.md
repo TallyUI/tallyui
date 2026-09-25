@@ -1718,6 +1718,9 @@ interface OrderCreatePayload {
              - Priced documents show a sale on 242 products (684
                variants).
              - D2a's nightly base-price pass still finds no drift.
+     - **Vendure gets the same nightly base-price backstop
+       (`reconcile.prices`).** Its concrete drift is a tax-rate change,
+       which moves `priceWithTax` with no `updatedAt` bump.
   6. **Vendure servers run in UTC**, both the process and the database
      session, or set `updatedAtSkewMs`. The Vendure quick-start says so.
 - **Job order**, decided by value to the shipping product (amendment 3).
