@@ -13,6 +13,10 @@ export type { TaxLineInput, OrderTaxTotals } from './tax';
 export type { TaxProviderProps } from './tax';
 export type { TaxRateMap, TaxContext } from './tax';
 
+// Store settings
+export { resolveStoreSettings, useStoreSettings, withPricingContext, taxProviderProps } from './store-settings';
+export type { StoreSettingsResolution, ResolveStoreSettingsOptions, StoreSettingsState } from './store-settings';
+
 // Repository
 export { createRepository } from './repository';
 export type { Repository } from './repository';
