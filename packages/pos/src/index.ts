@@ -8,8 +8,8 @@ export type { CurrencyProviderProps } from './currency';
 
 // Tax
 export { TaxProvider, useTax } from './tax';
-export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, computeOrderTax } from './tax';
-export type { TaxLineInput, OrderTaxTotals } from './tax';
+export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, computeOrderTax, taxLinesByRate } from './tax';
+export type { TaxLineInput, OrderTaxTotals, RateTaxLine } from './tax';
 export type { TaxProviderProps } from './tax';
 export type { TaxRateMap, TaxContext } from './tax';
 
@@ -64,3 +64,4 @@ export { RegisterSessionRequiredError, RegisterSessionClosedError, RegisterMovem
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';
 export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows } from './register';
 export type { Correction, RecordedFigures, ClosureScope } from './register';
+export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact } from './register';

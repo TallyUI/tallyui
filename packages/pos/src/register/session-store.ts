@@ -5,11 +5,13 @@
  * Everything here writes local-only collections (`schemas.ts`). WCPOS's outbox (`pending`,
  * `retryMovement`) moves to registers job c. A session's sales are the `pos_orders` documents
  * whose `sessionId` is the session's id, and their payments are its ledger rows. Refunds are
- * not attributed yet (no refund model, as in `deriveExpected`), and the closure has no per-rate
- * tax breakdown: `PosOrder` carries tax as per-line micros, and a Z report's per-rate rounding is
- * a decision of its own.
+ * not attributed yet (no refund model, as in `deriveExpected`). The frozen closure's money
+ * breakdowns (`payment_methods`, `opening_float`, `movements`, `tax_rates`) are minor-unit
+ * integers, the same convention as the closure row itself; `closure-document.ts` converts them
+ * to the decimal strings its envelope carries.
  */
 import type { RxCollection } from 'rxdb';
+import { taxLinesByRate } from '../tax/exact';
 import type { PosOrder } from '../pos-order/types';
 import { deriveExpected, type LedgerRow } from './expected';
 import { countVariance } from './register-count.helpers';
@@ -337,6 +339,21 @@ export async function writeClosure({
     const method = row.kind === 'cash' ? 'cash' : row.method_id;
     payment_methods[method] = { sales_minor: (payment_methods[method]?.sales_minor ?? 0) + row.amountMinor, refunds_minor: 0 };
   }
+  // Same per-rate split a receipt shows (`taxLinesByRate`), run per order so each order's rates
+  // add up to its own taxMinor, then summed across the session's orders by rate. A line's own
+  // taxInclusive overrides the order's, matching PosOrderLine's own fallback convention.
+  const taxRates = new Map<string, { ratePpm: number; net_minor: number; tax_minor: number }>();
+  for (const order of bound) {
+    const lines = order.lines.map((line) => ({ ...line, taxInclusive: line.taxInclusive ?? order.pricesIncludeTax }));
+    for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(lines, order.taxMinor)) {
+      const existing = taxRates.get(String(ratePpm));
+      taxRates.set(String(ratePpm), {
+        ratePpm,
+        net_minor: (existing?.net_minor ?? 0) + netMinor,
+        tax_minor: (existing?.tax_minor ?? 0) + amountMinor,
+      });
+    }
+  }
   const unsynced = bound.filter((order) => order.syncStatus === 'pending');
   const draft: Closure = {
     id: session.id,
@@ -368,6 +385,11 @@ export async function writeClosure({
       opened_by: session.opened_by ?? null,
       approved_by: session.approved_by ?? null,
       payment_methods,
+      tax_rates: Object.fromEntries(
+        [...taxRates.values()].map(({ ratePpm, net_minor, tax_minor }) => [
+          ratePpm, { name: `Tax ${ratePpm / 10000}%`, net_minor, tax_minor, gross_minor: net_minor + tax_minor },
+        ]),
+      ),
       opening_float: {
         expected_minor: session.expected_float_minor ?? null,
         counted_minor: session.counted_float_minor,

@@ -248,6 +248,87 @@ it('sums the Z: float plus net cash sales, pay-ins and pay-outs, without the voi
   expect(closure.movement_ids).toHaveLength(4);
 });
 
+// TallyUI-only (#134 review): writeClosure freezes a per-rate tax breakdown in minor units, the
+// same split a receipt shows (taxLinesByRate), summed across the session's orders by rate.
+it('freezes a per-rate tax breakdown, summed across orders, that matches each order\'s own taxMinor', async () => {
+  const session = await openSession(db.register_sessions, {
+    registerId: 'register', expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: '7',
+    businessDay: { year: 2026, month: 9, day: 16 },
+  });
+  const taxed = (priceMinor: number) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 200000, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: priceMinor, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: Math.round(priceMinor * 1.2) });
+    return { ...finalizeOrder(builder.getSnapshot(), { registerId: 'register', cashierRef: '7' }), sessionId: session.id };
+  };
+  const orders = [taxed(1000), taxed(500)];
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 1800 }, closedBy: '7' });
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 1800,
+    otherTenders: {}, movements: [], orders, softwareVersion: '1.0.0', timezone: 'UTC',
+  });
+  const [rate] = Object.values(
+    closure.breakdowns.tax_rates as Record<string, { net_minor: number; tax_minor: number; gross_minor: number }>,
+  );
+  expect(rate).toMatchObject({ net_minor: 1500, tax_minor: 300, gross_minor: 1800 });
+  expect(rate.tax_minor).toBe(orders.reduce((sum, o) => sum + o.taxMinor, 0));
+});
+
+// TallyUI-only (#134 second review): a tax-inclusive line's netMinor already contains its tax, so
+// the tax-free base is netMinor minus that tax, not netMinor itself — the same two orders as
+// above, priced inclusive, must freeze the same net/tax/gross, with gross equal to what was paid.
+it('freezes the tax-free net for tax-inclusive orders, not the tax-inclusive netMinor', async () => {
+  const session = await openSession(db.register_sessions, {
+    registerId: 'register', expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: '7',
+    businessDay: { year: 2026, month: 9, day: 16 },
+  });
+  const taxed = (grossMinor: number) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 200000, pricesIncludeTax: true } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: grossMinor, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: grossMinor });
+    return { ...finalizeOrder(builder.getSnapshot(), { registerId: 'register', cashierRef: '7' }), sessionId: session.id };
+  };
+  const orders = [taxed(1200), taxed(600)];
+  const paidMinor = orders.reduce((sum, o) => sum + o.totalMinor, 0);
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: paidMinor }, closedBy: '7' });
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: paidMinor,
+    otherTenders: {}, movements: [], orders, softwareVersion: '1.0.0', timezone: 'UTC',
+  });
+  const [rate] = Object.values(
+    closure.breakdowns.tax_rates as Record<string, { net_minor: number; tax_minor: number; gross_minor: number }>,
+  );
+  expect(rate).toMatchObject({ net_minor: 1500, tax_minor: 300, gross_minor: 1800 });
+  expect(rate.gross_minor).toBe(paidMinor);
+});
+
+// TallyUI-only (#134 second review): one order mixing an inclusive and an exclusive line at the
+// same rate — each line's own mode sets its tax-free base, and the rate's net/tax still sum to
+// its gross, which still sums to what the order actually charged.
+it('sums an inclusive and an exclusive line at the same rate to one correct rate total', async () => {
+  const session = await openSession(db.register_sessions, {
+    registerId: 'register', expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: '7',
+    businessDay: { year: 2026, month: 9, day: 16 },
+  });
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 200000, pricesIncludeTax: false } });
+  builder.addLine({ productId: 'excl', name: 'Exclusive item', unitPrice: { amount: 800, currency: 'EUR' } });
+  builder.addLine({ productId: 'incl', name: 'Inclusive item', unitPrice: { amount: 1200, currency: 'EUR', taxInclusive: true } });
+  const totalMinor = builder.getSnapshot().totalMinor;
+  builder.addPayment({ method: 'cash', amountMinor: totalMinor });
+  const order = { ...finalizeOrder(builder.getSnapshot(), { registerId: 'register', cashierRef: '7' }), sessionId: session.id };
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: totalMinor }, closedBy: '7' });
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: totalMinor,
+    otherTenders: {}, movements: [], orders: [order], softwareVersion: '1.0.0', timezone: 'UTC',
+  });
+  const [rate] = Object.values(
+    closure.breakdowns.tax_rates as Record<string, { net_minor: number; tax_minor: number; gross_minor: number }>,
+  );
+  expect(rate).toMatchObject({ net_minor: 1800, tax_minor: 360, gross_minor: 2160 });
+  expect(rate.net_minor + rate.tax_minor).toBe(rate.gross_minor);
+  expect(rate.gross_minor).toBe(order.totalMinor);
+});
+
 // TallyUI: the three collections are local only (the #53 rule). Every RxDB replication, including
 // every `startReplication`, registers its collection in REPLICATION_STATE_BY_COLLECTION (the
 // control below shows the probe sees one). After the whole write path, none of the three is there:
