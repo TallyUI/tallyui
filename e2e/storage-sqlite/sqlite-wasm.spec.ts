@@ -73,6 +73,22 @@ test.describe('storage-sqlite worker cold start (real Chromium, ADR-061)', () =>
     expect(await page.evaluate(() => (window as any).tally.count())).toBe(3);
   });
 
+  test('a connector schema bump drops on the real engine: version 0 reopened as version 1 is empty, and a version-1 document inserts', async ({ page }) => {
+    await page.goto('/');
+    expect((await openDb(page, DB_NAME)).ok).toBe(true);
+    await page.evaluate(() => (window as any).tally.insertMany(3));
+    expect(await page.evaluate(() => (window as any).tally.count())).toBe(3);
+    await page.evaluate(() => (window as any).tally.close());
+
+    // A reload stands in for the upgrade: a new bundle opens the same database with the version-1 schema.
+    await page.reload();
+    const reopened = await page.evaluate((name) => (window as any).tally.open(name, 1), DB_NAME);
+    expect(reopened.ok, JSON.stringify(reopened)).toBe(true);
+    expect(await page.evaluate(() => (window as any).tally.count())).toBe(0);
+    await page.evaluate(() => (window as any).tally.insertPriced());
+    expect(await page.evaluate(() => (window as any).tally.count())).toBe(1);
+  });
+
   test('close, storage.terminate(), then a new storage reopens the database within 10s', async ({ page }) => {
     await page.goto('/');
     expect((await openDb(page, DB_NAME)).ok).toBe(true);

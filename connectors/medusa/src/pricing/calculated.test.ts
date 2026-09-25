@@ -5,7 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { resolvePrice, type SyncContext } from '@tallyui/core';
-import { startFingerprintReconcile } from '@tallyui/database';
+import { connectorCollection, startFingerprintReconcile } from '@tallyui/database';
 import { medusaProductSchema, type MedusaCalculatedPrice, type MedusaProductDocument } from '../schemas/products';
 import { medusaProductTraits } from '../traits/product';
 import { medusaConnector } from '../index';
@@ -96,7 +96,7 @@ describe('the publishable key never leaks', () => {
     const db = await createRxDatabase({
       name: `medusakeyleak${Date.now()}`, multiInstance: false, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ products: { schema: medusaProductSchema } });
+    await db.addCollections({ products: connectorCollection(medusaProductSchema) });
     // startDelayMs 0: the timer path, which logs the failure with console.warn.
     const runner = startFingerprintReconcile({
       collection: db.products, adapter: medusaConnector.reconcile!.calculatedPrices!, context, reSync: () => {}, startDelayMs: 0,
@@ -167,13 +167,13 @@ describe('Medusa price traits in priced mode', () => {
   });
 });
 
-describe('the Medusa schema stores calculated_price without a schema change', () => {
+describe('the Medusa schema (version 1) declares and stores calculated_price', () => {
   it('accepts variants carrying a full calculated_price object, and null', async () => {
     const db = await createRxDatabase({
       name: `medusacalcschema${Date.now()}`, multiInstance: false,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ products: { schema: medusaProductSchema } });
+    await db.addCollections({ products: connectorCollection(medusaProductSchema) });
     const full = { ...calc({ calculated_amount: 8, type: 'sale' }), id: 'pset_1', original_price: { id: 'price_1' } };
     const base = { handle: 'h', status: 'published' };
     await db.products.insert({ ...base, id: 'prod_full', handle: 'full', variants: [{ id: 'v1', prices: [], calculated_price: full }] });

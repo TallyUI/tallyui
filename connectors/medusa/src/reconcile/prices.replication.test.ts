@@ -5,7 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { startFingerprintReconcile, startIdReconcile } from '@tallyui/database';
+import { connectorCollection, startFingerprintReconcile, startIdReconcile } from '@tallyui/database';
 import { medusaProductSchema } from '../schemas/products';
 import { medusaConnector } from '../index';
 
@@ -81,7 +81,7 @@ async function start(products: Product[]) {
     name: `medusapricereconcile${++databaseNumber}`, multiInstance: false,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
   });
-  await db.addCollections({ products: { schema: medusaProductSchema } });
+  await db.addCollections({ products: connectorCollection(medusaProductSchema) });
   serve(products);
   replication = replicateRxCollection<any, any>({
     collection: db.products, replicationIdentifier: 'medusa-price-reconcile-proof',
@@ -136,7 +136,7 @@ describe('Medusa price reconcile, run against a real RxDB replication', () => {
       name: `medusapricereconcile${++databaseNumber}`, multiInstance: false,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ products: { schema: medusaProductSchema } });
+    await db.addCollections({ products: connectorCollection(medusaProductSchema) });
     serve(products);
     replication = replicateRxCollection<any, any>({
       collection: db.products, replicationIdentifier: 'medusa-price-reconcile-proof',

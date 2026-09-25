@@ -5,6 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { connectorCollection } from '@tallyui/database';
 import { medusaProductSchema } from '../schemas/products';
 import { medusaProductReplication, type MedusaProductCheckpoint } from './products';
 
@@ -49,7 +50,7 @@ async function setup(size: number, tied = false, afterFirstPage?: (rows: Map<str
     multiInstance: false,
   });
   cleanup.push(() => db.close());
-  const { products } = await db.addCollections({ products: { schema: medusaProductSchema } });
+  const { products } = await db.addCollections({ products: connectorCollection(medusaProductSchema) });
   const state = replicateRxCollection<any, MedusaProductCheckpoint>({
     collection: products, replicationIdentifier: 'medusa-products',
     live: true, waitForLeadership: false,

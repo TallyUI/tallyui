@@ -1,4 +1,4 @@
-import { createRxDatabase, addRxPlugin, type RxDatabase, type RxCollection } from 'rxdb';
+import { createRxDatabase, addRxPlugin, type MigrationStrategies, type RxDatabase, type RxCollection } from 'rxdb';
 import type { Observable } from 'rxjs';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { RxDBLocalDocumentsPlugin } from 'rxdb/plugins/local-documents';
@@ -7,6 +7,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 
 import type { TallyConnector } from '@tallyui/core';
 
+import { connectorCollection } from './connector-collection';
 import { STOCK_LEVELS_COLLECTION, stockLevelsCollection } from './stock-levels';
 import { WEB_STORAGE_ENGINE } from './engine';
 import { withStorageWatchdog, type StorageHealth } from './storage-watchdog';
@@ -62,12 +63,16 @@ export async function createTallyDatabase(options: CreateDatabaseOptions): Promi
   const watched = storage?.tallyEngine === WEB_STORAGE_ENGINE ? withStorageWatchdog(storage) : undefined;
   const effectiveStorage = watched ?? storage;
 
-  const collectionConfigs: Record<string, { schema: any; localDocuments?: boolean }> = {};
+  const collectionConfigs: Record<string, { schema: any; localDocuments?: boolean; migrationStrategies?: MigrationStrategies }> = {};
   for (const [collectionName, schema] of Object.entries(connector.schemas)) {
-    collectionConfigs[collectionName] = { schema };
+    // A connector schema's version bump drops every document (see ConnectorSchemas);
+    // startReplication's new identifier then resyncs them. autoMigrate stays on.
+    collectionConfigs[collectionName] = connectorCollection(schema);
   }
   // The stock reconcile overlay (ADR-060): local only, never replicated. Its
-  // local documents hold the time of the last successful pass.
+  // local documents hold the time of the last successful pass. It gets no
+  // migration strategies and must stay at version 0, since a drop would lose
+  // local data. `pos_orders` is local too; `@tallyui/pos` creates it, not this.
   if (connector.reconcile?.stock) {
     if (STOCK_LEVELS_COLLECTION in collectionConfigs) {
       throw new Error(`Connector "${connector.id}" defines a "${STOCK_LEVELS_COLLECTION}" collection; that name is reserved for the stock reconcile overlay.`);

@@ -6,6 +6,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { connectorCollection } from '@tallyui/database';
 import type { SyncContext } from '@tallyui/core';
 import { medusaAdminUserAuth, medusaConnector, medusaProductSchema } from '../index';
 import { medusaStoreSettings } from '../store-settings';
@@ -63,7 +64,7 @@ describe.skipIf(!MEDUSA_DEV_URL || !MEDUSA_DEV_EMAIL || !MEDUSA_DEV_PASSWORD)('l
       name: `medusa_first_sync_live_${Date.now()}`, multiInstance: false,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ products: { schema: medusaProductSchema } });
+    await db.addCollections({ products: connectorCollection(medusaProductSchema) });
 
     // Count the first sync's requests and bytes by wrapping fetch.
     const realFetch = globalThis.fetch;

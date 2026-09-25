@@ -1711,6 +1711,27 @@ interface OrderCreatePayload {
 - **Until job A lands, neither POS (medusapos or vendurepos) treats
   replicated stock as live.** The connectors' stock is only as fresh as the
   last product-level change.
+- **Amendment 9. Connector schema bumps are drop-and-resync, by rule
+  (2026-09-25, backlog 44).** A connector schema describes a server-owned,
+  pull-replicated collection.
+  - A version bump drops its documents: `createTallyDatabase` supplies
+    `v => null` strategies.
+  - It also resets the checkpoint: `startReplication`'s identifier gains
+    `-v<version>` above version 0. With #97's seed, the catalogue then
+    downloads once.
+  - **Why not an identity transform:**
+    - Under a fresh replication identifier, every migrated document
+      looks locally changed to the downstream. That is exactly the
+      skip-the-next-pull failure the no-local-writes rule exists to
+      prevent.
+    - It would also keep documents the server deleted in the meantime.
+  - **An upgrade arrives over the network** (a web bundle or a store
+    update). So the till was online moments before, and it resyncs in
+    about 17 s on medusa-dev.
+  - **A consumer that wants an offline-safe upgrade must ship the bump
+    while online.**
+  - Local-only collections (`stock_levels`, `pos_orders`) are never part
+    of this rule.
 
 ## ADR-061 TallyUI databases are single-instance; web storage is RxDB Premium SQLite-wasm
 

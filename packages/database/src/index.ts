@@ -1,5 +1,6 @@
 export { createTallyDatabase, getStorageHealth } from './create-db';
 export type { TallyDatabase, CreateDatabaseOptions } from './create-db';
+export { connectorCollection } from './connector-collection';
 
 export { getStorage } from './storage';
 

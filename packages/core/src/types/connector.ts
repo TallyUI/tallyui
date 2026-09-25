@@ -84,6 +84,11 @@ export interface SyncContext {
 /**
  * Schema definitions for a connector.
  * Each connector provides its own RxDB schemas that mirror its API shape.
+ *
+ * Each describes a server-owned, pull-replicated collection (ADR-060), so its
+ * versions never transform documents: a version bump drops and resyncs.
+ * `createTallyDatabase` drops the old documents, and `startReplication` resets
+ * the checkpoint, so the first sync after the bump downloads the collection again.
  */
 export interface ConnectorSchemas {
   products: RxJsonSchema<any>;
