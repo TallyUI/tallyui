@@ -134,7 +134,28 @@ describe('Vendure price reconcile, run against a real RxDB replication', () => {
     runner.stop();
   }, 60000);
 
-  it('mutation check: a fingerprint that always agrees never catches the drift', async () => {
+  it('a local document missing a price field (no priceWithTax) is refetched once, then stable', async () => {
+    const products = makeProducts();
+    const connector = await start(products);
+
+    const target = (await db.products.findOne('5').exec())!;
+    const { priceWithTax: _priceWithTax, ...withoutPriceWithTax } = target.toJSON().variants[0];
+    await target.incrementalPatch({ variants: [withoutPriceWithTax] });
+
+    const runner = runnerFor(connector.reconcile!.prices!);
+    const first = await runner.reconcile();
+    expect(first.queued).toBe(1);
+    await replication!.awaitInSync();
+
+    const delivered = (await db.products.findOne('5').exec())!.toJSON();
+    expect(delivered.variants[0].priceWithTax).toBe(1100);
+
+    const second = await runner.reconcile();
+    expect(second.queued).toBe(0);
+    runner.stop();
+  }, 60000);
+
+  it('mutation check: a constant local fingerprint disagrees with every product and queues the whole catalogue', async () => {
     const products = makeProducts();
     const connector = await start(products);
 

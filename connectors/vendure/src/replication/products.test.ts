@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SyncContext } from '@tallyui/core';
 
-import { createVendureProductReplication, vendureProductReplication, toProductDocument, type VendureProductCheckpoint } from './products';
+import { createVendureProductReplication, vendureProductReplication, toProductDocument, probeUpdatedAtSkew, type VendureProductCheckpoint } from './products';
 import { createVendureConnector } from '../index';
 import { vendureProductTraits } from '../traits/product';
 
@@ -56,7 +56,7 @@ describe('vendureProductReplication.pull.handler', () => {
     expect(body.variables.options.filter).toBeUndefined();
   });
 
-  it('passes updatedAt filter and skip from checkpoint', async () => {
+  it('passes updatedAt filter and skip from a mid-pass checkpoint', async () => {
     const mockProducts = [
       { id: '3', name: 'Thingamajig', updatedAt: '2026-02-01T00:00:00Z' },
     ];
@@ -67,7 +67,12 @@ describe('vendureProductReplication.pull.handler', () => {
       }),
     );
 
-    const checkpoint = { skip: 50, updatedAt: '2026-01-15T00:00:00Z' };
+    // A current-shape mid-pass checkpoint (passHighWater/passTotal set): skip
+    // and filter pass straight through, with no mark or probe request.
+    const checkpoint = {
+      skip: 50, updatedAt: '2026-01-15T00:00:00Z',
+      passHighWater: '2026-02-01T00:00:00Z', passTotal: 1,
+    };
     const result = await vendureProductReplication.pull.handler(checkpoint, 100, context);
 
     const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
@@ -76,7 +81,7 @@ describe('vendureProductReplication.pull.handler', () => {
       updatedAt: { after: '2026-01-14T23:59:59.999Z' },
     });
 
-    // Reaching totalItems resets skip to 0, including legacy checkpoints
+    // Reaching totalItems resets skip to 0
     expect(result.checkpoint.skip).toBe(0);
   });
 
@@ -173,7 +178,12 @@ describe('fixed-window passes', () => {
     const fetch = serveProducts([{ id: '1', updatedAt: timestamp }]);
     fetch.mockResolvedValueOnce(gqlResponse({ products: { items: [], totalItems: 0 } }));
     const adapter = createVendureProductReplication(undefined, 2 * 3600e3);
-    const result = await adapter.pull.handler({ skip: 50, updatedAt: '2025-12-31T00:00:00.000Z' }, 2, context);
+    // A current-shape mid-pass checkpoint, so this exercises the empty-page
+    // restart below, not the old-shape normalisation (backlog 30).
+    const result = await adapter.pull.handler({
+      skip: 50, updatedAt: '2025-12-31T00:00:00.000Z',
+      passHighWater: '2025-12-31T00:00:00.000Z', passTotal: 0,
+    }, 2, context);
     const options = fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string).variables.options);
     expect(options.map((option) => option.filter?.updatedAt.after)).toEqual([
       '2025-12-30T21:59:59.999Z', undefined,
@@ -248,6 +258,50 @@ describe('fixed-window passes', () => {
     expect(second.checkpoint).toEqual({ skip: 1000, updatedAt: lowerBound, passHighWater: timestamp, passTotal: 1900 });
   });
 
+  it('gives the mark and both skew probes their own minimal query (backlog 29)', async () => {
+    const fetch = serveProducts([{ id: '1', updatedAt: timestamp }]);
+    await vendureProductReplication.pull.handler(undefined, 10, context);
+
+    const queries = fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string).query as string);
+    expect(queries).toHaveLength(4); // mark, the two skew probes, then the page.
+    for (const query of queries.slice(0, 3)) {
+      expect(query).toContain('items { id updatedAt }');
+      expect(query).not.toContain('variants');
+    }
+    expect(queries[3]).toContain('variants {'); // the page query is unchanged.
+  });
+
+  it('restarts once from an old-shape (pre-#45) mid-pass checkpoint, then syncs normally (backlog 30)', async () => {
+    const products = [
+      { id: '1', updatedAt: timestamp }, { id: '2', updatedAt: timestamp }, { id: '3', updatedAt: timestamp },
+    ];
+    const fetch = serveProducts(products);
+    // The shape saved mid-pass before #45 added passHighWater/passTotal:
+    // skip and updatedAt only.
+    const oldShape: VendureProductCheckpoint = { skip: 1, updatedAt: '2025-12-31T00:00:00.000Z' };
+
+    const first = await vendureProductReplication.pull.handler(oldShape, 10, context);
+    const firstSyncRequests = fetch.mock.calls.length;
+    expect(first.documents.map((p) => p.id)).toEqual(['1', '2', '3']);
+    expect(first.checkpoint).toEqual({ skip: 0, updatedAt: timestamp });
+
+    fetch.mockClear();
+    const second = await vendureProductReplication.pull.handler(first.checkpoint, 10, context);
+    const secondSyncRequests = fetch.mock.calls.length;
+    expect(second).toEqual({ documents: [], checkpoint: first.checkpoint });
+
+    fetch.mockClear();
+    const third = await vendureProductReplication.pull.handler(second.checkpoint, 10, context);
+    const thirdSyncRequests = fetch.mock.calls.length;
+    expect(third).toEqual({ documents: [], checkpoint: second.checkpoint });
+
+    // The first sync restarts the pass (mark + two probes + the page).
+    expect(firstSyncRequests).toBe(4);
+    // Each sync after makes at most one more request than a normal idle sync (1).
+    expect(secondSyncRequests).toBeLessThanOrEqual(2);
+    expect(thirdSyncRequests).toBeLessThanOrEqual(2);
+  });
+
   it.each([undefined, 'barcode', 'ean'])('selects only the opted-in barcode field: %s', async (barcodeField) => {
     const connector = createVendureConnector({ barcodeField });
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => gqlResponse({ products: { items: [] } }));
@@ -255,12 +309,53 @@ describe('fixed-window passes', () => {
     await connector.sync.products.fetchByIds(['1'], context);
     for (const [, init] of fetch.mock.calls) {
       const { query } = JSON.parse(init!.body as string);
+      if (query.includes('GetProductsMark')) continue; // backlog 29: the mark query is minimal, not opted in.
       if (barcodeField) expect(query).toContain(`customFields { ${barcodeField} }`);
       else expect(query).not.toContain('customFields');
       expect(query).toContain('stockLevels { stockLocationId stockOnHand stockAllocated }');
     }
     const doc = { variants: [{ customFields: { barcode: '123', ean: '456' } }] };
     expect(connector.traits.product.getBarcode(doc)).toBe(barcodeField === 'ean' ? '456' : barcodeField ? '123' : undefined);
+  });
+});
+
+describe('probeUpdatedAtSkew (backlog 31)', () => {
+  it('throws once when the mark is deleted, then a retried call (RxDB retry) passes cleanly', async () => {
+    await expect(probeUpdatedAtSkew('2026-01-01T00:00:00.000Z', 0, async () => 0)).rejects.toThrow(/TZ=UTC.*updatedAtSkewMs/);
+    let calls = 0;
+    await expect(probeUpdatedAtSkew('2026-01-01T00:00:00.000Z', 0, async () => (calls++ === 0 ? 1 : 0)))
+      .resolves.toBe('2026-01-01T00:00:00.000Z');
+  });
+});
+
+describe('the guard re-reads the mark once before throwing (backlog 31, optional part)', () => {
+  beforeEach(() => vi.restoreAllMocks());
+  const mark1 = '2026-01-01T00:10:00.000Z';
+  const mark2 = '2026-01-01T00:05:00.000Z';
+
+  it('a deletion between the mark and the probe gives a clean pass with no error', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(gqlResponse({ products: { items: [{ id: '9', updatedAt: mark1 }], totalItems: 1 } })) // mark read: '9' looks newest...
+      .mockResolvedValueOnce(gqlResponse({ products: { items: [], totalItems: 0 } })) // ...but it's gone by the time the probe runs.
+      .mockResolvedValueOnce(gqlResponse({ products: { items: [{ id: '5', updatedAt: mark2 }], totalItems: 1 } })) // re-read: '5' is now the newest.
+      .mockResolvedValueOnce(gqlResponse({ products: { items: [{ id: '5', updatedAt: mark2 }], totalItems: 1 } })) // the retried probe, against the new mark, succeeds.
+      .mockResolvedValueOnce(gqlResponse({ products: { items: [], totalItems: 0 } })) // the negative-overlap probe: no over-fetch.
+      .mockResolvedValueOnce(gqlResponse({ products: { items: [{ id: '5', updatedAt: mark2 }], totalItems: 1 } })); // the page.
+
+    const result = await vendureProductReplication.pull.handler(undefined, 10, context);
+
+    expect(result.documents.map((p) => p.id)).toEqual(['5']);
+    expect(result.checkpoint).toEqual({ skip: 0, updatedAt: mark2 });
+  });
+
+  it('a persistent mismatch still throws, as today', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(gqlResponse({ products: { items: [{ id: '9', updatedAt: mark1 }], totalItems: 1 } })) // mark read
+      .mockResolvedValueOnce(gqlResponse({ products: { items: [], totalItems: 0 } })) // the probe: empty
+      .mockResolvedValueOnce(gqlResponse({ products: { items: [], totalItems: 0 } })); // the re-read: nothing survives either
+
+    await expect(vendureProductReplication.pull.handler(undefined, 10, context))
+      .rejects.toThrow(/TZ=UTC.*updatedAtSkewMs/);
   });
 });
 
