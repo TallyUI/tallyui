@@ -169,7 +169,8 @@ function expectLinesAddUp(order: Order, context = '') {
   const converted = order.lineItems.flatMap((li, index) => li.taxInclusive === d.taxInclusive ? [] : [index]);
   const remaining = order.lineItems.map((li) => convert(li, li.netMinor, d.taxInclusive));
   const residues = order.lineItems.map((li, index) => {
-    const rows = li.discounts.map((own) => convert(li, own.amountMinor, d.taxInclusive));
+    // A return line shows no rows: its capped "discounts" cancel its negative gross, they aren't money off.
+    const rows = returned[index] ? [] : li.discounts.map((own) => convert(li, own.amountMinor, d.taxInclusive));
     expect(d.lines[index].discounts.map((row) => row.amountMinor), `${context} line ${index}'s rows`).toEqual(rows);
     const share = convert(li, li.orderDiscountMinor, d.taxInclusive);
     const floor = rows.reduce((sum, r) => sum + r, share);
@@ -345,6 +346,26 @@ describe('display line figures (ADR-063)', () => {
     expectLinesAddUp(order);
     expect(order.display.lines[1]).toMatchObject({ amountMinor: row.returnAmount, discounts: [] });
     expect(order.lineItems[1]).toMatchObject({ netMinor: 0, discountMinor: -300, taxMicros: '0' });
+  });
+
+  // #132 re-review: a discounted return line. Settlement records its capped discounts as −300 and 0 (they cancel its
+  // negative gross); shown as rows they'd print −300 off (−250 or −360 converted) and a negative Discount.
+  it.each([false, true])('a return line with a 10% and a fixed discount shows 0 with no rows (inclusive display %s)', (pricesIncludeTax) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(pricesIncludeTax) });
+    const a = builder.addLine({ productId: 'a', name: 'A', quantity: 3, unitPrice: { amount: 1001, currency: 'EUR', taxInclusive: true }, taxRates: [{ ratePpm: 190000 }] });
+    const r = builder.addLine({ productId: 'r', name: 'Return', unitPrice: { amount: -300, currency: 'EUR', taxInclusive: false } });
+    builder.addLine({ productId: 'b', name: 'B', unitPrice: { amount: 499, currency: 'EUR', taxInclusive: false } });
+    builder.applyLineDiscount(a, { type: 'fixed', value: 101 });
+    builder.applyLineDiscount(r, { type: 'percentage', value: 10 });
+    builder.applyLineDiscount(r, { type: 'fixed', value: 50 });
+    builder.applyOrderDiscount({ type: 'fixed', value: 100 });
+    const order = builder.getSnapshot();
+    expect(order.lineItems[1].discounts.map((d) => d.amountMinor)).toEqual([-300, 0]);
+    expectAddsUp(order);
+    expectLinesAddUp(order);
+    expect(order.display.lines[1]).toMatchObject({ amountMinor: 0, discounts: [] });
+    expect(order.display.discountMinor).toBeGreaterThanOrEqual(0);
+    expect(order.display.discountMinor).toBe(order.display.lines[0].discounts[0].amountMinor + order.display.orderDiscountMinor);
   });
 
   it.each([

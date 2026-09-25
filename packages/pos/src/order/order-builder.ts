@@ -167,13 +167,14 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // never to a discount or an unconverted line.
     const taxInclusive = taxContext.pricesIncludeTax;
     const figures = lines.map((li) => {
-      const discounts = li.discounts.map((d) => ({
+      // A negative-priced (return) line shows what settlement charges for it (recalculateLine caps it at 0 today),
+      // with no rows: its capped "discounts" are the negative gross cancelled, not money off.
+      const returned = li.unitPriceMinor < 0;
+      const discounts = returned ? [] : li.discounts.map((d) => ({
         discountId: d.id, ...(d.label !== undefined ? { label: d.label } : {}), amountMinor: toDisplayMode(li, d.amountMinor, taxInclusive),
       }));
       const shareMinor = toDisplayMode(li, li.orderDiscountMinor, taxInclusive);
       const remainingMinor = toDisplayMode(li, li.netMinor, taxInclusive);
-      // A negative-priced (return) line shows what settlement charges for it (recalculateLine caps it at 0 today).
-      const returned = li.unitPriceMinor < 0;
       const amountMinor = li.taxInclusive === taxInclusive && !returned ? li.unitPriceMinor * li.quantity
         : discounts.reduce((sum, d) => sum + d.amountMinor, remainingMinor + shareMinor);
       return { line: { lineId: li.id, amountMinor, discounts }, shareMinor, remainingMinor, returned };
@@ -203,7 +204,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (left !== 0) throw new Error(`Display residue ${left} left over with no converted line to take it (ADR-063)`);
     // Checked here, not only in tests: every figure >= 0, and no line shows less than its own rows and share (lines
     // with a non-negative gross; a return line's negative amount is its own).
+    if (displayDiscount < 0) throw new Error(`Display discount ${displayDiscount} is negative (ADR-063)`);
     for (const { line, shareMinor, returned } of figures) {
+      if (returned && line.discounts.length > 0) throw new Error(`Return line ${line.lineId} shows discount rows (ADR-063)`);
       if (returned) continue;
       const rows = line.discounts.reduce((sum, d) => sum + d.amountMinor, 0);
       if (shareMinor < 0 || line.discounts.some((d) => d.amountMinor < 0) || line.amountMinor < rows + shareMinor) {

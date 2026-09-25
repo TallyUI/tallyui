@@ -2206,8 +2206,10 @@ interface OrderCreatePayload {
     every figure is ≥ 0 and no line shows less than its rows plus share.
     The spill is a crash guard: it never fired in a 200k-cart fuzz.
   - **Return lines:** a negative-priced line shows what settlement charges
-    for it (its converted remaining plus rows and share), takes no residue,
-    and is outside the ≥ 0 checks. Settlement caps its discount part at the
+    for it (its converted remaining plus share) with **no discount rows**:
+    its capped discounts cancel its negative gross, they aren't money off.
+    It takes no residue and is outside the per-line ≥ 0 checks; the builder
+    throws if a return line has rows or the display discount is negative. Settlement caps its discount part at the
     gross today, so it's charged, and shown, at 0. Refund and return lines
     get their own design when Paul opens refunds.
   - **Why the cent sits there:** the discount the cashier typed is the
