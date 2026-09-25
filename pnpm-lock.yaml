@@ -167,6 +167,18 @@ importers:
 
   apps/web:
     dependencies:
+      '@tallyui/components':
+        specifier: workspace:*
+        version: link:../../packages/components
+      '@tallyui/connector-medusa':
+        specifier: workspace:*
+        version: link:../../connectors/medusa
+      '@tallyui/connector-woocommerce':
+        specifier: workspace:*
+        version: link:../../connectors/woocommerce
+      '@tallyui/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@tallyui/theme':
         specifier: workspace:*
         version: link:../../packages/theme
@@ -232,6 +244,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
     devDependencies:
+      '@tallyui/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       rxdb:
         specifier: 16.21.1
         version: 16.21.1(rxjs@7.8.2)(supports-color@10.2.2)
@@ -252,6 +267,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
     devDependencies:
+      '@tallyui/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@tallyui/pos':
+        specifier: workspace:*
+        version: link:../../packages/pos
       rxdb:
         specifier: 16.21.1
         version: 16.21.1(rxjs@7.8.2)(supports-color@10.2.2)
@@ -284,6 +305,18 @@ importers:
         specifier: '>=0.74'
         version: 0.81.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.4)(supports-color@10.2.2)
     devDependencies:
+      '@tallyui/connector-medusa':
+        specifier: workspace:*
+        version: link:../../connectors/medusa
+      '@tallyui/connector-vendure':
+        specifier: workspace:*
+        version: link:../../connectors/vendure
+      '@tallyui/connector-woocommerce':
+        specifier: workspace:*
+        version: link:../../connectors/woocommerce
+      '@tallyui/mock-api':
+        specifier: workspace:*
+        version: link:../../apps/mock-api
       '@types/react':
         specifier: '>=18'
         version: 19.2.14
@@ -332,6 +365,9 @@ importers:
       '@tallyui/core':
         specifier: workspace:*
         version: link:../core
+      '@tallyui/database':
+        specifier: workspace:*
+        version: link:../database
       '@types/react':
         specifier: '>=18'
         version: 19.2.14

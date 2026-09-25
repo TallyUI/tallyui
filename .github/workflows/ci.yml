@@ -23,6 +23,9 @@ jobs:
         env:
           RXDB_PREMIUM: ${{ secrets.RXDB_PREMIUM }}
 
+      - name: Check workspace dependency declarations
+        run: pnpm check:deps
+
       - name: Build packages
         run: pnpm build
 

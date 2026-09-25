@@ -34,6 +34,8 @@
     "@tallyui/core": "workspace:*"
   },
   "devDependencies": {
+    "@tallyui/database": "workspace:*",
+    "@tallyui/pos": "workspace:*",
     "rxdb": "16.21.1"
   }
 }
