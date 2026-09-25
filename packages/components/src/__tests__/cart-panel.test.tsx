@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { Text } from 'react-native';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
+import { Text, TextInput, View } from 'react-native';
 import { CartPanel } from '../cart/cart-panel';
 
 const items = [{ name: 'Coffee' }, { name: 'Grinder' }];
@@ -65,5 +66,61 @@ describe('CartPanel', () => {
   it('renders afterItems even when there are no items', () => {
     render(<CartPanel items={[]} renderItem={() => null} afterItems={<Text>Discount chips</Text>} />);
     expect(screen.getByText('Discount chips')).toBeDefined();
+  });
+});
+
+describe('CartPanel row identity across removals', () => {
+  /** A row with its own local text state, like medusapos's per-line discount form. */
+  function Row({ item }: { item: { name: string } }) {
+    const [note, setNote] = useState('');
+    return (
+      <View>
+        <Text>{item.name}</Text>
+        <TextInput placeholder={`note-${item.name}`} value={note} onChangeText={setNote} />
+      </View>
+    );
+  }
+
+  const lines = [
+    { id: 'a', name: 'Coffee' },
+    { id: 'b', name: 'Grinder' },
+    { id: 'c', name: 'Filters' },
+  ];
+
+  it('items with an id keep a row\'s typed input across a removal above it, with no keyExtractor (default keys by id)', () => {
+    const { rerender } = render(<CartPanel items={lines} renderItem={(item) => <Row item={item} />} />);
+    fireEvent.change(screen.getByPlaceholderText('note-Filters'), { target: { value: 'rush' } });
+    expect((screen.getByPlaceholderText('note-Filters') as HTMLInputElement).value).toBe('rush');
+
+    rerender(<CartPanel items={lines.slice(1)} renderItem={(item) => <Row item={item} />} />);
+
+    expect((screen.getByPlaceholderText('note-Filters') as HTMLInputElement).value).toBe('rush');
+  });
+
+  it('an explicit keyExtractor still works, keeping input identity even for items without id', () => {
+    const anon = lines.map(({ name }) => ({ name }));
+    const { rerender } = render(
+      <CartPanel items={anon} renderItem={(item) => <Row item={item} />} keyExtractor={(item) => item.name} />
+    );
+    fireEvent.change(screen.getByPlaceholderText('note-Filters'), { target: { value: 'rush' } });
+
+    rerender(
+      <CartPanel items={anon.slice(1)} renderItem={(item) => <Row item={item} />} keyExtractor={(item) => item.name} />
+    );
+
+    expect((screen.getByPlaceholderText('note-Filters') as HTMLInputElement).value).toBe('rush');
+  });
+
+  it('items without an id fall back to the index, so a removal above shifts typed input onto the wrong row — this is why keying by id/keyExtractor exists', () => {
+    const anon = lines.map(({ name }) => ({ name }));
+    const { rerender } = render(<CartPanel items={anon} renderItem={(item) => <Row item={item} />} />);
+    fireEvent.change(screen.getByPlaceholderText('note-Filters'), { target: { value: 'rush' } });
+
+    rerender(<CartPanel items={anon.slice(1)} renderItem={(item) => <Row item={item} />} />);
+
+    // Filters was at index 2; after removing the first item it renders at
+    // index 1, reusing the React identity (and empty state) that used to
+    // belong to Grinder at index 1, instead of keeping "rush".
+    expect((screen.getByPlaceholderText('note-Filters') as HTMLInputElement).value).toBe('');
   });
 });

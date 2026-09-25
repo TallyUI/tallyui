@@ -8,6 +8,8 @@ export interface CartPanelProps<T> extends Omit<VStackProps, 'children'> {
   items: T[];
   /** Render function for each cart line */
   renderItem: (item: T, index: number) => ReactNode;
+  /** Row key per item; defaults to the item's string/number `id`, else its index. Override for items without `id`, or to key by something else. */
+  keyExtractor?: (item: T, index: number) => string;
   /** Header slot (e.g. customer info) */
   header?: ReactNode;
   /** Content after the lines, inside the scrolling region (e.g. discount chips); shown even with no lines, so it isn't hidden by an empty cart */
@@ -30,15 +32,22 @@ export interface CartPanelProps<T> extends Omit<VStackProps, 'children'> {
  * <CartPanel
  *   items={cartItems}
  *   renderItem={(item) => <CartLine {...item} />}
+ *   keyExtractor={(line) => line.id}
  *   header={<CustomerCard doc={customer} />}
  *   afterItems={<DiscountChips discounts={discounts} />}
  *   footer={<CartTotal subtotal={subtotal} total={total} />}
  * />
  * ```
  */
+function defaultKey(item: unknown, index: number): string {
+  const id = (item as { id?: unknown } | null)?.id;
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : String(index);
+}
+
 export function CartPanel<T>({
   items,
   renderItem,
+  keyExtractor,
   header,
   afterItems,
   footer,
@@ -54,7 +63,11 @@ export function CartPanel<T>({
 
       <ScrollView className="flex-1 min-h-0" contentContainerClassName="flex-grow">
         {hasItems
-          ? items.map((item, index) => <View key={index}>{renderItem(item, index)}</View>)
+          ? items.map((item, index) => (
+              <View key={keyExtractor ? keyExtractor(item, index) : defaultKey(item, index)}>
+                {renderItem(item, index)}
+              </View>
+            ))
           : (emptyState ?? null)}
         {afterItems}
       </ScrollView>
