@@ -482,7 +482,8 @@ bodies and design docs, and the source is given for each.
     local documents (#74). Store binding uses one neutral `storeKey`
     string. Adopting the server's counters is job c.
   - **A sale's session:**
-    - `PosOrder.sessionId` is set by `finalizeOrder` and stays on the
+    - `PosOrder.sessionId` is set only by `stampSession`, which checks the
+      session is live (`finalizeOrder` takes no session), and stays on the
       device. It is **not** sent in `order.create`.
     - The server gets the session stamp later, with the Z-posting command.
     - Adding it bumped `posOrderSchema` to version 1, with an identity
@@ -497,11 +498,26 @@ bodies and design docs, and the source is given for each.
     `open` or `counting` session, and `writeClosure` a closed one.
   - **Orders the server rejected still count in the drawer**, because the
     cash was taken.
-  - **The read-then-insert window (#123 review, 2026-09-25):**
-    `recordMovement`'s re-read after the insert narrows the window a close
-    can land in, but a close that lands after that re-read can still
-    freeze a closure without the movement. The server closes the window
-    fully in job c, by refusing writes to a closed session.
+  - **The read-then-insert windows (#123 and #126 reviews, 2026-09-25):**
+    the local store checks a session, then writes, and a close can land in
+    between. There are two such windows:
+    - **A movement:** `recordMovement` checks the session, inserts the
+      movement, then re-reads the session. The re-read narrows the window,
+      but a close that lands after it can still freeze a closure without
+      the movement. The principle is that the local store never deletes a
+      cash record it cannot prove is uncounted. So a movement that races a
+      close is removed (`RegisterSessionClosedError`) only when the
+      session's closure row is already frozen without it. Before that row
+      exists, it's kept and flagged stranded (`RegisterMovementStrandedError`),
+      never deleted: `writeClosure` freezes its caller's movement list and
+      reserves the draft before inserting the row, so the local store can't
+      prove whether the movement is counted.
+    - **A sale:** `stampSession` checks the session, then the caller
+      inserts the order into the outbox. A close that lands in between is
+      missed, and the closure freezes without the sale.
+
+    The server closes both windows in job c, by refusing writes to a
+    closed session.
 
 ## ADR-033 Business model deferred; hardware drivers kept splittable (plan D4)
 

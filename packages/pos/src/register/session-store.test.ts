@@ -14,7 +14,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import { toOrderCreateEnvelope } from '../pos-order/command';
 import { finalizeOrder } from '../pos-order/finalize';
-import { cashMovementSchema, registerSessionSchema } from './schemas';
+import { cashMovementSchema, closureSchema, registerSessionSchema } from './schemas';
 import {
   backToSelling,
   closeSession,
@@ -27,10 +27,13 @@ import {
   startCounting,
   voidMovement,
   type CashMovementCollection,
+  type ClosureCollection,
   type RegisterSessionCollection,
 } from './session-store';
 
-let db: RxDatabase<{ register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection }>;
+let db: RxDatabase<{
+  register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection; closures: ClosureCollection;
+}>;
 beforeEach(async () => {
   db = await createRxDatabase({
     name: `session${Math.random().toString(36).slice(2)}`,
@@ -40,6 +43,7 @@ beforeEach(async () => {
   await db.addCollections({
     register_sessions: { schema: registerSessionSchema },
     cash_movements: { schema: cashMovementSchema },
+    closures: { schema: closureSchema },
   });
 });
 afterEach(async () => {
@@ -69,7 +73,7 @@ it('opens pending and retains the pending transition through each local state', 
 });
 it('void inserts a write-once reversal and marks its target', async () => {
   const session = await openSession(db.register_sessions, input);
-  const row = await recordMovement(db.register_sessions, db.cash_movements, {
+  const row = await recordMovement(db.register_sessions, db.cash_movements, db.closures, {
     sessionId: session.id,
     type: 'paid_out',
     amountMinor: 700,
@@ -158,7 +162,7 @@ it('refuses to reopen or recount a closed session, and a repeat close changes no
 it('refuses movements on a closed or missing session, and voids on a closed one', async () => {
   const session = await openSession(db.register_sessions, input);
   const move = (sessionId: string) =>
-    recordMovement(db.register_sessions, db.cash_movements, {
+    recordMovement(db.register_sessions, db.cash_movements, db.closures, {
       sessionId, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7',
     });
   const row = await move(session.id);

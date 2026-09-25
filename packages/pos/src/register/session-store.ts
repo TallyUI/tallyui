@@ -35,6 +35,22 @@ export class RegisterSessionClosedError extends Error {
   }
 }
 
+/**
+ * The movement is recorded, on a session that closed while it was saved, and no closure is known
+ * to count it, so it was kept rather than deleted. The caller must not record it again; job c's
+ * server resolves stranded movements. The message can be shown to a cashier as it is.
+ */
+export class RegisterMovementStrandedError extends Error {
+  readonly id: string;
+  readonly session_id: string;
+  constructor(movement: { id: string; session_id: string }) {
+    super('Recorded, but the session closed while saving. It may not be on this session\'s Z. Do not enter it again.');
+    this.name = 'RegisterMovementStrandedError';
+    this.id = movement.id;
+    this.session_id = movement.session_id;
+  }
+}
+
 /** Every move a session may make. Nothing leaves `closed`; everything else is refused. */
 const TRANSITIONS: Record<RegisterSession['status'], readonly RegisterSession['status'][]> = {
   open: ['counting', 'closed'],
@@ -162,10 +178,15 @@ export async function closeSession(
   });
 }
 
-/** Records a movement on a session that is `open` or `counting`; a closed or missing one is refused. */
+/**
+ * Records a movement on a session that is `open` or `counting`; a closed or missing one is refused.
+ * A close that races the insert ends in `RegisterSessionClosedError` (removed) or
+ * `RegisterMovementStrandedError` (kept; don't record it again).
+ */
 export async function recordMovement(
   sessions: RegisterSessionCollection,
   movements: CashMovementCollection,
+  closures: ClosureCollection,
   input: { sessionId: string; type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string; actor: string },
 ) {
   await requireLiveSession(sessions, input.sessionId);
@@ -178,14 +199,34 @@ export async function recordMovement(
     created_by: input.actor,
     created_at_gmt: new Date().toISOString(),
   });
-  // Not atomic with the check above: a close landing here still froze without this movement, so
-  // it's removed rather than left off every Z; the cashier re-records it in the next session.
-  const after = await sessions.findOne(input.sessionId).exec();
-  if (after?.status === 'closed') {
-    await row.remove();
-    throw new RegisterSessionClosedError();
+  // Not atomic with the check above, so a close can land between the check and the insert. Once
+  // the insert has succeeded, the movement is recorded, and the store never deletes a cash record
+  // it cannot prove is uncounted (ADR-032):
+  // - a closure row that lists it counts it, so it's returned;
+  // - a closure row that doesn't list it proves it uncounted, because a closure is frozen, so it's
+  //   removed and refused, and the cashier records it again in the next session;
+  // - with no closure row yet nothing is proven: `writeClosure` freezes the movements its caller
+  //   collected, not this collection, and reserves that draft on the register document before
+  //   inserting the row, so a caller's array or the reservation may already hold it. It's kept and
+  //   flagged stranded, and job c's server resolves it.
+  // If the re-read or the lookup fails, the outcome is unknown, so it's returned as recorded for
+  // the server to reconcile.
+  let counted: readonly string[] | undefined;
+  try {
+    const after = await sessions.findOne(input.sessionId).exec();
+    if (after?.status !== 'closed') return row;
+    counted = (await closures.findOne(input.sessionId).exec())?.movement_ids;
+  } catch {
+    return row;
   }
-  return row;
+  if (!counted) throw new RegisterMovementStrandedError(row);
+  if (counted.includes(row.id)) return row;
+  try {
+    await row.remove();
+  } catch {
+    throw new RegisterMovementStrandedError(row);
+  }
+  throw new RegisterSessionClosedError();
 }
 
 /** Reverses a movement with a `void` row while its session is live; repeated or concurrent calls share one reversal. */
