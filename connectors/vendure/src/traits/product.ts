@@ -11,6 +11,53 @@ function productStock(variants: StockLevel[]): StockLevel {
 }
 
 /**
+ * Per-variant stock (backlog 28, #45 stock review). Untracked (`trackInventory`
+ * `FALSE`, or `INHERIT` with the global setting off) is always sellable, with no
+ * quantity. A tracked variant's saleable units are on hand minus allocated minus
+ * the effective threshold (global unless `useGlobalOutOfStockThreshold` is
+ * `false`) -- Vendure's own rule (`@vendure/core` 3.7.3,
+ * `dist/service/services/product-variant.service.js:270-274`,
+ * `getSaleableStockLevel`: `stockOnHand - stockAllocated - effectiveOutOfStockThreshold`).
+ * `backorder` is saleable > 0 with on-hand-less-allocated <= 0 (a negative
+ * threshold). The Shop API's `stockLevel` string is a last-resort fallback
+ * when neither `stockLevels` nor `stockOnHand` is present.
+ */
+function variantStock(
+  variant: any,
+  stockLocationId: string | undefined,
+  globalTrackInventory: boolean,
+  globalOutOfStockThreshold: number,
+): StockLevel {
+  if (!variant) return { status: 'unknown' };
+  const tracked = variant.trackInventory === 'TRUE'
+    || (variant.trackInventory !== 'FALSE' && globalTrackInventory);
+  if (!tracked) return { status: 'in_stock' };
+
+  const threshold = variant.useGlobalOutOfStockThreshold !== false
+    ? globalOutOfStockThreshold : (variant.outOfStockThreshold ?? 0);
+
+  let onHandLessAllocated: number | undefined;
+  if (variant.stockLevels != null) {
+    onHandLessAllocated = variant.stockLevels
+      .filter((level: any) => stockLocationId == null || String(level.stockLocationId) === stockLocationId)
+      .reduce((sum: number, level: any) => sum + level.stockOnHand - level.stockAllocated, 0);
+  } else if (variant.stockOnHand != null) {
+    onHandLessAllocated = variant.stockOnHand;
+  }
+
+  if (onHandLessAllocated != null) {
+    const saleable = onHandLessAllocated - threshold;
+    const status = saleable <= 0 ? 'out_of_stock' : onHandLessAllocated > 0 ? 'in_stock' : 'backorder';
+    return { status, quantity: Math.max(saleable, 0) };
+  }
+
+  // Shop API: only the stockLevel string, so tracking/threshold cannot apply.
+  if (variant.stockLevel === 'IN_STOCK' || variant.stockLevel === 'LOW_STOCK') return { status: 'in_stock' };
+  if (variant.stockLevel === 'OUT_OF_STOCK') return { status: 'out_of_stock' };
+  return { status: 'unknown' };
+}
+
+/**
  * Vendure product trait implementations.
  *
  * Key differences from other connectors:
@@ -22,7 +69,13 @@ function productStock(variants: StockLevel[]): StockLevel {
  * - No native sale price — Vendure handles sales via promotions at checkout
  * - No native barcode field — uses custom fields if configured
  */
-export function createVendureProductTraits(barcodeField?: string, stockLocationId?: string, pricesIncludeTax = false): ProductTraits {
+export function createVendureProductTraits(
+  barcodeField?: string,
+  stockLocationId?: string,
+  pricesIncludeTax = false,
+  globalTrackInventory = true,
+  globalOutOfStockThreshold = 0,
+): ProductTraits {
 const priceField = pricesIncludeTax ? 'priceWithTax' : 'price';
 const traits: ProductTraits = {
   getId: (doc) => String(doc.id),
@@ -50,27 +103,8 @@ const traits: ProductTraits = {
     stock: traits.getStock({ variants: [variant] }),
   })),
 
-  getStock: (doc) => productStock((doc.variants ?? []).map((variant: any): StockLevel => {
-    if (!variant) return { status: 'unknown' };
-    if (variant.stockLevels != null) {
-      const quantity = variant.stockLevels
-        .filter((level: any) => stockLocationId == null || String(level.stockLocationId) === stockLocationId)
-        .reduce((sum: number, level: any) => sum + level.stockOnHand - level.stockAllocated, 0);
-      return { status: quantity > 0 ? 'in_stock' : 'out_of_stock', quantity };
-    }
-    // Admin API: exact stockOnHand. Shop API: only the stockLevel string.
-    if (variant.stockOnHand != null) {
-      return {
-        status: variant.stockOnHand > 0 ? 'in_stock' : 'out_of_stock',
-        quantity: variant.stockOnHand,
-      };
-    }
-    if (variant.stockLevel === 'IN_STOCK' || variant.stockLevel === 'LOW_STOCK') {
-      return { status: 'in_stock' };
-    }
-    if (variant.stockLevel === 'OUT_OF_STOCK') return { status: 'out_of_stock' };
-    return { status: 'unknown' };
-  })),
+  getStock: (doc) => productStock((doc.variants ?? []).map((variant: any) =>
+    variantStock(variant, stockLocationId, globalTrackInventory, globalOutOfStockThreshold))),
 
   getPrice: (doc) => {
     // Vendure stores prices as integers in smallest currency unit (cents)
@@ -104,33 +138,15 @@ const traits: ProductTraits = {
 
   getDescription: (doc) => doc.description || undefined,
 
+  // Aggregated across every variant, like getStock (backlog 28), not variant 0.
   getStockStatus: (doc) => {
-    const variant = doc.variants?.[0];
-    if (!variant) return 'unknown';
-    if (variant.stockLevels != null) {
-      return traits.getStock({ variants: [variant] }).quantity! > 0 ? 'instock' : 'outofstock';
-    }
-
-    // Vendure Shop API returns stockLevel as a string
-    const level = variant.stockLevel;
-    if (level === 'IN_STOCK' || level === 'LOW_STOCK') return 'instock';
-    if (level === 'OUT_OF_STOCK') return 'outofstock';
-
-    // Fall back to Admin API stockOnHand if available
-    if (variant.stockOnHand != null) {
-      return variant.stockOnHand > 0 ? 'instock' : 'outofstock';
-    }
-
+    const status = traits.getStock(doc).status;
+    if (status === 'in_stock' || status === 'backorder') return 'instock';
+    if (status === 'out_of_stock') return 'outofstock';
     return 'unknown';
   },
 
-  getStockQuantity: (doc) => {
-    if (doc.variants?.[0]?.stockLevels != null) {
-      return traits.getStock({ variants: [doc.variants[0]] }).quantity ?? null;
-    }
-    // stockOnHand is available from Admin API; Shop API only has the string stockLevel
-    return doc.variants?.[0]?.stockOnHand ?? null;
-  },
+  getStockQuantity: (doc) => traits.getStock(doc).quantity ?? null,
 
   hasVariants: (doc) => (doc.variants?.length ?? 0) > 1,
 

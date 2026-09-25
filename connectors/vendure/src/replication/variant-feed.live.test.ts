@@ -6,6 +6,7 @@ import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/rep
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { ReplicationAdapter } from '@tallyui/core';
+import { connectorCollection } from '@tallyui/database';
 import { createVendureConnector } from '../index';
 import { vendureProductSchema } from '../schemas/products';
 import { createVendureProductReplication } from './products';
@@ -58,7 +59,7 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure variant feed', () =>
       name: 'vendurevariantfeedlive', multiInstance: false,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ products: { schema: vendureProductSchema } });
+    await db.addCollections({ products: connectorCollection(vendureProductSchema) });
     // The product feed alone, to show it misses the change, and the connector's one replication.
     const feeds: Record<string, ReplicationAdapter<any>> = {
       productFeed: createVendureProductReplication('barcode'),

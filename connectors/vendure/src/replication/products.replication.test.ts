@@ -5,6 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { connectorCollection } from '@tallyui/database';
 import { vendureProductSchema } from '../schemas/products';
 import { createVendureProductReplication, type VendureProductCheckpoint } from './products';
 
@@ -56,7 +57,7 @@ async function start(count: number, afterPage?: (products: Product[]) => void, t
     name: `vendureproof${++databaseNumber}`, multiInstance: false,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
   });
-  await db.addCollections({ products: { schema: vendureProductSchema } });
+  await db.addCollections({ products: connectorCollection(vendureProductSchema) });
   replication = replicateRxCollection<any, VendureProductCheckpoint>({
     collection: db.products, replicationIdentifier: 'vendure-products-proof',
     live: true, waitForLeadership: false, retryTime: 10,

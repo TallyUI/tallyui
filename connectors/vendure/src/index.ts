@@ -9,6 +9,7 @@ import { createVendureVariantFeedReplication } from './replication/variant-feed'
 import { vendureStockReconcile } from './reconcile/stock';
 import { createFetchByIds, fetchPages, variantIds } from './reconcile/ids';
 import { vendureStoreSettings } from './store-settings';
+import { vendureGlobalStockSettings } from './global-settings';
 
 /**
  * Vendure connector for Tally UI.
@@ -26,9 +27,15 @@ import { vendureStoreSettings } from './store-settings';
  * ```
  *
  * `pricesIncludeTax` must equal the POS tax setting (`TaxContext.pricesIncludeTax`);
- * pass `settings.pricesIncludeTax` from `storeSettings`.
+ * pass `settings.pricesIncludeTax` from `storeSettings`. `globalTrackInventory`
+ * and `globalOutOfStockThreshold` are the channel's stock defaults; read them
+ * with `vendureGlobalStockSettings` after sign-in, like `pricesIncludeTax`
+ * from `storeSettings`.
  */
-export const createVendureConnector = (options: { barcodeField?: string; stockLocationId?: string; pricesIncludeTax?: boolean; updatedAtSkewMs?: number } = {}): TallyConnector => {
+export const createVendureConnector = (options: {
+  barcodeField?: string; stockLocationId?: string; pricesIncludeTax?: boolean; updatedAtSkewMs?: number;
+  globalTrackInventory?: boolean; globalOutOfStockThreshold?: number;
+} = {}): TallyConnector => {
   // The id reconcile's corrections reach `products` only through this pull adapter (ADR-060).
   const idFeed = createReconcileFeed({ fetchByIds: createFetchByIds(options.barcodeField) });
   return {
@@ -44,7 +51,10 @@ export const createVendureConnector = (options: { barcodeField?: string; stockLo
     },
 
     traits: {
-      product: createVendureProductTraits(options.barcodeField, options.stockLocationId, options.pricesIncludeTax),
+      product: createVendureProductTraits(
+        options.barcodeField, options.stockLocationId, options.pricesIncludeTax,
+        options.globalTrackInventory, options.globalOutOfStockThreshold,
+      ),
     },
 
     sync: {
@@ -81,3 +91,4 @@ export { createVendureProductReplication, vendureProductReplication } from './re
 export { createVendureVariantFeedReplication } from './replication/variant-feed';
 export { vendureStockReconcile } from './reconcile/stock';
 export { vendureStoreSettings } from './store-settings';
+export { vendureGlobalStockSettings } from './global-settings';

@@ -5,7 +5,8 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { createVendureConnector } from '../index';
+import { connectorCollection } from '@tallyui/database';
+import { createVendureConnector, vendureGlobalStockSettings } from '../index';
 import { vendureProductSchema } from '../schemas/products';
 import type { VendureProductCheckpoint } from './products';
 
@@ -57,7 +58,7 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure product replication'
       name: 'vendurelive', multiInstance: false,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ products: { schema: vendureProductSchema } });
+    await db.addCollections({ products: connectorCollection(vendureProductSchema) });
     const adapter = createVendureConnector({ barcodeField: 'barcode' }).replication!.products!;
     const options = {
       collection: db.products, replicationIdentifier: 'vendure-products-live',
@@ -75,6 +76,16 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure product replication'
     const variants = local.flatMap((p) => p.toJSON().variants);
     for (const variant of variants) expect(Array.isArray(variant.stockLevels)).toBe(true);
     expect(variants.some((variant) => Boolean(variant.customFields?.barcode))).toBe(true);
+    // backlog 28: trackInventory, the threshold fields and enabled ride on every variant.
+    for (const variant of variants) {
+      expect(['TRUE', 'FALSE', 'INHERIT']).toContain(variant.trackInventory);
+      expect(typeof variant.outOfStockThreshold).toBe('number');
+      expect(typeof variant.useGlobalOutOfStockThreshold).toBe('boolean');
+      expect(typeof variant.enabled).toBe('boolean');
+    }
+    const globalStock = await vendureGlobalStockSettings({ connectorId: 'vendure', baseUrl, headers });
+    expect(typeof globalStock.trackInventory).toBe('boolean');
+    expect(typeof globalStock.outOfStockThreshold).toBe('number');
     expect(warn).not.toHaveBeenCalled();
     await replication.cancel();
 
