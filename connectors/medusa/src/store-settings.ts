@@ -65,9 +65,8 @@ export const medusaStoreSettings = async (context: SyncContext, choice?: StoreSe
 
   const countries = region.countries ?? [];
   const chosenCountry = choice?.country?.toLowerCase();
-  const countryCode =
-    (chosenCountry && countries.find((c) => c.iso_2.toLowerCase() === chosenCountry)?.iso_2) ||
-    (countries.length === 1 ? countries[0]!.iso_2 : undefined);
+  // A chosen country outside the region is a mismatch, never silently replaced: the tax rate would differ from what the server charges.
+  const countryCode = chosenCountry ? countries.find((c) => c.iso_2.toLowerCase() === chosenCountry)?.iso_2 : countries.length === 1 ? countries[0]!.iso_2 : undefined;
 
   // Once the country is known, its tax region tells us the rate; ambiguity is reported below either way.
   let taxRegions: TaxRegion[] = [];
@@ -85,7 +84,8 @@ export const medusaStoreSettings = async (context: SyncContext, choice?: StoreSe
     (availableKeys.length === 1 ? availableKeys[0] : undefined);
 
   if (countryCode === undefined || !channelKey) {
-    throw new StoreSettingsError('choice_required', 'Medusa needs a country and/or sales channel choice', {
+    const message = chosenCountry && countryCode === undefined ? "the chosen country isn't in this region; choose a country" : 'Medusa needs a country and/or sales channel choice';
+    throw new StoreSettingsError('choice_required', message, {
       countries: countries.map((c) => c.iso_2.toLowerCase()),
       channels: availableKeys.map((k) => ({ id: k.id, name: channelName(k) })),
     });
