@@ -75,11 +75,13 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   function recalculateLine(line: LineItem, orderDiscountMinor = 0): LineItem {
     const grossMinor = line.unitPriceMinor * line.quantity;
 
-    // Recompute discount amounts from current gross
-    const recalcedDiscounts = line.discounts.map((d) => ({
-      ...d,
-      amountMinor: computeDiscountAmount(d, grossMinor),
-    }));
+    // Each amount is what that discount actually removed, capped at what's left, matching buildOrder's order-discount path (ADR-062).
+    let remaining = grossMinor;
+    const recalcedDiscounts = line.discounts.map((d) => {
+      const amountMinor = Math.min(remaining, computeDiscountAmount(d, d.type === 'percentage' ? grossMinor : remaining));
+      remaining -= amountMinor;
+      return { ...d, amountMinor };
+    });
 
     // The order share never exceeds what the line discounts leave (allocateOrderDiscount's bound).
     const lineDiscountMinor = Math.min(grossMinor, recalcedDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
