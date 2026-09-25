@@ -1,12 +1,13 @@
 // @vitest-environment node
 // `pos_orders` holds sales not yet sent, so its version 0 to 1 bump (ADR-032, `sessionId`) must
 // never lose one. Replaces WCPOS's `closure-migration.test.ts` (its closures v0 to v1 migration).
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, fillWithDefaultSettings, type RxCollectionCreator, type RxStorage } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder } from './finalize';
+import { addPosOrderCollection, POS_ORDER_MIGRATION_CLOSE_WAIT_MS } from './open';
 import { addPosOrderCollectionTests, versionZero } from './open.test-helper';
 import { posOrderCollection, posOrderSchema } from './schema';
 import type { PosOrder } from './types';
@@ -118,3 +119,85 @@ it('never drops a version-0 order that fails validation at version 1: a validati
 });
 
 describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory()));
+
+/** `storage`, but every write to `pos_orders` never settles: like a stuck migration batch. */
+function stuckWrites(storage: RxStorage<any, any>): RxStorage<any, any> {
+  return { ...storage, createStorageInstance: async (params) => {
+    const instance = await storage.createStorageInstance(params);
+    if (params.collectionName !== 'pos_orders') return instance;
+    return new Proxy(instance, { get: (target: any, key) => key === 'bulkWrite'
+      ? () => new Promise(() => undefined)
+      : typeof target[key] === 'function' ? target[key].bind(target) : target[key] });
+  } };
+}
+
+it('closes within the close-wait limit even when a migration never settles, and never loses the order', async () => {
+  const memory = getRxStorageMemory();
+  const good = pendingOrder();
+  const name = `posopen${uuidv7().replaceAll('-', '')}`;
+  const before = await open(name, memory, { schema: versionZero() });
+  await (await before.added).pos_orders.insert(good);
+  await before.db.close();
+
+  const db = await createRxDatabase({ name, storage: stuckWrites(memory), multiInstance: false });
+  addPosOrderCollection(db).catch(() => undefined);
+  // Real, short wait for the call above to reach the stuck write, before faking the clock.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  vi.useFakeTimers();
+  try {
+    const closing = db.close();
+    await vi.advanceTimersByTimeAsync(POS_ORDER_MIGRATION_CLOSE_WAIT_MS + 1000);
+    await expect(closing).resolves.toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+  // The order was never touched by the stuck run: it is still in version-0 storage for the next open.
+  expect(await versionZeroDocument(memory, name, good.id)).toMatchObject(good);
+});
+
+it('refuses a multiInstance database before any reset, and adds no collection', async () => {
+  const db = await createRxDatabase({ name: `posopen${uuidv7().replaceAll('-', '')}`, storage: getRxStorageMemory(), multiInstance: true });
+  try {
+    await expect(addPosOrderCollection(db)).rejects.toThrow('addPosOrderCollection: multiInstance databases are not supported (ADR-061)');
+    expect(db.collections.pos_orders).toBeUndefined();
+  } finally {
+    await db.close();
+  }
+});
+
+it('keeps at most one db.onClose handler across DM4 retries, and a fresh open still gets its own one', async () => {
+  const memory = getRxStorageMemory();
+  const bad = { ...pendingOrder(), syncStatus: 'queued' } as unknown as PosOrder;
+  const name = `posopen${uuidv7().replaceAll('-', '')}`;
+  const before = await open(name, memory, { schema: versionZero() });
+  await (await before.added).pos_orders.insert(bad);
+  await before.db.close();
+
+  // RxDB's own migration-state plumbing registers its own db.onClose handler per attempt too
+  // (unrelated to this function), so only entries this function itself pushed are counted.
+  const ours = (target: { onClose: Array<() => unknown> }) =>
+    target.onClose.filter((handler) => handler.toString().includes('waitWithTimeout')).length;
+
+  const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage: memory }), multiInstance: false });
+  expect(ours(db)).toBe(0);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await expect(addPosOrderCollection(db)).rejects.toMatchObject({ code: 'DM4' });
+  }
+  // Still one, not three: this is the fix. A separate, unrelated database (below) checks that a
+  // clean, successful open still registers its own handler, rather than reusing this one's
+  // storage, which would also exercise RxDB's own migration-meta cleanup a second time.
+  expect(ours(db)).toBe(1);
+  await db.close();
+
+  const good = pendingOrder();
+  const cleanName = `posopen${uuidv7().replaceAll('-', '')}`;
+  const seed = await open(cleanName, memory, { schema: versionZero() });
+  await (await seed.added).pos_orders.insert(good);
+  await seed.db.close();
+
+  const reopened = await createRxDatabase({ name: cleanName, storage: wrappedValidateAjvStorage({ storage: memory }), multiInstance: false });
+  await addPosOrderCollection(reopened);
+  expect(ours(reopened)).toBe(1);
+  await reopened.close();
+});
