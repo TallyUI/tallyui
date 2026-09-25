@@ -695,6 +695,9 @@ interface OrderCreatePayload {
   field, guard stays) → M (the Medusa plugin honours it) → T2 (tallyui
   removes the guard). The Vendure plugin honours the field from its first
   `order.create` commit, so there is no older-Vendure-plugin case to gate on.
+  **Completed 2026-09-25:** M merged (medusapos/app #56, `3646095`), with a
+  live mixed-order contract on Medusa 2.21.0 applied without warnings, and
+  T2 removed the #94 guard.
 
 ## ADR-039 `order.create` edge cases (addendum to ADR-038)
 

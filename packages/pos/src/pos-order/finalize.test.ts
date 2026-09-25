@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createOrderBuilder } from '../order/order-builder';
+import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
 import { uuidv7 } from './uuidv7';
 
@@ -70,14 +71,16 @@ describe('finalizeOrder', () => {
     expect(finalizeOrder(builder.getSnapshot()).payments[0]).toMatchObject({ amountMinor: 3451, tenderedMinor: 3451, changeMinor: 0 });
   });
 
-  it('rejects an order with a converted line', () => {
+  it('finalizes an order with a converted line, carrying taxInclusive through to the payload line only', () => {
     const builder = sale();
-    builder.addLine({ productId: 'p3', name: 'Item 3', unitPrice: { amount: 500, currency: 'EUR', taxInclusive: true } });
+    builder.addLine({ productId: 'p3', name: 'Item 3', sku: 'SKU3', unitPrice: { amount: 500, currency: 'EUR', taxInclusive: true } });
     builder.addPayment({ method: 'cash', amountMinor: 10000 });
-    const order = builder.getSnapshot();
-    expect(() => finalizeOrder(order)).toThrow(
-      "finalize: a line's price has a different tax mode from the store; refresh the store settings and try again",
-    );
+    const order = finalizeOrder(builder.getSnapshot());
+    expect(order.lines[0]).not.toHaveProperty('taxInclusive');
+    expect(order.lines[2]).toMatchObject({ name: 'Item 3', taxInclusive: true });
+    const envelope = toOrderCreateEnvelope(order, 'device1');
+    expect(envelope.payload.lines[0]).not.toHaveProperty('taxInclusive');
+    expect(envelope.payload.lines[2]).toMatchObject({ title: 'Item 3', taxInclusive: true });
   });
 
   it('finalizes an order whose lines all agree with the store tax mode', () => {
