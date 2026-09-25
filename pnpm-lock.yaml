@@ -372,6 +372,9 @@ importers:
       '@tallyui/pos':
         specifier: workspace:*
         version: link:../pos
+      '@tallyui/storage-sqlite':
+        specifier: workspace:*
+        version: link:../storage-sqlite
       rxdb:
         specifier: 16.21.1
         version: 16.21.1(rxjs@7.8.2)(supports-color@10.2.2)

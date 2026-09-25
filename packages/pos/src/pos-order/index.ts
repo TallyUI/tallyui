@@ -4,3 +4,4 @@ export { finalizeOrder } from './finalize';
 export type { FinalizeOptions } from './finalize';
 export { toOrderCreateEnvelope } from './command';
 export { posOrderSchema, posOrderCollection } from './schema';
+export { addPosOrderCollection } from './open';
