@@ -2000,6 +2000,14 @@ interface OrderCreatePayload {
   - a **401** means the credentials are rejected or expired, never version
     1, and throws `SignInError`.
 
+  In Medusa only `medusaAdminUserConnector` reads capabilities: the
+  plugin's routes (`/tally/v1/commands` and `/tally/v1/info`) authenticate
+  users only (bearer or session), so the secret-key `medusaConnector` can't
+  post sales through the plugin and exposes no `capabilities()`. Finally, `finalize` throws
+  "finalize: negative discount" for any negative discount, whatever the
+  capability, since a negative amount would otherwise go out as version 1
+  with no discount fields.
+
   `SyncContext.capabilities` carries the value the app is acting on, copied
   from `SignInResult.capabilities` at sign-in. `TallyConnector.capabilities?
   (context)` re-reads it for a session restored without signing in again,

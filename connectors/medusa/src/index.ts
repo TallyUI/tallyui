@@ -143,14 +143,11 @@ export const medusaConnector: TallyConnector = {
 
   storeSettings: medusaStoreSettings,
 
-  // The secret-key connector can't reach /tally/v1/commands either (it
-  // authenticates users), so this simply comes back 401 or the plugin's
-  // fallback of 1, whatever the server says for a key.
-  capabilities: medusaCapabilities,
+  // No capabilities read here: the plugin's routes authenticate users only, so this connector can't send orders through the plugin either.
 };
 
 /** Medusa connector using an admin user's Bearer JWT. */
-export const medusaAdminUserConnector: TallyConnector = { ...medusaConnector, auth: medusaAdminUserAuth };
+export const medusaAdminUserConnector: TallyConnector = { ...medusaConnector, auth: medusaAdminUserAuth, capabilities: medusaCapabilities };
 
 // Re-export pieces for advanced usage
 export { medusaProductSchema } from './schemas/products';

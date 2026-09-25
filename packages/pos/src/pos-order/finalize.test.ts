@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { resolveCapabilities } from '@tallyui/core';
-import { medusaConnector } from '@tallyui/connector-medusa';
+import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order/order-builder';
 import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
@@ -138,7 +138,7 @@ describe('finalizeOrder', () => {
       ),
     };
     expect(() => finalizeOrder(rigged))
-      .toThrow(new Error('finalize: discounts are not supported by the server yet (order.create v2)'));
+      .toThrow(new Error('finalize: negative discount'));
   });
 });
 
@@ -166,10 +166,26 @@ describe('finalizeOrder capability gate (ADR-062)', () => {
     expect(() => finalizeOrder(order, { capabilities: { orderCreate: 2 } })).not.toThrow();
   });
 
+  it('rejects a hand-built negative discount even with capabilities: { orderCreate: 2 }', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const order = builder.getSnapshot();
+    const rigged = {
+      ...order,
+      discountMinor: -100,
+      discounts: [{ id: 'd1', type: 'fixed' as const, value: -100, amountMinor: -100 }],
+      lineItems: order.lineItems.map((line, i) =>
+        i === 0 ? { ...line, discountMinor: -100, orderDiscountMinor: -100 } : line,
+      ),
+    };
+    expect(() => finalizeOrder(rigged, { capabilities: { orderCreate: 2 } }))
+      .toThrow(new Error('finalize: negative discount'));
+  });
+
   it('keeps the last known capability through an unreachable server (Front desk scenario)', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('network error'));
-    const context = { connectorId: medusaConnector.id, baseUrl: 'https://medusa.test', headers: {} };
-    const fresh = await medusaConnector.capabilities!(context);
+    const context = { connectorId: medusaAdminUserConnector.id, baseUrl: 'https://medusa.test', headers: {} };
+    const fresh = await medusaAdminUserConnector.capabilities!(context);
     fetchSpy.mockRestore();
     expect(fresh).toBeUndefined();
     const capabilities = resolveCapabilities(fresh, { orderCreate: 2 });

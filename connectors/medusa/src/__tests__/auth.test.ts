@@ -35,6 +35,11 @@ describe('Medusa auth', () => {
     expect(medusaAdminUserConnector.auth).toBe(medusaAdminUserAuth);
   });
 
+  it('reads capabilities only on the admin-user connector: the secret-key connector authenticates users only', () => {
+    expect(medusaConnector.capabilities).toBeUndefined();
+    expect(typeof medusaAdminUserConnector.capabilities).toBe('function');
+  });
+
   it('sends the admin user auth headers on a replication request', async () => {
     const context: SyncContext = {
       connectorId: medusaAdminUserConnector.id,
