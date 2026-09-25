@@ -38,6 +38,22 @@ describe('CartTotal', () => {
     expect(screen.queryByText('Discount')).toBeNull();
   });
 
+  it('orders the rows Subtotal / Discount / Tax / Total, matching the receipt', () => {
+    const { container } = render(<CartTotal subtotal={subtotal} total={total} discount={{ amount: 250, currency: 'EUR' }} locale="en"
+      taxLines={[{ label: 'VAT', amount: { amount: 400, currency: 'EUR' } }]} />);
+    const text = container.textContent ?? '';
+    const positions = ['Subtotal', 'Discount', 'VAT', 'Total'].map((label) => text.indexOf(label));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it('labels tax rows as included, not added, when taxInclusive', () => {
+    render(<CartTotal subtotal={subtotal} total={total} locale="en" taxInclusive
+      taxLines={[{ label: 'VAT 19%', amount: { amount: 479, currency: 'EUR' } }]} />);
+    expect(screen.getByText('incl. VAT 19%')).toBeDefined();
+    expect(screen.queryByText('VAT 19%')).toBeNull();
+  });
+
   it('renders supplied zero amounts', () => {
     render(<CartTotal subtotal={{ amount: 0, currency: 'EUR' }} total={{ amount: 0, currency: 'EUR' }} locale="en" />);
     expect(screen.getAllByText('€0.00')).toHaveLength(2);

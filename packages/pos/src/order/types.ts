@@ -29,10 +29,19 @@ export interface Order {
  */
 export interface DisplayTotals {
   taxInclusive: boolean;      // = order.pricesIncludeTax
-  subtotalMinor: number;      // before discounts: excl. tax when exclusive, incl. tax when inclusive
-  discountMinor: number;      // every discount, in the display mode; >= 0
+  subtotalMinor: number;      // before discounts: total − tax + discount when exclusive, total + discount when inclusive
+  discountMinor: number;      // Σ lines' discount rows + orderDiscountMinor, in the display mode; >= 0
   taxMinor: number;           // = order.taxMinor (added when exclusive, included when inclusive)
   totalMinor: number;         // = order.totalMinor
+  lines: DisplayLine[];       // in lineItems order; Σ amountMinor = subtotalMinor
+  orderDiscountMinor: number; // the order discounts as one row, not allocated: Σ each line's share, converted on its own
+}
+
+/** One line in the display mode (ADR-063): before any discount, with its own discounts as sub-rows. */
+export interface DisplayLine {
+  lineId: string;
+  amountMinor: number;        // quantity × unit price in the display mode; the last converted line also carries the rounding residue
+  discounts: { discountId: string; label?: string; amountMinor: number }[]; // this line's own discounts, each converted on its own
 }
 
 export interface LineItem {

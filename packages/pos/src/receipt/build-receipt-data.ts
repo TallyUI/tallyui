@@ -1,4 +1,4 @@
-import type { Order } from '../order/types';
+import type { Discount, Order } from '../order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import type { ReceiptConfig, ReceiptData } from './types';
 
@@ -20,6 +20,7 @@ export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptDa
     taxSoFar += BigInt(li.taxMicros);
     return li.taxInclusive ? li.netMinor - share : li.netMinor + share;
   });
+  const label = (d: Discount) => d.label ?? d.couponCode ?? `${d.type} discount`;
 
   return {
     header: {
@@ -38,11 +39,14 @@ export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptDa
       lineTotalMinor: lineTotals[index],
       // Line plus allocated order discounts, in the line's own mode; lineTotalMinor is already after it (ADR-062).
       ...(li.discountMinor > 0 ? { discountMinor: li.discountMinor } : {}),
+      displayAmountMinor: order.display.lines[index].amountMinor,
+      displayDiscounts: order.display.lines[index].discounts.map((row, i) => ({ label: label(li.discounts[i]), amountMinor: row.amountMinor })),
     })),
     discounts: order.discounts.map((d) => ({
-      label: d.label ?? d.couponCode ?? `${d.type} discount`,
+      label: label(d),
       amountMinor: d.amountMinor,
     })),
+    orderDiscountMinor: order.display.orderDiscountMinor,
     totals: {
       taxInclusive: order.display.taxInclusive,
       subtotalMinor: order.display.subtotalMinor,
