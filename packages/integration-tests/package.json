@@ -1,0 +1,22 @@
+{
+  "name": "@tallyui/integration-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-layer tests moved out of packages/pos, packages/database, packages/core and connectors/medusa to keep the workspace dependency graph acyclic (see scripts/check-workspace-deps.mjs)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tallyui/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@tallyui/connector-medusa": "workspace:*",
+    "@tallyui/connector-vendure": "workspace:*",
+    "@tallyui/database": "workspace:*",
+    "@tallyui/pos": "workspace:*",
+    "rxdb": "16.21.1",
+    "rxjs": "7.8.2"
+  }
+}
