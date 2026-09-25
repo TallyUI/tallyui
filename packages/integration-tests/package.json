@@ -16,6 +16,7 @@
     "@tallyui/connector-vendure": "workspace:*",
     "@tallyui/database": "workspace:*",
     "@tallyui/pos": "workspace:*",
+    "@tallyui/storage-sqlite": "workspace:*",
     "rxdb": "16.21.1",
     "rxjs": "7.8.2"
   }
