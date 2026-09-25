@@ -25,15 +25,21 @@ const context: SyncContext = { connectorId: connector.id, baseUrl, headers };
 
 `createTallyDatabase({ connector, storage })` builds an RxDB database whose collections come straight from the connector's schemas, plus a `stock_levels` overlay when the connector reconciles stock. A collection the app creates itself still needs migration strategies for every schema version bump, or RxDB refuses it; `connectorCollection(schema)` builds that config (ADR-060 amendment 9).
 
+The app also creates `pos_orders`, the local store of finalized sales, with `posOrderCollection()`. Its migration strategies keep every order through a schema bump, and the collection holds sales not yet sent, so never create it from `posOrderSchema` alone (RxDB refuses a schema above version 0 without its strategies), and never with `connectorCollection`, whose bumps drop documents.
+
 ```ts
 import { createTallyDatabase, connectorCollection, getStorage } from '@tallyui/database';
+import { posOrderCollection } from '@tallyui/pos';
 import type { TallyConnector } from '@tallyui/core';
 import type { RxJsonSchema } from 'rxdb';
 
 declare const connector: TallyConnector, deviceSettingsSchema: RxJsonSchema<unknown>;
 
 const db = await createTallyDatabase({ connector, storage: getStorage() });
-await db.addCollections({ device_settings: connectorCollection(deviceSettingsSchema) });
+await db.addCollections({
+  device_settings: connectorCollection(deviceSettingsSchema),
+  pos_orders: posOrderCollection(),
+});
 ```
 
 ## Store settings

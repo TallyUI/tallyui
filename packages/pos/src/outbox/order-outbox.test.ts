@@ -4,7 +4,7 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandEnvelope, CommandResult, OrderCreatePayload } from '@tallyui/core';
-import { posOrderSchema, uuidv7, type PosOrder } from '../pos-order';
+import { posOrderCollection, uuidv7, type PosOrder } from '../pos-order';
 import { createOrderOutbox, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -42,7 +42,7 @@ beforeEach(async () => {
   outboxes = [];
   db = await createRxDatabase({ name: `outbox${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
-  ({ pos_orders: collection } = await db.addCollections({ pos_orders: { schema: posOrderSchema } }));
+  ({ pos_orders: collection } = await db.addCollections({ pos_orders: posOrderCollection() }));
 });
 
 afterEach(async () => {

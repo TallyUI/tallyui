@@ -5,6 +5,8 @@ import { uuidv7 } from './uuidv7';
 
 export interface FinalizeOptions {
   registerId?: string;
+  /** The open register session (`requireOpenSession`); stored on the order, never sent. */
+  sessionId?: string;
   cashierRef?: string;
   now?: Date;
   newId?: () => string;
@@ -74,6 +76,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       ...(order.customer.email !== undefined ? { email: order.customer.email } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
+    ...(options.sessionId !== undefined ? { sessionId: options.sessionId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),
   };
 }

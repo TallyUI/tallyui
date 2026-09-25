@@ -41,6 +41,11 @@ export interface PosOrder {
   customer: { id?: string; name?: string; email?: string } | null;
   note?: string;
   registerId?: string;
+  /**
+   * The register session the sale was taken in (ADR-032): its closure counts this order.
+   * Local only: `toOrderCreateEnvelope` never sends it.
+   */
+  sessionId?: string;
   cashierRef?: string;
   syncStatus: PosOrderSyncStatus;
   commandId: string;

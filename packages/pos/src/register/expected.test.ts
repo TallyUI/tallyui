@@ -34,3 +34,16 @@ it('derives captured session cash and card net of refunds and non-voided movemen
   });
   expect(result).toEqual({ cash: 16500, card: 3000 });
 });
+
+// TallyUI (registers a2): the test above sets both void markers at once, so either rule alone
+// could be deleted unnoticed. Each marker alone must exclude the movement.
+it.each([
+  ['its own voided_by', [{ id: 'out', session_id: 'session', type: 'paid_out', amountMinor: 700, voided_by: 'gone' }]],
+  ['a void row naming it', [
+    { id: 'out', session_id: 'session', type: 'paid_out', amountMinor: 700 },
+    { id: 'void', session_id: 'session', type: 'void', amountMinor: 700, voids: 'out' },
+  ]],
+])('excludes a movement voided by %s alone', (_, movements) => {
+  const result = deriveExpected({ session: { id: 'session', countedFloatMinor: 10000 }, ledgerRowsBySession: [], movements });
+  expect(result).toEqual({ cash: 10000 });
+});

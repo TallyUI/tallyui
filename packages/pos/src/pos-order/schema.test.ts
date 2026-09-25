@@ -5,14 +5,14 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder } from './finalize';
-import { posOrderSchema } from './schema';
+import { posOrderCollection, posOrderSchema } from './schema';
 import { uuidv7 } from './uuidv7';
 
 it('inserts a finalised order into an AJV-validated RxDB memory collection', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
-    const { pos_orders } = await db.addCollections({ pos_orders: { schema: posOrderSchema } });
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
     builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Item 1', unitPrice: { amount: 850, currency: 'EUR' }, quantity: 2,
       taxRates: [{ code: 'VAT', ratePpm: 190000 }] });
@@ -42,15 +42,17 @@ it('inserts a finalised order into an AJV-validated RxDB memory collection', asy
 });
 
 it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bump, because lines.items already accepts unknown properties", async () => {
-  // posOrderSchema.version stays 0: the `lines` item schema never set additionalProperties to
+  // `taxInclusive` needed no version bump: the `lines` item schema never set additionalProperties to
   // false, so it already accepts (and round-trips) a property it does not declare — the same as
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
-  // needs no matching schema edit, so there is nothing to migrate.
-  expect(posOrderSchema.version).toBe(0);
+  // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
+  // `sessionId`, ADR-032; see migration.test.ts.)
+  expect(posOrderSchema.version).toBe(1);
+  expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
-    const { pos_orders } = await db.addCollections({ pos_orders: { schema: posOrderSchema } });
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
     builder.addLine({ productId: 'p1', name: 'Item 1', unitPrice: { amount: 850, currency: 'EUR' } });
     builder.addPayment({ method: 'cash', amountMinor: 2000 });
