@@ -5,10 +5,18 @@ import { roundMicrosToMinor } from '../tax/exact';
 import type { Order } from '../order/types';
 import type { ReceiptConfig, ReceiptData } from './types';
 
-/** The receipt's invariants (ADR-063): lines sum to subtotal − discount; that plus tax (when exclusive) is
- *  the total, or minus nothing (when inclusive, since tax is already in the subtotal); tax lines sum to the tax. */
+/** The receipt's invariants (ADR-063): the printed lines sum to the subtotal; their discount rows plus the order row
+ *  to the discount; subtotal − discount plus tax (when exclusive) is the total, or minus nothing (when inclusive, since
+ *  tax is already in the subtotal); tax lines sum to the tax. Every printed figure is at least 0. */
 function expectReceiptAddsUp(receipt: ReceiptData) {
   const { totals } = receipt;
+  expect(receipt.lineItems.reduce((sum, li) => sum + li.displayAmountMinor, 0)).toBe(totals.subtotalMinor);
+  const rows = receipt.lineItems.flatMap((li) => li.displayDiscounts.map((row) => row.amountMinor));
+  expect(rows.reduce((sum, amount) => sum + amount, 0) + receipt.orderDiscountMinor).toBe(totals.discountMinor);
+  for (const amount of [...receipt.lineItems.map((li) => li.displayAmountMinor), ...rows, receipt.orderDiscountMinor]) {
+    expect(amount).toBeGreaterThanOrEqual(0);
+  }
+  // lineTotalMinor, after every discount, is kept for existing readers; it still sums to subtotal − discount.
   const lineSum = receipt.lineItems.reduce((sum, li) => sum + li.lineTotalMinor, 0);
   expect(lineSum).toBe(totals.subtotalMinor - totals.discountMinor);
   expect(totals.subtotalMinor - totals.discountMinor + (totals.taxInclusive ? 0 : totals.taxMinor)).toBe(totals.totalMinor);
@@ -58,7 +66,10 @@ const baseOrder: Order = {
   discountMinor: 100,
   taxMinor: 105,
   totalMinor: 1205,
-  display: { taxInclusive: false, subtotalMinor: 1200, discountMinor: 100, taxMinor: 105, totalMinor: 1205 },
+  display: {
+    taxInclusive: false, subtotalMinor: 1200, discountMinor: 100, taxMinor: 105, totalMinor: 1205, orderDiscountMinor: 100,
+    lines: [{ lineId: 'li1', amountMinor: 900, discounts: [] }, { lineId: 'li2', amountMinor: 300, discounts: [] }],
+  },
   balanceDueMinor: 0,
   changeDueMinor: 295,
   currency: 'USD',
@@ -137,6 +148,8 @@ describe('buildReceiptData', () => {
       quantity: 2,
       unitPriceMinor: 450,
       lineTotalMinor: 900,
+      displayAmountMinor: 900,
+      displayDiscounts: [],
     });
   });
 
@@ -206,7 +219,7 @@ describe('buildReceiptData', () => {
       discountMinor: 0,
       taxMinor: 0,
       totalMinor: 0,
-      display: { taxInclusive: false, subtotalMinor: 0, discountMinor: 0, taxMinor: 0, totalMinor: 0 },
+      display: { taxInclusive: false, subtotalMinor: 0, discountMinor: 0, taxMinor: 0, totalMinor: 0, lines: [], orderDiscountMinor: 0 },
       balanceDueMinor: 0,
       changeDueMinor: 0,
     };
@@ -305,6 +318,34 @@ describe('buildReceiptData', () => {
     builder.applyOrderDiscount({ type: 'fixed', value: 100 });
     const receipt = buildReceiptData(builder.getSnapshot(), config);
     expect(receipt.totals).toMatchObject({ taxInclusive: row.taxInclusive, ...row.display });
+    expectReceiptAddsUp(receipt);
+  });
+
+  it('the medusapos receipt prints the line at 400 above Subtotal 400 and a Discount row of 90, not 310', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 250000, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 400, currency: 'EUR' } });
+    builder.applyOrderDiscount({ type: 'fixed', value: 90, label: 'Promo' });
+    const receipt = buildReceiptData(builder.getSnapshot(), config);
+    expect(receipt.lineItems[0]).toMatchObject({ displayAmountMinor: 400, displayDiscounts: [], lineTotalMinor: 310 });
+    expect(receipt.orderDiscountMinor).toBe(90);
+    expect(receipt.totals).toMatchObject({ subtotalMinor: 400, discountMinor: 90, taxMinor: 78, totalMinor: 388 });
+    expectReceiptAddsUp(receipt);
+  });
+
+  it.each([false, true])('prints each line before discounts, its own discounts as labelled rows, and the order row (inclusive store: %s)', (storeInclusive) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: storeInclusive } });
+    const a = builder.addLine({ productId: 'a', name: 'A', quantity: 3, unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: true } });
+    const b = builder.addLine({ productId: 'b', name: 'B', unitPrice: { amount: 999, currency: 'EUR', taxInclusive: false } });
+    builder.applyLineDiscount(a, { type: 'percentage', value: 10, label: 'Ten' });
+    builder.applyLineDiscount(a, { type: 'fixed', value: 150, couponCode: 'SAVE' });
+    builder.applyLineDiscount(b, { type: 'fixed', value: 99 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 15 });
+    const order = builder.getSnapshot();
+    const receipt = buildReceiptData(order, config);
+    expect(receipt.lineItems.map((li) => [li.displayAmountMinor, li.displayDiscounts])).toEqual(storeInclusive
+      ? [[3000, [{ label: 'Ten', amountMinor: 300 }, { label: 'SAVE', amountMinor: 150 }]], [1189, [{ label: 'fixed discount', amountMinor: 118 }]]]
+      : [[2521, [{ label: 'Ten', amountMinor: 252 }, { label: 'SAVE', amountMinor: 126 }]], [999, [{ label: 'fixed discount', amountMinor: 99 }]]]);
+    expect(receipt.orderDiscountMinor).toBe(order.display.orderDiscountMinor);
     expectReceiptAddsUp(receipt);
   });
 });

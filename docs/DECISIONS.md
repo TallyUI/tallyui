@@ -2170,3 +2170,61 @@ interface OrderCreatePayload {
   invariant is the same as `order.display`'s. Receipt lines and each line's
   own discount row are unchanged, in the line's own mode — showing them in
   the display mode for mixed carts is backlog 48.
+- **Line figures (amendment, 2026-09-25):** `order.display` gains `lines`
+  (each line before any discount, with its own discounts as sub-rows) and
+  `orderDiscountMinor` (the order discounts as one row, not allocated). A
+  line is **converted** when its own mode differs from the display mode;
+  `convert(x)` takes a converted line's own-mode amount into the display
+  mode **on its own**, at that line's rates: `x − round(tax in x)` or
+  `x + round(tax on x)`, half away. Otherwise it's `x`.
+  - Each sub-row is `convert(d.amountMinor)` (ADR-062's capped amount).
+    The order row is `Σ convert(line.orderDiscountMinor)`, so it's 0 with
+    no order discount. `display.discountMinor` is every sub-row plus the
+    order row.
+  - `display.subtotalMinor` is now `total − tax + discount` (exclusive) or
+    `total + discount` (inclusive). A line in the display mode shows
+    `quantity × unit price`, exactly. A converted line shows
+    `convert(netMinor)` (what's left after its own discounts and its order
+    share) plus its sub-rows and its converted share, so it never shows less
+    than its own rows (#132 review: converting the gross on its own could
+    show 6081 above rows of 6082).
+  - The **residue**, subtotal − Σ line amounts, goes to the converted line
+    with the **largest converted remaining** (ties to the earlier line). A
+    negative residue takes a line down to its rows and share at most, then
+    the next largest: six 2-cent inclusive lines at 27% can owe −3 with no
+    line above 2. Putting it all on the last converted line showed a 1-cent
+    line at −1 (#132 review).
+  - **Invariants, exact by construction:** Σ line amounts = subtotal;
+    Σ sub-rows + order row = discount; and the totals invariants above.
+  - **Guards (the builder throws):** with no converted line the residue is
+    0, since Σ gross = Σ net + Σ discounts. Otherwise |residue| ≤ ⌊n/2⌋ + 1,
+    where n is the number of non-zero rounded conversions on converted
+    lines (remainings, sub-rows and order shares): each is off by at most
+    half a cent, and the order-level tax rounding by at most one more. With
+    the remaining-based amounts, only the remainings' roundings reach the
+    residue, so the bound has room to spare. The builder also checks that
+    every figure is ≥ 0 and no line shows less than its rows plus share.
+    The spill is a crash guard: it never fired in a 200k-cart fuzz.
+  - **Return lines:** a negative-priced line shows what settlement charges
+    for it (its converted remaining plus share) with **no discount rows**:
+    its capped discounts cancel its negative gross, they aren't money off.
+    It takes no residue and is outside the per-line ≥ 0 checks; the builder
+    throws if a return line has rows or the display discount is negative. Settlement caps its discount part at the
+    gross today, so it's charged, and shown, at 0. Refund and return lines
+    get their own design when Paul opens refunds.
+  - **Why the cent sits there:** the discount the cashier typed is the
+    figure a customer can check, so every discount row is exact in its own
+    mode, converted independently. A converted line's shown amount is
+    already a rounded conversion the customer can't verify to the cent. A
+    "Rounding" row is out.
+  - **Consequences:** single-mode carts show the same subtotal and discount
+    as before. Mixed carts can shift by about a cent, which is accepted:
+    ADR-062's mixed fixture with €9.50 off B shows 3522 / 950 (was 3521 /
+    949) exclusive, and 4191 / 1131 (was 4190 / 1130) inclusive. The
+    receipt prints `displayAmountMinor`, `displayDiscounts` and
+    `orderDiscountMinor`; `lineTotalMinor` stays, after every discount, for
+    existing readers, and isn't the figure to print above the subtotal.
+    `CartTotal` orders its rows Subtotal / Discount / Tax / Total and reads
+    tax as "incl." when `taxInclusive`.
+  - This completes the receipt half of backlog 48; one renderer is still
+    open.
