@@ -11,6 +11,7 @@ export type {
   Discount,
   AppliedDiscount,
   DisplayTotals,
+  DisplayLine,
   Payment,
   CustomerSummary,
   PaymentMethod,
