@@ -67,6 +67,37 @@ describe('medusaStoreSettings', () => {
     await expect(medusaStoreSettings(context, { country: 'de' })).resolves.toMatchObject({ currency: 'USD' });
   });
 
+  it('a chosen country outside a single-country region gives choice_required, never the only country (money bug regression)', async () => {
+    mockFetch(store(null), regions([{ id: 'reg_a', countries: [{ iso_2: 'de' }] }]), pricePreferences(), apiKeys([{ id: 'k1' }]));
+
+    await expect(medusaStoreSettings(context, { country: 'dk' })).rejects.toMatchObject({
+      code: 'choice_required',
+      message: "the chosen country isn't in this region; choose a country",
+      choices: { countries: ['de'] },
+    });
+  });
+
+  it('a single-country region with no country chosen still resolves ready', async () => {
+    mockFetch(store(null), regions([{ id: 'reg_a' }]), pricePreferences(), apiKeys([{ id: 'k1' }]), taxRegions());
+
+    await expect(medusaStoreSettings(context)).resolves.toMatchObject({ currency: 'EUR' });
+  });
+
+  it('a chosen country matches the single region country case-insensitively', async () => {
+    mockFetch(store(null), regions([{ id: 'reg_a' }]), pricePreferences(), apiKeys([{ id: 'k1' }]), taxRegions());
+
+    await expect(medusaStoreSettings(context, { country: 'DE' })).resolves.toMatchObject({ currency: 'EUR' });
+  });
+
+  it('a multi-country region with an unmatched country still gives choice_required', async () => {
+    mockFetch(store(null), regions([{ id: 'reg_a', countries: [{ iso_2: 'de' }, { iso_2: 'fr' }] }]), pricePreferences(), apiKeys([{ id: 'k1' }]));
+
+    await expect(medusaStoreSettings(context, { country: 'dk' })).rejects.toMatchObject({
+      code: 'choice_required',
+      choices: { countries: ['de', 'fr'] },
+    });
+  });
+
   it('two regions and no choice give choice_required with regions', async () => {
     mockFetch(store(null), regions([{ id: 'reg_a', name: 'A' }, { id: 'reg_b', name: 'B' }]), pricePreferences(), apiKeys([{ id: 'k1' }]));
 
