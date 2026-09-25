@@ -52,6 +52,19 @@ describe('OrdersList', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 
+  // Registers c1a (ADR-032, late sale).
+  it('explains a late sale under Needs attention and Recent, with Retry only when it is also rejected', () => {
+    const late = 'Taken after the register closed. It is not in that register\'s closure.';
+    const view = render(<OrdersList orders={[order('l', { lateSessionId: 'closed' })]} onRetry={async () => 0} />);
+    expect(headers()).toEqual(['Needs attention', 'Recent']);
+    expect(screen.getAllByText(late)).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    view.rerender(<OrdersList orders={[order('l', { lateSessionId: 'closed', syncStatus: 'rejected', error: { code: 'invalid', message: 'no' } })]}
+      onRetry={async () => 0} />);
+    expect(screen.getAllByText(late)).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
+  });
+
   it('calls onRetry with the order id and stays retrying until the order leaves rejected', async () => {
     const rejected = order('r', { syncStatus: 'rejected', error: { code: 'unknown_variant', message: 'gone' } });
     let settle!: (count: number) => void;

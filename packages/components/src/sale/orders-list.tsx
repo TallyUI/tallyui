@@ -36,6 +36,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             <Text className="text-foreground">{order.serverRefs?.displayId ? `Order #${order.serverRefs.displayId} · ` : ''}{count} {count === 1 ? 'item' : 'items'}</Text>
             <Text className="text-muted-foreground">{formatDate(order.createdAt)} · {formatMoney({ amount: order.totalMinor, currency: order.currency })} · {STATUS_LABEL[order.syncStatus]}</Text>
             {order.syncStatus === 'rejected' && order.error ? <Text className="text-destructive">{order.error.code}: {order.error.message}</Text> : null}
+            {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
+            {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
             {section.title === 'Needs attention' && order.syncStatus === 'rejected' ? order.error?.code === 'idempotency_mismatch'
               ? <Text className="text-foreground">This sale needs checking against the store before it can be sent again.</Text>
               : <Pressable accessibilityRole="button" disabled={retryingIds.has(order.id)} onPress={async () => {

@@ -28,8 +28,9 @@ function waitWithTimeout(promise: Promise<unknown>, ms: number): Promise<void> {
 }
 
 /**
- * Writes each version-0 order over its differing version-1 copy, through the same write RxDB's
- * migration makes, and leaves orders without a copy (and any deleted one) to the migration.
+ * Writes each order of the stored older version over its differing copy in the current version,
+ * through the same write RxDB's migration makes, and leaves orders without a copy (and any deleted
+ * one) to the migration. `from` is whichever older version is stored, 0 or 1.
  */
 async function writeOverStaleCopies(collection: RxCollection, from: RxStorageInstance<any, any, any>, to: RxStorageInstance<any, any, any>) {
   const handler = rxStorageInstanceToReplicationHandler(to, defaultConflictHandler, collection.database.token, true);
@@ -39,20 +40,20 @@ async function writeOverStaleCopies(collection: RxCollection, from: RxStorageIns
     const rows = await Promise.all(page.documents.filter((doc) => copies.has(doc.id) && !doc._deleted).map(async (doc) =>
       ({ assumedMasterState: copies.get(doc.id), newDocumentState: await migrateDocumentData(collection, from.schema.version, doc) })));
     const stale = rows.filter((row) => row.newDocumentState && !deepEqual(row.assumedMasterState, row.newDocumentState));
-    // A write error (a version-0 state version 1 refuses) stops the run with DM4, as RxDB's own write does.
+    // A write error (an older state the current version refuses) stops the run with DM4, as RxDB's own write does.
     if (stale.length > 0) await handler.masterWrite(stale);
   }
 }
 
 /**
- * Adds `pos_orders` to `db` and resolves once no version-0 order is left to migrate. The one
+ * Adds `pos_orders` to `db` and resolves once no order of an older version is left to migrate. The one
  * sanctioned way to open it (ADR-032 amendment 2). On DM4 it rejects after the migration has
  * stopped and closes the collection, so the app can surface the error and open again; it never
  * deletes an order.
  *
  * RxDB 16.21 trusts the status its last migration stored: a leftover `ERROR` rejects
  * `migratePromise` at once while the migration keeps running (a close then interrupts it), and a
- * `DONE` left before a rollback resolves it before the new version-0 orders have moved. So the
+ * `DONE` left before a rollback resolves it before the older version's new orders have moved. So the
  * collection is added without `autoMigrate`, the status and a failed run's checkpoint are reset
  * (never an order or its storage), and the migration itself is awaited.
  */
@@ -67,7 +68,7 @@ export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollectio
     // Never reset a still-settling earlier attempt's checkpoint out from under it: each new
     // migration on this database starts only once the one before it has fully settled.
     await latestMigrations.get(db);
-    // Version-0 orders exist (their collection record is there), so any stored status is a past run's.
+    // Older-version orders exist (their collection record is there), so any stored status is a past run's.
     await state.updateStatus((status) => {
       // RxDB writes only what the handler changes in place.
       delete status.error;
@@ -84,18 +85,19 @@ export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollectio
       databaseInstanceToken: db.token, multiInstance: db.multiInstance, options: {}, password: db.password,
       schema: getRxReplicationMetaInstanceSchema(old, hasEncryption(old)), devMode: overwritable.isDevMode() })).remove();
     // RxDB bug 2: `cancel()` stops `this.replicationState`, which `migrateStorage` never sets, so each
-    // run's replication outlives the run. It wakes only on its version-0 change stream (one shared
-    // across instances, as on memory storage), then writes its checkpoint into the store a later run
-    // removed (an unhandled `removed already`) and its conflicts into version 0. So that stream ends
-    // once the run has settled. And RxDB never overwrites a version-1 copy (it drops the assumed
-    // state): a stale copy wins its conflict, or 16.21 loops on it. Yet a copy is only ever an earlier
-    // version-0 state (the collection opens only once version 0 is gone), so the newer state goes first.
-    // A rare exception: after a rollback, an older build's one-time carry-over (for example medusapos's
-    // Dexie import, run again from a leftover Dexie database, after a failed removal or from an old tab)
-    // can bulk-insert an older state of order A into an empty version 0 while version 1 holds A as sent.
-    // This overwrite then makes A pending again, and it is sent twice; the server's commandId idempotency
-    // is what stops a double charge. Also, a deleted version-0 order that has a copy is skipped in
-    // writeOverStaleCopies, so RxDB would still loop on it if anything ever deleted a pos_orders document.
+    // run's replication outlives the run. It wakes only on the stored older version's change stream (one
+    // shared across instances, as on memory storage), then writes its checkpoint into the store a later
+    // run removed (an unhandled `removed already`) and its conflicts into the older version. So that
+    // stream ends once the run has settled. And RxDB never overwrites a copy in the current version (it
+    // drops the assumed state): a stale copy wins its conflict, or 16.21 loops on it. Yet a copy is only
+    // ever an earlier older-version state (the collection opens only once the older version is gone), so
+    // the newer state goes first. A rare exception: after a rollback, an older build's one-time carry-over
+    // (for example medusapos's Dexie import, run again from a leftover Dexie database, after a failed
+    // removal or from an old tab) can bulk-insert an older state of order A into an empty older version
+    // while the current version holds A as sent. This overwrite then makes A pending again, and it is sent
+    // twice; the server's commandId idempotency is what stops a double charge. Also, a deleted
+    // older-version order that has a copy is skipped in writeOverStaleCopies, so RxDB would still
+    // loop on it if anything ever deleted a pos_orders document.
     const settled = new Subject<void>();
     const migrateStorage = state.migrateStorage.bind(state);
     state.migrateStorage = async (from, to, batchSize) => {
@@ -113,7 +115,7 @@ export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollectio
     if (isFirstMigrationOnDb) db.onClose.push(() => waitWithTimeout(latestMigrations.get(db)!, POS_ORDER_MIGRATION_CLOSE_WAIT_MS));
     await migration;
     const status = (await getSingleDocument(db.internalStore, state.statusDocId))?.data as RxMigrationStatus | undefined;
-    // RxDB deletes the version-0 collection record only after every order has moved.
+    // RxDB deletes the older version's collection record only after every order has moved.
     if (status?.status === 'DONE' && !(await getOldCollectionMeta(state))) return collection;
     throw newRxError('DM4', { collection: collection.name, error: status?.error });
   } catch (error) {
