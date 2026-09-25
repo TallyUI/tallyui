@@ -17,6 +17,62 @@ const TEST_RE = /\.test(-d)?\.[jt]sx?$/;
 const STATIC_START = /^(import|export|\})\b/;
 const FROM_RE = /from\s*['"](@tallyui\/[a-zA-Z0-9_-]+)/;
 const DYNAMIC_RE = /import\s*\(\s*['"](@tallyui\/[a-zA-Z0-9_-]+)/;
+
+// Layering (Front desk, 2026-09-25): components may import @tallyui/pos only as `import
+// type`/`export type`, or a pure function on this allow-list — never a hook, store, the
+// order builder, a namespace/default import, a value re-export, or a dynamic import().
+const COMPONENTS_POS_ALLOWLIST = new Set(['buildReceiptData']);
+const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
+const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
+const POS_DEFAULT_RE = /import\s+(type\s+)?(\*\s+as\s+[\w$]+|[A-Za-z_$][\w$]*)\s*(?:,\s*\{([^}]*)\})?\s*from\s*['"]@tallyui\/pos['"]/g;
+const POS_STAR_EXPORT_RE = /export\s+(type\s+)?\*(?:\s+as\s+[\w$]+)?\s*from\s*['"]@tallyui\/pos['"]/g;
+const POS_DYNAMIC_RE = /import\s*\(\s*['"]@tallyui\/pos['"]/g;
+function lineOf(content, index) {
+  return content.slice(0, index).split('\n').length;
+}
+function reportNamed(list, relFile, line) {
+  let n = 0;
+  for (const raw of list.split(',')) {
+    const spec = raw.trim();
+    if (!spec || spec.startsWith('type ')) continue;
+    const name = spec.split(/\s+as\s+/)[0].trim();
+    if (!COMPONENTS_POS_ALLOWLIST.has(name)) {
+      console.error(`${relFile}:${line} imports ${name} from @tallyui/pos (${POS_MSG})`);
+      n++;
+    }
+  }
+  return n;
+}
+function layeringViolations(files) {
+  let n = 0;
+  for (const file of files) {
+    const relFile = relative(ROOT, file);
+    if (isTestFile(relFile)) continue;
+    const content = readFileSync(file, 'utf8');
+    POS_NAMED_RE.lastIndex = 0;
+    for (let m; (m = POS_NAMED_RE.exec(content));) {
+      if (!m[1]) n += reportNamed(m[2], relFile, lineOf(content, m.index));
+    }
+    POS_DEFAULT_RE.lastIndex = 0;
+    for (let m; (m = POS_DEFAULT_RE.exec(content));) {
+      if (m[1]) continue;
+      const line = lineOf(content, m.index);
+      console.error(`${relFile}:${line} imports ${m[2]} from @tallyui/pos (${POS_MSG})`);
+      n++;
+      if (m[3]) n += reportNamed(m[3], relFile, line);
+    }
+    POS_STAR_EXPORT_RE.lastIndex = 0;
+    for (let m; (m = POS_STAR_EXPORT_RE.exec(content));) {
+      if (!m[1]) { console.error(`${relFile}:${lineOf(content, m.index)} imports * from @tallyui/pos (${POS_MSG})`); n++; }
+    }
+    POS_DYNAMIC_RE.lastIndex = 0;
+    for (let m; (m = POS_DYNAMIC_RE.exec(content));) {
+      console.error(`${relFile}:${lineOf(content, m.index)} imports @tallyui/pos dynamically (${POS_MSG})`);
+      n++;
+    }
+  }
+  return n;
+}
 function walk(dir, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
@@ -67,6 +123,7 @@ for (const group of GROUPS) {
         }
       }
     }
+    if (pkg.name === '@tallyui/components') violations += layeringViolations(files);
   }
 }
 if (violations === 0) {

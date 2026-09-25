@@ -1452,6 +1452,18 @@ interface OrderCreatePayload {
     export it as a constant. Follow-up: medusapos/app adopts
     `@tallyui/pos`'s `useSale`/`lib/cart`/`lib/catalogue` and deletes its
     own copies, in its own job.
+  - TV6a done: `Cart`, `CartBar`, `Tender`, `DiscountForm`, `DiscountChips`,
+    `parseDiscount` and `discountLabel` lifted from medusapos/app
+    `388495b1cdb9ef36d1af88b0e82d1171a2465ff0` into
+    `packages/components/src/sale/`. Adaptations: `Cart` takes an optional
+    `taxLabel?: (ratePpm: number) => string` (default
+    `` `Tax ${ratePpm / 10000}%` ``), since VAT isn't universal — medusapos
+    passes its own `VAT ${rate}%`; `dataSet={{ print: 'hide' }}` stays, as
+    the print-style hook TV6b lifts; everything else (English strings,
+    layout classes) is unchanged. `@tallyui/components` gains a runtime
+    `@tallyui/pos` dependency, for types and `buildReceiptData` only
+    (ADR-064). The catalogue, receipt, print style and sync status are
+    TV6b.
 - **Consequences:**
   - The second app costs about half the first.
   - A third backend (WooCommerce, or Shopify if it is unparked) gets the
@@ -2240,3 +2252,21 @@ interface OrderCreatePayload {
     tax as "incl." when `taxInclusive`.
   - This completes the receipt half of backlog 48; one renderer is still
     open.
+
+## ADR-064 `@tallyui/components` may depend on `@tallyui/pos` for types and pure functions only
+
+- **Date:** 2026-09-25 · **Status:** Accepted (Front desk, 2026-09-25) ·
+  **Source:** TV6a (ADR-052), which needed `useSale`'s shape and
+  `buildReceiptData` inside a lifted `Cart`.
+- **Why:** components render from props alone, in the docs and every
+  platform app; a hook, store, collection or the order builder would tie a
+  component to React state or a live sale it doesn't own.
+- **Decision:** non-test code under `packages/components/src` may import
+  from `@tallyui/pos` only as `import type` (`Cart` takes `sale:
+  ReturnType<typeof useSale>`), or a pure function on
+  `COMPONENTS_POS_ALLOWLIST` (starts with `buildReceiptData`) — never a
+  hook, store or the order builder. `useState` in `Cart`/`DiscountForm` is
+  component-local React state, not a pos import.
+- **Enforcement:** `scripts/check-workspace-deps.mjs`'s
+  `layeringViolations` fails `pnpm check:deps` on a non-type-only,
+  non-allow-listed named import from `@tallyui/pos`.

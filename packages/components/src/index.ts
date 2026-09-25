@@ -130,6 +130,9 @@ export {
   type ConnectionStatus,
 } from './settings';
 
+// Sale components
+export { Cart, CartBar, Tender, DiscountForm, DiscountChips, parseDiscount, discountLabel } from './sale';
+
 // Layout components
 export {
   POSLayout,
