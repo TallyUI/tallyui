@@ -19,11 +19,12 @@ export interface ReceiptData {
   lineItems: ReceiptLineItem[];
   discounts: { label: string; amountMinor: number }[];
   totals: {
-    subtotalMinor: number;
-    discountMinor: number;
+    taxInclusive: boolean;      // from order.display: tax is added (false) or included (true)
+    subtotalMinor: number;      // order.display.subtotalMinor: before discounts, in the display mode
+    discountMinor: number;      // order.display.discountMinor: every discount, in the display mode (>= 0)
     taxLines: { label: string; code?: string; ratePpm: number; amountMinor: number }[];
-    taxMinor: number;
-    totalMinor: number;
+    taxMinor: number;           // order.display.taxMinor
+    totalMinor: number;         // order.display.totalMinor
   };
   payments: { method: string; amountMinor: number; reference?: string }[];
   changeDueMinor: number;

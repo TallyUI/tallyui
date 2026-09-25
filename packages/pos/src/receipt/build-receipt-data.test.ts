@@ -3,7 +3,17 @@ import { createOrderBuilder } from '../order/order-builder';
 import { buildReceiptData } from './build-receipt-data';
 import { roundMicrosToMinor } from '../tax/exact';
 import type { Order } from '../order/types';
-import type { ReceiptConfig } from './types';
+import type { ReceiptConfig, ReceiptData } from './types';
+
+/** The receipt's invariants (ADR-063): lines sum to subtotal − discount; that plus tax (when exclusive) is
+ *  the total, or minus nothing (when inclusive, since tax is already in the subtotal); tax lines sum to the tax. */
+function expectReceiptAddsUp(receipt: ReceiptData) {
+  const { totals } = receipt;
+  const lineSum = receipt.lineItems.reduce((sum, li) => sum + li.lineTotalMinor, 0);
+  expect(lineSum).toBe(totals.subtotalMinor - totals.discountMinor);
+  expect(totals.subtotalMinor - totals.discountMinor + (totals.taxInclusive ? 0 : totals.taxMinor)).toBe(totals.totalMinor);
+  expect(totals.taxLines.reduce((sum, line) => sum + line.amountMinor, 0)).toBe(totals.taxMinor);
+}
 
 const baseOrder: Order = {
   id: 'order-001',
@@ -158,8 +168,9 @@ describe('buildReceiptData', () => {
     expect(labels).toContain('Tax 5%');
   });
 
-  it('calculates totals', () => {
+  it('calculates totals from order.display (ADR-063)', () => {
     const receipt = buildReceiptData(baseOrder, config);
+    expect(receipt.totals.taxInclusive).toBe(false);
     expect(receipt.totals.subtotalMinor).toBe(1200);
     expect(receipt.totals.discountMinor).toBe(100);
     expect(receipt.totals.taxMinor).toBe(105);
@@ -195,6 +206,7 @@ describe('buildReceiptData', () => {
       discountMinor: 0,
       taxMinor: 0,
       totalMinor: 0,
+      display: { taxInclusive: false, subtotalMinor: 0, discountMinor: 0, taxMinor: 0, totalMinor: 0 },
       balanceDueMinor: 0,
       changeDueMinor: 0,
     };
@@ -219,8 +231,9 @@ describe('buildReceiptData', () => {
   it.each([
     { name: 'inclusive price, exclusive store', storeInclusive: false, ratePpm: 190000, a: 1000, aQty: 3, b: 1000,
       lineTotals: [2521, 1000], subtotalMinor: 3521, taxMinor: 669, totalMinor: 4190 },
+    // Inclusive display's subtotal is before discounts, in the inclusive mode; with none, it equals the total.
     { name: 'exclusive price, inclusive store', storeInclusive: true, ratePpm: 190000, a: 1000, aQty: 3, b: 1000,
-      lineTotals: [3570, 1000], subtotalMinor: 3840, taxMinor: 730, totalMinor: 4570 },
+      lineTotals: [3570, 1000], subtotalMinor: 4570, taxMinor: 730, totalMinor: 4570 },
     // Per-line rounding would show A as 4 (tax 0.36¢ rounds to 0), but the order's one rounding of 0.76¢ gives 1¢.
     { name: 'sub-cent taxes, exclusive store', storeInclusive: false, ratePpm: 100000, a: 4, aQty: 1, b: 4,
       lineTotals: [3, 4], subtotalMinor: 7, taxMinor: 1, totalMinor: 8 },
@@ -231,11 +244,8 @@ describe('buildReceiptData', () => {
     const receipt = buildReceiptData(builder.getSnapshot(), config);
     const lineTotals = receipt.lineItems.map((line) => line.lineTotalMinor);
     expect(lineTotals).toEqual(row.lineTotals);
-    expect(receipt.totals).toMatchObject({ subtotalMinor: row.subtotalMinor, taxMinor: row.taxMinor, totalMinor: row.totalMinor });
-    // Exclusive receipts list lines before tax, so they add up to the subtotal; inclusive ones after tax, to the total.
-    const sum = lineTotals.reduce((total, amount) => total + amount, 0);
-    expect(sum).toBe(row.storeInclusive ? receipt.totals.totalMinor : receipt.totals.subtotalMinor);
-    expect(receipt.totals.subtotalMinor + receipt.totals.taxMinor).toBe(receipt.totals.totalMinor);
+    expect(receipt.totals).toMatchObject({ taxInclusive: row.storeInclusive, subtotalMinor: row.subtotalMinor, taxMinor: row.taxMinor, totalMinor: row.totalMinor });
+    expectReceiptAddsUp(receipt);
     // The customer still pays each shelf amount in full: A's gross, or A's net plus its exact tax, plus B in the store's mode.
     const exclusiveTax = (amount: number) => roundMicrosToMinor(BigInt(amount * row.ratePpm));
     const shelfA = row.storeInclusive ? row.a * row.aQty + exclusiveTax(row.a * row.aQty) : row.a * row.aQty;
@@ -255,15 +265,46 @@ describe('buildReceiptData', () => {
     const orderDiscount = order.discounts[0].amountMinor;
     expect(orderDiscount).toBe(Math.round((2750 + 999 + 500) * 0.15));
     expect(receipt.discounts).toEqual([{ label: 'Staff', amountMinor: orderDiscount }]);
-    // Each line shows its own discount, in its own mode; together they are the receipt's discount total.
+    // Each line still shows its own discount, in its own mode (ADR-062); unlike before ADR-063, A's mode differs
+    // from the store's, so these no longer sum to totals.discountMinor (that's the display figure; see backlog 48).
     const lineDiscounts = receipt.lineItems.map((line) => line.discountMinor ?? 0);
     expect(lineDiscounts).toEqual(order.lineItems.map((li) => li.discountMinor));
     expect(lineDiscounts.every((amount) => amount > 0)).toBe(true);
-    expect(receipt.totals.discountMinor).toBe(250 + orderDiscount);
-    expect(lineDiscounts.reduce((total, amount) => total + amount, 0)).toBe(receipt.totals.discountMinor);
-    const sum = receipt.lineItems.reduce((total, line) => total + line.lineTotalMinor, 0);
-    expect(sum).toBe(storeInclusive ? receipt.totals.totalMinor : receipt.totals.subtotalMinor);
-    expect(receipt.totals.subtotalMinor + receipt.totals.taxMinor).toBe(receipt.totals.totalMinor);
-    expect(receipt.totals.taxLines.reduce((total, line) => total + line.amountMinor, 0)).toBe(receipt.totals.taxMinor);
+    expect(receipt.totals.discountMinor).toBe(order.display.discountMinor);
+    expectReceiptAddsUp(receipt);
+  });
+
+  it('has no discount shown when the order has none', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'USD' } });
+    const receipt = buildReceiptData(builder.getSnapshot(), config);
+    expect(receipt.totals.discountMinor).toBe(0);
+    expectReceiptAddsUp(receipt);
+  });
+
+  it.each([
+    { taxInclusive: false, display: { subtotalMinor: 1000, discountMinor: 200, taxMinor: 80, totalMinor: 880 } },
+    { taxInclusive: true, display: { subtotalMinor: 1000, discountMinor: 200, taxMinor: 73, totalMinor: 800 } },
+  ])('single-mode store with a line and an order discount: totals come from order.display exactly (inclusive: $taxInclusive)', (row) => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: row.taxInclusive } });
+    const lineId = builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'USD' } });
+    builder.applyLineDiscount(lineId, { type: 'percentage', value: 10 });
+    builder.applyOrderDiscount({ type: 'fixed', value: 100 });
+    const receipt = buildReceiptData(builder.getSnapshot(), config);
+    expect(receipt.totals).toMatchObject({ taxInclusive: row.taxInclusive, ...row.display });
+    expectReceiptAddsUp(receipt);
+  });
+
+  it.each([
+    { taxInclusive: false, display: { subtotalMinor: 3521, discountMinor: 88, taxMinor: 652, totalMinor: 4085 } },
+    { taxInclusive: true, display: { subtotalMinor: 4190, discountMinor: 105, taxMinor: 652, totalMinor: 4085 } },
+  ])('mixed cart (one inclusive line, one exclusive line) with an order discount, in each display mode (inclusive: $taxInclusive)', (row) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: row.taxInclusive } });
+    builder.addLine({ productId: 'a', name: 'Inclusive', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: true }, quantity: 3 });
+    builder.addLine({ productId: 'b', name: 'Exclusive', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: false } });
+    builder.applyOrderDiscount({ type: 'fixed', value: 100 });
+    const receipt = buildReceiptData(builder.getSnapshot(), config);
+    expect(receipt.totals).toMatchObject({ taxInclusive: row.taxInclusive, ...row.display });
+    expectReceiptAddsUp(receipt);
   });
 });

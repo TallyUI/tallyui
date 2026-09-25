@@ -60,11 +60,12 @@ export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptDa
       amountMinor: d.amountMinor,
     })),
     totals: {
-      subtotalMinor: order.subtotalMinor,
-      discountMinor: order.discountMinor,
+      taxInclusive: order.display.taxInclusive,
+      subtotalMinor: order.display.subtotalMinor,
+      discountMinor: order.display.discountMinor,
       taxLines,
-      taxMinor: order.taxMinor,
-      totalMinor: order.totalMinor,
+      taxMinor: order.display.taxMinor,
+      totalMinor: order.display.totalMinor,
     },
     payments: order.payments.map((p) => ({
       method: p.method,
