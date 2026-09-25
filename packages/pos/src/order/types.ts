@@ -62,6 +62,8 @@ export interface AppliedDiscount extends Discount {
 export interface Payment {
   id: string;
   method: string;
+  // For cash, record the full amount tendered here, not the capped amount: `finalizeOrder`
+  // caps it at the balance due and writes out `tenderedMinor`/`changeMinor` itself.
   amountMinor: number;
   tenderedMinor?: number;
   changeMinor?: number;

@@ -31,6 +31,28 @@ export interface SignInResult {
   token: string;
   /** ISO 8601, when the backend says when the token expires */
   expiresAt?: string;
+  /** The store's contract capabilities (ADR-062), when the read was conclusive. */
+  capabilities?: ServerCapabilities;
+}
+
+/** The highest `order.create` contract version a store's server currently accepts (ADR-062). */
+export interface ServerCapabilities {
+  orderCreate: number;
+}
+
+/**
+ * Resolves the capabilities to act on: a definitive fresh read always wins,
+ * even a downgrade to 1; an inconclusive fresh read (`undefined`) keeps the
+ * last known value. The app persists `stored` with its session, the way it
+ * persists the store-settings choice, and copies the result into
+ * `SyncContext.capabilities`. `finalizeOrder` treats `undefined` as 1, which
+ * only happens when the value has never been read (ADR-062).
+ */
+export function resolveCapabilities(
+  fresh: ServerCapabilities | undefined,
+  stored: ServerCapabilities | undefined,
+): ServerCapabilities | undefined {
+  return fresh ?? stored;
 }
 
 export interface AuthField {
@@ -79,6 +101,8 @@ export interface SyncContext {
   signal?: AbortSignal;
   /** From `storeSettings().pricingContext`; opaque to the app; the connector prices documents with it. Never logged. */
   pricingContext?: Record<string, string>;
+  /** The store's contract capabilities (ADR-062), copied from the sign-in result. */
+  capabilities?: ServerCapabilities;
 }
 
 /**
@@ -159,4 +183,13 @@ export interface TallyConnector {
    * never writes to the store (ADR-048).
    */
   storeSettings?: (context: SyncContext, choice?: StoreSettingsChoice) => Promise<StoreSettings>;
+
+  /**
+   * Re-reads the store's contract capabilities (ADR-062) for a session
+   * restored without signing in again — otherwise a restored session would
+   * block discounts until the cashier signed in again. `undefined` means
+   * the read was inconclusive (offline or a server error), not version 1;
+   * see `resolveCapabilities`.
+   */
+  capabilities?: (context: SyncContext) => Promise<ServerCapabilities | undefined>;
 }

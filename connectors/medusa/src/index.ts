@@ -1,5 +1,6 @@
-import { combinePullAdapters, createReconcileFeed, SignInError, type ConnectorAuth, type TallyConnector } from '@tallyui/core';
+import { combinePullAdapters, createReconcileFeed, SignInError, type ConnectorAuth, type ServerCapabilities, type SyncContext, type TallyConnector } from '@tallyui/core';
 
+import { readCapabilities } from './capabilities';
 import { medusaProductSchema } from './schemas/products';
 import { medusaProductTraits } from './traits/product';
 import { medusaProductSync } from './sync/products';
@@ -64,8 +65,13 @@ export const medusaSignIn: NonNullable<ConnectorAuth['signIn']> = async (baseUrl
   if (body.verification_required === true) throw new SignInError('unsupported', 'Medusa requires email verification, which this connector does not support');
   if (!res.ok) throw new SignInError('server_error', body.message ?? `Medusa sign-in failed (HTTP ${res.status})`, res.status);
   if (typeof body.token !== 'string') throw new SignInError('server_error', `Medusa sign-in response had no token (HTTP ${res.status})`, res.status);
-  return { token: body.token, expiresAt: jwtExpiresAt(body.token) };
+  const capabilities = await readCapabilities(baseUrl, { Authorization: `Bearer ${body.token}` }, { fetch: doFetch, signal: init.signal });
+  return { token: body.token, expiresAt: jwtExpiresAt(body.token), capabilities };
 };
+
+/** Re-reads the store's `order.create` capability (ADR-062) for a restored session, with the connector's own headers. */
+export const medusaCapabilities = (context: SyncContext): Promise<ServerCapabilities | undefined> =>
+  readCapabilities(context.baseUrl, context.headers, { signal: context.signal });
 
 // The JWT from Medusa's emailpass sign-in (POST /auth/user/emailpass) is stored as token.
 // email and password are only sign-in form fields and are never sent as headers.
@@ -136,6 +142,11 @@ export const medusaConnector: TallyConnector = {
   },
 
   storeSettings: medusaStoreSettings,
+
+  // The secret-key connector can't reach /tally/v1/commands either (it
+  // authenticates users), so this simply comes back 401 or the plugin's
+  // fallback of 1, whatever the server says for a key.
+  capabilities: medusaCapabilities,
 };
 
 /** Medusa connector using an admin user's Bearer JWT. */

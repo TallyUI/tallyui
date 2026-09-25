@@ -24,7 +24,8 @@ export type {
   StoreSettings,
   StoreSettingsChoice,
 } from './types';
-export type { SignInResult } from './types/connector';
+export type { SignInResult, ServerCapabilities } from './types/connector';
+export { resolveCapabilities } from './types/connector';
 export { SignInError } from './sign-in';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';

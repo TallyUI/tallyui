@@ -60,8 +60,13 @@ describe('Medusa auth', () => {
 describe('Medusa sign-in', () => {
   const b64url = (value: unknown) => btoa(JSON.stringify(value)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
   const jwt = (payload: unknown) => `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.sig`;
-  const signIn = (body: unknown, status = 200) => {
-    const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify(body), { status }));
+  // The info route (ADR-062) is a second fetch after a successful sign-in; a 404 (an old
+  // plugin) is the default so tests that don't care about capabilities need no changes.
+  const signIn = (body: unknown, status = 200, caps: { body?: unknown; status?: number } = { status: 404 }) => {
+    const fetch = vi.fn(async (url: string | URL | Request, _init?: RequestInit) =>
+      String(url).endsWith('/tally/v1/info')
+        ? new Response(JSON.stringify(caps.body ?? {}), { status: caps.status ?? 404 })
+        : new Response(JSON.stringify(body), { status }));
     return { fetch, result: medusaAdminUserAuth.signIn!('https://medusa.test', { email: 'admin@test.com', password: 'pw' }, { fetch }) };
   };
 
@@ -69,7 +74,7 @@ describe('Medusa sign-in', () => {
     const token = jwt({ actor_id: 'user_1', exp: 1790000000, name: 'ÿÿÿÿ' });
     expect(token.split('.')[1]).toMatch(/[-_]/); // exercises the base64url alphabet
     const { fetch, result } = signIn({ token });
-    await expect(result).resolves.toEqual({ token, expiresAt: new Date(1790000000 * 1000).toISOString() });
+    await expect(result).resolves.toEqual({ token, expiresAt: new Date(1790000000 * 1000).toISOString(), capabilities: { orderCreate: 1 } });
     const [url, init] = fetch.mock.calls[0]!;
     expect(url).toBe('https://medusa.test/auth/user/emailpass');
     expect(init?.method).toBe('POST');
@@ -78,7 +83,7 @@ describe('Medusa sign-in', () => {
 
   it('leaves expiresAt undefined when the token has no exp', async () => {
     await expect(signIn({ token: jwt({ actor_id: 'user_1' }) }).result).resolves.toMatchObject({ expiresAt: undefined });
-    await expect(signIn({ token: 'not-a-jwt' }).result).resolves.toEqual({ token: 'not-a-jwt', expiresAt: undefined });
+    await expect(signIn({ token: 'not-a-jwt' }).result).resolves.toEqual({ token: 'not-a-jwt', expiresAt: undefined, capabilities: { orderCreate: 1 } });
   });
 
   it('rejects a 401 as invalid_credentials', async () => {
@@ -146,5 +151,15 @@ describe('Medusa sign-in', () => {
     const fetch = vi.fn(async () => { throw abortError; });
     const result = medusaAdminUserAuth.signIn!('https://medusa.test', { email: 'admin@test.com', password: 'pw' }, { fetch });
     await expect(result).rejects.toBe(abortError);
+  });
+
+  it('returns capabilities: { orderCreate: 2 } when the info route says [1, 2] (ADR-062)', async () => {
+    const { result } = signIn({ token: jwt({ actor_id: 'user_1' }) }, 200, { status: 200, body: { contracts: { 'order.create': [1, 2] } } });
+    await expect(result).resolves.toMatchObject({ capabilities: { orderCreate: 2 } });
+  });
+
+  it('returns capabilities: { orderCreate: 1 } when the info route 404s (an old plugin)', async () => {
+    const { result } = signIn({ token: jwt({ actor_id: 'user_1' }) }, 200, { status: 404 });
+    await expect(result).resolves.toMatchObject({ capabilities: { orderCreate: 1 } });
   });
 });

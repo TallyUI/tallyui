@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { resolveCapabilities } from '@tallyui/core';
+import { medusaConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order/order-builder';
 import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
@@ -8,6 +10,13 @@ function sale() {
   const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
   builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Item 1', sku: 'SKU1', unitPrice: { amount: 850, currency: 'EUR' }, quantity: 2 });
   builder.addLine({ productId: 'p2', name: 'Item 2', unitPrice: { amount: 1200, currency: 'EUR' } });
+  return builder;
+}
+
+function discountedSale() {
+  const builder = sale();
+  builder.applyLineDiscount(builder.getSnapshot().lineItems[0].id, { type: 'fixed', value: 100 });
+  builder.addPayment({ method: 'cash', amountMinor: 5000 });
   return builder;
 }
 
@@ -130,5 +139,43 @@ describe('finalizeOrder', () => {
     };
     expect(() => finalizeOrder(rigged))
       .toThrow(new Error('finalize: discounts are not supported by the server yet (order.create v2)'));
+  });
+});
+
+describe('finalizeOrder capability gate (ADR-062)', () => {
+  it('rejects a discount when the capability is explicitly 1, same as no capabilities', () => {
+    const order = discountedSale().getSnapshot();
+    expect(() => finalizeOrder(order, { capabilities: { orderCreate: 1 } }))
+      .toThrow('finalize: discounts are not supported by the server yet (order.create v2)');
+  });
+
+  it('accepts a discount and produces a version-2 envelope when the capability is 2', () => {
+    const order = discountedSale().getSnapshot();
+    const posOrder = finalizeOrder(order, { capabilities: { orderCreate: 2 } });
+    expect(posOrder.discountMinor).toBeGreaterThan(0);
+    const envelope = toOrderCreateEnvelope(posOrder, 'device1');
+    expect(envelope.version).toBe(2);
+    expect(envelope.payload.discountMinor).toBe(posOrder.discountMinor);
+  });
+
+  it('leaves a discount-free order unaffected, whatever the capability', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 3451 });
+    const order = builder.getSnapshot();
+    expect(() => finalizeOrder(order, { capabilities: { orderCreate: 1 } })).not.toThrow();
+    expect(() => finalizeOrder(order, { capabilities: { orderCreate: 2 } })).not.toThrow();
+  });
+
+  it('keeps the last known capability through an unreachable server (Front desk scenario)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('network error'));
+    const context = { connectorId: medusaConnector.id, baseUrl: 'https://medusa.test', headers: {} };
+    const fresh = await medusaConnector.capabilities!(context);
+    fetchSpy.mockRestore();
+    expect(fresh).toBeUndefined();
+    const capabilities = resolveCapabilities(fresh, { orderCreate: 2 });
+    expect(capabilities).toEqual({ orderCreate: 2 });
+    const order = discountedSale().getSnapshot();
+    const posOrder = finalizeOrder(order, { capabilities });
+    expect(toOrderCreateEnvelope(posOrder, 'device1').version).toBe(2);
   });
 });
