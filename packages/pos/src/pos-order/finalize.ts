@@ -1,3 +1,4 @@
+import type { ServerCapabilities } from '@tallyui/core';
 import type { Order } from '../order/types';
 import type { PosOrder, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
@@ -7,18 +8,28 @@ export interface FinalizeOptions {
   cashierRef?: string;
   now?: Date;
   newId?: () => string;
+  /** The store's `order.create` capability (ADR-062); `undefined` is treated as 1. */
+  capabilities?: ServerCapabilities;
 }
 
 /** Turns a fully paid builder Order into a pending PosOrder without mutating it. */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
   if (!order.lineItems.length) throw new Error('finalize: no lines');
-  // An old plugin would reject or mis-apply a version-2 payload; this guard goes once the plugins honour it (ADR-062).
+  // Defence in depth: the builder already clamps every discount to >= 0, so this should never fire.
+  if (order.discountMinor < 0
+    || order.lineItems.some((line) => line.discountMinor < 0)
+    || order.discounts.some((d) => d.amountMinor < 0)) {
+    throw new Error('finalize: negative discount');
+  }
+  // An old plugin would reject or mis-apply a version-2 payload; this guard rejects a discount only when the store can't take it yet (ADR-062).
   // Checked as "any non-zero" rather than "> 0": defence in depth, since the builder already clamps every
   // discount to >= 0, so a negative amountMinor should never reach here.
   const hasDiscount = order.discountMinor !== 0
     || order.lineItems.some((line) => line.discountMinor !== 0)
     || order.discounts.some((d) => d.amountMinor !== 0);
-  if (hasDiscount) throw new Error('finalize: discounts are not supported by the server yet (order.create v2)');
+  if (hasDiscount && (options.capabilities?.orderCreate ?? 1) < 2) {
+    throw new Error('finalize: discounts are not supported by the server yet (order.create v2)');
+  }
   for (const payment of order.payments) {
     if (payment.method !== 'cash' && payment.method !== 'external') {
       throw new Error(`finalize: unsupported payment method ${payment.method}`);

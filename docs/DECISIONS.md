@@ -1979,10 +1979,49 @@ interface OrderCreatePayload {
      (order.create v2)"), since an old plugin would reject a version-2
      payload or mis-apply it;
   2. the medusapos plugin honours version 2 with line adjustments;
-  3. a small TallyUI change removes the guard.
+  3. **amended 2026-09-25 (the Front desk):** the guard becomes a
+     per-store capability check, below, instead of a global one, so an old
+     plugin is handled for good rather than needing one more release to
+     catch up.
+- **The capability check (amendment, 2026-09-25, the Front desk).** The
+  plugin exposes `GET {baseUrl}/tally/v1/info`, with the same auth as
+  `/tally/v1/commands` (the admin bearer), returning
+  `{ "contracts": { "order.create": [1, 2] } }`: the key is exactly
+  `"order.create"`, and the value is the supported integer versions. The
+  connector reads it into `ServerCapabilities { orderCreate }`, the highest
+  version the store accepts, with three outcomes:
+  - a 2xx with a valid list gives its max; a 2xx with the field missing,
+    empty or malformed, a body that isn't JSON, or a **404**, means an old
+    or absent plugin and gives `{ orderCreate: 1 }`;
+  - a network failure, a 5xx, or any other non-2xx that isn't a 404 or a
+    401 is **unknown**, never version 1, and gives `undefined` — a till
+    that's briefly offline must not start refusing discounts on a store
+    that supports version 2;
+  - a **401** means the credentials are rejected or expired, never version
+    1, and throws `SignInError`.
 
-  The guard does not know which backend a sale goes to, so it protects
-  every plugin; each one must honour version 2 before the guard goes.
+  In Medusa only `medusaAdminUserConnector` reads capabilities: the
+  plugin's routes (`/tally/v1/commands` and `/tally/v1/info`) authenticate
+  users only (bearer or session), so the secret-key `medusaConnector` can't
+  post sales through the plugin and exposes no `capabilities()`. Finally, `finalize` throws
+  "finalize: negative discount" for any negative discount, whatever the
+  capability, since a negative amount would otherwise go out as version 1
+  with no discount fields.
+
+  `SyncContext.capabilities` carries the value the app is acting on, copied
+  from `SignInResult.capabilities` at sign-in. `TallyConnector.capabilities?
+  (context)` re-reads it for a session restored without signing in again,
+  so a restored session isn't stuck blocking discounts until the cashier
+  signs in again. `resolveCapabilities(fresh, stored)` in `@tallyui/core`
+  is `fresh ?? stored`: a definitive fresh answer always wins, even a
+  downgrade to 1; an unknown (`undefined`) read keeps the last known
+  value, which the app persists with its stored session, the way it
+  persists the store-settings choice. `finalize` rejects a discount only
+  when `(capabilities?.orderCreate ?? 1) < 2` — `undefined` behaves as 1,
+  which only happens when the value has never been read.
+
+  **The Vendure plugin is born with version 2 and the endpoint**, so it
+  never joins this rollout.
 - **Consequences:**
   - Every order discount now lowers the tax. An existing test that asserted
     the after-tax total was changed to the pre-tax numbers.

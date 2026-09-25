@@ -164,21 +164,23 @@ const liveTab = startLiveTab({
 
 ## Selling
 
-`createOrderBuilder({ currency, taxContext })` builds up an order's lines, discounts and payments behind `order$` and `getSnapshot()`. `finalizeOrder(order)` turns a snapshot into a `PosOrder` ready for the outbox, but throws if the order carries a discount -- checkout can't finalize a discounted sale yet. `createOrderOutbox({ collection, transport, deviceId })`, fed by `createHttpCommandTransport`, sends finalized orders and retries with backoff until the backend accepts them.
+`createOrderBuilder({ currency, taxContext })` builds up an order's lines, discounts and payments behind `order$` and `getSnapshot()`. Record a cash payment's `amountMinor` as the full amount tendered, not a capped amount -- `finalizeOrder` caps it at the balance due and writes out `tenderedMinor` and `changeMinor` itself. `finalizeOrder(order, { capabilities: context.capabilities })` turns a snapshot into a `PosOrder` ready for the outbox, and throws only when the order carries a discount and the store's `order.create` capability is below 2 -- an old plugin can't take a discounted sale yet (ADR-062). `createOrderOutbox({ collection, transport, deviceId })`, fed by `createHttpCommandTransport`, sends finalized orders and retries with backoff until the backend accepts them.
 
 ```ts
 import { createOrderBuilder, finalizeOrder, createOrderOutbox, createHttpCommandTransport } from '@tallyui/pos';
 import type { TaxContext, PosOrder } from '@tallyui/pos';
+import type { SyncContext } from '@tallyui/core';
 import type { RxCollection } from 'rxdb';
 
-declare const taxContext: TaxContext, posOrders: RxCollection<PosOrder>;
+declare const taxContext: TaxContext, posOrders: RxCollection<PosOrder>, context: SyncContext;
 declare const deviceId: string, getHeaders: () => Record<string, string>;
 
 const order = createOrderBuilder({ currency: 'USD', taxContext });
 order.addLine({ productId: 'prod_1', name: 'Espresso', unitPrice: { amount: 350, currency: 'USD' } });
 order.addPayment({ method: 'cash', amountMinor: 350 });
 
-const posOrder = finalizeOrder(order.getSnapshot()); // throws if the order carries a discount
+// throws only when the order carries a discount and the store's capability is below 2 (ADR-062)
+const posOrder = finalizeOrder(order.getSnapshot(), { capabilities: context.capabilities });
 
 const outbox = createOrderOutbox({
   collection: posOrders,
