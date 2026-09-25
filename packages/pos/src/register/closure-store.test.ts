@@ -27,6 +27,7 @@ import {
   closeSession,
   openSession,
   recordMovement,
+  RegisterMovementStrandedError,
   RegisterSessionClosedError,
   RegisterSessionRequiredError,
   requireOpenSession,
@@ -83,7 +84,7 @@ async function seed() {
     ['paid_out', 500],
     ['paid_out', 700],
   ] as const) {
-    const row = await recordMovement(db.register_sessions, db.cash_movements, {
+    const row = await recordMovement(db.register_sessions, db.cash_movements, db.closures, {
       sessionId: session.id,
       type,
       amountMinor,
@@ -214,12 +215,12 @@ it('sums the Z: float plus net cash sales, pay-ins and pay-outs, without the voi
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
     builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: priceMinor, currency: 'EUR' } });
     builder.addPayment({ method, amountMinor: tenderedMinor });
-    return finalizeOrder(builder.getSnapshot(), { registerId: 'register', sessionId, cashierRef: '7' });
+    return { ...finalizeOrder(builder.getSnapshot(), { registerId: 'register', cashierRef: '7' }), sessionId };
   };
   const orders = [sale(2500, 'cash', 2500), sale(1200, 'cash', 2000), sale(3000, 'external', 3000), sale(9900, 'cash', 9900, 'other')];
   expect(orders[1].payments[0]).toMatchObject({ amountMinor: 1200, tenderedMinor: 2000, changeMinor: 800 });
   const move = (type: 'paid_in' | 'paid_out', amountMinor: number) =>
-    recordMovement(db.register_sessions, db.cash_movements, {
+    recordMovement(db.register_sessions, db.cash_movements, db.closures, {
       sessionId: session.id, type, amountMinor, reason: 'Float', actor: '7',
     });
   await move('paid_in', 500);
@@ -286,7 +287,7 @@ it('never leaves a sale or a pay-out taken after a close off every Z report', as
   // A sale's sessionId comes from requireOpenSession, which gives out no closed session.
   await expect(requireOpenSession(db.register_sessions, 'register', true)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
   const payOut = (sessionId: string) =>
-    recordMovement(db.register_sessions, db.cash_movements, {
+    recordMovement(db.register_sessions, db.cash_movements, db.closures, {
       sessionId, type: 'paid_out', amountMinor: 700, reason: '', actor: '7',
     });
   await expect(payOut(input.session.id)).rejects.toBeInstanceOf(RegisterSessionClosedError);
@@ -325,6 +326,100 @@ it('keeps the register document and a session with the id "register" apart', asy
     id: register!.id, stores: { store: { registers: { register: { last_closure_number: 1 } } } },
   });
   expect((await db.register_sessions.findOne('register').exec())?.status).toBe('closed');
+});
+
+// TallyUI (registers job c review, F2, and #126 review, item 2): a close that lands between
+// recordMovement's insert and its re-read. The store never deletes a cash record it cannot prove
+// is uncounted. `during` runs in that gap, right after the close.
+async function raceClose(during: (closed: RegisterSession) => Promise<void>) {
+  const session = await open();
+  const insert = db.cash_movements.insert.bind(db.cash_movements);
+  db.cash_movements.insert = (async (doc: Parameters<typeof insert>[0]) => {
+    const row = await insert(doc);
+    db.cash_movements.insert = insert;
+    await during(await closeSession(db.register_sessions, session.id, { counted: { cash: 10000 }, closedBy: '7' }));
+    return row;
+  }) as typeof db.cash_movements.insert;
+  const recorded = recordMovement(db.register_sessions, db.cash_movements, db.closures, {
+    sessionId: session.id, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7',
+  });
+  return { session, recorded };
+}
+const failure = (promise: Promise<unknown>) => promise.then(() => new Error('resolved'), (error: unknown) => error);
+const stranded = "Recorded, but the session closed while saving. It may not be on this session's Z. Do not enter it again.";
+
+// (i) Revert: drop the "closure counts it" guard, so it's always removed.
+it('returns a movement that a racing close counted on its closure row', async () => {
+  let counted: readonly string[] = [];
+  const { recorded } = await raceClose(async (closed) => {
+    counted = (await z(closed, { movements: await db.cash_movements.find().exec() })).movement_ids;
+  });
+  const row = await recorded;
+  expect(counted).toEqual([row.id]);
+  expect(await db.cash_movements.findOne(row.id).exec()).not.toBeNull();
+  expect(await db.cash_movements.count().exec()).toBe(1);
+});
+
+// (ii) The closure row is frozen without it, so it's provably uncounted. The row count of 0 is
+// the whole check: the closure was frozen before the movement could be listed.
+it('removes and refuses a movement that a closure row already frozen does not list', async () => {
+  const { recorded } = await raceClose(async (closed) => {
+    await z(closed, { movements: [] });
+  });
+  await expect(recorded).rejects.toBeInstanceOf(RegisterSessionClosedError);
+  expect(await db.cash_movements.count().exec()).toBe(0);
+});
+
+// (iii) Revert: remove the movement when there's no closure row.
+it('keeps a movement and flags it stranded while the Z is in progress: reserved on the register document, no closure row yet', async () => {
+  const { session, recorded } = await raceClose(async (closed) => {
+    const insert = vi.spyOn(db.closures, 'insert').mockRejectedValueOnce(new Error('disk write'));
+    await expect(z(closed, { movements: await db.cash_movements.find().exec() })).rejects.toThrow('disk write');
+    insert.mockRestore();
+  });
+  const error = await failure(recorded);
+  const [kept] = await db.cash_movements.find().exec();
+  expect(error).toBeInstanceOf(RegisterMovementStrandedError);
+  expect(error).toMatchObject({ message: stranded, id: kept.id, session_id: session.id });
+  expect(await db.closures.count().exec()).toBe(0);
+  const reservation = (await readRegister(db.register_sessions))!.stores.store.registers!.register.closure_reservation!;
+  expect(reservation.row.movement_ids).toEqual([kept.id]);
+  // Finishing the Z freezes the reserved draft, which counts the movement that was kept.
+  const closed = (await db.register_sessions.findOne(session.id).exec())!;
+  expect((await z(closed)).movement_ids).toEqual([kept.id]);
+});
+
+// Revert: remove the movement when there's no closure row.
+it('keeps a movement and flags it stranded when its session closed and no Z has started', async () => {
+  const { session, recorded } = await raceClose(async () => {});
+  const error = await failure(recorded);
+  const [kept] = await db.cash_movements.find().exec();
+  expect(error).toBeInstanceOf(RegisterMovementStrandedError);
+  expect(error).toMatchObject({ message: stranded, id: kept.id, session_id: session.id });
+  expect(await db.cash_movements.count().exec()).toBe(1);
+});
+
+// Revert: throw when the re-read fails.
+it('returns a movement as recorded when the re-read after the insert fails', async () => {
+  const { recorded } = await raceClose(async () => {
+    vi.spyOn(db.register_sessions, 'findOne').mockImplementationOnce(() => {
+      throw new Error('disk read');
+    });
+  });
+  const row = await recorded;
+  expect(await db.cash_movements.findOne(row.id).exec()).not.toBeNull();
+});
+
+// Revert: let remove()'s error through.
+it('flags a movement stranded, and keeps it, when removing it fails', async () => {
+  const { session, recorded } = await raceClose(async (closed) => {
+    await z(closed, { movements: [] });
+    vi.spyOn(db.cash_movements, 'bulkRemove').mockRejectedValueOnce(new Error('disk write'));
+  });
+  const error = await failure(recorded);
+  const [kept] = await db.cash_movements.find().exec();
+  expect(error).toBeInstanceOf(RegisterMovementStrandedError);
+  expect(error).toMatchObject({ id: kept.id, session_id: session.id });
 });
 
 // Each till's register document keeps its own sale counter; each register its own closure numbers.

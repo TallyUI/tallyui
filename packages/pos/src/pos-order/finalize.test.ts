@@ -80,19 +80,27 @@ describe('finalizeOrder', () => {
     expect(finalizeOrder(builder.getSnapshot()).payments[0]).toMatchObject({ amountMinor: 3451, tenderedMinor: 3451, changeMinor: 0 });
   });
 
-  it('stamps the register session on the order but never sends it: the order.create envelope is byte-identical with and without it', () => {
-    const finalize = (sessionId?: string) => {
+  it('never sends a stamped register session: the order.create envelope is byte-identical with and without it', () => {
+    const finalize = () => {
       let n = 0;
       const newId = () => `00000000-0000-7000-8000-${String(++n).padStart(12, '0')}`;
       const builder = sale();
       builder.addPayment({ method: 'cash', amountMinor: 5000 });
-      return finalizeOrder(builder.getSnapshot(), { now: new Date('2026-09-23T12:00:00.000Z'), newId, registerId: 'r1', sessionId });
+      return finalizeOrder(builder.getSnapshot(), { now: new Date('2026-09-23T12:00:00.000Z'), newId, registerId: 'r1' });
     };
-    const stamped = finalize('session-1');
+    const stamped = { ...finalize(), sessionId: 'session-1' };
     const unstamped = finalize();
-    expect(stamped.sessionId).toBe('session-1');
     expect(unstamped).not.toHaveProperty('sessionId');
     expect(JSON.stringify(toOrderCreateEnvelope(stamped, 'device-1'))).toBe(JSON.stringify(toOrderCreateEnvelope(unstamped, 'device-1')));
+  });
+
+  // TallyUI (#126 review, item 1): stampSession, which checks the session is live, is the only
+  // way to set a sale's session. Revert: copy `options.sessionId` onto the order again.
+  it('cannot set a session: an unchecked sessionId passed through a cast never reaches the order', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const options = { registerId: 'r1', sessionId: 'unknown-session' } as Parameters<typeof finalizeOrder>[1];
+    expect(finalizeOrder(builder.getSnapshot(), options)).not.toHaveProperty('sessionId');
   });
 
   it('finalizes an order with a converted line, carrying taxInclusive through to the payload line only', () => {
@@ -171,6 +179,18 @@ describe('finalizeOrder capability gate (ADR-062)', () => {
     const envelope = toOrderCreateEnvelope(posOrder, 'device1');
     expect(envelope.version).toBe(2);
     expect(envelope.payload.discountMinor).toBe(posOrder.discountMinor);
+  });
+
+  // TallyUI (Medusa live contract, medusapos #62): a 100%-discounted sale needs no payment at all.
+  it('finalizes a 100%-discounted sale at a total of 0, taking no payment, as a version-2 envelope', () => {
+    const builder = sale();
+    builder.applyLineDiscount(builder.getSnapshot().lineItems[0].id, { type: 'percentage', value: 100 });
+    builder.applyLineDiscount(builder.getSnapshot().lineItems[1].id, { type: 'percentage', value: 100 });
+    const order = builder.getSnapshot();
+    expect(order.totalMinor).toBe(0);
+    const posOrder = finalizeOrder(order, { capabilities: { orderCreate: 2 } });
+    expect(posOrder).toMatchObject({ totalMinor: 0, payments: [] });
+    expect(toOrderCreateEnvelope(posOrder, 'device1').version).toBe(2);
   });
 
   it('leaves a discount-free order unaffected, whatever the capability', () => {
