@@ -47,6 +47,16 @@ export const PRODUCT_LIST_QUERY = (barcodeField?: string) => `
   }
 `;
 
+/** The high-water mark and the skew probes only compare ids and timestamps (backlog 29). */
+const PRODUCT_MARK_QUERY = `
+  query GetProductsMark($options: ProductListOptions) {
+    products(options: $options) {
+      items { id updatedAt }
+      totalItems
+    }
+  }
+`;
+
 /**
  * Helper to execute a GraphQL query against the Vendure Admin API.
  */
@@ -76,15 +86,33 @@ export async function gql(
   return body;
 }
 
-/** Probes around a pass's high-water mark for the server's updatedAt skew (ADR-060). `fetchTotal(after)` runs the caller's own list query (products, variants) and returns its totalItems. */
+/**
+ * Probes around a pass's high-water mark for the server's updatedAt skew
+ * (ADR-060). `fetchTotal(after)` runs the caller's own list query (products,
+ * variants) and returns its totalItems. Returns the mark actually probed
+ * (backlog 31: `remark`, given, may re-read a newer one; see below).
+ */
 export async function probeUpdatedAtSkew(
   passHighWater: string,
   updatedAtSkewMs: number,
   fetchTotal: (after: string) => Promise<number>,
-): Promise<void> {
+  remark?: () => Promise<string | undefined>,
+): Promise<string> {
   for (const overlap of [1, 0]) {
     if (overlap === 0 && updatedAtSkewMs > 0) continue;
-    const total = await fetchTotal(new Date(Date.parse(passHighWater) + (overlap === 0 ? 1 : -1) - updatedAtSkewMs).toISOString());
+    const after = (mark: string) => new Date(Date.parse(mark) + (overlap === 0 ? 1 : -1) - updatedAtSkewMs).toISOString();
+    let total = await fetchTotal(after(passHighWater));
+    if (overlap === 1 && total === 0 && remark) {
+      // The mark's own product can be deleted between the mark read and this
+      // probe (harmless on its own: RxDB retries the resulting error and the
+      // next mark read picks a survivor). Re-reading the mark once here means
+      // that common case settles without throwing at all.
+      const remarked = await remark();
+      if (remarked) {
+        passHighWater = remarked;
+        total = await fetchTotal(after(passHighWater));
+      }
+    }
     if (overlap === 1 && total === 0) {
       throw new Error('Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.');
     }
@@ -92,6 +120,7 @@ export async function probeUpdatedAtSkew(
       console.warn('Vendure updatedAt filters over-fetch because the server is not in UTC.');
     }
   }
+  return passHighWater;
 }
 
 /** Project an API product onto the schema's top-level fields (RxDB rejects undeclared ones). Sorts `variants` by id (a stable copy; the input is not mutated), since Vendure does not guarantee variant order. */
@@ -117,22 +146,35 @@ export const createVendureProductReplication = (barcodeField?: string, updatedAt
   pull: {
     async handler(lastCheckpoint, batchSize, context) {
       if (batchSize > 1000) throw new Error('Vendure Admin API take must not exceed 1000');
+      // A checkpoint with skip > 0 but neither passHighWater nor passTotal is
+      // the shape saved mid-pass by the code before #45 gave a pass its own
+      // high-water mark and total (that code kept only skip and updatedAt).
+      // Its skip counts offset pages under a different sort and a moving
+      // updatedAt filter, which don't line up with this pull's fixed-window
+      // paging by id: resuming at that offset could skip rows. Restarting the
+      // pass from offset 0 cannot skip anything, only re-read rows this or an
+      // earlier pass already applied, which RxDB's upsert makes harmless.
+      if (lastCheckpoint?.skip && lastCheckpoint.passHighWater === undefined && lastCheckpoint.passTotal === undefined) {
+        lastCheckpoint = { skip: 0, updatedAt: lastCheckpoint.updatedAt ?? '' };
+      }
       let passHighWater = lastCheckpoint?.passHighWater ?? lastCheckpoint?.updatedAt ?? '';
       if (!lastCheckpoint?.skip) {
-        const head = await gql(context, PRODUCT_LIST_QUERY(barcodeField), {
-          options: { take: 1, sort: { updatedAt: 'DESC' } },
-        });
-        passHighWater = head.data?.products?.items?.[0]?.updatedAt ?? lastCheckpoint?.updatedAt ?? '';
+        const fetchMark = async () => {
+          const head = await gql(context, PRODUCT_MARK_QUERY, { options: { take: 1, sort: { updatedAt: 'DESC' } } });
+          return head.data?.products?.items?.[0]?.updatedAt as string | undefined;
+        };
+        const mark = await fetchMark();
+        passHighWater = mark ?? lastCheckpoint?.updatedAt ?? '';
         // Same-ms writes after this read wait for a newer mark or periodic reconcile (ADR-060, to come).
-        if (!head.data?.products?.items?.length || (lastCheckpoint?.updatedAt && passHighWater === lastCheckpoint.updatedAt)) {
+        if (mark === undefined || (lastCheckpoint?.updatedAt && passHighWater === lastCheckpoint.updatedAt)) {
           return { documents: [], checkpoint: lastCheckpoint ?? { skip: 0, updatedAt: '' } };
         }
-        await probeUpdatedAtSkew(passHighWater, updatedAtSkewMs, async (after) => {
-          const probe = await gql(context, PRODUCT_LIST_QUERY(barcodeField), {
+        passHighWater = await probeUpdatedAtSkew(passHighWater, updatedAtSkewMs, async (after) => {
+          const probe = await gql(context, PRODUCT_MARK_QUERY, {
             options: { take: 1, sort: { updatedAt: 'DESC' }, filter: { updatedAt: { after } } },
           });
           return probe.data.products.totalItems;
-        });
+        }, fetchMark);
       }
       const options: Record<string, any> = {
         take: batchSize,
