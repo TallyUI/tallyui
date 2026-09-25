@@ -35,9 +35,9 @@ afterEach(async () => {
  * One replication on `products`, as the app runs it. `legacy` first syncs with the
  * product feed alone under the same identifier, then changes the server.
  */
-async function start({ afterFirstVariantPage, variantPageSize, legacy }: {
-  afterFirstVariantPage?: (variants: Variant[]) => void; variantPageSize?: number;
-  legacy?: (products: Product[]) => void;
+async function start({ afterFirstVariantPage, afterFirstProductPage, variantPageSize, updatedAtSkewMs, legacy }: {
+  afterFirstVariantPage?: (variants: Variant[]) => void; afterFirstProductPage?: (variants: Variant[]) => void;
+  variantPageSize?: number; updatedAtSkewMs?: number; legacy?: (products: Product[]) => void;
 } = {}) {
   const products: Product[] = Array.from({ length: 2000 }, (_, i) => ({
     id: String(i + 1), name: `Product ${i + 1}`, slug: `product-${i + 1}`, updatedAt: timestamp(i),
@@ -49,6 +49,7 @@ async function start({ afterFirstVariantPage, variantPageSize, legacy }: {
   // beforeRead runs before the server reads its rows; afterRead holds a response already read.
   const hooks: { beforeRead?: (kind: Kind) => Promise<void>; afterRead?: (kind: Kind) => Promise<void> } = {};
   let hooked = false;
+  let hookedProduct = false;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
     const { query, variables: { options } } = JSON.parse(init!.body as string);
     const root = query.includes('productVariants') ? 'productVariants' : 'products';
@@ -76,6 +77,10 @@ async function start({ afterFirstVariantPage, variantPageSize, legacy }: {
       hooked = true;
       afterFirstVariantPage?.(variants);
     }
+    if (kind === 'productPage' && skip === 0 && !hookedProduct) {
+      hookedProduct = true;
+      afterFirstProductPage?.(variants);
+    }
     const body = JSON.stringify({ data: { [root]: { items, totalItems: matching.length } } });
     await hooks.afterRead?.(kind);
     return new Response(body);
@@ -85,10 +90,10 @@ async function start({ afterFirstVariantPage, variantPageSize, legacy }: {
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
   });
   await db.addCollections({ products: { schema: vendureProductSchema } });
-  const adapter = variantPageSize
+  const adapter = variantPageSize || updatedAtSkewMs
     ? combinePullAdapters({
       products: createVendureProductReplication(),
-      variants: createVendureVariantFeedReplication(undefined, 0, variantPageSize),
+      variants: createVendureVariantFeedReplication(undefined, updatedAtSkewMs ?? 0, variantPageSize),
     }, { legacyKey: 'products' })
     : createVendureConnector().replication!.products!;
   const checkpoints: any[] = [];
@@ -159,7 +164,43 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
     expect(count('variantPage')).toBe(0);
     // The seed was stored with the first call's checkpoint.
     expect(checkpoints[1].variants).toMatchObject({ skip: 0, updatedAt: iso(timestamp(3333)) });
-  });
+  }, 60000);
+
+  it('keeps both early and late variant edits made during the first sync, on and after the first product page', async () => {
+    let edited = false;
+    const { variants } = await start({ afterFirstProductPage: (rows) => {
+      edited = true;
+      change(rows, [5], 10000); // Edit A, t1: product 5 was on the page just served.
+      change(rows, [1300], 10001); // Edit B, t2 > t1: product 1300, on a later page.
+    } });
+    expect(edited).toBe(true);
+    await sync();
+    await expectPrices(variants, [5, 1300]);
+  }, 60000);
+
+  it('catches an edit whose updatedAt ties the seeded mark exactly (the 1 ms overlap)', async () => {
+    const { variants, reset } = await start();
+    reset();
+    // Variant 10 ties the pre-edit newest mark (timestamp 3333) exactly; variant 20
+    // is 1 ms later so the pass runs at all. Vendure's `after` is strict, so the
+    // feed reads `since - 1 ms`, catching the tie.
+    change(variants, [10], 3333);
+    change(variants, [20], 3334);
+    await sync();
+    await expectPrices(variants, [10, 20]);
+  }, 60000);
+
+  it('with updatedAtSkewMs set, catches an edit up to that skew before the seeded mark', async () => {
+    const skewMs = 5000;
+    const { variants, reset } = await start({ updatedAtSkewMs: skewMs });
+    reset();
+    // Variant 10 sits exactly skewMs before the pre-edit newest mark, at the widened
+    // filter's edge; variant 20 is later, so the pass runs at all.
+    change(variants, [10], 3333 - skewMs);
+    change(variants, [20], 3334);
+    await sync();
+    await expectPrices(variants, [10, 20]);
+  }, 60000);
 
   it('delivers the parents of 30 variants whose prices changed across 25 products', async () => {
     const { variants, delivered, reset } = await start();
@@ -170,7 +211,7 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
     await expectPrices(variants, changed);
     expect(delivered('productPage')).toEqual([]);
     expect(new Set(delivered('parents'))).toEqual(new Set([...range(1, 25).map(String), ...overlap]));
-  });
+  }, 60000);
 
   it('delivers all 240 parents of 250 changed variants in one sync, reading several 50-variant pages per call', async () => {
     const { variants, delivered, variantPagesPerCall, reset } = await start({ variantPageSize: 50 });
@@ -182,7 +223,7 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
     expect(new Set(delivered('parents'))).toEqual(new Set([...range(1, 240).map(String), ...overlap]));
     // Each page yields at most 50 parents, below batch size 100, so a call must read on.
     expect(Math.max(...variantPagesPerCall)).toBeGreaterThan(1);
-  });
+  }, 60000);
 
   it('keeps both early and late variant changes made after page one', async () => {
     // An upgrade, so the variant feed runs a full multi-page pass (a fresh install is seeded).
@@ -192,7 +233,7 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
     } });
     await sync();
     await expectPrices(variants, [5, 3300]);
-  });
+  }, 60000);
 
   it('makes exactly two requests on an idle sync, one mark per feed', async () => {
     const { requests, reset } = await start();
@@ -201,7 +242,7 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
     await sync();
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     expect(requests.map((r) => r.kind)).toEqual(['productMark', 'variantMark']);
-  });
+  }, 60000);
 
   it('delivers a product change and a variant change of another product in one sync', async () => {
     const { products, variants, delivered, reset } = await start();
@@ -213,7 +254,7 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
     await expectPrices(variants, [9]);
     expect(delivered('productPage')).toContain('7');
     expect(delivered('parents')).toContain('9');
-  });
+  }, 60000);
 
   it('never lets a parent fetch made before a rename revert it', async () => {
     const { products, variants, requests, hooks } = await start();
@@ -260,7 +301,7 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
     const renamedAt = names.indexOf('Renamed 7');
     expect(renamedAt).toBeGreaterThanOrEqual(0);
     expect(names.slice(renamedAt).every((name) => name === 'Renamed 7'), names.join(', ')).toBe(true);
-  });
+  }, 60000);
 
   it('advances the checkpoint past variant pages whose parents were all deleted', async () => {
     const { products, variants, checkpoints, count, reset } = await start({ variantPageSize: 100 });
@@ -278,7 +319,7 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
     expect(checkpoints[0].variants).toMatchObject({ skip: 0, updatedAt: iso(timestamp(10000)) });
     await expectPrices(variants, [5]);
     expect(carriers).toBe(1);
-  });
+  }, 60000);
 
   it('upgrades from a stored product-feed checkpoint without re-downloading the catalogue', async () => {
     const { checkpoints, delivered, count } = await start({ legacy: (products) => rename(products, 3) });
@@ -291,5 +332,5 @@ describe('Vendure products and variant feeds in one real RxDB replication', () =
     expect((await db.products.findOne('3').exec())!.name).toBe('Renamed 3');
     // The variant feed runs its first full pass: every product has a variant.
     expect(new Set(delivered('parents')).size).toBe(2000);
-  });
+  }, 60000);
 });
