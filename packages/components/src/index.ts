@@ -133,7 +133,7 @@ export {
 // Sale components
 export {
   Cart, CartBar, Tender, DiscountForm, DiscountChips, parseDiscount, discountLabel,
-  Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus,
+  Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList,
 } from './sale';
 
 // Layout components

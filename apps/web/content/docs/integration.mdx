@@ -29,6 +29,8 @@ The app also opens `pos_orders`, the local store of finalized sales, with `addPo
 
 If an order fails the new schema's validation, `addPosOrderCollection` rejects with RxDB's DM4 error once the migration has stopped, and every order stays in the old version's storage. Surface the error, and retry by calling it again or reopening the database. Never delete anything to get past it.
 
+Rolling a till back to a build with an older `pos_orders` schema version, then upgrading it again, is unsupported. For example, a till that goes from version 1 back to version 0 and then on to version 2 holds two older versions at once. Its first `addPosOrderCollection` then rejects with DM4, and the next call migrates the rest. No order is lost.
+
 ```ts
 import { createTallyDatabase, connectorCollection, getStorage } from '@tallyui/database';
 import { addPosOrderCollection } from '@tallyui/pos';

@@ -8,17 +8,22 @@
 //     ProductsScreen and fetchStoreSettings, not the hook.
 import type { ReactNode } from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { StoreSettings as PricingSettings } from '@tallyui/core';
+import type { CommandEnvelope, OrderCreatePayload, StoreSettings as PricingSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
+import type { LogEntry } from '../logging';
 import { createOrderBuilder } from '../order';
-import { finalizeOrder } from '../pos-order';
+import { createOrderOutbox } from '../outbox';
+import { addPosOrderCollection, finalizeOrder, type PosOrder } from '../pos-order';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
-import { closeSession, openSession, registerSessionSchema, type RegisterSessionCollection } from '../register';
+import {
+  closeSession, closureSchema, ensureRegister, openSession, registerFactsLogger, registerSessionCollection, writeClosure,
+  type ClosureCollection, type RegisterSessionCollection,
+} from '../register';
 import { catalogueEntries } from './catalogue';
 import { DISCOUNTS_UNSUPPORTED, useSale } from './use-sale';
 
@@ -61,7 +66,7 @@ async function withOpenSession() {
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     multiInstance: false,
   });
-  await db.addCollections({ register_sessions: { schema: registerSessionSchema } });
+  await db.addCollections({ register_sessions: registerSessionCollection() });
   const sessions = db.register_sessions as RegisterSessionCollection;
   const session = await openSession(sessions, {
     registerId, expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: cashierRef,
@@ -322,20 +327,96 @@ describe('sale', () => {
     }
   });
 
-  it("a closed session makes complete() set error and keep the tender, and onSaleCompleted isn't called", async () => {
+});
+
+// Registers c1a (ADR-032, late sale): complete() runs after the money is taken, so a refused stamp
+// keeps the sale, outside every closure. This replaces "a closed session makes complete() set error
+// and keep the tender, and onSaleCompleted isn't called". Revert: restore "setError and return" there.
+describe('late sale', () => {
+  const facts: LogEntry[] = [];
+  registerFactsLogger.addSink({ id: 'late-sale-capture', levels: ['debug', 'info', 'warn', 'error'], write: (entry) => facts.push(entry) });
+  const lateFacts = () => facts.filter((entry) => (entry.data?.context as { type?: string })?.type === 'register.late-sale');
+  beforeEach(() => { facts.length = 0; });
+
+  /** Completes a card sale on `sessionId`, and returns the hook and the order `onSaleCompleted` got. */
+  async function completeOn(sessions: RegisterSessionCollection, sessionId: string, onSaleCompleted = vi.fn()) {
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, session: { id: sessionId, sessions } }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    expect(onSaleCompleted).toHaveBeenCalledTimes(1);
+    return { result, completed: onSaleCompleted.mock.calls[0][0] as PosOrder };
+  }
+
+  it.each(['closed', 'missing'])('a %s session: the sale reaches onSaleCompleted and the receipt with lateSessionId and no sessionId, and a late-sale fact is logged', async (kind) => {
+    const { db, sessions, sessionId: opened } = await withOpenSession();
+    try {
+      if (kind === 'closed') await closeSession(sessions, opened, { counted: { cash: 0 } });
+      const sessionId = kind === 'closed' ? opened : 'missing-session';
+      const { result, completed } = await completeOn(sessions, sessionId);
+      expect(completed).toMatchObject({ lateSessionId: sessionId, syncStatus: 'pending', registerId });
+      expect(completed).not.toHaveProperty('sessionId');
+      expect(result.current.stage).toEqual({ kind: 'receipt', order: expect.anything(), posOrder: completed });
+      expect(result.current.error).toBeNull();
+      expect(lateFacts()).toHaveLength(1);
+      expect(lateFacts()[0]).toMatchObject({ level: 'warn', data: {
+        actor: { id: cashierRef },
+        terminal: { operationId: completed.id.replace(/-/g, '') },
+        context: { type: 'register.late-sale', orderId: completed.id, sessionId, registerId },
+      } });
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('a log sink that throws on the late-sale fact never stops the sale', async () => {
     const { db, sessions, sessionId } = await withOpenSession();
+    const failing = { id: 'failing', levels: ['warn' as const], write: () => { throw new Error('sink down'); } };
+    registerFactsLogger.addSink(failing);
     try {
       await closeSession(sessions, sessionId, { counted: { cash: 0 } });
-      const completed = vi.fn();
-      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed, session: { id: sessionId, sessions } }));
-      addSaleLines(result);
-      act(() => result.current.startTender('external'));
-      await act(async () => { await result.current.complete(); });
-      expect(result.current.stage).toEqual({ kind: 'tender', method: 'external' });
-      expect(result.current.order.payments).toHaveLength(1);
-      expect(result.current.error).toBe('register_session_closed');
-      expect(completed).not.toHaveBeenCalled();
+      const { result, completed } = await completeOn(sessions, sessionId);
+      expect(completed.lateSessionId).toBe(sessionId);
+      expect(result.current.stage.kind).toBe('receipt');
     } finally {
+      registerFactsLogger.removeSink('failing');
+      await db.remove();
+    }
+  });
+
+  it('an open session still stamps sessionId, and logs no late-sale fact', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { completed } = await completeOn(sessions, sessionId);
+      expect(completed.sessionId).toBe(sessionId);
+      expect(completed).not.toHaveProperty('lateSessionId');
+      expect(lateFacts()).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it("the late order is stored pending with lateSessionId through a real outbox, and the closed session's closure doesn't count it", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    await db.addCollections({ closures: { schema: closureSchema } });
+    const orders = await addPosOrderCollection(db);
+    const sent: CommandEnvelope<OrderCreatePayload>[] = [];
+    const outbox = createOrderOutbox({ collection: orders, deviceId: 'device-1', random: () => 0.5,
+      transport: { send: async (batch) => { sent.push(...batch); return { kind: 'retry', reason: 'offline' }; } } });
+    try {
+      await ensureRegister(sessions, 'web');
+      const closed = await closeSession(sessions, sessionId, { counted: { cash: 0 } });
+      const { completed } = await completeOn(sessions, sessionId, vi.fn(async (posOrder: PosOrder) => {
+        await orders.insert(posOrder);
+        await outbox.flush();
+      }));
+      expect((await orders.findOne(completed.id).exec())?.toJSON()).toMatchObject({ syncStatus: 'pending', lateSessionId: sessionId });
+      expect(sent.map((command) => command.payload.clientOrderId)).toEqual([completed.id]);
+      const closure = await writeClosure({ closures: db.closures as ClosureCollection, register: sessions, storeKey: 'store', session: closed,
+        counted: 0, otherTenders: {}, movements: [], orders: [completed], softwareVersion: '1.0.0' });
+      expect(closure.toJSON()).toMatchObject({ order_ids: [], period_sales_total_minor: 0, unsynced_count: 0, till_expected: { cash: 0 } });
+    } finally {
+      outbox.stop();
       await db.remove();
     }
   });

@@ -50,10 +50,10 @@ export { searchProducts, withStockOverlay, getProductStock, stockOverlay$, stock
 export { useSale, DISCOUNTS_UNSUPPORTED, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel } from './sale';
 export type { SaleStage, CatalogueEntry } from './sale';
 
-export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema, posOrderCollection, addPosOrderCollection } from './pos-order';
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema, posOrderCollection, addPosOrderCollection, getDeviceId, needsAttention } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';
-export { createHttpCommandTransport, createOrderOutbox } from './outbox';
-export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OutboxState } from './outbox';
+export { createHttpCommandTransport, createOrderOutbox, useOrderOutbox } from './outbox';
+export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
 export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR } from './tender';
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg } from './tender';
 

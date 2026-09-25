@@ -46,8 +46,8 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // false, so it already accepts (and round-trips) a property it does not declare — the same as
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
-  // `sessionId`, ADR-032; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(1);
+  // `sessionId`, ADR-032, and version 2 adds `lateSessionId`, `display` and `taxByRate`; see migration.test.ts.)
+  expect(posOrderSchema.version).toBe(2);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });

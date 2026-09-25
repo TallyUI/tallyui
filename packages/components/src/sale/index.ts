@@ -6,3 +6,4 @@ export { Catalogue, formatStockSyncTime } from './catalogue';
 export { Receipt } from './receipt';
 export { injectPrintStyle } from './print-style';
 export { SyncStatus } from './sync-status';
+export { OrdersList } from './orders-list';

@@ -3,7 +3,7 @@ import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/
 import { createOrderBuilder, type Discount, type Order } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
 import { useTax } from '../tax';
-import { stampSession, type RegisterSessionCollection } from '../register';
+import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import type { CatalogueEntry } from './catalogue';
 import { addEntryToCart, CartError } from './cart';
 
@@ -15,7 +15,12 @@ export const DISCOUNTS_UNSUPPORTED = 'finalize: discounts are not supported by t
 /** Call under a `TaxProvider`: its tax context and the settings' currency price every sale. */
 export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   registerId: string; cashierRef: string; capabilities?: ServerCapabilities;
-  /** When set, `complete()` stamps the finalized order with this session before `onSaleCompleted`. */
+  /**
+   * When set, `complete()` stamps the finalized order with this session before `onSaleCompleted`.
+   * `complete()` runs after the money is taken, so a refused stamp (the session closed or went
+   * missing) never stops the sale: it goes on to `onSaleCompleted` and the receipt with
+   * `lateSessionId` instead of `sessionId`, and a `late-sale` register fact is recorded (ADR-032).
+   */
   session?: { id: string; sessions: RegisterSessionCollection };
   onSaleCompleted?: (posOrder: PosOrder) => Promise<void> | void;
 }) {
@@ -93,9 +98,17 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       if (opts.session) {
         try {
           posOrder = await stampSession(posOrder, opts.session.id, opts.session.sessions);
-        } catch (error) {
-          setError((error as Error).message);
-          return;
+        } catch {
+          // The money is taken: keep the sale, outside every closure (ADR-032, late sale).
+          const { sessionId: _unstamped, ...unstamped } = posOrder;
+          posOrder = { ...unstamped, lateSessionId: opts.session.id };
+          try {
+            // useSale knows the cashier only by ref, so the actor carries no display name.
+            recordRegisterFact({ kind: 'late-sale', orderId: posOrder.id, sessionId: opts.session.id, registerId: opts.registerId,
+              actor: { id: opts.cashierRef, name: '' } });
+          } catch {
+            // The logger calls the app's sinks unguarded; a failing sink must never lose the sale.
+          }
         }
       }
       try {

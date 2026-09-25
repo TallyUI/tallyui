@@ -533,6 +533,21 @@ bodies and design docs, and the source is given for each.
 
     The server closes both windows in job c, by refusing writes to a
     closed session.
+- **Late sale (the Front desk, 2026-09-25).** The one outcome that must be
+  impossible is money taken with no recorded order. `useSale.complete()`
+  runs after the money is taken, so when `stampSession` refuses there, for
+  any reason (the session closed, went missing, or a crash between the
+  app's recheck and the stamp):
+  - the sale is still finalized and handed to `onSaleCompleted`, so it is
+    queued to the outbox;
+  - it has no `sessionId`; `lateSessionId` (local only, `pos_orders`
+    version 2) holds the id of the session it tried;
+  - a `late-sale` register fact records the order, that session and the
+    register;
+  - the closed Z is never changed;
+  - `needsAttention` surfaces the order, and `OrdersList` explains it.
+
+  A refusal in `finalizeOrder`, before any stamp, still stops the sale.
 - **Registers c1b done (2026-09-25): `useRegisterSession`**, a neutral port
   of WCPOS `next`'s `use-register-session.ts` at `3b5331b5c`.
   - **The app supplies every input:** the collections (`pos_orders`
@@ -1501,6 +1516,26 @@ interface OrderCreatePayload {
     `declare module 'react-native'` block (TV6a's `uniwind-env.d.ts`
     already augments `dataSet`). `searchProducts`, `catalogueEntries`,
     `findEntryByCode`, `variantPriceLabel` join `COMPONENTS_POS_ALLOWLIST`.
+  - TV7 done: the neutral outbox core lifted from medusapos/app
+    `563b03c4`: `getDeviceId` (from `register`), `needsAttention` (from
+    `order-store`) and `useOrderOutbox` (from `use-outbox`) into
+    `packages/pos/src/`, and `OrdersList` (from the `orders` screen) into
+    `packages/components/src/sale/`. Adaptations: `getDeviceId` takes the
+    storage key (medusapos passes `'medusapos.register_id'`);
+    `useOrderOutbox` takes `storeKey` (medusapos: the base URL), `open`,
+    `transport`, `deviceId`, `onBusy` and `onOpenError` in place of the
+    app's session, `openOrderStore`, `authHeaders`, `markBusy` and
+    `reportStorageStartFailure`, and calls `onOpenError` for every opening
+    error (medusapos filters with `isStorageWorkerFailure`); `OrdersList`
+    takes `orders`, `onRetry` (the outbox's `requeue`), `formatDate?`
+    (default `Intl.DateTimeFormat`, keeping an unparseable value as is) and
+    `footer?` (medusapos: the feedback link). `needsAttention` joins
+    `COMPONENTS_POS_ALLOWLIST`. The router, session, storage selection,
+    Dexie carry-over, `product-cache` and `live-tab` stay in the app.
+    SQLite/Dexie storage selection and the storage watchdog are
+    platform-neutral, and the Vendure app will need them. They're deferred
+    until the Vendure app is their second consumer, so the abstraction is
+    cut from two real cases rather than one.
 - **Consequences:**
   - The second app costs about half the first.
   - A third backend (WooCommerce, or Shopify if it is unparked) gets the
@@ -2302,7 +2337,8 @@ interface OrderCreatePayload {
   from `@tallyui/pos` only as `import type` (`Cart` takes `sale:
   ReturnType<typeof useSale>`), or a pure function on
   `COMPONENTS_POS_ALLOWLIST` (`buildReceiptData`, `searchProducts`,
-  `catalogueEntries`, `findEntryByCode`, `variantPriceLabel`) — never a
+  `catalogueEntries`, `findEntryByCode`, `variantPriceLabel`,
+  `needsAttention`) — never a
   hook, store or the order builder. `useState` in `Cart`/`DiscountForm` is
   component-local React state, not a pos import.
 - **Enforcement:** `scripts/check-workspace-deps.mjs`'s
@@ -2311,7 +2347,7 @@ interface OrderCreatePayload {
 
 ## ADR-065 `order.create` version 3 carries the receipt's figures on every sale; `pos_orders` goes to schema version 2
 
-- **Date:** 2026-09-25 · **Status:** Accepted (the Front desk); implementation queued after registers job c1 · **Source:** decision (e) on the half-cent gap: Medusa keeps unrounded totals, so the POS receipt and the frozen closures are the fiscal figures.
+- **Date:** 2026-09-25 · **Status:** Accepted (the Front desk); the `pos_orders` version-2 schema landed in registers c1a (decision 4), and the version-3 envelope and `finalizeOrder` are queued after registers job c1 · **Source:** decision (e) on the half-cent gap: Medusa keeps unrounded totals, so the POS receipt and the frozen closures are the fiscal figures.
 - **Context:**
   - The server needs the receipt's own figures for every sale: the display totals and lines (ADR-063), and tax by rate (`taxLinesByRate`, #134).
   - The medusapos plugin is strict (#62). It rejects a version-1 command that carries extra fields, and a version-2 command without `discountMinor`.
@@ -2327,6 +2363,8 @@ interface OrderCreatePayload {
   4. **`pos_orders` goes to schema version 2,** adding the two optional fields.
      - It uses an identity migration strategy through `posOrderCollection()` and `addPosOrderCollection` (#131, #133, #135).
      - It gets the same migration tests as version 0 → 1: a pending order survives byte for byte, nothing is dropped, and the SQLite and memory storages are both covered.
+     - **Amended (2026-09-25):** the version-2 bump landed in registers c1a, with both fields and ADR-032's `lateSessionId`, and its tests run from version 0 and from version 1. So the ADR-065 job does only the version-3 envelope and `finalizeOrder`; it writes the fields and bumps no schema.
+     - **Stored names (the Front desk, 2026-09-25):** `taxByRate` is stored as `taxLinesByRate` names it, `{ ratePpm, code?, label?, netMinor, amountMinor, grossMinor }`, where `amountMinor` is the tax; the nested objects of `display` and `taxByRate` refuse unknown fields. The version-3 wire field maps `amountMinor` to the tax.
   5. **The medusapos plugin** advertises `order.create` `[1, 2, 3]` on `/tally/v1/info` and records the two fields in the order's metadata. That half is specified alongside, so both land together.
 - **Consequences:**
   - Every sale made against a version-3 server carries its fiscal figures.
