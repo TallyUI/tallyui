@@ -38,6 +38,37 @@ describe('toOrderCreateEnvelope', () => {
     });
     expect(JSON.parse(JSON.stringify(envelope))).toStrictEqual(envelope);
     expect(order).toStrictEqual(before);
+    // A discount-free order stays version 1 and byte-identical to the payload before ADR-062, key order included.
+    expect(JSON.stringify(envelope)).toBe('{"id":"command-id","type":"order.create","version":1,"createdAt":"2026-09-23T12:00:00.000Z",'
+      + '"deviceId":"device1","attempt":3,"payload":{"clientOrderId":"order-id","createdAt":"2026-09-23T12:00:00.000Z","currency":"EUR",'
+      + '"pricesIncludeTax":false,"lines":[{"clientLineId":"line1","variantId":"v1","title":"Item 1","quantity":2,"unitPriceMinor":850},'
+      + '{"clientLineId":"line2","variantId":"p2","title":"Item 2","quantity":1,"unitPriceMinor":1200}],"payments":[{"clientPaymentId":'
+      + '"payment1","method":"external","amountMinor":1000,"reference":"terminal"},{"clientPaymentId":"payment2","method":"cash",'
+      + '"amountMinor":2451,"tenderedMinor":3000,"changeMinor":549}],"subtotalMinor":2900,"taxMinor":551,"totalMinor":3451,'
+      + '"customer":{"email":"buyer@example.com"},"registerId":"r1","cashierRef":"staff1"}}');
+  });
+
+  // Test-only path: finalize still refuses discounts until the plugins honour version 2 (ADR-062).
+  it('a discounted order is version 2: each discounted line carries discountMinor, and the order carries their sum', () => {
+    const discounted: PosOrder = {
+      ...order, subtotalMinor: 2610, discountMinor: 290, taxMinor: 496, totalMinor: 3106,
+      lines: [
+        { ...order.lines[0], discountMinor: 270, netMinor: 1430 },
+        { ...order.lines[1], discountMinor: 20, netMinor: 1180, taxInclusive: true },
+        { ...order.lines[1], id: 'line3', discountMinor: 0 },
+      ],
+    };
+    const envelope = toOrderCreateEnvelope(discounted, 'device1');
+    expect(envelope.version).toBe(2);
+    expect(envelope.payload.lines).toStrictEqual([
+      { clientLineId: 'line1', variantId: 'v1', title: 'Item 1', quantity: 2, unitPriceMinor: 850, discountMinor: 270 },
+      { clientLineId: 'line2', variantId: 'p2', title: 'Item 2', quantity: 1, unitPriceMinor: 1200, taxInclusive: true, discountMinor: 20 },
+      { clientLineId: 'line3', variantId: 'p2', title: 'Item 2', quantity: 1, unitPriceMinor: 1200 },
+    ]);
+    expect(envelope.payload.discountMinor).toBe(290);
+    expect(envelope.payload.discountMinor).toBe(envelope.payload.lines.reduce((sum, line) => sum + (line.discountMinor ?? 0), 0));
+    expect(envelope.payload).toMatchObject({ subtotalMinor: 2610, taxMinor: 496, totalMinor: 3106 });
+    expect(JSON.parse(JSON.stringify(envelope))).toStrictEqual(envelope);
   });
 
   it.each([null, { name: 'Customer' }, { email: '' }])('omits undefined optional fields and uses null without an email: %j', (customer) => {

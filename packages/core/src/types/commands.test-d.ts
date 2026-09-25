@@ -24,7 +24,8 @@ describe('command types', () => {
     expectTypeOf<CommandWarning['code']>().toEqualTypeOf<'total_mismatch' | 'insufficient_stock'>();
   });
 
-  it('pins the envelope version', () => {
-    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<1>();
+  it('pins the envelope versions: 2 only for a discounted order.create (ADR-062)', () => {
+    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<1 | 2>();
+    expectTypeOf<OrderCreatePayload['discountMinor']>().toEqualTypeOf<number | undefined>();
   });
 });

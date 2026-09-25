@@ -674,6 +674,9 @@ interface OrderCreatePayload {
     than the rounded total) is `rejected` with a stable `error.code`.
 - **Change rule:** changing any of these shapes needs a new ADR and a
   `version` bump, agreed by both tracks.
+- **Amended by ADR-062:** a discounted order is `version: 2`, with
+  `discountMinor` on its lines and payload; a discount-free one stays
+  version 1, byte-identical.
 - **Amendment (2026-09-24):** a new rejection code `invalid_payload` is
   returned as `status: 'rejected'` when a command's payload fails shape
   validation. This check runs before the ledger claim; it is deterministic,
@@ -1890,3 +1893,99 @@ interface OrderCreatePayload {
     `getRxStorageSQLiteWasm` storage, in mode `'one'` with one worker
     holding the exclusive pool, and opens every store's database on it. A
     second storage would start a second worker, which cannot open the pool.
+
+## ADR-062 Discounts are pre-tax, allocated per line, and carried in `order.create` version 2
+
+- **Date:** 2026-09-25 · **Status:** Accepted (the Front desk); amends
+  ADR-038 under its change rule (a new ADR and a `version` bump) · **Source:**
+  backlog item 11 (programme plan §2.5)
+- **Context:** the order builder applied line discounts before tax, but
+  took order discounts off the total **after** tax. They were never
+  allocated to the lines, so they did not reduce the tax. VAT and sales tax
+  are due on the amount actually paid, so **the after-tax order discount
+  was a bug**. At 20% exclusive, a €100.00 line with 10% off the order paid
+  €110.00; it now pays €108.00 (€90.00 plus €18.00 tax).
+- **Decision:**
+  1. **The basis is pre-tax.** A line discount reduces that line's base. An
+     order discount is allocated across the lines, and each line's tax is
+     then computed in its own mode (D2c) on its discounted base.
+  2. **Every amount is in the line's own mode**: the shelf (gross) amount
+     for an inclusive line, the pre-tax (net) amount for an exclusive one.
+     A line's **pre-order-discount amount** is its `gross − line discounts`
+     in that mode. In a mixed-mode order:
+     - a percentage order discount applies to each line's own-mode amount,
+       so an inclusive line's share reduces its gross and an exclusive
+       line's share reduces its net;
+     - a fixed order discount is allocated by the same amounts, and its
+       cap is their sum;
+     - the paid total is the sum of the lines' post-discount gross
+       amounts (an exclusive line's net plus its tax, an inclusive line's
+       total), with tax rounded once for the order (ADR-037);
+     - the receipt's discount total is the sum of the own-mode amounts.
+  3. **The order discount amount.** The base is the sum of the lines'
+     pre-order-discount amounts. A percentage is
+     `roundHalfAway(base × pct / 100)`; a fixed amount is its integer minor
+     value. Several order discounts apply in order, each against the base
+     still remaining, and each is capped at it. The order discount is their
+     sum.
+  4. **Allocation** (`allocateOrderDiscount` in `@tallyui/pos`, pure, for
+     the plugins' reference): shares in proportion to each line's
+     pre-order-discount amount, with largest-remainder rounding to the
+     minor unit and ties to the earlier line. The shares sum exactly to the
+     order discount, and no share exceeds its line's amount.
+  5. **Lines carry their share.** `LineItem.orderDiscountMinor` is the
+     share; `discountMinor` is the line discounts plus the share;
+     `netMinor = gross − discountMinor` is the taxed base. The order totals
+     sum the lines, with no after-tax subtraction. `order.discountMinor` is
+     the sum of every discount, and `order.discounts[].amountMinor` keeps
+     each order discount for display.
+- **`order.create` version 2** (`@tallyui/core`):
+
+```ts
+interface CommandEnvelope<P> { /* … */ version: 1 | 2; /* … */ }
+interface OrderCreateLine {
+  /* …version 1 fields… */
+  discountMinor?: number; // line + allocated order discount, own mode, minor units; only when > 0
+}
+interface OrderCreatePayload {
+  /* …version 1 fields… */
+  discountMinor?: number; // the order's total discount = Σ lines[].discountMinor; only when > 0
+}
+```
+
+  - **The envelope's `version` is 2 only when a discount is present.** A
+    discount-free payload stays **version 1 and byte-identical**, so every
+    current order and every current plugin is unaffected.
+  - **Server rule:** a line's charged base is
+    `unitPriceMinor × quantity − discountMinor`, in the line's own mode
+    (`taxInclusive ?? pricesIncludeTax`), taxed as ADR-038 and ADR-039
+    describe. `subtotalMinor`, `taxMinor` and `totalMinor` are already
+    after the discounts; ADR-037's ≤ 1 minor-unit guard and
+    `total_mismatch` still apply.
+  - **Medusa:** one line-item adjustment per discounted line on the draft
+    order, carrying that line's `discountMinor` and the reason "POS
+    discount"; never ad-hoc promotions. An order discount therefore
+    appears in Medusa as the sum of its line adjustments.
+  - `PosOrderLine.discountMinor` already existed and `finalize` copies it,
+    so the `pos_orders` schema is unchanged (its line items do not forbid
+    extra properties, and `discountMinor` was already declared).
+- **Rollout, through the guard, as ADR-038 amendment 2 did (T1, M, T2):**
+  1. this change: the builder computes pre-tax discounts and the client
+     can send version 2, but **`finalize` still rejects any discount**
+     ("finalize: discounts are not supported by the server yet
+     (order.create v2)"), since an old plugin would reject a version-2
+     payload or mis-apply it;
+  2. the medusapos plugin honours version 2 with line adjustments;
+  3. a small TallyUI change removes the guard.
+
+  The guard does not know which backend a sale goes to, so it protects
+  every plugin; each one must honour version 2 before the guard goes.
+- **Consequences:**
+  - Every order discount now lowers the tax. An existing test that asserted
+    the after-tax total was changed to the pre-tax numbers.
+  - Stacked percentage order discounts compound (the second applies to
+    what the first leaves), where they previously each took the full
+    subtotal.
+  - The receipt shows each line's discount (`discountMinor`, absent when
+    0) and the order discounts as their own lines. Its lines still add up
+    to the subtotal (exclusive) or the total (inclusive).
