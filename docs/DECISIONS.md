@@ -2155,3 +2155,44 @@ interface OrderCreatePayload {
   invariant is the same as `order.display`'s. Receipt lines and each line's
   own discount row are unchanged, in the line's own mode — showing them in
   the display mode for mixed carts is backlog 48.
+- **Line figures (amendment, 2026-09-25):** `order.display` gains `lines`
+  (each line before any discount, with its own discounts as sub-rows) and
+  `orderDiscountMinor` (the order discounts as one row, not allocated). A
+  line is **converted** when its own mode differs from the display mode;
+  `convert(x)` takes a converted line's own-mode amount into the display
+  mode **on its own**, at that line's rates: `x − round(tax in x)` or
+  `x + round(tax on x)`, half away. Otherwise it's `x`.
+  - Each sub-row is `convert(d.amountMinor)` (ADR-062's capped amount).
+    The order row is `Σ convert(line.orderDiscountMinor)`, so it's 0 with
+    no order discount. `display.discountMinor` is every sub-row plus the
+    order row.
+  - `display.subtotalMinor` is now `total − tax + discount` (exclusive) or
+    `total + discount` (inclusive). A line's amount is `convert(quantity ×
+    unit price)`; the **residue**, subtotal − Σ line amounts, is added to
+    the **last converted line**.
+  - **Invariants, exact by construction:** Σ line amounts = subtotal;
+    Σ sub-rows + order row = discount; and the totals invariants above.
+  - **Guards (the builder throws):** with no converted line the residue is
+    0, since Σ gross = Σ net + Σ discounts. Otherwise |residue| ≤ ⌊n/2⌋ + 1,
+    where n is the number of non-zero rounded conversions on converted
+    lines (amounts, sub-rows and order shares): each is off by at most half
+    a cent, and the order-level tax rounding by at most one more. One cent
+    per converted line isn't enough: a single converted line with stacked
+    discounts can carry a residue of 2 from rounding alone (the 3 × 147.24
+    regression test).
+  - **Why the cent sits there:** the discount the cashier typed is the
+    figure a customer can check, so every discount row is exact in its own
+    mode, converted independently. A converted line's shown amount is
+    already a rounded conversion the customer can't verify to the cent. A
+    "Rounding" row is out.
+  - **Consequences:** single-mode carts show the same subtotal and discount
+    as before. Mixed carts can shift by about a cent, which is accepted:
+    ADR-062's mixed fixture with €9.50 off B shows 3522 / 950 (was 3521 /
+    949) exclusive, and 4191 / 1131 (was 4190 / 1130) inclusive. The
+    receipt prints `displayAmountMinor`, `displayDiscounts` and
+    `orderDiscountMinor`; `lineTotalMinor` stays, after every discount, for
+    existing readers, and isn't the figure to print above the subtotal.
+    `CartTotal` orders its rows Subtotal / Discount / Tax / Total and reads
+    tax as "incl." when `taxInclusive`.
+  - This completes the receipt half of backlog 48; one renderer is still
+    open.

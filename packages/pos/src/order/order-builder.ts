@@ -22,7 +22,7 @@ function roundHalfAway(n: number): number {
   return Math.sign(n) * Math.round(Math.abs(n));
 }
 
-/** The order totals of recalculated lines; the settlement and display totals both use it (ADR-063). */
+/** The settlement totals of recalculated lines; the display figures derive from them (ADR-063). */
 function sumLines(lines: LineItem[]): { subtotalMinor: number; taxMinor: number; totalMinor: number } {
   const netMinor = lines.reduce((sum, li) => sum + li.netMinor, 0);
   const lineTaxMicros = lines.reduce((sum, li) => sum + BigInt(li.taxMicros), 0n);
@@ -32,6 +32,24 @@ function sumLines(lines: LineItem[]): { subtotalMinor: number; taxMinor: number;
   // The totals sum the lines as recalculated; nothing is subtracted after tax.
   const linesTotal = netMinor + roundMicrosToMinor(exclusiveTaxMicros);
   return { subtotalMinor: linesTotal - taxMinor, taxMinor, totalMinor: Math.max(0, linesTotal) };
+}
+
+/** An own-mode amount on a line, in the display mode, converted on its own at the line's rates (ADR-063). */
+function toDisplayMode(line: LineItem, amountMinor: number, displayInclusive: boolean): number {
+  if (line.taxInclusive === displayInclusive) return amountMinor;
+  const ratePpm = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
+  const taxMinor = roundMicrosToMinor(taxMicros(amountMinor, ratePpm, line.taxInclusive));
+  return line.taxInclusive ? amountMinor - taxMinor : amountMinor + taxMinor;
+}
+
+/**
+ * The display residue's guard (ADR-063); throws when the arithmetic is wrong rather than rounded. With no converted
+ * line it's exactly 0 (Σ gross = Σ net + Σ discounts). Otherwise each of the n non-zero rounded conversions is off by
+ * at most half a cent, and the order-level tax rounding by at most one more, so |residue| ≤ ⌊n/2⌋ + 1.
+ */
+export function assertDisplayResidue(residue: number, convertedLines: number, conversions: number): void {
+  const bound = convertedLines === 0 ? 0 : Math.floor(conversions / 2) + 1;
+  if (Math.abs(residue) > bound) throw new Error(`Display residue ${residue} exceeds its bound of ${bound} (ADR-063)`);
 }
 
 export interface OrderBuilderOptions {
@@ -142,11 +160,31 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     const { subtotalMinor, taxMinor, totalMinor } = sumLines(lines);
     const discountMinor = lines.reduce((sum, li) => sum + li.discountMinor, 0);
-    // Display totals (ADR-063): the same lines with no discounts, through the same arithmetic, and the difference.
-    const shelf = sumLines(lineItems.map((li) => recalculateLine({ ...li, discounts: [] })));
+    // Display figures (ADR-063): every discount the cashier entered, and each line's shelf amount, converted on
+    // its own into the display mode. The subtotal is derived from the settlement total, so every sum is exact;
+    // the rounding residue goes to the last converted line's amount, never to a discount or an unconverted line.
     const taxInclusive = taxContext.pricesIncludeTax;
-    const [before, after] = taxInclusive ? [shelf.totalMinor, totalMinor] : [shelf.subtotalMinor, subtotalMinor];
-    const display = { taxInclusive, subtotalMinor: before, discountMinor: before - after, taxMinor, totalMinor };
+    const displayLines = lines.map((li) => ({
+      lineId: li.id,
+      amountMinor: toDisplayMode(li, li.unitPriceMinor * li.quantity, taxInclusive),
+      discounts: li.discounts.map((d) => ({
+        discountId: d.id, ...(d.label !== undefined ? { label: d.label } : {}), amountMinor: toDisplayMode(li, d.amountMinor, taxInclusive),
+      })),
+    }));
+    const orderDiscountDisplay = lines.reduce((sum, li) => sum + toDisplayMode(li, li.orderDiscountMinor, taxInclusive), 0);
+    const displayDiscount = displayLines.reduce(
+      (sum, line) => line.discounts.reduce((lineSum, d) => lineSum + d.amountMinor, sum), orderDiscountDisplay);
+    const displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount;
+    const residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
+    const converted = lines.flatMap((li, index) => li.taxInclusive === taxInclusive ? [] : [index]);
+    const conversions = converted.reduce((count, index) => count + [lines[index].unitPriceMinor * lines[index].quantity,
+      lines[index].orderDiscountMinor, ...lines[index].discounts.map((d) => d.amountMinor)].filter((x) => x !== 0).length, 0);
+    assertDisplayResidue(residue, converted.length, conversions);
+    if (residue !== 0) displayLines[converted[converted.length - 1]].amountMinor += residue;
+    const display = {
+      taxInclusive, subtotalMinor: displaySubtotal, discountMinor: displayDiscount, taxMinor, totalMinor,
+      lines: displayLines, orderDiscountMinor: orderDiscountDisplay,
+    };
     const paidMinor = payments.reduce((sum, p) => sum + p.amountMinor, 0);
     const balanceDueMinor = Math.max(0, totalMinor - paidMinor);
     const changeDueMinor = Math.max(0, paidMinor - totalMinor);

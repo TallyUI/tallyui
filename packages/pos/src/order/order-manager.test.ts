@@ -7,8 +7,15 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderManager } from './order-manager';
 import type { ProductTraits } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
+import type { DisplayTotals } from './types';
 
 addRxPlugin(RxDBDevModePlugin);
+
+/** Resume re-adds each line, so line and discount ids are new; every display figure must still match (ADR-063). */
+const withoutIds = (display: DisplayTotals) => ({
+  ...display,
+  lines: display.lines.map(({ lineId: _, ...line }) => ({ ...line, discounts: line.discounts.map(({ discountId: __, ...row }) => row) })),
+});
 
 const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
 
@@ -131,7 +138,7 @@ describe('OrderManager', () => {
       subtotalMinor: parked.subtotalMinor, discountMinor: parked.discountMinor,
       taxMinor: parked.taxMinor, totalMinor: parked.totalMinor,
     });
-    expect(resumed.display).toEqual(parked.display);
+    expect(withoutIds(resumed.display)).toEqual(withoutIds(parked.display));
     resumed.lineItems.forEach((line, index) => {
       expect(line.taxInclusive).toBe(parked.lineItems[index].taxInclusive);
       expect(line.priceTaxModeConverted).toBe(parked.lineItems[index].priceTaxModeConverted);
@@ -157,7 +164,7 @@ describe('OrderManager', () => {
       subtotalMinor: parked.subtotalMinor, discountMinor: parked.discountMinor,
       taxMinor: parked.taxMinor, totalMinor: parked.totalMinor,
     });
-    expect(resumed.display).toEqual(parked.display);
+    expect(withoutIds(resumed.display)).toEqual(withoutIds(parked.display));
     resumed.lineItems.forEach((line, index) => {
       expect(line.taxInclusive).toBe(parked.lineItems[index].taxInclusive);
     });
