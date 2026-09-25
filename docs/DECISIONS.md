@@ -2270,3 +2270,27 @@ interface OrderCreatePayload {
 - **Enforcement:** `scripts/check-workspace-deps.mjs`'s
   `layeringViolations` fails `pnpm check:deps` on a non-type-only,
   non-allow-listed named import from `@tallyui/pos`.
+
+## ADR-065 `order.create` version 3 carries the receipt's figures on every sale; `pos_orders` goes to schema version 2
+
+- **Date:** 2026-09-25 · **Status:** Accepted (the Front desk); implementation queued after registers job c1 · **Source:** decision (e) on the half-cent gap: Medusa keeps unrounded totals, so the POS receipt and the frozen closures are the fiscal figures.
+- **Context:**
+  - The server needs the receipt's own figures for every sale: the display totals and lines (ADR-063), and tax by rate (`taxLinesByRate`, #134).
+  - The medusapos plugin is strict (#62). It rejects a version-1 command that carries extra fields, and a version-2 command without `discountMinor`.
+  - So these figures can't be added to version 1, and version 2 only covers discounted sales.
+- **Decision:**
+  1. **`order.create` version 3** is version 2 plus two optional fields, both in integer minor units:
+     - **`display`:** the order's display totals and display lines, exactly as the receipt shows them, with the currency and its exponent;
+     - **`taxByRate`:** from `taxLinesByRate`, giving each rate with its net, tax and gross.
+  2. **It's sent on every sale** (discounted or not) when the store's `capabilities.orderCreate` is at least 3. Below that, the client sends version 1 or 2 exactly as ADR-062 says, so **old plugins receive nothing new**.
+  3. **The figures come from the same order snapshot the receipt uses, and are never recomputed.**
+     - `finalizeOrder` copies `order.display` and `taxLinesByRate(order)` onto the `PosOrder`, and the envelope builder reads them from there.
+     - `display` must equal `order.display`, and Σ `taxByRate.tax` must equal `taxMinor`. Both are asserted in tests.
+  4. **`pos_orders` goes to schema version 2,** adding the two optional fields.
+     - It uses an identity migration strategy through `posOrderCollection()` and `addPosOrderCollection` (#131, #133, #135).
+     - It gets the same migration tests as version 0 → 1: a pending order survives byte for byte, nothing is dropped, and the SQLite and memory storages are both covered.
+  5. **The medusapos plugin** advertises `order.create` `[1, 2, 3]` on `/tally/v1/info` and records the two fields in the order's metadata. That half is specified alongside, so both land together.
+- **Consequences:**
+  - Every sale made against a version-3 server carries its fiscal figures.
+  - Old plugins and old clients are unchanged.
+  - Apps must adopt the new `addPosOrderCollection` release before they rely on version 3.
