@@ -447,6 +447,25 @@ bodies and design docs, and the source is given for each.
   - Copy the stable neutral packages (printer, scanner, receipt schema and
     renderer) only when a milestone needs them.
   - Nothing changes in the WCPOS repositories without Paul.
+- **Amendment 1 (2026-09-25): port provenance and a re-sync checklist.**
+  - **Port provenance:**
+    - The tender reducer (#118): WCPOS `next` `3b5331b5c`, `tender-state.ts`.
+    - The register maths (registers job a1):
+      `3b5331b5c`, plus the three commits that introduced it on `next` —
+      `4311853a1` (roadmap#269, sessions and movements), `e555d6143`
+      (roadmap#270, counting and closure) and `21b57723e` (#2131, the
+      closures room). Refund attribution (`attributeRefunds`) is deferred
+      until TallyUI has a refund model (a decision for Paul).
+  - **Re-sync from `next` checklist**, for job a2 or any later port from
+    the same WCPOS sources:
+    - Diff each source path between the pinned commit above and the new
+      `next` head.
+    - Port behaviour changes with their tests.
+    - Keep the neutral changes: integer minor units (with a required
+      `exponent` wherever typed text becomes minor units), no WooCommerce
+      meta, no outbox fields.
+    - Update the pinned commit in this entry.
+    - Run the ported tests.
 
 ## ADR-033 Business model deferred; hardware drivers kept splittable (plan D4)
 
