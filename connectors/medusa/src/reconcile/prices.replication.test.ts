@@ -5,7 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { startFingerprintReconcile } from '@tallyui/database';
+import { startFingerprintReconcile, startIdReconcile } from '@tallyui/database';
 import { medusaProductSchema } from '../schemas/products';
 import { medusaConnector } from '../index';
 
@@ -126,5 +126,57 @@ describe('Medusa price reconcile, run against a real RxDB replication', () => {
       expect(after[pid], `product ${pid}`).toBe(rev);
     }
     runner.stop();
+  }, 60000);
+
+  it('a product deleted on the server after its price drifted locally survives the fingerprint queue, and only an id-reconcile pass tombstones it', async () => {
+    const products = makeProducts();
+    // reSync is a no-op here: each phase below drives replication.reSync() itself, so the
+    // queue's enqueue and its later drain never race against each other.
+    db = await createRxDatabase({
+      name: `medusapricereconcile${++databaseNumber}`, multiInstance: false,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
+    });
+    await db.addCollections({ products: { schema: medusaProductSchema } });
+    serve(products);
+    replication = replicateRxCollection<any, any>({
+      collection: db.products, replicationIdentifier: 'medusa-price-reconcile-proof',
+      live: true, waitForLeadership: false, retryTime: 10,
+      pull: {
+        batchSize: BATCH_SIZE,
+        handler: (checkpoint, batchSize) => medusaConnector.replication!.products!.pull.handler(checkpoint, batchSize, context),
+      },
+    });
+    await replication.awaitInSync();
+    expect(await db.products.find().exec()).toHaveLength(TOTAL);
+
+    const target = id(11);
+    const removedIndex = products.findIndex((p) => p.id === target);
+    products[removedIndex]!.variants[0]!.prices[0]!.amount = 5150; // drifts, so the fingerprint pass queues it
+
+    const priceRunner = startFingerprintReconcile({
+      collection: db.products, adapter: medusaConnector.reconcile!.prices!, context,
+      reSync: () => {}, intervalMs: 999_999_999,
+    });
+    const priceResult = await priceRunner.reconcile();
+    expect(priceResult.queued).toBe(1);
+    priceRunner.stop();
+
+    products.splice(removedIndex, 1); // gone from the server before the queued entry is re-fetched
+    replication.reSync();
+    await replication.awaitInSync();
+    expect(await db.products.findOne(target).exec()).not.toBeNull(); // survives: refreshOnly is never tombstoned
+
+    const idRunner = startIdReconcile({
+      collection: db.products, adapter: medusaConnector.reconcile!.ids!, context,
+      reSync: () => {}, startDelayMs: null, intervalMs: 999_999_999,
+    });
+    const idResult = await idRunner.reconcileIds();
+    expect(idResult.queued).toBe(1);
+    expect(idResult.braked).toBe(false);
+    idRunner.stop();
+
+    replication.reSync();
+    await replication.awaitInSync();
+    expect(await db.products.findOne(target).exec()).toBeNull(); // the id reconcile's braked path does delete
   }, 60000);
 });

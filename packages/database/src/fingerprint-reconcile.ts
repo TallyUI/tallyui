@@ -16,6 +16,8 @@ export interface StartFingerprintReconcileOptions<Doc> {
   intervalMs?: number;
   /** Pages read before a pass is truncated (default 100). */
   maxPages?: number;
+  /** Injection for tests; default Date.now. Stamps `lastResultAt`/`lastErrorAt`. */
+  now?: () => number;
 }
 
 export interface FingerprintReconcileResult {
@@ -34,11 +36,22 @@ export interface FingerprintReconcileResult {
   unreported: number;
 }
 
-/** The runner's state; entirely in memory. */
+/**
+ * The runner's state; entirely in memory. The result is current only when
+ * `lastResultAt > (lastErrorAt ?? 0)`; show `unreported` from a stale result
+ * as stale. See `isFingerprintResultCurrent`.
+ */
 export interface FingerprintReconcileState {
   running: boolean;
   lastResult?: FingerprintReconcileResult;
+  lastResultAt?: number;
   lastError?: unknown;
+  lastErrorAt?: number;
+}
+
+/** True when `state.lastResult` is current, i.e. newer than the last failure, if any. */
+export function isFingerprintResultCurrent(state: FingerprintReconcileState): boolean {
+  return state.lastResultAt !== undefined && state.lastResultAt > (state.lastErrorAt ?? 0);
 }
 
 /**
@@ -51,7 +64,7 @@ export interface FingerprintReconcileState {
  * `reconcile()` on demand. Concurrent calls share one pass.
  */
 export function startFingerprintReconcile<Doc>({
-  collection, adapter, context, reSync, startDelayMs = null, intervalMs = 86_400_000, maxPages = 100,
+  collection, adapter, context, reSync, startDelayMs = null, intervalMs = 86_400_000, maxPages = 100, now = Date.now,
 }: StartFingerprintReconcileOptions<Doc>): {
   reconcile(): Promise<FingerprintReconcileResult>;
   stop(): void;
@@ -84,7 +97,7 @@ export function startFingerprintReconcile<Doc>({
     checkAborted();
     // Phase 2: compare local documents the remote side reported against their
     // remote fingerprint. A product the remote side didn't report is skipped.
-    const entries: Array<{ id: string; local: Doc }> = [];
+    const entries: Array<{ id: string; local: Doc; refreshOnly: true }> = [];
     let compared = 0;
     let unreported = 0;
     for (const doc of await collection.find().exec()) {
@@ -93,7 +106,8 @@ export function startFingerprintReconcile<Doc>({
       if (remoteFingerprint === undefined) { if (pages > 0) unreported++; continue; }
       compared++;
       const local = doc.toJSON() as Doc;
-      if (adapter.fingerprint(local) !== remoteFingerprint) entries.push({ id, local });
+      // refreshOnly: a missing re-fetch is skipped, never tombstoned -- deletions are the id reconcile's job (ADR-060).
+      if (adapter.fingerprint(local) !== remoteFingerprint) entries.push({ id, local, refreshOnly: true });
     }
 
     checkAborted();
@@ -106,10 +120,11 @@ export function startFingerprintReconcile<Doc>({
     update({ running: true });
     try {
       const result = await pass();
-      update({ running: false, lastResult: result });
+      update({ running: false, lastResult: result, lastResultAt: now() });
       return result;
     } catch (error) {
-      update({ running: false, lastError: error });
+      // lastResult (and lastResultAt) are left as they were: the app can tell it's stale via isFingerprintResultCurrent.
+      update({ running: false, lastError: error, lastErrorAt: now() });
       throw error;
     }
   };
