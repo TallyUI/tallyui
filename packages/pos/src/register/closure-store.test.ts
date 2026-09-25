@@ -20,12 +20,16 @@ import type { ReplicationAdapter } from '@tallyui/core';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder } from '../pos-order/finalize';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
-import { ensureRegister, readRegister } from './register-document';
-import { cashMovementSchema, closureSchema, registerSessionCollection } from './schemas';
+import { bindRegister, ensureRegister, nextSaleCounter, readRegister } from './register-document';
+import { cashMovementSchema, closureSchema, registerSessionCollection, type CashMovement, type RegisterSession } from './schemas';
 import {
+  backToSelling,
   closeSession,
   openSession,
   recordMovement,
+  RegisterSessionClosedError,
+  RegisterSessionRequiredError,
+  requireOpenSession,
   voidMovement,
   writeClosure,
   type CashMovementCollection,
@@ -79,14 +83,14 @@ async function seed() {
     ['paid_out', 500],
     ['paid_out', 700],
   ] as const) {
-    const row = await recordMovement(db.cash_movements, {
+    const row = await recordMovement(db.register_sessions, db.cash_movements, {
       sessionId: session.id,
       type,
       amountMinor,
       reason: '',
       actor: '7',
     });
-    if (amountMinor === 700) await voidMovement(db.cash_movements, row.id, '7');
+    if (amountMinor === 700) await voidMovement(db.register_sessions, db.cash_movements, row.id, '7');
   }
   session = await closeSession(db.register_sessions, session.id, {
     counted: { cash: 15000 },
@@ -215,10 +219,12 @@ it('sums the Z: float plus net cash sales, pay-ins and pay-outs, without the voi
   const orders = [sale(2500, 'cash', 2500), sale(1200, 'cash', 2000), sale(3000, 'external', 3000), sale(9900, 'cash', 9900, 'other')];
   expect(orders[1].payments[0]).toMatchObject({ amountMinor: 1200, tenderedMinor: 2000, changeMinor: 800 });
   const move = (type: 'paid_in' | 'paid_out', amountMinor: number) =>
-    recordMovement(db.cash_movements, { sessionId: session.id, type, amountMinor, reason: 'Float', actor: '7' });
+    recordMovement(db.register_sessions, db.cash_movements, {
+      sessionId: session.id, type, amountMinor, reason: 'Float', actor: '7',
+    });
   await move('paid_in', 500);
   await move('paid_out', 300);
-  await voidMovement(db.cash_movements, (await move('paid_out', 200)).id, '7');
+  await voidMovement(db.register_sessions, db.cash_movements, (await move('paid_out', 200)).id, '7');
   const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 13850 }, closedBy: '7' });
   const closure = await writeClosure({
     closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 13850,
@@ -259,4 +265,86 @@ it('runs the whole session write path without ever replicating its three collect
   });
   expect(REPLICATION_STATE_BY_COLLECTION.get(scratch)).toEqual([control]);
   await control.cancel();
+});
+
+const open = (registerId = 'register') =>
+  openSession(db.register_sessions, {
+    registerId, expectedFloatMinor: 10000, countedFloatMinor: 10000, openedBy: '7', businessDay: { year: 2026, month: 9, day: 16 },
+  });
+const z = (session: RegisterSession, extra: { counted?: number; orders?: PosOrder[]; movements?: CashMovement[] } = {}) =>
+  writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session, counted: extra.counted ?? 10000,
+    otherTenders: {}, movements: extra.movements ?? [], orders: extra.orders ?? [], softwareVersion: '1.0.0',
+  });
+
+// TallyUI (#123 review): close, Z #1, reopen, then a 2,500 sale and a 700 pay-out fell off every
+// Z. The closed session now refuses both, so they land in the next session and on Z #2.
+it('never leaves a sale or a pay-out taken after a close off every Z report', async () => {
+  const input = await seed();
+  const z1 = await writeClosure(input);
+  await expect(backToSelling(db.register_sessions, input.session.id)).rejects.toBeInstanceOf(RegisterSessionClosedError);
+  // A sale's sessionId comes from requireOpenSession, which gives out no closed session.
+  await expect(requireOpenSession(db.register_sessions, 'register', true)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+  const payOut = (sessionId: string) =>
+    recordMovement(db.register_sessions, db.cash_movements, {
+      sessionId, type: 'paid_out', amountMinor: 700, reason: '', actor: '7',
+    });
+  await expect(payOut(input.session.id)).rejects.toBeInstanceOf(RegisterSessionClosedError);
+
+  const next = await open();
+  const sessionId = (await requireOpenSession(db.register_sessions, 'register', true))!;
+  expect(sessionId).toBe(next.id);
+  await payOut(sessionId);
+  const closed = await closeSession(db.register_sessions, sessionId, { counted: { cash: 11800 }, closedBy: '7' });
+  const orders = [...input.orders, order('late-sale', sessionId, [{ method: 'cash', amountMinor: 2500 }])];
+  const z2 = await z(closed, { counted: 11800, orders, movements: await db.cash_movements.find().exec() });
+  expect(z2.toJSON()).toMatchObject({
+    number: 2, order_ids: ['late-sale'], period_sales_total_minor: 2500, till_expected: { cash: 11800 }, variance: { cash: 0 },
+  });
+  expect(z2.breakdowns.movements).toMatchObject([{ type: 'paid_out', amountMinor: 700 }]);
+  expect((await writeClosure(input)).toJSON()).toEqual(z1.toJSON());
+});
+
+// TallyUI (#123 review, F3). Revert: drop writeClosure's closed-session check.
+it('refuses a closure for a session that is not closed, without minting a number', async () => {
+  const session = await open();
+  const before = await readRegister(db.register_sessions);
+  await expect(z(session)).rejects.toThrow('register_session_not_closed');
+  await expect(z({ ...session.toJSON(), status: 'closed' })).rejects.toThrow('register_session_not_closed');
+  expect(await readRegister(db.register_sessions)).toEqual(before);
+  expect(await db.closures.count().exec()).toBe(0);
+});
+
+// The register document is a local document on register_sessions, so it never meets a session row.
+it('keeps the register document and a session with the id "register" apart', async () => {
+  const register = await readRegister(db.register_sessions);
+  const session = await db.register_sessions.insert({ ...(await open()).toJSON(), id: 'register' });
+  const closure = await z(await closeSession(db.register_sessions, session.id, { counted: { cash: 10000 } }));
+  expect(closure.toJSON()).toMatchObject({ id: 'register', number: 1 });
+  expect(await readRegister(db.register_sessions)).toMatchObject({
+    id: register!.id, stores: { store: { registers: { register: { last_closure_number: 1 } } } },
+  });
+  expect((await db.register_sessions.findOne('register').exec())?.status).toBe('closed');
+});
+
+// Each till's register document keeps its own sale counter; each register its own closure numbers.
+it('counts two registers in one store on their own: sale counters and closure numbers', async () => {
+  const back = await createRxDatabase({
+    name: `closure${Math.random().toString(36).slice(2)}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
+    multiInstance: false,
+  });
+  const { register_sessions: backTill } = await back.addCollections({ register_sessions: registerSessionCollection() });
+  await ensureRegister(backTill, 'web');
+  await bindRegister(db.register_sessions, 'store', { id: 'front', name: 'Front' });
+  await bindRegister(backTill, 'store', { id: 'back', name: 'Back' });
+  const counters = [];
+  for (const till of [db.register_sessions, db.register_sessions, backTill, db.register_sessions]) {
+    counters.push(await nextSaleCounter(till, 'store'));
+  }
+  expect(counters).toEqual([1, 2, 1, 3]);
+  await back.remove();
+  const close = async (registerId: string) =>
+    (await z(await closeSession(db.register_sessions, (await open(registerId)).id, { counted: { cash: 10000 } }))).number;
+  expect([await close('front'), await close('back'), await close('front'), await close('back')]).toEqual([1, 1, 2, 2]);
 });

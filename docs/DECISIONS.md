@@ -492,6 +492,11 @@ bodies and design docs, and the source is given for each.
     - RxDB 16.21 never drops an order that fails validation during
       migration. It stops with DM4 and keeps the version-0 storage
       (`migration.test.ts`).
+  - **A closed session is final.** WCPOS's server refuses writes to it;
+    until job c the store does: nothing leaves `closed`, movements need an
+    `open` or `counting` session, and `writeClosure` a closed one.
+  - **Orders the server rejected still count in the drawer**, because the
+    cash was taken.
 
 ## ADR-033 Business model deferred; hardware drivers kept splittable (plan D4)
 

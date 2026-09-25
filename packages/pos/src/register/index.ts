@@ -12,7 +12,7 @@ export {
 } from './register-document';
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register-document';
 export {
-  RegisterSessionRequiredError, openSessionSelector, requireOpenSession, openSession, startCounting, backToSelling,
-  closeSession, recordMovement, voidMovement, writeClosure,
+  RegisterSessionRequiredError, RegisterSessionClosedError, openSessionSelector, requireOpenSession, openSession,
+  startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure,
 } from './session-store';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './session-store';
