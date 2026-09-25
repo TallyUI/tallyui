@@ -54,13 +54,16 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
 };
 
 /**
- * The `pos_orders` collection config: always create the collection with this, so the migration
- * strategies come with the schema. `pos_orders` holds sales not yet sent, so no step may drop a
+ * The `pos_orders` collection config, with its migration strategies. Open the collection with
+ * `addPosOrderCollection(db)`, which uses this and settles the migration safely; adding this config
+ * directly leaves RxDB's own open path. `pos_orders` holds sales not yet sent, so no step may drop a
  * document: version 1 only adds an optional field, so every version-0 order passes unchanged.
  *
- * RxDB 16.21 never drops a document that fails the new schema's validation. With a validating
- * storage the migration stops with DM4 and the order stays in the version-0 storage; without
- * one it is copied as is (`migration.test.ts`).
+ * Within one run, RxDB 16.21 keeps an order that fails the new schema's validation: with a
+ * validating storage the migration stops with DM4 and the order stays in the version-0 storage;
+ * without one it is copied as is. **Across runs, RxDB's own open path can lose it**: a failed run
+ * can leave its checkpoint past that order, and the next run then removes the version-0 storage
+ * without copying it. `addPosOrderCollection` resets that checkpoint, so use it (`migration.test.ts`).
  */
 export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migrationStrategies: MigrationStrategies } {
   // addRxPlugin ignores a plugin it already has.

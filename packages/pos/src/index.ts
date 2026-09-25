@@ -45,7 +45,7 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig } from './receipt';
 // Product
 export { searchProducts, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$ } from './product';
 
-export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema, posOrderCollection } from './pos-order';
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema, posOrderCollection, addPosOrderCollection } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';
 export { createHttpCommandTransport, createOrderOutbox } from './outbox';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OutboxState } from './outbox';

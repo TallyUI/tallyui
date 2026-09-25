@@ -1,22 +1,16 @@
 // @vitest-environment node
 // `pos_orders` holds sales not yet sent, so its version 0 to 1 bump (ADR-032, `sessionId`) must
 // never lose one. Replaces WCPOS's `closure-migration.test.ts` (its closures v0 to v1 migration).
-import { expect, it } from 'vitest';
-import { createRxDatabase, fillWithDefaultSettings, type RxCollectionCreator, type RxJsonSchema, type RxStorage } from 'rxdb';
+import { describe, expect, it } from 'vitest';
+import { createRxDatabase, fillWithDefaultSettings, type RxCollectionCreator, type RxStorage } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder } from './finalize';
+import { addPosOrderCollectionTests, versionZero } from './open.test-helper';
 import { posOrderCollection, posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
-
-/** The shipped version-0 schema: version 1 with its only addition, `sessionId`, taken out. */
-function versionZero(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
-  delete (schema.properties as Record<string, unknown>).sessionId;
-  return { ...schema, version: 0 };
-}
 
 /** A sale the outbox has tried and will try again: pending, with lines, split payments and its last error. */
 function pendingOrder(): PosOrder {
@@ -122,3 +116,5 @@ it('never drops a version-0 order that fails validation at version 1: a validati
     await unvalidated.db.remove();
   }
 });
+
+describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory()));
