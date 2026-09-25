@@ -27,6 +27,28 @@ export class RegisterSessionRequiredError extends Error {
   }
 }
 
+/** The session is closed, and a closed session is final: there's no server yet to refuse writes to it. */
+export class RegisterSessionClosedError extends Error {
+  constructor() {
+    super('register_session_closed');
+    this.name = 'RegisterSessionClosedError';
+  }
+}
+
+/** Every move a session may make. Nothing leaves `closed`; everything else is refused. */
+const TRANSITIONS: Record<RegisterSession['status'], readonly RegisterSession['status'][]> = {
+  open: ['counting', 'closed'],
+  counting: ['open', 'closed'],
+  closed: [],
+};
+
+async function requireLiveSession(sessions: RegisterSessionCollection, id: string) {
+  const session = await sessions.findOne(id).exec();
+  if (!session) throw new RegisterSessionRequiredError();
+  if (session.status === 'closed') throw new RegisterSessionClosedError();
+  return session;
+}
+
 export const openSessionSelector = { status: 'open' } as const;
 
 /** The open session's id before a money action, or `RegisterSessionRequiredError`; `null` when sessions are off. */
@@ -45,9 +67,7 @@ export async function requireOpenSession(
 
 /**
  * `yyyy-MM-dd` of a GMT instant in an IANA `timezone`, or in the device's own zone for
- * `'device'`. `Intl` rather than WCPOS's `date-fns`, so no dependency is added. Exported for
- * `closure-rows.ts` (registers job b1), which reuses it for the closures list's own business-day
- * fallback rather than duplicating it.
+ * `'device'`. `Intl` rather than WCPOS's `date-fns`, so no dependency is added.
  */
 export function businessDayOf(atGmt: string, timezone: string) {
   const at = new Date(atGmt.endsWith('Z') ? atGmt : `${atGmt}Z`);
@@ -94,14 +114,23 @@ async function transition(
 ) {
   const row = await sessions.findOne(id).exec();
   if (!row) throw new RegisterSessionRequiredError();
+  // A repeat close is a no-op that returns the closed session unchanged, not an error: it is what
+  // a retry after a lost response needs, and it must not overwrite the count, time or actor.
+  if (row.status === 'closed' && status === 'closed') return row;
   const at = new Date().toISOString();
-  return row.incrementalPatch({
-    ...extra,
-    status,
-    pending_status: status,
-    status_at: at,
-    ...(status === 'counting' ? { counting_started_at_gmt: at } : {}),
-    ...(status === 'closed' ? { closed_at_gmt: at } : {}),
+  // The guard runs again on the latest document, so a racing write can't slip past it.
+  return row.incrementalModify((doc) => {
+    if (doc.status === 'closed' && status === 'closed') return doc;
+    if (doc.status === 'closed') throw new RegisterSessionClosedError();
+    if (!TRANSITIONS[doc.status].includes(status)) throw new Error(`invalid_session_transition:${doc.status}->${status}`);
+    return {
+      ...doc, ...extra,
+      status,
+      pending_status: status,
+      status_at: at,
+      ...(status === 'counting' ? { counting_started_at_gmt: at } : {}),
+      ...(status === 'closed' ? { closed_at_gmt: at } : {}),
+    };
   });
 }
 
@@ -124,10 +153,13 @@ export async function closeSession(
   });
 }
 
-export function recordMovement(
+/** Records a movement on a session that is `open` or `counting`; a closed or missing one is refused. */
+export async function recordMovement(
+  sessions: RegisterSessionCollection,
   movements: CashMovementCollection,
   input: { sessionId: string; type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string; actor: string },
 ) {
+  await requireLiveSession(sessions, input.sessionId);
   return movements.insert({
     id: uuid(),
     session_id: input.sessionId,
@@ -139,10 +171,13 @@ export function recordMovement(
   });
 }
 
-/** Reverses a movement with a `void` row; repeated or concurrent calls share one reversal. */
-export async function voidMovement(movements: CashMovementCollection, movementId: string, actor: string) {
+/** Reverses a movement with a `void` row while its session is live; repeated or concurrent calls share one reversal. */
+export async function voidMovement(
+  sessions: RegisterSessionCollection, movements: CashMovementCollection, movementId: string, actor: string,
+) {
   const row = await movements.findOne(movementId).exec();
   if (!row || row.type === 'void') throw new Error('invalid_void_target');
+  await requireLiveSession(sessions, row.session_id);
   // Repeated Undo taps share one durable reversal: the target's voided_by names it.
   const id = uuid();
   const claimed = await row.incrementalModify((doc) => {
@@ -170,6 +205,9 @@ export async function voidMovement(movements: CashMovementCollection, movementId
  * Freezes a closed session's figures into its closure, once. The draft is reserved on the register
  * document with its number (`mintClosureNumber`), so a failed insert or a restarted till reuses the
  * same snapshot and number, and its period reaches the perpetual totals exactly once.
+ * Only a closed session (`closed` with `closed_at_gmt`) has a closure, and a closed session is
+ * final, so its existing closure is returned as it was frozen. Orders the server rejected still
+ * count in the drawer, because the cash was taken.
  */
 export async function writeClosure({
   closures,
@@ -204,6 +242,8 @@ export async function writeClosure({
   softwareVersion: string;
   timezone?: string;
 }) {
+  // Before anything is minted: an open session never reserves a closure number.
+  if (session.status !== 'closed' || !session.closed_at_gmt) throw new Error('register_session_not_closed');
   const existing = await closures.findOne(session.id).exec();
   if (existing) {
     await advancePerpetual(register, storeKey, session.register_id, {
