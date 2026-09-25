@@ -131,7 +131,10 @@ export {
 } from './settings';
 
 // Sale components
-export { Cart, CartBar, Tender, DiscountForm, DiscountChips, parseDiscount, discountLabel } from './sale';
+export {
+  Cart, CartBar, Tender, DiscountForm, DiscountChips, parseDiscount, discountLabel,
+  Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus,
+} from './sale';
 
 // Layout components
 export {

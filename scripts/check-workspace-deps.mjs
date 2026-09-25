@@ -21,7 +21,9 @@ const DYNAMIC_RE = /import\s*\(\s*['"](@tallyui\/[a-zA-Z0-9_-]+)/;
 // Layering (Front desk, 2026-09-25): components may import @tallyui/pos only as `import
 // type`/`export type`, or a pure function on this allow-list — never a hook, store, the
 // order builder, a namespace/default import, a value re-export, or a dynamic import().
-const COMPONENTS_POS_ALLOWLIST = new Set(['buildReceiptData']);
+const COMPONENTS_POS_ALLOWLIST = new Set([
+  'buildReceiptData', 'searchProducts', 'catalogueEntries', 'findEntryByCode', 'variantPriceLabel',
+]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
 const POS_DEFAULT_RE = /import\s+(type\s+)?(\*\s+as\s+[\w$]+|[A-Za-z_$][\w$]*)\s*(?:,\s*\{([^}]*)\})?\s*from\s*['"]@tallyui\/pos['"]/g;

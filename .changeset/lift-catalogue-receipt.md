@@ -1,0 +1,5 @@
+---
+"@tallyui/components": minor
+---
+
+Lifted medusapos's product catalogue, receipt, print-style hook and sync status into `@tallyui/components` (`Catalogue`, `Receipt`, `injectPrintStyle`, `SyncStatus`), so every platform POS gets the same screens (ADR-052, TV6b). `Catalogue` takes an optional `hour12?: boolean` (undefined keeps the locale default) instead of reading `expo-localization`. `Receipt` takes `store: { name: string; address?: string }` instead of a Medusa-shaped settings type, an optional `topInset?: number` (default 0) instead of an app-local strip-height context, an optional `formatDate?: (iso: string) => string` defaulting to an `Intl.DateTimeFormat` formatter, and an optional `taxLabel?: (ratePpm: number) => string` with the same default as `Cart`'s (TV6a), keeping the `incl. ` prefix rule. `searchProducts`, `catalogueEntries`, `findEntryByCode` and `variantPriceLabel` join `buildReceiptData` on the pure-function allow-list components may import from `@tallyui/pos` (ADR-064).

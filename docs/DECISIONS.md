@@ -1464,6 +1464,20 @@ interface OrderCreatePayload {
     `@tallyui/pos` dependency, for types and `buildReceiptData` only
     (ADR-064). The catalogue, receipt, print style and sync status are
     TV6b.
+  - TV6b done: `Catalogue`, `Receipt`, `injectPrintStyle`, `SyncStatus`
+    lifted from medusapos/app `563b03c4` into
+    `packages/components/src/sale/`; `lib/catalogue`'s test (TV5 lifted
+    the source without it) ported into `pos/src/sale/catalogue.test.ts`.
+    Adaptations: `Catalogue` takes `hour12?: boolean` (app-supplied)
+    instead of reading `expo-localization`; `Receipt` takes `store: {
+    name, address? }` instead of Medusa's `StoreSettings`, `topInset?:
+    number` (default 0) instead of `StripHeightContext`, `formatDate?`
+    (default `Intl.DateTimeFormat`) instead of an app util, and
+    `taxLabel?`, defaulting like TV6a's `Cart`, instead of hard-coded
+    `VAT` — keeping the `incl. ` prefix rule; `print-style.ts` drops its
+    `declare module 'react-native'` block (TV6a's `uniwind-env.d.ts`
+    already augments `dataSet`). `searchProducts`, `catalogueEntries`,
+    `findEntryByCode`, `variantPriceLabel` join `COMPONENTS_POS_ALLOWLIST`.
 - **Consequences:**
   - The second app costs about half the first.
   - A third backend (WooCommerce, or Shopify if it is unparked) gets the
@@ -2264,7 +2278,8 @@ interface OrderCreatePayload {
 - **Decision:** non-test code under `packages/components/src` may import
   from `@tallyui/pos` only as `import type` (`Cart` takes `sale:
   ReturnType<typeof useSale>`), or a pure function on
-  `COMPONENTS_POS_ALLOWLIST` (starts with `buildReceiptData`) — never a
+  `COMPONENTS_POS_ALLOWLIST` (`buildReceiptData`, `searchProducts`,
+  `catalogueEntries`, `findEntryByCode`, `variantPriceLabel`) — never a
   hook, store or the order builder. `useState` in `Cart`/`DiscountForm` is
   component-local React state, not a pos import.
 - **Enforcement:** `scripts/check-workspace-deps.mjs`'s
