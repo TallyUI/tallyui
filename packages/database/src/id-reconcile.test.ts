@@ -151,13 +151,58 @@ describe('startIdReconcile', () => {
     expect(fetchPages).not.toHaveBeenCalled();
   });
 
-  it('shares one pass between concurrent calls', async () => {
+  it('a call during a pass queues one follow-up pass, not the same promise', async () => {
     const { adapter, fetchPages } = fakeAdapter([[{ id: 'p1', variantIds: ['v1', 'v2'] }]]);
     const { reconcileIds, stop } = start(adapter, vi.fn());
 
-    const [a, b] = await Promise.all([reconcileIds(), reconcileIds()]);
-    expect(b).toBe(a);
-    expect(fetchPages).toHaveBeenCalledTimes(1);
+    const first = reconcileIds();
+    const followUp = reconcileIds();
+    expect(followUp).not.toBe(first);
+    await Promise.all([first, followUp]);
+    expect(fetchPages).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('a server deletion after the first pass reads is tombstoned by the follow-up, with no interval tick', async () => {
+    // Remote agrees with every local product at first, so the first pass finds nothing to queue.
+    let remote = [
+      { id: 'p1', variantIds: ['v1', 'v2'] },
+      { id: 'p2', variantIds: ['v3'] },
+      { id: 'p3', variantIds: ['v4', 'v5'] },
+    ];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let firstRead!: () => void;
+    const firstReadDone = new Promise<void>((resolve) => { firstRead = resolve; });
+    let calls = 0;
+    const enqueue = vi.fn();
+    const adapter: IdReconcileAdapter<Doc> = {
+      async *fetchPages() {
+        const call = ++calls;
+        const page = remote;
+        if (call === 1) firstRead();
+        yield page;
+        if (call === 1) await gate;
+      },
+      variantIds: (doc) => (doc.variants ?? []).map((v) => v.id),
+      enqueue,
+    };
+    const reSync = vi.fn();
+    const { reconcileIds, stop } = start(adapter, reSync, { intervalMs: 86_400_000 }); // a day; proves no interval tick delivered the tombstone
+
+    const first = reconcileIds();
+    const followUp = reconcileIds();
+    expect(followUp).not.toBe(first);
+
+    await firstReadDone; // the current pass has already read the old, complete remote list
+    remote = remote.filter((p) => p.id !== 'p2'); // p2 is deleted on the server after that read
+    release();
+
+    expect(await first).toMatchObject({ queued: 0, braked: false });
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(await followUp).toMatchObject({ queued: 1, braked: false });
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue.mock.calls[0][0].map((e: any) => e.id)).toEqual(['p2']);
     stop();
   });
 

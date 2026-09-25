@@ -3,6 +3,7 @@ import { BehaviorSubject, type Observable } from 'rxjs';
 
 import { STOCK_LEVELS_LAST_PASS, type StockReconcileAdapter, type SyncContext } from '@tallyui/core';
 
+import { createPassQueue } from './pass-queue';
 import type { StockLevelRow } from './stock-levels';
 
 export interface StartStockReconcileOptions {
@@ -42,8 +43,10 @@ export interface StockReconcileState {
  * RxDB's downstream skip the next pulled version of that document.
  *
  * The first pass waits for the interval; the app calls reconcileStock() after
- * first paint and on foreground or resume. Concurrent calls share one pass.
- * stop() clears the timer and aborts a running pass.
+ * first paint and on foreground or resume. A call during a pass queues one
+ * follow-up pass (later calls share it), so a change made after the pass
+ * read is picked up straight after, not at the next interval. stop() clears
+ * the timer and aborts a running pass.
  */
 export function startStockReconcile({
   collection,
@@ -62,7 +65,6 @@ export function startStockReconcile({
   const checkAborted = () => {
     if (signal.aborted) throw signal.reason ?? new Error('Stock reconcile stopped');
   };
-  let running: Promise<StockReconcileResult> | undefined;
   const state = new BehaviorSubject<StockReconcileState>({ running: false, truncated: false });
   const update = (patch: Partial<StockReconcileState>) => state.next({ ...state.value, ...patch });
   // Every pass awaits this, so a collection without local documents (RxDB LD8) fails before fetching.
@@ -129,7 +131,7 @@ export function startStockReconcile({
       throw error;
     }
   };
-  const reconcileStock = () => (running ??= tracked().finally(() => { running = undefined; }));
+  const reconcileStock = createPassQueue(tracked);
   const timer = setInterval(() => {
     reconcileStock().catch((error) => console.warn('Stock reconcile failed:', error));
   }, intervalMs);

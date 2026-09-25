@@ -71,14 +71,78 @@ describe('startStockReconcile', () => {
     stop();
   });
 
-  it('shares one pass between concurrent calls', async () => {
+  it('a call during a pass queues one follow-up pass, not the same promise', async () => {
     const { adapter, fetchPages } = fakeAdapter([{ v1: 9 }]);
     const { reconcileStock, stop } = start(adapter);
 
-    const [a, b] = await Promise.all([reconcileStock(), reconcileStock()]);
-    expect(b).toBe(a);
-    expect(fetchPages).toHaveBeenCalledTimes(1);
+    const first = reconcileStock();
+    const followUp = reconcileStock();
+    expect(followUp).not.toBe(first);
+    await Promise.all([first, followUp]);
+    expect(fetchPages).toHaveBeenCalledTimes(2);
     stop();
+  });
+
+  it('a stock flip after the first pass reads lands via the follow-up, not the current pass, with no interval tick', async () => {
+    let onHand = 5; // matches the seed, so the first pass writes nothing
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let firstRead!: () => void;
+    const firstReadDone = new Promise<void>((resolve) => { firstRead = resolve; });
+    let calls = 0;
+    const fetchPages = vi.fn(async function* () {
+      const call = ++calls;
+      const page = new Map(Object.entries({ v1: [{ onHand }], v2: 3, gone: 1 }));
+      if (call === 1) firstRead();
+      yield page;
+      if (call === 1) await gate;
+    });
+    const adapter: StockReconcileAdapter = { fetchPages, overlay: () => undefined };
+    const { reconcileStock, stop } = start(adapter, { intervalMs: 86_400_000 }); // a day; proves no interval tick delivered the flip
+
+    const first = reconcileStock();
+    const followUp = reconcileStock();
+    expect(followUp).not.toBe(first);
+
+    await firstReadDone; // the current pass has already read onHand: 5
+    onHand = 0; // the stock flip happens after that read
+    release();
+
+    expect(await first).toMatchObject({ written: 0, removed: 0 });
+    expect(await followUp).toMatchObject({ written: 1, removed: 0 });
+    expect((await snapshot()).v1.value).toEqual([{ onHand: 0 }]);
+    expect(fetchPages).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('stop() during a pass with a follow-up queued leaves no unhandled rejection', async () => {
+    const rejections: unknown[] = [];
+    const onUnhandled = (reason: unknown) => rejections.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const adapter: StockReconcileAdapter = {
+        async *fetchPages() {
+          yield new Map([['v1', 1]]);
+          await gate;
+        },
+        overlay: () => undefined,
+      };
+      const { reconcileStock, stop } = start(adapter);
+
+      const first = reconcileStock();
+      const followUp = reconcileStock();
+      stop();
+      release();
+
+      await expect(first).rejects.toThrow();
+      await expect(followUp).rejects.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 0)); // let any dangling microtask surface
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   it('writes nothing when fetchPages throws after page 1', async () => {
