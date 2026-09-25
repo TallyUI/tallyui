@@ -57,6 +57,13 @@ function variantStock(
   return { status: 'unknown' };
 }
 
+// Vendure's variant `enabled` (replicated since #110): a disabled variant is
+// not offered, priced or counted; a product with none left is not sellable
+// (#104 hides it).
+function liveVariants(doc: any): any[] {
+  return (doc.variants ?? []).filter((variant: any) => variant.enabled !== false);
+}
+
 /**
  * Vendure product trait implementations.
  *
@@ -85,7 +92,7 @@ const traits: ProductTraits = {
   getSku: (doc) => doc.variants?.[0]?.sku || undefined,
 
   getPrices: (doc, context) => {
-    const variant = doc.variants?.[0];
+    const variant = liveVariants(doc)[0];
     // Both price fields are already integers in minor units.
     const amount = variant?.[priceField];
     if (amount == null) return [];
@@ -94,7 +101,7 @@ const traits: ProductTraits = {
     return [{ amount, currency, kind: 'base' }];
   },
 
-  getVariants: (doc, context) => (doc.variants ?? []).map((variant: any) => ({
+  getVariants: (doc, context) => liveVariants(doc).map((variant: any) => ({
     id: String(variant.id),
     title: variant.name || undefined,
     sku: variant.sku || undefined,
@@ -103,19 +110,19 @@ const traits: ProductTraits = {
     stock: traits.getStock({ variants: [variant] }),
   })),
 
-  getStock: (doc) => productStock((doc.variants ?? []).map((variant: any) =>
+  getStock: (doc) => productStock(liveVariants(doc).map((variant: any) =>
     variantStock(variant, stockLocationId, globalTrackInventory, globalOutOfStockThreshold))),
 
   getPrice: (doc) => {
     // Vendure stores prices as integers in smallest currency unit (cents)
-    const amount = doc.variants?.[0]?.[priceField];
+    const amount = liveVariants(doc)[0]?.[priceField];
     if (amount == null) return undefined;
     return (amount / 100).toFixed(2);
   },
 
   getRegularPrice: (doc) => {
     // Vendure has no separate regular/sale price — promotions happen at checkout
-    const amount = doc.variants?.[0]?.[priceField];
+    const amount = liveVariants(doc)[0]?.[priceField];
     if (amount == null) return undefined;
     return (amount / 100).toFixed(2);
   },
@@ -150,9 +157,11 @@ const traits: ProductTraits = {
 
   hasVariants: (doc) => (doc.variants?.length ?? 0) > 1,
 
-  isSellable: (doc) => doc.enabled !== false,
+  // A product with no variants at all keeps the product-level-only answer.
+  isSellable: (doc) => doc.enabled !== false
+    && ((doc.variants?.length ?? 0) === 0 || liveVariants(doc).length > 0),
 
-  getVariantCount: (doc) => doc.variants?.length ?? 1,
+  getVariantCount: (doc) => doc.variants ? liveVariants(doc).length : 1,
 
   getType: (doc) => {
     // Vendure has no native product type field
