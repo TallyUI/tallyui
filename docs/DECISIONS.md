@@ -2182,19 +2182,34 @@ interface OrderCreatePayload {
     no order discount. `display.discountMinor` is every sub-row plus the
     order row.
   - `display.subtotalMinor` is now `total − tax + discount` (exclusive) or
-    `total + discount` (inclusive). A line's amount is `convert(quantity ×
-    unit price)`; the **residue**, subtotal − Σ line amounts, is added to
-    the **last converted line**.
+    `total + discount` (inclusive). A line in the display mode shows
+    `quantity × unit price`, exactly. A converted line shows
+    `convert(netMinor)` (what's left after its own discounts and its order
+    share) plus its sub-rows and its converted share, so it never shows less
+    than its own rows (#132 review: converting the gross on its own could
+    show 6081 above rows of 6082).
+  - The **residue**, subtotal − Σ line amounts, goes to the converted line
+    with the **largest converted remaining** (ties to the earlier line). A
+    negative residue takes a line down to its rows and share at most, then
+    the next largest: six 2-cent inclusive lines at 27% can owe −3 with no
+    line above 2. Putting it all on the last converted line showed a 1-cent
+    line at −1 (#132 review).
   - **Invariants, exact by construction:** Σ line amounts = subtotal;
     Σ sub-rows + order row = discount; and the totals invariants above.
   - **Guards (the builder throws):** with no converted line the residue is
     0, since Σ gross = Σ net + Σ discounts. Otherwise |residue| ≤ ⌊n/2⌋ + 1,
     where n is the number of non-zero rounded conversions on converted
-    lines (amounts, sub-rows and order shares): each is off by at most half
-    a cent, and the order-level tax rounding by at most one more. One cent
-    per converted line isn't enough: a single converted line with stacked
-    discounts can carry a residue of 2 from rounding alone (the 3 × 147.24
-    regression test).
+    lines (remainings, sub-rows and order shares): each is off by at most
+    half a cent, and the order-level tax rounding by at most one more. With
+    the remaining-based amounts, only the remainings' roundings reach the
+    residue, so the bound has room to spare. The builder also checks that
+    every figure is ≥ 0 and no line shows less than its rows plus share.
+    The spill is a crash guard: it never fired in a 200k-cart fuzz.
+  - **Return lines:** a negative-priced line shows what settlement charges
+    for it (its converted remaining plus rows and share), takes no residue,
+    and is outside the ≥ 0 checks. Settlement caps its discount part at the
+    gross today, so it's charged, and shown, at 0. Refund and return lines
+    get their own design when Paul opens refunds.
   - **Why the cent sits there:** the discount the cashier typed is the
     figure a customer can check, so every discount row is exact in its own
     mode, converted independently. A converted line's shown amount is

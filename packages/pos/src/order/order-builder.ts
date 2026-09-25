@@ -160,27 +160,56 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     const { subtotalMinor, taxMinor, totalMinor } = sumLines(lines);
     const discountMinor = lines.reduce((sum, li) => sum + li.discountMinor, 0);
-    // Display figures (ADR-063): every discount the cashier entered, and each line's shelf amount, converted on
-    // its own into the display mode. The subtotal is derived from the settlement total, so every sum is exact;
-    // the rounding residue goes to the last converted line's amount, never to a discount or an unconverted line.
+    // Display figures (ADR-063): every discount the cashier entered, and each line's order share, converted on its own
+    // into the display mode. A line in the display mode shows quantity × unit price; a converted line shows its
+    // converted remaining (netMinor) plus its rows and share, so it's never less than them. The subtotal is derived
+    // from the settlement total, so every sum is exact; the rounding residue goes to the converted lines' amounts,
+    // never to a discount or an unconverted line.
     const taxInclusive = taxContext.pricesIncludeTax;
-    const displayLines = lines.map((li) => ({
-      lineId: li.id,
-      amountMinor: toDisplayMode(li, li.unitPriceMinor * li.quantity, taxInclusive),
-      discounts: li.discounts.map((d) => ({
+    const figures = lines.map((li) => {
+      const discounts = li.discounts.map((d) => ({
         discountId: d.id, ...(d.label !== undefined ? { label: d.label } : {}), amountMinor: toDisplayMode(li, d.amountMinor, taxInclusive),
-      })),
-    }));
-    const orderDiscountDisplay = lines.reduce((sum, li) => sum + toDisplayMode(li, li.orderDiscountMinor, taxInclusive), 0);
+      }));
+      const shareMinor = toDisplayMode(li, li.orderDiscountMinor, taxInclusive);
+      const remainingMinor = toDisplayMode(li, li.netMinor, taxInclusive);
+      // A negative-priced (return) line shows what settlement charges for it (recalculateLine caps it at 0 today).
+      const returned = li.unitPriceMinor < 0;
+      const amountMinor = li.taxInclusive === taxInclusive && !returned ? li.unitPriceMinor * li.quantity
+        : discounts.reduce((sum, d) => sum + d.amountMinor, remainingMinor + shareMinor);
+      return { line: { lineId: li.id, amountMinor, discounts }, shareMinor, remainingMinor, returned };
+    });
+    const displayLines = figures.map((f) => f.line);
+    const orderDiscountDisplay = figures.reduce((sum, f) => sum + f.shareMinor, 0);
     const displayDiscount = displayLines.reduce(
       (sum, line) => line.discounts.reduce((lineSum, d) => lineSum + d.amountMinor, sum), orderDiscountDisplay);
     const displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount;
     const residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
     const converted = lines.flatMap((li, index) => li.taxInclusive === taxInclusive ? [] : [index]);
-    const conversions = converted.reduce((count, index) => count + [lines[index].unitPriceMinor * lines[index].quantity,
-      lines[index].orderDiscountMinor, ...lines[index].discounts.map((d) => d.amountMinor)].filter((x) => x !== 0).length, 0);
+    const conversions = converted.reduce((count, index) => count + [lines[index].netMinor, lines[index].orderDiscountMinor,
+      ...lines[index].discounts.map((d) => d.amountMinor)].filter((x) => x !== 0).length, 0);
     assertDisplayResidue(residue, converted.length, conversions);
-    if (residue !== 0) displayLines[converted[converted.length - 1]].amountMinor += residue;
+    // Largest converted remaining first (ties to the earlier line). A negative residue takes a line down to its rows
+    // and share at most, then moves on: six 2-cent inclusive lines can owe −3 with no line above 2. The spill is a
+    // crash guard; it never fired in a 200k-cart fuzz. Negative-priced (return) lines convert as they are and never
+    // take residue; refunds get their own design.
+    let left = residue;
+    const takers = converted.filter((index) => !figures[index].returned);
+    for (const index of takers.sort((a, b) => figures[b].remainingMinor - figures[a].remainingMinor || a - b)) {
+      if (left === 0) break;
+      const take = left > 0 ? left : Math.max(left, -figures[index].remainingMinor);
+      displayLines[index].amountMinor += take;
+      left -= take;
+    }
+    if (left !== 0) throw new Error(`Display residue ${left} left over with no converted line to take it (ADR-063)`);
+    // Checked here, not only in tests: every figure >= 0, and no line shows less than its own rows and share (lines
+    // with a non-negative gross; a return line's negative amount is its own).
+    for (const { line, shareMinor, returned } of figures) {
+      if (returned) continue;
+      const rows = line.discounts.reduce((sum, d) => sum + d.amountMinor, 0);
+      if (shareMinor < 0 || line.discounts.some((d) => d.amountMinor < 0) || line.amountMinor < rows + shareMinor) {
+        throw new Error(`Display line ${line.lineId} shows ${line.amountMinor}, less than its rows ${rows} and share ${shareMinor} (ADR-063)`);
+      }
+    }
     const display = {
       taxInclusive, subtotalMinor: displaySubtotal, discountMinor: displayDiscount, taxMinor, totalMinor,
       lines: displayLines, orderDiscountMinor: orderDiscountDisplay,
