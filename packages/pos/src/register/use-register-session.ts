@@ -16,11 +16,11 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { combineLatest, map, of, switchMap } from 'rxjs';
-import type { RxCollection, RxDocument } from 'rxdb';
+import type { MangoQuerySelector, RxCollection, RxDocument } from 'rxdb';
 import type { PosOrder } from '../pos-order/types';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, type Actor } from './facts';
-import type { RegisterHost } from './register-document';
+import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
 import * as store from './session-store';
 import { RegisterSessionRequiredError, type CashMovementCollection, type ClosureCollection, type RegisterSessionCollection } from './session-store';
@@ -40,6 +40,19 @@ export class RegisterSessionAlreadyOpenError extends Error {
     this.name = 'RegisterSessionAlreadyOpenError';
   }
 }
+
+/** An earlier session's close didn't finish (its closure is unwritten or unapplied); close it first. Its message can be shown to a cashier as it is. */
+export class RegisterCloseIncompleteError extends Error {
+  constructor() {
+    super('Finish closing the previous session first.');
+    this.name = 'RegisterCloseIncompleteError';
+  }
+}
+
+// Module-wide, so two hook instances for one register can't both open (keyed by `registerId`).
+const openingByRegister = new Map<string, Promise<unknown>>();
+// Closures whose `session-closed` fact is logged, so a double-tapped close logs it once.
+const closedFacts = new Set<string>();
 
 export interface UseRegisterSessionOptions {
   /** `register_sessions`, created with `registerSessionCollection()`; `null` while it opens. */
@@ -77,13 +90,39 @@ export interface UseRegisterSessionOptions {
 }
 
 type SessionDoc = RxDocument<RegisterSession>;
-type Snapshot = { rows: SessionDoc[]; closureRows: RxDocument<Closure>[]; entries: RxDocument<CashMovement>[]; sales: RxDocument<PosOrder>[] };
+type Reservation = RegisterBucket['closure_reservation'];
+type Snapshot = {
+  rows: SessionDoc[]; closureRows: RxDocument<Closure>[]; reservation: Reservation;
+  entries: RxDocument<CashMovement>[]; sales: RxDocument<PosOrder>[];
+};
 
-/** The session for this register: open or counting, else a closed one whose closure write was interrupted. */
-function currentSession(rows: SessionDoc[], closureRows: RxDocument<Closure>[]) {
-  return rows.find((row) => row.status !== 'closed')
-    ?? rows.find((row) => row.status === 'closed' && row.closure_id === row.id && !closureRows.some((closure) => closure.id === row.id))
+const reservationOf = (register: RegisterDocument | null, storeKey: string, registerId: string) =>
+  register?.stores[storeKey]?.registers?.[registerId]?.closure_reservation;
+
+/** A closed session whose close didn't finish: its closure row was never written. */
+const unwritten = (row: RegisterSession, closureRows: readonly { id: string }[]) =>
+  row.status === 'closed' && row.closure_id === row.id && !closureRows.some((closure) => closure.id === row.id);
+
+/**
+ * The session for this register: first the one an unapplied closure reservation names (its close
+ * was interrupted after the number was reserved, perhaps after its row was written), so it can
+ * finish; then the open or counting one; then a closed one whose closure row was never written.
+ */
+function currentSession(rows: SessionDoc[], closureRows: RxDocument<Closure>[], reservation: Reservation) {
+  return (reservation && !reservation.applied ? rows.find((row) => row.id === reservation.row.session_id) : undefined)
+    ?? rows.find((row) => row.status !== 'closed')
+    ?? rows.find((row) => unwritten(row, closureRows))
     ?? null;
+}
+
+/**
+ * Reads straight from the storage with the query RxDB would run, past its query cache. In RxDB
+ * 16.21.1 a document written a microtask or so after a query first subscribes never reaches that
+ * cached query, and its `exec()` keeps returning the stale result (bug 4 in the local RxDB repro).
+ */
+async function readFresh<T>(collection: RxCollection<T>, selector: MangoQuerySelector<T>): Promise<T[]> {
+  const { documents } = await collection.storageInstance.query(collection.find({ selector }).getPreparedQuery());
+  return documents as T[];
 }
 
 /** A session's ledger rows, built from its orders' payments the way `writeClosure` builds them. */
@@ -95,26 +134,25 @@ function ledgerRows(orders: readonly PosOrder[]): LedgerRow[] {
 }
 
 export function useRegisterSession(options: UseRegisterSessionOptions) {
-  const { sessions, movements, closures, orders, registerId, enabled, actor, timezone, tenderInProgress, expectedCloseTime, labels } = options;
+  const { sessions, movements, closures, orders, register, storeKey, registerId, enabled, actor, timezone, tenderInProgress, expectedCloseTime, labels } = options;
   const source = useMemo(() => {
     if (!enabled || !sessions || !movements || !closures || !orders || !registerId) return null;
     return combineLatest([
       sessions.find({ selector: { register_id: registerId } }).$,
       closures.find({ selector: { register_id: registerId } }).$,
-    ]).pipe(switchMap(([rows, closureRows]) => {
-      const current = currentSession(rows, closureRows);
-      if (!current) return of({ rows, closureRows, entries: [], sales: [] } as Snapshot);
+      observeRegister$(register).pipe(map((document) => reservationOf(document, storeKey, registerId))),
+    ]).pipe(switchMap(([rows, closureRows, reservation]) => {
+      const current = currentSession(rows, closureRows, reservation);
+      if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [] } as Snapshot);
       return combineLatest([
         movements.find({ selector: { session_id: current.id } }).$,
         orders.find({ selector: { sessionId: current.id } }).$,
-      ]).pipe(map(([entries, sales]) => ({ rows, closureRows, entries, sales })));
+      ]).pipe(map(([entries, sales]) => ({ rows, closureRows, reservation, entries, sales })));
     }));
-  }, [enabled, sessions, movements, closures, orders, registerId]);
-  // Latest-value refs: an `actions` object from an earlier render still sees the current flag,
-  // and a double tap on open shares one in-flight promise.
+  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId]);
+  // A latest-value ref: an `actions` object from an earlier render still sees the current flag.
   const tender = useRef(tenderInProgress);
   tender.current = tenderInProgress;
-  const opening = useRef<Promise<unknown> | null>(null);
   const [observed, setObserved] = useState<{ source: typeof source; snapshot: Snapshot } | null>(null);
   useEffect(() => {
     if (!source) return;
@@ -124,13 +162,14 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   // WCPOS re-evaluates `overdue` each minute.
   const [, setMinute] = useState(0);
   useEffect(() => {
+    if (!enabled || !expectedCloseTime) return;
     const timer = setInterval(() => setMinute((value) => value + 1), 60_000);
     return () => clearInterval(timer);
-  }, []);
+  }, [enabled, expectedCloseTime]);
 
   // Only an emission from the current source is trusted: a changed register or collection starts empty.
   const data = source && observed?.source === source ? observed.snapshot : null;
-  const session = data ? currentSession(data.rows, data.closureRows) : null;
+  const session = data ? currentSession(data.rows, data.closureRows, data.reservation) : null;
   const entries = data?.entries ?? [];
   const sales = data?.sales ?? [];
   const expected = session
@@ -172,15 +211,25 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     /** The open session's id, `null` when sessions are off, else `RegisterSessionRequiredError`. Call it when tender starts and before a card terminal captures. */
     requireOpen,
     actions: {
-      /** Refuses with `RegisterSessionAlreadyOpenError` while the register has a live session or another open is running. */
+      /**
+       * Refuses with `RegisterSessionAlreadyOpenError` while the register has a live session or
+       * another open is running (in any hook instance), and with `RegisterCloseIncompleteError`
+       * while an earlier close hasn't finished: a new session would lock the till behind it.
+       */
       openSession: async (input: { expectedFloatMinor: number | null; countedFloatMinor: number }) => {
         // A double tap: the second call sees the first's promise, set before its first await.
-        if (opening.current) throw new RegisterSessionAlreadyOpenError();
+        const key = registerId ?? '';
+        if (openingByRegister.has(key)) throw new RegisterSessionAlreadyOpenError();
         const run = (async () => {
-          const { sessions, registerId } = live();
-          // The collection, not the rendered snapshot, which can lag a session just opened.
-          const existing = await sessions.findOne({ selector: { register_id: registerId, status: { $in: ['open', 'counting'] } } }).exec();
-          if (existing) throw new RegisterSessionAlreadyOpenError();
+          const { sessions, closures, registerId } = live();
+          // The storage, not the rendered snapshot or a cached query, which can lag a new write.
+          const rows = await readFresh(sessions, { register_id: registerId });
+          if (rows.some((row) => row.status !== 'closed')) throw new RegisterSessionAlreadyOpenError();
+          const reservation = reservationOf(await readRegister(register), storeKey, registerId);
+          const closureRows = await readFresh(closures, { register_id: registerId });
+          if ((reservation && !reservation.applied) || rows.some((row) => unwritten(row, closureRows))) {
+            throw new RegisterCloseIncompleteError();
+          }
           const [year, month, day] = store.businessDayOf(new Date().toISOString(), timezone).split('-').map(Number);
           const row = await store.openSession(sessions, {
             ...input, registerId, openedBy: actor.id, businessDay: { year, month, day }, storeKey: options.storeKey,
@@ -191,11 +240,11 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           });
           return row;
         })();
-        opening.current = run;
+        openingByRegister.set(key, run);
         try {
           return await run;
         } finally {
-          opening.current = null;
+          openingByRegister.delete(key);
         }
       },
       startCounting: async () => {
@@ -209,7 +258,10 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         recordRegisterFact({ kind: 'counting-abandoned', actor, sessionId: row.id, registerId: row.register_id });
         return row;
       },
-      /** `counted` maps each tender to its counted minor units; an interrupted close resumes. */
+      /**
+       * `counted` maps each tender to its counted minor units. An interrupted close resumes with
+       * the count persisted on the session, not the one passed to the retry (WCPOS uses the retry's).
+       */
       closeSession: async (input: { counted: Record<string, number> }) => {
         refuseDuringTender();
         const { sessions, movements, closures, orders } = live();
@@ -217,22 +269,27 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         const closed = open.status === 'closed'
           ? open.getLatest()
           : await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, timezone });
-        const { cash = 0, ...otherTenders } = input.counted;
+        const { cash = 0, ...otherTenders } = closed.counted ?? input.counted;
+        // Read past the query cache: the Z's figures are derived from these rows.
         const closure = await store.writeClosure({
-          closures, register: options.register, storeKey: options.storeKey, session: closed,
+          closures, register, storeKey, session: closed,
           counted: cash, otherTenders, timezone, softwareVersion: options.softwareVersion,
-          movements: await movements.find({ selector: { session_id: closed.id } }).exec(),
-          orders: await orders.find({ selector: { sessionId: closed.id } }).exec(),
+          movements: await readFresh(movements, { session_id: closed.id }),
+          orders: await readFresh(orders, { sessionId: closed.id }),
           resolveCashierName: labels?.resolveCashierName,
           labels: {
             register_name: labels?.registerName ?? '', closed_by_name: nameOf(closed.closed_by),
             opened_by_name: nameOf(closed.opened_by), approved_by_name: nameOf(closed.approved_by),
           },
         });
-        recordRegisterFact({
-          kind: 'session-closed', actor, sessionId: closed.id, registerId: closed.register_id,
-          closureId: closure.id, number: closure.number, counted: closure.counted, variance: closure.variance,
-        });
+        // The fact's operationId is the closure id: a repeated or concurrent close logs it once.
+        if (!closedFacts.has(closure.id)) {
+          closedFacts.add(closure.id);
+          recordRegisterFact({
+            kind: 'session-closed', actor, sessionId: closed.id, registerId: closed.register_id,
+            closureId: closure.id, number: closure.number, counted: closure.counted, variance: closure.variance,
+          });
+        }
         return closure;
       },
       recordMovement: async (input: { type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string }) => {

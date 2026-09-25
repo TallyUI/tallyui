@@ -59,11 +59,12 @@ import {
   RegisterSessionRequiredError,
   startCounting,
   backToSelling,
+  writeClosure,
   type CashMovementCollection,
   type ClosureCollection,
   type RegisterSessionCollection,
 } from './session-store';
-import { RegisterSessionAlreadyOpenError, RegisterTenderInProgressError, useRegisterSession, type UseRegisterSessionOptions } from './use-register-session';
+import { RegisterCloseIncompleteError, RegisterSessionAlreadyOpenError, RegisterTenderInProgressError, useRegisterSession, type UseRegisterSessionOptions } from './use-register-session';
 
 let db: RxDatabase<{
   register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection; closures: ClosureCollection;
@@ -119,16 +120,26 @@ function seed(openedBy = '7', registerId = 'register') {
 function movement(sessionId: string, type: 'paid_in' | 'paid_out' | 'no_sale', amountMinor: number, reason = 'Float top-up') {
   return recordMovement(db.register_sessions, db.cash_movements, db.closures, { sessionId, type, amountMinor, reason, actor: '7' });
 }
-/** A hand-built pending sale stamped with `sessionId`: only what the hook and a closure read. */
-function sale(id: string, sessionId: string, payments: Omit<PosOrderPayment, 'id'>[]) {
+/** A hand-built pending sale, stamped with `sessionId` when given: only what the hook and a closure read. */
+function sale(id: string, sessionId: string | undefined, payments: Omit<PosOrderPayment, 'id'>[], extra: Partial<PosOrder> = {}) {
   const total = payments.reduce((sum, payment) => sum + payment.amountMinor, 0);
   return db.pos_orders.insert({
     id, commandId: `command-${id}`, createdAt: '2026-09-16T10:00:00.000Z', updatedAt: '2026-09-16T10:00:00.000Z',
     currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: total, discountMinor: 0, taxMinor: 0,
-    totalMinor: total, customer: null, syncStatus: 'pending', sessionId, cashierRef: '7',
-    payments: payments.map((payment, i) => ({ ...payment, id: `${id}-payment-${i}` })),
+    totalMinor: total, customer: null, syncStatus: 'pending', ...(sessionId ? { sessionId } : {}), cashierRef: '7',
+    payments: payments.map((payment, i) => ({ ...payment, id: `${id}-payment-${i}` })), ...extra,
   });
 }
+/** Closes a session and writes its closure straight through the store, as an earlier day's close. */
+async function closeFully(id: string) {
+  const closed = await closeSession(db.register_sessions, id, { counted: { cash: 10000 } });
+  return writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000,
+    otherTenders: {}, movements: [], orders: await db.pos_orders.find().exec(), softwareVersion: '1.0.0',
+  });
+}
+const reservation = async () => (await readRegister(db.register_sessions))?.stores.store?.registers?.register?.closure_reservation;
+const openInput = { expectedFloatMinor: null, countedFloatMinor: 10000 };
 const attempt = expect.stringMatching(/^[0-9a-f]{32}$/);
 const logged = (message: string, context: Record<string, unknown>) =>
   expect(logs).toContainEqual(expect.objectContaining({
@@ -285,8 +296,14 @@ describe('the session', () => {
   });
 
   it('expects the float plus cash sales plus pay-ins minus pay-outs, from its own orders only', async () => {
+    // An earlier session on this register, closed with its own sale.
+    const earlier = await seed();
+    await sale('earlier', earlier.id, [{ method: 'cash', amountMinor: 4444 }]);
+    await closeFully(earlier.id);
     const session = await seed();
     const other = await seed('7', 'other-register');
+    // A late sale (ADR-032): taken for this session but refused the stamp, so it's not its sale.
+    await sale('unstamped', undefined, [{ method: 'cash', amountMinor: 8888 }], { lateSessionId: session.id });
     await sale('sale-1', session.id, [{ method: 'cash', amountMinor: 1500, tenderedMinor: 2000, changeMinor: 500 }]);
     await sale('sale-2', session.id, [{ method: 'external', amountMinor: 3000 }]);
     await sale('elsewhere', other.id, [{ method: 'cash', amountMinor: 9999 }]);
@@ -393,6 +410,120 @@ describe('a second open', () => {
     expect((outcomes[1] as PromiseRejectedResult).reason).toBeInstanceOf(RegisterSessionAlreadyOpenError);
     expect(await db.register_sessions.find({ selector: { register_id: 'register' } }).exec()).toHaveLength(1);
   });
+
+  it('is refused from a second hook instance for the same register', async () => {
+    const one = render();
+    const two = render();
+    let outcomes!: PromiseSettledResult<unknown>[];
+    await act(async () => {
+      outcomes = await Promise.allSettled([one.result.current.actions.openSession(openInput), two.result.current.actions.openSession(openInput)]);
+    });
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'rejected']);
+    expect((outcomes[1] as PromiseRejectedResult).reason).toBeInstanceOf(RegisterSessionAlreadyOpenError);
+    expect(await db.register_sessions.find({ selector: { register_id: 'register' } }).exec()).toHaveLength(1);
+  });
+});
+
+describe('an interrupted close', () => {
+  // Each ends with the first session's close finished, then a new session opening.
+  async function finish(result: { current: ReturnType<typeof useRegisterSession> }, id: string) {
+    await expect(result.current.actions.openSession(openInput)).rejects.toBeInstanceOf(RegisterCloseIncompleteError);
+    let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
+    // The retry's count is ignored: the close resumes with the count persisted on the session.
+    await act(async () => {
+      closure = await result.current.actions.closeSession({ counted: { cash: 1 } });
+    });
+    expect(closure.toJSON()).toMatchObject({ id, number: 1, counted: { cash: 11500 }, order_ids: ['a-sale'], variance: { cash: 0 } });
+    expect(await reservation()).toMatchObject({ applied: true });
+    expect((await readRegister(db.register_sessions))?.stores.store.registers?.register.perpetual_sales_total_minor).toBe(1500);
+    await waitFor(() => expect(result.current.session).toBeNull());
+    await act(() => result.current.actions.openSession(openInput));
+    await waitFor(() => expect(result.current.session?.status).toBe('open'));
+  }
+
+  it('at the closure insert blocks a new open, and finishes on the next close', async () => {
+    const a = await seed();
+    await sale('a-sale', a.id, [{ method: 'cash', amountMinor: 1500 }]);
+    const result = await settled();
+    vi.spyOn(db.closures, 'insert').mockRejectedValueOnce(new Error('killed'));
+    await expect(result.current.actions.closeSession({ counted: { cash: 11500 } })).rejects.toThrow('killed');
+    vi.restoreAllMocks();
+    expect(await db.closures.storageInstance.findDocumentsById([a.id], false)).toEqual([]);
+    expect(await reservation()).toMatchObject({ applied: false });
+    await waitFor(() => expect(result.current.session?.status).toBe('closed'));
+    await finish(result, a.id);
+  });
+
+  it('after the closure insert, before the totals, stays current, blocks a new open, and finishes on the next close', async () => {
+    const a = await seed();
+    await sale('a-sale', a.id, [{ method: 'cash', amountMinor: 1500 }]);
+    const result = await settled();
+    // The till dies at the first register-document read after the closure row exists: `advancePerpetual`.
+    const getLocal = db.register_sessions.getLocal.bind(db.register_sessions);
+    vi.spyOn(db.register_sessions, 'getLocal').mockImplementation((async (id: string) => {
+      if ((await db.closures.storageInstance.findDocumentsById([a.id], false)).length) throw new Error('killed');
+      return getLocal(id);
+    }) as typeof getLocal);
+    await expect(result.current.actions.closeSession({ counted: { cash: 11500 } })).rejects.toThrow('killed');
+    vi.restoreAllMocks();
+    expect(await db.closures.storageInstance.findDocumentsById([a.id], false)).toHaveLength(1);
+    expect(await reservation()).toMatchObject({ applied: false });
+    // Its closure row exists, but the unapplied reservation names it, so it is still current.
+    await waitFor(() => expect(result.current.session?.id).toBe(a.id));
+    await finish(result, a.id);
+  });
+
+  it('with no reservation yet resumes with the persisted count, not the retry\'s', async () => {
+    const session = await seed();
+    await closeSession(db.register_sessions, session.id, { counted: { cash: 10000 } });
+    const result = await settled();
+    let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
+    await act(async () => {
+      closure = await result.current.actions.closeSession({ counted: { cash: 5 } });
+    });
+    expect(closure.counted).toEqual({ cash: 10000 });
+  });
+});
+
+it('freezes a sale and a movement that RxDB\'s query cache missed (RxDB 16.21.1, bug 4)', async () => {
+  const session = await seed();
+  // A document written a microtask after its query first subscribes never reaches that query.
+  const orders = db.pos_orders.find({ selector: { sessionId: session.id } });
+  const moves = db.cash_movements.find({ selector: { session_id: session.id } });
+  const subscriptions = [orders.$.subscribe()];
+  await Promise.resolve();
+  await sale('missed', session.id, [{ method: 'cash', amountMinor: 100 }]);
+  subscriptions.push(moves.$.subscribe());
+  await Promise.resolve();
+  await db.cash_movements.insert({
+    id: 'missed-move', session_id: session.id, type: 'paid_out', amountMinor: 30, reason: 'Milk', created_at_gmt: '2026-09-16T10:00:00.000Z',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The precondition: the cached queries are stale (if RxDB fixes this, these fail first).
+  expect(await orders.exec()).toHaveLength(0);
+  expect(await moves.exec()).toHaveLength(0);
+  const result = await settled();
+  let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
+  await act(async () => {
+    closure = await result.current.actions.closeSession({ counted: { cash: 10070 } });
+  });
+  expect(closure.toJSON()).toMatchObject({
+    order_ids: ['missed'], movement_ids: ['missed-move'], till_expected: { cash: 10070 }, variance: { cash: 0 },
+  });
+  subscriptions.forEach((subscription) => subscription.unsubscribe());
+});
+
+it('logs a double-tapped close once', async () => {
+  await seed();
+  const result = await settled();
+  const { closeSession: close } = result.current.actions;
+  let closed!: Awaited<ReturnType<typeof close>>[];
+  await act(async () => {
+    closed = await Promise.all([close({ counted: { cash: 10000 } }), close({ counted: { cash: 10000 } })]);
+  });
+  expect(closed[1].id).toBe(closed[0].id);
+  expect(await db.closures.find().exec()).toHaveLength(1);
+  expect(logs.filter((entry) => entry.message === 'Register session closed')).toHaveLength(1);
 });
 
 it('writes the closure once, and a repeated close returns the same closure', async () => {
