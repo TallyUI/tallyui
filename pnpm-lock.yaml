@@ -354,6 +354,31 @@ importers:
         specifier: 7.8.2
         version: 7.8.2
 
+  packages/integration-tests:
+    dependencies:
+      '@tallyui/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@tallyui/connector-medusa':
+        specifier: workspace:*
+        version: link:../../connectors/medusa
+      '@tallyui/connector-vendure':
+        specifier: workspace:*
+        version: link:../../connectors/vendure
+      '@tallyui/database':
+        specifier: workspace:*
+        version: link:../database
+      '@tallyui/pos':
+        specifier: workspace:*
+        version: link:../pos
+      rxdb:
+        specifier: 16.21.1
+        version: 16.21.1(rxjs@7.8.2)(supports-color@10.2.2)
+      rxjs:
+        specifier: 7.8.2
+        version: 7.8.2
+
   packages/pos:
     devDependencies:
       '@tallyui/connector-medusa':

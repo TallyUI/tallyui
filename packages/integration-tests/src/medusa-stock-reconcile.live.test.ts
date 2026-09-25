@@ -7,7 +7,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { STOCK_LEVELS_COLLECTION, startStockReconcile, stockLevelsCollection } from '@tallyui/database';
 import { getProductStock } from '@tallyui/pos';
-import { medusaAdminUserAuth, medusaAdminUserConnector } from '../index';
+import { medusaAdminUserAuth, medusaAdminUserConnector } from '@tallyui/connector-medusa';
 
 addRxPlugin(RxDBDevModePlugin);
 

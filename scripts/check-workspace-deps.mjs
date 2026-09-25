@@ -17,20 +17,6 @@ const TEST_RE = /\.test(-d)?\.[jt]sx?$/;
 const STATIC_START = /^(import|export|\})\b/;
 const FROM_RE = /from\s*['"](@tallyui\/[a-zA-Z0-9_-]+)/;
 const DYNAMIC_RE = /import\s*\(\s*['"](@tallyui\/[a-zA-Z0-9_-]+)/;
-// Declaring these would close a cycle in the pnpm/turbo workspace graph:
-// turbo refuses every task (not just build) on a cyclic graph, and it does
-// not distinguish dependencies from devDependencies for that check
-// (vercel/turborepo#9253). Each import here still resolves in-repo via the
-// vitest/tsconfig path aliases; a filtered install of these five packages
-// alone is untested. Revisit by extracting the shared test fixtures these
-// packages cross-import into their own dependency-free package.
-const CYCLE_EXCEPTIONS = new Set([
-  '@tallyui/core>@tallyui/pos',
-  '@tallyui/database>@tallyui/connector-medusa',
-  '@tallyui/database>@tallyui/pos',
-  '@tallyui/pos>@tallyui/connector-vendure',
-  '@tallyui/connector-medusa>@tallyui/pos',
-]);
 function walk(dir, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
@@ -74,9 +60,7 @@ for (const group of GROUPS) {
       for (const { dep, line } of importsIn(file)) {
         if (dep === pkg.name) continue;
         const declared = test ? declaredAny.has(dep) : declaredRuntime.has(dep);
-        if (!declared && CYCLE_EXCEPTIONS.has(`${pkg.name}>${dep}`)) {
-          console.log(`check:deps: cycle exception: ${pkg.name}: ${relFile}:${line} imports ${dep}`);
-        } else if (!declared) {
+        if (!declared) {
           const section = test ? 'devDependencies' : 'dependencies';
           console.error(`${pkg.name}: ${relFile}:${line} imports ${dep} (declare it in ${section})`);
           violations++;
