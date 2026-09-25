@@ -6,6 +6,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { findVariantByCode } from '@tallyui/core';
 import { connectorCollection } from '@tallyui/database';
+import { createOrderBuilder } from '@tallyui/pos';
 import { vendureProductTraits } from '../traits/product';
 import { createVendureConnector } from '../index';
 import { vendureProductSchema } from '../schemas/products';
@@ -37,6 +38,60 @@ describe('Vendure isSellable / getVariantCount', () => {
   it('distinguishes empty and missing variant data', () => {
     expect(vendureProductTraits.getVariantCount({ variants: [] })).toBe(0);
     expect(vendureProductTraits.getVariantCount({})).toBe(1);
+  });
+});
+
+// Vendure parity job 3: a variant's own `enabled` (replicated since #110)
+// governs whether it is offered, priced or counted, on top of the product flag.
+describe('disabled variants (Vendure parity job 3, #104)', () => {
+  const bothDisabled = {
+    id: '55', name: 'Grinder', enabled: true,
+    variants: [
+      { id: '301', price: 1000, currencyCode: 'USD', enabled: false, stockOnHand: 5 },
+      { id: '302', price: 2000, currencyCode: 'USD', enabled: false, stockOnHand: 3 },
+    ],
+  };
+  const oneLive = {
+    id: '56', name: 'Grinder', enabled: true,
+    variants: [
+      { id: '301', price: 1000, currencyCode: 'USD', enabled: false, stockOnHand: 5 },
+      { id: '302', price: 2000, currencyCode: 'USD', enabled: true, stockOnHand: 3 },
+    ],
+  };
+
+  it('a product with every variant disabled is not sellable, unpriced and out of variants', () => {
+    expect(vendureProductTraits.isSellable(bothDisabled)).toBe(false);
+    expect(vendureProductTraits.getPrices(bothDisabled)).toEqual([]);
+    expect(vendureProductTraits.getVariants!(bothDisabled)).toEqual([]);
+    expect(vendureProductTraits.getStock(bothDisabled)).toEqual({ status: 'unknown' });
+  });
+
+  it('one disabled, one live: sells, prices and counts the live variant only', () => {
+    expect(vendureProductTraits.isSellable(oneLive)).toBe(true);
+    expect(vendureProductTraits.getPrices(oneLive)).toEqual([{ amount: 2000, currency: 'USD', kind: 'base' }]);
+    const variants = vendureProductTraits.getVariants!(oneLive);
+    expect(variants).toHaveLength(1);
+    expect(variants[0].id).toBe('302');
+    expect(vendureProductTraits.getVariantCount(oneLive)).toBe(1);
+    expect(vendureProductTraits.getStock(oneLive)).toEqual({ status: 'in_stock', quantity: 3 });
+  });
+
+  it('a missing enabled flag on a variant is treated as live, unlike an explicit false', () => {
+    const doc = { enabled: true, variants: [{ id: '1', price: 500, currencyCode: 'USD' }] };
+    expect(vendureProductTraits.isSellable(doc)).toBe(true);
+    expect(vendureProductTraits.getVariantCount(doc)).toBe(1);
+  });
+
+  it('the product flag still wins over live variants', () => {
+    const doc = { enabled: false, variants: [{ id: '1', price: 500, currencyCode: 'USD' }] };
+    expect(vendureProductTraits.isSellable(doc)).toBe(false);
+  });
+
+  it("addProduct refuses an all-disabled product with #104's message", () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    expect(() => builder.addProduct(bothDisabled, vendureProductTraits))
+      .toThrow("addProduct: this product isn't sold in this store's channel");
+    expect(builder.getSnapshot().lineItems).toHaveLength(0);
   });
 });
 
