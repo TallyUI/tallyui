@@ -4,12 +4,14 @@
  * provenance (ADR-032 amendment 1): WCPOS `next` `3b5331b5c` `closure-document.ts`.
  *
  * Neutral changes: money is a2's integer minor units on input, from `Closure`'s/`RegisterSession`'s
- * own fields, formatted to the decimal strings the envelope carries with `minorToDecimal` at
- * `ClosureContext.exponent` (b1's `exportCsv` does the same); `breakdowns` stays an opaque,
- * caller-supplied blob whose money fields are already decimal strings, as WCPOS's server sent
- * them. `number` is a2's `Closure.number` (`printed_number`/`server_number` don't exist);
- * `store_id` is sourced from a2's `store_key`; date-fns/`@date-fns/tz` become `Intl`, following
- * a2's `businessDayOf`; a cashier id stays a2's string id (not WCPOS's numeric one).
+ * own fields AND from `breakdowns` (`writeClosure` freezes `payment_methods`, `opening_float`,
+ * `movements` and `tax_rates` in the same minor-unit convention as the closure row itself — it is
+ * not an opaque, already-decimal blob). `buildClosureDocument` converts every `*_minor`/`amountMinor`
+ * breakdown field to the decimal strings the envelope carries with `minorToDecimal` at
+ * `ClosureContext.exponent` (b1's `exportCsv` does the same); `number` is a2's `Closure.number`
+ * (`printed_number`/`server_number` don't exist); `store_id` is sourced from a2's `store_key`;
+ * date-fns/`@date-fns/tz` become `Intl`, following a2's `businessDayOf`; a cashier id stays a2's
+ * string id (not WCPOS's numeric one).
  */
 import { minorToDecimal } from './money';
 import type { Closure, RegisterSession } from './schemas';
@@ -33,6 +35,45 @@ export type ClosureContext = {
 
 const decimalMap = (minor: Record<string, number>, exponent: number): Record<string, string> =>
   Object.fromEntries(Object.entries(minor).map(([key, value]) => [key, minorToDecimal(value, exponent)]));
+
+/** `writeClosure`'s frozen minor-unit breakdown money (`payment_methods`, `tax_rates`,
+ * `opening_float`, `movements[].amountMinor`) → the decimal strings the envelope carries. */
+function decimalizeBreakdowns(breakdowns: Values, exponent: number): Values {
+  const dec = (m: unknown) => (typeof m === 'number' ? minorToDecimal(m, exponent) : m);
+  const group = (key: string, pairs: [string, string][]) => {
+    const source = breakdowns[key] as Record<string, Values> | undefined;
+    return (
+      source &&
+      Object.fromEntries(
+        Object.entries(source).map(([id, entry]) => [
+          id,
+          { ...entry, ...Object.fromEntries(pairs.map(([from, to]) => [to, dec(entry[from])])) },
+        ]),
+      )
+    );
+  };
+  const openingFloat = breakdowns.opening_float as Values | undefined;
+  return {
+    ...breakdowns,
+    ...(breakdowns.payment_methods
+      ? { payment_methods: group('payment_methods', [['sales_minor', 'sales'], ['refunds_minor', 'refunds']]) }
+      : {}),
+    ...(breakdowns.tax_rates
+      ? { tax_rates: group('tax_rates', [['net_minor', 'net'], ['tax_minor', 'tax'], ['gross_minor', 'gross']]) }
+      : {}),
+    ...(openingFloat
+      ? {
+          opening_float: {
+            ...openingFloat, expected: dec(openingFloat.expected_minor), counted: dec(openingFloat.counted_minor),
+            variance: dec(openingFloat.variance_minor),
+          },
+        }
+      : {}),
+    ...(breakdowns.movements
+      ? { movements: (breakdowns.movements as Values[]).map((m) => ({ ...m, amount: dec(m.amountMinor) })) }
+      : {}),
+  };
+}
 
 // Server Receipt_Date_Formatter keys; absent dates remain empty, not today's date.
 export function formatClosureDate(
@@ -171,6 +212,7 @@ export function buildClosureDocument(row: Closure, context: ClosureContext) {
   return envelope(
     {
       ...rest,
+      breakdowns: decimalizeBreakdowns(rest.breakdowns, exponent),
       store_id: store_key,
       till_expected: decimalMap(till_expected, exponent),
       expected: decimalMap(expected, exponent),

@@ -248,6 +248,32 @@ it('sums the Z: float plus net cash sales, pay-ins and pay-outs, without the voi
   expect(closure.movement_ids).toHaveLength(4);
 });
 
+// TallyUI-only (#134 review): writeClosure freezes a per-rate tax breakdown in minor units, the
+// same split a receipt shows (taxLinesByRate), summed across the session's orders by rate.
+it('freezes a per-rate tax breakdown, summed across orders, that matches each order\'s own taxMinor', async () => {
+  const session = await openSession(db.register_sessions, {
+    registerId: 'register', expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: '7',
+    businessDay: { year: 2026, month: 9, day: 16 },
+  });
+  const taxed = (priceMinor: number) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 200000, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: priceMinor, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: Math.round(priceMinor * 1.2) });
+    return { ...finalizeOrder(builder.getSnapshot(), { registerId: 'register', cashierRef: '7' }), sessionId: session.id };
+  };
+  const orders = [taxed(1000), taxed(500)];
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 1800 }, closedBy: '7' });
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 1800,
+    otherTenders: {}, movements: [], orders, softwareVersion: '1.0.0', timezone: 'UTC',
+  });
+  const [rate] = Object.values(
+    closure.breakdowns.tax_rates as Record<string, { net_minor: number; tax_minor: number; gross_minor: number }>,
+  );
+  expect(rate).toMatchObject({ net_minor: 1500, tax_minor: 300, gross_minor: 1800 });
+  expect(rate.tax_minor).toBe(orders.reduce((sum, o) => sum + o.taxMinor, 0));
+});
+
 // TallyUI: the three collections are local only (the #53 rule). Every RxDB replication, including
 // every `startReplication`, registers its collection in REPLICATION_STATE_BY_COLLECTION (the
 // control below shows the probe sees one). After the whole write path, none of the three is there:

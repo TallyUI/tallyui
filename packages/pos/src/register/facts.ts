@@ -30,7 +30,7 @@ type SimpleKind = 'counting-started' | 'counting-abandoned' | 'approval-refused'
 export type RegisterFact =
   | (Human & { kind: 'session-opened'; amount: number; variance: RegisterSession['opening_variance_minor'] })
   | (Human & { kind: SimpleKind })
-  | (Human & { kind: 'session-closed'; closureId: string } & Pick<Closure, 'counted' | 'variance'>)
+  | (Human & { kind: 'session-closed'; closureId: string } & Pick<Closure, 'number' | 'counted' | 'variance'>)
   | (Human & Movement & { kind: 'movement-recorded' })
   | (Human & Movement & { kind: 'movement-voided'; voids: string })
   | (Human & { kind: 'approval-granted'; approvedBy: string | null })
@@ -70,7 +70,7 @@ export function recordRegisterFact(fact: RegisterFact): void {
       return emit('Register session counting abandoned', 'register.counting-abandoned');
     case 'session-closed':
       return emit('Register session closed', 'register.session-closed', {
-        closureId: fact.closureId, counted: fact.counted, variance: fact.variance,
+        closureId: fact.closureId, number: fact.number, counted: fact.counted, variance: fact.variance,
       });
     case 'movement-recorded':
       // No-sale is the cashier action, independent of drawer dispatch, and makes no cash claim.

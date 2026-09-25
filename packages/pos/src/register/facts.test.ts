@@ -86,6 +86,12 @@ it('gives every attempt its own operationId so repeat collapsing cannot fold two
   expect(ids[0]).not.toBe(ids[1]);
 });
 
+// TallyUI-only (#134 review): a Z report's own number, not just its counted/variance figures.
+it('logs the closure number with a session-closed fact', () => {
+  recordRegisterFact({ kind: 'session-closed', ...input, closureId: 'c', number: 7, counted: { cash: 100 }, variance: { cash: 0 } });
+  expect(last()).toMatchObject({ data: { context: { type: 'register.session-closed', closureId: 'c', number: 7 } } });
+});
+
 // Removing a mapping, attributing a system fact, or changing its fold policy breaks this table.
 const pair = { sessionId: 'session-id', registerId: 'register-id' };
 const human = { ...pair, actor };
@@ -95,7 +101,7 @@ const cases: { fact: RegisterFact; type: string; identity: string }[] = [
   { fact: { kind: 'counting-started', ...human }, type: 'register.counting-started', identity: 'fresh' },
   { fact: { kind: 'counting-abandoned', ...human }, type: 'register.counting-abandoned', identity: 'fresh' },
   {
-    fact: { kind: 'session-closed', ...human, closureId: 'closure-id', counted: { cash: 10000 }, variance: { cash: 0 } },
+    fact: { kind: 'session-closed', ...human, closureId: 'closure-id', number: 42, counted: { cash: 10000 }, variance: { cash: 0 } },
     type: 'register.session-closed',
     identity: 'closureid',
   },
