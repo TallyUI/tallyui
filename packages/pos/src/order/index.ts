@@ -10,6 +10,7 @@ export type {
   AddLineInput,
   Discount,
   AppliedDiscount,
+  DisplayTotals,
   Payment,
   CustomerSummary,
   PaymentMethod,

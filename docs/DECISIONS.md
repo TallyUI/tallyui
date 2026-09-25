@@ -2128,3 +2128,25 @@ interface OrderCreatePayload {
     is clamped to 0 in `computeDiscountAmount`, so a line or order discount
     can never raise a price. `finalize`'s guard rejects any non-zero
     discount, not only a positive one, as defence in depth.
+
+## ADR-063 Display totals are separate from settlement totals
+
+- **Date:** 2026-09-25 · **Status:** Accepted (the Front desk) · **Source:**
+  the medusapos cart showed Subtotal 3.10 + VAT 0.78 − Discount 0.90 as a
+  Total of 3.88, since `subtotalMinor` is already after the discounts.
+- **Decision:** the **settlement figures** (`subtotalMinor`,
+  `discountMinor`, `taxMinor`, `totalMinor`; each line in its own mode) go
+  in `order.create`, unchanged. The **display figures**, `order.display`,
+  are in the store's display mode and never sent to the server. A parked
+  order's saved draft may carry it, and it's recomputed from the lines on
+  resume, so it's never authoritative. They are the order's totals with no
+  discounts, by the same arithmetic, plus the difference.
+  **Exclusive display:** `subtotal − discount + tax = total`.
+  **Inclusive display** (the subtotal is the shelf total):
+  `subtotal − discount = total`, with the tax shown as "includes", not
+  added. Both hold exactly.
+- **Apps must not rebuild them:** `discountMinor` mixes inclusive lines'
+  gross shares with exclusive lines' net shares, so it doesn't add up.
+- **Follow-up:** the receipt adopts `display` in the next job: Subtotal,
+  Includes discounts, Tax and Total come from `order.display`. The rest of
+  backlog item 48 (one renderer, one envelope) stays where it is.

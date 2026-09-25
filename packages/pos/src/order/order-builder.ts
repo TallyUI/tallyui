@@ -22,6 +22,18 @@ function roundHalfAway(n: number): number {
   return Math.sign(n) * Math.round(Math.abs(n));
 }
 
+/** The order totals of recalculated lines; the settlement and display totals both use it (ADR-063). */
+function sumLines(lines: LineItem[]): { subtotalMinor: number; taxMinor: number; totalMinor: number } {
+  const netMinor = lines.reduce((sum, li) => sum + li.netMinor, 0);
+  const lineTaxMicros = lines.reduce((sum, li) => sum + BigInt(li.taxMicros), 0n);
+  const exclusiveTaxMicros = lines.reduce((sum, li) => li.taxInclusive ? sum : sum + BigInt(li.taxMicros), 0n);
+  const taxMinor = roundMicrosToMinor(lineTaxMicros);
+  // Each line pays in its own mode: an inclusive line its gross, an exclusive line its net plus tax.
+  // The totals sum the lines as recalculated; nothing is subtracted after tax.
+  const linesTotal = netMinor + roundMicrosToMinor(exclusiveTaxMicros);
+  return { subtotalMinor: linesTotal - taxMinor, taxMinor, totalMinor: Math.max(0, linesTotal) };
+}
+
 export interface OrderBuilderOptions {
   currency: string;
   taxContext: TaxContext;
@@ -126,16 +138,13 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const lines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
 
-    const netMinor = lines.reduce((sum, li) => sum + li.netMinor, 0);
-    const lineTaxMicros = lines.reduce((sum, li) => sum + BigInt(li.taxMicros), 0n);
-    const exclusiveTaxMicros = lines.reduce((sum, li) => li.taxInclusive ? sum : sum + BigInt(li.taxMicros), 0n);
-    const taxMinor = roundMicrosToMinor(lineTaxMicros);
-    // Each line pays in its own mode: an inclusive line its gross, an exclusive line its net plus tax.
-    // The totals sum the discounted lines; nothing is subtracted after tax.
-    const linesTotal = netMinor + roundMicrosToMinor(exclusiveTaxMicros);
-    const subtotalMinor = linesTotal - taxMinor;
+    const { subtotalMinor, taxMinor, totalMinor } = sumLines(lines);
     const discountMinor = lines.reduce((sum, li) => sum + li.discountMinor, 0);
-    const totalMinor = Math.max(0, linesTotal);
+    // Display totals (ADR-063): the same lines with no discounts, through the same arithmetic, and the difference.
+    const shelf = sumLines(lineItems.map((li) => recalculateLine({ ...li, discounts: [] })));
+    const taxInclusive = taxContext.pricesIncludeTax;
+    const [before, after] = taxInclusive ? [shelf.totalMinor, totalMinor] : [shelf.subtotalMinor, subtotalMinor];
+    const display = { taxInclusive, subtotalMinor: before, discountMinor: before - after, taxMinor, totalMinor };
     const paidMinor = payments.reduce((sum, p) => sum + p.amountMinor, 0);
     const balanceDueMinor = Math.max(0, totalMinor - paidMinor);
     const changeDueMinor = Math.max(0, paidMinor - totalMinor);
@@ -152,6 +161,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       discountMinor,
       taxMinor,
       totalMinor,
+      display,
       paidMinor,
       balanceDueMinor,
       changeDueMinor,
