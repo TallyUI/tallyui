@@ -22,7 +22,7 @@ export { createRepository } from './repository';
 export type { Repository } from './repository';
 
 // Order
-export { createOrderBuilder, createOrderManager } from './order';
+export { createOrderBuilder, createOrderManager, allocateOrderDiscount } from './order';
 export type { OrderBuilder, OrderBuilderOptions } from './order';
 export type { OrderManager, OrderManagerOptions, ParkedOrderSummary } from './order';
 export type {
@@ -48,3 +48,5 @@ export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema } from './
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';
 export { createHttpCommandTransport, createOrderOutbox } from './outbox';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OutboxState } from './outbox';
+export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR } from './tender';
+export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg } from './tender';

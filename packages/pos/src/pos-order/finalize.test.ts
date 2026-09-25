@@ -89,7 +89,8 @@ describe('finalizeOrder', () => {
     expect(() => finalizeOrder(builder.getSnapshot())).not.toThrow();
   });
 
-  it.each(['no lines', 'underpaid', 'unsupported payment method voucher', 'change exceeds cash', 'discounts not supported yet', 'payments do not reconcile'])(
+  it.each(['no lines', 'underpaid', 'unsupported payment method voucher', 'change exceeds cash',
+    'discounts are not supported by the server yet (order.create v2)', 'payments do not reconcile'])(
     'rejects %s', (reason) => {
       const builder = sale();
       if (reason === 'no lines') builder.clear();
@@ -97,7 +98,7 @@ describe('finalizeOrder', () => {
       else if (reason === 'change exceeds cash') {
         builder.addPayment({ method: 'external', amountMinor: 4000 });
         builder.addPayment({ method: 'cash', amountMinor: 0 });
-      } else if (reason === 'discounts not supported yet') {
+      } else if (reason.startsWith('discounts')) {
         builder.applyLineDiscount(builder.getSnapshot().lineItems[0].id, { type: 'fixed', value: 100 });
         builder.addPayment({ method: 'cash', amountMinor: 5000 });
       }
@@ -106,4 +107,28 @@ describe('finalizeOrder', () => {
       expect(() => finalizeOrder(order)).toThrow(`finalize: ${reason}`);
     },
   );
+
+  it('still rejects an order discount, now allocated to the lines, with the same Error', () => {
+    const builder = sale();
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    expect(() => finalizeOrder(builder.getSnapshot()))
+      .toThrow(new Error('finalize: discounts are not supported by the server yet (order.create v2)'));
+  });
+
+  it('rejects a hand-built order with a negative discountMinor (the guard checks non-zero, not just positive)', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const order = builder.getSnapshot();
+    const rigged = {
+      ...order,
+      discountMinor: -100,
+      discounts: [{ id: 'd1', type: 'fixed' as const, value: -100, amountMinor: -100 }],
+      lineItems: order.lineItems.map((line, i) =>
+        i === 0 ? { ...line, discountMinor: -100, orderDiscountMinor: -100 } : line,
+      ),
+    };
+    expect(() => finalizeOrder(rigged))
+      .toThrow(new Error('finalize: discounts are not supported by the server yet (order.create v2)'));
+  });
 });

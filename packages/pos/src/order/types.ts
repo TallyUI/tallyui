@@ -10,8 +10,8 @@ export interface Order {
   note: string;
   currency: string;
   pricesIncludeTax: boolean;
-  subtotalMinor: number;      // excl. tax, after line discounts
-  discountMinor: number;      // line + order discounts
+  subtotalMinor: number;      // excl. tax, after line and order discounts (both pre-tax, ADR-062)
+  discountMinor: number;      // line + order discounts, each line's in its own mode; Σ lineItems[].discountMinor
   taxMinor: number;           // rounded once per order
   totalMinor: number;         // what the customer pays
   paidMinor: number;
@@ -32,8 +32,9 @@ export interface LineItem {
   quantity: number;           // integer >= 1
   taxLines: LineTaxLine[];    // stacked rates on the same net base (ADR-040)
   discounts: AppliedDiscount[];
-  discountMinor: number;
-  netMinor: number;           // unitPriceMinor × quantity − discountMinor
+  discountMinor: number;      // line discounts + orderDiscountMinor, in the line's own mode
+  orderDiscountMinor: number; // this line's allocated share of the order discounts (ADR-062)
+  netMinor: number;           // unitPriceMinor × quantity − discountMinor; the taxed base
   taxMicros: string;          // Σ taxLines[].taxMicros, decimal string of a bigint
   taxInclusive: boolean;      // the price's own tax mode; the order's when the price has none
   /** Set only when the price's tax mode differs from the order's; named price mode → order mode. */
@@ -55,7 +56,7 @@ export interface Discount {
 
 export interface AppliedDiscount extends Discount {
   id: string;
-  amountMinor: number;
+  amountMinor: number;        // an order discount: its own-mode amount, allocated across the lines
 }
 
 export interface Payment {

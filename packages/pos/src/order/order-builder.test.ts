@@ -5,6 +5,7 @@ import type { ProductTraits } from '@tallyui/core';
 import { medusaProductTraits } from '@tallyui/connector-medusa';
 import type { TaxContext } from '../tax/types';
 import { roundMicrosToMinor } from '../tax/exact';
+import { finalizeOrder } from '../pos-order/finalize';
 
 const traits: ProductTraits = {
   getId: (doc) => doc.id,
@@ -433,7 +434,7 @@ describe('per-price tax mode', () => {
     expect(order.lineItems[0].taxMicros).toBe(String(BigInt(row.taxMicros[0]) + BigInt(row.taxMicros[1])));
   });
 
-  it('keeps each line in its own mode in a mixed order, with an order discount after tax', () => {
+  it('keeps each line in its own mode in a mixed order, with an order discount allocated before tax', () => {
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
     builder.addLine({ productId: 'a', name: 'Inclusive', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: true }, quantity: 3 });
     builder.addLine({ productId: 'b', name: 'Store mode', unitPrice: { amount: 1000, currency: 'EUR' } });
@@ -447,11 +448,12 @@ describe('per-price tax mode', () => {
     expect(before.taxMinor).toBe(roundMicrosToMinor(BigInt(a.taxMicros) + BigInt(b.taxMicros)));
     expect(before.subtotalMinor + before.taxMinor).toBe(before.totalMinor);
 
-    // Today's order discounts are not allocated to lines: they come off the total, after tax.
+    // The €1.00 is shared 3:1 by the own-mode amounts (€30.00 gross, €10.00 net); each line is taxed after its share.
     builder.applyOrderDiscount({ type: 'fixed', value: 100 });
     const after = builder.getSnapshot();
-    expect(after).toMatchObject({ totalMinor: 4090, taxMinor: 669, subtotalMinor: 3521, discountMinor: 100 });
-    expect(after.lineItems).toEqual(before.lineItems);
+    expect(after.lineItems.map((li) => [li.orderDiscountMinor, li.netMinor])).toEqual([[75, 2925], [25, 975]]);
+    expect(after.lineItems[1].taxMicros).toBe('185250000');
+    expect(after).toMatchObject({ totalMinor: 4085, taxMinor: 652, subtotalMinor: 3433, discountMinor: 100 });
   });
 
   it('does not merge a flagged price into an unflagged line', () => {
@@ -480,5 +482,114 @@ describe('per-price tax mode', () => {
       unitPriceMinor: 1000, sku: 'MUG-1', taxInclusive: true, priceTaxModeConverted: 'inclusive-to-exclusive',
     });
     expect(order).toMatchObject({ totalMinor: 1000, taxMinor: 160, subtotalMinor: 840, pricesIncludeTax: false });
+  });
+});
+
+describe('pre-tax discounts (ADR-062)', () => {
+  const store = (pricesIncludeTax: boolean, ratePpm = 200000): TaxContext => ({ getTaxRatePpm: () => ratePpm, pricesIncludeTax });
+
+  it('takes a 10% order discount off the taxed base: €100.00 at 20% exclusive pays €108.00, not €110.00', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 10000, currency: 'EUR' } });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    const order = builder.getSnapshot();
+    expect(order).toMatchObject({ subtotalMinor: 9000, taxMinor: 1800, totalMinor: 10800, discountMinor: 1000 });
+    expect(order.lineItems[0]).toMatchObject({ discountMinor: 1000, orderDiscountMinor: 1000, netMinor: 9000, taxMicros: '1800000000' });
+    expect(order.discounts[0].amountMinor).toBe(1000);
+  });
+
+  it('pays €108.00 for a €120.00 line at 20% inclusive with €12.00 off, tax €18.00 the exact remainder', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(true) });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 12000, currency: 'EUR' } });
+    builder.applyOrderDiscount({ type: 'fixed', value: 1200 });
+    expect(builder.getSnapshot()).toMatchObject({ totalMinor: 10800, taxMinor: 1800, subtotalMinor: 9000, discountMinor: 1200 });
+  });
+
+  it.each([
+    { discount: { type: 'percentage' as const, value: 10 }, shares: [300, 100], totalMinor: 3771, taxMinor: 602 },
+    { discount: { type: 'fixed' as const, value: 100 }, shares: [75, 25], totalMinor: 4085, taxMinor: 652 },
+    // A fixed discount caps at the sum of the own-mode amounts: €30.00 gross + €10.00 net.
+    { discount: { type: 'fixed' as const, value: 999999 }, shares: [3000, 1000], totalMinor: 0, taxMinor: 0 },
+  ])('discounts a mixed order on each line\'s own-mode amount: $discount.type $discount.value', (row) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false, 190000) });
+    builder.addLine({ productId: 'a', name: 'Inclusive', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: true }, quantity: 3 });
+    builder.addLine({ productId: 'b', name: 'Exclusive', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyOrderDiscount(row.discount);
+    const order = builder.getSnapshot();
+    const [a, b] = order.lineItems;
+    // A 10% share reduces the inclusive line's gross and the exclusive line's net by 10% each.
+    expect([a.orderDiscountMinor, b.orderDiscountMinor]).toEqual(row.shares);
+    expect([a.netMinor, b.netMinor]).toEqual([3000 - row.shares[0], 1000 - row.shares[1]]);
+    expect(order).toMatchObject({ totalMinor: row.totalMinor, taxMinor: row.taxMinor, discountMinor: row.shares[0] + row.shares[1] });
+    expect(order.discounts[0].amountMinor).toBe(row.shares[0] + row.shares[1]);
+    // Paid = Σ post-discount gross, to the cent: the inclusive line's total, the exclusive line's net plus its tax.
+    expect(order.totalMinor).toBe(a.netMinor + b.netMinor + roundMicrosToMinor(BigInt(b.taxMicros)));
+    expect(order.taxMinor).toBe(roundMicrosToMinor(BigInt(a.taxMicros) + BigInt(b.taxMicros)));
+    expect(order.subtotalMinor + order.taxMinor).toBe(order.totalMinor);
+  });
+
+  it('stacks line and order discounts on one line, and taxes what both leave', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: store(false, 100000) });
+    const lineId = builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'USD' } });
+    builder.applyLineDiscount(lineId, { type: 'percentage', value: 10 });
+    builder.applyOrderDiscount({ type: 'fixed', value: 100 });
+    let order = builder.getSnapshot();
+    expect(order.lineItems[0]).toMatchObject({ discountMinor: 200, orderDiscountMinor: 100, netMinor: 800, taxMicros: '80000000' });
+    expect(order).toMatchObject({ subtotalMinor: 800, taxMinor: 80, totalMinor: 880, discountMinor: 200 });
+    // An order percentage applies to what the line discount leaves: 10% of €9.00.
+    builder.removeDiscount(order.discounts[0].id);
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    order = builder.getSnapshot();
+    expect(order.lineItems[0]).toMatchObject({ discountMinor: 190, orderDiscountMinor: 90, netMinor: 810 });
+    expect(order).toMatchObject({ taxMinor: 81, totalMinor: 891 });
+  });
+
+  it('reallocates order discounts when the lines change', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: store(false, 100000) });
+    const first = builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'USD' } });
+    builder.addLine({ productId: 'p2', name: 'Other', unitPrice: { amount: 1000, currency: 'USD' } });
+    builder.applyOrderDiscount({ type: 'fixed', value: 101 });
+    expect(builder.getSnapshot().lineItems.map((li) => li.orderDiscountMinor)).toEqual([51, 50]);
+    builder.updateQuantity(first, 3);
+    expect(builder.getSnapshot().lineItems.map((li) => li.orderDiscountMinor)).toEqual([76, 25]);
+    builder.removeItem(first);
+    expect(builder.getSnapshot()).toMatchObject({ totalMinor: 989, discountMinor: 101 });
+  });
+
+  it('adds two order-discount percentages instead of compounding them: 10% and 20% of €10.00 give €1.00 and €2.00', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 20 });
+    const order = builder.getSnapshot();
+    // Before this change, the second discount compounded on what the first left: 100 then 180.
+    expect(order.discounts.map((d) => d.amountMinor)).toEqual([100, 200]);
+    expect(order.discountMinor).toBe(300);
+  });
+
+  it('caps the second of two 60% order discounts at what remains: 600 then 400, not 600 then 240', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyOrderDiscount({ type: 'percentage', value: 60 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 60 });
+    const order = builder.getSnapshot();
+    expect(order.discounts.map((d) => d.amountMinor)).toEqual([600, 400]);
+    expect(order.discountMinor).toBe(1000);
+  });
+
+  it('clamps a negative line discount so it cannot inflate the order (Front desk review of #115)', () => {
+    // A €10.00 line, 20% exclusive, with a −€5.00 fixed line discount and a 10% order discount.
+    // Unclamped, the line discount subtracted a negative amount and the order paid 1620 (€16.20) — the bug.
+    // Clamped, the line discount is 0, the order discount is 100, and the total is 900 + 180 tax = 1080.
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    const lineId = builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyLineDiscount(lineId, { type: 'fixed', value: -500 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    const order = builder.getSnapshot();
+    expect(order.lineItems[0]).toMatchObject({ discountMinor: 100, orderDiscountMinor: 100, netMinor: 900 });
+    expect(order.discounts[0].amountMinor).toBe(100);
+    expect(order).toMatchObject({ discountMinor: 100, taxMinor: 180, totalMinor: 1080 });
+    expect(order.discountMinor).toBeGreaterThanOrEqual(0);
+    expect(() => finalizeOrder(order)).toThrow('finalize: discounts are not supported by the server yet (order.create v2)');
   });
 });

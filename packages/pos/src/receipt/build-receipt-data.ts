@@ -52,6 +52,8 @@ export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptDa
       quantity: li.quantity,
       unitPriceMinor: li.unitPriceMinor,
       lineTotalMinor: lineTotals[index],
+      // Line plus allocated order discounts, in the line's own mode; lineTotalMinor is already after it (ADR-062).
+      ...(li.discountMinor > 0 ? { discountMinor: li.discountMinor } : {}),
     })),
     discounts: order.discounts.map((d) => ({
       label: d.label ?? d.couponCode ?? `${d.type} discount`,

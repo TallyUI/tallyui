@@ -20,6 +20,7 @@ const baseOrder: Order = {
       taxMicros: '90000000',
       discounts: [],
       discountMinor: 0,
+      orderDiscountMinor: 0,
       netMinor: 900,
       taxInclusive: false,
     },
@@ -34,6 +35,7 @@ const baseOrder: Order = {
       taxMicros: '15000000',
       discounts: [],
       discountMinor: 0,
+      orderDiscountMinor: 0,
       netMinor: 300,
       taxInclusive: false,
     },
@@ -238,5 +240,29 @@ describe('buildReceiptData', () => {
     const shelfA = row.storeInclusive ? row.a * row.aQty + exclusiveTax(row.a * row.aQty) : row.a * row.aQty;
     const shelfB = row.storeInclusive ? row.b : row.b + exclusiveTax(row.b);
     expect(receipt.totals.totalMinor).toBe(shelfA + shelfB);
+  });
+
+  it.each([false, true])('shows line and order discounts, and its totals still add up (ADR-062; inclusive store: %s)', (storeInclusive) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: storeInclusive } });
+    const lineId = builder.addLine({ productId: 'a', name: 'A', unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: !storeInclusive }, quantity: 3 });
+    builder.addLine({ productId: 'b', name: 'B', unitPrice: { amount: 999, currency: 'EUR' } });
+    builder.addLine({ productId: 'c', name: 'C', unitPrice: { amount: 500, currency: 'EUR' } });
+    builder.applyLineDiscount(lineId, { type: 'fixed', value: 250 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 15, label: 'Staff' });
+    const order = builder.getSnapshot();
+    const receipt = buildReceiptData(order, config);
+    const orderDiscount = order.discounts[0].amountMinor;
+    expect(orderDiscount).toBe(Math.round((2750 + 999 + 500) * 0.15));
+    expect(receipt.discounts).toEqual([{ label: 'Staff', amountMinor: orderDiscount }]);
+    // Each line shows its own discount, in its own mode; together they are the receipt's discount total.
+    const lineDiscounts = receipt.lineItems.map((line) => line.discountMinor ?? 0);
+    expect(lineDiscounts).toEqual(order.lineItems.map((li) => li.discountMinor));
+    expect(lineDiscounts.every((amount) => amount > 0)).toBe(true);
+    expect(receipt.totals.discountMinor).toBe(250 + orderDiscount);
+    expect(lineDiscounts.reduce((total, amount) => total + amount, 0)).toBe(receipt.totals.discountMinor);
+    const sum = receipt.lineItems.reduce((total, line) => total + line.lineTotalMinor, 0);
+    expect(sum).toBe(storeInclusive ? receipt.totals.totalMinor : receipt.totals.subtotalMinor);
+    expect(receipt.totals.subtotalMinor + receipt.totals.taxMinor).toBe(receipt.totals.totalMinor);
+    expect(receipt.totals.taxLines.reduce((total, line) => total + line.amountMinor, 0)).toBe(receipt.totals.taxMinor);
   });
 });
