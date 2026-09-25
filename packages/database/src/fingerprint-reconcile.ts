@@ -3,6 +3,8 @@ import { BehaviorSubject, type Observable } from 'rxjs';
 
 import type { FingerprintReconcileAdapter, SyncContext } from '@tallyui/core';
 
+import { createPassQueue } from './pass-queue';
+
 export interface StartFingerprintReconcileOptions<Doc> {
   /** The replicated collection. Read only. */
   collection: RxCollection<Doc>;
@@ -61,7 +63,9 @@ export function isFingerprintResultCurrent(state: FingerprintReconcileState): bo
  * `reSync`; only a complete pass acts. Products the remote side doesn't
  * report are left alone -- deletions are the id reconcile's job. No pass
  * runs at start by default (`startDelayMs: null`); the app may still call
- * `reconcile()` on demand. Concurrent calls share one pass.
+ * `reconcile()` on demand. A call during a pass queues one follow-up pass
+ * (later calls share it), so a change made after the pass read is picked up
+ * straight after, not at the next interval.
  */
 export function startFingerprintReconcile<Doc>({
   collection, adapter, context, reSync, startDelayMs = null, intervalMs = 86_400_000, maxPages = 100, now = Date.now,
@@ -74,7 +78,6 @@ export function startFingerprintReconcile<Doc>({
   const { signal } = controller;
   // React Native's AbortController polyfill has no throwIfAborted() and may have no reason.
   const checkAborted = () => { if (signal.aborted) throw signal.reason ?? new Error('Fingerprint reconcile stopped'); };
-  let running: Promise<FingerprintReconcileResult> | undefined;
   const state = new BehaviorSubject<FingerprintReconcileState>({ running: false });
   const update = (patch: Partial<FingerprintReconcileState>) => state.next({ ...state.value, ...patch });
 
@@ -129,7 +132,7 @@ export function startFingerprintReconcile<Doc>({
     }
   };
 
-  const reconcile = () => (running ??= tracked().finally(() => { running = undefined; }));
+  const reconcile = createPassQueue(tracked);
   const onTimer = () => reconcile().catch((error) => console.warn('Fingerprint reconcile failed:', error));
   let startTimer: ReturnType<typeof setTimeout> | undefined;
   let intervalTimer: ReturnType<typeof setInterval>;

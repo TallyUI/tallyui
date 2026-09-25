@@ -1,6 +1,8 @@
 import type { RxCollection } from 'rxdb';
 import type { IdReconcileAdapter, SyncContext } from '@tallyui/core';
 
+import { createPassQueue } from './pass-queue';
+
 /**
  * Below this count of would-be tombstones, the brake never applies, whatever
  * `maxDeleteShare` says: in a small shop, deleting 2 of 5 products is normal.
@@ -36,8 +38,10 @@ export interface IdReconcileResult { pages: number; queued: number; truncated: b
  * and queues disagreeing documents for the collection's pull (ADR-060). Only
  * reads `collection`. A throw, abort, truncation or the mass-delete brake
  * (below) queues nothing and skips `reSync`; only a complete, un-braked pass
- * acts. One pass runs `startDelayMs` after start, then every `intervalMs`;
- * concurrent calls share one pass.
+ * acts. One pass runs `startDelayMs` after start, then every `intervalMs`. A
+ * call during a pass queues one follow-up pass (later calls share it), so a
+ * change made after the pass read is picked up straight after, not at the
+ * next interval.
  */
 export function startIdReconcile<Doc>({
   collection, adapter, context, reSync, startDelayMs = 5_000, intervalMs = 86_400_000, maxPages = 100,
@@ -47,7 +51,6 @@ export function startIdReconcile<Doc>({
   const { signal } = controller;
   // React Native's AbortController polyfill has no throwIfAborted() and may have no reason.
   const checkAborted = () => { if (signal.aborted) throw signal.reason ?? new Error('Id reconcile stopped'); };
-  let running: Promise<IdReconcileResult> | undefined;
 
   const pass = async (): Promise<IdReconcileResult> => {
     checkAborted();
@@ -103,7 +106,7 @@ export function startIdReconcile<Doc>({
     return { pages, queued: entries.length, truncated: false, braked: false };
   };
 
-  const reconcileIds = () => (running ??= pass().finally(() => { running = undefined; }));
+  const reconcileIds = createPassQueue(pass);
   const onTimer = () => reconcileIds().catch((error) => console.warn('Id reconcile failed:', error));
   let startTimer: ReturnType<typeof setTimeout> | undefined;
   let intervalTimer: ReturnType<typeof setInterval>;

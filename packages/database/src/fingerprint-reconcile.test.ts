@@ -178,13 +178,53 @@ describe('startFingerprintReconcile', () => {
     expect(fetchPages).not.toHaveBeenCalled();
   });
 
-  it('shares one pass between concurrent calls', async () => {
+  it('a call during a pass queues one follow-up pass, not the same promise', async () => {
     const { adapter, fetchPages } = fakeAdapter([{ p1: '10' }]);
     const { reconcile, stop } = start(adapter, vi.fn());
 
-    const [a, b] = await Promise.all([reconcile(), reconcile()]);
-    expect(b).toBe(a);
-    expect(fetchPages).toHaveBeenCalledTimes(1);
+    const first = reconcile();
+    const followUp = reconcile();
+    expect(followUp).not.toBe(first);
+    await Promise.all([first, followUp]);
+    expect(fetchPages).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('a price change after the first pass reads re-delivers via the follow-up, with no interval tick', async () => {
+    let price = '10'; // matches local p1, so the first pass finds nothing to queue
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let firstRead!: () => void;
+    const firstReadDone = new Promise<void>((resolve) => { firstRead = resolve; });
+    let calls = 0;
+    const enqueue = vi.fn();
+    const adapter: FingerprintReconcileAdapter<Doc> = {
+      async *fetchPages() {
+        const call = ++calls;
+        const page = new Map([['p1', price], ['p2', '20']]);
+        if (call === 1) firstRead();
+        yield page;
+        if (call === 1) await gate;
+      },
+      fingerprint: (doc) => doc.price,
+      enqueue,
+    };
+    const reSync = vi.fn();
+    const { reconcile, stop } = start(adapter, reSync, { intervalMs: 86_400_000 }); // a day; proves no interval tick delivered the change
+
+    const first = reconcile();
+    const followUp = reconcile();
+    expect(followUp).not.toBe(first);
+
+    await firstReadDone; // the current pass has already read price: '10'
+    price = '99'; // the price changes on the server after that read
+    release();
+
+    expect(await first).toMatchObject({ queued: 0 });
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(await followUp).toMatchObject({ queued: 1 });
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue.mock.calls[0][0]).toEqual([{ id: 'p1', local: { id: 'p1', price: '10' }, refreshOnly: true }]);
     stop();
   });
 
