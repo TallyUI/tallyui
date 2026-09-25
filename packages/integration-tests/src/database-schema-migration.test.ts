@@ -4,7 +4,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import type { RxReplicationState } from 'rxdb/plugins/replication';
 import type { ReplicationAdapter, SyncContext, TallyConnector } from '@tallyui/core';
 import { medusaConnector, medusaProductSchema } from '@tallyui/connector-medusa';
-import { posOrderSchema, type PosOrder } from '@tallyui/pos';
+import { posOrderCollection, type PosOrder } from '@tallyui/pos';
 import { createTallyDatabase, startReplication, type TallyDatabase } from '@tallyui/database';
 
 // A made-up key for tests only.
@@ -108,7 +108,7 @@ afterEach(async () => {
 async function open(name: string, storage: unknown, schema: typeof medusaProductSchema) {
   const connector: TallyConnector = { ...medusaConnector, schemas: { products: schema } };
   db = await createTallyDatabase({ connector, name, storage });
-  await db.addCollections({ pos_orders: { schema: posOrderSchema } });
+  await db.addCollections({ pos_orders: posOrderCollection() });
   return db;
 }
 

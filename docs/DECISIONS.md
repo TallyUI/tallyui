@@ -466,6 +466,37 @@ bodies and design docs, and the source is given for each.
       meta, no outbox fields.
     - Update the pinned commit in this entry.
     - Run the ported tests.
+- **Amendment 2 (2026-09-25, the Front desk): register sessions (registers
+  job a2), from the same WCPOS `next` commit.**
+  - **Three local-only collections** in `@tallyui/pos`:
+    `register_sessions`, `cash_movements` and `closures`. They start at
+    version 0, the app creates them, and they are never replicated.
+    - WCPOS's outbox fields are removed, and so are the closures' server
+      and print fields.
+    - The optional fields for a server to acknowledge a session
+      (`pending_status`, `server_status`, `status_at`, `approver_token`,
+      `server_expected` and `server_sales_count`) are kept, so that job c
+      needs no schema bump.
+  - **The register's identity and counters** are a local document on
+    `register_sessions`, because the Tally database has no database-level
+    local documents (#74). Store binding uses one neutral `storeKey`
+    string. Adopting the server's counters is job c.
+  - **A sale's session:**
+    - `PosOrder.sessionId` is set by `finalizeOrder` and stays on the
+      device. It is **not** sent in `order.create`.
+    - The server gets the session stamp later, with the Z-posting command.
+    - Adding it bumped `posOrderSchema` to version 1, with an identity
+      migration.
+    - Apps create `pos_orders` with `posOrderCollection()`, which carries
+      the migration strategies, so they can't be forgotten.
+    - RxDB 16.21 never drops an order that fails validation during
+      migration. It stops with DM4 and keeps the version-0 storage
+      (`migration.test.ts`).
+  - **A closed session is final.** WCPOS's server refuses writes to it;
+    until job c the store does: nothing leaves `closed`, movements need an
+    `open` or `counting` session, and `writeClosure` a closed one.
+  - **Orders the server rejected still count in the drawer**, because the
+    cash was taken.
 
 ## ADR-033 Business model deferred; hardware drivers kept splittable (plan D4)
 

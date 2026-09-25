@@ -44,7 +44,7 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig } from './receipt';
 // Product
 export { searchProducts, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$ } from './product';
 
-export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema } from './pos-order';
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema, posOrderCollection } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';
 export { createHttpCommandTransport, createOrderOutbox } from './outbox';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OutboxState } from './outbox';
@@ -54,3 +54,9 @@ export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, 
 // Register
 export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, parseMinor, validAmount, countVariance, overThreshold, denominationTotal, varianceText, denominations } from './register';
 export type { MovementType, LedgerRow, Movement } from './register';
+export { registerSessionSchema, registerSessionCollection, cashMovementSchema, closureSchema } from './register';
+export type { RegisterSession, CashMovement, Closure } from './register';
+export { mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegisterId, readBoundRegister, bindRegister, unbindRegister, nextSaleCounter, mintClosureNumber, advancePerpetual } from './register';
+export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register';
+export { RegisterSessionRequiredError, RegisterSessionClosedError, openSessionSelector, requireOpenSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure } from './register';
+export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';

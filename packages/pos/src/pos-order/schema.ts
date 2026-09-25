@@ -1,8 +1,14 @@
-import type { RxJsonSchema } from 'rxdb';
+import { addRxPlugin, type MigrationStrategies, type RxJsonSchema } from 'rxdb';
+import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 import type { PosOrder } from './types';
 
+/**
+ * Version 1 adds the optional `sessionId` (ADR-032); nothing else changed from version 0.
+ * Create the collection with `posOrderCollection()`, never with this schema alone: RxDB
+ * refuses a version above 0 without its migration strategies.
+ */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 0, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 1, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     commandId: { type: 'string', maxLength: 36 },
@@ -13,7 +19,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     subtotalMinor: { type: 'integer' }, discountMinor: { type: 'integer' },
     taxMinor: { type: 'integer' }, totalMinor: { type: 'integer' },
     syncStatus: { type: 'string', enum: ['pending', 'applied', 'rejected'], maxLength: 10 },
-    note: { type: 'string' }, registerId: { type: 'string' }, cashierRef: { type: 'string' },
+    note: { type: 'string' }, registerId: { type: 'string' }, sessionId: { type: 'string' }, cashierRef: { type: 'string' },
     lines: { type: 'array', items: {
       type: 'object', properties: {
         id: { type: 'string', maxLength: 36 }, productId: { type: 'string' }, variantId: { type: 'string' },
@@ -46,3 +52,18 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     'totalMinor', 'payments', 'customer', 'syncStatus', 'commandId', 'updatedAt'],
   indexes: ['createdAt', 'syncStatus', ['syncStatus', 'createdAt']],
 };
+
+/**
+ * The `pos_orders` collection config: always create the collection with this, so the migration
+ * strategies come with the schema. `pos_orders` holds sales not yet sent, so no step may drop a
+ * document: version 1 only adds an optional field, so every version-0 order passes unchanged.
+ *
+ * RxDB 16.21 never drops a document that fails the new schema's validation. With a validating
+ * storage the migration stops with DM4 and the order stays in the version-0 storage; without
+ * one it is copied as is (`migration.test.ts`).
+ */
+export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migrationStrategies: MigrationStrategies } {
+  // addRxPlugin ignores a plugin it already has.
+  addRxPlugin(RxDBMigrationSchemaPlugin);
+  return { schema: posOrderSchema, migrationStrategies: { 1: (doc: PosOrder) => doc } };
+}

@@ -80,6 +80,21 @@ describe('finalizeOrder', () => {
     expect(finalizeOrder(builder.getSnapshot()).payments[0]).toMatchObject({ amountMinor: 3451, tenderedMinor: 3451, changeMinor: 0 });
   });
 
+  it('stamps the register session on the order but never sends it: the order.create envelope is byte-identical with and without it', () => {
+    const finalize = (sessionId?: string) => {
+      let n = 0;
+      const newId = () => `00000000-0000-7000-8000-${String(++n).padStart(12, '0')}`;
+      const builder = sale();
+      builder.addPayment({ method: 'cash', amountMinor: 5000 });
+      return finalizeOrder(builder.getSnapshot(), { now: new Date('2026-09-23T12:00:00.000Z'), newId, registerId: 'r1', sessionId });
+    };
+    const stamped = finalize('session-1');
+    const unstamped = finalize();
+    expect(stamped.sessionId).toBe('session-1');
+    expect(unstamped).not.toHaveProperty('sessionId');
+    expect(JSON.stringify(toOrderCreateEnvelope(stamped, 'device-1'))).toBe(JSON.stringify(toOrderCreateEnvelope(unstamped, 'device-1')));
+  });
+
   it('finalizes an order with a converted line, carrying taxInclusive through to the payload line only', () => {
     const builder = sale();
     builder.addLine({ productId: 'p3', name: 'Item 3', sku: 'SKU3', unitPrice: { amount: 500, currency: 'EUR', taxInclusive: true } });
