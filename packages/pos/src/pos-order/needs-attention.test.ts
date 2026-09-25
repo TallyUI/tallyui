@@ -23,4 +23,15 @@ describe('needsAttention', () => {
     expect(needsAttention(orders)).toEqual([warned, rejected]);
     expect(orders[0]).toBe(rejected);
   });
+
+  // Registers c1a (ADR-032, late sale). Revert: drop the lateSessionId case from needsAttention.
+  it('selects a late sale whatever its sync status, newest first, without changing the input', () => {
+    const base = sale();
+    const pending: PosOrder = { ...base, id: 'late-pending', lateSessionId: 'closed', createdAt: '2026-01-02T00:00:00Z' };
+    const applied: PosOrder = { ...base, id: 'late-applied', syncStatus: 'applied', lateSessionId: 'closed', createdAt: '2026-01-04T00:00:00Z' };
+    const orders = [pending, base, applied, { ...base, syncStatus: 'applied' as const }];
+    const before = structuredClone(orders);
+    expect(needsAttention(orders)).toEqual([applied, pending]);
+    expect(orders).toEqual(before);
+  });
 });

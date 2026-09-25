@@ -87,6 +87,17 @@ describe('toOrderCreateEnvelope', () => {
     for (const line of envelope.payload.lines) expect(line).not.toHaveProperty('taxInclusive');
   });
 
+  // Registers c1a (ADR-032, late sale): lateSessionId is local only, like sessionId.
+  it('never sends lateSessionId, in version 1 or 2', () => {
+    const discounted: PosOrder = { ...order, discountMinor: 100, lines: [{ ...order.lines[0], discountMinor: 100 }, order.lines[1]] };
+    for (const [sale, version] of [[order, 1], [discounted, 2]] as const) {
+      const envelope = toOrderCreateEnvelope({ ...sale, lateSessionId: 'session-1' }, 'device1');
+      expect(envelope.version).toBe(version);
+      expect(envelope).toStrictEqual(toOrderCreateEnvelope(sale, 'device1'));
+      expect(JSON.stringify(envelope)).not.toContain('session-1');
+    }
+  });
+
   it('a converted line carries its own taxInclusive, the rest are unchanged', () => {
     const converted: PosOrder = { ...order, lines: [{ ...order.lines[0], taxInclusive: true }, order.lines[1]] };
     const envelope = toOrderCreateEnvelope(converted, 'device1');

@@ -11,6 +11,10 @@
  * a2's own; a person id (`approvedBy`) is a2's string id, not WCPOS's numeric one; money fields
  * are a2's integer minor units, matching `CashMovement.amountMinor` and `Closure.counted`/
  * `variance`.
+ *
+ * TallyUI's own addition (registers c1a): `late-sale`, a sale whose money was taken but whose
+ * session refused the stamp (ADR-032 amendment "Late sale"). Its `sessionId` is the session it
+ * tried, and its durable subject is the order.
  */
 import { createLogger } from '../logging';
 import { mintUuid } from './register-document';
@@ -34,10 +38,11 @@ export type RegisterFact =
   | (Human & Movement & { kind: 'movement-recorded' })
   | (Human & Movement & { kind: 'movement-voided'; voids: string })
   | (Human & { kind: 'approval-granted'; approvedBy: string | null })
-  | (Human & { kind: 'variance-over-threshold'; variance: number; threshold: number | undefined });
+  | (Human & { kind: 'variance-over-threshold'; variance: number; threshold: number | undefined })
+  | (Pair & { kind: 'late-sale'; orderId: string; actor?: Actor });
 
 /** A human action without its own durable record gets a fresh attempt id; a durable action (a
- * session or a movement) uses the stable id of its subject. */
+ * session, a movement or a late sale's order) uses the stable id of its subject. */
 function identity(fact: RegisterFact): { operationId: string } {
   switch (fact.kind) {
     case 'session-opened':
@@ -47,6 +52,8 @@ function identity(fact: RegisterFact): { operationId: string } {
     case 'movement-recorded':
     case 'movement-voided':
       return { operationId: fact.movementId.replace(/-/g, '') };
+    case 'late-sale':
+      return { operationId: fact.orderId.replace(/-/g, '') };
     default:
       return attempt();
   }
@@ -95,5 +102,8 @@ export function recordRegisterFact(fact: RegisterFact): void {
       return emit('Register X-report print dispatched', 'register.x-report-printed');
     case 'drawer-dispatched':
       return emit('Register drawer kick dispatched', 'register.drawer-opened');
+    // The money was taken, so the sale is kept and queued, outside every closure.
+    case 'late-sale':
+      return emit('Register late sale kept outside its session', 'register.late-sale', { orderId: fact.orderId }, 'warn');
   }
 }

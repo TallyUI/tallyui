@@ -4,11 +4,13 @@ import type { PosOrder } from './types';
 
 /**
  * Version 1 adds the optional `sessionId` (ADR-032); nothing else changed from version 0.
- * Create the collection with `posOrderCollection()`, never with this schema alone: RxDB
- * refuses a version above 0 without its migration strategies.
+ * Version 2 adds three optional fields and changes nothing else: `lateSessionId` (ADR-032, late
+ * sale), and ADR-065's `display` and `taxByRate`, declared ahead of the job that writes them so a
+ * till migrates once. Create the collection with `posOrderCollection()`, never with this schema
+ * alone: RxDB refuses a version above 0 without its migration strategies.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 1, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 2, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     commandId: { type: 'string', maxLength: 36 },
@@ -47,6 +49,27 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       required: ['code'], additionalProperties: true,
     } },
     error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'] },
+    lateSessionId: { type: 'string' },
+    display: { type: 'object', properties: {
+      currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
+      subtotalMinor: { type: 'integer' }, discountMinor: { type: 'integer' }, taxMinor: { type: 'integer' },
+      totalMinor: { type: 'integer' }, orderDiscountMinor: { type: 'integer' },
+      lines: { type: 'array', items: {
+        type: 'object', properties: {
+          lineId: { type: 'string' }, amountMinor: { type: 'integer' },
+          discounts: { type: 'array', items: {
+            type: 'object', properties: { discountId: { type: 'string' }, label: { type: 'string' }, amountMinor: { type: 'integer' } },
+            required: ['discountId', 'amountMinor'],
+          } },
+        }, required: ['lineId', 'amountMinor', 'discounts'],
+      } },
+    }, required: ['currency', 'exponent', 'taxInclusive', 'subtotalMinor', 'discountMinor', 'taxMinor', 'totalMinor', 'orderDiscountMinor', 'lines'] },
+    taxByRate: { type: 'array', items: {
+      type: 'object', properties: {
+        ratePpm: { type: 'integer' }, code: { type: 'string' }, netMinor: { type: 'integer' },
+        amountMinor: { type: 'integer' }, grossMinor: { type: 'integer' },
+      }, required: ['ratePpm', 'netMinor', 'amountMinor', 'grossMinor'],
+    } },
   },
   required: ['id', 'createdAt', 'currency', 'pricesIncludeTax', 'lines', 'subtotalMinor', 'discountMinor', 'taxMinor',
     'totalMinor', 'payments', 'customer', 'syncStatus', 'commandId', 'updatedAt'],
@@ -57,16 +80,19 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
  * The `pos_orders` collection config, with its migration strategies. Open the collection with
  * `addPosOrderCollection(db)`, which uses this and settles the migration safely; adding this config
  * directly leaves RxDB's own open path. `pos_orders` holds sales not yet sent, so no step may drop a
- * document: version 1 only adds an optional field, so every version-0 order passes unchanged.
+ * document: versions 1 and 2 only add optional fields, so every order from version 0 or 1 passes
+ * unchanged.
  *
  * Within one run, RxDB 16.21 keeps an order that fails the new schema's validation: with a
- * validating storage the migration stops with DM4 and the order stays in the version-0 storage;
- * without one it is copied as is. **Across runs, RxDB's own open path can lose it**: a failed run
- * can leave its checkpoint past that order, and the next run then removes the version-0 storage
- * without copying it. `addPosOrderCollection` resets that checkpoint, so use it (`migration.test.ts`).
+ * validating storage the migration stops with DM4 and the order stays in the older version's
+ * storage; without one it is copied as is. **Across runs, RxDB's own open path can lose it**: a
+ * failed run can leave its checkpoint past that order, and the next run then removes the older
+ * version's storage without copying it. `addPosOrderCollection` resets that checkpoint, so use it
+ * (`migration.test.ts`).
  */
 export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migrationStrategies: MigrationStrategies } {
   // addRxPlugin ignores a plugin it already has.
   addRxPlugin(RxDBMigrationSchemaPlugin);
-  return { schema: posOrderSchema, migrationStrategies: { 1: (doc: PosOrder) => doc } };
+  const identity = (doc: PosOrder) => doc;
+  return { schema: posOrderSchema, migrationStrategies: { 1: identity, 2: identity } };
 }
