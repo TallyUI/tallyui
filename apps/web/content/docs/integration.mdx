@@ -25,21 +25,21 @@ const context: SyncContext = { connectorId: connector.id, baseUrl, headers };
 
 `createTallyDatabase({ connector, storage })` builds an RxDB database whose collections come straight from the connector's schemas, plus a `stock_levels` overlay when the connector reconciles stock. A collection the app creates itself still needs migration strategies for every schema version bump, or RxDB refuses it; `connectorCollection(schema)` builds that config (ADR-060 amendment 9).
 
-The app also creates `pos_orders`, the local store of finalized sales, with `posOrderCollection()`. Its migration strategies keep every order through a schema bump, and the collection holds sales not yet sent, so never create it from `posOrderSchema` alone (RxDB refuses a schema above version 0 without its strategies), and never with `connectorCollection`, whose bumps drop documents.
+The app also opens `pos_orders`, the local store of finalized sales, with `addPosOrderCollection(db)`. It adds the collection with `posOrderCollection()`'s migration strategies and resolves only once every order has migrated. The collection holds sales not yet sent, so never create it from `posOrderSchema` alone (RxDB refuses a schema above version 0 without its strategies), with `connectorCollection`, whose bumps drop documents, or by adding `posOrderCollection()` yourself.
+
+If an order fails the new schema's validation, `addPosOrderCollection` rejects with RxDB's DM4 error once the migration has stopped, and every order stays in the old version's storage. Surface the error, and retry by calling it again or reopening the database. Never delete anything to get past it.
 
 ```ts
 import { createTallyDatabase, connectorCollection, getStorage } from '@tallyui/database';
-import { posOrderCollection } from '@tallyui/pos';
+import { addPosOrderCollection } from '@tallyui/pos';
 import type { TallyConnector } from '@tallyui/core';
 import type { RxJsonSchema } from 'rxdb';
 
 declare const connector: TallyConnector, deviceSettingsSchema: RxJsonSchema<unknown>;
 
 const db = await createTallyDatabase({ connector, storage: getStorage() });
-await db.addCollections({
-  device_settings: connectorCollection(deviceSettingsSchema),
-  pos_orders: posOrderCollection(),
-});
+await db.addCollections({ device_settings: connectorCollection(deviceSettingsSchema) });
+const posOrders = await addPosOrderCollection(db);
 ```
 
 ## Store settings

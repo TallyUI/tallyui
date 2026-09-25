@@ -490,9 +490,24 @@ bodies and design docs, and the source is given for each.
       migration.
     - Apps create `pos_orders` with `posOrderCollection()`, which carries
       the migration strategies, so they can't be forgotten.
-    - RxDB 16.21 never drops an order that fails validation during
-      migration. It stops with DM4 and keeps the version-0 storage
-      (`migration.test.ts`).
+    - Within one run, RxDB 16.21 keeps an order that fails validation
+      during migration: it stops with DM4 and keeps the version-0 storage
+      (`migration.test.ts`). **Across runs, RxDB's own open path can lose
+      that order.** A failed run can leave its checkpoint past it, and the
+      next run then removes the version-0 storage without copying it. This
+      was reproduced with 451 orders: RxDB's path ended with 450. That's
+      one more reason apps must use `addPosOrderCollection` (next bullet),
+      which resets the checkpoint.
+    - **Apps open `pos_orders` with `addPosOrderCollection(db)`** (2026-09-25,
+      medusapos #64 review). RxDB 16.21 trusts its stored migration status:
+      after a DM4, `migratePromise` rejects at once while the migration runs
+      on, so on SQLite a close interrupts it on every open; and a `DONE` left
+      from before a rollback lets the store open before the version-0 app's
+      new sales have moved. A failed run's checkpoint can also be past an
+      order it never copied, which the next run then removes. The function
+      resets the status and that checkpoint (never an order or its storage),
+      awaits the migration itself, holds a close until it settles, and
+      resolves only when no version-0 order is left.
   - **A closed session is final.** WCPOS's server refuses writes to it;
     until job c the store does: nothing leaves `closed`, movements need an
     `open` or `counting` session, and `writeClosure` a closed one.
