@@ -30,11 +30,13 @@ export function ProductCard({ doc, onPress, imageSize = 80, currencySymbol, notS
   const content = (
     <VStack
       space="sm"
-      className={cn('items-center rounded-lg border border-border bg-card p-3', !sellable && 'opacity-50', className)}
+      className={cn('items-center rounded-lg border border-border bg-card p-3', className)}
       {...props}
     >
-      <ProductImage doc={doc} size={imageSize} className="rounded-md" />
-      <ProductTitle doc={doc} className="text-sm" numberOfLines={2} />
+      {/* Unsellable: the card keeps its opaque surface and only its contents dim, so
+          it reads as lower contrast than its neighbours on any backdrop, in both themes. */}
+      <ProductImage doc={doc} size={imageSize} className={cn('rounded-md', !sellable && 'opacity-50')} />
+      <ProductTitle doc={doc} className={cn('text-sm', !sellable && 'opacity-50')} numberOfLines={2} />
       {sellable ? (
         <ProductPrice doc={doc} currencySymbol={currencySymbol} />
       ) : (
