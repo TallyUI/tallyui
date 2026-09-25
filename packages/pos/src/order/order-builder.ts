@@ -2,6 +2,7 @@ import { BehaviorSubject, type Observable } from 'rxjs';
 import { resolvePrice, type ProductTraits } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
 import { taxMicros, roundMicrosToMinor } from '../tax/exact';
+import { allocateOrderDiscount } from './allocate-order-discount';
 import type {
   Order,
   LineItem,
@@ -58,7 +59,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
   const subject = new BehaviorSubject<Order>(buildOrder());
 
-  function recalculateLine(line: LineItem): LineItem {
+  /** Stored lines carry no order share; buildOrder recalculates each with its allocated share (ADR-062). */
+  function recalculateLine(line: LineItem, orderDiscountMinor = 0): LineItem {
     const grossMinor = line.unitPriceMinor * line.quantity;
 
     // Recompute discount amounts from current gross
@@ -67,7 +69,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       amountMinor: computeDiscountAmount(d, grossMinor),
     }));
 
-    const discountMinor = Math.min(grossMinor, recalcedDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
+    // The order share never exceeds what the line discounts leave (allocateOrderDiscount's bound).
+    const lineDiscountMinor = Math.min(grossMinor, recalcedDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
+    const discountMinor = lineDiscountMinor + orderDiscountMinor;
     const netMinor = grossMinor - discountMinor;
     const combinedRate = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
     // Tax in the line's own mode, from its own unit price × quantity: never re-tax a rounded base.
@@ -87,6 +91,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       ...line,
       discounts: recalcedDiscounts,
       discountMinor,
+      orderDiscountMinor,
       netMinor,
       taxLines,
       taxMicros: allocatedTax.toString(),
@@ -94,30 +99,43 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   }
 
   function computeDiscountAmount(discount: Discount, base: number): number {
+    // Clamped here so both line and order discounts can never go negative (a negative
+    // percentage or fixed value would otherwise raise the price instead of lowering it).
     if (discount.type === 'percentage') {
-      return roundHalfAway(base * discount.value / 100);
+      return Math.max(0, roundHalfAway(base * discount.value / 100));
     }
     if (!Number.isInteger(discount.value)) throw new RangeError('Fixed discount must be integer minor units');
-    return Math.min(discount.value, base);
+    return Math.max(0, Math.min(discount.value, base));
   }
 
   function buildOrder(): Order {
-    const netMinor = lineItems.reduce((sum, li) => sum + li.netMinor, 0);
-    const lineTaxMicros = lineItems.reduce((sum, li) => sum + BigInt(li.taxMicros), 0n);
-    const exclusiveTaxMicros = lineItems.reduce((sum, li) => li.taxInclusive ? sum : sum + BigInt(li.taxMicros), 0n);
-    const taxMinor = roundMicrosToMinor(lineTaxMicros);
-    // Each line pays in its own mode: an inclusive line its gross, an exclusive line its net plus tax.
-    const preOrderDiscountTotal = netMinor + roundMicrosToMinor(exclusiveTaxMicros);
-    const subtotalMinor = preOrderDiscountTotal - taxMinor;
-    let remaining = preOrderDiscountTotal;
+    // Order discounts are pre-tax (ADR-062). The base is the lines' pre-order-discount amounts, each in its
+    // own mode (an inclusive line's shelf amount, an exclusive line's net). A percentage discount is additive:
+    // each is computed on that base, not on what an earlier order discount leaves (WCPOS `next` / WooCommerce
+    // parity). A fixed discount is computed on what remains, as before. Every discount is then capped at what
+    // remains, which decreases as each is applied, and the total is allocated to the lines, which are then
+    // taxed on what is left.
+    const lineAmounts = lineItems.map((li) => li.netMinor);
+    const base = lineAmounts.reduce((sum, amount) => sum + Math.max(0, amount), 0);
+    let remaining = base;
     const recalcedOrderDiscounts = orderDiscounts.map((d) => {
-      const amountMinor = computeDiscountAmount(d, d.type === 'percentage' ? subtotalMinor : remaining);
-      remaining = Math.max(0, remaining - amountMinor);
+      const amountMinor = Math.min(remaining, computeDiscountAmount(d, d.type === 'percentage' ? base : remaining));
+      remaining -= amountMinor;
       return { ...d, amountMinor };
     });
-    const orderDiscountMinor = recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0);
-    const discountMinor = lineItems.reduce((sum, li) => sum + li.discountMinor, 0) + orderDiscountMinor;
-    const totalMinor = Math.max(0, preOrderDiscountTotal - orderDiscountMinor);
+    const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
+    const lines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
+
+    const netMinor = lines.reduce((sum, li) => sum + li.netMinor, 0);
+    const lineTaxMicros = lines.reduce((sum, li) => sum + BigInt(li.taxMicros), 0n);
+    const exclusiveTaxMicros = lines.reduce((sum, li) => li.taxInclusive ? sum : sum + BigInt(li.taxMicros), 0n);
+    const taxMinor = roundMicrosToMinor(lineTaxMicros);
+    // Each line pays in its own mode: an inclusive line its gross, an exclusive line its net plus tax.
+    // The totals sum the discounted lines; nothing is subtracted after tax.
+    const linesTotal = netMinor + roundMicrosToMinor(exclusiveTaxMicros);
+    const subtotalMinor = linesTotal - taxMinor;
+    const discountMinor = lines.reduce((sum, li) => sum + li.discountMinor, 0);
+    const totalMinor = Math.max(0, linesTotal);
     const paidMinor = payments.reduce((sum, p) => sum + p.amountMinor, 0);
     const balanceDueMinor = Math.max(0, totalMinor - paidMinor);
     const changeDueMinor = Math.max(0, paidMinor - totalMinor);
@@ -125,7 +143,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     return {
       id: orderId,
       status: 'draft',
-      lineItems: [...lineItems],
+      lineItems: lines,
       discounts: recalcedOrderDiscounts,
       payments: [...payments],
       customer,
@@ -184,6 +202,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       taxLines: taxRates.map((tax) => ({ ...tax, taxMicros: '0' })),
       discounts: [],
       discountMinor: 0,
+      orderDiscountMinor: 0,
       netMinor: 0,
       taxMicros: '0',
       taxInclusive,

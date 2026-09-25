@@ -37,12 +37,13 @@ describe('discount engine', () => {
     builder.applyLineDiscount(lineId, { type: 'percentage', value: 10 });
     builder.applyOrderDiscount({ type: 'percentage', value: 12.5 });
     const order = builder.getSnapshot();
-    expect(order.lineItems[0]).toMatchObject({ discountMinor: 1, netMinor: 4 });
+    // The line carries its line discount (1) and its share of the order discount (1) (ADR-062).
+    expect(order.lineItems[0]).toMatchObject({ discountMinor: 2, orderDiscountMinor: 1, netMinor: 3 });
     expect(order.discounts[0].amountMinor).toBe(1);
     expect(order.totalMinor).toBe(3);
   });
 
-  it('caps combined line discounts at gross and fixed order discounts at the remaining total', () => {
+  it('caps combined line discounts at gross and fixed order discounts at the remaining pre-tax base', () => {
     const builder = createOrderBuilder({ currency: 'USD', taxContext });
     const lineId = builder.addProduct(product, traits);
     builder.applyLineDiscount(lineId, { type: 'fixed', value: 800 });
@@ -52,8 +53,9 @@ describe('discount engine', () => {
     builder.applyOrderDiscount({ type: 'percentage', value: 20 });
     builder.applyOrderDiscount({ type: 'fixed', value: 1000 });
     const order = builder.getSnapshot();
-    expect(order.discounts.map((d) => d.amountMinor)).toEqual([200, 900]);
-    expect(order).toMatchObject({ totalMinor: 0, discountMinor: 2100 });
+    // The base is the pre-tax 1000 still owed, not the 1100 total: 20% is 200, and the fixed 1000 caps at 800 (ADR-062).
+    expect(order.discounts.map((d) => d.amountMinor)).toEqual([200, 800]);
+    expect(order).toMatchObject({ totalMinor: 0, taxMinor: 0, discountMinor: 2000 });
   });
 
   it('rejects non-integer fixed discounts without changing the order', () => {
@@ -114,7 +116,7 @@ describe('discount engine', () => {
 
       const order = await firstValueFrom(builder.order$);
       expect(order.discountMinor).toBe(200);
-      expect(order.totalMinor).toBe(900); // 11 - 2
+      expect(order.totalMinor).toBe(880); // (10 - 2) + 0.80 tax: pre-tax, ADR-062
     });
 
     it('applies a fixed discount to the order', async () => {

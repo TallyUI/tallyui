@@ -12,7 +12,13 @@ export interface FinalizeOptions {
 /** Turns a fully paid builder Order into a pending PosOrder without mutating it. */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
   if (!order.lineItems.length) throw new Error('finalize: no lines');
-  if (order.discountMinor > 0) throw new Error('finalize: discounts not supported yet');
+  // An old plugin would reject or mis-apply a version-2 payload; this guard goes once the plugins honour it (ADR-062).
+  // Checked as "any non-zero" rather than "> 0": defence in depth, since the builder already clamps every
+  // discount to >= 0, so a negative amountMinor should never reach here.
+  const hasDiscount = order.discountMinor !== 0
+    || order.lineItems.some((line) => line.discountMinor !== 0)
+    || order.discounts.some((d) => d.amountMinor !== 0);
+  if (hasDiscount) throw new Error('finalize: discounts are not supported by the server yet (order.create v2)');
   for (const payment of order.payments) {
     if (payment.method !== 'cash' && payment.method !== 'external') {
       throw new Error(`finalize: unsupported payment method ${payment.method}`);

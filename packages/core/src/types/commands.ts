@@ -5,7 +5,8 @@ export type CommandType = 'order.create';
 export interface CommandEnvelope<P = unknown> {
   id: string; // UUIDv7, the idempotency key; never reused
   type: CommandType;
-  version: 1;
+  /** 2 only when an `order.create` carries a discount (ADR-062); a discount-free payload stays 1, byte-identical. */
+  version: 1 | 2;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -55,6 +56,12 @@ export interface OrderCreateLine {
    * older clients and single-mode orders are unchanged.
    */
   taxInclusive?: boolean;
+  /**
+   * Version 2 (ADR-062): this line's total discount, its own line discounts plus its allocated share of
+   * the order discount, in the line's own tax mode and integer minor units. The line is taxed on
+   * `unitPriceMinor × quantity − discountMinor`. Present only when above 0.
+   */
+  discountMinor?: number;
 }
 
 /** Supported order payment method. */
@@ -78,6 +85,8 @@ export interface OrderCreatePayload {
   pricesIncludeTax: boolean;
   lines: OrderCreateLine[];
   subtotalMinor: number;
+  /** Version 2 (ADR-062): the order's total discount, equal to Σ `lines[].discountMinor`. Present only when above 0. */
+  discountMinor?: number;
   taxMinor: number;
   totalMinor: number;
   payments: OrderCreatePayment[];

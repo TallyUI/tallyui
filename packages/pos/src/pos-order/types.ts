@@ -10,6 +10,7 @@ export interface PosOrderLine {
   sku: string;
   quantity: number;
   unitPriceMinor: number;
+  /** Line discounts plus the allocated order-discount share, in the line's own tax mode (ADR-062). */
   discountMinor: number;
   netMinor: number;
   taxLines: Array<{ code?: string; ratePpm: number; taxMicros: string }>;

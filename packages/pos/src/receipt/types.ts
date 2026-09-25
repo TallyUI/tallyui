@@ -4,6 +4,7 @@ export interface ReceiptLineItem {
   quantity: number;
   unitPriceMinor: number;
   lineTotalMinor: number;
+  discountMinor?: number;     // this line's discounts, already taken off lineTotalMinor; absent when 0
 }
 
 export interface ReceiptData {
