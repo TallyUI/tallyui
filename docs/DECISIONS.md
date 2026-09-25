@@ -533,6 +533,29 @@ bodies and design docs, and the source is given for each.
 
     The server closes both windows in job c, by refusing writes to a
     closed session.
+- **Registers c1b done (2026-09-25): `useRegisterSession`**, a neutral port
+  of WCPOS `next`'s `use-register-session.ts` at `3b5331b5c`.
+  - **The app supplies every input:** the collections (`pos_orders`
+    included), the register host, `storeKey`, `registerId`, `enabled`, the
+    cashier, the timezone and the labels. There's no context, no WooCommerce
+    store document and no engine query, and nothing is sent to a server.
+  - **Expected cash and the sales count are derived locally**, from the
+    `pos_orders` stamped with the session's id and its movements.
+  - **Not ported:** `retryMovement` and `refusedMovements`, anchor
+    invalidation, the server figures, `unsyncedCount` and the `sync_status`
+    filters (all job c2); refunds and refund parents (no refund model yet).
+  - **The checkout gate has two points.** The app calls `requireOpen()`
+    when tender starts and again just before a card terminal captures, and
+    useSale's `complete()` stamps through `stampSession`.
+  - **The tender block:** while `tenderInProgress` is true, `startCounting`
+    and `closeSession` throw `RegisterTenderInProgressError` before any
+    write, so a till can't close under a payment in progress. The flag is
+    read through a latest-value ref, so older `actions` see it too.
+  - **A second open is refused** (`RegisterSessionAlreadyOpenError`) while
+    the collection has an `open` or `counting` session for the register, or
+    while another open from the same hook is still running.
+  - **Known difference, left for later:** `overdue` keeps WCPOS's rule and
+    reads the close time on the device's clock, not the store's timezone.
 
 ## ADR-033 Business model deferred; hardware drivers kept splittable (plan D4)
 

@@ -26,3 +26,5 @@ export { minorToDecimal } from './money';
 export { formatClosureDate, buildClosureDocument, buildXReportDocument } from './closure-document';
 export type { ClosureContext } from './closure-document';
 export { registerFactsLogger, recordRegisterFact, type Actor, type RegisterFact } from './facts';
+export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError } from './use-register-session';
+export type { UseRegisterSessionOptions } from './use-register-session';
