@@ -6,10 +6,8 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { firstValueFrom, filter } from 'rxjs';
 import { createVendureConnector } from '@tallyui/connector-vendure';
-import { getProductStock, withStockOverlay } from '@tallyui/core';
 import { STOCK_LEVELS_COLLECTION, startStockReconcile, stockLevelsCollection } from '@tallyui/database';
-
-import { stockOverlay$, stockOverlayAsOf$ } from './stock';
+import { getProductStock, withStockOverlay, stockOverlay$, stockOverlayAsOf$ } from '@tallyui/pos';
 
 addRxPlugin(RxDBDevModePlugin);
 addRxPlugin(RxDBLocalDocumentsPlugin);

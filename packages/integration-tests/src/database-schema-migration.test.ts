@@ -5,9 +5,7 @@ import type { RxReplicationState } from 'rxdb/plugins/replication';
 import type { ReplicationAdapter, SyncContext, TallyConnector } from '@tallyui/core';
 import { medusaConnector, medusaProductSchema } from '@tallyui/connector-medusa';
 import { posOrderSchema, type PosOrder } from '@tallyui/pos';
-
-import { createTallyDatabase, type TallyDatabase } from './create-db';
-import { startReplication } from './replication';
+import { createTallyDatabase, startReplication, type TallyDatabase } from '@tallyui/database';
 
 // A made-up key for tests only.
 const KEY = 'pk_test_not_a_real_key_0123456789';

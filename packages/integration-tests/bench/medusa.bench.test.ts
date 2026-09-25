@@ -1,7 +1,7 @@
 // @vitest-environment node
 /*
 TALLY_BENCH_MEDUSA_URL=http://127.0.0.1:9000 TALLY_BENCH_MEDUSA_KEY=sk_... \
-  ./node_modules/.bin/vitest run packages/database/bench/medusa.bench.test.ts --maxWorkers=1
+  ./node_modules/.bin/vitest run packages/integration-tests/bench/medusa.bench.test.ts --maxWorkers=1
 */
 import { describe, expect, it } from 'vitest';
 import { medusaConnector } from '@tallyui/connector-medusa';
