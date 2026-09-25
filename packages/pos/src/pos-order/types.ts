@@ -56,7 +56,7 @@ export interface PosOrder {
   /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. Not written yet. */
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). Not written yet. */
-  taxByRate?: Array<{ ratePpm: number; code?: string; netMinor: number; amountMinor: number; grossMinor: number }>;
+  taxByRate?: Array<{ ratePpm: number; code?: string; label?: string; netMinor: number; amountMinor: number; grossMinor: number }>;
   cashierRef?: string;
   syncStatus: PosOrderSyncStatus;
   commandId: string;

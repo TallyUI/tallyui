@@ -50,23 +50,25 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     } },
     error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'] },
     lateSessionId: { type: 'string' },
-    display: { type: 'object', properties: {
+    // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
+    display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
       subtotalMinor: { type: 'integer' }, discountMinor: { type: 'integer' }, taxMinor: { type: 'integer' },
       totalMinor: { type: 'integer' }, orderDiscountMinor: { type: 'integer' },
       lines: { type: 'array', items: {
-        type: 'object', properties: {
+        type: 'object', additionalProperties: false, properties: {
           lineId: { type: 'string' }, amountMinor: { type: 'integer' },
           discounts: { type: 'array', items: {
-            type: 'object', properties: { discountId: { type: 'string' }, label: { type: 'string' }, amountMinor: { type: 'integer' } },
+            type: 'object', additionalProperties: false,
+            properties: { discountId: { type: 'string' }, label: { type: 'string' }, amountMinor: { type: 'integer' } },
             required: ['discountId', 'amountMinor'],
           } },
         }, required: ['lineId', 'amountMinor', 'discounts'],
       } },
     }, required: ['currency', 'exponent', 'taxInclusive', 'subtotalMinor', 'discountMinor', 'taxMinor', 'totalMinor', 'orderDiscountMinor', 'lines'] },
     taxByRate: { type: 'array', items: {
-      type: 'object', properties: {
-        ratePpm: { type: 'integer' }, code: { type: 'string' }, netMinor: { type: 'integer' },
+      type: 'object', additionalProperties: false, properties: {
+        ratePpm: { type: 'integer' }, code: { type: 'string' }, label: { type: 'string' }, netMinor: { type: 'integer' },
         amountMinor: { type: 'integer' }, grossMinor: { type: 'integer' },
       }, required: ['ratePpm', 'netMinor', 'amountMinor', 'grossMinor'],
     } },

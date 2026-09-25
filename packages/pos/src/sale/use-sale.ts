@@ -103,7 +103,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
           const { sessionId: _unstamped, ...unstamped } = posOrder;
           posOrder = { ...unstamped, lateSessionId: opts.session.id };
           try {
-            recordRegisterFact({ kind: 'late-sale', orderId: posOrder.id, sessionId: opts.session.id, registerId: opts.registerId });
+            // useSale knows the cashier only by ref, so the actor carries no display name.
+            recordRegisterFact({ kind: 'late-sale', orderId: posOrder.id, sessionId: opts.session.id, registerId: opts.registerId,
+              actor: { id: opts.cashierRef, name: '' } });
           } catch {
             // The logger calls the app's sinks unguarded; a failing sink must never lose the sale.
           }

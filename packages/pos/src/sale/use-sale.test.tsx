@@ -360,6 +360,7 @@ describe('late sale', () => {
       expect(result.current.error).toBeNull();
       expect(lateFacts()).toHaveLength(1);
       expect(lateFacts()[0]).toMatchObject({ level: 'warn', data: {
+        actor: { id: cashierRef },
         terminal: { operationId: completed.id.replace(/-/g, '') },
         context: { type: 'register.late-sale', orderId: completed.id, sessionId, registerId },
       } });
