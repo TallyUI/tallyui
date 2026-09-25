@@ -3,6 +3,7 @@ import { firstValueFrom } from 'rxjs';
 import { createOrderBuilder } from './order-builder';
 import type { ProductTraits } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
+import type { Order } from './types';
 
 const traits: ProductTraits = {
   getId: (doc) => doc.id,
@@ -166,6 +167,92 @@ describe('discount engine', () => {
       const line = order.lineItems[0];
       expect(line.discounts).toHaveLength(2);
       expect(line.discountMinor).toBe(300); // $1 + $2
+    });
+  });
+
+  describe('line discount amounts, each capped at what the prior ones left (#63)', () => {
+    const zeroTax: TaxContext = { getTaxRatePpm: () => 0, pricesIncludeTax: false };
+
+    it('records what a fixed amount actually removes after a percentage, not the raw fixed value', async () => {
+      const builder = createOrderBuilder({ currency: 'USD', taxContext: zeroTax });
+      const lineId = builder.addProduct({ ...product, price: 1250 }, traits); // €12.50
+      builder.applyLineDiscount(lineId, { type: 'percentage', value: 10 }); // €1.25
+      builder.applyLineDiscount(lineId, { type: 'fixed', value: 1200 }); // only €11.25 is left
+
+      const order = await firstValueFrom(builder.order$);
+      const line = order.lineItems[0];
+      expect(line.discounts.map((d) => d.amountMinor)).toEqual([125, 1125]);
+      expect(line.discounts.reduce((sum, d) => sum + d.amountMinor, 0)).toBe(1250);
+      expect(line.discountMinor).toBe(1250);
+    });
+
+    it('caps a second fixed amount at what the first left', async () => {
+      const builder = createOrderBuilder({ currency: 'USD', taxContext: zeroTax });
+      const lineId = builder.addProduct({ ...product, price: 1000 }, traits);
+      builder.applyLineDiscount(lineId, { type: 'fixed', value: 700 });
+      builder.applyLineDiscount(lineId, { type: 'fixed', value: 700 });
+
+      const order = await firstValueFrom(builder.order$);
+      expect(order.lineItems[0].discounts.map((d) => d.amountMinor)).toEqual([700, 300]);
+    });
+
+    it('keeps a percentage additive on the full gross, not the base a prior fixed amount left', async () => {
+      const builder = createOrderBuilder({ currency: 'USD', taxContext: zeroTax });
+      const lineId = builder.addProduct({ ...product, price: 1000 }, traits);
+      builder.applyLineDiscount(lineId, { type: 'fixed', value: 700 });
+      builder.applyLineDiscount(lineId, { type: 'percentage', value: 10 }); // 10% of the 1000 gross is 100, capped at the 300 left
+
+      const order = await firstValueFrom(builder.order$);
+      const line = order.lineItems[0];
+      expect(line.discounts.map((d) => d.amountMinor)).toEqual([700, 100]);
+      expect(line.discountMinor).toBe(800);
+    });
+
+    it('keeps Σ discounts[].amountMinor equal to the line\'s own discount share across scenarios, with and without an order discount', () => {
+      const scenarios: Array<() => void> = [
+        () => {
+          const b = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+          const id = b.addProduct({ ...product, price: 5 }, traits);
+          b.applyLineDiscount(id, { type: 'percentage', value: 10 });
+          b.applyOrderDiscount({ type: 'percentage', value: 12.5 });
+          assertLineDiscountsSum(b.getSnapshot());
+        },
+        () => {
+          const b = createOrderBuilder({ currency: 'USD', taxContext });
+          const id = b.addProduct(product, traits);
+          b.applyLineDiscount(id, { type: 'fixed', value: 800 });
+          b.applyLineDiscount(id, { type: 'fixed', value: 800 });
+          b.addProduct({ ...product, id: 'p2' }, traits);
+          b.applyOrderDiscount({ type: 'percentage', value: 20 });
+          b.applyOrderDiscount({ type: 'fixed', value: 1000 });
+          assertLineDiscountsSum(b.getSnapshot());
+        },
+        () => {
+          const b = createOrderBuilder({ currency: 'USD', taxContext });
+          const id = b.addProduct(product, traits);
+          b.applyLineDiscount(id, { type: 'percentage', value: 10, label: '10% off' });
+          b.applyLineDiscount(id, { type: 'fixed', value: 200, label: '$2 off' });
+          assertLineDiscountsSum(b.getSnapshot());
+        },
+        () => {
+          const b = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+          const id = b.addProduct({ ...product, price: 1250 }, traits);
+          b.applyLineDiscount(id, { type: 'percentage', value: 10 });
+          b.applyLineDiscount(id, { type: 'fixed', value: 1200 });
+          b.applyOrderDiscount({ type: 'fixed', value: 50 });
+          assertLineDiscountsSum(b.getSnapshot());
+        },
+      ];
+
+      function assertLineDiscountsSum(order: Order) {
+        for (const line of order.lineItems) {
+          if (line.discounts.length === 0) continue;
+          const sum = line.discounts.reduce((s, d) => s + d.amountMinor, 0);
+          expect(sum).toBe(line.discountMinor - line.orderDiscountMinor);
+        }
+      }
+
+      scenarios.forEach((run) => run());
     });
   });
 
