@@ -22,3 +22,7 @@ export { exportCsv } from './export-csv';
 export { labelKeys } from './document-labels';
 export { clampClosureScope, selectClosureRows } from './closure-rows';
 export type { ClosureScope } from './closure-rows';
+export { minorToDecimal } from './money';
+export { formatClosureDate, buildClosureDocument, buildXReportDocument } from './closure-document';
+export type { ClosureContext } from './closure-document';
+export { registerFactsLogger, recordRegisterFact, type Actor, type RegisterFact } from './facts';

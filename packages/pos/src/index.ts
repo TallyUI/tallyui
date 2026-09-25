@@ -63,3 +63,4 @@ export { RegisterSessionRequiredError, RegisterSessionClosedError, RegisterMovem
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';
 export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows } from './register';
 export type { Correction, RecordedFigures, ClosureScope } from './register';
+export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact } from './register';
