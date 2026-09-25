@@ -10,7 +10,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string }) {
   const { order } = sale;
   const money = (amount: number) => ({ amount, currency: order.currency });
-  // order.display's figures (TallyUI ADR-063), with its tax split by rate; never app arithmetic (ADR 0008).
+  // order.display's figures (TallyUI ADR-063), with its tax split by rate; never app arithmetic (medusapos ADR 0008).
   const { totals } = buildReceiptData(order, { storeName: '' });
   const taxRows = totals.taxLines.map((line) => ({ label: taxLabel(line.ratePpm), amount: money(line.amountMinor) }));
   // Each line before its discounts, with its own discounts' amounts. The order discounts are one figure: a single
