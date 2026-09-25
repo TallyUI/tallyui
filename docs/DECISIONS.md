@@ -1478,6 +1478,26 @@ interface OrderCreatePayload {
     `declare module 'react-native'` block (TV6a's `uniwind-env.d.ts`
     already augments `dataSet`). `searchProducts`, `catalogueEntries`,
     `findEntryByCode`, `variantPriceLabel` join `COMPONENTS_POS_ALLOWLIST`.
+  - TV7 done: the neutral outbox core lifted from medusapos/app
+    `563b03c4`: `getDeviceId` (from `register`), `needsAttention` (from
+    `order-store`) and `useOrderOutbox` (from `use-outbox`) into
+    `packages/pos/src/`, and `OrdersList` (from the `orders` screen) into
+    `packages/components/src/sale/`. Adaptations: `getDeviceId` takes the
+    storage key (medusapos passes `'medusapos.register_id'`);
+    `useOrderOutbox` takes `storeKey` (medusapos: the base URL), `open`,
+    `transport`, `deviceId`, `onBusy` and `onOpenError` in place of the
+    app's session, `openOrderStore`, `authHeaders`, `markBusy` and
+    `reportStorageStartFailure`, and calls `onOpenError` for every opening
+    error (medusapos filters with `isStorageWorkerFailure`); `OrdersList`
+    takes `orders`, `onRetry` (the outbox's `requeue`), `formatDate?`
+    (default `Intl.DateTimeFormat`, keeping an unparseable value as is) and
+    `footer?` (medusapos: the feedback link). `needsAttention` joins
+    `COMPONENTS_POS_ALLOWLIST`. The router, session, storage selection,
+    Dexie carry-over, `product-cache` and `live-tab` stay in the app.
+    SQLite/Dexie storage selection and the storage watchdog are
+    platform-neutral, and the Vendure app will need them. They're deferred
+    until the Vendure app is their second consumer, so the abstraction is
+    cut from two real cases rather than one.
 - **Consequences:**
   - The second app costs about half the first.
   - A third backend (WooCommerce, or Shopify if it is unparked) gets the
@@ -2279,7 +2299,8 @@ interface OrderCreatePayload {
   from `@tallyui/pos` only as `import type` (`Cart` takes `sale:
   ReturnType<typeof useSale>`), or a pure function on
   `COMPONENTS_POS_ALLOWLIST` (`buildReceiptData`, `searchProducts`,
-  `catalogueEntries`, `findEntryByCode`, `variantPriceLabel`) — never a
+  `catalogueEntries`, `findEntryByCode`, `variantPriceLabel`,
+  `needsAttention`) — never a
   hook, store or the order builder. `useState` in `Cart`/`DiscountForm` is
   component-local React state, not a pos import.
 - **Enforcement:** `scripts/check-workspace-deps.mjs`'s

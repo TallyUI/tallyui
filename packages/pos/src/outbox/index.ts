@@ -3,3 +3,5 @@ export type { HttpTransportOptions } from './http-transport';
 export { createOrderOutbox } from './order-outbox';
 export type { OrderOutboxOptions, OrderOutbox } from './order-outbox';
 export type { TransportOutcome, CommandTransport, OutboxState } from './types';
+export { useOrderOutbox } from './use-order-outbox';
+export type { UseOrderOutboxOptions, UseOrderOutboxResult } from './use-order-outbox';
