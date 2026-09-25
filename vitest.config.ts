@@ -10,6 +10,7 @@ export default defineConfig({
       'connectors/**/*.test.{ts,tsx}',
       'apps/mock-api/**/*.test.ts',
       'apps/demo/**/*.test.ts',
+      'apps/web/content/docs/**/*.test.ts',
     ],
     typecheck: {
       include: ['packages/**/*.test-d.ts', 'connectors/**/*.test-d.ts'],

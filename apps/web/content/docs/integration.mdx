@@ -1,0 +1,189 @@
+---
+title: Building a POS app
+description: Wiring the connector, database, store settings, pricing, background checks, status, live tab and selling into a platform POS app
+---
+
+Every platform POS app -- the Medusa POS today, a Vendure POS next -- wires the same TallyUI pieces in the same order. This page is that wiring, backend-agnostic where the connector allows it and calling out Medusa/Vendure differences where it doesn't. It isn't a tester or store-setup guide for any one app; see that app's own repo for those.
+
+## Sign in
+
+A connector that supports email and password exposes `auth.signIn`, which exchanges credentials for a token; `auth.getHeaders` then turns stored credentials into request headers. The two combine into the `SyncContext` that every other call in this guide takes. A connector without `signIn` (an API-key connector, like Medusa's default) skips straight to `getHeaders` with the key the user entered.
+
+```ts
+import type { SyncContext, TallyConnector } from '@tallyui/core';
+
+declare const connector: TallyConnector, baseUrl: string;
+
+const { auth } = connector;
+if (!auth.signIn) throw new Error(`${auth.type} has no email/password sign-in`);
+const { token } = await auth.signIn(baseUrl, { email: 'demo@example.com', password: 'demo-password' });
+const headers = auth.getHeaders({ token });
+const context: SyncContext = { connectorId: connector.id, baseUrl, headers };
+```
+
+## The database
+
+`createTallyDatabase({ connector, storage })` builds an RxDB database whose collections come straight from the connector's schemas, plus a `stock_levels` overlay when the connector reconciles stock. A collection the app creates itself still needs migration strategies for every schema version bump, or RxDB refuses it; `connectorCollection(schema)` builds that config (ADR-060 amendment 9).
+
+```ts
+import { createTallyDatabase, connectorCollection, getStorage } from '@tallyui/database';
+import type { TallyConnector } from '@tallyui/core';
+import type { RxJsonSchema } from 'rxdb';
+
+declare const connector: TallyConnector, deviceSettingsSchema: RxJsonSchema<unknown>;
+
+const db = await createTallyDatabase({ connector, storage: getStorage() });
+await db.addCollections({ device_settings: connectorCollection(deviceSettingsSchema) });
+```
+
+## Store settings
+
+`useStoreSettings({ connector, context, loadChoice, saveChoice })` resolves the store's currency, tax and pricing once after sign-in, and re-resolves only when `connector` or `context` change by identity -- so memoise both. A `'choose'` state means the store sells in more than one place; render `StoreSettingsChoiceScreen` with its `choices` and hand its `onSubmit` straight to `store.choose`.
+
+```tsx
+import { useMemo, type ReactNode } from 'react';
+import { medusaConnector } from '@tallyui/connector-medusa';
+import { useStoreSettings } from '@tallyui/pos';
+import { StoreSettingsChoiceScreen } from '@tallyui/components';
+import type { StoreSettingsChoice } from '@tallyui/core';
+
+declare const baseUrl: string, headers: Record<string, string>;
+declare const loadChoice: () => StoreSettingsChoice | undefined, saveChoice: (choice: StoreSettingsChoice) => void;
+
+function StoreGate({ children }: { children: ReactNode }) {
+  const context = useMemo(() => ({ connectorId: medusaConnector.id, baseUrl, headers }), [baseUrl, headers]);
+  const store = useStoreSettings({ connector: medusaConnector, context, loadChoice, saveChoice });
+
+  if (store.state === 'choose') {
+    return <StoreSettingsChoiceScreen choices={store.choices} initial={store.initial} onSubmit={store.choose} />;
+  }
+  return store.state === 'ready' ? children : null;
+}
+```
+
+## Pricing and tax
+
+`withPricingContext(context, settings)` folds the resolved settings' opaque pricing context into the `SyncContext` that `startReplication` uses, and `taxProviderProps(settings)` turns the same settings into `<TaxProvider>`'s rates and inclusivity. Medusa needs that pricing context for its calculated-price replication; Vendure instead takes `settings.pricesIncludeTax`, plus `vendureGlobalStockSettings(context)`'s channel defaults, as options to `createVendureConnector`.
+
+```tsx
+import type { ReactNode } from 'react';
+import { startReplication } from '@tallyui/database';
+import { withPricingContext, taxProviderProps, TaxProvider } from '@tallyui/pos';
+import type { SyncContext, StoreSettings, TallyConnector } from '@tallyui/core';
+import type { TallyDatabase } from '@tallyui/database';
+
+declare const connector: TallyConnector, db: TallyDatabase;
+declare const context: SyncContext, settings: StoreSettings;
+declare const children: ReactNode;
+
+startReplication({
+  collection: db.products,
+  adapter: connector.replication!.products!,
+  context: withPricingContext(context, settings),
+});
+
+function Totals() {
+  return <TaxProvider {...taxProviderProps(settings)}>{children}</TaxProvider>;
+}
+```
+
+## Background checks
+
+`startStockReconcile`, `startIdReconcile` and `startFingerprintReconcile` (for `reconcile.prices` and `reconcile.calculatedPrices`) each read on an interval and enqueue what disagrees with the local documents. Medusa and Vendure each export their own base-price interval as `*_PRICE_RECONCILE_INTERVAL_MS` from their `reconcile/prices` module rather than from the package root, so pass it as a literal or take the runner's 24-hour default; the calculated-price runner's own `MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS` is exported, and needs `maxPages: 1000` since its default of 100 pages of 100 products would truncate a large catalogue. A call to `reconcileStock()`, `reconcileIds()` or `reconcile()` right after a sale, or on foreground, folds into any pass already running rather than waiting for the interval (#108).
+
+```ts
+import { startStockReconcile, startIdReconcile, startFingerprintReconcile } from '@tallyui/database';
+import { MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS } from '@tallyui/connector-medusa';
+import type { TallyConnector, SyncContext } from '@tallyui/core';
+import type { TallyDatabase } from '@tallyui/database';
+
+declare const connector: TallyConnector, db: TallyDatabase;
+declare const context: SyncContext, reSync: () => void;
+
+startStockReconcile({ collection: db.stock_levels, adapter: connector.reconcile!.stock!, context });
+startIdReconcile({ collection: db.products, adapter: connector.reconcile!.ids!, context, reSync });
+// 24h, matching *_PRICE_RECONCILE_INTERVAL_MS in each connector's reconcile/prices module.
+startFingerprintReconcile({ collection: db.products, adapter: connector.reconcile!.prices!, context, reSync, intervalMs: 24 * 60 * 60 * 1000 });
+startFingerprintReconcile({
+  collection: db.products, adapter: connector.reconcile!.calculatedPrices!, context, reSync,
+  intervalMs: MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS, maxPages: 1000,
+});
+```
+
+## Status
+
+`ConnectorStatus` shows the fingerprint runner's own state: `unsoldCount={state.lastResult?.unreported}` for products the sales channel doesn't sell, and `unsoldStale={!isFingerprintResultCurrent(state)}` so a result older than the last failure reads as stale rather than current. `ProductGrid` hides those same unsellable products by default; pass `showUnsellable` to show them anyway.
+
+```tsx
+import { ConnectorStatus, ProductGrid, ProductCard } from '@tallyui/components';
+import { isFingerprintResultCurrent } from '@tallyui/database';
+import type { FingerprintReconcileState } from '@tallyui/database';
+
+declare const state: FingerprintReconcileState, products: unknown[];
+
+function Status() {
+  return (
+    <>
+      <ConnectorStatus
+        name="Medusa"
+        status="connected"
+        unsoldCount={state.lastResult?.unreported}
+        unsoldStale={!isFingerprintResultCurrent(state)}
+      />
+      <ProductGrid items={products} renderItem={(doc) => <ProductCard doc={doc} />} />
+    </>
+  );
+}
+```
+
+## One live tab
+
+Exactly one tab is ever live (ADR-061); `startLiveTab`'s `onPark` runs when this tab hands over, and must stop the background runners, close every database with the storage worker still alive (capped, since a healthy close takes milliseconds), then call `storage.terminate()` -- terminating first leaves the next open hanging. See the [Live Tab](/docs/live-tab) page for the full protocol, the parked screen and the hand-over timing; this guide doesn't repeat it.
+
+```ts
+import { startLiveTab } from '@tallyui/database';
+import type { TallyDatabase } from '@tallyui/database';
+
+declare const storeId: string, databases: TallyDatabase[];
+declare const storage: { terminate(): void }, stopRunners: () => void;
+
+const PARK_CLOSE_LIMIT_MS = 3_000;
+
+const liveTab = startLiveTab({
+  scope: storeId,
+  onPark: async () => {
+    stopRunners();
+    await Promise.race([
+      Promise.all(databases.map((db) => db.close())),
+      new Promise((resolve) => setTimeout(resolve, PARK_CLOSE_LIMIT_MS)),
+    ]);
+    storage.terminate();
+  },
+});
+```
+
+## Selling
+
+`createOrderBuilder({ currency, taxContext })` builds up an order's lines, discounts and payments behind `order$` and `getSnapshot()`. `finalizeOrder(order)` turns a snapshot into a `PosOrder` ready for the outbox, but throws if the order carries a discount -- checkout can't finalize a discounted sale yet. `createOrderOutbox({ collection, transport, deviceId })`, fed by `createHttpCommandTransport`, sends finalized orders and retries with backoff until the backend accepts them.
+
+```ts
+import { createOrderBuilder, finalizeOrder, createOrderOutbox, createHttpCommandTransport } from '@tallyui/pos';
+import type { TaxContext, PosOrder } from '@tallyui/pos';
+import type { RxCollection } from 'rxdb';
+
+declare const taxContext: TaxContext, posOrders: RxCollection<PosOrder>;
+declare const deviceId: string, getHeaders: () => Record<string, string>;
+
+const order = createOrderBuilder({ currency: 'USD', taxContext });
+order.addLine({ productId: 'prod_1', name: 'Espresso', unitPrice: { amount: 350, currency: 'USD' } });
+order.addPayment({ method: 'cash', amountMinor: 350 });
+
+const posOrder = finalizeOrder(order.getSnapshot()); // throws if the order carries a discount
+
+const outbox = createOrderOutbox({
+  collection: posOrders,
+  transport: createHttpCommandTransport({ baseUrl: 'https://my-medusa-backend.com', getHeaders }),
+  deviceId,
+});
+outbox.start();
+```
