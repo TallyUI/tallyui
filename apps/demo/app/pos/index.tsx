@@ -8,6 +8,7 @@ const screens = [
   // Cart
   { href: '/pos/discount-badge', label: 'DiscountBadge' },
   { href: '/pos/cart-note-input', label: 'CartNoteInput' },
+  { href: '/pos/cart-panel', label: 'CartPanel' },
   // Product
   { href: '/pos/category-nav', label: 'CategoryNav' },
   { href: '/pos/product-variant-picker', label: 'ProductVariantPicker' },
