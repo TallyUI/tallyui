@@ -11,7 +11,10 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { cashMovementSchema, registerSessionSchema } from './schemas';
+import { createOrderBuilder } from '../order/order-builder';
+import { toOrderCreateEnvelope } from '../pos-order/command';
+import { finalizeOrder } from '../pos-order/finalize';
+import { cashMovementSchema, closureSchema, registerSessionSchema } from './schemas';
 import {
   backToSelling,
   closeSession,
@@ -20,13 +23,17 @@ import {
   RegisterSessionClosedError,
   RegisterSessionRequiredError,
   requireOpenSession,
+  stampSession,
   startCounting,
   voidMovement,
   type CashMovementCollection,
+  type ClosureCollection,
   type RegisterSessionCollection,
 } from './session-store';
 
-let db: RxDatabase<{ register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection }>;
+let db: RxDatabase<{
+  register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection; closures: ClosureCollection;
+}>;
 beforeEach(async () => {
   db = await createRxDatabase({
     name: `session${Math.random().toString(36).slice(2)}`,
@@ -36,6 +43,7 @@ beforeEach(async () => {
   await db.addCollections({
     register_sessions: { schema: registerSessionSchema },
     cash_movements: { schema: cashMovementSchema },
+    closures: { schema: closureSchema },
   });
 });
 afterEach(async () => {
@@ -65,7 +73,7 @@ it('opens pending and retains the pending transition through each local state', 
 });
 it('void inserts a write-once reversal and marks its target', async () => {
   const session = await openSession(db.register_sessions, input);
-  const row = await recordMovement(db.register_sessions, db.cash_movements, {
+  const row = await recordMovement(db.register_sessions, db.cash_movements, db.closures, {
     sessionId: session.id,
     type: 'paid_out',
     amountMinor: 700,
@@ -154,7 +162,7 @@ it('refuses to reopen or recount a closed session, and a repeat close changes no
 it('refuses movements on a closed or missing session, and voids on a closed one', async () => {
   const session = await openSession(db.register_sessions, input);
   const move = (sessionId: string) =>
-    recordMovement(db.register_sessions, db.cash_movements, {
+    recordMovement(db.register_sessions, db.cash_movements, db.closures, {
       sessionId, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7',
     });
   const row = await move(session.id);
@@ -168,4 +176,33 @@ it('refuses movements on a closed or missing session, and voids on a closed one'
   );
   expect(await db.cash_movements.count().exec()).toBe(2);
   expect(row.getLatest().voided_by).toBeFalsy();
+});
+
+// TallyUI (registers job c review, F1): stampSession is the call that sets sessionId. Revert:
+// make stampSession accept a closed session.
+it('stampSession stamps an unstamped order on an open or counting session, refuses a closed, missing, or already-differently-stamped one, and never touches the envelope', async () => {
+  const session = await openSession(db.register_sessions, input);
+  const build = () => {
+    let n = 0;
+    const newId = () => `00000000-0000-7000-8000-${String(++n).padStart(12, '0')}`;
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 500, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 500 });
+    return finalizeOrder(builder.getSnapshot(), { now: new Date('2026-09-23T12:00:00.000Z'), newId });
+  };
+  const stamped = await stampSession(build(), session.id, db.register_sessions);
+  expect(stamped.sessionId).toBe(session.id);
+  expect(JSON.stringify(toOrderCreateEnvelope(stamped, 'device-1')))
+    .toBe(JSON.stringify(toOrderCreateEnvelope(build(), 'device-1')));
+  // Stamping the same id again is fine; a different one is refused as a re-stamp.
+  expect((await stampSession(stamped, session.id, db.register_sessions)).sessionId).toBe(session.id);
+  await expect(stampSession(stamped, 'other-session', db.register_sessions)).rejects.toThrow('session_already_stamped');
+
+  await startCounting(db.register_sessions, session.id);
+  expect((await stampSession(build(), session.id, db.register_sessions)).sessionId).toBe(session.id);
+
+  await expect(stampSession(build(), 'missing', db.register_sessions)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+
+  await closeSession(db.register_sessions, session.id, { counted: { cash: 500 } });
+  await expect(stampSession(build(), session.id, db.register_sessions)).rejects.toBeInstanceOf(RegisterSessionClosedError);
 });
