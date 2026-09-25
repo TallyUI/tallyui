@@ -796,7 +796,7 @@ T1–T11) is complete at `3996453`. The A-track (medusapos) is in progress.
 | 10 | **Conformance suite, `@tallyui/sync-server`, and the TSP pull, stream and ids endpoints** (ADR-023) | ≥ 40 cases green against the reference server and medusa-dev; 10k out-of-order-commit rows with 0 missed and 0 resurrected |
 | 11 | **Discount contract:** an ADR plus a version bump, fixing the after-tax order-discount basis | A discounted sale lands in Medusa within ≤ 1 minor unit of the POS total |
 | 12 | **Registers, sessions and X/Z closures** (a WCPOS port, ADR-032) | The ported WCPOS tests pass; in the e2e run the Z report equals the sum of the sales |
-| 13 | **Split tender and the tender-reducer port** | WCPOS tender-reducer test parity; a split cash + external sale lands with correct payment rows |
+| 13 | **TallyUI half done 2026-09-25 (the tender reducer is in `@tallyui/pos`, at test parity); the split-tender screens come with TV6 and the app.** **Split tender and the tender-reducer port** | WCPOS tender-reducer test parity; a split cash + external sale lands with correct payment rows |
 | 14 | **Customers** (search, attach, create through `customer.create` / `customer.patch` commands) | A sale with a customer lands with that `customer_id`; a field-merge conflict test passes |
 | 15 | **Cashier roles:** an actor type plus permissions (Medusa RBAC is Enterprise) | A cashier without admin rights can sell but gets 403 on admin routes |
 | 16 | **RxDB 17 + premium SQLite storage** (D2, Job 4) | Benchmark median within 10% of 12.52 s; premium installs in CI from `RXDB_LICENSE_KEY`; web SQLite-wasm and native SQLite both pass the storage tests |
