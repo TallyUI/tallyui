@@ -4,7 +4,11 @@
 // by the dedicated opfs-sahpool worker at `/tallyui-sqlite-worker.js`, built
 // by the package's own bin (`tallyui-build-sqlite-worker`).
 import { createRxDatabase, type RxDatabase, type RxCollection } from 'rxdb';
-import { getRxStorageSQLiteWasm, isStorageWorkerStartError } from '../../../packages/storage-sqlite/src/web/index';
+import {
+  getRxStorageSQLiteWasm,
+  isStorageWorkerStartError,
+  type RxStorageSQLiteWasm,
+} from '../../../packages/storage-sqlite/src/web/index';
 
 interface ItemDocType {
   id: string;
@@ -29,6 +33,7 @@ const schema = {
 };
 
 let db: ItemDatabase | undefined;
+let storage: RxStorageSQLiteWasm | undefined;
 
 type OpenResult = { ok: true } | { ok: false; isStorageWorkerStartError: boolean; message: string };
 
@@ -36,7 +41,8 @@ async function open(name: string): Promise<OpenResult> {
   try {
     db = await createRxDatabase<{ items: ItemCollection }>({
       name,
-      storage: getRxStorageSQLiteWasm({ workerInput: '/tallyui-sqlite-worker.js' }),
+      // A new storage on every open, as an app builds one after a park.
+      storage: (storage = getRxStorageSQLiteWasm({ workerInput: '/tallyui-sqlite-worker.js' })),
       multiInstance: false,
     });
     await db.addCollections({ items: { schema } });
@@ -72,10 +78,22 @@ async function close(): Promise<void> {
   db = undefined;
 }
 
+/** The park order's second step, after close() (ADR-061, amendment 1). */
+function terminate(): void {
+  storage?.terminate();
+}
+
 declare global {
   interface Window {
-    tally: { open: typeof open; insertMany: typeof insertMany; queryByIndex: typeof queryByIndex; count: typeof count; close: typeof close };
+    tally: {
+      open: typeof open;
+      insertMany: typeof insertMany;
+      queryByIndex: typeof queryByIndex;
+      count: typeof count;
+      close: typeof close;
+      terminate: typeof terminate;
+    };
   }
 }
 
-window.tally = { open, insertMany, queryByIndex, count, close };
+window.tally = { open, insertMany, queryByIndex, count, close, terminate };
