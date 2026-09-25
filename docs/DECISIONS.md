@@ -2014,6 +2014,16 @@ interface OrderCreatePayload {
     order, carrying that line's `discountMinor` and the reason "POS
     discount"; never ad-hoc promotions. An order discount therefore
     appears in Medusa as the sum of its line adjustments.
+    - **The Medusa convention (2026-09-25, the Front desk; plugin half in
+      medusapos #62):** each adjustment has the description "POS
+      discount" and **no `code`**. Medusa's
+      `refreshDraftOrderAdjustmentsWorkflow` deletes any adjustment whose
+      `code` is not an applied promotion, so a coded POS adjustment would
+      vanish on the next draft-order refresh.
+    - This is Medusa's convention, not part of the contract. Every other
+      backend's plugin records its own equivalent here. For example, a
+      Vendure plugin must say how its discount survives Vendure's own
+      promotion recalculation.
   - `PosOrderLine.discountMinor` already existed and `finalize` copies it,
     so the `pos_orders` schema is unchanged (its line items do not forbid
     extra properties, and `discountMinor` was already declared).
