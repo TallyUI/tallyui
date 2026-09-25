@@ -45,9 +45,11 @@ export async function requireOpenSession(
 
 /**
  * `yyyy-MM-dd` of a GMT instant in an IANA `timezone`, or in the device's own zone for
- * `'device'`. `Intl` rather than WCPOS's `date-fns`, so no dependency is added.
+ * `'device'`. `Intl` rather than WCPOS's `date-fns`, so no dependency is added. Exported for
+ * `closure-rows.ts` (registers job b1), which reuses it for the closures list's own business-day
+ * fallback rather than duplicating it.
  */
-function businessDayOf(atGmt: string, timezone: string) {
+export function businessDayOf(atGmt: string, timezone: string) {
   const at = new Date(atGmt.endsWith('Z') ? atGmt : `${atGmt}Z`);
   const format = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone === 'device' ? undefined : timezone, year: 'numeric', month: '2-digit', day: '2-digit',

@@ -1,0 +1,61 @@
+{
+  "id": "closure-fixture",
+  "session_id": "session-fixture",
+  "register_id": "register-fixture",
+  "store_key": "1",
+  "business_day": "2026-09-11",
+  "closed_by": "1",
+  "corrections_count": 0,
+  "number": 42,
+  "opened_at": "2026-09-11T08:00:00Z",
+  "closed_at": "2026-09-11T17:00:00Z",
+  "till_expected": { "cash": 18000, "card": 12000 },
+  "expected": { "cash": 18000, "card": 12000 },
+  "counted": { "cash": 17800, "card": 12000 },
+  "variance": { "cash": -200, "card": 0 },
+  "period_sales_total_minor": 25000,
+  "period_refunds_total_minor": 5000,
+  "perpetual_sales_total_minor": 525000,
+  "perpetual_refunds_total_minor": 25000,
+  "unsynced_count": 2,
+  "unsynced_total_minor": 1200,
+  "software_version": "preview",
+  "breakdowns": {
+    "currency": "USD",
+    "transaction_count": 12,
+    "refund_count": 2,
+    "cashiers": [{ "id": "1", "name": "Alex" }],
+    "register_name": "Main register",
+    "opened_by": "1",
+    "approved_by": "1",
+    "opened_by_name": "Alex",
+    "closed_by_name": "Alex",
+    "approved_by_name": "Alex",
+    "payment_methods": {
+      "cash": { "sales_minor": 13000, "refunds_minor": 5000 },
+      "card": { "sales_minor": 12000, "refunds_minor": 0 }
+    },
+    "tax_rates": {
+      "vat": { "name": "VAT 20%", "net_minor": 16667, "tax_minor": 3333, "gross_minor": 20000 }
+    },
+    "opening_float": { "expected_minor": 10000, "counted_minor": 10000, "variance_minor": 0 },
+    "movements": [
+      {
+        "id": "movement-fixture",
+        "type": "paid_out",
+        "amountMinor": 500,
+        "reason": "Petty cash",
+        "created_at_gmt": "2026-09-11T10:00:00Z",
+        "created_by": "1",
+        "voids": null,
+        "voided_by": "sample-void"
+      }
+    ]
+  },
+  "order_ids": [],
+  "movement_ids": [],
+  "server_closure_id": null,
+  "printed_at": null,
+  "print_count": 0,
+  "number_retried": false
+}
