@@ -327,6 +327,29 @@ it('keeps the register document and a session with the id "register" apart', asy
   expect((await db.register_sessions.findOne('register').exec())?.status).toBe('closed');
 });
 
+// TallyUI (registers job c review, F2): recordMovement re-reads after the insert, so a close
+// that lands in the gap can't leave a movement off the Z it should be on. Revert: drop the
+// re-read after the insert.
+it('refuses and removes a movement whose session closes in the gap between the insert and the re-read', async () => {
+  const session = await open();
+  const insert = db.cash_movements.insert.bind(db.cash_movements);
+  db.cash_movements.insert = (async (doc: Parameters<typeof insert>[0]) => {
+    const row = await insert(doc);
+    // Lands the close inside the window recordMovement's insert is awaiting, before its re-read.
+    await closeSession(db.register_sessions, session.id, { counted: { cash: 10000 }, closedBy: '7' });
+    return row;
+  }) as typeof db.cash_movements.insert;
+  await expect(
+    recordMovement(db.register_sessions, db.cash_movements, {
+      sessionId: session.id, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7',
+    }),
+  ).rejects.toBeInstanceOf(RegisterSessionClosedError);
+  expect(await db.cash_movements.count().exec()).toBe(0);
+  const closed = (await db.register_sessions.findOne(session.id).exec())!;
+  const closure = await z(closed, { movements: await db.cash_movements.find().exec() });
+  expect(closure.movement_ids).toEqual([]);
+});
+
 // Each till's register document keeps its own sale counter; each register its own closure numbers.
 it('counts two registers in one store on their own: sale counters and closure numbers', async () => {
   const back = await createRxDatabase({

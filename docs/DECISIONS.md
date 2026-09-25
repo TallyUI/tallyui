@@ -497,6 +497,11 @@ bodies and design docs, and the source is given for each.
     `open` or `counting` session, and `writeClosure` a closed one.
   - **Orders the server rejected still count in the drawer**, because the
     cash was taken.
+  - **The read-then-insert window (#123 review, 2026-09-25):**
+    `recordMovement`'s re-read after the insert narrows the window a close
+    can land in, but a close that lands after that re-read can still
+    freeze a closure without the movement. The server closes the window
+    fully in job c, by refusing writes to a closed session.
 
 ## ADR-033 Business model deferred; hardware drivers kept splittable (plan D4)
 
@@ -2043,6 +2048,17 @@ interface OrderCreatePayload {
      per-store capability check, below, instead of a global one, so an old
      plugin is handled for good rather than needing one more release to
      catch up.
+  4. **2026-09-25 (the Front desk):** the Medusa plugin half (medusapos
+     #62) is merged at `20442ab59279f91cc1df7756a2ce1959a58a90dd`. It
+     serves `GET /tally/v1/info` with `contracts: { "order.create": [1,
+     2] }`, applies one code-less "POS discount" adjustment per discounted
+     line, and completes a 100%-discounted sale at a total of 0 without
+     collecting a payment. It rejects a version-2 command with no
+     `discountMinor` and a version-1 command that carries one; otherwise
+     version 1 is byte-identical. The live contract on Medusa 2.21.0
+     applied a mixed discounted order with no warnings, at a total of
+     20.25 and tax of 4.05, equal to the client's figures. So on a store
+     running it, a discounted TallyUI sale finalizes as version 2.
 - **The capability check (amendment, 2026-09-25, the Front desk).** The
   plugin exposes `GET {baseUrl}/tally/v1/info`, with the same auth as
   `/tally/v1/commands` (the admin bearer), returning

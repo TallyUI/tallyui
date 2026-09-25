@@ -5,7 +5,8 @@ import { uuidv7 } from './uuidv7';
 
 export interface FinalizeOptions {
   registerId?: string;
-  /** The open register session (`requireOpenSession`); stored on the order, never sent. */
+  /** Don't set this directly: use `stampSession`, which checks the session is live. Kept for
+   * tests and migrations. */
   sessionId?: string;
   cashierRef?: string;
   now?: Date;

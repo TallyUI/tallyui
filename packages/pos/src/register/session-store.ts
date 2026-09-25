@@ -65,6 +65,15 @@ export async function requireOpenSession(
   return session.id;
 }
 
+// The one sanctioned way to set `PosOrder.sessionId`: verifies `sessionId` is live and returns
+// the order stamped with it -- `finalizeOrder` is pure and never checks it. Refuses to re-stamp
+// an order that already carries a different session's id.
+export async function stampSession(order: PosOrder, sessionId: string, sessions: RegisterSessionCollection): Promise<PosOrder> {
+  if (order.sessionId !== undefined && order.sessionId !== sessionId) throw new Error('session_already_stamped');
+  const session = await requireLiveSession(sessions, sessionId);
+  return { ...order, sessionId: session.id };
+}
+
 /**
  * `yyyy-MM-dd` of a GMT instant in an IANA `timezone`, or in the device's own zone for
  * `'device'`. `Intl` rather than WCPOS's `date-fns`, so no dependency is added.
@@ -160,7 +169,7 @@ export async function recordMovement(
   input: { sessionId: string; type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string; actor: string },
 ) {
   await requireLiveSession(sessions, input.sessionId);
-  return movements.insert({
+  const row = await movements.insert({
     id: uuid(),
     session_id: input.sessionId,
     type: input.type,
@@ -169,6 +178,14 @@ export async function recordMovement(
     created_by: input.actor,
     created_at_gmt: new Date().toISOString(),
   });
+  // Not atomic with the check above: a close landing here still froze without this movement, so
+  // it's removed rather than left off every Z; the cashier re-records it in the next session.
+  const after = await sessions.findOne(input.sessionId).exec();
+  if (after?.status === 'closed') {
+    await row.remove();
+    throw new RegisterSessionClosedError();
+  }
+  return row;
 }
 
 /** Reverses a movement with a `void` row while its session is live; repeated or concurrent calls share one reversal. */

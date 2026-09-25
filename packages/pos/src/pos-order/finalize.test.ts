@@ -173,6 +173,18 @@ describe('finalizeOrder capability gate (ADR-062)', () => {
     expect(envelope.payload.discountMinor).toBe(posOrder.discountMinor);
   });
 
+  // TallyUI (Medusa live contract, medusapos #62): a 100%-discounted sale needs no payment at all.
+  it('finalizes a 100%-discounted sale at a total of 0, taking no payment, as a version-2 envelope', () => {
+    const builder = sale();
+    builder.applyLineDiscount(builder.getSnapshot().lineItems[0].id, { type: 'percentage', value: 100 });
+    builder.applyLineDiscount(builder.getSnapshot().lineItems[1].id, { type: 'percentage', value: 100 });
+    const order = builder.getSnapshot();
+    expect(order.totalMinor).toBe(0);
+    const posOrder = finalizeOrder(order, { capabilities: { orderCreate: 2 } });
+    expect(posOrder).toMatchObject({ totalMinor: 0, payments: [] });
+    expect(toOrderCreateEnvelope(posOrder, 'device1').version).toBe(2);
+  });
+
   it('leaves a discount-free order unaffected, whatever the capability', () => {
     const builder = sale();
     builder.addPayment({ method: 'cash', amountMinor: 3451 });

@@ -58,5 +58,5 @@ export { registerSessionSchema, registerSessionCollection, cashMovementSchema, c
 export type { RegisterSession, CashMovement, Closure } from './register';
 export { mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegisterId, readBoundRegister, bindRegister, unbindRegister, nextSaleCounter, mintClosureNumber, advancePerpetual } from './register';
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register';
-export { RegisterSessionRequiredError, RegisterSessionClosedError, openSessionSelector, requireOpenSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure } from './register';
+export { RegisterSessionRequiredError, RegisterSessionClosedError, openSessionSelector, requireOpenSession, stampSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure } from './register';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';

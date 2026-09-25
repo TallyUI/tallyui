@@ -11,6 +11,9 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { createOrderBuilder } from '../order/order-builder';
+import { toOrderCreateEnvelope } from '../pos-order/command';
+import { finalizeOrder } from '../pos-order/finalize';
 import { cashMovementSchema, registerSessionSchema } from './schemas';
 import {
   backToSelling,
@@ -20,6 +23,7 @@ import {
   RegisterSessionClosedError,
   RegisterSessionRequiredError,
   requireOpenSession,
+  stampSession,
   startCounting,
   voidMovement,
   type CashMovementCollection,
@@ -168,4 +172,33 @@ it('refuses movements on a closed or missing session, and voids on a closed one'
   );
   expect(await db.cash_movements.count().exec()).toBe(2);
   expect(row.getLatest().voided_by).toBeFalsy();
+});
+
+// TallyUI (registers job c review, F1): stampSession is the call that sets sessionId. Revert:
+// make stampSession accept a closed session.
+it('stampSession stamps an unstamped order on an open or counting session, refuses a closed, missing, or already-differently-stamped one, and never touches the envelope', async () => {
+  const session = await openSession(db.register_sessions, input);
+  const build = () => {
+    let n = 0;
+    const newId = () => `00000000-0000-7000-8000-${String(++n).padStart(12, '0')}`;
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 500, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 500 });
+    return finalizeOrder(builder.getSnapshot(), { now: new Date('2026-09-23T12:00:00.000Z'), newId });
+  };
+  const stamped = await stampSession(build(), session.id, db.register_sessions);
+  expect(stamped.sessionId).toBe(session.id);
+  expect(JSON.stringify(toOrderCreateEnvelope(stamped, 'device-1')))
+    .toBe(JSON.stringify(toOrderCreateEnvelope(build(), 'device-1')));
+  // Stamping the same id again is fine; a different one is refused as a re-stamp.
+  expect((await stampSession(stamped, session.id, db.register_sessions)).sessionId).toBe(session.id);
+  await expect(stampSession(stamped, 'other-session', db.register_sessions)).rejects.toThrow('session_already_stamped');
+
+  await startCounting(db.register_sessions, session.id);
+  expect((await stampSession(build(), session.id, db.register_sessions)).sessionId).toBe(session.id);
+
+  await expect(stampSession(build(), 'missing', db.register_sessions)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+
+  await closeSession(db.register_sessions, session.id, { counted: { cash: 500 } });
+  await expect(stampSession(build(), session.id, db.register_sessions)).rejects.toBeInstanceOf(RegisterSessionClosedError);
 });
