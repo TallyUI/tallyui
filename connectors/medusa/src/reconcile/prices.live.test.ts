@@ -6,7 +6,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { SyncContext } from '@tallyui/core';
-import { startFingerprintReconcile } from '@tallyui/database';
+import { connectorCollection, startFingerprintReconcile } from '@tallyui/database';
 import { medusaAdminUserAuth, medusaConnector, medusaProductSchema } from '../index';
 import { fetchByIds } from './ids';
 
@@ -34,7 +34,7 @@ describe.skipIf(!MEDUSA_DEV_URL || !MEDUSA_DEV_EMAIL || !MEDUSA_DEV_PASSWORD)('l
       name: `medusa_price_live_${Date.now()}`, multiInstance: false,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     });
-    await db.addCollections({ products: { schema: medusaProductSchema } });
+    await db.addCollections({ products: connectorCollection(medusaProductSchema) });
     await db.products.bulkInsert(docs as Record<string, unknown>[]);
 
     const runner = startFingerprintReconcile({

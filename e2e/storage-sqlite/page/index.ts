@@ -9,11 +9,14 @@ import {
   isStorageWorkerStartError,
   type RxStorageSQLiteWasm,
 } from '../../../packages/storage-sqlite/src/web/index';
+// Its own module, so the page bundles without createTallyDatabase's dev-mode setup.
+import { connectorCollection } from '../../../packages/database/src/connector-collection';
 
 interface ItemDocType {
   id: string;
   group: string;
   seq: number;
+  calculated_price?: { calculated_amount: number | null } | null;
 }
 
 type ItemCollection = RxCollection<ItemDocType>;
@@ -32,12 +35,19 @@ const schema = {
   indexes: [['group', 'seq']] as const,
 };
 
+/** Version 1 adds one optional property, as backlog 44 did to Medusa's products (a drop-and-resync bump). */
+const schemaV1 = {
+  ...schema,
+  version: 1,
+  properties: { ...schema.properties, calculated_price: { type: ['object', 'null'] as const, properties: { calculated_amount: { type: ['number', 'null'] as const } } } },
+};
+
 let db: ItemDatabase | undefined;
 let storage: RxStorageSQLiteWasm | undefined;
 
 type OpenResult = { ok: true } | { ok: false; isStorageWorkerStartError: boolean; message: string };
 
-async function open(name: string): Promise<OpenResult> {
+async function open(name: string, version: 0 | 1 = 0): Promise<OpenResult> {
   try {
     db = await createRxDatabase<{ items: ItemCollection }>({
       name,
@@ -45,7 +55,7 @@ async function open(name: string): Promise<OpenResult> {
       storage: (storage = getRxStorageSQLiteWasm({ workerInput: '/tallyui-sqlite-worker.js' })),
       multiInstance: false,
     });
-    await db.addCollections({ items: { schema } });
+    await db.addCollections({ items: version === 1 ? connectorCollection<ItemDocType>(schemaV1 as any) : { schema } });
     return { ok: true };
   } catch (error) {
     return { ok: false, isStorageWorkerStartError: isStorageWorkerStartError(error), message: String(error) };
@@ -60,6 +70,12 @@ async function insertMany(total: number): Promise<void> {
     seq: i,
   }));
   await db.items.bulkInsert(docs);
+}
+
+/** Inserts one version-1 document, with `calculated_price`. */
+async function insertPriced(): Promise<void> {
+  if (!db) throw new Error('not open');
+  await db.items.insert({ id: 'priced', group: 'even', seq: 0, calculated_price: { calculated_amount: 8 } });
 }
 
 async function queryByIndex(group: string): Promise<string[]> {
@@ -88,6 +104,7 @@ declare global {
     tally: {
       open: typeof open;
       insertMany: typeof insertMany;
+      insertPriced: typeof insertPriced;
       queryByIndex: typeof queryByIndex;
       count: typeof count;
       close: typeof close;
@@ -96,4 +113,4 @@ declare global {
   }
 }
 
-window.tally = { open, insertMany, queryByIndex, count, close, terminate };
+window.tally = { open, insertMany, insertPriced, queryByIndex, count, close, terminate };

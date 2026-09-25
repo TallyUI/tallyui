@@ -5,6 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { connectorCollection } from '@tallyui/database';
 import { combinePullAdapters, type ReplicationAdapter } from '@tallyui/core';
 import { medusaProductSchema } from '../schemas/products';
 import { medusaConnector } from '../index';
@@ -94,7 +95,7 @@ async function start({ variantPageSize, afterVariantPage, afterProductPage, lega
     name: `medusavariantfeed${++databaseNumber}`, multiInstance: false,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
   });
-  await db.addCollections({ products: { schema: medusaProductSchema } });
+  await db.addCollections({ products: connectorCollection(medusaProductSchema) });
   const adapter = variantPageSize
     ? combinePullAdapters({
       products: medusaProductReplication,

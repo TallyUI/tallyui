@@ -6,7 +6,7 @@ import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/rep
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { resolvePrice, type FingerprintReconcileAdapter, type SyncContext } from '@tallyui/core';
-import { startFingerprintReconcile } from '@tallyui/database';
+import { connectorCollection, startFingerprintReconcile } from '@tallyui/database';
 import { medusaProductSchema } from '../schemas/products';
 import { toDocument } from '../replication/products';
 import { medusaConnector } from '../index';
@@ -134,7 +134,7 @@ async function start(context: SyncContext) {
     name: `medusacalculated${++databaseNumber}`, multiInstance: false,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
   });
-  await db.addCollections({ products: { schema: medusaProductSchema } });
+  await db.addCollections({ products: connectorCollection(medusaProductSchema) });
   const errors: unknown[] = [];
   replication = replicateRxCollection<any, any>({
     collection: db.products, replicationIdentifier: 'medusa-calculated-prices-proof',

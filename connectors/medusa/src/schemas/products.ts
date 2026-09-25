@@ -41,7 +41,8 @@ export interface MedusaProductDocument {
  */
 export const medusaProductSchema: RxJsonSchema<any> = {
   title: 'Medusa Product',
-  version: 0,
+  // 1: declares `variants[].calculated_price` (backlog 44). A bump drops and resyncs (ConnectorSchemas).
+  version: 1,
   type: 'object',
   primaryKey: 'id',
   properties: {
@@ -197,11 +198,7 @@ export const medusaProductSchema: RxJsonSchema<any> = {
               },
             },
           },
-          // Admin base prices. The store API's `calculated_price` rides beside them as an extra,
-          // undeclared variant property (items set no `additionalProperties`): an object in
-          // priced mode, `null` when the sales channel or region does not sell the variant, and
-          // absent (undefined) in base-only mode, with no pricing context. It moves into the
-          // schema at the next version bump (backlog 44).
+          // Admin base prices.
           prices: {
             type: 'array',
             items: {
@@ -212,6 +209,27 @@ export const medusaProductSchema: RxJsonSchema<any> = {
                 amount: { type: 'number' },
                 min_quantity: { type: ['number', 'null'] },
                 max_quantity: { type: ['number', 'null'] },
+              },
+            },
+          },
+          // The store API's price (D2b), as `MedusaCalculatedPrice`: an object in priced mode,
+          // `null` when the sales channel or region does not sell the variant, and absent in
+          // base-only mode, with no pricing context. No `additionalProperties: false`: the store
+          // API sends more fields (`id`, `original_price`) and can add others.
+          calculated_price: {
+            type: ['object', 'null'],
+            properties: {
+              calculated_amount: { type: ['number', 'null'] },
+              original_amount: { type: ['number', 'null'] },
+              currency_code: { type: 'string' },
+              is_calculated_price_tax_inclusive: { type: ['boolean', 'null'] },
+              is_original_price_tax_inclusive: { type: ['boolean', 'null'] },
+              calculated_price: {
+                type: 'object',
+                properties: {
+                  price_list_id: { type: ['string', 'null'] },
+                  price_list_type: { type: ['string', 'null'] },
+                },
               },
             },
           },

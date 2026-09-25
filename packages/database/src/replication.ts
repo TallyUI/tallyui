@@ -29,9 +29,16 @@ export function startReplication<RxDocType, CheckpointType = any>({
   retryTime = 5000,
   autoStart = true,
 }: StartReplicationOptions<RxDocType, CheckpointType>): RxReplicationState<RxDocType, CheckpointType> {
+  // A schema bump drops the documents (createTallyDatabase), so it must also
+  // reset the checkpoint: RxDB migrates the old checkpoint with the collection.
+  // A new identifier is a fresh meta instance, so the pull starts from nothing
+  // (and a combined adapter seeds as on a fresh install). The old meta instance
+  // is left orphaned: a few rows, and removing it is out of scope. Version 0
+  // keeps the original identifier, so existing installs never resync.
+  const { version } = collection.schema;
   return replicateRxCollection({
     collection,
-    replicationIdentifier: `${context.connectorId}-${collection.name}`,
+    replicationIdentifier: `${context.connectorId}-${collection.name}${version > 0 ? `-v${version}` : ''}`,
     pull: {
       handler: (checkpoint, batchSize) =>
         adapter.pull.handler(checkpoint as CheckpointType | undefined, batchSize, context),
