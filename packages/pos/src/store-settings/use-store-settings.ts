@@ -34,7 +34,11 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
   const requestRef = useRef(0);
   const [state, setState] = useState<StoreSettingsState>(LOADING);
 
-  const resolve = useCallback((choice?: StoreSettingsChoice) => {
+  // `from`, when given, is the request that created the `choose`/`retry` calling this: a call
+  // arriving after a store switch made that request stale is ignored, so it can't apply an old
+  // pick to the new store.
+  const resolve = useCallback((choice?: StoreSettingsChoice, from?: number) => {
+    if (from !== undefined && from !== requestRef.current) return;
     const request = ++requestRef.current;
     const current = () => request === requestRef.current;
     setState(LOADING);
@@ -42,12 +46,13 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
       (result) => {
         if (!current()) return;
         if (result.status === 'ready') setState({ state: 'ready', settings: result.settings, choice: result.choice });
-        else if (result.status === 'choose') setState({ state: 'choose', choices: result.choices, initial: result.initial, choose: resolve });
+        else if (result.status === 'choose')
+          setState({ state: 'choose', choices: result.choices, initial: result.initial, choose: (pick) => resolve(pick, request) });
         else setState({ state: 'unsupported' });
       },
       // A retry keeps the choice that failed: a new pick is saved only once it resolves.
       (error: unknown) => {
-        if (current()) setState({ state: 'error', error, retry: () => resolve(choice) });
+        if (current()) setState({ state: 'error', error, retry: () => resolve(choice, request) });
       },
     );
   }, []);

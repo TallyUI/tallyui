@@ -97,4 +97,85 @@ describe('useStoreSettings', () => {
     await waitFor(() => expect(result.current).toEqual({ state: 'unsupported' }));
     expect(loadChoice).not.toHaveBeenCalled();
   });
+
+  it('after unmount, a pending resolution never updates state', async () => {
+    const pending = deferred<StoreSettings>();
+    const connector = fakeConnector(() => pending.promise);
+    const { result, unmount } = renderHook(() => useStoreSettings({ connector, context, loadChoice: () => undefined, saveChoice: vi.fn() }));
+    expect(result.current).toEqual({ state: 'loading' });
+
+    unmount();
+    await act(async () => pending.resolve(settings));
+    expect(result.current).toEqual({ state: 'loading' }); // no update reached it; a mid-flight resolve after unmount would warn
+  });
+
+  it('retry() after a failed initial resolve reuses the stored choice', async () => {
+    const failure = new StoreSettingsError('failed', 'offline');
+    const storeSettings = vi.fn<NonNullable<TallyConnector['storeSettings']>>().mockRejectedValueOnce(failure).mockResolvedValue(settings);
+    const connector = fakeConnector(storeSettings);
+    const { result } = renderHook(() => useStoreSettings({ connector, context, loadChoice: () => ({ country: 'de' }), saveChoice: vi.fn() }));
+
+    await waitFor(() => expect(result.current.state).toBe('error'));
+    const current = result.current;
+    if (current.state !== 'error') return;
+
+    act(() => current.retry());
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+    expect(storeSettings).toHaveBeenNthCalledWith(1, context, { country: 'de' });
+    expect(storeSettings).toHaveBeenNthCalledWith(2, context, { country: 'de' }); // reloaded, not just remembered
+  });
+
+  it('retry() after choose(pick) fails reuses that pick, not the stored choice', async () => {
+    const failure = new StoreSettingsError('failed', 'offline');
+    const storeSettings = vi.fn<NonNullable<TallyConnector['storeSettings']>>()
+      .mockRejectedValueOnce(new StoreSettingsError('choice_required', 'pick a country', choices))
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValue(settings);
+    const connector = fakeConnector(storeSettings);
+    const { result } = renderHook(() => useStoreSettings({ connector, context, loadChoice: () => ({ country: 'fr' }), saveChoice: vi.fn() }));
+
+    await waitFor(() => expect(result.current.state).toBe('choose'));
+    const choosing = result.current;
+    if (choosing.state !== 'choose') return;
+    act(() => choosing.choose({ country: 'de' }));
+
+    await waitFor(() => expect(result.current.state).toBe('error'));
+    const failed = result.current;
+    if (failed.state !== 'error') return;
+    act(() => failed.retry());
+
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+    expect(storeSettings).toHaveBeenNthCalledWith(3, context, { country: 'de' });
+  });
+
+  it('ignores a choose captured before a store switch, leaving the new store untouched', async () => {
+    const storeSettingsA = vi.fn(async () => {
+      throw new StoreSettingsError('choice_required', 'pick a country', choices);
+    });
+    const connectorA = fakeConnector(storeSettingsA);
+    const pendingB = deferred<StoreSettings>();
+    const storeSettingsB = vi.fn(() => pendingB.promise);
+    const connectorB = fakeConnector(storeSettingsB);
+    const saveChoiceB = vi.fn();
+
+    const { result, rerender } = renderHook(
+      ({ connector, saveChoice }: { connector: TallyConnector; saveChoice: typeof saveChoiceB }) =>
+        useStoreSettings({ connector, context, loadChoice: () => undefined, saveChoice }),
+      { initialProps: { connector: connectorA, saveChoice: vi.fn() } },
+    );
+
+    await waitFor(() => expect(result.current.state).toBe('choose'));
+    const stale = result.current;
+    if (stale.state !== 'choose') return;
+
+    rerender({ connector: connectorB, saveChoice: saveChoiceB });
+    await waitFor(() => expect(storeSettingsB).toHaveBeenCalledTimes(1));
+    const beforeStale = result.current;
+
+    act(() => stale.choose({ country: 'de' }));
+
+    expect(saveChoiceB).not.toHaveBeenCalled();
+    expect(storeSettingsB).toHaveBeenCalledTimes(1); // the stale choose triggered no extra resolve
+    expect(result.current).toEqual(beforeStale);
+  });
 });

@@ -50,21 +50,88 @@ describe('resolveStoreSettings', () => {
     expect(saveChoice).toHaveBeenCalledExactlyOnceWith({ region: 'r2' });
   });
 
-  it('choice_required gives choose, with the tried choice as initial, and saves nothing', async () => {
+  it('choice_required gives choose, with the tried choice narrowed to initial, and saves nothing', async () => {
     const storeSettings = vi.fn(async () => {
       throw new StoreSettingsError('choice_required', 'pick one', choices);
     });
     const stale = setup(storeSettings, { region: 'gone' });
-    await expect(resolveStoreSettings(stale.options)).resolves.toEqual({ status: 'choose', choices, initial: { region: 'gone' } });
+    await expect(resolveStoreSettings(stale.options)).resolves.toEqual({ status: 'choose', choices });
 
     const fresh = setup(storeSettings);
-    await expect(resolveStoreSettings(fresh.options, { region: 'r9' })).resolves.toEqual({ status: 'choose', choices, initial: { region: 'r9' } });
+    await expect(resolveStoreSettings(fresh.options, { region: 'r2' })).resolves.toEqual({ status: 'choose', choices, initial: { region: 'r2' } });
 
     const none = setup(storeSettings);
     await expect(resolveStoreSettings(none.options)).resolves.toEqual({ status: 'choose', choices });
 
     expect(stale.saveChoice).not.toHaveBeenCalled();
     expect(fresh.saveChoice).not.toHaveBeenCalled();
+  });
+
+  it('drops a stale region from initial when regions are offered', async () => {
+    const storeSettings = vi.fn(async () => {
+      throw new StoreSettingsError('choice_required', 'pick one', choices); // regions: r1, r2
+    });
+    const { options } = setup(storeSettings, { region: 'gone' });
+    await expect(resolveStoreSettings(options)).resolves.toEqual({ status: 'choose', choices });
+  });
+
+  it('keeps a stored region when regions are not offered, only countries', async () => {
+    const countryChoices = { countries: ['de', 'fr'] };
+    const storeSettings = vi.fn(async () => {
+      throw new StoreSettingsError('choice_required', 'pick one', countryChoices);
+    });
+    const { options } = setup(storeSettings, { region: 'r1' });
+    await expect(resolveStoreSettings(options)).resolves.toEqual({ status: 'choose', choices: countryChoices, initial: { region: 'r1' } });
+  });
+
+  it('drops a stale country when countries are offered, keeping a region that already resolved', async () => {
+    const countryChoices = { countries: ['de', 'fr'] };
+    const storeSettings = vi.fn(async () => {
+      throw new StoreSettingsError('choice_required', 'pick one', countryChoices);
+    });
+    const { options } = setup(storeSettings, { region: 'r1', country: 'gone' });
+    await expect(resolveStoreSettings(options)).resolves.toEqual({ status: 'choose', choices: countryChoices, initial: { region: 'r1' } });
+  });
+
+  it('omits initial entirely when every field of the tried choice drops', async () => {
+    const bothChoices = { regions: [{ id: 'r1', name: 'One' }], countries: ['de', 'fr'] };
+    const storeSettings = vi.fn(async () => {
+      throw new StoreSettingsError('choice_required', 'pick one', bothChoices);
+    });
+    const { options } = setup(storeSettings, { region: 'gone', country: 'gone' });
+    const result = await resolveStoreSettings(options);
+    expect(result).toEqual({ status: 'choose', choices: bothChoices });
+    expect(result).not.toHaveProperty('initial');
+  });
+
+  it('treats a throwing or rejecting loadChoice as no stored choice', async () => {
+    const storeSettings = vi.fn(async () => settings);
+    const saveChoice = vi.fn();
+    const connector = fakeConnector(storeSettings);
+
+    const throwing = { connector, context, loadChoice: () => { throw new Error('corrupt'); }, saveChoice };
+    await expect(resolveStoreSettings(throwing)).resolves.toEqual({ status: 'ready', settings });
+
+    const rejecting = { connector, context, loadChoice: () => Promise.reject(new Error('AsyncStorage failed')), saveChoice };
+    await expect(resolveStoreSettings(rejecting)).resolves.toEqual({ status: 'ready', settings });
+
+    const choiceRequired = fakeConnector(vi.fn(async () => {
+      throw new StoreSettingsError('choice_required', 'pick one', choices);
+    }));
+    const stillChoose = { connector: choiceRequired, context, loadChoice: () => { throw new Error('corrupt'); }, saveChoice };
+    await expect(resolveStoreSettings(stillChoose)).resolves.toEqual({ status: 'choose', choices });
+  });
+
+  it('still resolves ready, with onSaveError, when saveChoice rejects after success', async () => {
+    const storeSettings = vi.fn(async () => settings);
+    const saveError = new Error('disk full');
+    const saveChoice = vi.fn(() => Promise.reject(saveError));
+    const onSaveError = vi.fn();
+    const connector = fakeConnector(storeSettings);
+
+    await expect(resolveStoreSettings({ connector, context, loadChoice: () => undefined, saveChoice, onSaveError }, { region: 'r1' }))
+      .resolves.toEqual({ status: 'ready', settings, choice: { region: 'r1' } });
+    expect(onSaveError).toHaveBeenCalledExactlyOnceWith(saveError);
   });
 
   it('rethrows failed, and any other error, unchanged without saving', async () => {
