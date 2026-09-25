@@ -101,6 +101,27 @@ describe('combinePullAdapters', () => {
       // The upgrade keeps the variant feed's full healing pass.
       expect(variants.handler).toHaveBeenLastCalledWith(undefined, 100, context);
     });
+
+    it('re-seeds from scratch on retry after a seedCheckpoint rejects, with no handler run on the failed call', async () => {
+      const { calls, products, variants, prices, combined } = seeded();
+      variants.seedCheckpoint!.mockRejectedValueOnce(new Error('seed failed'));
+      await expect(combined.pull.handler(undefined, 100, context)).rejects.toThrow('seed failed');
+      // The seed loop stops at the first rejection: variants.seed ran (and rejected,
+      // so it logged nothing), prices was never reached, and no handler ran at all.
+      expect(calls).toEqual([]);
+      expect(variants.seedCheckpoint).toHaveBeenCalledTimes(1);
+      expect(prices.seedCheckpoint).not.toHaveBeenCalled();
+      expect(products.handler).not.toHaveBeenCalled();
+      expect(variants.handler).not.toHaveBeenCalled();
+      expect(prices.handler).not.toHaveBeenCalled();
+      // RxDB retries with the same (still empty) checkpoint; nothing was stored, so it seeds again from scratch.
+      calls.length = 0;
+      const { checkpoint } = await combined.pull.handler(undefined, 100, context);
+      expect(calls).toEqual(['variants.seed', 'prices.seed', 'products.handler', 'variants.handler', 'prices.handler']);
+      expect(variants.seedCheckpoint).toHaveBeenCalledTimes(2);
+      expect(variants.handler).toHaveBeenLastCalledWith({ skip: 0, updatedAt: 'mark' }, 100, context);
+      expect(checkpoint.variants).toEqual({ skip: 1, updatedAt: 'mark' });
+    });
   });
 
   it.each([
