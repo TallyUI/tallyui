@@ -99,21 +99,27 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   }
 
   function computeDiscountAmount(discount: Discount, base: number): number {
+    // Clamped here so both line and order discounts can never go negative (a negative
+    // percentage or fixed value would otherwise raise the price instead of lowering it).
     if (discount.type === 'percentage') {
-      return roundHalfAway(base * discount.value / 100);
+      return Math.max(0, roundHalfAway(base * discount.value / 100));
     }
     if (!Number.isInteger(discount.value)) throw new RangeError('Fixed discount must be integer minor units');
-    return Math.min(discount.value, base);
+    return Math.max(0, Math.min(discount.value, base));
   }
 
   function buildOrder(): Order {
     // Order discounts are pre-tax (ADR-062). The base is the lines' pre-order-discount amounts, each in its
-    // own mode (an inclusive line's shelf amount, an exclusive line's net); each discount takes its part of
-    // the base still remaining, and the total is allocated to the lines, which are then taxed on what is left.
+    // own mode (an inclusive line's shelf amount, an exclusive line's net). A percentage discount is additive:
+    // each is computed on that base, not on what an earlier order discount leaves (WCPOS `next` / WooCommerce
+    // parity). A fixed discount is computed on what remains, as before. Every discount is then capped at what
+    // remains, which decreases as each is applied, and the total is allocated to the lines, which are then
+    // taxed on what is left.
     const lineAmounts = lineItems.map((li) => li.netMinor);
-    let remaining = lineAmounts.reduce((sum, amount) => sum + Math.max(0, amount), 0);
+    const base = lineAmounts.reduce((sum, amount) => sum + Math.max(0, amount), 0);
+    let remaining = base;
     const recalcedOrderDiscounts = orderDiscounts.map((d) => {
-      const amountMinor = Math.max(0, Math.min(remaining, computeDiscountAmount(d, remaining)));
+      const amountMinor = Math.min(remaining, computeDiscountAmount(d, d.type === 'percentage' ? base : remaining));
       remaining -= amountMinor;
       return { ...d, amountMinor };
     });

@@ -115,4 +115,20 @@ describe('finalizeOrder', () => {
     expect(() => finalizeOrder(builder.getSnapshot()))
       .toThrow(new Error('finalize: discounts are not supported by the server yet (order.create v2)'));
   });
+
+  it('rejects a hand-built order with a negative discountMinor (the guard checks non-zero, not just positive)', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const order = builder.getSnapshot();
+    const rigged = {
+      ...order,
+      discountMinor: -100,
+      discounts: [{ id: 'd1', type: 'fixed' as const, value: -100, amountMinor: -100 }],
+      lineItems: order.lineItems.map((line, i) =>
+        i === 0 ? { ...line, discountMinor: -100, orderDiscountMinor: -100 } : line,
+      ),
+    };
+    expect(() => finalizeOrder(rigged))
+      .toThrow(new Error('finalize: discounts are not supported by the server yet (order.create v2)'));
+  });
 });

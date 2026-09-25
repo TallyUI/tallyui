@@ -1923,11 +1923,14 @@ interface OrderCreatePayload {
        total), with tax rounded once for the order (ADR-037);
      - the receipt's discount total is the sum of the own-mode amounts.
   3. **The order discount amount.** The base is the sum of the lines'
-     pre-order-discount amounts. A percentage is
-     `roundHalfAway(base × pct / 100)`; a fixed amount is its integer minor
-     value. Several order discounts apply in order, each against the base
-     still remaining, and each is capped at it. The order discount is their
-     sum.
+     pre-order-discount amounts. Several order discounts apply in order. A
+     **percentage** discount is computed on the pre-order-discount base
+     (additive, as in WCPOS `next` and WooCommerce's default):
+     `roundHalfAway(base × pct / 100)`. A **fixed** discount is its integer
+     minor value, computed against the base still remaining. Each discount
+     is capped at what remains, so the total never exceeds the base.
+     Sequential (compounding) discounting is a possible later option. The
+     order discount is the sum of the (capped) discounts.
   4. **Allocation** (`allocateOrderDiscount` in `@tallyui/pos`, pure, for
      the plugins' reference): shares in proportion to each line's
      pre-order-discount amount, with largest-remainder rounding to the
@@ -1983,9 +1986,14 @@ interface OrderCreatePayload {
 - **Consequences:**
   - Every order discount now lowers the tax. An existing test that asserted
     the after-tax total was changed to the pre-tax numbers.
-  - Stacked percentage order discounts compound (the second applies to
-    what the first leaves), where they previously each took the full
-    subtotal.
+  - Stacked percentage order discounts are additive: each is computed on
+    the pre-order-discount base, not on what an earlier order discount
+    leaves. Each is still capped at what remains, so the total never
+    exceeds the base.
   - The receipt shows each line's discount (`discountMinor`, absent when
     0) and the order discounts as their own lines. Its lines still add up
     to the subtotal (exclusive) or the total (inclusive).
+  - A negative discount (a negative percentage or a negative fixed value)
+    is clamped to 0 in `computeDiscountAmount`, so a line or order discount
+    can never raise a price. `finalize`'s guard rejects any non-zero
+    discount, not only a positive one, as defence in depth.

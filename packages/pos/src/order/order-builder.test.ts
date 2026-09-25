@@ -5,6 +5,7 @@ import type { ProductTraits } from '@tallyui/core';
 import { medusaProductTraits } from '@tallyui/connector-medusa';
 import type { TaxContext } from '../tax/types';
 import { roundMicrosToMinor } from '../tax/exact';
+import { finalizeOrder } from '../pos-order/finalize';
 
 const traits: ProductTraits = {
   getId: (doc) => doc.id,
@@ -553,5 +554,42 @@ describe('pre-tax discounts (ADR-062)', () => {
     expect(builder.getSnapshot().lineItems.map((li) => li.orderDiscountMinor)).toEqual([76, 25]);
     builder.removeItem(first);
     expect(builder.getSnapshot()).toMatchObject({ totalMinor: 989, discountMinor: 101 });
+  });
+
+  it('adds two order-discount percentages instead of compounding them: 10% and 20% of €10.00 give €1.00 and €2.00', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 20 });
+    const order = builder.getSnapshot();
+    // Before this change, the second discount compounded on what the first left: 100 then 180.
+    expect(order.discounts.map((d) => d.amountMinor)).toEqual([100, 200]);
+    expect(order.discountMinor).toBe(300);
+  });
+
+  it('caps the second of two 60% order discounts at what remains: 600 then 400, not 600 then 240', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyOrderDiscount({ type: 'percentage', value: 60 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 60 });
+    const order = builder.getSnapshot();
+    expect(order.discounts.map((d) => d.amountMinor)).toEqual([600, 400]);
+    expect(order.discountMinor).toBe(1000);
+  });
+
+  it('clamps a negative line discount so it cannot inflate the order (Front desk review of #115)', () => {
+    // A €10.00 line, 20% exclusive, with a −€5.00 fixed line discount and a 10% order discount.
+    // Unclamped, the line discount subtracted a negative amount and the order paid 1620 (€16.20) — the bug.
+    // Clamped, the line discount is 0, the order discount is 100, and the total is 900 + 180 tax = 1080.
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: store(false) });
+    const lineId = builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyLineDiscount(lineId, { type: 'fixed', value: -500 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    const order = builder.getSnapshot();
+    expect(order.lineItems[0]).toMatchObject({ discountMinor: 100, orderDiscountMinor: 100, netMinor: 900 });
+    expect(order.discounts[0].amountMinor).toBe(100);
+    expect(order).toMatchObject({ discountMinor: 100, taxMinor: 180, totalMinor: 1080 });
+    expect(order.discountMinor).toBeGreaterThanOrEqual(0);
+    expect(() => finalizeOrder(order)).toThrow('finalize: discounts are not supported by the server yet (order.create v2)');
   });
 });
