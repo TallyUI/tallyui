@@ -197,6 +197,21 @@ it('matches the local-row fixture to the server fixture key-for-key at every tem
   expect(doc.fiscal).toMatchObject(server.fiscal);
 });
 
+// TallyUI-only (#134 second review): every fixture above uses a 2-decimal currency, so a mutation
+// hard-coding exponent 2 in `minorToDecimal`'s callers would still pass them all. JPY (0 decimal
+// places) exercises every conversion site: tenders, payment_methods, tax_rates, opening_float,
+// movements and the closure's own totals.
+it("formats a closure's money at a non-2 exponent (JPY, exponent 0)", () => {
+  const jpyContext: ClosureContext = { ...context, currency: 'JPY', exponent: 0 };
+  const doc = buildClosureDocument(row, jpyContext);
+  expect(doc.closure.tenders[0]).toMatchObject({ expected: '18000', counted: '17800', variance: '-200' });
+  expect((doc.closure as unknown as Record<string, string>).period_sales_total).toBe('25000');
+  expect(doc.closure.breakdowns.payment_methods[0]).toMatchObject({ sales: '13000', refunds: '5000' });
+  expect(doc.closure.breakdowns.tax_rates[0]).toMatchObject({ net: '16667', tax: '3333', gross: '20000' });
+  expect(doc.closure.breakdowns.opening_float).toMatchObject({ expected: '10000', counted: '10000', variance: '0' });
+  expect(doc.closure.breakdowns.movements[0]).toMatchObject({ amount: '500' });
+});
+
 // TallyUI-only: the pinned key-tree snapshot (ADR-032). The WCPOS fixture is a hand-authored
 // preview payload for the shipped closure template, not `buildClosureDocument`'s own output, so
 // its key tree differs from ours in specific, listed ways rather than matching byte for byte.

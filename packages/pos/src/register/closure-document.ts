@@ -30,6 +30,11 @@ export type ClosureContext = {
   i18n: Record<string, string>;
   /** Overrides an X-report's `server_expected` tender map, in minor units. */
   expected?: Record<string, number>;
+  /**
+   * `buildXReportDocument`'s own breakdowns merge only (unlike `buildClosureDocument`'s frozen
+   * `Closure.breakdowns`): its money fields are still expected as decimal strings, not minor
+   * units. Job c's X-report caller, once it exists, converts them before passing this in.
+   */
   breakdowns?: Values;
 };
 

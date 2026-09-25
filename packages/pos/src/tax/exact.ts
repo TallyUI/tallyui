@@ -109,27 +109,37 @@ export interface RateTaxLine {
 }
 
 /**
- * Groups each line's stacked tax rates (ADR-040: each independently taxes the line's full net) by
- * `code`+`ratePpm`, floors each group's exact tax to minor units, then distributes `orderTaxMinor`
- * minus that floor sum by largest remainder (ties to the higher rate) so the rates sum to exactly
- * `orderTaxMinor`. Shared by a receipt's tax summary and a Z report's per-rate breakdown.
+ * Groups each line's stacked tax rates (ADR-040: each independently taxes the line's full
+ * tax-free base) by `code`+`ratePpm`, floors each group's exact tax to minor units, then
+ * distributes `orderTaxMinor` minus that floor sum by largest remainder (ties to the higher rate)
+ * so the rates sum to exactly `orderTaxMinor`. A line's `netMinor` is in its OWN tax mode
+ * (`taxInclusive`): an inclusive line's net already contains its tax, so its tax-free base is
+ * `netMinor − roundMicrosToMinor(Σ its taxMicros)`; an exclusive line's base is `netMinor` as is.
+ * Shared by a receipt's tax summary and a Z report's per-rate breakdown.
  */
 export function taxLinesByRate(
-  lines: readonly { netMinor: number; taxLines: readonly { code?: string; ratePpm: number; taxMicros: string }[] }[],
+  lines: readonly {
+    netMinor: number;
+    taxInclusive: boolean;
+    taxLines: readonly { code?: string; ratePpm: number; taxMicros: string }[];
+  }[],
   orderTaxMinor: number,
   taxLabels?: Record<number, string>,
 ): RateTaxLine[] {
   const byRate = new Map<string, { code?: string; ratePpm: number; micros: bigint; netMinor: number }>();
-  for (const line of lines)
+  for (const line of lines) {
+    const lineTaxMicros = line.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n);
+    const base = line.taxInclusive ? line.netMinor - roundMicrosToMinor(lineTaxMicros) : line.netMinor;
     for (const tax of line.taxLines) {
       const key = JSON.stringify([tax.code ?? '', tax.ratePpm]);
       const existing = byRate.get(key);
       byRate.set(key, {
         code: tax.code, ratePpm: tax.ratePpm,
         micros: (existing?.micros ?? 0n) + BigInt(tax.taxMicros),
-        netMinor: (existing?.netMinor ?? 0) + line.netMinor,
+        netMinor: (existing?.netMinor ?? 0) + base,
       });
     }
+  }
   const groups = Array.from(byRate.values()).map(({ code, ratePpm, micros, netMinor }) => {
     const floor = micros / MICROS_PER_MINOR - (micros < 0n && micros % MICROS_PER_MINOR !== 0n ? 1n : 0n);
     return {

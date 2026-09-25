@@ -340,10 +340,12 @@ export async function writeClosure({
     payment_methods[method] = { sales_minor: (payment_methods[method]?.sales_minor ?? 0) + row.amountMinor, refunds_minor: 0 };
   }
   // Same per-rate split a receipt shows (`taxLinesByRate`), run per order so each order's rates
-  // add up to its own taxMinor, then summed across the session's orders by rate.
+  // add up to its own taxMinor, then summed across the session's orders by rate. A line's own
+  // taxInclusive overrides the order's, matching PosOrderLine's own fallback convention.
   const taxRates = new Map<string, { ratePpm: number; net_minor: number; tax_minor: number }>();
-  for (const order of bound)
-    for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(order.lines, order.taxMinor)) {
+  for (const order of bound) {
+    const lines = order.lines.map((line) => ({ ...line, taxInclusive: line.taxInclusive ?? order.pricesIncludeTax }));
+    for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(lines, order.taxMinor)) {
       const existing = taxRates.get(String(ratePpm));
       taxRates.set(String(ratePpm), {
         ratePpm,
@@ -351,6 +353,7 @@ export async function writeClosure({
         tax_minor: (existing?.tax_minor ?? 0) + amountMinor,
       });
     }
+  }
   const unsynced = bound.filter((order) => order.syncStatus === 'pending');
   const draft: Closure = {
     id: session.id,
