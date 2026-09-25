@@ -5,7 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { startIdReconcile } from '@tallyui/database';
+import { connectorCollection, startIdReconcile } from '@tallyui/database';
 import { createVendureConnector } from '../index';
 import { vendureProductSchema } from '../schemas/products';
 
@@ -109,7 +109,7 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure id reconcile', () =>
         name: 'vendureidreconcilelive', multiInstance: false,
         storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
       });
-      await db.addCollections({ products: { schema: vendureProductSchema } });
+      await db.addCollections({ products: connectorCollection(vendureProductSchema) });
       const connector = createVendureConnector();
       const context = { connectorId: 'vendure', baseUrl, headers };
       replication = replicateRxCollection<any, any>({

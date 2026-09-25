@@ -12,7 +12,9 @@ import type { RxJsonSchema } from 'rxdb';
  * - No native barcode field (custom fields only)
  */
 export const vendureProductSchema: RxJsonSchema<any> = {
-  version: 0,
+  // 1: declares variant trackInventory/outOfStockThreshold/useGlobalOutOfStockThreshold/enabled
+  // (backlog 28). A bump drops and resyncs (ConnectorSchemas, ADR-060 amendment 9).
+  version: 1,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -92,6 +94,9 @@ export const vendureProductSchema: RxJsonSchema<any> = {
             },
           },
           trackInventory: { type: 'string' },
+          outOfStockThreshold: { type: 'number' },
+          useGlobalOutOfStockThreshold: { type: 'boolean' },
+          enabled: { type: 'boolean' },
           featuredAsset: {
             type: ['object', 'null'],
             properties: {

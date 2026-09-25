@@ -1,7 +1,17 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest';
+import { addRxPlugin, createRxDatabase } from 'rxdb';
+import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
+import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
+import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { findVariantByCode } from '@tallyui/core';
+import { connectorCollection } from '@tallyui/database';
 import { vendureProductTraits } from '../traits/product';
 import { createVendureConnector } from '../index';
+import { vendureProductSchema } from '../schemas/products';
+import { vendureStockReconcile } from '../reconcile/stock';
+
+addRxPlugin(RxDBDevModePlugin);
 
 describe('Vendure isSellable / getVariantCount', () => {
   it('allows enabled products', () => {
@@ -290,10 +300,10 @@ describe('product-level getStock', () => {
     ] })).toEqual({ status: 'in_stock', quantity: undefined });
   });
 
-  it('sums quantities when all variants are out of stock', () => {
+  it('clamps a negative saleable quantity to 0 per variant, then sums (backlog 28)', () => {
     expect(vendureProductTraits.getStock({ variants: [
       { stockOnHand: 0 }, { stockOnHand: -2 },
-    ] })).toEqual({ status: 'out_of_stock', quantity: -2 });
+    ] })).toEqual({ status: 'out_of_stock', quantity: 0 });
   });
 
   it.each([
@@ -421,5 +431,94 @@ describe('Vendure stock locations', () => {
     expect(traits.getStock({ variants: [{ stockOnHand: 4 }] })).toEqual({ status: 'in_stock', quantity: 4 });
     expect(traits.getStock({ variants: [{ stockLevel: 'LOW_STOCK' }] })).toEqual({ status: 'in_stock' });
     expect(traits.getStock({ variants: [{ stockLevels: [], stockOnHand: 99 }] })).toEqual({ status: 'out_of_stock', quantity: 0 });
+  });
+});
+
+// backlog 28 (#45 stock review): trackInventory, the out-of-stock threshold and
+// aggregation across every variant, not variant 0.
+describe('trackInventory (design point 3a)', () => {
+  it('FALSE is always in stock, with no quantity, even with 0 on hand', () => {
+    expect(vendureProductTraits.getStock({ variants: [{ trackInventory: 'FALSE', stockOnHand: 0 }] }))
+      .toEqual({ status: 'in_stock' });
+  });
+
+  it('INHERIT with the global setting off is also always in stock', () => {
+    const traits = createVendureConnector({ globalTrackInventory: false }).traits.product;
+    expect(traits.getStock({ variants: [{ trackInventory: 'INHERIT', stockOnHand: 0 }] }))
+      .toEqual({ status: 'in_stock' });
+  });
+
+  it('INHERIT with the global setting on (the default) tracks, and 0 on hand is out of stock', () => {
+    expect(vendureProductTraits.getStock({ variants: [{ trackInventory: 'INHERIT', stockOnHand: 0 }] }))
+      .toEqual({ status: 'out_of_stock', quantity: 0 });
+  });
+});
+
+describe('outOfStockThreshold (design point 3b)', () => {
+  it('subtracts the per-variant threshold from on hand minus allocated', () => {
+    expect(vendureProductTraits.getStock({ variants: [{
+      useGlobalOutOfStockThreshold: false, outOfStockThreshold: 3,
+      stockLevels: [{ stockLocationId: '1', stockOnHand: 10, stockAllocated: 2 }],
+    }] })).toEqual({ status: 'in_stock', quantity: 5 });
+  });
+
+  it('subtracts the global threshold when useGlobalOutOfStockThreshold is not false', () => {
+    const traits = createVendureConnector({ globalOutOfStockThreshold: 3 }).traits.product;
+    expect(traits.getStock({ variants: [{
+      stockLevels: [{ stockLocationId: '1', stockOnHand: 10, stockAllocated: 2 }],
+    }] })).toEqual({ status: 'in_stock', quantity: 5 });
+  });
+
+  it('saleable <= 0 is out of stock', () => {
+    expect(vendureProductTraits.getStock({ variants: [{
+      useGlobalOutOfStockThreshold: false, outOfStockThreshold: 5, stockOnHand: 5,
+    }] })).toEqual({ status: 'out_of_stock', quantity: 0 });
+  });
+
+  it('a negative threshold (-5) with 0 on hand is a backorder', () => {
+    expect(vendureProductTraits.getStock({ variants: [{
+      useGlobalOutOfStockThreshold: false, outOfStockThreshold: -5, stockOnHand: 0,
+    }] })).toEqual({ status: 'backorder', quantity: 5 });
+  });
+});
+
+describe('getStockStatus / getStockQuantity aggregate every variant (design point 4)', () => {
+  it('one out, one in: instock overall and the sum of quantities', () => {
+    const doc = { variants: [{ stockOnHand: 0 }, { stockOnHand: 4 }] };
+    expect(vendureProductTraits.getStockStatus(doc)).toBe('instock');
+    expect(vendureProductTraits.getStockQuantity(doc)).toBe(4);
+  });
+});
+
+describe('the stock overlay applies tracking and the threshold on top (design point 5)', () => {
+  it('a fresh overlaid stockLevels still gets the threshold subtracted', () => {
+    const doc = { variants: [{
+      id: 'v1', useGlobalOutOfStockThreshold: false, outOfStockThreshold: 3,
+      stockLevels: [{ stockLocationId: '1', stockOnHand: 1, stockAllocated: 0 }],
+    }] };
+    const overlay = vendureStockReconcile.overlay(doc, new Map([
+      ['v1', [{ stockLocationId: '1', stockOnHand: 10, stockAllocated: 2 }]],
+    ]));
+    expect(vendureProductTraits.getStock({ ...doc, ...overlay })).toEqual({ status: 'in_stock', quantity: 5 });
+  });
+});
+
+describe('vendureProductSchema v1 (backlog 28)', () => {
+  it('inserts a document with the new stock-tracking and enabled fields', async () => {
+    const db = await createRxDatabase({
+      name: `vendureschemav1${Date.now()}`, multiInstance: false,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
+    });
+    const { products } = await db.addCollections({ products: connectorCollection(vendureProductSchema) });
+    const doc = await products.insert({
+      id: '1', name: 'Widget', variants: [{
+        id: '1', trackInventory: 'FALSE', outOfStockThreshold: -5,
+        useGlobalOutOfStockThreshold: false, enabled: true,
+      }],
+    });
+    expect(doc.toJSON().variants[0]).toMatchObject({
+      trackInventory: 'FALSE', outOfStockThreshold: -5, useGlobalOutOfStockThreshold: false, enabled: true,
+    });
+    await db.close();
   });
 });

@@ -34,6 +34,9 @@ export const PRODUCT_LIST_QUERY = (barcodeField?: string) => `
           currencyCode
           stockLevels { stockLocationId stockOnHand stockAllocated }
           trackInventory
+          outOfStockThreshold
+          useGlobalOutOfStockThreshold
+          enabled
           featuredAsset { id preview }
           options { id name code }
           ${barcodeField ? `customFields { ${barcodeField} }` : ''}

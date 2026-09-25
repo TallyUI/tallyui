@@ -6,6 +6,7 @@ import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/rep
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { combinePullAdapters, type ReplicationAdapter } from '@tallyui/core';
+import { connectorCollection } from '@tallyui/database';
 import { vendureProductSchema } from '../schemas/products';
 import { createVendureConnector } from '../index';
 import { createVendureVariantFeedReplication } from './variant-feed';
@@ -89,7 +90,7 @@ async function start({ afterFirstVariantPage, afterFirstProductPage, variantPage
     name: `vendurevariantfeed${++databaseNumber}`, multiInstance: false,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
   });
-  await db.addCollections({ products: { schema: vendureProductSchema } });
+  await db.addCollections({ products: connectorCollection(vendureProductSchema) });
   const adapter = variantPageSize || updatedAtSkewMs
     ? combinePullAdapters({
       products: createVendureProductReplication(),
