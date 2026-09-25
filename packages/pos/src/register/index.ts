@@ -16,3 +16,9 @@ export {
   startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure,
 } from './session-store';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './session-store';
+export { deriveSettled } from './settled-figures';
+export type { Correction, RecordedFigures } from './settled-figures';
+export { exportCsv } from './export-csv';
+export { labelKeys } from './document-labels';
+export { clampClosureScope, selectClosureRows } from './closure-rows';
+export type { ClosureScope } from './closure-rows';
