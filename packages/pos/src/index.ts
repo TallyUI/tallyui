@@ -60,3 +60,5 @@ export { mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegis
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register';
 export { RegisterSessionRequiredError, RegisterSessionClosedError, openSessionSelector, requireOpenSession, stampSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure } from './register';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';
+export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows } from './register';
+export type { Correction, RecordedFigures, ClosureScope } from './register';

@@ -78,7 +78,7 @@ export async function stampSession(order: PosOrder, sessionId: string, sessions:
  * `yyyy-MM-dd` of a GMT instant in an IANA `timezone`, or in the device's own zone for
  * `'device'`. `Intl` rather than WCPOS's `date-fns`, so no dependency is added.
  */
-function businessDayOf(atGmt: string, timezone: string) {
+export function businessDayOf(atGmt: string, timezone: string) {
   const at = new Date(atGmt.endsWith('Z') ? atGmt : `${atGmt}Z`);
   const format = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone === 'device' ? undefined : timezone, year: 'numeric', month: '2-digit', day: '2-digit',
