@@ -245,7 +245,7 @@ const receipt = buildReceiptData(order, {
 // receipt.header  — store name, address, order number, date, cashier, register
 // receipt.lineItems — name, sku, quantity, unitPrice, lineTotal
 // receipt.discounts — label, amount
-// receipt.totals — subtotal, discountTotal, taxLines[], taxTotal, total
+// receipt.totals — taxInclusive, subtotalMinor (before discounts), discountMinor, taxLines[], taxMinor, totalMinor: the display figures (ADR-063)
 // receipt.payments — method, amount, reference
 // receipt.changeDue — change owed to customer
 // receipt.footer — note, barcode

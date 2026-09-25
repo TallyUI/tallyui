@@ -2150,3 +2150,8 @@ interface OrderCreatePayload {
 - **Follow-up:** the receipt adopts `display` in the next job: Subtotal,
   Includes discounts, Tax and Total come from `order.display`. The rest of
   backlog item 48 (one renderer, one envelope) stays where it is.
+- **Receipt adoption (2026-09-25):** `ReceiptData.totals` now carries
+  `order.display`'s figures, plus a new `taxInclusive` flag; the receipt's
+  invariant is the same as `order.display`'s. Receipt lines and each line's
+  own discount row are unchanged, in the line's own mode — showing them in
+  the display mode for mixed carts is backlog 48.
