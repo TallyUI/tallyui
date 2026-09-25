@@ -344,6 +344,14 @@ describe('OrderBuilder', () => {
     expect(builder.getSnapshot().lineItems).toHaveLength(0);
   });
 
+  it("refuses an unsellable product before looking up its price", () => {
+    const unsellableTraits = { ...traits, isSellable: () => false };
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    expect(() => builder.addProduct(productDoc, unsellableTraits))
+      .toThrow("addProduct: this product isn't sold in this store's channel");
+    expect(builder.getSnapshot().lineItems).toHaveLength(0);
+  });
+
   it('adds same product with different variantIds as separate lines', async () => {
     const builder = createOrderBuilder({ currency: 'USD', taxContext });
     builder.addProduct(productDoc, traits, { variantId: 'small' });

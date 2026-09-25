@@ -208,6 +208,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     addProduct(doc, traits, opts) {
       const productId = traits.getId(doc);
+      if (!traits.isSellable(doc)) throw new Error("addProduct: this product isn't sold in this store's channel");
       const variant = opts?.variantId !== undefined && traits.getVariants
         ? traits.getVariants(doc, { currency }).find((variant) => variant.id === opts.variantId) : undefined;
       if (opts?.variantId !== undefined && traits.getVariants && !variant)

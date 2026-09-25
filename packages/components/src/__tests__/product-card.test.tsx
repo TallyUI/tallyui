@@ -43,4 +43,40 @@ describe('ProductCard', () => {
     fireEvent.click(screen.getByText('Espresso Machine Pro'));
     expect(onPress).toHaveBeenCalled();
   });
+
+  it('shows a muted "Not sold here" state and ignores a press for an unsellable product', () => {
+    const onPress = vi.fn();
+    const connector = createTestConnector('medusa');
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductCard doc={{ ...medusaDoc, status: 'draft' }} onPress={onPress} />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('Not sold here')).toBeDefined();
+    const card = screen.getByText('Not sold here').closest('[aria-disabled]');
+    expect(card).not.toBeNull();
+    fireEvent.click(card!);
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('shows a custom notSoldLabel for an unsellable product', () => {
+    const connector = createTestConnector('medusa');
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductCard doc={{ ...medusaDoc, status: 'draft' }} notSoldLabel="Unavailable" />
+      </ConnectorProvider>
+    );
+    expect(screen.getByText('Unavailable')).toBeDefined();
+  });
+
+  it('renders a sellable card unchanged', () => {
+    const connector = createTestConnector('medusa');
+    render(
+      <ConnectorProvider connector={connector}>
+        <ProductCard doc={{ ...medusaDoc, status: 'published' }} />
+      </ConnectorProvider>
+    );
+    expect(screen.queryByText('Not sold here')).toBeNull();
+    expect(screen.getByText(medusaDoc.title)).toBeDefined();
+  });
 });

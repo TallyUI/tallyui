@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   View,
   Text,
-  FlatList,
   Pressable,
   ActivityIndicator,
 } from 'react-native';
@@ -10,10 +9,10 @@ import { Link, Stack } from 'expo-router';
 
 import { cn } from '@tallyui/theme';
 import { ConnectorProvider } from '@tallyui/core';
-import { ProductTitle, ProductPrice, ProductImage } from '@tallyui/components';
+import { ProductGrid, ProductCard, Switch } from '@tallyui/components';
 import { woocommerceConnector } from '@tallyui/connector-woocommerce';
 import { medusaConnector } from '@tallyui/connector-medusa';
-import { getProductStock, stockOverlay$, stockOverlayAsOf$ } from '@tallyui/pos';
+import { stockOverlay$, stockOverlayAsOf$ } from '@tallyui/pos';
 import type { TallyConnector } from '@tallyui/core';
 
 import { useDemoDatabase } from '../lib/use-demo-database';
@@ -27,9 +26,9 @@ const connectors = [woocommerceConnector, medusaConnector];
  */
 function ProductList({ connector }: { connector: TallyConnector }) {
   const { db, products, loading, error } = useDemoDatabase(connector);
-  const traits = connector.traits.product;
   const [overlay, setOverlay] = useState<Map<string, unknown>>();
   const [asOf, setAsOf] = useState<string>();
+  const [showUnsellable, setShowUnsellable] = useState(false);
 
   // The demo starts no reconcile runner, so the overlay stays empty and
   // stock falls back to the product documents.
@@ -59,25 +58,16 @@ function ProductList({ connector }: { connector: TallyConnector }) {
 
   return (
     <ConnectorProvider connector={connector} stockOverlay={overlay} stockOverlayAsOf={asOf}>
-      <FlatList
-        data={products}
-        keyExtractor={(item) => traits.getId(item)}
-        contentContainerClassName="gap-2 p-4"
-        renderItem={({ item }) => (
-          <View className="flex-row gap-3 rounded-lg bg-card p-3 shadow-sm">
-            <ProductImage doc={item} size={60} />
-            <View className="flex-1 justify-center gap-0.5">
-              <ProductTitle doc={item} className="text-base font-semibold" numberOfLines={1} />
-              <ProductPrice doc={item} className="text-[15px] font-medium" />
-              <Text className="mt-0.5 text-xs text-muted-foreground">
-                SKU: {traits.getSku(item) ?? '—'} · {getProductStock(item, traits, connector.reconcile?.stock, overlay).status}
-              </Text>
-            </View>
-          </View>
-        )}
-        ListEmptyComponent={
-          <Text className="mt-10 text-center text-sm text-muted-foreground">No products found.</Text>
-        }
+      <View className="flex-row items-center justify-between px-4 pb-2">
+        <Text className="text-[13px] text-muted-foreground">Show products this channel doesn't sell</Text>
+        <Switch checked={showUnsellable} onCheckedChange={setShowUnsellable} />
+      </View>
+      <ProductGrid
+        items={products}
+        showUnsellable={showUnsellable}
+        className="px-2"
+        renderItem={(item) => <ProductCard doc={item} />}
+        emptyState={<Text className="mt-10 text-center text-sm text-muted-foreground">No products found.</Text>}
       />
     </ConnectorProvider>
   );
