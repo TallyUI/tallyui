@@ -1238,6 +1238,28 @@ interface OrderCreatePayload {
     Vendure charges.
   - vendure-dev flags no default, so it gets Standard, 25%.
 
+- **Sale prices come from Vendure's order, not the catalogue
+  (2026-09-25, Front desk).** Core Vendure has no catalogue sale price:
+  a promotion applies to an order, through its conditions and actions,
+  at checkout.
+  - **The catalogue shows Vendure's list price:** `priceWithTax` or
+    `price`, per the channel's `pricesIncludeTax` (TV4a).
+  - **Promotions are applied where Vendure applies them, in the order.**
+    The POS prices a sale through Vendure's active-order calculation at
+    checkout. **It never reimplements promotions client-side**, because
+    their conditions (customer groups, minimum amounts, coupon codes,
+    date windows) would drift from the store's.
+  - **Catalogue "sale" badges are out of scope for Vendure** until a
+    plugin exposes promotion previews. So `getPrices` returns only a
+    `base` price, and `getSalePrice` and `isOnSale` stay empty.
+  - **Unlike Medusa**, whose store API resolves sale price lists into a
+    per-variant `calculated_price` (ADR-060 amendment 8, D2b), Vendure
+    has no catalogue-level equivalent. That's why the two connectors
+    differ here.
+  - **Multi-channel choice** (which channel's token a till uses) waits
+    for the Vendure POS app. Today the channel is the `channel_token`
+    credential.
+
 ## ADR-050 The Vendure change feed is a journal written in the transaction
 
 - **Date:** 2026-09-24 · **Status:** Accepted as the post-MVP design for
