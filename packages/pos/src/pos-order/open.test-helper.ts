@@ -98,6 +98,40 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
     expect(await stored()).toMatchObject({ v0: [], v1: [good, fixed] });
   });
 
+  it('rapid DM4 retries on one database raise no unhandled rejection, and the fixed open migrates every order once', async () => {
+    const unhandled: unknown[] = [];
+    const spy = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', spy);
+    try {
+      const { open, versionZeroApp, stored } = store(makeStorage());
+      const [good, bad] = [order(1), order(2, 'queued')];
+      await versionZeroApp((orders) => orders.bulkInsert([good, bad]));
+      const db = await open();
+      for (let attempt = 0; attempt < 4; attempt++) {
+        await expect(addPosOrderCollection(db)).rejects.toMatchObject({ code: 'DM4' });
+        expect(await stored()).toMatchObject({ v0: [good, bad], v1: [good] });
+      }
+      await db.close();
+
+      const fixed = { ...bad, syncStatus: 'pending' as const };
+      await versionZeroApp(async (orders) => (await orders.findOne(bad.id).exec()).incrementalPatch({ syncStatus: 'pending' }));
+      // The failed runs' replications do not wake on that write: no checkpoint into a removed store, and no copy.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(unhandled).toEqual([]);
+      expect(await stored()).toMatchObject({ v0: [good, fixed], v1: [good] });
+      const next = await open();
+      const pos = await addPosOrderCollection(next);
+      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([good, fixed]);
+      await next.close();
+      expect(await stored()).toMatchObject({ v0: [], v1: [good, fixed] });
+      // Long enough for a stray replication write to reject.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', spy);
+    }
+  });
+
   it.runIf(sqlite)('repeated opens closed mid-open or straight after they settle lose and duplicate nothing, and the fixed open migrates all', async () => {
     const { open, versionZeroApp, stored } = store(makeStorage(), slow);
     // Three migration batches (RxDB's 200); the invalid order is in the last.
@@ -140,6 +174,34 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
     expect(await status(reupgraded)).toMatchObject({ status: 'DONE', count: { total: 2, handled: 2 } });
     await reupgraded.close();
     expect(await stored()).toMatchObject({ v0: [], v1: [first, ...rolledBack] });
+  });
+
+  it('after a rollback sent or rejected orders a failed run had copied, the re-upgrade keeps the version-0 states, and a pending one stays pending', async () => {
+    // Slow writes let a test timeout fire should RxDB's migration loop on these conflicts.
+    const { open, versionZeroApp, stored } = store(makeStorage(), slow);
+    const [sent, refused, unsent, bad] = [order(1), order(2), order(3), order(4, 'queued')];
+    await versionZeroApp((orders) => orders.bulkInsert([sent, refused, unsent, bad]));
+    const failed = await open();
+    await expect(addPosOrderCollection(failed)).rejects.toMatchObject({ code: 'DM4' });
+    await failed.close();
+    expect(await stored()).toMatchObject({ v1: [sent, refused, unsent] });
+
+    // The rolled-back version-0 app sends one, has one rejected, and fixes the invalid one.
+    const at = '2026-09-25T01:00:00.000Z';
+    const applied = { ...sent, syncStatus: 'applied' as const, serverRefs: { orderId: 'server-1', totalMinor: 100 }, updatedAt: at };
+    const rejected = { ...refused, syncStatus: 'rejected' as const, error: { code: 'validation', message: 'no' }, updatedAt: at };
+    const fixed = { ...bad, syncStatus: 'pending' as const };
+    await versionZeroApp(async (orders) => {
+      for (const next of [applied, rejected, fixed]) await (await orders.findOne(next.id).exec()).incrementalPatch(next);
+    });
+    expect(await stored()).toMatchObject({ v0: [applied, rejected, unsent, fixed], v1: [sent, refused, unsent] });
+
+    const reupgraded = await open();
+    const pos = await addPosOrderCollection(reupgraded);
+    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([applied, rejected, unsent, fixed]);
+    expect(await pos.count({ selector: { syncStatus: 'pending' } }).exec()).toBe(2);
+    await reupgraded.close();
+    expect(await stored()).toMatchObject({ v0: [], v1: [applied, rejected, unsent, fixed] });
   });
 
   it('a genuinely invalid order rejects with DM4 after the migration has stopped, and every order is kept', async () => {
