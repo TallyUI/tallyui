@@ -1440,6 +1440,18 @@ interface OrderCreatePayload {
     in its own job, when convenient.
   - If the move slips, the fallback is copying the files into
     `vendurepos/app` and recording the duplication.
+- **Progress:**
+  - TV5 done: `useSale`, `lib/cart` and `lib/catalogue` lifted from
+    medusapos/app `a1b981d` into `packages/pos/src/sale/`. Adaptations:
+    `useSale` takes an optional `session?: { id, sessions }`; when set,
+    `complete()` stamps the finalized order with `stampSession` before
+    `onSaleCompleted`, and a closed or missing session surfaces as `error`
+    and keeps the tender (#126); without `session`, behaviour is
+    unchanged. `DISCOUNTS_UNSUPPORTED` keeps finalize's literal message,
+    with a test pinning the two together, since `finalize.ts` doesn't
+    export it as a constant. Follow-up: medusapos/app adopts
+    `@tallyui/pos`'s `useSale`/`lib/cart`/`lib/catalogue` and deletes its
+    own copies, in its own job.
 - **Consequences:**
   - The second app costs about half the first.
   - A third backend (WooCommerce, or Shopify if it is unparked) gets the
