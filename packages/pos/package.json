@@ -43,6 +43,7 @@
     "rxdb": "16.21.1",
     "rxjs": "7.8.2",
     "@tallyui/connector-medusa": "workspace:*",
-    "@tallyui/connector-woocommerce": "workspace:*"
+    "@tallyui/connector-woocommerce": "workspace:*",
+    "@tallyui/database": "workspace:*"
   }
 }
