@@ -166,7 +166,7 @@ it('refuses a multiInstance database before any reset, and adds no collection', 
   }
 });
 
-it('keeps at most one db.onClose handler across DM4 retries, and a fresh open still gets its own one', async () => {
+it('keeps at most one db.onClose handler across DM4 retries, and the fixed reopen of the same database gets its own one', async () => {
   const memory = getRxStorageMemory();
   const bad = { ...pendingOrder(), syncStatus: 'queued' } as unknown as PosOrder;
   const name = `posopen${uuidv7().replaceAll('-', '')}`;
@@ -184,20 +184,17 @@ it('keeps at most one db.onClose handler across DM4 retries, and a fresh open st
   for (let attempt = 0; attempt < 3; attempt++) {
     await expect(addPosOrderCollection(db)).rejects.toMatchObject({ code: 'DM4' });
   }
-  // Still one, not three: this is the fix. A separate, unrelated database (below) checks that a
-  // clean, successful open still registers its own handler, rather than reusing this one's
-  // storage, which would also exercise RxDB's own migration-meta cleanup a second time.
+  // Still one, not three: this is the fix.
   expect(ours(db)).toBe(1);
   await db.close();
 
-  const good = pendingOrder();
-  const cleanName = `posopen${uuidv7().replaceAll('-', '')}`;
-  const seed = await open(cleanName, memory, { schema: versionZero() });
-  await (await seed.added).pos_orders.insert(good);
-  await seed.db.close();
+  // The same database, fixed: the earlier runs' replications no longer wake on this write.
+  const fixing = await open(name, memory, { schema: versionZero() });
+  await (await (await fixing.added).pos_orders.findOne(bad.id).exec())!.incrementalPatch({ syncStatus: 'pending' });
+  await fixing.db.close();
 
-  const reopened = await createRxDatabase({ name: cleanName, storage: wrappedValidateAjvStorage({ storage: memory }), multiInstance: false });
-  await addPosOrderCollection(reopened);
+  const reopened = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage: memory }), multiInstance: false });
+  expect(await (await addPosOrderCollection(reopened)).count().exec()).toBe(1);
   expect(ours(reopened)).toBe(1);
   await reopened.close();
 });

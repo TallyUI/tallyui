@@ -1,7 +1,9 @@
 import {
-  getRxReplicationMetaInstanceSchema, getSingleDocument, hasEncryption, newRxError, overwritable, type RxCollection, type RxDatabase,
+  deepEqual, defaultConflictHandler, getChangedDocumentsSince, getRxReplicationMetaInstanceSchema, getSingleDocument, hasEncryption, newRxError,
+  overwritable, rxStorageInstanceToReplicationHandler, type RxCollection, type RxDatabase, type RxStorageInstance,
 } from 'rxdb';
-import { getOldCollectionMeta, type RxMigrationStatus } from 'rxdb/plugins/migration-schema';
+import { getOldCollectionMeta, migrateDocumentData, type RxMigrationStatus } from 'rxdb/plugins/migration-schema';
+import { Subject, takeUntil } from 'rxjs';
 import { posOrderCollection } from './schema';
 import type { PosOrder } from './types';
 
@@ -23,6 +25,23 @@ function waitWithTimeout(promise: Promise<unknown>, ms: number): Promise<void> {
     const timer = setTimeout(resolve, ms);
     promise.finally(() => { clearTimeout(timer); resolve(); });
   });
+}
+
+/**
+ * Writes each version-0 order over its differing version-1 copy, through the same write RxDB's
+ * migration makes, and leaves orders without a copy (and any deleted one) to the migration.
+ */
+async function writeOverStaleCopies(collection: RxCollection, from: RxStorageInstance<any, any, any>, to: RxStorageInstance<any, any, any>) {
+  const handler = rxStorageInstanceToReplicationHandler(to, defaultConflictHandler, collection.database.token, true);
+  for (let page = await getChangedDocumentsSince(from, 200); page.documents.length > 0;
+    page = await getChangedDocumentsSince(from, 200, page.checkpoint)) {
+    const copies = new Map((await to.findDocumentsById(page.documents.map((doc) => doc.id), false)).map((copy) => [copy.id, copy]));
+    const rows = await Promise.all(page.documents.filter((doc) => copies.has(doc.id) && !doc._deleted).map(async (doc) =>
+      ({ assumedMasterState: copies.get(doc.id), newDocumentState: await migrateDocumentData(collection, from.schema.version, doc) })));
+    const stale = rows.filter((row) => row.newDocumentState && !deepEqual(row.assumedMasterState, row.newDocumentState));
+    // A write error (a version-0 state version 1 refuses) stops the run with DM4, as RxDB's own write does.
+    if (stale.length > 0) await handler.masterWrite(stale);
+  }
 }
 
 /**
@@ -64,9 +83,25 @@ export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollectio
     await (await db.storage.createStorageInstance({ databaseName: db.name, collectionName: `rx-migration-state-meta-pos_orders-${old.version}`,
       databaseInstanceToken: db.token, multiInstance: db.multiInstance, options: {}, password: db.password,
       schema: getRxReplicationMetaInstanceSchema(old, hasEncryption(old)), devMode: overwritable.isDevMode() })).remove();
+    // RxDB bug 2: `cancel()` stops `this.replicationState`, which `migrateStorage` never sets, so each
+    // run's replication outlives the run. It wakes only on its version-0 change stream (one shared
+    // across instances, as on memory storage), then writes its checkpoint into the store a later run
+    // removed (an unhandled `removed already`) and its conflicts into version 0. So that stream ends
+    // once the run has settled. And RxDB never overwrites a version-1 copy (it drops the assumed
+    // state): a stale copy wins its conflict, or 16.21 loops on it. Yet a copy is only ever an earlier
+    // version-0 state (the collection opens only once version 0 is gone), so the newer state goes first.
+    const settled = new Subject<void>();
+    const migrateStorage = state.migrateStorage.bind(state);
+    state.migrateStorage = async (from, to, batchSize) => {
+      if (from.collectionName === collection.name) await writeOverStaleCopies(collection, from, to);
+      return migrateStorage(new Proxy(from, { get: (target, key) => {
+        const value = key === 'changeStream' ? () => target.changeStream().pipe(takeUntil(settled)) : Reflect.get(target, key);
+        return typeof value === 'function' ? value.bind(target) : value;
+      } }), to, batchSize);
+    };
     // Settles once the migration has: DONE, or ERROR with its old storage closed. RxDB's close
     // does not stop a migration, so a close waits for it rather than closing storage under it.
-    const migration = state.startMigration();
+    const migration = state.startMigration().finally(() => settled.next());
     const isFirstMigrationOnDb = !latestMigrations.has(db);
     latestMigrations.set(db, migration.catch(() => undefined));
     if (isFirstMigrationOnDb) db.onClose.push(() => waitWithTimeout(latestMigrations.get(db)!, POS_ORDER_MIGRATION_CLOSE_WAIT_MS));
