@@ -13,11 +13,6 @@ export interface FinalizeOptions {
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
   if (!order.lineItems.length) throw new Error('finalize: no lines');
   if (order.discountMinor > 0) throw new Error('finalize: discounts not supported yet');
-  // Until ADR-038 carries a per-line tax mode, the server would charge this
-  // line in the order's mode (D2c; removed by the ADR-038 amendment job).
-  if (order.lineItems.some((line) => line.priceTaxModeConverted)) {
-    throw new Error("finalize: a line's price has a different tax mode from the store; refresh the store settings and try again");
-  }
   for (const payment of order.payments) {
     if (payment.method !== 'cash' && payment.method !== 'external') {
       throw new Error(`finalize: unsupported payment method ${payment.method}`);
