@@ -2341,6 +2341,7 @@ interface OrderCreatePayload {
      - It uses an identity migration strategy through `posOrderCollection()` and `addPosOrderCollection` (#131, #133, #135).
      - It gets the same migration tests as version 0 → 1: a pending order survives byte for byte, nothing is dropped, and the SQLite and memory storages are both covered.
      - **Amended (2026-09-25):** the version-2 bump landed in registers c1a, with both fields and ADR-032's `lateSessionId`, and its tests run from version 0 and from version 1. So the ADR-065 job does only the version-3 envelope and `finalizeOrder`; it writes the fields and bumps no schema.
+     - **Stored names (the Front desk, 2026-09-25):** `taxByRate` is stored as `taxLinesByRate` names it, `{ ratePpm, code?, netMinor, amountMinor, grossMinor }`, where `amountMinor` is the tax. The version-3 wire field maps `amountMinor` to the tax.
   5. **The medusapos plugin** advertises `order.create` `[1, 2, 3]` on `/tally/v1/info` and records the two fields in the order's metadata. That half is specified alongside, so both land together.
 - **Consequences:**
   - Every sale made against a version-3 server carries its fiscal figures.
