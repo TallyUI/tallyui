@@ -48,6 +48,7 @@ const baseOrder: Order = {
   discountMinor: 100,
   taxMinor: 105,
   totalMinor: 1205,
+  display: { taxInclusive: false, subtotalMinor: 1200, discountMinor: 100, taxMinor: 105, totalMinor: 1205 },
   balanceDueMinor: 0,
   changeDueMinor: 295,
   currency: 'USD',

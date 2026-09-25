@@ -10,15 +10,29 @@ export interface Order {
   note: string;
   currency: string;
   pricesIncludeTax: boolean;
-  subtotalMinor: number;      // excl. tax, after line and order discounts (both pre-tax, ADR-062)
-  discountMinor: number;      // line + order discounts, each line's in its own mode; Σ lineItems[].discountMinor
-  taxMinor: number;           // rounded once per order
-  totalMinor: number;         // what the customer pays
+  // Settlement figures, sent in `order.create` (ADR-038, ADR-062). Show `display` instead (ADR-063).
+  subtotalMinor: number;      // settlement: excl. tax, after line and order discounts (both pre-tax, ADR-062)
+  discountMinor: number;      // settlement: Σ lineItems[].discountMinor, each in its line's own mode, so it mixes modes; not for display
+  taxMinor: number;           // settlement: rounded once per order
+  totalMinor: number;         // settlement: what the customer pays
+  display: DisplayTotals;
   paidMinor: number;
   balanceDueMinor: number;    // max(0, total − paid)
   changeDueMinor: number;     // max(0, paid − total)
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Figures for showing the cart or a receipt in the store's display mode (ADR-063); never sent to the server.
+ * A parked order's saved draft may carry them; they are recomputed from the lines on resume, so never authoritative.
+ */
+export interface DisplayTotals {
+  taxInclusive: boolean;      // = order.pricesIncludeTax
+  subtotalMinor: number;      // before discounts: excl. tax when exclusive, incl. tax when inclusive
+  discountMinor: number;      // every discount, in the display mode; >= 0
+  taxMinor: number;           // = order.taxMinor (added when exclusive, included when inclusive)
+  totalMinor: number;         // = order.totalMinor
 }
 
 export interface LineItem {
