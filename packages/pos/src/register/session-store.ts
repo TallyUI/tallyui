@@ -17,7 +17,7 @@ import { readFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact } from './facts';
 import { countVariance } from './register-count.helpers';
-import { advancePerpetual, mintClosureNumber, mintUuid as uuid, readRegister, type RegisterHost } from './register-document';
+import { advancePerpetual, markClosuresSwept, mintClosureNumber, mintUuid as uuid, readRegister, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
 
 export type RegisterSessionCollection = RxCollection<RegisterSession>;
@@ -72,6 +72,12 @@ async function readSession(sessions: RegisterSessionCollection, id: string) {
   return stored;
 }
 
+/** The closure as stored, by primary key, not a cached `findOne(id)` (as `readSession`); `undefined` without `closures`. */
+async function readClosure(closures: ClosureCollection | undefined, id: string) {
+  const [stored] = (await closures?.storageInstance.findDocumentsById([id], false)) ?? [];
+  return stored;
+}
+
 async function requireLiveSession(sessions: RegisterSessionCollection, id: string) {
   const session = await readSession(sessions, id);
   if (!session) throw new RegisterSessionRequiredError();
@@ -114,14 +120,33 @@ export async function stampSession(order: PosOrder, sessionId: string, sessions:
  * order whose session has no closure yet, a late order and another register's orders. The decision
  * is made again on the stored order, so a repeat or concurrent sweep patches it once. Returns the
  * ids it patched.
+ *
+ * Bounded by `swept_closure_ids` on the register document (the #158 follow-ups): a closure already
+ * in that set is never re-checked, so a repeat sweep with no new closure makes no `pos_orders`
+ * query. The closure lists the "never touched" rules read still come from `readFresh`. Ids join
+ * the set only after their orders are patched, so a crash in between just leaves that closure
+ * unswept for the next run; the patch above is already idempotent.
+ *
+ * The bound alone leaves a hole: `writeClosure` can freeze a closure before an insert racing the
+ * close lands, so a sweep run right after finds nothing there yet; marking that closure swept at
+ * once would then hide the insert forever. So an id joins the set only once its closure is past
+ * `SWEEP_GRACE_MS`; until then every sweep re-checks it (cheap: few closures are that recent).
+ * `full` (the app-start sweep) ignores the set outright, so even a save that hangs past the grace
+ * and lands after its closure is marked swept is still caught, on the next start.
  */
-export async function sweepOrphanStamps({ sessions, closures, orders, registerId }: {
+export const SWEEP_GRACE_MS = 10 * 60_000;
+
+export async function sweepOrphanStamps({ sessions, closures, orders, registerId, register, storeKey, full = false }: {
   sessions: RegisterSessionCollection; closures: ClosureCollection; orders: RxCollection<PosOrder>; registerId: string;
+  register: RegisterHost; storeKey: string;
+  /** Ignores `swept_closure_ids` and checks every closure of this register: the app-start sweep. */
+  full?: boolean;
 }) {
   const closed = new Set((await readFresh(sessions, { selector: { register_id: registerId, status: 'closed' } })).map(({ id }) => id));
-  const frozen = new Map((await readFresh(closures, { selector: { register_id: registerId } }))
-    .filter((closure) => closed.has(closure.session_id))
-    .map((closure) => [closure.session_id, new Set(closure.order_ids)]));
+  const swept = new Set((await readRegister(register))?.stores[storeKey]?.registers?.[registerId]?.swept_closure_ids);
+  const unswept = (await readFresh(closures, { selector: { register_id: registerId } }))
+    .filter((closure) => closed.has(closure.session_id) && (full || !swept.has(closure.id)));
+  const frozen = new Map(unswept.map((closure) => [closure.session_id, new Set(closure.order_ids)]));
   const patched: string[] = [];
   if (!frozen.size) return patched;
   for (const { id, sessionId, cashierRef } of await readFresh(orders, { selector: { sessionId: { $in: [...frozen.keys()] } } })) {
@@ -142,6 +167,12 @@ export async function sweepOrphanStamps({ sessions, closures, orders, registerId
       // The logger calls the app's sinks unguarded; the order is already patched.
     }
   }
+  // Only a closure past the grace joins the set, and only once every one of this batch's orders is
+  // patched: a crash before this write just leaves it unswept, and the next sweep re-checks it,
+  // patching nothing twice.
+  const now = Date.now();
+  const markSwept = unswept.filter((closure) => now - new Date(closure.closed_at).getTime() >= SWEEP_GRACE_MS).map(({ id }) => id);
+  if (markSwept.length) await markClosuresSwept(register, storeKey, registerId, markSwept);
   return patched;
 }
 
@@ -329,7 +360,7 @@ export async function voidMovement(
   try {
     const after = await readSession(sessions, row.session_id);
     if (after?.status !== 'closed') return reversal;
-    counted = (await closures?.findOne(row.session_id).exec())?.movement_ids;
+    counted = (await readClosure(closures, row.session_id))?.movement_ids;
   } catch {
     return reversal;
   }
