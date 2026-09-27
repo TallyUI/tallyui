@@ -9,6 +9,7 @@
     "build": "turbo build",
     "test": "vitest run",
     "check:deps": "node scripts/check-workspace-deps.mjs",
+    "check:core-dist": "node scripts/check-core-dist.mjs",
     "smoke:pack": "node scripts/pack-smoke.mjs",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
