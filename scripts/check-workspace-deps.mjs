@@ -8,7 +8,7 @@
 // import's closing brace). That excludes a JSDoc usage example
 // (`* import … from '@tallyui/x';`) and an error string quoting one.
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative, basename, sep } from 'node:path';
+import { join, relative, resolve, dirname, basename, sep } from 'node:path';
 const ROOT = process.cwd();
 const GROUPS = ['packages', 'connectors', 'apps'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.turbo', '.expo', '.next', 'out']);
@@ -104,6 +104,24 @@ function forbiddenImportViolations(pkgName, files) {
   }
   return n;
 }
+// A relative import/export resolving into rxdb/ pulls it in just as surely (the #157 review).
+const RELATIVE_SPEC_RE = /^[ \t]*(import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s*)?['"](\.[^'"]*)['"]/gm;
+function coreRxdbReexportViolations(pkgName, files) {
+  if (pkgName !== '@tallyui/core') return 0;
+  const rxdbAbs = join(ROOT, 'packages/core/src/rxdb'); let n = 0;
+  for (const file of files) {
+    const relFile = relative(ROOT, file).split(sep).join('/');
+    if (isTestFile(relFile) || !relFile.startsWith('packages/core/src/') || relFile.startsWith('packages/core/src/rxdb/')) continue;
+    const content = readFileSync(file, 'utf8');
+    for (const m of content.matchAll(RELATIVE_SPEC_RE)) {
+      if (m[2]) continue;
+      const r = resolve(dirname(file), m[3]);
+      if (r !== rxdbAbs && !r.startsWith(rxdbAbs + sep)) continue;
+      console.error(`${relFile}:${lineOf(content, m.index)} pulls in the rxdb subpath at runtime (core's main entry stays RxDB-free; import @tallyui/core/rxdb instead)`); n++;
+    }
+  }
+  return n;
+}
 function walk(dir, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
@@ -156,6 +174,7 @@ for (const group of GROUPS) {
     }
     if (pkg.name === '@tallyui/components') violations += layeringViolations(files);
     violations += forbiddenImportViolations(pkg.name, files);
+    violations += coreRxdbReexportViolations(pkg.name, files);
   }
 }
 if (violations === 0) {

@@ -29,6 +29,9 @@ jobs:
       - name: Build packages
         run: pnpm build
 
+      - name: Check core's dist stays RxDB-free
+        run: pnpm check:core-dist
+
       - name: Typecheck
         run: pnpm typecheck
 
