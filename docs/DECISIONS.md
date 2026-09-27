@@ -364,6 +364,7 @@ bodies and design docs, and the source is given for each.
   - Live displays a cashier would act on (`useRegisterSession`, `useOrderOutbox`'s recent list)
     use `watchFresh` (`@tallyui/pos`) instead of a cached `find().$`, for the same reason.
     It re-reads once per bulk write (`collection.eventBulks$`; SQLite: per 199 documents), not per document.
+  - The helpers now live in `@tallyui/core/rxdb`, a side-effect-free subpath with `rxdb`/`rxjs` as optional peers (core's main entry stays RxDB-free; `@tallyui/pos` re-exports them and never imports `@tallyui/database` at runtime), and the id and fingerprint reconciles read their local products with `readFresh`.
 
 ## ADR-025 No RxDB premium or SSPL code in TallyUI library packages
 

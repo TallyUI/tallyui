@@ -2,6 +2,7 @@ import type { RxCollection } from 'rxdb';
 import { BehaviorSubject, type Observable } from 'rxjs';
 
 import type { FingerprintReconcileAdapter, SyncContext } from '@tallyui/core';
+import { readFresh } from '@tallyui/core/rxdb';
 
 import { createPassQueue } from './pass-queue';
 
@@ -103,12 +104,13 @@ export function startFingerprintReconcile<Doc>({
     const entries: Array<{ id: string; local: Doc; refreshOnly: true }> = [];
     let compared = 0;
     let unreported = 0;
-    for (const doc of await collection.find().exec()) {
-      const id = doc.primary as string;
+    // readFresh, not a cached `find()`: a pull write during that query's storage read would
+    // leave it stale for every later pass (RxDB 16.21.1 bug 4, `readFresh`'s doc comment).
+    for (const local of await readFresh(collection, {})) {
+      const id = (local as Record<string, unknown>)[collection.schema.primaryPath] as string;
       const remoteFingerprint = remote.get(id);
       if (remoteFingerprint === undefined) { if (pages > 0) unreported++; continue; }
       compared++;
-      const local = doc.toJSON() as Doc;
       // refreshOnly: a missing re-fetch is skipped, never tombstoned -- deletions are the id reconcile's job (ADR-060).
       if (adapter.fingerprint(local) !== remoteFingerprint) entries.push({ id, local, refreshOnly: true });
     }

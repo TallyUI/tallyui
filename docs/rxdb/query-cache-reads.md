@@ -1,6 +1,6 @@
 # RxDB's query cache: which reads may decide money or sync
 
-**The rule:** in TallyUI and every connector built on it, a read that decides **money** (a sale, a payment, a closure, a stock decision) or **sync** (what is sent, pulled, tombstoned or re-fetched) never goes through a cached `RxQuery`. It uses `readFresh`/`countFresh`, a primary-key read of storage (`collection.storageInstance.findDocumentsById`), or a live `watchFresh`. A cached `find()`/`findOne()`/`count()` is fine only for display, or where the safety argument below applies and is written down next to the read.
+**The rule:** in TallyUI and every connector built on it, a read that decides **money** (a sale, a payment, a closure, a stock decision) or **sync** (what is sent, pulled, tombstoned or re-fetched) never goes through a cached `RxQuery`. It uses `readFresh`/`countFresh` (from `@tallyui/core/rxdb`, re-exported by `@tallyui/pos`), a primary-key read of storage (`collection.storageInstance.findDocumentsById`), or a live `watchFresh`. A cached `find()`/`findOne()`/`count()` is fine only for display, or where the safety argument below applies and is written down next to the read.
 
 ## Why
 
@@ -17,6 +17,8 @@ In TallyUI this left a raced sale unsent in the order outbox until the app resta
 - `readFresh(collection, query)` sends RxDB's own prepared query (`collection.find(query).getPreparedQuery()`, which carries the `_deleted: false` filter, the sort and the limit) straight to `collection.storageInstance.query`, and returns plain document data.
 - `countFresh` does the same through `storageInstance.count`.
 - `watchFresh(collection, query)` re-reads with `readFresh` on subscribe and on every `collection.eventBulks$` event, once per storage write batch (#153).
+
+**Where they live:** `@tallyui/core/rxdb`, a side-effect-free subpath of core, re-exported by `@tallyui/pos`. `rxdb` and `rxjs` are optional peers of core, needed only by this subpath; core's main entry stays RxDB-free, and `check:deps` fails on a runtime `rxdb` or `rxjs` import there.
 
 The helpers go through the same wrapped storage instance an `RxQuery` uses. They haven't been tested with key compression or field encryption, and no TallyUI collection uses either.
 
@@ -40,8 +42,8 @@ Each point was traced in RxDB 16.21.1's source or shown by a probe during the 20
 |---|---|---|---|
 | MONEY (latent) | `session-store.ts:64` (`requireLiveSession`, used by `stampSession`, `recordMovement` and `voidMovement`) | A sale stamped onto a closed session (on no Z, with no late-sale fact), or a movement recorded on a closed session and missing from its frozen closure. It's safe today only because the one status writer reads through the same `findOne` first; a writer that skips that read (such as a server-side close) would expose it. | **Fixed:** `readSession`, a primary-key storage read |
 | MONEY (latent) | `session-store.ts:218` (`recordMovement`'s re-read) | As above | **Fixed:** the same |
-| SYNC | `id-reconcile.ts:78` | A product inserted during the read is never checked, so a backend delete is never tombstoned. A product deleted during the read is re-enqueued and counted as a tombstone on every pass, which can trip the mass-delete brake. | `readFresh` (the helper moves to `@tallyui/database`) |
-| SYNC | `fingerprint-reconcile.ts:106` | A product inserted during the read is never re-checked, so a missed price is never corrected | The same |
+| SYNC | `id-reconcile.ts:78` | A product inserted during the read is never checked, so a backend delete is never tombstoned. A product deleted during the read is re-enqueued and counted as a tombstone on every pass, which can trip the mass-delete brake. | **Fixed:** `readFresh(collection, {})`, from `@tallyui/core/rxdb` |
+| SYNC | `fingerprint-reconcile.ts:106` | A product inserted during the read is never re-checked, so a missed price is never corrected | **Fixed:** the same |
 
 ### DISPLAY: a stale result shows a cashier something out of date
 
