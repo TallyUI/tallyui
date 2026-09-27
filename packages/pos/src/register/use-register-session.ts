@@ -161,15 +161,28 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const data = source && observed?.source === source ? observed.snapshot : null;
 
   // The orphan-stamp sweep (`store.sweepOrphanStamps`): one run at a time, and a request during a
-  // run schedules one more, which reads afresh. A failure is logged, never thrown into the UI.
-  const sweeper = useRef<{ running?: Promise<void>; queued?: Promise<void>; target?: Parameters<typeof store.sweepOrphanStamps>[0] }>({});
-  sweeper.current.target = enabled && sessions && closures && orders && registerId ? { sessions, closures, orders, registerId } : undefined;
-  const sweep = (): Promise<void> => {
+  // run schedules one more, which reads afresh (carrying `full` forward if any waiting call asked
+  // for it). A failure is logged, never thrown into the UI.
+  const sweeper = useRef<{
+    running?: Promise<void>; queued?: Promise<void>; queuedFull?: boolean;
+    target?: Parameters<typeof store.sweepOrphanStamps>[0];
+  }>({});
+  sweeper.current.target = enabled && sessions && closures && orders && registerId
+    ? { sessions, closures, orders, registerId, register, storeKey } : undefined;
+  const sweep = (full = false): Promise<void> => {
     const state = sweeper.current;
-    if (state.running) return (state.queued ??= state.running.then(() => { state.queued = undefined; return sweep(); }));
+    if (state.running) {
+      state.queuedFull = state.queuedFull || full;
+      return (state.queued ??= state.running.then(() => {
+        const runFull = !!state.queuedFull;
+        state.queued = undefined;
+        state.queuedFull = undefined;
+        return sweep(runFull);
+      }));
+    }
     const target = state.target;
     if (!target) return Promise.resolve();
-    const run = store.sweepOrphanStamps(target).then(() => undefined, (error: unknown) => {
+    const run = store.sweepOrphanStamps({ ...target, full }).then(() => undefined, (error: unknown) => {
       try {
         registerFactsLogger.error('Register orphan-stamp sweep failed', { context: { type: 'register.sweep-failed', registerId: target.registerId, error: String(error) } });
       } catch {
@@ -178,15 +191,17 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     }).finally(() => { state.running = undefined; });
     return (state.running = run);
   };
-  // It runs on start (this source's first snapshot), and whenever a closure appears that it hasn't
-  // seen, such as one a sync writes. `closeSession` also runs it after its own closure.
+  // On start (this source's first snapshot), it sweeps every closure, ignoring `swept_closure_ids`
+  // (`full`): the once-per-start repair for an insert that raced a close or a server close made
+  // while the app was closed. Later, on a closure it hasn't seen (such as one a sync writes) and
+  // after `closeSession`'s own closure, it runs the bounded, fast-path sweep instead.
   const seen = useRef<{ source: typeof source; ids: Set<string> } | null>(null);
   useEffect(() => {
     if (!data) return;
     const ids = data.closureRows.map((row) => row.id);
     if (seen.current?.source !== source) {
       seen.current = { source, ids: new Set(ids) };
-      void sweep();
+      void sweep(true);
     } else if (ids.some((id) => !seen.current!.ids.has(id))) {
       ids.forEach((id) => seen.current!.ids.add(id));
       void sweep();

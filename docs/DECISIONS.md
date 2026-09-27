@@ -583,6 +583,33 @@ bodies and design docs, and the source is given for each.
         touches the closure, an order the closure lists, an order whose
         session has no closure yet, a late order or another register's
         orders.
+      - **Bounded by `swept_closure_ids` (the #158 follow-ups, 2026-09-28):**
+        a per-register set on the register document, so a closure it has
+        already checked costs the sweep no `pos_orders` query, and the
+        set needs no schema bump (the register document is a local
+        document). An id joins the set only after that closure's orders are
+        patched, so a crash in between just leaves it unswept for the next
+        run; the patch is already idempotent. A `sessionId` index on
+        `pos_orders` would narrow the query further, but is deferred to the
+        ADR-065 v3 envelope job, so tills migrate the schema once.
+      - **A grace period, and a full sweep at start (the same follow-ups,
+        the hole the bound left open, 2026-09-28).** `writeClosure` can
+        freeze a closure before an insert racing its close lands; a sweep
+        run right after finds nothing there yet, and marking the closure
+        swept at once would then hide that insert forever. So a closure
+        joins `swept_closure_ids` only once it is older than
+        `SWEEP_GRACE_MS` (10 minutes) by its `closed_at`; until then every
+        sweep re-checks it, which costs little, since there are few recent
+        closures. Separately, the sweep `useRegisterSession` runs on start
+        ignores the set outright and checks every closure of the register,
+        which is what repairs a closed session's insert (or a server close)
+        that landed while the app was closed; the bounded, fast-path sweep
+        still runs after `closeSession`'s own closure and when a closure it
+        hasn't seen appears. A save that hangs longer than the grace can
+        still land after its closure is marked swept, and is then caught by
+        the next start's full sweep instead of the one right after it; this
+        is acceptable, because a save hung that long already ends in the
+        storage prompt or a restart.
       - **A void re-reads its session** after its writes, as
         `recordMovement` does. On a closed session, a reversal its closure
         doesn't list, or with no closure yet (or no `closures` passed), is
@@ -2482,6 +2509,7 @@ interface OrderCreatePayload {
      - It gets the same migration tests as version 0 → 1: a pending order survives byte for byte, nothing is dropped, and the SQLite and memory storages are both covered.
      - **Amended (2026-09-25):** the version-2 bump landed in registers c1a, with both fields and ADR-032's `lateSessionId`, and its tests run from version 0 and from version 1. So the ADR-065 job does only the version-3 envelope and `finalizeOrder`; it writes the fields and bumps no schema.
      - **Stored names (the Front desk, 2026-09-25):** `taxByRate` is stored as `taxLinesByRate` names it, `{ ratePpm, code?, label?, netMinor, amountMinor, grossMinor }`, where `amountMinor` is the tax; the nested objects of `display` and `taxByRate` refuse unknown fields. The version-3 wire field maps `amountMinor` to the tax.
+     - **Deferred (the #158 follow-ups, 2026-09-28):** a `sessionId` index on `pos_orders`, which would narrow the orphan-stamp sweep's query (ADR-032) further, is not part of this version-2 bump. It moves to this job, so the v3 schema bump carries the index and tills migrate once.
   5. **The medusapos plugin** advertises `order.create` `[1, 2, 3]` on `/tally/v1/info` and records the two fields in the order's metadata. That half is specified alongside, so both land together.
 - **Consequences:**
   - Every sale made against a version-3 server carries its fiscal figures.

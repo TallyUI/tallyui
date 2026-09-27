@@ -62,6 +62,7 @@ import {
   stampSession,
   startCounting,
   sweepOrphanStamps,
+  SWEEP_GRACE_MS,
   backToSelling,
   writeClosure,
   type CashMovementCollection,
@@ -593,7 +594,10 @@ describe('the orphan-stamp sweep', () => {
   const stored = async (id: string) => (await db.pos_orders.storageInstance.findDocumentsById([id], false))[0];
   const storedJson = async (ids: string[]) => Promise.all(ids.map(async (id) => JSON.stringify(await stored(id))));
   const storedClosure = async (id: string) => JSON.stringify((await db.closures.storageInstance.findDocumentsById([id], false))[0]);
-  const target = () => ({ sessions: db.register_sessions, closures: db.closures, orders: db.pos_orders, registerId: 'register' });
+  const target = () => ({
+    sessions: db.register_sessions, closures: db.closures, orders: db.pos_orders, registerId: 'register',
+    register: db.register_sessions, storeKey: 'store',
+  });
   const cash = [{ method: 'cash' as const, amountMinor: 1500 }];
   /** A server close, then its closure, frozen from the orders stored by then. */
   async function closedOnServer(id: string) {
@@ -686,5 +690,118 @@ describe('the orphan-stamp sweep', () => {
     expect(await stored('raced')).toMatchObject({ lateSessionId: session.id });
     expect(await stored('raced')).not.toHaveProperty('sessionId');
     expect(lateFacts()).toHaveLength(1);
+  });
+
+  // TallyUI (the #158 follow-ups): bounded by `swept_closure_ids` on the register document, so a
+  // closure past the grace and already checked costs no `pos_orders` query. Revert: drop the
+  // swept-set filter (sweep every closure every time).
+  it('queries pos_orders only for a closure past the grace it has not swept before', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const first = await seed();
+    await closedOnServer(first.id);
+    await sale('orphan-1', first.id, cash);
+    expect(await sweepOrphanStamps(target())).toEqual(['orphan-1']); // within the grace: unswept still
+    vi.setSystemTime(Date.now() + SWEEP_GRACE_MS + 1); // first's closure is now past the grace
+    expect(await sweepOrphanStamps(target())).toEqual([]); // this sweep marks it swept
+    const second = await seed();
+    await closedOnServer(second.id);
+    await sale('orphan-2', second.id, cash);
+    const query = vi.spyOn(db.pos_orders.storageInstance, 'query');
+    // first's closure costs nothing (swept); second's is new, so it is queried, but is still
+    // within its own grace and so stays unswept.
+    expect(await sweepOrphanStamps(target())).toEqual(['orphan-2']);
+    expect(query).toHaveBeenCalledTimes(1);
+    query.mockClear();
+    vi.setSystemTime(Date.now() + SWEEP_GRACE_MS + 1); // second's closure is now past the grace too
+    expect(await sweepOrphanStamps(target())).toEqual([]); // this sweep marks it swept
+    query.mockClear();
+    expect(await sweepOrphanStamps(target())).toEqual([]); // both closures are swept and past the grace
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  // TallyUI (the #158 follow-ups): a crash between the patch and the swept-set write (never here:
+  // the write is the last step) leaves the next sweep re-checking that closure; the patch is
+  // idempotent, so it patches nothing twice and logs no second fact. Revert: write the swept set
+  // before the patch loop.
+  it('re-checks a closure after a crash before the swept-set write, without patching twice', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const session = await seed();
+    await closedOnServer(session.id);
+    await sale('crash-orphan', session.id, cash);
+    vi.setSystemTime(Date.now() + SWEEP_GRACE_MS + 1); // past the grace: this sweep tries to mark it swept
+    const getLocal = db.register_sessions.getLocal.bind(db.register_sessions);
+    let calls = 0;
+    vi.spyOn(db.register_sessions, 'getLocal').mockImplementation((async (id: string) => {
+      calls += 1;
+      if (calls === 2) throw new Error('killed'); // the second call is markClosuresSwept's write
+      return getLocal(id);
+    }) as typeof getLocal);
+    await expect(sweepOrphanStamps(target())).rejects.toThrow('killed');
+    vi.restoreAllMocks();
+    expect(await stored('crash-orphan')).toMatchObject({ lateSessionId: session.id });
+    expect(lateFacts()).toHaveLength(1);
+    expect(await sweepOrphanStamps(target())).toEqual([]); // re-checked, patched nothing twice
+    expect(lateFacts()).toHaveLength(1);
+  });
+
+  // TallyUI (the #158 follow-ups): `closeSession` awaits its own sweep, however slow, before its
+  // promise resolves. Revert: drop `await sweep()` in `closeSession`.
+  it("closeSession awaits its own sweep before its promise resolves", async () => {
+    const session = await seed();
+    const stamped = await stampSession({ id: 'slow' } as PosOrder, session.id, db.register_sessions);
+    const result = await settled();
+    const insert = db.closures.insert.bind(db.closures);
+    vi.spyOn(db.closures, 'insert').mockImplementationOnce((async (row: Parameters<typeof insert>[0]) => {
+      await sale('slow', stamped.sessionId, cash);
+      return insert(row);
+    }) as typeof insert);
+    const findOne = db.pos_orders.findOne.bind(db.pos_orders);
+    vi.spyOn(db.pos_orders, 'findOne').mockImplementation(((id: string) => {
+      const query = findOne(id);
+      if (id !== 'slow') return query;
+      const exec = query.exec.bind(query);
+      query.exec = (() => new Promise((resolve) => setTimeout(() => resolve(exec()), 20))) as typeof query.exec;
+      return query;
+    }) as typeof findOne);
+    await act(async () => {
+      await result.current.actions.closeSession({ counted: { cash: 10000 } });
+    });
+    // Checked the instant closeSession's promise resolves, with no waitFor: a dropped `await`
+    // would let this run before the delayed patch lands.
+    expect(await stored('slow')).toMatchObject({ lateSessionId: session.id });
+  });
+
+  // TallyUI (the #158 follow-ups, the hole the bound left open): a closure isn't marked swept
+  // until it is past the grace, so an insert racing the close that lands only after the post-close
+  // sweep already ran and found nothing is still caught by the next sweep. Revert: mark closures
+  // swept immediately, with no grace.
+  it('catches an order whose insert lands only after the post-close sweep already ran and found nothing', async () => {
+    const session = await seed();
+    const stamped = await stampSession({ id: 'race' } as PosOrder, session.id, db.register_sessions);
+    await closedOnServer(session.id); // the closure freezes with no orders
+    expect(await sweepOrphanStamps(target())).toEqual([]); // the post-close sweep: finds nothing, marks nothing
+    await sale('race', stamped.sessionId, cash); // the insert lands only now
+    expect(await sweepOrphanStamps(target())).toEqual(['race']); // still unswept: the next sweep catches it
+    expect(await stored('race')).toMatchObject({ lateSessionId: session.id });
+  });
+
+  // TallyUI (the #158 follow-ups): past the grace the closure joins the set, and the bounded,
+  // fast-path sweep then skips it with no query; but a save that hangs longer than the grace and
+  // lands only after that still reaches the till, and the next app start's full sweep, which
+  // ignores the set, still catches it. Revert: make the start sweep honour the set.
+  it("the app start's full sweep still catches a save that hung past the grace and landed after its closure was marked swept", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const session = await seed();
+    const stamped = await stampSession({ id: 'hung' } as PosOrder, session.id, db.register_sessions);
+    await closedOnServer(session.id);
+    vi.setSystemTime(Date.now() + SWEEP_GRACE_MS + 1); // past the grace
+    expect(await sweepOrphanStamps(target())).toEqual([]); // this sweep marks the closure swept
+    const query = vi.spyOn(db.pos_orders.storageInstance, 'query');
+    expect(await sweepOrphanStamps(target())).toEqual([]); // the fast path skips a swept closure: no query
+    expect(query).not.toHaveBeenCalled();
+    query.mockRestore();
+    await sale('hung', stamped.sessionId, cash); // the hung save's insert lands only now
+    render(); // the app start: a full sweep, ignoring the set
+    await waitFor(async () => expect((await stored('hung'))?.lateSessionId).toBe(session.id));
   });
 });
