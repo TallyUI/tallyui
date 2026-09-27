@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { RxCollection } from 'rxdb';
+import type { RxCollection, RxError } from 'rxdb';
 import type { PosOrder } from '../pos-order';
 import { createOrderOutbox } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
@@ -28,7 +28,11 @@ export interface UseOrderOutboxResult {
   state: OutboxState;
   /** The newest 50 orders, newest first; empty until the current store is ready. */
   recent: PosOrder[];
-  /** Stores a finalized order, then flushes. Throws the opening error, or "Orders are not ready.", before the store is ready. */
+  /**
+   * Stores a finalized order, then flushes. Throws the opening error, or "Orders are not ready.", before the store is ready.
+   * Recording an order that is already stored with the same `commandId` (a retried `complete()`) counts as stored and
+   * still flushes; a stored order with the same `id` and another `commandId` is a real conflict and rejects.
+   */
   record(posOrder: PosOrder): Promise<void>;
   /** Sends pending orders; does nothing before the current store is ready. */
   flush(): Promise<void>;
@@ -94,7 +98,16 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
     async record(posOrder) {
       const opened = current.current;
       if (!opened || opened.storeKey !== storeKey) throw openingError.current ?? new Error('Orders are not ready.');
-      await opened.orders.insert(posOrder);
+      try {
+        await opened.orders.insert(posOrder);
+      } catch (error) {
+        // useSale's retry hands over the order a failed save already stored (complete() is idempotent,
+        // ADR-052). RxDB 16's insert throws RxError code 'CONFLICT' for an existing primary key, with the
+        // stored document in `parameters.writeError.documentInDb`; the same commandId means it is stored.
+        const stored = (error as RxError)?.code === 'CONFLICT' ? (error as RxError).parameters.writeError : undefined;
+        const inDb = stored?.status === 409 ? stored.documentInDb : undefined;
+        if (!inDb || inDb._deleted || inDb.commandId !== posOrder.commandId) throw error;
+      }
       if (current.current === opened) void opened.outbox.flush();
     },
   };
