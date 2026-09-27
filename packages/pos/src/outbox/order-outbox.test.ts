@@ -588,6 +588,11 @@ describe('order outbox', () => {
     const requeued = (await collection.findOne(input.id).exec())!;
     expect(requeued.syncStatus).toBe('pending');
     expect(requeued.commandId).toBe(requeuedCommandId);
+    // A second flush sends it, once, under the new commandId, and marks it applied.
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1][0]).toEqual([expect.objectContaining({ id: requeuedCommandId })]);
+    expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('applied');
   });
 
   // RxDB 16.21.1 bug 4: a write that lands after a cached query's storage read has answered, but

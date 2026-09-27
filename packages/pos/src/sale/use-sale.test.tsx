@@ -580,7 +580,7 @@ describe('complete() is idempotent for one tender', () => {
     }
   });
 
-  it('newSale() abandons the pending completion: the stored order stays pending and unchanged, the next sale gets new ids', async () => {
+  it('newSale() abandons the pending completion: the stored order stays pending and unchanged (re-handed once in the background, per #147), the next sale gets new ids', async () => {
     const { result, unmount, completed, stored } = await renderWithOutbox({ after: 1 });
     try {
       startCardSale(result);
@@ -591,11 +591,15 @@ describe('complete() is idempotent for one tender', () => {
       expect(result.current.sale.saving).toBe(false);
       expect(result.current.sale.error).toBeNull();
       expect(result.current.sale.stage.kind).toBe('cart');
+      // The money was taken: newSale() hands the abandoned, already-stored order back to onSaleCompleted
+      // once in the background (useOrderOutbox.record treats its commandId as already stored).
+      expect(completed).toHaveBeenCalledTimes(2);
+      expect(completed.mock.calls[1][0]).toMatchObject({ id: abandoned.id, commandId: abandoned.commandId });
       startCardSale(result);
       expect(result.current.sale.order.lineItems).toHaveLength(2);
       await act(async () => { await result.current.sale.complete(); });
       expect(result.current.sale.stage.kind).toBe('receipt');
-      const next = completed.mock.calls[1][0];
+      const next = completed.mock.calls[2][0];
       expect(next.id).not.toBe(abandoned.id);
       expect(next.commandId).not.toBe(abandoned.commandId);
       const orders = await stored();
@@ -806,6 +810,72 @@ describe('abandoning a hung save and locking from entry', () => {
       expect(result.current.stage.kind).toBe('cart');
     } finally {
       saleLogger.removeSink('abandoned-save-capture');
+      await db.remove();
+    }
+  });
+
+  // The #147 review: deliver() abandoned mid-flight (pending already installed) must not swallow a
+  // later throw silently. Covers both a session-less sale and one with a session, since deliver() is
+  // reached the same way in both, once the generation check has already passed.
+  it.each(['session-less', 'with a session'] as const)(
+    'abandon (%s) with the insert in flight, then the save throws: the order is stored and an error log names its id',
+    async (kind) => {
+      const logged: LogEntry[] = [];
+      saleLogger.addSink({ id: 'abandon-inflight-capture', levels: ['error'], write: (entry) => logged.push(entry) });
+      const { db: ordersDb, orders } = await withPosOrders();
+      const sessionCtx = kind === 'with a session' ? await withOpenSession() : null;
+      let releaseThrow!: () => void;
+      const throwGate = new Promise<void>((resolve) => { releaseThrow = resolve; });
+      const completed = vi.fn(async (posOrder: PosOrder) => {
+        await orders.insert(posOrder);
+        await throwGate;
+        throw new Error('flush failed');
+      });
+      try {
+        const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed,
+          ...(sessionCtx ? { session: { id: sessionCtx.sessionId, sessions: sessionCtx.sessions } } : {}) }));
+        addSaleLines(result);
+        act(() => result.current.startTender('external'));
+        let completion!: Promise<void>;
+        act(() => { completion = result.current.complete(); });
+        await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+        act(() => result.current.newSale()); // abandons while onSaleCompleted (the insert) is in flight
+        releaseThrow();
+        await act(async () => { await completion; });
+        expect(await orders.find().exec()).toHaveLength(1);
+        expect(logged).toHaveLength(1);
+        expect(logged[0]).toMatchObject({ level: 'error', data: { error: 'flush failed' } });
+        expect(typeof (logged[0].data as { orderId?: string }).orderId).toBe('string');
+        expect(result.current.error).toBeNull();
+        expect(result.current.stage.kind).toBe('cart');
+      } finally {
+        saleLogger.removeSink('abandon-inflight-capture');
+        await ordersDb.remove();
+        if (sessionCtx) await sessionCtx.db.remove();
+      }
+    },
+  );
+
+  it("newSale() after a failed save (pending set) re-hands the order in the background; it ends up stored exactly once", async () => {
+    const { db, orders } = await withPosOrders();
+    let failFirst = true;
+    const completed = vi.fn(async (posOrder: PosOrder) => {
+      if (failFirst) { failFirst = false; throw new Error('Storage busy'); }
+      await orders.insert(posOrder);
+    });
+    try {
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      await act(async () => { await result.current.complete(); }); // fails; pending stays set for Retry
+      expect(result.current.error).toBe('The sale could not be saved: Storage busy');
+      expect(await orders.find().exec()).toHaveLength(0);
+      await act(async () => { result.current.newSale(); }); // abandons the parked completion; hands it over
+      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+      expect(completed).toHaveBeenCalledTimes(2);
+      expect(result.current.stage.kind).toBe('cart');
+      expect(result.current.error).toBeNull();
+    } finally {
       await db.remove();
     }
   });

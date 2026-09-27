@@ -71,12 +71,31 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     setError(null);
   }
 
+  /**
+   * Hands an abandoned attempt's order to `onSaleCompleted` in the background: the money was taken,
+   * so it must still be stored, even though nothing on screen is waiting for it any more. A throw is
+   * logged at error, with the order id, since nothing else would ever surface it.
+   */
+  async function handOverAbandoned(posOrder: PosOrder) {
+    try {
+      await opts.onSaleCompleted?.(posOrder);
+    } catch (error) {
+      saleLogger.error('onSaleCompleted failed for an abandoned attempt', { orderId: posOrder.id,
+        error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   /** Hands a pending completion to `onSaleCompleted`; the outcome applies only if it wasn't abandoned meanwhile. */
   async function deliver(completion: { order: Order; posOrder: PosOrder }) {
     try {
       await opts.onSaleCompleted?.(completion.posOrder);
     } catch (error) {
-      if (pending.current === completion) setError(`The sale could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+      if (pending.current === completion) {
+        setError(`The sale could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+      } else {
+        saleLogger.error('onSaleCompleted failed for an abandoned attempt', { orderId: completion.posOrder.id,
+          error: error instanceof Error ? error.message : String(error) });
+      }
       return;
     }
     if (pending.current !== completion) return;
@@ -192,28 +211,23 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       // newSale() may have landed while this attempt was building or stamping. The money is taken:
       // onSaleCompleted still stores this order, just never as the new sale's pending completion,
       // lock, error or receipt — those are newSale()'s or a fresh attempt's to set.
-      if (generation.current !== myGeneration) {
-        try {
-          await opts.onSaleCompleted?.(posOrder);
-        } catch (error) {
-          saleLogger.error('onSaleCompleted failed for an attempt newSale() abandoned', { orderId: posOrder.id,
-            error: error instanceof Error ? error.message : String(error) });
-        }
-        return;
-      }
+      if (generation.current !== myGeneration) return handOverAbandoned(posOrder);
       pending.current = { order: current, posOrder };
       return deliver(pending.current);
     }),
     /**
      * Starts a new, empty sale. It also abandons a pending completion, and any attempt still building or
      * stamping, unlocking the till at once instead of waiting for it. Abandoning clears the screen, never
-     * the record (the Front desk, 2026-09-25): the money is taken, so an attempt abandoned after its order
-     * was built still hands it to `onSaleCompleted` in the background, just never as this new sale's
-     * pending completion, lock, error or receipt; one abandoned before that has nothing to store.
-     * `newSale()` never deletes, updates or requeues `pos_orders` itself.
+     * the record (the Front desk, 2026-09-25): the money is taken, so an order already built — whether a
+     * prior attempt is still delivering it (that attempt's own `deliver()` handles it) or it's parked
+     * after a failed save with nothing in flight — still reaches `onSaleCompleted` in the background,
+     * just never as this new sale's pending completion, lock, error or receipt. An attempt abandoned
+     * before its order was built has nothing to store. `newSale()` never deletes, updates or requeues
+     * `pos_orders` itself.
      */
     newSale() {
       generation.current++;
+      const parked = !inFlight.current ? pending.current : null;
       pending.current = null;
       inFlight.current = null;
       setSaving(false);
@@ -223,6 +237,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       setOrder(next.getSnapshot());
       setStage({ kind: 'cart' });
       setError(null);
+      if (parked) void handOverAbandoned(parked.posOrder);
     },
   };
   return result;
