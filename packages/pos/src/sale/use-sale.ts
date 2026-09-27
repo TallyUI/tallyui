@@ -4,8 +4,12 @@ import { createOrderBuilder, type Discount, type Order } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
 import { useTax } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
+import { createLogger } from '../logging';
 import type { CatalogueEntry } from './catalogue';
 import { addEntryToCart, CartError } from './cart';
+
+/** Logs a throw from onSaleCompleted for an attempt newSale() has abandoned: nothing else would ever surface it. */
+export const saleLogger = createLogger('sale');
 
 export type SaleStage = { kind: 'cart' } | { kind: 'tender'; method: 'cash' | 'external' }
   | { kind: 'receipt'; order: Order; posOrder: PosOrder };
@@ -33,17 +37,20 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   const [stage, setStage] = useState<SaleStage>({ kind: 'cart' });
   const [error, setError] = useState<string | null>(null);
   // The pending completion: the order complete() built for this tender attempt. The ref is read
-  // synchronously by complete() and the lock; `saving` mirrors it for rendering.
+  // synchronously by complete() and the lock; `saving` mirrors it (true from complete()'s entry) for rendering.
   const pending = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
   const [saving, setSaving] = useState(false);
   // The complete() call in flight, and the stage as of the last render or receipt, both read synchronously.
   const inFlight = useRef<Promise<void> | null>(null);
+  // Bumped by newSale(): an attempt still building or stamping when newSale() lands checks this before installing pending.
+  const generation = useRef(0);
   const stageNow = useRef(stage);
   stageNow.current = stage;
-  /** True, with SALE_SAVING shown, while a completion is pending: the sale can't change. */
+  /** True, with SALE_SAVING shown, from complete()'s entry (inFlight) through a pending retry: the sale can't change. */
   function locked() {
-    if (pending.current) setError(SALE_SAVING);
-    return !!pending.current;
+    const active = !!(inFlight.current || pending.current);
+    if (active) setError(SALE_SAVING);
+    return active;
   }
   useEffect(() => {
     const subscription = builder.order$.subscribe(setOrder);
@@ -83,11 +90,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   /**
    * Runs one complete() attempt, unless one is in flight or the receipt shows. The in-flight promise is
    * set before the attempt's first await, so a second call (a double tap) shares it and never builds a
-   * second order.
+   * second order. `.finally` clears `inFlight` only if it still holds this attempt's own promise.
    */
   function once(attempt: () => Promise<void>): Promise<void> {
     if (!inFlight.current && stageNow.current.kind !== 'receipt') {
-      inFlight.current = attempt().finally(() => { inFlight.current = null; });
+      const mine: Promise<void> = attempt().finally(() => { if (inFlight.current === mine) inFlight.current = null; });
+      inFlight.current = mine;
     }
     return inFlight.current ?? Promise.resolve();
   }
@@ -141,10 +149,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     },
     /**
      * Finalizes the tender, stamps the session (see `session`), hands the order to `onSaleCompleted`,
-     * then shows the receipt. Idempotent for one tender attempt (DECISIONS, ADR-052): once the order
-     * is built, that order is the sale. It is kept as the pending completion, `saving` turns true and
-     * the sale is locked (every change sets SALE_SAVING), because `onSaleCompleted` may already have
-     * stored it before failing. If `onSaleCompleted` throws, the error is set and the tender stays;
+     * then shows the receipt. `saving` turns true and the sale locks (every change sets SALE_SAVING)
+     * from this call's entry, not only once the order is built; a refused finalize unlocks it again,
+     * with the refusal's error. Idempotent for one tender attempt (DECISIONS, ADR-052): once the order
+     * is built, that order is the sale, kept as the pending completion, because `onSaleCompleted` may
+     * already have stored it before failing. If `onSaleCompleted` throws, the error is set and the tender stays;
      * calling `complete()` again reuses the pending completion exactly (the same `id`, `commandId`
      * and `createdAt`, no new stamp and no second late-sale fact) and hands it to `onSaleCompleted`
      * again, so that must accept an order it already stored (as `useOrderOutbox.record` does). The
@@ -153,11 +162,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
      */
     complete: () => once(async () => {
       if (pending.current) return deliver(pending.current);
+      const myGeneration = generation.current;
+      setSaving(true);
       const current = builder.getSnapshot();
       let posOrder: PosOrder;
       try {
         posOrder = finalizeOrder(current, { registerId: opts.registerId, cashierRef: opts.cashierRef, capabilities: opts.capabilities });
       } catch (error) {
+        setSaving(false);
         setError((error as Error).message);
         return;
       }
@@ -177,18 +189,33 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
           }
         }
       }
+      // newSale() may have landed while this attempt was building or stamping. The money is taken:
+      // onSaleCompleted still stores this order, just never as the new sale's pending completion,
+      // lock, error or receipt — those are newSale()'s or a fresh attempt's to set.
+      if (generation.current !== myGeneration) {
+        try {
+          await opts.onSaleCompleted?.(posOrder);
+        } catch (error) {
+          saleLogger.error('onSaleCompleted failed for an attempt newSale() abandoned', { orderId: posOrder.id,
+            error: error instanceof Error ? error.message : String(error) });
+        }
+        return;
+      }
       pending.current = { order: current, posOrder };
-      setSaving(true);
       return deliver(pending.current);
     }),
     /**
-     * Starts a new, empty sale. It also abandons a pending completion, which unlocks the till. Abandoning
-     * clears the screen, never the record (the Front desk, 2026-09-25): an order a failed save had already
-     * stored stays in the outbox, because the money was taken. `newSale()` never deletes, updates or
-     * requeues anything in `pos_orders`.
+     * Starts a new, empty sale. It also abandons a pending completion, and any attempt still building or
+     * stamping, unlocking the till at once instead of waiting for it. Abandoning clears the screen, never
+     * the record (the Front desk, 2026-09-25): the money is taken, so an attempt abandoned after its order
+     * was built still hands it to `onSaleCompleted` in the background, just never as this new sale's
+     * pending completion, lock, error or receipt; one abandoned before that has nothing to store.
+     * `newSale()` never deletes, updates or requeues `pos_orders` itself.
      */
     newSale() {
+      generation.current++;
       pending.current = null;
+      inFlight.current = null;
       setSaving(false);
       madeWith.current = { taxContext, currency: settings.currency };
       const next = createOrderBuilder({ currency: settings.currency, taxContext });

@@ -106,10 +106,11 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       for (const order of orders) {
         const result = outcome.results.find((entry) => entry.id === order.commandId);
         if (!result) continue;
-        // findOne(id) is cached too, and goes stale the same way when the order isn't in RxDB's
-        // document cache: check the stored state, and use findOne only for the write.
-        const [stored] = await readFresh(collection, { selector: { id: order.id } });
-        if (stored?.syncStatus !== 'pending') continue;
+        // A primary-key lookup straight on the storage instance: skips the query cache (like
+        // readFresh, but without its full index scan here) and excludes a deleted document as not
+        // found. The commandId check catches an order requeued while this one was in flight.
+        const [stored] = await collection.storageInstance.findDocumentsById([order.id], false);
+        if (stored?.syncStatus !== 'pending' || stored.commandId !== order.commandId) continue;
         const current = await collection.findOne(order.id).exec();
         if (!current) continue;
         const updatedAt = new Date(now()).toISOString();

@@ -1,6 +1,11 @@
-// OrdersList (ADR-052, TV7), lifted from medusapos/app `563b03c4` `app/orders.tsx`. medusapos has no test of the
-// screen's sections or retry (its `feedback-link.test.tsx` covers only the app's feedback link, which stays in the
-// app and arrives here through `footer`), so these are written from the screen's code.
+// OrdersList (ADR-052, TV7), lifted from medusapos/app `563b03c4` `app/orders.tsx`. medusapos/app does have a test
+// of the screen, `describe('Orders screen and sync status')` in `apps/expo/tests/products-screen.test.tsx`
+// (medusapos/app `563b03c4487cbdcab6fbfb53d8a19afd9112b1094`, the same pin TV7 lifted from): the five tests below
+// marked "Ported from medusapos/app" carry that describe's titles word for word, adapted to OrdersList's props
+// (`orders`, `onRetry`, `formatDate`, `footer`) in place of the screen, `useOutboxContext` and `requeue`. Left out
+// (2026-09-27 review): "redirects Orders to login when signed out" (session/routing, stays in the app, not
+// OrdersList) and "shows retry seconds and updates the countdown" (exercises `<SyncStatus>` directly, not
+// OrdersList). Every other test here is TallyUI's own, written from OrdersList's code.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
@@ -96,5 +101,82 @@ describe('OrdersList', () => {
       footer={<span>Send feedback</span>} />);
     expect(screen.getByText('Send feedback')).toBeTruthy();
     expect(screen.getByText(/^corrupt date · /)).toBeTruthy();
+  });
+
+  // Ported from medusapos/app `563b03c4`'s `describe('Orders screen and sync status')`.
+  it('shows only Recent when no orders need attention', () => {
+    render(<OrdersList orders={[order('a'), order('b', { syncStatus: 'applied' })]} onRetry={async () => 0}
+      footer={<a href="#">Send feedback</a>} />);
+    expect(headers()).toEqual(['Recent']);
+    expect(screen.getByRole('link', { name: 'Send feedback' })).toBeTruthy();
+  });
+
+  it('lists attention first, including errors, both warnings, totals and server display IDs', () => {
+    // A single, one-item line (unlike this file's other orders' default quantity of 2), to match
+    // medusapos/app's savedSale() and its "1 item"/"3 items" assertions below.
+    const base = order('base', { lines: [{ id: 'line-base', productId: 'shirt', variantId: 'blue', name: 'Blue shirt',
+      sku: 'BLUE', quantity: 1, unitPriceMinor: 1200, discountMinor: 0, netMinor: 1200, taxLines: [] }],
+      subtotalMinor: 1200, totalMinor: 1200 });
+    const rejected = { ...base, id: 'rejected', syncStatus: 'rejected' as const, error: { code: 'invalid', message: 'Unknown variant' } };
+    const warned = { ...base, id: 'warned', syncStatus: 'applied' as const, serverRefs: { orderId: 'server', displayId: '42', totalMinor: 1000 },
+      lines: base.lines.map((line) => ({ ...line, quantity: 3 })),
+      warnings: [{ code: 'insufficient_stock' as const, variantId: 'blue', quantity: 2 },
+        { code: 'total_mismatch' as const, serverMinor: 1000, expectedMinor: 1200 }] };
+    render(<OrdersList orders={[rejected, warned, base]} onRetry={async () => 0} formatDate={formatDate} />);
+    expect(headers()).toEqual(['Needs attention', 'Recent']);
+    const money = formatMoney({ amount: base.totalMinor, currency: base.currency });
+    for (const label of ['invalid: Unknown variant', 'Stock short by 2 for Blue shirt',
+      `Store total ${formatMoney({ amount: 1000, currency: base.currency })} vs POS ${formatMoney({ amount: 1200, currency: base.currency })}`,
+      'Order #42 · 3 items']) {
+      expect(screen.getAllByText(label)).toHaveLength(2);
+    }
+    expect(screen.getAllByText('1 item')).toHaveLength(3);
+    const dateAndTotal = `${formatDate(base.createdAt)} · ${money}`;
+    expect(screen.getByText(`${dateAndTotal} · Waiting to sync`)).toBeTruthy();
+    expect(screen.getAllByText(`${dateAndTotal} · Synced`)).toHaveLength(2);
+    expect(screen.getAllByText(`${dateAndTotal} · Not accepted`)).toHaveLength(2);
+  });
+
+  it.each(['invalid', 'idempotency_mismatch', 'warnings'])('offers Retry only for requeueable rejections: %s', async (kind) => {
+    const base = order('r');
+    const orders: PosOrder[] = [kind === 'warnings'
+      ? { ...base, syncStatus: 'applied', warnings: [{ code: 'total_mismatch', serverMinor: 1000, expectedMinor: 1200 }] }
+      : { ...base, syncStatus: 'rejected', error: { code: kind, message: 'Rejected' } }];
+    const onRetry = vi.fn().mockResolvedValue(1);
+    render(<OrdersList orders={orders} onRetry={onRetry} />);
+    if (kind === 'invalid') {
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+      expect(onRetry).toHaveBeenCalledExactlyOnceWith(['r']);
+    } else {
+      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+      expect(onRetry).not.toHaveBeenCalled();
+    }
+    expect(screen.queryByText('This sale needs checking against the store before it can be sent again.') !== null).toBe(kind === 'idempotency_mismatch');
+  });
+
+  it.each([0, 1])('blocks repeat Retry taps until requeue resolves %s or the order leaves rejected', async (result) => {
+    const rejected: PosOrder = { ...order('r'), syncStatus: 'rejected' };
+    let resolve!: (count: number) => void;
+    const onRetry = vi.fn(() => new Promise<number>((done) => { resolve = done; }));
+    render(<OrdersList orders={[rejected]} onRetry={onRetry} />);
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    act(() => { fireEvent.click(retry); fireEvent.click(retry); });
+    expect(onRetry).toHaveBeenCalledExactlyOnceWith(['r']);
+    expect(retry.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => { resolve(result); });
+    expect(retry.getAttribute('aria-disabled')).toBe(result === 0 ? null : 'true');
+    fireEvent.click(retry);
+    expect(onRetry).toHaveBeenCalledTimes(result === 0 ? 2 : 1);
+  });
+
+  it.each(['pending', 'applied'] as const)('clears Retry state when the outbox reports %s', async (syncStatus) => {
+    const rejected: PosOrder = { ...order('r'), syncStatus: 'rejected' };
+    const onRetry = vi.fn().mockResolvedValue(1);
+    const view = render(<OrdersList orders={[rejected]} onRetry={onRetry} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+    view.rerender(<OrdersList orders={[{ ...rejected, syncStatus }]} onRetry={onRetry} />);
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    view.rerender(<OrdersList orders={[rejected]} onRetry={onRetry} />);
+    expect(screen.getByRole('button', { name: 'Retry' }).getAttribute('aria-disabled')).toBeNull();
   });
 });

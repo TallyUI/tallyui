@@ -570,6 +570,26 @@ describe('order outbox', () => {
     expect((await collection.findOne(input.id).exec())?.toJSON()).toMatchObject({ syncStatus: 'rejected', error });
   });
 
+  it('an order requeued to a new commandId while its old command is in flight stays pending under the new commandId when the old result arrives', async () => {
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send } = setup();
+    let requeuedCommandId!: string;
+    send.mockImplementationOnce(async (batch) => {
+      // A requeue lands while this send (built under input.commandId) is still in flight.
+      await (await collection.findOne(input.id).exec())!.incrementalModify((data) => {
+        requeuedCommandId = uuidv7();
+        return { ...data, commandId: requeuedCommandId, syncStatus: 'pending' as const };
+      });
+      return { kind: 'results', results: applied(batch) }; // the old command's result, keyed by input.commandId
+    });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    const requeued = (await collection.findOne(input.id).exec())!;
+    expect(requeued.syncStatus).toBe('pending');
+    expect(requeued.commandId).toBe(requeuedCommandId);
+  });
+
   // RxDB 16.21.1 bug 4: a write that lands after a cached query's storage read has answered, but
   // before its continuation runs, never reaches that query. These insert a sale at that moment.
   it('sends a sale inserted while the pending read is in flight, and a later sale', async () => {

@@ -25,7 +25,7 @@ import {
   type ClosureCollection, type RegisterSessionCollection,
 } from '../register';
 import { catalogueEntries } from './catalogue';
-import { DISCOUNTS_UNSUPPORTED, SALE_SAVING, useSale } from './use-sale';
+import { DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, useSale } from './use-sale';
 
 const traits = medusaConnector.traits.product;
 const product = {
@@ -662,5 +662,190 @@ describe('complete() is idempotent for one tender', () => {
     } finally {
       unmount();
     }
+  });
+});
+
+// Follow-ups to complete()'s idempotency (2026-09-27, the #145 review): abandoning a hung save, and
+// locking the sale from complete()'s entry rather than only once the order is built and stamped.
+describe('abandoning a hung save and locking from entry', () => {
+  /** Opens a memory pos_orders collection to check what a completed sale actually stored. */
+  async function withPosOrders() {
+    const db = await createRxDatabase({ name: `abandon${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    return { db, orders: await addPosOrderCollection(db) };
+  }
+
+  it("newSale() during a save that never resolves: the next sale saves its own order with new ids, and the old order is untouched", async () => {
+    const { db, orders } = await withPosOrders();
+    try {
+      let holdOld = true;
+      const oldGate = new Promise<void>(() => {}); // deliberately never resolves
+      const completed = vi.fn(async (posOrder: PosOrder) => {
+        await orders.insert(posOrder);
+        if (holdOld) { holdOld = false; await oldGate; }
+      });
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      act(() => { result.current.complete(); });
+      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+      const oldStored = (await orders.find().exec())[0].toJSON();
+      act(() => result.current.newSale());
+      expect(result.current.stage.kind).toBe('cart');
+      expect(result.current.saving).toBe(false);
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.stage.kind).toBe('receipt');
+      expect(result.current.error).toBeNull();
+      const stored = await orders.find().exec();
+      expect(stored).toHaveLength(2);
+      const next = completed.mock.calls[1][0] as PosOrder;
+      expect(next.id).not.toBe(oldStored.id);
+      expect(next.commandId).not.toBe(oldStored.commandId);
+      expect(stored.find((doc) => doc.id === oldStored.id)!.toJSON()).toEqual(oldStored);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it("an old save that resolves late doesn't corrupt the new sale's in-flight tracking: a duplicate tap on the new sale shares its one save", async () => {
+    const { db, orders } = await withPosOrders();
+    try {
+      let releaseOld!: () => void;
+      const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
+      let releaseNew!: () => void;
+      const newGate = new Promise<void>((resolve) => { releaseNew = resolve; });
+      let call = 0;
+      const completed = vi.fn(async (posOrder: PosOrder) => {
+        await orders.insert(posOrder);
+        call += 1;
+        await (call === 1 ? oldGate : newGate);
+      });
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let oldPromise!: Promise<void>;
+      act(() => { oldPromise = result.current.complete(); });
+      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+      act(() => result.current.newSale());
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let newPromise!: Promise<void>;
+      act(() => { newPromise = result.current.complete(); });
+      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(2));
+      // The old save finally resolves, late, while the new sale's save is itself still in flight.
+      await act(async () => { releaseOld(); await oldPromise; });
+      // A duplicate tap on the new sale's complete() must still share that one in-flight save.
+      let duplicate!: Promise<void>;
+      act(() => { duplicate = result.current.complete(); });
+      expect(duplicate).toBe(newPromise);
+      await act(async () => { releaseNew(); await Promise.all([newPromise, duplicate]); });
+      expect(completed).toHaveBeenCalledTimes(2);
+      expect(result.current.stage.kind).toBe('receipt');
+      expect(result.current.error).toBeNull();
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('newSale() while the stamp is slow: the old order still reaches onSaleCompleted once and is stored once; the new sale is unlocked with no receipt or error from it', async () => {
+    const { db: sessionDb, sessions, sessionId } = await withOpenSession();
+    const { db: ordersDb, orders } = await withPosOrders();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const slow = { findOne: (id: string) => ({ exec: async () => { await gate; return sessions.findOne(id).exec(); } }) };
+    const completed = vi.fn(async (posOrder: PosOrder) => { await orders.insert(posOrder); });
+    try {
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed,
+        session: { id: sessionId, sessions: slow as unknown as RegisterSessionCollection } }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let oldPromise!: Promise<void>;
+      act(() => { oldPromise = result.current.complete(); }); // stuck in the stamp (gate not released)
+      expect(result.current.saving).toBe(true);
+      act(() => result.current.newSale()); // abandons the old attempt mid-stamp; the money was already taken
+      expect(result.current.saving).toBe(false);
+      expect(result.current.stage.kind).toBe('cart');
+      release(); // let the old attempt's stamp finish, now stale for the new sale
+      await act(async () => { await oldPromise; });
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(await orders.find().exec()).toHaveLength(1);
+      expect(result.current.saving).toBe(false);
+      expect(result.current.error).toBeNull();
+      expect(result.current.stage.kind).toBe('cart');
+    } finally {
+      await sessionDb.remove();
+      await ordersDb.remove();
+    }
+  });
+
+  it('an abandoned attempt whose background save throws logs the error at error level, naming the order id, and leaves the new sale untouched', async () => {
+    const logged: LogEntry[] = [];
+    saleLogger.addSink({ id: 'abandoned-save-capture', levels: ['error'], write: (entry) => logged.push(entry) });
+    const { db, sessions, sessionId } = await withOpenSession();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const slow = { findOne: (id: string) => ({ exec: async () => { await gate; return sessions.findOne(id).exec(); } }) };
+    try {
+      const { result } = renderSale(pricing, saleOpts({
+        onSaleCompleted: async () => { throw new Error('disk full'); },
+        session: { id: sessionId, sessions: slow as unknown as RegisterSessionCollection },
+      }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let oldPromise!: Promise<void>;
+      act(() => { oldPromise = result.current.complete(); });
+      act(() => result.current.newSale());
+      release();
+      await act(async () => { await oldPromise; });
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({ level: 'error', data: { error: 'disk full' } });
+      expect(typeof (logged[0].data as { orderId?: string }).orderId).toBe('string');
+      expect(result.current.error).toBeNull();
+      expect(result.current.stage.kind).toBe('cart');
+    } finally {
+      saleLogger.removeSink('abandoned-save-capture');
+      await db.remove();
+    }
+  });
+
+  it('Back during the stamp: cancelTender() is refused with the saving error; a subsequent save failure leaves the tender and Retry', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const slow = { findOne: (id: string) => ({ exec: async () => { await gate; return sessions.findOne(id).exec(); } }) };
+    try {
+      const { result } = renderSale(pricing, saleOpts({
+        onSaleCompleted: async () => { throw new Error('Storage full'); },
+        session: { id: sessionId, sessions: slow as unknown as RegisterSessionCollection },
+      }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let completion!: Promise<void>;
+      act(() => { completion = result.current.complete(); });
+      act(() => result.current.cancelTender());
+      expect(result.current.error).toBe(SALE_SAVING);
+      expect(result.current.stage).toEqual({ kind: 'tender', method: 'external' });
+      release();
+      await act(async () => { await completion; });
+      expect(result.current.saving).toBe(true);
+      expect(result.current.stage).toEqual({ kind: 'tender', method: 'external' });
+      expect(result.current.error).toBe('The sale could not be saved: Storage full');
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('a finalizeOrder refusal leaves the sale unlocked, with the refusal error', async () => {
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: vi.fn() }));
+    addSaleLines(result);
+    act(() => result.current.startTender('cash'));
+    act(() => result.current.setTender({ method: 'cash', amountMinor: 1000 })); // underpaid: finalize refuses
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBe('finalize: underpaid');
+    expect(result.current.saving).toBe(false);
+    act(() => result.current.cancelTender());
+    expect(result.current.stage.kind).toBe('cart');
   });
 });
