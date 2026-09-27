@@ -28,6 +28,9 @@ export type RegisterCounters = {
  */
 export type RegisterBucket = Partial<RegisterCounters> & {
   closure_reservation?: { row: Closure; applied: boolean };
+  /** Closure ids the orphan-stamp sweep has already checked (ADR-032, the #158 follow-ups): a
+   *  local-document field, so bounding the sweep needs no schema bump. */
+  swept_closure_ids?: string[];
 };
 
 export interface RegisterStore {
@@ -223,5 +226,18 @@ export function advancePerpetual(
         : refunds + period.refundsMinor,
       counters_started_at: register.counters_started_at ?? new Date().toISOString(),
     });
+  });
+}
+
+/**
+ * Adds closure ids to the register's swept set (ADR-032, the #158 follow-ups), once each: the
+ * orphan-stamp sweep's bound, so a closure already checked costs the sweep no `pos_orders` query.
+ */
+export function markClosuresSwept(host: RegisterHost, storeKey: string, registerId: string, closureIds: readonly string[]) {
+  return modifyStore(host, storeKey, (store) => {
+    const register = store?.registers?.[registerId] ?? {};
+    const swept = new Set(register.swept_closure_ids);
+    closureIds.forEach((closureId) => swept.add(closureId));
+    return withRegister(store, registerId, { ...register, swept_closure_ids: [...swept] });
   });
 }
