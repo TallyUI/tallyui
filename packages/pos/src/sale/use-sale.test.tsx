@@ -921,10 +921,12 @@ describe('abandoning a hung save and locking from entry', () => {
 
   // The #147 review asked that deliver() abandoned mid-flight never swallow a later throw. Since 5a (the
   // Front desk, 2026-09-27) newSale() can't abandon a built order mid-save until isStored confirms it (no
-  // isStored here): it's refused, and the throw lands on the tender as usual. Covers a session-less sale
-  // and one with a session. The confirmed, abandoned case's throw is the next test's.
+  // isStored here): it's refused, and the throw lands on the tender as usual. Since the #150 review, that
+  // throw is also logged at error, still pending or not: a screen unmounted by the time it lands (medusapos
+  // Sign out) must never lose it silently. Covers a session-less sale and one with a session. The confirmed,
+  // abandoned case's throw is the next test's.
   it.each(['session-less', 'with a session'] as const)(
-    'newSale() (%s) with the insert in flight is refused; the save then throws: the order is stored once, and the tender keeps the error for Retry',
+    'newSale() (%s) with the insert in flight is refused; the save then throws: the order is stored once and the throw logged, and the tender keeps the error for Retry',
     async (kind) => {
       const logged: LogEntry[] = [];
       saleLogger.addSink({ id: 'abandon-inflight-capture', levels: ['error'], write: (entry) => logged.push(entry) });
@@ -950,7 +952,8 @@ describe('abandoning a hung save and locking from entry', () => {
         releaseThrow();
         await act(async () => { await completion; });
         expect(await orders.find().exec()).toHaveLength(1);
-        expect(logged).toEqual([]);
+        expect(logged).toEqual([expect.objectContaining({ level: 'error',
+          data: { orderId: completed.mock.calls[0][0].id, error: 'flush failed' } })]);
         expect(result.current.error).toBe('The sale could not be saved: flush failed');
         expect(result.current.stage).toEqual({ kind: 'tender', method: 'external' });
         expect(result.current.saving).toBe(true);
@@ -1112,5 +1115,112 @@ describe('abandoning a hung save and locking from entry', () => {
     expect(result.current.canContinue).toBe(false);
     await act(async () => { releaseStale(); await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(result.current.canContinue).toBe(false); // attempt 1's stale answer belongs to a dropped attempt
+  });
+
+  // #150 review: Continue is now the only way past a hung save (5a), so an old, hung save and a genuinely
+  // new one can still both be in flight in the same hook at once — this exercises that overlap directly,
+  // rather than through the abandon-mid-stamp path #149 closed. Three surviving mutants: `.finally`
+  // clearing `inFlight` unconditionally would let a duplicate tap on the new sale double-build it;
+  // `deliver()` without its `pending.current !== completion` return would let the old save's late,
+  // successful resolution stomp the new sale's state; `newSale()` not clearing `inFlight` would make the
+  // new sale's own Complete a no-op (caught immediately below, since it would even refuse addSaleLines).
+  it('Continue past a hung old save; the new sale completes normally, is untouched when the old save resolves late, and a duplicate tap never double-builds it', async () => {
+    const storedIds = new Set<string>();
+    let releaseOld!: () => void;
+    const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
+    let releaseNew!: () => void;
+    const newGate = new Promise<void>((resolve) => { releaseNew = resolve; });
+    let oldId: string | undefined;
+    const onSaleCompleted = vi.fn(async (posOrder: PosOrder) => {
+      storedIds.add(posOrder.id);
+      if (!oldId) { oldId = posOrder.id; await oldGate; return; }
+      await newGate;
+    });
+    const isStored = async (posOrder: PosOrder) => storedIds.has(posOrder.id);
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, isStored }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    act(() => { result.current.complete(); }); // the old attempt: stores, then hangs on oldGate
+    expect(oldId).toBeDefined();
+    act(() => result.current.newSale()); // refused; asks isStored afresh
+    await waitFor(() => expect(result.current.canContinue).toBe(true));
+    act(() => result.current.continueSale()); // past the hung old save
+    expect(result.current.stage.kind).toBe('cart');
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    let newPromise!: Promise<void>;
+    act(() => { newPromise = result.current.complete(); }); // the new attempt: builds; stores, then hangs on newGate
+    expect(onSaleCompleted).toHaveBeenCalledTimes(2); // a genuinely new order was built and handed over
+    const newId = onSaleCompleted.mock.calls[1][0].id;
+    expect(newId).not.toBe(oldId);
+    releaseOld(); // the old save finally resolves, late, while the new one is still hung
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); // flush the old chain fully
+    expect(result.current).toMatchObject({ stage: { kind: 'tender', method: 'external' }, saving: true, error: null }); // untouched
+    let duplicate!: Promise<void>;
+    act(() => { duplicate = result.current.complete(); }); // a duplicate tap must share the new sale's one save
+    expect(duplicate).toBe(newPromise);
+    expect(onSaleCompleted).toHaveBeenCalledTimes(2); // no third, spurious build
+    releaseNew();
+    await act(async () => { await Promise.all([newPromise, duplicate]); });
+    expect(result.current).toMatchObject({ stage: { kind: 'receipt', posOrder: { id: newId } }, saving: false, error: null });
+    expect(storedIds.size).toBe(2);
+  });
+});
+
+// #150 review: medusapos's Sign out is live while saving, and unmounts the sale screen (closing the
+// outbox). A throw from onSaleCompleted on an unmounted screen must still be logged, not silently lost.
+describe('unmount logs a save that would otherwise be lost silently', () => {
+  it('unmount during an in-flight save that then throws logs the error with the order id', async () => {
+    const logged: LogEntry[] = [];
+    saleLogger.addSink({ id: 'unmount-inflight-throw', levels: ['error'], write: (entry) => logged.push(entry) });
+    let releaseThrow!: () => void;
+    const throwGate = new Promise<void>((resolve) => { releaseThrow = resolve; });
+    const onSaleCompleted = vi.fn(async (_posOrder: PosOrder) => { await throwGate; throw new Error('flush failed'); });
+    try {
+      const { result, unmount } = renderSale(pricing, saleOpts({ onSaleCompleted }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let promise!: Promise<void>;
+      act(() => { promise = result.current.complete(); }); // builds; onSaleCompleted is in flight
+      const orderId = onSaleCompleted.mock.calls[0][0].id;
+      unmount(); // the screen goes away (medusapos Sign out) while the save is still in flight
+      releaseThrow();
+      await promise;
+      expect(logged).toEqual(expect.arrayContaining([expect.objectContaining({
+        level: 'error', data: expect.objectContaining({ orderId }) })]));
+    } finally {
+      saleLogger.removeSink('unmount-inflight-throw');
+    }
+  });
+
+  it('unmount with a pending, unconfirmed completion logs at error with the order id and stage', async () => {
+    const logged: LogEntry[] = [];
+    saleLogger.addSink({ id: 'unmount-pending', levels: ['error'], write: (entry) => logged.push(entry) });
+    const onSaleCompleted = vi.fn(async (_posOrder: PosOrder) => { throw new Error('flush failed'); });
+    try {
+      const { result, unmount } = renderSale(pricing, saleOpts({ onSaleCompleted }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      await act(async () => { await result.current.complete(); }); // fails; pending stays set for Retry
+      const orderId = onSaleCompleted.mock.calls[0][0].id;
+      logged.length = 0; // drop the throw's own log (deliver()'s); this test is about the unmount log itself
+      unmount();
+      expect(logged).toEqual([expect.objectContaining({ level: 'error',
+        message: 'useSale unmounted with a save pending or in flight', data: { orderId, stage: 'tender' } })]);
+    } finally {
+      saleLogger.removeSink('unmount-pending');
+    }
+  });
+
+  it('unmount with nothing pending logs nothing', () => {
+    const logged: LogEntry[] = [];
+    saleLogger.addSink({ id: 'unmount-idle', levels: ['error'], write: (entry) => logged.push(entry) });
+    try {
+      const { unmount } = renderSale(pricing);
+      unmount();
+      expect(logged).toEqual([]);
+    } finally {
+      saleLogger.removeSink('unmount-idle');
+    }
   });
 });

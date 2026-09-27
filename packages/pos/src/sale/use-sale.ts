@@ -74,6 +74,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   useEffect(() => {
     if (idle && (madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency)) result.newSale();
   });
+  // A screen that unmounts (medusapos: Sign out) mid-save must still leave a trace of the loss.
+  useEffect(() => () => {
+    if (pending.current || inFlight.current) {
+      saleLogger.error('useSale unmounted with a save pending or in flight',
+        { orderId: pending.current?.posOrder.id, stage: stageNow.current.kind });
+    }
+  }, []);
 
   function setTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string } | null) {
     if (locked()) return;
@@ -97,12 +104,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     try {
       await opts.onSaleCompleted?.(completion.posOrder);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Logged whatever the mount state and whether or not it's still pending (#150 review): a screen
+      // unmounted mid-save (medusapos Sign out) must never lose a throw silently. Skipped only once the
+      // order is confirmed stored, since a later throw on a known-safe order needs no fresh alarm.
+      if (confirmed.current !== completion) {
+        saleLogger.error('onSaleCompleted failed', { orderId: completion.posOrder.id, error: message });
+      }
       if (pending.current === completion) {
-        setError(`The sale could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+        setError(`The sale could not be saved: ${message}`);
         checkStored(completion);
-      } else {
-        saleLogger.error('onSaleCompleted failed for an abandoned attempt', { orderId: completion.posOrder.id,
-          error: error instanceof Error ? error.message : String(error) });
       }
       return;
     }
