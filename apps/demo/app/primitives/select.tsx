@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
-import { Select, PortalHost } from '@tallyui/primitives';
+import { Select } from '@tallyui/primitives';
 import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 const fruits = [
@@ -76,7 +76,6 @@ export default function SelectScreen() {
           <Text style={s.btn}>Reset</Text>
         </Pressable>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

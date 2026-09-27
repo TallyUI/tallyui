@@ -21,6 +21,13 @@ const screens = [
   // Register
   { href: '/pos/cash-count-input', label: 'CashCountInput' },
   { href: '/pos/register-open-close', label: 'RegisterOpenClose' },
+  { href: '/pos/register/picker', label: 'RegisterPicker' },
+  { href: '/pos/register/open', label: 'OpenRegisterCard' },
+  { href: '/pos/register/bar', label: 'RegisterBar' },
+  { href: '/pos/register/movement', label: 'MovementSheet' },
+  { href: '/pos/register/panel', label: 'RegisterPanel' },
+  { href: '/pos/register/column', label: 'RegisterColumn' },
+  { href: '/pos/register/blind', label: 'RegisterPanel (blind)' },
   // Settings
   { href: '/pos/connector-status', label: 'ConnectorStatus' },
   { href: '/pos/settings-group', label: 'SettingsGroup' },

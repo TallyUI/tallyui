@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { Stack } from 'expo-router';
-import { PortalHost } from '@tallyui/primitives';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuCheckboxItem, ContextMenuRadioItem,
@@ -132,7 +131,6 @@ export default function ContextMenuScreen() {
           </ContextMenu>
         </VStack>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

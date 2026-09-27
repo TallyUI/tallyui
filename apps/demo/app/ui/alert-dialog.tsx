@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
-import { PortalHost } from '@tallyui/primitives';
 import {
   AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
   AlertDialogFooter, AlertDialogTitle, AlertDialogDescription,
@@ -95,7 +94,6 @@ export default function AlertDialogScreen() {
           </AlertDialog>
         </VStack>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

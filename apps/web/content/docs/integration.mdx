@@ -69,6 +69,8 @@ function StoreGate({ children }: { children: ReactNode }) {
 }
 ```
 
+Mount a single `<PortalHost />` (from `@tallyui/primitives`) once at the app's root, after navigation -- above `StoreGate`, not inside a screen -- or dialogs, popovers and sheets render under the screen's own header instead of above it.
+
 ## Pricing and tax
 
 `withPricingContext(context, settings)` folds the resolved settings' opaque pricing context into the `SyncContext` that `startReplication` uses, and `taxProviderProps(settings)` turns the same settings into `<TaxProvider>`'s rates and inclusivity. Medusa needs that pricing context for its calculated-price replication; Vendure instead takes `settings.pricesIncludeTax`, plus `vendureGlobalStockSettings(context)`'s channel defaults, as options to `createVendureConnector`.

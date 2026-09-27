@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
-import { PortalHost } from '@tallyui/primitives';
 import {
   Popover, PopoverTrigger, PopoverContent,
   Button, Text, VStack, HStack, Input, Label,
@@ -87,7 +86,6 @@ export default function PopoverScreen() {
           </Popover>
         </VStack>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

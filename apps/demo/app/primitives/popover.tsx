@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
-import { Popover, PortalHost } from '@tallyui/primitives';
+import { Popover } from '@tallyui/primitives';
 import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function PopoverScreen() {
@@ -57,7 +57,6 @@ export default function PopoverScreen() {
           </Popover.Portal>
         </Popover.Root>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

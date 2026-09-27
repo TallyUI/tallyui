@@ -312,3 +312,45 @@ it('flags a void stranded when a close lands between its check and its writes, a
   expect([...(frozen as { movement_ids: string[] }).movement_ids].sort()).toEqual([target.id, other.id, live.id].sort());
   expect((await db.closures.findOne(id).exec())?.toJSON()).toEqual(frozen);
 });
+
+// register-screens-a (the #160 review's nit): readClosure reads the closure by primary key with
+// `findDocumentsById([id], false)`, the same "a deleted document counts as missing" rule
+// `readSession` documents above. A repeated Undo on an already-voided movement reuses the first
+// reversal (its id, already counted by a real closure written after the reversal existed), so
+// this closure's movement_ids genuinely lists it — proving the outcome turns on the delete, not on
+// the reversal being absent from the closure for some other reason. Revert: pass `true` (include
+// deleted) and this test fails, because the deleted closure would still be found and its stale
+// movement_ids would wrongly count the reversal as delivered, returning it instead of throwing.
+it('treats a deleted closure document as missing, not as a closure that already counted the void', async () => {
+  await ensureRegister(db.register_sessions, 'web');
+  const { id } = await openSession(db.register_sessions, input);
+  const target = await paidOut(id);
+  // Voided while the session is still open: no closure check on this path, so the reversal is
+  // minted for real before any closure exists.
+  const reversal = await voidMovement(db.register_sessions, db.cash_movements, target.id, '7');
+  await restart();
+  let closureId = '';
+  const raced = duringNextReadById(async () => {
+    await closeSession(db.register_sessions, id, { counted: { cash: 10000 } });
+    const [session] = await db.register_sessions.storageInstance.findDocumentsById([id], false);
+    const closure = await writeClosure({
+      closures: db.closures, register: db.register_sessions, storeKey: 'store', session, counted: 10000,
+      otherTenders: {}, movements: await db.cash_movements.find().exec(), orders: [], softwareVersion: '1.0.0',
+    });
+    closureId = closure.id;
+    // The closure genuinely counted the reversal at write time...
+    expect(closure.movement_ids).toContain(reversal.id);
+    // ...but the row is purged (a retention sweep, a mis-click) before voidMovement re-reads it.
+    await closure.remove();
+  });
+  // A repeated Undo on the same, already-voided movement: reuses `reversal.id` rather than minting
+  // a new one, so no new write lands between the closure write above and the read below.
+  const error = await voidMovement(db.register_sessions, db.cash_movements, target.id, '7', db.closures).catch(
+    (e: unknown) => e,
+  );
+  expect(raced()).toBe(true);
+  expect(error).toBeInstanceOf(RegisterMovementStrandedError);
+  expect((error as RegisterMovementStrandedError).id).toBe(reversal.id);
+  // Truly gone from storage, not merely filtered out of a live query.
+  expect(await db.closures.storageInstance.findDocumentsById([closureId], true)).toHaveLength(1);
+});

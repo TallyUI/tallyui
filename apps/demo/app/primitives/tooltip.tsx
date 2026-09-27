@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
-import { Tooltip, PortalHost } from '@tallyui/primitives';
+import { Tooltip } from '@tallyui/primitives';
 import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function TooltipScreen() {
@@ -53,7 +53,6 @@ export default function TooltipScreen() {
           </Tooltip.Root>
         </View>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

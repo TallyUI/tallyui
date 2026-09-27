@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
-import { PortalHost } from '@tallyui/primitives';
 import {
   Dialog, DialogTrigger, DialogContent, DialogHeader, DialogFooter,
   DialogTitle, DialogDescription, DialogClose,
@@ -102,7 +101,6 @@ export default function DialogScreen() {
           </Dialog>
         </VStack>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

@@ -1,3 +1,10 @@
 export { CashCountInput, type CashCountInputProps, type Denomination } from './cash-count-input';
 export { RegisterSummary, type RegisterSummaryProps, type TransactionSummary } from './register-summary';
 export { RegisterOpenClose, type RegisterOpenCloseProps } from './register-open-close';
+export { RegisterPicker, type RegisterPickerProps, type RegisterPickerRegister } from './register-picker';
+export { OpenRegisterCard, type OpenRegisterCardProps } from './open-register-card';
+export { RegisterBar, type RegisterBarProps } from './register-bar';
+export { describeRegisterBarPill, type RegisterBarPill } from './register-bar.helpers';
+export { MovementSheet, type MovementSheetProps } from './movement-sheet';
+export { RegisterPanel, type RegisterPanelProps } from './register-panel';
+export { RegisterColumn, type RegisterColumnProps } from './register-column';

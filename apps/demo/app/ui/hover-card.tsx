@@ -1,6 +1,5 @@
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
-import { PortalHost } from '@tallyui/primitives';
 import {
   HoverCard, HoverCardTrigger, HoverCardContent,
   Button, Text, VStack, HStack, Avatar,
@@ -79,7 +78,6 @@ export default function HoverCardScreen() {
           </HoverCard>
         </VStack>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

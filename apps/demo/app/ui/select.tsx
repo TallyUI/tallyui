@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
-import { PortalHost } from '@tallyui/primitives';
 import {
   Select, SelectTrigger, SelectValue, SelectContent,
   SelectGroup, SelectLabel, SelectItem, SelectSeparator,
@@ -87,7 +86,6 @@ export default function SelectScreen() {
           </Select>
         </VStack>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }
