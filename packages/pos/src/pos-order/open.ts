@@ -15,15 +15,30 @@ import type { PosOrder } from './types';
  */
 export const POS_ORDER_MIGRATION_CLOSE_WAIT_MS = 10_000;
 
-/** The latest migration per database, so a close waits for the current one across DM4 retries
- * rather than accumulating one wait per retry. Never loses track of an earlier attempt: each new
- * migration on a database starts only once the previous one has settled (see below). */
-const latestMigrations = new WeakMap<RxDatabase, Promise<unknown>>();
+/**
+ * `addPosOrderCollection` stopped, before any further write, because its database is closing: it
+ * was called once `close()` had begun, or the close stopped waiting for it (after
+ * `POS_ORDER_MIGRATION_CLOSE_WAIT_MS`). No order is lost: reopen the database and call it again.
+ */
+export class PosOrderOpenClosedError extends Error {
+  readonly code = 'POS_ORDER_OPEN_CLOSED';
+  constructor(readonly databaseName: string) {
+    super(`addPosOrderCollection: database ${databaseName} closed during the open; reopen it and open pos_orders again`);
+    this.name = 'PosOrderOpenClosedError';
+  }
+}
 
-function waitWithTimeout(promise: Promise<unknown>, ms: number): Promise<void> {
+/** Every open per database so far, settled or not: one promise, so a close waits for all of them
+ * across DM4 retries with one handler, and a new open's reset waits for every earlier migration. */
+const latestOpens = new WeakMap<RxDatabase, Promise<unknown>>();
+/** Databases whose close stopped waiting (the limit passed), so storage is closing under the open. */
+const closedUnderOpen = new WeakSet<RxDatabase>();
+
+/** Resolves true once `promise` settles, or false after `ms`. */
+function waitWithTimeout(promise: Promise<unknown>, ms: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    promise.finally(() => { clearTimeout(timer); resolve(); });
+    const timer = setTimeout(() => resolve(false), ms);
+    promise.finally(() => { clearTimeout(timer); resolve(true); });
   });
 }
 
@@ -56,18 +71,47 @@ async function writeOverStaleCopies(collection: RxCollection, from: RxStorageIns
  * `DONE` left before a rollback resolves it before the older version's new orders have moved. So the
  * collection is added without `autoMigrate`, the status and a failed run's checkpoint are reset
  * (never an order or its storage), and the migration itself is awaited.
+ *
+ * A close waits for the whole open, up to `POS_ORDER_MIGRATION_CLOSE_WAIT_MS`. Called once the
+ * database's close has begun, or when the close stops waiting, it rejects with
+ * `PosOrderOpenClosedError` (`code: 'POS_ORDER_OPEN_CLOSED'`) before any further write: reopen and
+ * call it again. Any other rejection (DM4, a storage error) is a real failure.
  */
 export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollection<PosOrder>> {
   // The reset below runs before RxDB elects which tab migrates, so a second tab could reset a
   // migration another tab is running. TallyUI is single-instance (ADR-061).
   if (db.multiInstance) throw new Error('addPosOrderCollection: multiInstance databases are not supported (ADR-061)');
+  // RxDB 16.21.1 sets the private `closePromise` as `close()` begins (rx-database.js:356), and that
+  // close may already have read `db.onClose` (:381), so it would not wait for this open.
+  if (db.closed || (db as unknown as { closePromise: unknown }).closePromise) throw new PosOrderOpenClosedError(db.name);
+  // Registered before the first await. RxDB's close reads `db.onClose` once, when the database is
+  // idle (rx-database.js:381), and creating or removing a store doesn't keep it busy: a handler
+  // added after an await missed that close, which then closed storage under the open (2026-09-27).
+  const previous = latestOpens.get(db);
+  if (!previous) {
+    db.onClose.push(() => waitWithTimeout(latestOpens.get(db)!, POS_ORDER_MIGRATION_CLOSE_WAIT_MS)
+      .then((settled) => { if (!settled) closedUnderOpen.add(db); }));
+  }
+  const opening = openPosOrders(db, previous);
+  latestOpens.set(db, Promise.all([previous, opening.catch(() => undefined)]));
+  return opening;
+}
+
+async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefined): Promise<RxCollection<PosOrder>> {
+  // The backstop, after each await: `closed` is set only once every store is closed (rx-database.js:353).
+  const closing = () => closedUnderOpen.has(db) || db.closed;
+  const stopIfClosing = () => { if (closing()) throw new PosOrderOpenClosedError(db.name); };
   const { pos_orders: collection } = await db.addCollections({ pos_orders: { ...posOrderCollection(), autoMigrate: false } });
   const state = collection.getMigrationState();
   try {
-    if (!(await state.mustMigrate)) return collection;
+    stopIfClosing();
+    const mustMigrate = await state.mustMigrate;
+    stopIfClosing();
+    if (!mustMigrate) return collection;
     // Never reset a still-settling earlier attempt's checkpoint out from under it: each new
     // migration on this database starts only once the one before it has fully settled.
-    await latestMigrations.get(db);
+    await previous;
+    stopIfClosing();
     // Older-version orders exist (their collection record is there), so any stored status is a past run's.
     await state.updateStatus((status) => {
       // RxDB writes only what the handler changes in place.
@@ -81,9 +125,12 @@ export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollectio
     // would skip that order, then remove its storage. So every run starts from the first order,
     // as RxDB's own first run does; an order already copied is found equal and skipped.
     const old = (await state.oldCollectionMeta)!.data.schema;
-    await (await db.storage.createStorageInstance({ databaseName: db.name, collectionName: `rx-migration-state-meta-pos_orders-${old.version}`,
+    stopIfClosing();
+    const checkpoint = await db.storage.createStorageInstance({ databaseName: db.name, collectionName: `rx-migration-state-meta-pos_orders-${old.version}`,
       databaseInstanceToken: db.token, multiInstance: db.multiInstance, options: {}, password: db.password,
-      schema: getRxReplicationMetaInstanceSchema(old, hasEncryption(old)), devMode: overwritable.isDevMode() })).remove();
+      schema: getRxReplicationMetaInstanceSchema(old, hasEncryption(old)), devMode: overwritable.isDevMode() });
+    await (closing() ? checkpoint.close() : checkpoint.remove());
+    stopIfClosing();
     // RxDB bug 2: `cancel()` stops `this.replicationState`, which `migrateStorage` never sets, so each
     // run's replication outlives the run. It wakes only on the stored older version's change stream (one
     // shared across instances, as on memory storage), then writes its checkpoint into the store a later
@@ -109,11 +156,8 @@ export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollectio
     };
     // Settles once the migration has: DONE, or ERROR with its old storage closed. RxDB's close
     // does not stop a migration, so a close waits for it rather than closing storage under it.
-    const migration = state.startMigration().finally(() => settled.next());
-    const isFirstMigrationOnDb = !latestMigrations.has(db);
-    latestMigrations.set(db, migration.catch(() => undefined));
-    if (isFirstMigrationOnDb) db.onClose.push(() => waitWithTimeout(latestMigrations.get(db)!, POS_ORDER_MIGRATION_CLOSE_WAIT_MS));
-    await migration;
+    await state.startMigration().finally(() => settled.next());
+    stopIfClosing();
     const status = (await getSingleDocument(db.internalStore, state.statusDocId))?.data as RxMigrationStatus | undefined;
     // RxDB deletes the older version's collection record only after every order has moved.
     if (status?.status === 'DONE' && !(await getOldCollectionMeta(state))) return collection;

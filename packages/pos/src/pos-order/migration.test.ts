@@ -9,7 +9,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder } from './finalize';
-import { addPosOrderCollection, POS_ORDER_MIGRATION_CLOSE_WAIT_MS } from './open';
+import { addPosOrderCollection, POS_ORDER_MIGRATION_CLOSE_WAIT_MS, PosOrderOpenClosedError } from './open';
 import { addPosOrderCollectionTests, olderCollection, type Origin } from './open.test-helper';
 import { posOrderCollection, posOrderSchema } from './schema';
 import type { PosOrder } from './types';
@@ -220,6 +220,65 @@ async function oneOnCloseHandler(from: Origin) {
 
 it('keeps at most one db.onClose handler across DM4 retries, and the fixed reopen of the same database gets its own one', () => oneOnCloseHandler(0));
 
+/** The backstop: an open on a database whose close has begun rejects with the coded error, and writes nothing. */
+async function refusesClosingDatabase(from: Origin) {
+  const memory = getRxStorageMemory();
+  const order = pendingOrder(from);
+  const name = await seed(memory, order, from);
+  const db = await createRxDatabase({ name, storage: memory, multiInstance: false });
+  const closing = db.close();
+  const error = await addPosOrderCollection(db).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(PosOrderOpenClosedError);
+  expect(error).toMatchObject({ code: 'POS_ORDER_OPEN_CLOSED' });
+  await closing;
+  expect(db.collections.pos_orders).toBeUndefined();
+  expect(await olderDocument(memory, name, order.id, from)).toMatchObject(order);
+}
+
+it('an open on a database whose close has begun rejects with the coded error and keeps the order', () => refusesClosingDatabase(0));
+
+/**
+ * The backstop: the open is held before it removes the migration checkpoint for longer than a close
+ * waits. Once it resumes, it stops with the coded error before any write, and the next open migrates the order.
+ */
+async function stopsOnceCloseGivesUp(from: Origin) {
+  const memory = getRxStorageMemory();
+  const order = pendingOrder(from);
+  const name = await seed(memory, order, from);
+  let release!: () => void;
+  let reached!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const paused = new Promise<void>((resolve) => { reached = resolve; });
+  const holding: RxStorage<any, any> = { ...memory, createStorageInstance: async (params) => {
+    if (params.collectionName.startsWith('rx-migration-state-meta-')) { reached(); await held; }
+    return memory.createStorageInstance(params);
+  } };
+  const db = await createRxDatabase({ name, storage: holding, multiInstance: false });
+  const opening = addPosOrderCollection(db).catch((e: unknown) => e);
+  await paused;
+
+  vi.useFakeTimers();
+  try {
+    const closing = db.close();
+    await vi.advanceTimersByTimeAsync(POS_ORDER_MIGRATION_CLOSE_WAIT_MS + 1000);
+    await expect(closing).resolves.toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+  release();
+  const error = await opening;
+  expect(error).toBeInstanceOf(PosOrderOpenClosedError);
+  expect(error).toMatchObject({ code: 'POS_ORDER_OPEN_CLOSED' });
+  expect(await olderDocument(memory, name, order.id, from)).toMatchObject(order);
+
+  const next = await createRxDatabase({ name, storage: memory, multiInstance: false });
+  expect((await (await addPosOrderCollection(next)).findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+  await next.close();
+}
+
+it('an open held past the close-wait limit stops with the coded error before any write, and the next open migrates the order',
+  () => stopsOnceCloseGivesUp(0));
+
 // The same set from version 1 to 2 (registers c1a): a version-1 order carries its `sessionId`, and keeps it.
 describe('from version 1', () => {
   it('keeps a pending, unsynced version-1 order, with its sessionId, byte for byte through the migration to version 2', () => keepsPendingOrder(1));
@@ -230,4 +289,7 @@ describe('from version 1', () => {
   it('closes within the close-wait limit even when a migration never settles, and never loses the version-1 order', () => closesWithinWaitLimit(1));
   it('refuses a multiInstance database before any reset, adds no collection, and keeps the version-1 order', () => refusesMultiInstance(1));
   it('keeps at most one db.onClose handler across DM4 retries, and the fixed reopen of the same database gets its own one', () => oneOnCloseHandler(1));
+  it('an open on a database whose close has begun rejects with the coded error and keeps the version-1 order', () => refusesClosingDatabase(1));
+  it('an open held past the close-wait limit stops with the coded error before any write, and the next open migrates the version-1 order',
+    () => stopsOnceCloseGivesUp(1));
 });
