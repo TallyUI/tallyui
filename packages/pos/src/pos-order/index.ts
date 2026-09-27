@@ -4,7 +4,7 @@ export { finalizeOrder } from './finalize';
 export type { FinalizeOptions } from './finalize';
 export { toOrderCreateEnvelope } from './command';
 export { posOrderSchema, posOrderCollection } from './schema';
-export { addPosOrderCollection, PosOrderOpenClosedError } from './open';
+export { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from './open';
 export { getDeviceId } from './device-id';
 export { needsAttention } from './needs-attention';
 export { sameSale, OrderContentMismatchError } from './same-sale';

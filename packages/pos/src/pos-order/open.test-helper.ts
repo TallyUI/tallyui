@@ -3,12 +3,13 @@
 import { expect, it } from 'vitest';
 import {
   addRxPlugin, createRxDatabase, fillWithDefaultSettings, getPrimaryKeyOfInternalDocument, getSingleDocument, INTERNAL_CONTEXT_MIGRATION_STATUS,
-  normalizeMangoQuery, prepareQuery, type RxCollectionCreator, type RxDatabase, type RxJsonSchema, type RxStorage,
+  INTERNAL_STORAGE_NAME, normalizeMangoQuery, prepareQuery, type RxCollectionCreator, type RxDatabase, type RxJsonSchema, type RxStorage,
   type RxStorageInstanceCreationParams,
 } from 'rxdb';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { addPosOrderCollection } from './open';
+import { callbackSink, type LogEntry } from '../logging';
+import { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from './open';
 import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
@@ -214,6 +215,173 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
 
   it('a close while the open adds the collection waits for the whole open, and the same storage writes after', () =>
     closedMidOpen((params) => params.collectionName === 'pos_orders' && params.schema.version === posOrderSchema.version));
+
+  /**
+   * A close that stops waiting (a 50 ms limit) mid-migration. The run's first read of the current version,
+   * taken just before its first write (replication-protocol/index.js:162, :185), answers only once the close
+   * has resolved, or (`midClose`) once the close is closing the internal store, its last step, before
+   * `db.closed` is set. No write may reach a closed store: the open rejects with the coded error, the close is
+   * prompt, nothing is unhandled, and a later open on the same storage (one SQLite handle) migrates every
+   * order once and still writes, where a write to a closed instance would have poisoned it (rxdb-premium bug 6).
+   */
+  const closeGivesUp = async (midClose: boolean) => {
+    const unhandled: unknown[] = [];
+    const spy = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', spy);
+    const warnings: LogEntry[] = [];
+    posOrdersLogger.addSink(callbackSink({ id: 'close-gives-up', levels: ['warn'], callback: (entry) => warnings.push(entry) }));
+    try {
+      let holding = false;
+      let reached!: () => void;
+      let closingInternal!: () => void;
+      let release!: () => void;
+      const read = new Promise<void>((resolve) => { reached = resolve; });
+      const internalClose = new Promise<void>((resolve) => { closingInternal = resolve; });
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      const hold = (storage: RxStorage<any, any>): RxStorage<any, any> => ({ ...storage, createStorageInstance: async (params) => {
+        const instance = await storage.createStorageInstance(params);
+        const current = params.collectionName === 'pos_orders' && params.schema.version === posOrderSchema.version;
+        return new Proxy(instance, { get: (target: any, key) => {
+          // Only the migration's own read passes `withDeleted`; the open's stale-copy check does not.
+          if (holding && current && key === 'findDocumentsById') return async (ids: string[], withDeleted: boolean) => {
+            const found = await target.findDocumentsById(ids, withDeleted);
+            if (withDeleted) { reached(); await released; }
+            return found;
+          };
+          if (holding && midClose && params.collectionName === INTERNAL_STORAGE_NAME && key === 'close') {
+            return async () => { closingInternal(); await released; return target.close(); };
+          }
+          return typeof target[key] === 'function' ? target[key].bind(target) : target[key];
+        } });
+      } });
+      const { open, olderApp, stored } = store(makeStorage(), from, hold);
+      const orders = [order(1), order(2), order(3)];
+      await olderApp((collection) => collection.bulkInsert(orders));
+
+      holding = true;
+      const db = await open();
+      const opening = addPosOrderCollection(db, 50).then(() => 'resolved', (error: unknown) => error);
+      await read;
+      const started = Date.now();
+      const closing = db.close();
+      await (midClose ? internalClose : closing);
+      const elapsed = Date.now() - started;
+      expect(db.closed).toBe(!midClose);
+      holding = false;
+      release();
+      const error = await opening;
+      await closing;
+      expect(error).toBeInstanceOf(PosOrderOpenClosedError);
+      expect(error).toMatchObject({ code: 'POS_ORDER_OPEN_CLOSED' });
+      expect(elapsed).toBeLessThan(5000);
+      // The run's ERROR status was dropped, and logged with its key.
+      expect(warnings).toContainEqual(expect.objectContaining({ scope: 'pos-orders', data: { database: db.name, ids: [STATUS_ID] } }));
+      // Nothing reached the current version, and every order waits in the older one.
+      expect((await stored()).ids).toEqual({ v0: orders.map((o) => o.id), v1: [] });
+      // Long enough for a stray write to reject.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(unhandled).toEqual([]);
+
+      const next = await open();
+      const pos = await addPosOrderCollection(next);
+      await pos.insert(order(4));
+      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...orders, order(4)]);
+      await next.close();
+      expect(await stored()).toMatchObject({ v0: [], v1: [...orders, order(4)] });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', spy);
+      posOrdersLogger.removeSink('close-gives-up');
+    }
+  };
+
+  it('a close that stops waiting mid-migration lets no write reach a closed store: the open rejects with the coded error, and the same storage migrates every order once after',
+    () => closeGivesUp(false), 30000);
+
+  it('once the close stops waiting, the migration writes nothing even before the close has finished closing storage', () => closeGivesUp(true), 30000);
+
+  /**
+   * A close that stops waiting after the migration is DONE, while the open reads the status. RxDB's close
+   * runs its `onClose` handlers only once the database is idle (rx-database.js:381), and that read holds it
+   * busy (the internal store's reads are locked runs, rx-storage-helper.js:486), so the close begins
+   * mid-migration: the run's first read of the current version waits for it. The open's status read then
+   * answers only once the limit has passed, and the collections' close is waiting for it.
+   */
+  it('a close that stops waiting once the migration is DONE, while the open reads its status, rejects with the coded error', async () => {
+    const unhandled: unknown[] = [];
+    const spy = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', spy);
+    try {
+      const limit = 500;
+      let holding = false;
+      let done = false;
+      let migrating!: () => void;
+      let statusRead!: () => void;
+      let resumeMigration!: () => void;
+      let release!: () => void;
+      const migrationRead = new Promise<void>((resolve) => { migrating = resolve; });
+      const read = new Promise<void>((resolve) => { statusRead = resolve; });
+      const resumed = new Promise<void>((resolve) => { resumeMigration = resolve; });
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      const hold = (storage: RxStorage<any, any>): RxStorage<any, any> => ({ ...storage, createStorageInstance: async (params) => {
+        const instance = await storage.createStorageInstance(params);
+        const current = params.collectionName === 'pos_orders' && params.schema.version === posOrderSchema.version;
+        const internal = params.collectionName === INTERNAL_STORAGE_NAME;
+        return new Proxy(instance, { get: (target: any, key) => {
+          if (holding && current && key === 'findDocumentsById') return async (ids: string[], withDeleted: boolean) => {
+            if (withDeleted) { migrating(); await resumed; }
+            return target.findDocumentsById(ids, withDeleted);
+          };
+          // Once the run has written DONE, the next status read is the open's own.
+          if (holding && internal && key === 'bulkWrite') return (rows: any[], context: string) => {
+            if (rows.some((row) => row.document.id === STATUS_ID && row.document.data.status === 'DONE')) done = true;
+            return target.bulkWrite(rows, context);
+          };
+          if (holding && internal && key === 'findDocumentsById') return async (ids: string[], withDeleted: boolean) => {
+            if (done && ids.includes(STATUS_ID)) { done = false; statusRead(); await released; }
+            return target.findDocumentsById(ids, withDeleted);
+          };
+          return typeof target[key] === 'function' ? target[key].bind(target) : target[key];
+        } });
+      } });
+      const { open, olderApp, stored } = store(makeStorage(), from, hold);
+      const orders = [order(1), order(2), order(3)];
+      await olderApp((collection) => collection.bulkInsert(orders));
+
+      holding = true;
+      const db = await open();
+      const opening = addPosOrderCollection(db, limit).then(() => 'resolved', (error: unknown) => error);
+      await migrationRead;
+      let waitStarted!: () => void;
+      const waiting = new Promise<void>((resolve) => { waitStarted = resolve; });
+      db.onClose.push(async () => waitStarted());
+      const closing = db.close();
+      // The close's wait for the open has begun: the migration finishes, and the open's status read waits past the limit.
+      await waiting;
+      resumeMigration();
+      await read;
+      await new Promise((resolve) => setTimeout(resolve, limit + 200));
+      expect(db.closed).toBe(false);
+      holding = false;
+      release();
+      const error = await opening;
+      await closing;
+      expect(error).toBeInstanceOf(PosOrderOpenClosedError);
+      expect(error).toMatchObject({ code: 'POS_ORDER_OPEN_CLOSED' });
+      // The run had finished: every order is in the current version, once.
+      expect(await stored()).toMatchObject({ v0: [], v1: orders });
+
+      const next = await open();
+      const pos = await addPosOrderCollection(next);
+      await pos.insert(order(4));
+      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...orders, order(4)]);
+      await next.close();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', spy);
+    }
+  }, 30000);
 
   it(`after a rollback to the version-${from} app, its new sales migrate before the reopen resolves`, async () => {
     const { open, olderApp, stored } = store(makeStorage(), from);
