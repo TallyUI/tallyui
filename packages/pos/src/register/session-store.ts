@@ -60,8 +60,18 @@ const TRANSITIONS: Record<RegisterSession['status'], readonly RegisterSession['s
   closed: [],
 };
 
+/**
+ * The session as stored, by primary key, not a cached `findOne(id)`: a status write that skips that
+ * query (a server sync) can't leave a live-session check stale (docs/rxdb/query-cache-reads.md). A
+ * deleted document counts as missing.
+ */
+async function readSession(sessions: RegisterSessionCollection, id: string) {
+  const [stored] = await sessions.storageInstance.findDocumentsById([id], false);
+  return stored;
+}
+
 async function requireLiveSession(sessions: RegisterSessionCollection, id: string) {
-  const session = await sessions.findOne(id).exec();
+  const session = await readSession(sessions, id);
   if (!session) throw new RegisterSessionRequiredError();
   if (session.status === 'closed') throw new RegisterSessionClosedError();
   return session;
@@ -215,7 +225,7 @@ export async function recordMovement(
   // the server to reconcile.
   let counted: readonly string[] | undefined;
   try {
-    const after = await sessions.findOne(input.sessionId).exec();
+    const after = await readSession(sessions, input.sessionId);
     if (after?.status !== 'closed') return row;
     counted = (await closures.findOne(input.sessionId).exec())?.movement_ids;
   } catch {
