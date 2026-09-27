@@ -1502,9 +1502,10 @@ interface OrderCreatePayload {
     medusapos/app `a1b981d` into `packages/pos/src/sale/`. Adaptations:
     `useSale` takes an optional `session?: { id, sessions }`; when set,
     `complete()` stamps the finalized order with `stampSession` before
-    `onSaleCompleted`, and a closed or missing session surfaces as `error`
-    and keeps the tender (#126); without `session`, behaviour is
-    unchanged. `DISCOUNTS_UNSUPPORTED` keeps finalize's literal message,
+    `onSaleCompleted` (#126). Since registers c1a, a closed or missing
+    session no longer sets `error`: the sale goes on to `onSaleCompleted`
+    and the receipt with `lateSessionId` (ADR-032, late sale). Without
+    `session`, behaviour is unchanged. `DISCOUNTS_UNSUPPORTED` keeps finalize's literal message,
     with a test pinning the two together, since `finalize.ts` doesn't
     export it as a constant. Follow-up: medusapos/app adopts
     `@tallyui/pos`'s `useSale`/`lib/cart`/`lib/catalogue` and deletes its
@@ -1555,6 +1556,18 @@ interface OrderCreatePayload {
     platform-neutral, and the Vendure app will need them. They're deferred
     until the Vendure app is their second consumer, so the abstraction is
     cut from two real cases rather than one.
+  - **complete() is idempotent for one tender (2026-09-25).** Once
+    `useSale.complete()` has built the order for a tender attempt, that
+    order is the sale (the Front desk). Its `id` and `commandId` are
+    minted once, and every retry hands the same order to
+    `onSaleCompleted`, with no new stamp and no second late-sale fact.
+    Until it saves, `saving` is true and the sale is locked. A second
+    call while one is in flight (a double tap) shares the first call's
+    promise, and a call on the receipt does nothing. `newSale()`
+    abandons it; abandoning clears the screen, never the record, so an
+    order a failed save already stored stays in the outbox.
+    `useOrderOutbox.record` treats an order already stored under the same
+    `commandId` as stored (RxDB's `CONFLICT`) and still flushes.
 - **Consequences:**
   - The second app costs about half the first.
   - A third backend (WooCommerce, or Shopify if it is unparked) gets the

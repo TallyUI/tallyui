@@ -7,7 +7,7 @@
 //   - the whole `describe('store settings on the POS screen')` block: renders the app's
 //     ProductsScreen and fetchStoreSettings, not the hook.
 import type { ReactNode } from 'react';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
@@ -16,7 +16,7 @@ import type { CommandEnvelope, OrderCreatePayload, StoreSettings as PricingSetti
 import { medusaConnector } from '@tallyui/connector-medusa';
 import type { LogEntry } from '../logging';
 import { createOrderBuilder } from '../order';
-import { createOrderOutbox } from '../outbox';
+import { createOrderOutbox, useOrderOutbox, type CommandTransport } from '../outbox';
 import { addPosOrderCollection, finalizeOrder, type PosOrder } from '../pos-order';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
@@ -25,7 +25,7 @@ import {
   type ClosureCollection, type RegisterSessionCollection,
 } from '../register';
 import { catalogueEntries } from './catalogue';
-import { DISCOUNTS_UNSUPPORTED, useSale } from './use-sale';
+import { DISCOUNTS_UNSUPPORTED, SALE_SAVING, useSale } from './use-sale';
 
 const traits = medusaConnector.traits.product;
 const product = {
@@ -418,6 +418,249 @@ describe('late sale', () => {
     } finally {
       outbox.stop();
       await db.remove();
+    }
+  });
+});
+
+// complete() is idempotent for one tender (ADR-052, 2026-09-25): once complete() has built the order,
+// that order is the sale. A retry reuses it, so a save that failed after storing it never duplicates it.
+describe('complete() is idempotent for one tender', () => {
+  const facts: LogEntry[] = [];
+  registerFactsLogger.addSink({ id: 'idempotent-capture', levels: ['warn'], write: (entry) => facts.push(entry) });
+  const lateFacts = () => facts.filter((entry) => (entry.data?.context as { type?: string })?.type === 'register.late-sale');
+  beforeEach(() => { facts.length = 0; });
+
+  /**
+   * Renders useSale with a real useOrderOutbox on memory `pos_orders`. Its onSaleCompleted throws `before`
+   * times before recording, then `after` times after recording (a fake flush failure). The transport
+   * answers "retry in a minute", so every stored order stays pending and no retry fires during a test.
+   */
+  async function renderWithOutbox(failures: { before?: number; after?: number }, extra: Partial<Parameters<typeof useSale>[1]> = {}) {
+    const name = `idem${Math.random().toString(36).slice(2)}`;
+    const send = vi.fn<CommandTransport['send']>(async () => ({ kind: 'retry', reason: 'offline', retryAfterMs: 60_000 }));
+    const left = { before: failures.before ?? 0, after: failures.after ?? 0 };
+    const completed = vi.fn<(posOrder: PosOrder) => void>();
+    const open = async () => {
+      const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+      return { orders: await addPosOrderCollection(db), close: () => db.close().then(() => {}) };
+    };
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
+    }
+    const view = renderHook(() => {
+      const outbox = useOrderOutbox({ storeKey: 'store', deviceId: 'device-1', open, transport: () => ({ send }) });
+      const sale = useSale(pricing, saleOpts({ ...extra, onSaleCompleted: async (posOrder) => {
+        completed(posOrder);
+        if (left.before-- > 0) throw new Error('Storage busy');
+        await outbox.record(posOrder);
+        if (left.after-- > 0) throw new Error('flush failed');
+      } }));
+      return { outbox, sale };
+    }, { wrapper: Wrapper });
+    await waitFor(() => expect(view.result.current.outbox.orders).not.toBeNull());
+    const stored = async () => (await view.result.current.outbox.orders!.find().exec()).map((doc) => doc.toJSON());
+    return { result: view.result, unmount: view.unmount, completed, stored };
+  }
+  function startCardSale(result: { current: { sale: ReturnType<typeof useSale> } }) {
+    act(() => { result.current.sale.add(entries[0], traits); result.current.sale.add(entries[1], traits); });
+    act(() => result.current.sale.startTender('external'));
+  }
+
+  it("a throw after the insert, then a retry, ends with exactly one order in the outbox: the first attempt's", async () => {
+    const { result, unmount, completed, stored } = await renderWithOutbox({ after: 1 });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(result.current.sale.error).toBe('The sale could not be saved: flush failed');
+      expect(result.current.sale.stage).toEqual({ kind: 'tender', method: 'external' });
+      expect(result.current.sale.saving).toBe(true);
+      const first = completed.mock.calls[0][0];
+      expect(await stored()).toEqual([expect.objectContaining({ id: first.id, commandId: first.commandId })]);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(completed).toHaveBeenCalledTimes(2);
+      const orders = await stored();
+      expect(orders).toHaveLength(1);
+      expect(orders[0]).toMatchObject({ id: first.id, commandId: first.commandId, createdAt: first.createdAt, syncStatus: 'pending' });
+      expect(result.current.sale.stage).toEqual({ kind: 'receipt', order: expect.anything(), posOrder: first });
+      expect(result.current.sale.error).toBeNull();
+      expect(result.current.sale.saving).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('a throw before the insert, then retries, store one order; no retry finalizes again (same ids and createdAt)', async () => {
+    const { result, unmount, completed, stored } = await renderWithOutbox({ before: 2 });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(result.current.sale.error).toBe('The sale could not be saved: Storage busy');
+      expect(await stored()).toEqual([]);
+      await act(async () => { await result.current.sale.complete(); });
+      await act(async () => { await result.current.sale.complete(); });
+      expect(result.current.sale.stage.kind).toBe('receipt');
+      const first = completed.mock.calls[0][0];
+      expect(completed).toHaveBeenCalledTimes(3);
+      expect(completed.mock.calls.every(([posOrder]) => posOrder === first)).toBe(true);
+      expect(await stored()).toEqual([expect.objectContaining({ id: first.id, commandId: first.commandId, createdAt: first.createdAt })]);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("with a session, the retry doesn't stamp again: a session closed meanwhile doesn't make it late", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    const { result, unmount, completed, stored } = await renderWithOutbox({ after: 1 }, { session: { id: sessionId, sessions } });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      const first = completed.mock.calls[0][0];
+      expect(first.sessionId).toBe(sessionId);
+      await closeSession(sessions, sessionId, { counted: { cash: 0 } });
+      await act(async () => { await result.current.sale.complete(); });
+      expect(completed.mock.calls[1][0]).toBe(first);
+      expect(await stored()).toEqual([expect.objectContaining({ id: first.id, sessionId })]);
+      expect(lateFacts()).toEqual([]);
+    } finally {
+      unmount();
+      await db.remove();
+    }
+  });
+
+  it('with a closed session, the retry logs no second late-sale fact', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    await closeSession(sessions, sessionId, { counted: { cash: 0 } });
+    const { result, unmount, completed, stored } = await renderWithOutbox({ after: 1 }, { session: { id: sessionId, sessions } });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(lateFacts()).toHaveLength(1);
+      await act(async () => { await result.current.sale.complete(); });
+      const first = completed.mock.calls[0][0];
+      expect(completed.mock.calls[1][0]).toBe(first);
+      expect(lateFacts()).toHaveLength(1);
+      expect(await stored()).toEqual([expect.objectContaining({ id: first.id, lateSessionId: sessionId })]);
+    } finally {
+      unmount();
+      await db.remove();
+    }
+  });
+
+  it('while saving, every change to the sale is refused with the saving error, and the retry saves the sale as it was', async () => {
+    const { result, unmount, completed } = await renderWithOutbox({ after: 1 }, { capabilities: { orderCreate: 2 } });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      const before = result.current.sale.order;
+      const sale = () => result.current.sale;
+      const lineId = before.lineItems[0].id;
+      let refusal: string | null = null;
+      const changes: Array<[string, () => void]> = [
+        ['add', () => sale().add(entries[1], traits)],
+        ['setTender', () => sale().setTender({ method: 'cash', amountMinor: 99999 })],
+        ['cancelTender', () => sale().cancelTender()],
+        ['applyDiscount', () => { refusal = sale().applyDiscount(null, { type: 'percentage', value: 10 }); }],
+        ['setQuantity', () => sale().setQuantity(lineId, 5)],
+        ['remove', () => sale().remove(lineId)],
+        ['removeDiscount', () => sale().removeDiscount('any')],
+        ['startTender', () => sale().startTender('cash')],
+      ];
+      for (const [name, change] of changes) {
+        act(change);
+        expect(result.current.sale.order, name).toEqual(before);
+        expect(result.current.sale.stage, name).toEqual({ kind: 'tender', method: 'external' });
+        expect(result.current.sale.error, name).toBe(SALE_SAVING);
+      }
+      expect(refusal).toBe(SALE_SAVING);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(completed.mock.calls[1][0]).toBe(completed.mock.calls[0][0]);
+      expect(result.current.sale.stage.kind).toBe('receipt');
+    } finally {
+      unmount();
+    }
+  });
+
+  it('newSale() abandons the pending completion: the stored order stays pending and unchanged, the next sale gets new ids', async () => {
+    const { result, unmount, completed, stored } = await renderWithOutbox({ after: 1 });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      const [abandoned] = await stored();
+      expect(abandoned).toMatchObject({ syncStatus: 'pending' });
+      act(() => result.current.sale.newSale());
+      expect(result.current.sale.saving).toBe(false);
+      expect(result.current.sale.error).toBeNull();
+      expect(result.current.sale.stage.kind).toBe('cart');
+      startCardSale(result);
+      expect(result.current.sale.order.lineItems).toHaveLength(2);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(result.current.sale.stage.kind).toBe('receipt');
+      const next = completed.mock.calls[1][0];
+      expect(next.id).not.toBe(abandoned.id);
+      expect(next.commandId).not.toBe(abandoned.commandId);
+      const orders = await stored();
+      expect(orders).toHaveLength(2);
+      expect(orders.find((order) => order.id === abandoned.id)).toEqual(abandoned);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('two complete() calls in the same tick, with a slow stamp, build one order: one stamp, one onSaleCompleted', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let stamps = 0;
+    const slow = { findOne: (id: string) => ({ exec: async () => { stamps++; await gate; return sessions.findOne(id).exec(); } }) };
+    const { result, unmount, completed, stored } = await renderWithOutbox({},
+      { session: { id: sessionId, sessions: slow as unknown as RegisterSessionCollection } });
+    try {
+      startCardSale(result);
+      let calls!: Promise<void>[];
+      act(() => { calls = [result.current.sale.complete(), result.current.sale.complete()]; });
+      await act(async () => { release(); await Promise.all(calls); });
+      expect(await stored()).toHaveLength(1);
+      expect(stamps).toBe(1);
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(result.current.sale.stage.kind).toBe('receipt');
+      expect(calls[1]).toBe(calls[0]);
+    } finally {
+      unmount();
+      await db.remove();
+    }
+  });
+
+  it('complete() on the receipt does nothing, even from a handler bound before the receipt showed', async () => {
+    const { result, unmount, completed, stored } = await renderWithOutbox({});
+    try {
+      startCardSale(result);
+      const boundOnTender = result.current.sale.complete;
+      await act(async () => { await result.current.sale.complete(); });
+      const receipt = result.current.sale.stage;
+      expect(receipt.kind).toBe('receipt');
+      await act(async () => { await result.current.sale.complete(); });
+      await act(async () => { await boundOnTender(); });
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(await stored()).toHaveLength(1);
+      expect(result.current.sale.stage).toBe(receipt);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('a first complete() that succeeds behaves as before: one call, one order, the receipt, never left saving', async () => {
+    const { result, unmount, completed, stored } = await renderWithOutbox({});
+    try {
+      startCardSale(result);
+      expect(result.current.sale.saving).toBe(false);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(result.current.sale.stage).toEqual({ kind: 'receipt', order: expect.anything(), posOrder: completed.mock.calls[0][0] });
+      expect(result.current.sale.error).toBeNull();
+      expect(result.current.sale.saving).toBe(false);
+      expect(await stored()).toHaveLength(1);
+    } finally {
+      unmount();
     }
   });
 });
