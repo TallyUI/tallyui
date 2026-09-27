@@ -69,3 +69,4 @@ export type { RegisterSessionCollection, CashMovementCollection, ClosureCollecti
 export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows } from './register';
 export type { Correction, RecordedFigures, ClosureScope } from './register';
 export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact } from './register';
+export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, type UseRegisterSessionOptions } from './register';
