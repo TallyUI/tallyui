@@ -515,6 +515,23 @@ bodies and design docs, and the source is given for each.
       resets the status and that checkpoint (never an order or its storage),
       awaits the migration itself, holds a close until it settles, and
       resolves only when no version-0 order is left.
+      - **A close waits for the whole open (2026-09-27, CI run
+        36330600164).** The close-wait handler used to be registered only
+        after the open's first awaits. RxDB reads `db.onClose` once, when the
+        database is idle, and creating or removing the checkpoint store
+        doesn't keep it busy. So a close landing there closed `pos_orders` and
+        the internal store under the open, which failed with rxdb-premium's
+        raw `ReferenceError: context is not defined`. No order was lost, but a
+        write to a closed SQLite instance poisons every later write on that
+        handle until restart. Now the handler is registered before the first
+        await, and it waits (up to `POS_ORDER_MIGRATION_CLOSE_WAIT_MS`) for
+        every open on that database, not only its migration.
+      - **The coded error:** if the database's close had already begun when
+        the open was called, or the close stopped waiting for it, the open
+        stops before any further write. It then rejects with
+        `PosOrderOpenClosedError` (`code: 'POS_ORDER_OPEN_CLOSED'`), which
+        means "closed during the open, reopen". Any other rejection is a real
+        failure.
   - **A closed session is final.** WCPOS's server refuses writes to it;
     until job c the store does: nothing leaves `closed`, movements need an
     `open` or `counting` session, and `writeClosure` a closed one.

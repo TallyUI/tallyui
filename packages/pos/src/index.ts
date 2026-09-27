@@ -53,7 +53,7 @@ export { searchProducts, withStockOverlay, getProductStock, stockOverlay$, stock
 export { useSale, DISCOUNTS_UNSUPPORTED, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel } from './sale';
 export type { SaleStage, CatalogueEntry } from './sale';
 
-export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema, posOrderCollection, addPosOrderCollection, getDeviceId, needsAttention, sameSale, OrderContentMismatchError } from './pos-order';
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, getDeviceId, needsAttention, sameSale, OrderContentMismatchError } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';
 export { createHttpCommandTransport, createOrderOutbox, useOrderOutbox, outboxLogger } from './outbox';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
