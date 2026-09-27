@@ -7,7 +7,7 @@
 import { useRef } from 'react';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRxDatabase } from 'rxdb';
+import { createRxDatabase, type RxCollection } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order';
@@ -377,6 +377,74 @@ describe('useOrderOutbox options', () => {
       } finally {
         outboxLogger.removeSink('mismatch-capture');
       }
+    });
+
+    // medusapos's #85 review: a hung save's poll re-asks isStored every few seconds, and a mismatched
+    // order shouldn't get a fresh error log entry on every one of those.
+    it('logs a content mismatch once per order id, not on every isStored call', async () => {
+      const logged: LogEntry[] = [];
+      outboxLogger.addSink({ id: 'mismatch-once-capture', levels: ['error'], write: (entry) => logged.push(entry) });
+      try {
+        renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(retryLater) });
+        await waitFor(() => expect(outbox.orders).not.toBeNull());
+        const order = sale();
+        await act(async () => { await outbox.record(order); });
+        const mismatched = { ...order, totalMinor: order.totalMinor + 1 };
+        expect(await outbox.isStored(mismatched)).toBe(false);
+        expect(await outbox.isStored(mismatched)).toBe(false);
+        expect(await outbox.isStored(mismatched)).toBe(false);
+        expect(logged).toEqual([expect.objectContaining({ level: 'error', data: { orderId: order.id } })]);
+      } finally {
+        outboxLogger.removeSink('mismatch-once-capture');
+      }
+    });
+  });
+
+  // medusapos's #85 review: an app holds sign-out while a save is in flight, so a close under a
+  // write stuck in storage never lands mid-write.
+  describe('savesInFlight', () => {
+    /** Gates `collection.insert` on `gate`, so a `record()` call can be observed while still in flight. */
+    function gateInsert(collection: RxCollection<PosOrder>, gate: Promise<void>) {
+      const original = collection.insert.bind(collection);
+      collection.insert = ((doc: PosOrder) => gate.then(() => original(doc))) as unknown as typeof collection.insert;
+    }
+
+    it('is 1 while a record is in flight, and 0 once it resolves', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(appliedResults) });
+      await waitFor(() => expect(outbox.orders).not.toBeNull());
+      gateInsert(outbox.orders!, gate);
+      expect(outbox.savesInFlight).toBe(0);
+      let recording!: Promise<void>;
+      act(() => { recording = outbox.record(sale()); });
+      await waitFor(() => expect(outbox.savesInFlight).toBe(1));
+      await act(async () => { release(); await recording; });
+      expect(outbox.savesInFlight).toBe(0);
+    });
+
+    it('is 0 after a record rejects', async () => {
+      renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(appliedResults) });
+      await waitFor(() => expect(outbox.orders).not.toBeNull());
+      const order = sale();
+      await act(async () => { await outbox.record(order); });
+      expect(outbox.savesInFlight).toBe(0);
+      const mismatched = { ...order, totalMinor: order.totalMinor + 100 };
+      await act(async () => { await expect(outbox.record(mismatched)).rejects.toBeInstanceOf(OrderContentMismatchError); });
+      expect(outbox.savesInFlight).toBe(0);
+    });
+
+    it('is 2 for two concurrent records', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(appliedResults) });
+      await waitFor(() => expect(outbox.orders).not.toBeNull());
+      gateInsert(outbox.orders!, gate);
+      let first!: Promise<void>; let second!: Promise<void>;
+      act(() => { first = outbox.record(sale()); second = outbox.record(sale()); });
+      await waitFor(() => expect(outbox.savesInFlight).toBe(2));
+      await act(async () => { release(); await Promise.all([first, second]); });
+      expect(outbox.savesInFlight).toBe(0);
     });
   });
 
