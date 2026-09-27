@@ -16,8 +16,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { combineLatest, map, of, switchMap } from 'rxjs';
-import type { MangoQuerySelector, RxCollection, RxDocument } from 'rxdb';
+import type { RxCollection } from 'rxdb';
 import type { PosOrder } from '../pos-order/types';
+import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, type Actor } from './facts';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
@@ -89,11 +90,10 @@ export interface UseRegisterSessionOptions {
   labels?: { registerName?: string; resolveCashierName?: (id: string) => string };
 }
 
-type SessionDoc = RxDocument<RegisterSession>;
 type Reservation = RegisterBucket['closure_reservation'];
 type Snapshot = {
-  rows: SessionDoc[]; closureRows: RxDocument<Closure>[]; reservation: Reservation;
-  entries: RxDocument<CashMovement>[]; sales: RxDocument<PosOrder>[];
+  rows: RegisterSession[]; closureRows: Closure[]; reservation: Reservation;
+  entries: CashMovement[]; sales: PosOrder[];
 };
 
 const reservationOf = (register: RegisterDocument | null, storeKey: string, registerId: string) =>
@@ -108,21 +108,11 @@ const unwritten = (row: RegisterSession, closureRows: readonly { id: string }[])
  * was interrupted after the number was reserved, perhaps after its row was written), so it can
  * finish; then the open or counting one; then a closed one whose closure row was never written.
  */
-function currentSession(rows: SessionDoc[], closureRows: RxDocument<Closure>[], reservation: Reservation) {
+function currentSession(rows: RegisterSession[], closureRows: Closure[], reservation: Reservation) {
   return (reservation && !reservation.applied ? rows.find((row) => row.id === reservation.row.session_id) : undefined)
     ?? rows.find((row) => row.status !== 'closed')
     ?? rows.find((row) => unwritten(row, closureRows))
     ?? null;
-}
-
-/**
- * Reads straight from the storage with the query RxDB would run, past its query cache. In RxDB
- * 16.21.1 a document written a microtask or so after a query first subscribes never reaches that
- * cached query, and its `exec()` keeps returning the stale result (bug 4 in the local RxDB repro).
- */
-async function readFresh<T>(collection: RxCollection<T>, selector: MangoQuerySelector<T>): Promise<T[]> {
-  const { documents } = await collection.storageInstance.query(collection.find({ selector }).getPreparedQuery());
-  return documents as T[];
 }
 
 /** A session's ledger rows, built from its orders' payments the way `writeClosure` builds them. */
@@ -138,15 +128,15 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const source = useMemo(() => {
     if (!enabled || !sessions || !movements || !closures || !orders || !registerId) return null;
     return combineLatest([
-      sessions.find({ selector: { register_id: registerId } }).$,
-      closures.find({ selector: { register_id: registerId } }).$,
+      watchFresh(sessions, { selector: { register_id: registerId } }),
+      watchFresh(closures, { selector: { register_id: registerId } }),
       observeRegister$(register).pipe(map((document) => reservationOf(document, storeKey, registerId))),
     ]).pipe(switchMap(([rows, closureRows, reservation]) => {
       const current = currentSession(rows, closureRows, reservation);
       if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [] } as Snapshot);
       return combineLatest([
-        movements.find({ selector: { session_id: current.id } }).$,
-        orders.find({ selector: { sessionId: current.id } }).$,
+        watchFresh(movements, { selector: { session_id: current.id } }),
+        watchFresh(orders, { selector: { sessionId: current.id } }),
       ]).pipe(map(([entries, sales]) => ({ rows, closureRows, reservation, entries, sales })));
     }));
   }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId]);
@@ -223,11 +213,11 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         const run = (async () => {
           const { sessions, closures, registerId } = live();
           // The storage, not the rendered snapshot or a cached query, which can lag a new write.
-          const rows = await readFresh(sessions, { register_id: registerId });
+          const rows = await readFresh(sessions, { selector: { register_id: registerId } });
           if (rows.some((row) => row.status !== 'closed')) throw new RegisterSessionAlreadyOpenError();
           // Closure rows before the reservation: a close reserves, then inserts its row, then applies the
           // reservation, so a close landing between the two reads is still caught by one of them.
-          const closureRows = await readFresh(closures, { register_id: registerId });
+          const closureRows = await readFresh(closures, { selector: { register_id: registerId } });
           const reservation = reservationOf(await readRegister(register), storeKey, registerId);
           if ((reservation && !reservation.applied) || rows.some((row) => unwritten(row, closureRows))) {
             throw new RegisterCloseIncompleteError();
@@ -268,16 +258,15 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         refuseDuringTender();
         const { sessions, movements, closures, orders } = live();
         const open = current();
-        const closed = open.status === 'closed'
-          ? open.getLatest()
-          : await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, timezone });
+        // A fresh read by id, not `open` (plain data): `store.closeSession` is idempotent already closed.
+        const closed = await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, timezone });
         const { cash = 0, ...otherTenders } = closed.counted ?? input.counted;
         // Read past the query cache: the Z's figures are derived from these rows.
         const closure = await store.writeClosure({
           closures, register, storeKey, session: closed,
           counted: cash, otherTenders, timezone, softwareVersion: options.softwareVersion,
-          movements: await readFresh(movements, { session_id: closed.id }),
-          orders: await readFresh(orders, { sessionId: closed.id }),
+          movements: await readFresh(movements, { selector: { session_id: closed.id } }),
+          orders: await readFresh(orders, { selector: { sessionId: closed.id } }),
           resolveCashierName: labels?.resolveCashierName,
           labels: {
             register_name: labels?.registerName ?? '', closed_by_name: nameOf(closed.closed_by),

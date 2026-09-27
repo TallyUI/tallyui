@@ -361,6 +361,8 @@ bodies and design docs, and the source is given for each.
   pending count, the rejected orders to requeue and an order's state before
   patching with `readFresh`/`countFresh` (`@tallyui/pos`), which send RxDB's
   prepared query straight to the storage.
+  - Live displays a cashier would act on (`useRegisterSession`, `useOrderOutbox`'s recent list)
+    use `watchFresh` (`@tallyui/pos`) instead of a cached `find().$`, for the same reason.
 
 ## ADR-025 No RxDB premium or SSPL code in TallyUI library packages
 
@@ -1604,7 +1606,13 @@ interface OrderCreatePayload {
       Retry is the only way out: `newSale()` is refused. A refusal during a
       save still in flight asks `isStored` afresh, so a hung save whose order
       is stored can still Continue; its later throw is only logged. The
-      `sale` and `outbox` loggers are exported.
+      `sale` and `outbox` loggers are exported. A `newSale()` call before the
+      order is even built — still finalizing or stamping — is refused too,
+      unconditionally: there's nothing yet to ask `isStored` about, so
+      abandoning is possible only once the order is confirmed stored
+      (Continue), or from the receipt (the Front desk, 2026-09-27; #149
+      review). This replaces the generation-mismatch hand-over that abandoned
+      such an attempt in the background; `handOverAbandoned` is gone with it.
     - **Known gap (2026-09-27):** the pending completion lives only in
       memory. A page reload during the save loses it (same as before #145)
       and builds a new order on retry. Persisting the built order before

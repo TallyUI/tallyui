@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
 import { createLogger } from '../logging';
 import { OrderContentMismatchError, sameSale, type PosOrder } from '../pos-order';
+import { watchFresh } from '../rxdb';
 import { createOrderOutbox } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -74,9 +75,8 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
       const outbox = createOrderOutbox({ collection: store.orders, deviceId, transport: latest.current.transport(storeKey) });
       current.current = { storeKey, orders: store.orders, outbox };
       const status = outbox.state$.subscribe(setState);
-      const history = store.orders.find({ sort: [{ createdAt: 'desc' }], limit: 50 }).$.subscribe((docs) => {
-        setRecent(docs.map((doc) => doc.toMutableJSON()));
-      });
+      // watchFresh: find().$ can leave this stale forever, hiding a new order (RxDB 16.21.1 bug 4).
+      const history = watchFresh(store.orders, { sort: [{ createdAt: 'desc' }], limit: 50 }).subscribe(setRecent);
       dispose = () => {
         outbox.stop(); status.unsubscribe(); history.unsubscribe();
         void store.close();
