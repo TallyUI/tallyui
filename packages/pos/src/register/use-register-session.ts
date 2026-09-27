@@ -20,7 +20,7 @@ import type { RxCollection } from 'rxdb';
 import type { PosOrder } from '../pos-order/types';
 import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
-import { recordRegisterFact, type Actor } from './facts';
+import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
 import * as store from './session-store';
@@ -159,6 +159,39 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
 
   // Only an emission from the current source is trusted: a changed register or collection starts empty.
   const data = source && observed?.source === source ? observed.snapshot : null;
+
+  // The orphan-stamp sweep (`store.sweepOrphanStamps`): one run at a time, and a request during a
+  // run schedules one more, which reads afresh. A failure is logged, never thrown into the UI.
+  const sweeper = useRef<{ running?: Promise<void>; queued?: Promise<void>; target?: Parameters<typeof store.sweepOrphanStamps>[0] }>({});
+  sweeper.current.target = enabled && sessions && closures && orders && registerId ? { sessions, closures, orders, registerId } : undefined;
+  const sweep = (): Promise<void> => {
+    const state = sweeper.current;
+    if (state.running) return (state.queued ??= state.running.then(() => { state.queued = undefined; return sweep(); }));
+    const target = state.target;
+    if (!target) return Promise.resolve();
+    const run = store.sweepOrphanStamps(target).then(() => undefined, (error: unknown) => {
+      try {
+        registerFactsLogger.error('Register orphan-stamp sweep failed', { context: { type: 'register.sweep-failed', registerId: target.registerId, error: String(error) } });
+      } catch {
+        // A failing sink must not throw into the UI either.
+      }
+    }).finally(() => { state.running = undefined; });
+    return (state.running = run);
+  };
+  // It runs on start (this source's first snapshot), and whenever a closure appears that it hasn't
+  // seen, such as one a sync writes. `closeSession` also runs it after its own closure.
+  const seen = useRef<{ source: typeof source; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const ids = data.closureRows.map((row) => row.id);
+    if (seen.current?.source !== source) {
+      seen.current = { source, ids: new Set(ids) };
+      void sweep();
+    } else if (ids.some((id) => !seen.current!.ids.has(id))) {
+      ids.forEach((id) => seen.current!.ids.add(id));
+      void sweep();
+    }
+  }, [data, source]);
   const session = data ? currentSession(data.rows, data.closureRows, data.reservation) : null;
   const entries = data?.entries ?? [];
   const sales = data?.sales ?? [];
@@ -274,6 +307,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
             opened_by_name: nameOf(closed.opened_by), approved_by_name: nameOf(closed.approved_by),
           },
         });
+        // A stamp that raced this close, a resumed one included, is swept before the close returns.
+        await sweep();
         // The fact's operationId is the closure id: a repeated or concurrent close logs it once.
         if (!closedFacts.has(closure.id)) {
           closedFacts.add(closure.id);
@@ -296,8 +331,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
       },
       voidMovement: async (id: string) => {
         await requireOpen();
-        const { sessions, movements, registerId } = live();
-        const row = await store.voidMovement(sessions, movements, id, actor.id);
+        const { sessions, movements, closures, registerId } = live();
+        const row = await store.voidMovement(sessions, movements, id, actor.id, closures);
         recordRegisterFact({
           kind: 'movement-voided', actor, sessionId: row.session_id, registerId,
           movementId: row.id, movementType: row.type, amount: row.amountMinor, voids: id,
