@@ -32,7 +32,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
   return a.getTime() >= b.getTime() ? a : b;
 }
 
-export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, lastSyncedAt, lastStockCheckAt, hour12 }: {
+export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, lastSyncedAt, lastStockCheckAt, hour12, minCodeLength }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -44,6 +44,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** Whether to show a 12- or 24-hour clock in the stock-as-of time; undefined keeps the locale default. A platform
    * reads this off its own device APIs (e.g. expo-localization's getCalendars()) and passes it in. */
   hour12?: boolean;
+  /** A till's scanner setting: below this length (after trimming), Enter leaves the typed text as a plain
+   * search instead of doing a code lookup. A scanner's timing threshold is the app's own concern,
+   * in its unfocused wedge listener — not this prop's job. */
+  minCodeLength?: number;
 }) {
   const stockAsOf = laterOf(lastStockCheckAt, lastSyncedAt);
   const [query, setQuery] = useState('');
@@ -70,6 +74,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       <View className="gap-2 border-b border-border bg-card px-4 pb-3 pt-3">
         <SearchInput value={query} onChangeText={setQuery} placeholder="Search or scan barcode / SKU" autoFocus
           onSubmitEditing={() => {
+            if (minCodeLength && query.trim().length < minCodeLength) return;
             const entry = findEntryByCode(entries, query);
             if (entry) { select(entry); setQuery(''); }
           }} />
