@@ -869,56 +869,18 @@ describe('abandoning a hung save and locking from entry', () => {
     }
   });
 
-  // Since 5a a built order can be abandoned mid-save only once isStored confirms it, so the late old save
-  // here is an attempt abandoned mid-stamp (#147's first version abandoned an unconfirmed built order mid-save).
-  it("an old save that resolves late doesn't corrupt the new sale's in-flight tracking: a duplicate tap on the new sale shares its one save", async () => {
-    const { db, orders } = await withPosOrders();
-    const { db: sessionDb, sessions, sessionId } = await withOpenSession();
-    try {
-      let releaseOld!: () => void;
-      const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
-      let releaseNew!: () => void;
-      const newGate = new Promise<void>((resolve) => { releaseNew = resolve; });
-      let stamps = 0;
-      const slowFirst = { findOne: (id: string) => ({ exec: async () => {
-        if (stamps++ === 0) await oldGate;
-        return sessions.findOne(id).exec();
-      } }) };
-      let call = 0;
-      const completed = vi.fn(async (posOrder: PosOrder) => {
-        await orders.insert(posOrder);
-        if (++call === 1) await newGate; // the new sale reaches onSaleCompleted first; the old one's stamp is held
-      });
-      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed,
-        session: { id: sessionId, sessions: slowFirst as unknown as RegisterSessionCollection } }));
-      addSaleLines(result);
-      act(() => result.current.startTender('external'));
-      let oldPromise!: Promise<void>;
-      act(() => { oldPromise = result.current.complete(); });
-      act(() => result.current.newSale());
-      addSaleLines(result);
-      act(() => result.current.startTender('external'));
-      let newPromise!: Promise<void>;
-      act(() => { newPromise = result.current.complete(); });
-      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
-      // The old attempt finally stamps and saves, late, while the new sale's save is itself still in flight.
-      await act(async () => { releaseOld(); await oldPromise; });
-      expect(await orders.find().exec()).toHaveLength(2);
-      // A duplicate tap on the new sale's complete() must still share that one in-flight save.
-      let duplicate!: Promise<void>;
-      act(() => { duplicate = result.current.complete(); });
-      expect(duplicate).toBe(newPromise);
-      await act(async () => { releaseNew(); await Promise.all([newPromise, duplicate]); });
-      expect(completed).toHaveBeenCalledTimes(2);
-      expect(result.current.stage.kind).toBe('receipt');
-      expect(result.current.error).toBeNull();
-    } finally {
-      await db.remove();
-      await sessionDb.remove();
-    }
-  });
+  // Removed (the Front desk, 2026-09-27; #149 review): this covered newSale() abandoning a built
+  // order mid-stamp, so an old, abandoned attempt and a new one could be in flight in the same hook
+  // at once. That's now impossible — newSale() refuses during the stamp instead (see the stamp-window
+  // test below) — so there's no old attempt left to resolve late against a new sale's in-flight
+  // tracking. Double-tap sharing on one in-flight complete() is still covered above ("two complete()
+  // calls in the same tick, with a slow stamp, build one order").
 
-  it('newSale() while the stamp is slow: the old order still reaches onSaleCompleted once and is stored once; the new sale is unlocked with no receipt or error from it', async () => {
+  // 5a (the Front desk, 2026-09-27; #149 review) converts #147's abandon-mid-stamp test: newSale()
+  // during the stamp is now refused outright, like every other change, instead of handing the old
+  // attempt off in the background — a failure there would otherwise be money taken with only an
+  // error log. The cashier waits for the (short) stamp, then gets Retry or Continue as usual.
+  it('newSale() while the stamp is slow is refused; the sale is unchanged, and once the stamp resolves and the save succeeds, the receipt shows for that sale', async () => {
     const { db: sessionDb, sessions, sessionId } = await withOpenSession();
     const { db: ordersDb, orders } = await withPosOrders();
     let release!: () => void;
@@ -930,54 +892,32 @@ describe('abandoning a hung save and locking from entry', () => {
         session: { id: sessionId, sessions: slow as unknown as RegisterSessionCollection } }));
       addSaleLines(result);
       act(() => result.current.startTender('external'));
-      let oldPromise!: Promise<void>;
-      act(() => { oldPromise = result.current.complete(); }); // stuck in the stamp (gate not released)
+      const before = result.current.order;
+      let promise!: Promise<void>;
+      act(() => { promise = result.current.complete(); }); // stuck in the stamp (gate not released)
       expect(result.current.saving).toBe(true);
-      act(() => result.current.newSale()); // abandons the old attempt mid-stamp; the money was already taken
-      expect(result.current.saving).toBe(false);
-      expect(result.current.stage.kind).toBe('cart');
-      release(); // let the old attempt's stamp finish, now stale for the new sale
-      await act(async () => { await oldPromise; });
+      act(() => result.current.newSale()); // refused: nothing is built yet to ask isStored about
+      expect(result.current).toMatchObject({ order: before, stage: { kind: 'tender', method: 'external' },
+        saving: true, error: SALE_SAVING });
+      release(); // let the stamp finish
+      await act(async () => { await promise; });
       expect(completed).toHaveBeenCalledTimes(1);
       expect(await orders.find().exec()).toHaveLength(1);
-      expect(result.current.saving).toBe(false);
       expect(result.current.error).toBeNull();
-      expect(result.current.stage.kind).toBe('cart');
+      expect(result.current.stage.kind).toBe('receipt');
     } finally {
       await sessionDb.remove();
       await ordersDb.remove();
     }
   });
 
-  it('an abandoned attempt whose background save throws logs the error at error level, naming the order id, and leaves the new sale untouched', async () => {
-    const logged: LogEntry[] = [];
-    saleLogger.addSink({ id: 'abandoned-save-capture', levels: ['error'], write: (entry) => logged.push(entry) });
-    const { db, sessions, sessionId } = await withOpenSession();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const slow = { findOne: (id: string) => ({ exec: async () => { await gate; return sessions.findOne(id).exec(); } }) };
-    try {
-      const { result } = renderSale(pricing, saleOpts({
-        onSaleCompleted: async () => { throw new Error('disk full'); },
-        session: { id: sessionId, sessions: slow as unknown as RegisterSessionCollection },
-      }));
-      addSaleLines(result);
-      act(() => result.current.startTender('external'));
-      let oldPromise!: Promise<void>;
-      act(() => { oldPromise = result.current.complete(); });
-      act(() => result.current.newSale());
-      release();
-      await act(async () => { await oldPromise; });
-      expect(logged).toHaveLength(1);
-      expect(logged[0]).toMatchObject({ level: 'error', data: { error: 'disk full' } });
-      expect(typeof (logged[0].data as { orderId?: string }).orderId).toBe('string');
-      expect(result.current.error).toBeNull();
-      expect(result.current.stage.kind).toBe('cart');
-    } finally {
-      saleLogger.removeSink('abandoned-save-capture');
-      await db.remove();
-    }
-  });
+  // Removed (the Front desk, 2026-09-27; #149 review): this covered handOverAbandoned's error log for
+  // an attempt abandoned mid-stamp. That background hand-over no longer exists — newSale() refuses
+  // during the stamp instead of abandoning it (see the stamp-window test below), so there's nothing
+  // left to throw in the background from this window. The surviving abandon path (a confirmed pending
+  // completion, abandoned by Continue, whose still-in-flight save later throws) keeps its own coverage:
+  // "Continue during a save still in flight, once isStored confirms: its later throw is logged at
+  // error with the order id, never shown on the next sale".
 
   // The #147 review asked that deliver() abandoned mid-flight never swallow a later throw. Since 5a (the
   // Front desk, 2026-09-27) newSale() can't abandon a built order mid-save until isStored confirms it (no
@@ -1119,5 +1059,58 @@ describe('abandoning a hung save and locking from entry', () => {
     expect(result.current.saving).toBe(false);
     act(() => result.current.cancelTender());
     expect(result.current.stage.kind).toBe('cart');
+  });
+
+  // Three mutations the #149 review found no test catches (the Front desk, 2026-09-27).
+  it("complete()'s entry clears a canContinue left from an earlier failed attempt, including a Retry after Continue was offered", async () => {
+    let attempt = 0;
+    const onSaleCompleted = vi.fn(async () => { throw new Error('flush failed'); });
+    const isStored = async () => { attempt++; return attempt === 1; }; // only the first attempt is confirmed stored
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, isStored }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); }); // fails
+    await waitFor(() => expect(result.current.canContinue).toBe(true)); // confirmed stored
+    act(() => { result.current.complete(); }); // Retry (a new attempt): must clear canContinue at once
+    expect(result.current.canContinue).toBe(false);
+    await act(async () => {}); // the retry settles; its own check answers false, so no Continue
+    expect(result.current.canContinue).toBe(false);
+  });
+
+  it("checkStored's pending check: a stale confirmation for a completion that is no longer pending must not set canContinue", async () => {
+    let releaseStale!: () => void;
+    const staleAnswer = new Promise<boolean>((resolve) => { releaseStale = () => resolve(true); });
+    let call = 0;
+    const isStored = async () => { call++; return call === 1 ? staleAnswer : true; };
+    const onSaleCompleted = vi.fn(() => new Promise<void>(() => {})); // the money is taken; the save just hangs
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, isStored }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    act(() => { result.current.complete(); }); // builds; hangs in onSaleCompleted with pending and inFlight both set
+    act(() => result.current.newSale()); // refused; asks isStored afresh (call 1, held open)
+    act(() => result.current.newSale()); // refused again; asks isStored afresh (call 2, answers true at once)
+    await waitFor(() => expect(result.current.canContinue).toBe(true));
+    act(() => result.current.continueSale()); // clears the pending completion: a fresh, empty cart
+    expect(result.current.stage.kind).toBe('cart');
+    await act(async () => { releaseStale(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(result.current.canContinue).toBe(false); // that completion isn't pending any more
+    expect(result.current.stage.kind).toBe('cart');
+  });
+
+  it("checkStored's attempt check: a stale confirmation from an earlier attempt must not set canContinue once a newer attempt has started", async () => {
+    let releaseStale!: () => void;
+    const staleAnswer = new Promise<boolean>((resolve) => { releaseStale = () => resolve(true); });
+    let call = 0;
+    const onSaleCompleted = vi.fn(async () => { throw new Error('flush failed'); });
+    const isStored = async () => { call++; return call === 1 ? staleAnswer : false; };
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, isStored }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); }); // attempt 1 fails; its own check is held open
+    expect(result.current.canContinue).toBe(false);
+    await act(async () => { await result.current.complete(); }); // Retry = attempt 2; fails again, its own check answers false
+    expect(result.current.canContinue).toBe(false);
+    await act(async () => { releaseStale(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(result.current.canContinue).toBe(false); // attempt 1's stale answer belongs to a dropped attempt
   });
 });
