@@ -16,7 +16,7 @@ import type { CommandEnvelope, OrderCreatePayload, StoreSettings as PricingSetti
 import { medusaConnector } from '@tallyui/connector-medusa';
 import type { LogEntry } from '../logging';
 import { createOrderBuilder } from '../order';
-import { createOrderOutbox, useOrderOutbox, type CommandTransport } from '../outbox';
+import { createOrderOutbox, outboxLogger, useOrderOutbox, type CommandTransport } from '../outbox';
 import { addPosOrderCollection, finalizeOrder, type PosOrder } from '../pos-order';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
@@ -37,6 +37,7 @@ const product = {
 const entries = catalogueEntries([product], traits);
 const pricing: PricingSettings = { currency: 'EUR', pricesIncludeTax: false, taxRatesPpm: { default: 250000 } };
 const taxContext = { getTaxRatePpm: () => 250000, pricesIncludeTax: false };
+type IsStored = (posOrder: PosOrder) => Promise<boolean>;
 const registerId = 'register-1';
 const cashierRef = 'cashier@store.test';
 
@@ -433,11 +434,13 @@ describe('complete() is idempotent for one tender', () => {
   /**
    * Renders useSale with a real useOrderOutbox on memory `pos_orders`. Its onSaleCompleted throws `before`
    * times before recording, then `after` times after recording (a fake flush failure). The transport
-   * answers "retry in a minute", so every stored order stays pending and no retry fires during a test.
+   * answers "retry in a minute" (unless `failures.send` is given), so every stored order stays pending and no
+   * retry fires during a test. useSale gets the outbox's `isStored`, through `wrap` if given; `extra` may override it.
    */
-  async function renderWithOutbox(failures: { before?: number; after?: number }, extra: Partial<Parameters<typeof useSale>[1]> = {}) {
+  async function renderWithOutbox(failures: { before?: number; after?: number; send?: CommandTransport['send'] },
+    extra: Partial<Parameters<typeof useSale>[1]> = {}, wrap?: (real: IsStored) => IsStored) {
     const name = `idem${Math.random().toString(36).slice(2)}`;
-    const send = vi.fn<CommandTransport['send']>(async () => ({ kind: 'retry', reason: 'offline', retryAfterMs: 60_000 }));
+    const send = vi.fn<CommandTransport['send']>(failures.send ?? (async () => ({ kind: 'retry', reason: 'offline', retryAfterMs: 60_000 })));
     const left = { before: failures.before ?? 0, after: failures.after ?? 0 };
     const completed = vi.fn<(posOrder: PosOrder) => void>();
     const open = async () => {
@@ -449,7 +452,7 @@ describe('complete() is idempotent for one tender', () => {
     }
     const view = renderHook(() => {
       const outbox = useOrderOutbox({ storeKey: 'store', deviceId: 'device-1', open, transport: () => ({ send }) });
-      const sale = useSale(pricing, saleOpts({ ...extra, onSaleCompleted: async (posOrder) => {
+      const sale = useSale(pricing, saleOpts({ isStored: wrap ? wrap(outbox.isStored) : outbox.isStored, ...extra, onSaleCompleted: async (posOrder) => {
         completed(posOrder);
         if (left.before-- > 0) throw new Error('Storage busy');
         await outbox.record(posOrder);
@@ -459,7 +462,7 @@ describe('complete() is idempotent for one tender', () => {
     }, { wrapper: Wrapper });
     await waitFor(() => expect(view.result.current.outbox.orders).not.toBeNull());
     const stored = async () => (await view.result.current.outbox.orders!.find().exec()).map((doc) => doc.toJSON());
-    return { result: view.result, unmount: view.unmount, completed, stored };
+    return { result: view.result, unmount: view.unmount, completed, stored, send };
   }
   function startCardSale(result: { current: { sale: ReturnType<typeof useSale> } }) {
     act(() => { result.current.sale.add(entries[0], traits); result.current.sale.add(entries[1], traits); });
@@ -580,26 +583,26 @@ describe('complete() is idempotent for one tender', () => {
     }
   });
 
-  it('newSale() abandons the pending completion: the stored order stays pending and unchanged (re-handed once in the background, per #147), the next sale gets new ids', async () => {
+  it('newSale() once the order is confirmed stored abandons the pending completion: the stored order stays pending and unchanged, never handed over again, and the next sale gets new ids', async () => {
     const { result, unmount, completed, stored } = await renderWithOutbox({ after: 1 });
     try {
       startCardSale(result);
       await act(async () => { await result.current.sale.complete(); });
       const [abandoned] = await stored();
       expect(abandoned).toMatchObject({ syncStatus: 'pending' });
+      await waitFor(() => expect(result.current.sale.canContinue).toBe(true)); // 5a: newSale() waits for this
       act(() => result.current.sale.newSale());
       expect(result.current.sale.saving).toBe(false);
       expect(result.current.sale.error).toBeNull();
       expect(result.current.sale.stage.kind).toBe('cart');
-      // The money was taken: newSale() hands the abandoned, already-stored order back to onSaleCompleted
-      // once in the background (useOrderOutbox.record treats its commandId as already stored).
-      expect(completed).toHaveBeenCalledTimes(2);
-      expect(completed.mock.calls[1][0]).toMatchObject({ id: abandoned.id, commandId: abandoned.commandId });
+      // Confirmed stored, so never handed back to onSaleCompleted (the Front desk, 2026-09-27; #147 re-handed it).
+      await act(async () => {});
+      expect(completed).toHaveBeenCalledTimes(1);
       startCardSale(result);
       expect(result.current.sale.order.lineItems).toHaveLength(2);
       await act(async () => { await result.current.sale.complete(); });
       expect(result.current.sale.stage.kind).toBe('receipt');
-      const next = completed.mock.calls[2][0];
+      const next = completed.mock.calls[1][0];
       expect(next.id).not.toBe(abandoned.id);
       expect(next.commandId).not.toBe(abandoned.commandId);
       const orders = await stored();
@@ -667,6 +670,135 @@ describe('complete() is idempotent for one tender', () => {
       unmount();
     }
   });
+
+  // Continue once the order is confirmed stored (the Front desk, 2026-09-27; the medusapos v2 follow-up).
+  it('a save that stores, then throws: canContinue turns true, and continueSale() starts a new sale, leaving the order pending with its ids, never handed over again', async () => {
+    const { result, unmount, completed, stored } = await renderWithOutbox({ after: 1 });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      const [order] = await stored();
+      await waitFor(() => expect(result.current.sale.canContinue).toBe(true));
+      act(() => result.current.sale.continueSale());
+      expect(result.current.sale.stage.kind).toBe('cart');
+      expect(result.current.sale.order.lineItems).toEqual([]);
+      expect(result.current.sale).toMatchObject({ canContinue: false, saving: false, error: null });
+      for (let i = 0; i < 5; i++) await act(async () => {}); // room for a background hand-over, if one were made
+      expect(completed).toHaveBeenCalledTimes(1); // one save attempt; none from continueSale()
+      expect(await stored()).toEqual([expect.objectContaining({ id: order.id, commandId: order.commandId, syncStatus: 'pending' })]);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('a save that throws before storing: canContinue stays false, and continueSale() and newSale() change nothing', async () => {
+    const answers: boolean[] = [];
+    const { result, unmount, completed, stored } = await renderWithOutbox({ before: 1 }, {},
+      (real) => async (posOrder) => { const answer = await real(posOrder); answers.push(answer); return answer; });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(result.current.sale.canContinue).toBe(false);
+      await waitFor(() => expect(answers).toEqual([false]));
+      await act(async () => {});
+      expect(result.current.sale.canContinue).toBe(false);
+      const before = result.current.sale.order;
+      act(() => result.current.sale.continueSale());
+      act(() => result.current.sale.newSale());
+      expect(result.current.sale).toMatchObject({ order: before, stage: { kind: 'tender', method: 'external' }, saving: true, error: SALE_SAVING });
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(await stored()).toEqual([]);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('Continue never shows before the stored confirmation: false while saving and while a slow isStored runs; newSale() is refused until it answers true', async () => {
+    let answer!: () => void;
+    const gate = new Promise<void>((resolve) => { answer = resolve; });
+    const { result, unmount } = await renderWithOutbox({ after: 1 }, {}, (real) => async (posOrder) => { await gate; return real(posOrder); });
+    try {
+      startCardSale(result);
+      let completion!: Promise<void>;
+      act(() => { completion = result.current.sale.complete(); });
+      expect(result.current.sale.canContinue).toBe(false);
+      await act(async () => { await completion; });
+      expect(result.current.sale.error).toBe('The sale could not be saved: flush failed');
+      expect(result.current.sale.canContinue).toBe(false);
+      const before = result.current.sale.order;
+      act(() => result.current.sale.newSale());
+      expect(result.current.sale).toMatchObject({ order: before, stage: { kind: 'tender' }, saving: true, error: SALE_SAVING, canContinue: false });
+      await act(async () => { answer(); });
+      await waitFor(() => expect(result.current.sale.canContinue).toBe(true));
+      act(() => result.current.sale.newSale());
+      expect(result.current.sale).toMatchObject({ stage: { kind: 'cart' }, saving: false, error: null, canContinue: false });
+    } finally {
+      unmount();
+    }
+  });
+
+  it.each([
+    ['throws', { wrap: (): IsStored => async () => { throw new Error('storage gone'); } }],
+    ['is absent', { extra: { isStored: undefined } }],
+  ] as const)('an isStored that %s: canContinue stays false after a save that stored, then threw', async (_kind, setup) => {
+    const { result, unmount, stored } = await renderWithOutbox({ after: 1 }, 'extra' in setup ? setup.extra : {},
+      'wrap' in setup ? setup.wrap : undefined);
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(await stored()).toHaveLength(1);
+      for (let i = 0; i < 5; i++) await act(async () => {});
+      expect(result.current.sale.canContinue).toBe(false);
+      act(() => result.current.sale.continueSale());
+      expect(result.current.sale.stage).toEqual({ kind: 'tender', method: 'external' });
+    } finally {
+      unmount();
+    }
+  });
+
+  it('a Retry that succeeds after canContinue was true clears it and shows the receipt', async () => {
+    const { result, unmount } = await renderWithOutbox({ after: 1 });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      await waitFor(() => expect(result.current.sale.canContinue).toBe(true));
+      await act(async () => { await result.current.sale.complete(); });
+      expect(result.current.sale).toMatchObject({ stage: { kind: 'receipt' }, canContinue: false, saving: false, error: null });
+    } finally {
+      unmount();
+    }
+  });
+
+  it('requeue, then retry (medusapos #79): the Retry succeeds on the stored order under its new commandId, sent once, logged at warn', async () => {
+    const logged: LogEntry[] = [];
+    outboxLogger.addSink({ id: 'requeue-retry-capture', levels: ['warn'], write: (entry) => logged.push(entry) });
+    let sends = 0;
+    const send: CommandTransport['send'] = async (batch) => ({ kind: 'results', results: batch.map((command) => sends++ === 0
+      ? { id: command.id, status: 'rejected', error: { code: 'unknown_variant', message: 'gone' } }
+      : { id: command.id, status: 'applied', serverRefs: { orderId: 'server-order', totalMinor: command.payload.totalMinor } }) });
+    const { result, unmount, completed, stored, send: transport } = await renderWithOutbox({ after: 1, send });
+    try {
+      startCardSale(result);
+      await act(async () => { await result.current.sale.complete(); });
+      const first = completed.mock.calls[0][0];
+      await waitFor(async () => expect(await stored()).toEqual([expect.objectContaining({ syncStatus: 'rejected' })]));
+      await act(async () => { expect(await result.current.outbox.requeue([first.id])).toBe(1); });
+      await waitFor(async () => expect(await stored()).toEqual([expect.objectContaining({ syncStatus: 'applied' })]));
+      const [requeued] = await stored();
+      expect(requeued.commandId).not.toBe(first.commandId);
+      await act(async () => { await result.current.sale.complete(); });
+      expect(result.current.sale.stage.kind).toBe('receipt');
+      expect(result.current.sale.saving).toBe(false);
+      expect(await stored()).toEqual([requeued]);
+      const commands = transport.mock.calls.flatMap(([batch]) => batch.map((command) => command.id));
+      expect(commands.filter((id) => id === requeued.commandId)).toHaveLength(1);
+      expect(logged).toEqual([expect.objectContaining({ level: 'warn',
+        data: { orderId: first.id, storedCommandId: requeued.commandId, recordedCommandId: first.commandId } })]);
+    } finally {
+      outboxLogger.removeSink('requeue-retry-capture');
+      unmount();
+    }
+  });
 });
 
 // Follow-ups to complete()'s idempotency (2026-09-27, the #145 review): abandoning a hung save, and
@@ -679,67 +811,99 @@ describe('abandoning a hung save and locking from entry', () => {
     return { db, orders: await addPosOrderCollection(db) };
   }
 
-  it("newSale() during a save that never resolves: the next sale saves its own order with new ids, and the old order is untouched", async () => {
+  // 5a (the Front desk, 2026-09-27) replaces #147's "newSale() during a save that never resolves: the next
+  // sale saves its own order with new ids": with the order built, newSale() now waits for the stored
+  // confirmation, which a refusal mid-save asks for afresh. These two cover both answers.
+  /** A sale whose onSaleCompleted stores the order, then never settles; isStored reads that collection. */
+  async function renderHungSave(answer: (stored: boolean) => boolean) {
     const { db, orders } = await withPosOrders();
+    const completed = vi.fn(async (posOrder: PosOrder) => {
+      await orders.insert(posOrder);
+      await new Promise<void>(() => {}); // deliberately never resolves
+    });
+    const checks: boolean[] = [];
+    const isStored = async (posOrder: PosOrder) => {
+      const reply = answer(!!(await orders.findOne(posOrder.id).exec()));
+      checks.push(reply);
+      return reply;
+    };
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed, isStored }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    const before = result.current.order;
+    act(() => { result.current.complete(); });
+    await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+    act(() => result.current.newSale());
+    expect(result.current).toMatchObject({ order: before, stage: { kind: 'tender', method: 'external' },
+      saving: true, error: SALE_SAVING, canContinue: false });
+    return { db, orders, completed, checks, result };
+  }
+
+  it('newSale() during a save that never resolves, with the order built, is refused; an isStored that does not confirm leaves it refused, with no Continue', async () => {
+    const { db, completed, checks, result } = await renderHungSave(() => false);
     try {
-      let holdOld = true;
-      const oldGate = new Promise<void>(() => {}); // deliberately never resolves
-      const completed = vi.fn(async (posOrder: PosOrder) => {
-        await orders.insert(posOrder);
-        if (holdOld) { holdOld = false; await oldGate; }
-      });
-      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed }));
-      addSaleLines(result);
-      act(() => result.current.startTender('external'));
-      act(() => { result.current.complete(); });
-      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
-      const oldStored = (await orders.find().exec())[0].toJSON();
-      act(() => result.current.newSale());
-      expect(result.current.stage.kind).toBe('cart');
-      expect(result.current.saving).toBe(false);
-      addSaleLines(result);
-      act(() => result.current.startTender('external'));
-      await act(async () => { await result.current.complete(); });
-      expect(result.current.stage.kind).toBe('receipt');
-      expect(result.current.error).toBeNull();
-      const stored = await orders.find().exec();
-      expect(stored).toHaveLength(2);
-      const next = completed.mock.calls[1][0] as PosOrder;
-      expect(next.id).not.toBe(oldStored.id);
-      expect(next.commandId).not.toBe(oldStored.commandId);
-      expect(stored.find((doc) => doc.id === oldStored.id)!.toJSON()).toEqual(oldStored);
+      await waitFor(() => expect(checks).toEqual([false]));
+      await act(async () => {});
+      expect(result.current).toMatchObject({ stage: { kind: 'tender' }, saving: true, canContinue: false });
+      act(() => result.current.continueSale());
+      expect(result.current.stage.kind).toBe('tender');
+      expect(completed).toHaveBeenCalledTimes(1);
     } finally {
       await db.remove();
     }
   });
 
+  it('newSale() refused during a save that never resolves asks isStored; once it confirms, Continue starts a new sale with the order stored exactly once', async () => {
+    const { db, orders, completed, checks, result } = await renderHungSave((stored) => stored);
+    try {
+      await waitFor(() => expect(result.current.canContinue).toBe(true));
+      expect(checks).toEqual([true]);
+      act(() => result.current.continueSale());
+      expect(result.current).toMatchObject({ stage: { kind: 'cart' }, saving: false, error: null, canContinue: false });
+      expect(result.current.order.lineItems).toEqual([]);
+      for (let i = 0; i < 5; i++) await act(async () => {});
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(await orders.find().exec()).toHaveLength(1);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  // Since 5a a built order can be abandoned mid-save only once isStored confirms it, so the late old save
+  // here is an attempt abandoned mid-stamp (#147's first version abandoned an unconfirmed built order mid-save).
   it("an old save that resolves late doesn't corrupt the new sale's in-flight tracking: a duplicate tap on the new sale shares its one save", async () => {
     const { db, orders } = await withPosOrders();
+    const { db: sessionDb, sessions, sessionId } = await withOpenSession();
     try {
       let releaseOld!: () => void;
       const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
       let releaseNew!: () => void;
       const newGate = new Promise<void>((resolve) => { releaseNew = resolve; });
+      let stamps = 0;
+      const slowFirst = { findOne: (id: string) => ({ exec: async () => {
+        if (stamps++ === 0) await oldGate;
+        return sessions.findOne(id).exec();
+      } }) };
       let call = 0;
       const completed = vi.fn(async (posOrder: PosOrder) => {
         await orders.insert(posOrder);
-        call += 1;
-        await (call === 1 ? oldGate : newGate);
+        if (++call === 1) await newGate; // the new sale reaches onSaleCompleted first; the old one's stamp is held
       });
-      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed }));
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed,
+        session: { id: sessionId, sessions: slowFirst as unknown as RegisterSessionCollection } }));
       addSaleLines(result);
       act(() => result.current.startTender('external'));
       let oldPromise!: Promise<void>;
       act(() => { oldPromise = result.current.complete(); });
-      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
       act(() => result.current.newSale());
       addSaleLines(result);
       act(() => result.current.startTender('external'));
       let newPromise!: Promise<void>;
       act(() => { newPromise = result.current.complete(); });
-      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(2));
-      // The old save finally resolves, late, while the new sale's save is itself still in flight.
+      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+      // The old attempt finally stamps and saves, late, while the new sale's save is itself still in flight.
       await act(async () => { releaseOld(); await oldPromise; });
+      expect(await orders.find().exec()).toHaveLength(2);
       // A duplicate tap on the new sale's complete() must still share that one in-flight save.
       let duplicate!: Promise<void>;
       act(() => { duplicate = result.current.complete(); });
@@ -750,6 +914,7 @@ describe('abandoning a hung save and locking from entry', () => {
       expect(result.current.error).toBeNull();
     } finally {
       await db.remove();
+      await sessionDb.remove();
     }
   });
 
@@ -814,11 +979,12 @@ describe('abandoning a hung save and locking from entry', () => {
     }
   });
 
-  // The #147 review: deliver() abandoned mid-flight (pending already installed) must not swallow a
-  // later throw silently. Covers both a session-less sale and one with a session, since deliver() is
-  // reached the same way in both, once the generation check has already passed.
+  // The #147 review asked that deliver() abandoned mid-flight never swallow a later throw. Since 5a (the
+  // Front desk, 2026-09-27) newSale() can't abandon a built order mid-save until isStored confirms it (no
+  // isStored here): it's refused, and the throw lands on the tender as usual. Covers a session-less sale
+  // and one with a session. The confirmed, abandoned case's throw is the next test's.
   it.each(['session-less', 'with a session'] as const)(
-    'abandon (%s) with the insert in flight, then the save throws: the order is stored and an error log names its id',
+    'newSale() (%s) with the insert in flight is refused; the save then throws: the order is stored once, and the tender keeps the error for Retry',
     async (kind) => {
       const logged: LogEntry[] = [];
       saleLogger.addSink({ id: 'abandon-inflight-capture', levels: ['error'], write: (entry) => logged.push(entry) });
@@ -839,15 +1005,15 @@ describe('abandoning a hung save and locking from entry', () => {
         let completion!: Promise<void>;
         act(() => { completion = result.current.complete(); });
         await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
-        act(() => result.current.newSale()); // abandons while onSaleCompleted (the insert) is in flight
+        act(() => result.current.newSale()); // refused while onSaleCompleted (the insert) is in flight
+        expect(result.current.error).toBe(SALE_SAVING);
         releaseThrow();
         await act(async () => { await completion; });
         expect(await orders.find().exec()).toHaveLength(1);
-        expect(logged).toHaveLength(1);
-        expect(logged[0]).toMatchObject({ level: 'error', data: { error: 'flush failed' } });
-        expect(typeof (logged[0].data as { orderId?: string }).orderId).toBe('string');
-        expect(result.current.error).toBeNull();
-        expect(result.current.stage.kind).toBe('cart');
+        expect(logged).toEqual([]);
+        expect(result.current.error).toBe('The sale could not be saved: flush failed');
+        expect(result.current.stage).toEqual({ kind: 'tender', method: 'external' });
+        expect(result.current.saving).toBe(true);
       } finally {
         saleLogger.removeSink('abandon-inflight-capture');
         await ordersDb.remove();
@@ -856,7 +1022,38 @@ describe('abandoning a hung save and locking from entry', () => {
     },
   );
 
-  it("newSale() after a failed save (pending set) re-hands the order in the background; it ends up stored exactly once", async () => {
+  it('Continue during a save still in flight, once isStored confirms: its later throw is logged at error with the order id, never shown on the next sale', async () => {
+    const logged: LogEntry[] = [];
+    saleLogger.addSink({ id: 'continued-inflight-capture', levels: ['error'], write: (entry) => logged.push(entry) });
+    const { db, orders } = await withPosOrders();
+    let releaseThrow!: () => void;
+    const throwGate = new Promise<void>((resolve) => { releaseThrow = resolve; });
+    try {
+      const { result } = renderSale(pricing, saleOpts({
+        onSaleCompleted: async (posOrder) => { await orders.insert(posOrder); await throwGate; throw new Error('flush failed'); },
+        isStored: async (posOrder) => !!(await orders.findOne(posOrder.id).exec()) }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let completion!: Promise<void>;
+      act(() => { completion = result.current.complete(); });
+      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+      act(() => result.current.newSale()); // refused; asks isStored afresh
+      await waitFor(() => expect(result.current.canContinue).toBe(true));
+      act(() => result.current.continueSale());
+      releaseThrow();
+      await act(async () => { await completion; });
+      expect(logged).toEqual([expect.objectContaining({ level: 'error',
+        data: { orderId: (await orders.find().exec())[0].id, error: 'flush failed' } })]);
+      expect(result.current).toMatchObject({ stage: { kind: 'cart' }, saving: false, error: null, canContinue: false });
+    } finally {
+      saleLogger.removeSink('continued-inflight-capture');
+      await db.remove();
+    }
+  });
+
+  // 5a (the Front desk, 2026-09-27) replaces #147's "newSale() after a failed save re-hands the order in
+  // the background": that hand-over could fail again with only a log line, so money taken with no order.
+  it("newSale() after a save that failed before storing is refused, and the sale is unchanged; the Retry stores it exactly once", async () => {
     const { db, orders } = await withPosOrders();
     let failFirst = true;
     const completed = vi.fn(async (posOrder: PosOrder) => {
@@ -867,13 +1064,18 @@ describe('abandoning a hung save and locking from entry', () => {
       const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed }));
       addSaleLines(result);
       act(() => result.current.startTender('external'));
+      const before = result.current.order;
       await act(async () => { await result.current.complete(); }); // fails; pending stays set for Retry
       expect(result.current.error).toBe('The sale could not be saved: Storage busy');
       expect(await orders.find().exec()).toHaveLength(0);
-      await act(async () => { result.current.newSale(); }); // abandons the parked completion; hands it over
-      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+      await act(async () => { result.current.newSale(); }); // refused: the order isn't confirmed stored
+      expect(result.current).toMatchObject({ order: before, stage: { kind: 'tender', method: 'external' },
+        saving: true, error: SALE_SAVING, canContinue: false });
+      expect(completed).toHaveBeenCalledTimes(1);
+      await act(async () => { await result.current.complete(); });
+      expect(await orders.find().exec()).toHaveLength(1);
       expect(completed).toHaveBeenCalledTimes(2);
-      expect(result.current.stage.kind).toBe('cart');
+      expect(result.current.stage.kind).toBe('receipt');
       expect(result.current.error).toBeNull();
     } finally {
       await db.remove();

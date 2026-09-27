@@ -11,10 +11,11 @@ import { createRxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order';
-import { addPosOrderCollection, finalizeOrder, needsAttention, uuidv7, type PosOrder } from '../pos-order';
+import type { LogEntry } from '../logging';
+import { addPosOrderCollection, finalizeOrder, needsAttention, OrderContentMismatchError, uuidv7, type PosOrder } from '../pos-order';
 import { createHttpCommandTransport } from './http-transport';
 import type { CommandTransport } from './types';
-import { useOrderOutbox, type UseOrderOutboxOptions } from './use-order-outbox';
+import { outboxLogger, useOrderOutbox, type UseOrderOutboxOptions } from './use-order-outbox';
 
 type Session = { baseUrl: string; email: string; token: string };
 let outbox: ReturnType<typeof useOrderOutbox>;
@@ -280,14 +281,81 @@ describe('useOrderOutbox options', () => {
       expect(await outbox.orders!.count().exec()).toBe(1);
     });
 
-    it('under another commandId rejects, and keeps the stored order', async () => {
+    // Replaces #145's "under another commandId rejects": a requeue mints a new commandId (medusapos #79).
+    it('under another commandId with the same content counts as stored, never overwrites it, and logs the difference at warn', async () => {
+      const logged: LogEntry[] = [];
+      outboxLogger.addSink({ id: 'requeued-capture', levels: ['warn', 'error'], write: (entry) => logged.push(entry) });
+      try {
+        const send = vi.fn<CommandTransport['send']>(retryLater);
+        renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(send) });
+        await waitFor(() => expect(outbox.orders).not.toBeNull());
+        const order = sale();
+        await act(async () => { await outbox.record(order); });
+        const before = (await outbox.orders!.findOne(order.id).exec())!.toJSON();
+        const retried = uuidv7();
+        await act(async () => { await outbox.record({ ...order, commandId: retried }); });
+        expect((await outbox.orders!.findOne(order.id).exec())!.toJSON()).toEqual(before);
+        expect(await outbox.orders!.count().exec()).toBe(1);
+        expect(logged).toEqual([expect.objectContaining({ level: 'warn',
+          data: { orderId: order.id, storedCommandId: order.commandId, recordedCommandId: retried } })]);
+      } finally {
+        outboxLogger.removeSink('requeued-capture');
+      }
+    });
+
+    it('with different content under the same id throws OrderContentMismatchError, and keeps the stored order', async () => {
       renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(retryLater) });
       await waitFor(() => expect(outbox.orders).not.toBeNull());
       const order = sale();
       await act(async () => { await outbox.record(order); });
-      await expect(outbox.record({ ...order, commandId: uuidv7() })).rejects.toMatchObject({ code: 'CONFLICT' });
-      expect((await outbox.orders!.findOne(order.id).exec())?.commandId).toBe(order.commandId);
+      const before = (await outbox.orders!.findOne(order.id).exec())!.toJSON();
+      const recording = outbox.record({ ...order, totalMinor: order.totalMinor + 100 });
+      await expect(recording).rejects.toBeInstanceOf(OrderContentMismatchError);
+      await expect(recording).rejects.toMatchObject({ orderId: order.id });
+      expect((await outbox.orders!.findOne(order.id).exec())!.toJSON()).toEqual(before);
       expect(await outbox.orders!.count().exec()).toBe(1);
+    });
+  });
+
+  describe('isStored', () => {
+    const retryLater: CommandTransport['send'] = async () => ({ kind: 'retry', reason: 'offline', retryAfterMs: 60_000 });
+
+    it('is false before the store is ready', async () => {
+      renderOptions({ storeKey: null, deviceId: 'register-1', open: openStore, transport: fakeTransport(retryLater) });
+      expect(await outbox.isStored(sale())).toBe(false);
+    });
+
+    it('is true for the same id and content, including after a requeue changed the commandId', async () => {
+      const order = sale();
+      const send = vi.fn<CommandTransport['send']>().mockResolvedValueOnce({ kind: 'results',
+        results: [{ id: order.commandId, status: 'rejected', error: { code: 'unknown_variant', message: 'gone' } }] })
+        .mockImplementation(retryLater);
+      renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(send) });
+      await waitFor(() => expect(outbox.orders).not.toBeNull());
+      await act(async () => { await outbox.record(order); });
+      expect(await outbox.isStored(order)).toBe(true);
+      await waitFor(() => expect(outbox.recent[0]?.syncStatus).toBe('rejected'));
+      await act(async () => { expect(await outbox.requeue([order.id])).toBe(1); });
+      expect((await outbox.orders!.findOne(order.id).exec())!.commandId).not.toBe(order.commandId);
+      expect(await outbox.isStored(order)).toBe(true);
+    });
+
+    it('is false, logged at error, for a content mismatch; false for a missing order and a deleted one', async () => {
+      const logged: LogEntry[] = [];
+      outboxLogger.addSink({ id: 'mismatch-capture', levels: ['error'], write: (entry) => logged.push(entry) });
+      try {
+        renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(retryLater) });
+        await waitFor(() => expect(outbox.orders).not.toBeNull());
+        const order = sale();
+        await act(async () => { await outbox.record(order); });
+        expect(await outbox.isStored({ ...order, totalMinor: order.totalMinor + 1 })).toBe(false);
+        expect(logged).toEqual([expect.objectContaining({ level: 'error', data: { orderId: order.id } })]);
+        expect(await outbox.isStored(sale())).toBe(false);
+        await act(async () => { await (await outbox.orders!.findOne(order.id).exec())!.remove(); });
+        expect(await outbox.isStored(order)).toBe(false);
+      } finally {
+        outboxLogger.removeSink('mismatch-capture');
+      }
     });
   });
 

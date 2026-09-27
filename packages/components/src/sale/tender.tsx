@@ -24,6 +24,12 @@ export function Tender({ sale }: { sale: ReturnType<typeof useSale> }) {
       <Pressable accessibilityRole="button" onPress={sale.complete} className="rounded-md bg-primary px-4 py-3"><Text className="text-center font-semibold text-primary-foreground">Payment approved on terminal</Text></Pressable>
     </>}
     {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
+    {sale.canContinue ? <>
+      <Text className="text-foreground">This sale is stored and will be sent. Continue to the next sale.</Text>
+      <Pressable accessibilityRole="button" onPress={() => sale.continueSale()} className="rounded-md bg-primary px-4 py-3">
+        <Text className="text-center font-semibold text-primary-foreground">Continue</Text>
+      </Pressable>
+    </> : null}
     <Pressable accessibilityRole="button" onPress={sale.cancelTender} className="rounded-md border border-border bg-card px-4 py-3"><Text className="text-center text-foreground">Back</Text></Pressable>
   </View>;
 }

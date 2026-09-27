@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { useSale } from '@tallyui/pos';
 import { Tender } from '../sale/tender';
 import { blue, click, SaleHarness, sale, traits } from './sale-harness';
 
@@ -37,6 +38,31 @@ describe('Tender', () => {
       expect(sale.order.payments[0]).toMatchObject({ method: 'external', reference: 'A1B2' });
       await act(async () => { click('Payment approved on terminal'); });
       expect(sale.stage.kind).toBe('receipt');
+    });
+  });
+
+  describe('Continue after a failed save (the Front desk, 2026-09-27)', () => {
+    const stub = (canContinue: boolean) => ({
+      stage: { kind: 'tender', method: 'external' }, error: 'The sale could not be saved: flush failed', canContinue,
+      order: { currency: 'EUR', totalMinor: 1250, payments: [] },
+      complete: vi.fn(), continueSale: vi.fn(), setTender: vi.fn(), cancelTender: vi.fn(),
+    }) as unknown as ReturnType<typeof useSale>;
+    const message = 'This sale is stored and will be sent. Continue to the next sale.';
+
+    it('renders no Continue while canContinue is false', () => {
+      render(<Tender sale={stub(false)} />);
+      expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+      expect(screen.queryByText(message)).toBeNull();
+      expect(screen.getByRole('button', { name: 'Payment approved on terminal' })).toBeTruthy();
+    });
+
+    it('renders Continue, with its message, when canContinue is true; pressing it calls continueSale once', () => {
+      const sale = stub(true);
+      render(<Tender sale={sale} />);
+      expect(screen.getByText(message)).toBeTruthy();
+      click('Continue');
+      expect(sale.continueSale).toHaveBeenCalledTimes(1);
+      expect(sale.complete).not.toHaveBeenCalled();
     });
   });
 

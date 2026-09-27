@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
-import type { PosOrder } from '../pos-order';
+import { createLogger } from '../logging';
+import { OrderContentMismatchError, sameSale, type PosOrder } from '../pos-order';
 import { createOrderOutbox } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
 const idle: OutboxState = { pending: 0, sending: false };
+/** Logs a retried order found stored under another `commandId` (warn), and a content mismatch (error). */
+export const outboxLogger = createLogger('outbox');
 
 export interface UseOrderOutboxOptions {
   /** Which order store to use (medusapos: the backend's base URL); `null` means no store. A change reopens. */
@@ -30,10 +33,17 @@ export interface UseOrderOutboxResult {
   recent: PosOrder[];
   /**
    * Stores a finalized order, then flushes. Throws the opening error, or "Orders are not ready.", before the store is ready.
-   * Recording an order that is already stored with the same `commandId` (a retried `complete()`) counts as stored and
-   * still flushes; a stored order with the same `id` and another `commandId` is a real conflict and rejects.
+   * Recording an order whose `id` is already stored, not deleted, with the same money-bearing content (`sameSale`;
+   * a retried `complete()`) counts as stored, never overwrites it, and still flushes, whatever the stored `commandId`
+   * (a requeue mints a new one; the difference is logged at warn). Other content rejects with `OrderContentMismatchError`.
    */
   record(posOrder: PosOrder): Promise<void>;
+  /**
+   * Whether the current store holds this order `id`, not deleted, with the same money-bearing content (`sameSale`),
+   * whatever its `commandId`. A primary-key read on the storage instance, past RxDB's query cache. False before the
+   * store is ready; a content mismatch is false and logged at error.
+   */
+  isStored(order: PosOrder): Promise<boolean>;
   /** Sends pending orders; does nothing before the current store is ready. */
   flush(): Promise<void>;
   /** Moves rejected orders back to pending (see `OrderOutbox.requeue`); resolves to 0 before the current store is ready. */
@@ -103,12 +113,27 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
       } catch (error) {
         // useSale's retry hands over the order a failed save already stored (complete() is idempotent,
         // ADR-052). RxDB 16's insert throws RxError code 'CONFLICT' for an existing primary key, with the
-        // stored document in `parameters.writeError.documentInDb`; the same commandId means it is stored.
+        // stored document in `parameters.writeError.documentInDb`. The same id and content means it is stored, even
+        // under another commandId: a requeue mints one, and requiring it stuck the tender on Retry (medusapos #79).
         const stored = (error as RxError)?.code === 'CONFLICT' ? (error as RxError).parameters.writeError : undefined;
         const inDb = stored?.status === 409 ? stored.documentInDb : undefined;
-        if (!inDb || inDb._deleted || inDb.commandId !== posOrder.commandId) throw error;
+        if (!inDb || inDb._deleted) throw error;
+        if (!sameSale(inDb, posOrder)) throw new OrderContentMismatchError(posOrder.id);
+        if (inDb.commandId !== posOrder.commandId) {
+          outboxLogger.warn('Recorded an order stored under another commandId', { orderId: posOrder.id,
+            storedCommandId: inDb.commandId, recordedCommandId: posOrder.commandId });
+        }
       }
       if (current.current === opened) void opened.outbox.flush();
+    },
+    async isStored(order) {
+      const opened = current.current;
+      if (!opened || opened.storeKey !== storeKey) return false;
+      const [stored] = await opened.orders.storageInstance.findDocumentsById([order.id], false);
+      if (!stored || stored._deleted) return false;
+      if (sameSale(stored, order)) return true;
+      outboxLogger.error('A stored order has this id with different content', { orderId: order.id });
+      return false;
     },
   };
 }

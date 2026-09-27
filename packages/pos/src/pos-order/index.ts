@@ -7,3 +7,4 @@ export { posOrderSchema, posOrderCollection } from './schema';
 export { addPosOrderCollection } from './open';
 export { getDeviceId } from './device-id';
 export { needsAttention } from './needs-attention';
+export { sameSale, OrderContentMismatchError } from './same-sale';
