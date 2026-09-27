@@ -32,7 +32,7 @@ describe('watchFresh', () => {
     const subscription = watchFresh(sales, pending).subscribe((rows) => emissions.push(rows));
     // The repro's timing: the insert lands a microtask after subscribe, while the first storage
     // read watchFresh started may still be in flight. A cached `find().$` would miss this write
-    // forever (see `read-fresh.test.ts`); watchFresh re-reads on every `collection.$` event.
+    // forever (see `read-fresh.test.ts`); watchFresh re-reads on every write.
     await Promise.resolve();
     await sales.insert({ id: 'a', status: 'pending', createdAt: '1' });
     await vi.waitFor(() => expect(emissions.at(-1)).toEqual([{ id: 'a', status: 'pending', createdAt: '1' }]));
@@ -52,6 +52,20 @@ describe('watchFresh', () => {
     await sales.insert({ id: 'z', status: 'pending', createdAt: '9' });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(querySpy).toHaveBeenCalledTimes(1);
+    querySpy.mockRestore();
+  });
+
+  it('re-reads once for a bulk write, not once per document', async () => {
+    const querySpy = vi.spyOn(sales.storageInstance, 'query');
+    const emissions: Sale[][] = [];
+    const subscription = watchFresh(sales, { selector: { status: 'pending' } }).subscribe((rows) => emissions.push(rows));
+    await vi.waitFor(() => expect(emissions).toHaveLength(1));
+    await sales.bulkInsert(Array.from({ length: 100 }, (_, index) => ({ id: `s${index}`, status: 'pending', createdAt: `${index}` })));
+    await vi.waitFor(() => expect(emissions.at(-1)).toHaveLength(100));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // The first read on subscribe, then exactly one for the bulk of 100.
+    expect(querySpy).toHaveBeenCalledTimes(2);
+    subscription.unsubscribe();
     querySpy.mockRestore();
   });
 });
