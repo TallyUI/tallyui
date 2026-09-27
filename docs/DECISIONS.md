@@ -1575,6 +1575,10 @@ interface OrderCreatePayload {
     order a failed save already stored stays in the outbox.
     `useOrderOutbox.record` treats an order already stored under the same
     `commandId` as stored (RxDB's `CONFLICT`) and still flushes.
+    - **Known gap (2026-09-27):** the pending completion lives only in
+      memory. A page reload during the save loses it (same as before #145)
+      and builds a new order on retry. Persisting the built order before
+      capture is a design for the order.create v3 / registers c2 work.
 - **Consequences:**
   - The second app costs about half the first.
   - A third backend (WooCommerce, or Shopify if it is unparked) gets the
