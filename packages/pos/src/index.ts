@@ -50,7 +50,7 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig } from './receipt';
 export { searchProducts, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$ } from './product';
 
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel } from './sale';
 export type { SaleStage, CatalogueEntry } from './sale';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, sameSale, OrderContentMismatchError } from './pos-order';

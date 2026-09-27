@@ -1668,8 +1668,15 @@ interface OrderCreatePayload {
       outbox and never handing it to `onSaleCompleted` again. Until then
       Retry is the only way out: `newSale()` is refused. A refusal during a
       save still in flight asks `isStored` afresh, so a hung save whose order
-      is stored can still Continue; its later throw is only logged. The
-      `sale` and `outbox` loggers are exported. A `newSale()` call before the
+      is stored can still Continue; its later throw is only logged. A hung
+      save — one whose order is built and whose save neither resolves nor
+      throws — re-asks `isStored` by itself too, every 5 s while it stays
+      unconfirmed, so `Tender` can still offer Continue with no user action
+      (medusapos, the Front desk, 2026-09-28: its tender has no New sale
+      control while saving, so it never triggered the refused-`newSale()`
+      check). The refused-`newSale()` check stays for apps that have one.
+      `SALE_SAVING` is exported alongside the `sale` and `outbox` loggers.
+      A `newSale()` call before the
       order is even built — still finalizing or stamping — is refused too,
       unconditionally: there's nothing yet to ask `isStored` about, so
       abandoning is possible only once the order is confirmed stored
