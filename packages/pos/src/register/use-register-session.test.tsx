@@ -50,14 +50,18 @@ import type { LogEntry } from '../logging';
 import { addPosOrderCollection } from '../pos-order/open';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
 import { registerFactsLogger } from './facts';
+import { readFresh } from '../rxdb';
 import { ensureRegister, readRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCollection } from './schemas';
+import { serverClose } from './server-close.test-helper';
 import {
   closeSession,
   openSession,
   recordMovement,
   RegisterSessionRequiredError,
+  stampSession,
   startCounting,
+  sweepOrphanStamps,
   backToSelling,
   writeClosure,
   type CashMovementCollection,
@@ -579,4 +583,108 @@ it('is overdue after the close time while open, and not while counting', async (
   await startCounting(db.register_sessions, session.id);
   await waitFor(() => expect(result.current.session?.status).toBe('counting'));
   expect(result.current.overdue).toBe(false);
+});
+
+// ADR-032 (the #156 review): `stampSession`'s check and the app's insert aren't atomic, so a close
+// can freeze its closure between them. The sweep makes such an order a late sale, and never
+// touches the closure or an order it counts.
+describe('the orphan-stamp sweep', () => {
+  const lateFacts = () => logs.filter((entry) => (entry.data?.context as { type?: string })?.type === 'register.late-sale');
+  const stored = async (id: string) => (await db.pos_orders.storageInstance.findDocumentsById([id], false))[0];
+  const storedJson = async (ids: string[]) => Promise.all(ids.map(async (id) => JSON.stringify(await stored(id))));
+  const storedClosure = async (id: string) => JSON.stringify((await db.closures.storageInstance.findDocumentsById([id], false))[0]);
+  const target = () => ({ sessions: db.register_sessions, closures: db.closures, orders: db.pos_orders, registerId: 'register' });
+  const cash = [{ method: 'cash' as const, amountMinor: 1500 }];
+  /** A server close, then its closure, frozen from the orders stored by then. */
+  async function closedOnServer(id: string) {
+    await serverClose(db.register_sessions, id);
+    const [session] = await db.register_sessions.storageInstance.findDocumentsById([id], false);
+    return writeClosure({
+      closures: db.closures, register: db.register_sessions, storeKey: 'store', session, counted: 10000,
+      otherTenders: {}, movements: [], orders: await readFresh(db.pos_orders, {}), softwareVersion: '1.0.0',
+    });
+  }
+
+  // Revert: drop the sweep on start.
+  it('makes a sale stamped before a server close, and stored after its closure, a late sale on the next start', async () => {
+    const session = await seed();
+    const stamped = await stampSession({ id: 'orphan' } as PosOrder, session.id, db.register_sessions);
+    await closedOnServer(session.id); // while the app is closed: the Z freezes without the sale
+    await sale('orphan', stamped.sessionId, cash); // then the insert lands
+    const frozen = await storedClosure(session.id);
+    render(); // the restart
+    await waitFor(async () => expect((await stored('orphan'))?.lateSessionId).toBe(session.id));
+    expect(await stored('orphan')).not.toHaveProperty('sessionId');
+    expect(lateFacts()).toEqual([expect.objectContaining({
+      level: 'warn',
+      data: expect.objectContaining({ actor: { id: '7', name: '' }, context: { type: 'register.late-sale', orderId: 'orphan', sessionId: session.id, registerId: 'register' } }),
+    })]);
+    expect(await storedClosure(session.id)).toBe(frozen);
+  });
+
+  // Revert: sweep every stamped order of a closed session with a closure, listed or not.
+  it('never touches a sale its closure counts: at start, after a close, or on a repeat sweep', async () => {
+    const session = await seed();
+    await sale('legit', session.id, cash);
+    const before = await storedJson(['legit']);
+    const result = await settled();
+    await act(() => result.current.actions.closeSession({ counted: { cash: 11500 } }));
+    expect((await db.closures.findOne(session.id).exec())?.order_ids).toEqual(['legit']);
+    expect(await storedJson(['legit'])).toEqual(before);
+    expect(await sweepOrphanStamps(target())).toEqual([]);
+    cleanup();
+    render(); // a restart
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await storedJson(['legit'])).toEqual(before);
+    expect(lateFacts()).toEqual([]);
+  });
+
+  it("never touches an order whose session's closure isn't written, a late order, or another register's order", async () => {
+    const unwrittenClosure = await seed();
+    await sale('unclosed', unwrittenClosure.id, cash);
+    await serverClose(db.register_sessions, unwrittenClosure.id);
+    const closed = await seed();
+    await closedOnServer(closed.id);
+    await sale('already-late', undefined, cash, { lateSessionId: closed.id });
+    const elsewhere = await seed('7', 'other-register');
+    await closedOnServer(elsewhere.id);
+    await sale('elsewhere', elsewhere.id, cash);
+    await sale('orphan', closed.id, cash); // the control: this one is swept
+    const untouched = ['unclosed', 'already-late', 'elsewhere'];
+    const before = await storedJson(untouched);
+    expect(await sweepOrphanStamps(target())).toEqual(['orphan']);
+    expect(await storedJson(untouched)).toEqual(before);
+    expect(lateFacts()).toHaveLength(1);
+  });
+
+  it('patches an orphan once, with one fact, however many sweeps run', async () => {
+    const session = await seed();
+    await closedOnServer(session.id);
+    await sale('orphan', session.id, cash);
+    const runs = await Promise.all([sweepOrphanStamps(target()), sweepOrphanStamps(target())]);
+    expect(runs.flat()).toEqual(['orphan']);
+    expect(await sweepOrphanStamps(target())).toEqual([]);
+    expect(await stored('orphan')).toMatchObject({ lateSessionId: session.id });
+    expect(lateFacts()).toHaveLength(1);
+  });
+
+  it('sweeps a sale stored after the close read its orders, before that close returns', async () => {
+    const session = await seed();
+    const stamped = await stampSession({ id: 'raced' } as PosOrder, session.id, db.register_sessions);
+    const result = await settled();
+    // The insert lands after `writeClosure` read the orders, just before its closure row.
+    const insert = db.closures.insert.bind(db.closures);
+    vi.spyOn(db.closures, 'insert').mockImplementationOnce((async (row: Parameters<typeof insert>[0]) => {
+      await sale('raced', stamped.sessionId, cash);
+      return insert(row);
+    }) as typeof insert);
+    let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
+    await act(async () => {
+      closure = await result.current.actions.closeSession({ counted: { cash: 10000 } });
+    });
+    expect(closure.order_ids).toEqual([]);
+    expect(await stored('raced')).toMatchObject({ lateSessionId: session.id });
+    expect(await stored('raced')).not.toHaveProperty('sessionId');
+    expect(lateFacts()).toHaveLength(1);
+  });
 });
