@@ -1033,6 +1033,46 @@ describe('abandoning a hung save and locking from entry', () => {
         await db.remove();
       }
     });
+
+    // The check guard is per completion, not a bare boolean (medusapos's #85 review): sale 1's isStored
+    // never settles (a permanently stuck check), but sale 1 still gets past it through an ordinary Retry
+    // that succeeds, and newSale() to sale 2. Sale 2 hangs too; its poll must still confirm and offer
+    // Continue, which a shared boolean guard (stuck true forever from sale 1's stuck check) would block.
+    it("a completion whose isStored never settles never blocks a later sale's own poll", async () => {
+      const { db, orders } = await withPosOrders();
+      let sale = 1;
+      let insertedSale1 = false;
+      const completed = vi.fn(async (posOrder: PosOrder) => {
+        if (sale === 1) {
+          if (!insertedSale1) { insertedSale1 = true; await orders.insert(posOrder); throw new Error('flush failed'); }
+          return; // Retry: already stored, succeeds
+        }
+        await orders.insert(posOrder);
+        await new Promise<void>(() => {}); // sale 2 hangs too
+      });
+      const isStored = (posOrder: PosOrder) => sale === 1
+        ? new Promise<boolean>(() => {}) // sale 1's check never settles
+        : orders.findOne(posOrder.id).exec().then((doc) => !!doc);
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed, isStored, hungSaveCheckMs: checkMs }));
+      try {
+        addSaleLines(result);
+        act(() => result.current.startTender('external'));
+        await act(async () => { await result.current.complete(); }); // attempt 1: throws, fires the stuck check
+        expect(result.current.error).toBe('The sale could not be saved: flush failed');
+        expect(result.current.canContinue).toBe(false); // never confirms
+        await act(async () => { await result.current.complete(); }); // Retry: attempt 2 succeeds
+        expect(result.current.stage.kind).toBe('receipt');
+        act(() => result.current.newSale()); // allowed: pending is cleared
+        expect(result.current.stage.kind).toBe('cart');
+        sale = 2;
+        addSaleLines(result);
+        act(() => result.current.startTender('external'));
+        act(() => { result.current.complete(); }); // sale 2, hangs too, with its own timer armed
+        await waitFor(() => expect(result.current.canContinue).toBe(true)); // sale 2 still gets Continue
+      } finally {
+        await db.remove();
+      }
+    });
   });
 
   // Removed (the Front desk, 2026-09-27; #149 review): this covered newSale() abandoning a built

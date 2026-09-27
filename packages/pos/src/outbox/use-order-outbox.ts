@@ -49,6 +49,12 @@ export interface UseOrderOutboxResult {
   flush(): Promise<void>;
   /** Moves rejected orders back to pending (see `OrderOutbox.requeue`); resolves to 0 before the current store is ready. */
   requeue(orderIds?: string[]): Promise<number>;
+  /**
+   * The count of `record()` calls not yet settled (resolved or rejected). An app holds sign-out
+   * (closing the store) while this is above 0, because a close that lands under a write stuck in
+   * storage can wait forever, and TallyUI deliberately doesn't bound that close (#155).
+   */
+  savesInFlight: number;
 }
 
 /** Opens the order store for `storeKey`, runs its outbox and watches the recent orders (lifted from medusapos/app, ADR-052). */
@@ -60,9 +66,14 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
     storeKey: string; orders: RxCollection<PosOrder>; outbox: ReturnType<typeof createOrderOutbox>;
   } | null>(null);
   const openingError = useRef<unknown>(null);
+  // Order ids already logged for a content mismatch (see `isStored`), for the hook's lifetime: a hung
+  // save's poll re-asks isStored every few seconds, and a mismatch shouldn't get a fresh error each time.
+  const loggedMismatches = useRef(new Set<string>());
   const [orders, setOrders] = useState<RxCollection<PosOrder> | null>(null);
   const [state, setState] = useState<OutboxState>(idle);
   const [recent, setRecent] = useState<PosOrder[]>([]);
+  const savesInFlight = useRef(0);
+  const [savesInFlightCount, setSavesInFlightCount] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -105,26 +116,34 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
       const opened = current.current;
       return opened && opened.storeKey === storeKey ? opened.outbox.requeue(orderIds) : 0;
     },
+    savesInFlight: savesInFlightCount,
     async record(posOrder) {
-      const opened = current.current;
-      if (!opened || opened.storeKey !== storeKey) throw openingError.current ?? new Error('Orders are not ready.');
+      savesInFlight.current++;
+      setSavesInFlightCount(savesInFlight.current);
       try {
-        await opened.orders.insert(posOrder);
-      } catch (error) {
-        // useSale's retry hands over the order a failed save already stored (complete() is idempotent,
-        // ADR-052). RxDB 16's insert throws RxError code 'CONFLICT' for an existing primary key, with the
-        // stored document in `parameters.writeError.documentInDb`. The same id and content means it is stored, even
-        // under another commandId: a requeue mints one, and requiring it stuck the tender on Retry (medusapos #79).
-        const stored = (error as RxError)?.code === 'CONFLICT' ? (error as RxError).parameters.writeError : undefined;
-        const inDb = stored?.status === 409 ? stored.documentInDb : undefined;
-        if (!inDb || inDb._deleted) throw error;
-        if (!sameSale(inDb, posOrder)) throw new OrderContentMismatchError(posOrder.id);
-        if (inDb.commandId !== posOrder.commandId) {
-          outboxLogger.warn('Recorded an order stored under another commandId', { orderId: posOrder.id,
-            storedCommandId: inDb.commandId, recordedCommandId: posOrder.commandId });
+        const opened = current.current;
+        if (!opened || opened.storeKey !== storeKey) throw openingError.current ?? new Error('Orders are not ready.');
+        try {
+          await opened.orders.insert(posOrder);
+        } catch (error) {
+          // useSale's retry hands over the order a failed save already stored (complete() is idempotent,
+          // ADR-052). RxDB 16's insert throws RxError code 'CONFLICT' for an existing primary key, with the
+          // stored document in `parameters.writeError.documentInDb`. The same id and content means it is stored, even
+          // under another commandId: a requeue mints one, and requiring it stuck the tender on Retry (medusapos #79).
+          const stored = (error as RxError)?.code === 'CONFLICT' ? (error as RxError).parameters.writeError : undefined;
+          const inDb = stored?.status === 409 ? stored.documentInDb : undefined;
+          if (!inDb || inDb._deleted) throw error;
+          if (!sameSale(inDb, posOrder)) throw new OrderContentMismatchError(posOrder.id);
+          if (inDb.commandId !== posOrder.commandId) {
+            outboxLogger.warn('Recorded an order stored under another commandId', { orderId: posOrder.id,
+              storedCommandId: inDb.commandId, recordedCommandId: posOrder.commandId });
+          }
         }
+        if (current.current === opened) void opened.outbox.flush();
+      } finally {
+        savesInFlight.current--;
+        setSavesInFlightCount(savesInFlight.current);
       }
-      if (current.current === opened) void opened.outbox.flush();
     },
     async isStored(order) {
       const opened = current.current;
@@ -132,7 +151,10 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
       const [stored] = await opened.orders.storageInstance.findDocumentsById([order.id], false);
       if (!stored || stored._deleted) return false;
       if (sameSale(stored, order)) return true;
-      outboxLogger.error('A stored order has this id with different content', { orderId: order.id });
+      if (!loggedMismatches.current.has(order.id)) {
+        loggedMismatches.current.add(order.id);
+        outboxLogger.error('A stored order has this id with different content', { orderId: order.id });
+      }
       return false;
     },
   };
