@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
-import { PortalHost } from '@tallyui/primitives';
 import {
   Combobox, ComboboxTrigger, ComboboxInput,
   ComboboxContent, ComboboxItem, ComboboxEmpty,
@@ -100,7 +99,6 @@ export default function ComboboxScreen() {
           </Combobox>
         </VStack>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
-import { HoverCard, PortalHost } from '@tallyui/primitives';
+import { HoverCard } from '@tallyui/primitives';
 import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function HoverCardScreen() {
@@ -54,7 +54,6 @@ export default function HoverCardScreen() {
           </HoverCard.Portal>
         </HoverCard.Root>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

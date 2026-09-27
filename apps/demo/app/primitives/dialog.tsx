@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
-import { Dialog, PortalHost } from '@tallyui/primitives';
+import { Dialog } from '@tallyui/primitives';
 import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function DialogScreen() {
@@ -59,7 +59,6 @@ export default function DialogScreen() {
           </Dialog.Portal>
         </Dialog.Root>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

@@ -1,6 +1,5 @@
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
-import { PortalHost } from '@tallyui/primitives';
 import {
   Tooltip, TooltipTrigger, TooltipContent,
   Button, Text, VStack, HStack, Icon,
@@ -113,7 +112,6 @@ export default function TooltipScreen() {
           </HStack>
         </VStack>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

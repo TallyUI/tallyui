@@ -117,6 +117,21 @@ export {
   type TransactionSummary,
   RegisterOpenClose,
   type RegisterOpenCloseProps,
+  RegisterPicker,
+  type RegisterPickerProps,
+  type RegisterPickerRegister,
+  OpenRegisterCard,
+  type OpenRegisterCardProps,
+  RegisterBar,
+  type RegisterBarProps,
+  describeRegisterBarPill,
+  type RegisterBarPill,
+  MovementSheet,
+  type MovementSheetProps,
+  RegisterPanel,
+  type RegisterPanelProps,
+  RegisterColumn,
+  type RegisterColumnProps,
 } from './register';
 
 // Settings components

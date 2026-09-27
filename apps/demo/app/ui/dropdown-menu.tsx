@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
-import { PortalHost } from '@tallyui/primitives';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuRadioItem,
@@ -161,7 +160,6 @@ export default function DropdownMenuScreen() {
           </DropdownMenu>
         </VStack>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

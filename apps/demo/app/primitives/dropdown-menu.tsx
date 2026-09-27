@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
-import { DropdownMenu, PortalHost } from '@tallyui/primitives';
+import { DropdownMenu } from '@tallyui/primitives';
 import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function DropdownMenuScreen() {
@@ -121,7 +121,6 @@ export default function DropdownMenuScreen() {
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }

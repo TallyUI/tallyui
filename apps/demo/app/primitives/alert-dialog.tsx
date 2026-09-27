@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
-import { AlertDialog, PortalHost } from '@tallyui/primitives';
+import { AlertDialog } from '@tallyui/primitives';
 import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 export default function AlertDialogScreen() {
@@ -69,7 +69,6 @@ export default function AlertDialogScreen() {
           </AlertDialog.Portal>
         </AlertDialog.Root>
       </ScrollView>
-      <PortalHost />
     </>
   );
 }
