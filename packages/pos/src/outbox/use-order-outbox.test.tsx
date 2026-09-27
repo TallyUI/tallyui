@@ -263,6 +263,27 @@ describe('useOrderOutbox options', () => {
     await opened.close();
   });
 
+  it('shows an order the query cache missed, once its change event arrives (RxDB 16.21.1 bug 4)', async () => {
+    const opened = await openStore(session.baseUrl);
+    // Poison the query `recent` runs, before the hook (which runs the identical query) ever
+    // subscribes to it: a write landing while its storage read is in flight (the repro's timing)
+    // never reaches it, and RxDB's query cache never heals it (a `find().$`-driven `recent`
+    // would stay empty forever). A transport that never accepts: nothing else writes to the
+    // collection to mask that.
+    const stale = opened.orders.find({ sort: [{ createdAt: 'desc' }], limit: 50 });
+    const subscription = stale.$.subscribe();
+    await Promise.resolve();
+    const order = sale();
+    await opened.orders.insert(order);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await stale.exec()).toHaveLength(0); // the premise: this cached query stays stale
+    const retryLater: CommandTransport['send'] = async () => ({ kind: 'retry', reason: 'offline', retryAfterMs: 60_000 });
+    renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: async () => opened, transport: fakeTransport(retryLater) });
+    await waitFor(() => expect(outbox.recent).toHaveLength(1));
+    expect(outbox.recent[0]?.id).toBe(order.id);
+    subscription.unsubscribe();
+  });
+
   // complete() is idempotent for one tender (ADR-052): its retry records the order a failed save already stored.
   describe('recording an order that is already stored', () => {
     const retryLater: CommandTransport['send'] = async () => ({ kind: 'retry', reason: 'offline', retryAfterMs: 60_000 });
