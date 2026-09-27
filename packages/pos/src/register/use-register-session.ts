@@ -225,8 +225,10 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           // The storage, not the rendered snapshot or a cached query, which can lag a new write.
           const rows = await readFresh(sessions, { register_id: registerId });
           if (rows.some((row) => row.status !== 'closed')) throw new RegisterSessionAlreadyOpenError();
-          const reservation = reservationOf(await readRegister(register), storeKey, registerId);
+          // Closure rows before the reservation: a close reserves, then inserts its row, then applies the
+          // reservation, so a close landing between the two reads is still caught by one of them.
           const closureRows = await readFresh(closures, { register_id: registerId });
+          const reservation = reservationOf(await readRegister(register), storeKey, registerId);
           if ((reservation && !reservation.applied) || rows.some((row) => unwritten(row, closureRows))) {
             throw new RegisterCloseIncompleteError();
           }
