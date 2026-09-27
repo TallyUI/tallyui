@@ -970,6 +970,69 @@ describe('abandoning a hung save and locking from entry', () => {
         await db.remove();
       }
     });
+
+    // #161 review: with isStored slower than the interval, unguarded ticks ran several checks at once,
+    // and a hung storage (this poll's whole reason to exist) is exactly when isStored is slow.
+    it('overlapping checks: an isStored slower than the interval never has more than one check in flight at once', async () => {
+      const { db, orders } = await withPosOrders();
+      const completed = vi.fn(async (posOrder: PosOrder) => { await orders.insert(posOrder); await new Promise<void>(() => {}); });
+      let active = 0;
+      let maxActive = 0;
+      const isStored = vi.fn(async () => {
+        active++;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, checkMs * 5)); // much slower than the interval
+        active--;
+        return false;
+      });
+      try {
+        const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed, isStored, hungSaveCheckMs: checkMs }));
+        addSaleLines(result);
+        act(() => result.current.startTender('external'));
+        act(() => { result.current.complete(); });
+        await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+        await new Promise((resolve) => setTimeout(resolve, checkMs * 12)); // several ticks while isStored is slow
+        expect(isStored.mock.calls.length).toBeGreaterThanOrEqual(2); // the guard skipped ticks, not every one
+        expect(maxActive).toBe(1);
+      } finally {
+        await db.remove();
+      }
+    });
+
+    // #161 review: an old, abandoned attempt's own timer handle must never clear a newer sale's timer
+    // when its stale save finally settles late.
+    it("a stale save from an abandoned sale never kills the next sale's timer: sale 2 still gets Continue", async () => {
+      const { db, orders } = await withPosOrders();
+      let releaseSale1!: () => void;
+      const sale1Gate = new Promise<void>((resolve) => { releaseSale1 = resolve; });
+      let sale = 1;
+      const completed = vi.fn(async (posOrder: PosOrder) => {
+        await orders.insert(posOrder);
+        if (sale === 1) { await sale1Gate; throw new Error('sale 1 flush failed, late'); }
+        await new Promise<void>(() => {}); // sale 2 hangs too
+      });
+      const isStored = async (posOrder: PosOrder) => !!(await orders.findOne(posOrder.id).exec());
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed, isStored, hungSaveCheckMs: checkMs }));
+      try {
+        addSaleLines(result);
+        act(() => result.current.startTender('external'));
+        act(() => { result.current.complete(); }); // sale 1, hangs
+        await waitFor(() => expect(result.current.canContinue).toBe(true)); // sale 1's own timer confirms it
+        act(() => result.current.continueSale()); // abandons sale 1; sale 1's save is still in flight
+        expect(result.current.stage.kind).toBe('cart');
+        sale = 2;
+        addSaleLines(result);
+        act(() => result.current.startTender('external'));
+        act(() => { result.current.complete(); }); // sale 2, hangs too, with its own timer armed
+        await waitFor(async () => expect(await orders.find().exec()).toHaveLength(2));
+        releaseSale1(); // sale 1's stale save settles late, well after sale 2's timer took over
+        await act(async () => {});
+        await waitFor(() => expect(result.current.canContinue).toBe(true)); // sale 2 still gets Continue
+        expect(await orders.find().exec()).toHaveLength(2);
+      } finally {
+        await db.remove();
+      }
+    });
   });
 
   // Removed (the Front desk, 2026-09-27; #149 review): this covered newSale() abandoning a built

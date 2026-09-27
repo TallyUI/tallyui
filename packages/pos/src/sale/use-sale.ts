@@ -62,6 +62,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   // The hung-save poll (at most one at a time): deliver() arms it while a completion's save is in
   // flight, and it, confirm() and unmount all clear it.
   const hungSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Guards overlapping isStored checks (#161 review): a tick skips while one is already in flight,
+  // so an isStored slower than the interval never has more than one check running at once.
+  const checking = useRef(false);
   function clearHungSaveTimer() {
     if (hungSaveTimer.current !== null) { clearInterval(hungSaveTimer.current); hungSaveTimer.current = null; }
   }
@@ -111,24 +114,30 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   function checkStored(completion: { order: Order; posOrder: PosOrder }) {
     const attempt = attempts.current;
     const isStored = opts.isStored; // a throw, even a synchronous one, counts as not stored
-    if (isStored) void Promise.resolve(completion.posOrder).then(isStored).catch(() => false).then((stored) => {
+    if (!isStored) return;
+    checking.current = true;
+    void Promise.resolve(completion.posOrder).then(isStored).catch(() => false).then((stored) => {
       if (stored === true && attempts.current === attempt && pending.current === completion) confirm(completion);
-    });
+    }).finally(() => { checking.current = false; });
   }
 
   /** Hands a pending completion to `onSaleCompleted`; the outcome applies only if it wasn't abandoned meanwhile. */
   async function deliver(completion: { order: Order; posOrder: PosOrder }) {
     clearHungSaveTimer();
     // Re-asks isStored every HUNG_SAVE_CHECK_MS while this save is in flight and unconfirmed, so a hung
-    // post-insert step (no throw, no resolve) still offers Continue with no user action.
-    if (opts.isStored) hungSaveTimer.current = setInterval(() => {
+    // post-insert step (no throw, no resolve) still offers Continue with no user action. Its own
+    // `timer` handle is cleared below only while it's still the current one, so a late settle from an
+    // attempt a newer sale has already superseded can never cut off that newer sale's poll (#161 review).
+    const timer = opts.isStored ? setInterval(() => {
+      if (checking.current) return;
       if (pending.current === completion && inFlight.current && confirmed.current !== completion) checkStored(completion);
-      else clearHungSaveTimer();
-    }, opts.hungSaveCheckMs ?? HUNG_SAVE_CHECK_MS);
+      else if (hungSaveTimer.current === timer) clearHungSaveTimer();
+    }, opts.hungSaveCheckMs ?? HUNG_SAVE_CHECK_MS) : null;
+    hungSaveTimer.current = timer;
     try {
       await opts.onSaleCompleted?.(completion.posOrder);
     } catch (error) {
-      clearHungSaveTimer();
+      if (hungSaveTimer.current === timer) clearHungSaveTimer();
       const message = error instanceof Error ? error.message : String(error);
       // Logged whatever the mount state and whether or not it's still pending (#150 review): a screen
       // unmounted mid-save (medusapos Sign out) must never lose a throw silently. Skipped only once the
@@ -142,7 +151,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       }
       return;
     }
-    clearHungSaveTimer();
+    if (hungSaveTimer.current === timer) clearHungSaveTimer();
     if (pending.current !== completion) return;
     pending.current = null;
     confirm(null);
