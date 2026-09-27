@@ -361,6 +361,8 @@ bodies and design docs, and the source is given for each.
   pending count, the rejected orders to requeue and an order's state before
   patching with `readFresh`/`countFresh` (`@tallyui/pos`), which send RxDB's
   prepared query straight to the storage.
+  - Live displays a cashier would act on (`useRegisterSession`, `useOrderOutbox`'s recent list)
+    use `watchFresh` (`@tallyui/pos`) instead of a cached `find().$`, for the same reason.
 
 ## ADR-025 No RxDB premium or SSPL code in TallyUI library packages
 

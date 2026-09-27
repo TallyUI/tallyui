@@ -513,6 +513,24 @@ it('freezes a sale and a movement that RxDB\'s query cache missed (RxDB 16.21.1,
   subscriptions.forEach((subscription) => subscription.unsubscribe());
 });
 
+it('counts a sale the query cache missed, once its change event arrives, in live salesCount and expected (RxDB 16.21.1 bug 4)', async () => {
+  const session = await seed();
+  // A second, separately-created query for the same selector the hook's own orders query uses: a
+  // write landing while its storage read is in flight (the repro's timing) never reaches it, and
+  // RxDB's query cache never heals it (a `find().$`-driven `salesCount`/`expected` would stay 0).
+  const stale = db.pos_orders.find({ selector: { sessionId: session.id } });
+  const subscription = stale.$.subscribe();
+  await Promise.resolve();
+  await sale('missed', session.id, [{ method: 'cash', amountMinor: 4200 }]);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(await stale.exec()).toHaveLength(0); // the premise: this cached query stays stale
+  const result = await settled();
+  await waitFor(() => expect(result.current.salesCount).toBe(1));
+  // The float (10000, from `seed()`) plus the missed sale's cash.
+  expect(result.current.expected).toEqual({ cash: 14200 });
+  subscription.unsubscribe();
+});
+
 it('logs a double-tapped close once', async () => {
   await seed();
   const result = await settled();
