@@ -14,12 +14,14 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import { toOrderCreateEnvelope } from '../pos-order/command';
 import { finalizeOrder } from '../pos-order/finalize';
+import type { PosOrder } from '../pos-order/types';
 import { cashMovementSchema, closureSchema, registerSessionSchema } from './schemas';
 import {
   backToSelling,
   closeSession,
   openSession,
   recordMovement,
+  RegisterMovementStrandedError,
   RegisterSessionClosedError,
   RegisterSessionRequiredError,
   requireOpenSession,
@@ -34,9 +36,9 @@ import {
 let db: RxDatabase<{
   register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection; closures: ClosureCollection;
 }>;
-beforeEach(async () => {
+async function openDatabase(name: string) {
   db = await createRxDatabase({
-    name: `session${Math.random().toString(36).slice(2)}`,
+    name,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     multiInstance: false,
   });
@@ -45,7 +47,8 @@ beforeEach(async () => {
     cash_movements: { schema: cashMovementSchema },
     closures: { schema: closureSchema },
   });
-});
+}
+beforeEach(() => openDatabase(`session${Math.random().toString(36).slice(2)}`));
 afterEach(async () => {
   await db.remove();
 });
@@ -205,4 +208,82 @@ it('stampSession stamps an unstamped order on an open or counting session, refus
 
   await closeSession(db.register_sessions, session.id, { counted: { cash: 500 } });
   await expect(stampSession(build(), session.id, db.register_sessions)).rejects.toBeInstanceOf(RegisterSessionClosedError);
+});
+
+// ADR-032 and docs/rxdb/query-cache-reads.md (the 2026-09-28 audit's MONEY rows): the live-session
+// checks read storage by primary key. A status write that skips the cached `findOne(id)`, as a
+// server sync (registers c2) would, can land while a cold read of the session is in flight, and
+// RxDB 16.21.1's query cache then keeps the session as it was before the close. A restart leaves
+// no session in RxDB's document cache, so the next read of it is cold.
+async function restart() {
+  const { name } = db;
+  await db.close();
+  await openDatabase(name);
+}
+async function serverClose(id: string) {
+  const storage = db.register_sessions.storageInstance;
+  const [previous] = await storage.findDocumentsById([id], false);
+  const at = new Date().toISOString();
+  const closed = { ...previous, status: 'closed' as const, pending_status: 'closed', status_at: at, closed_at_gmt: at, closure_id: id };
+  expect((await storage.bulkWrite([{ previous, document: closed }], 'server-close')).error).toEqual([]);
+}
+/** Lands `write` during the next storage read by id: after storage answers, before the reader sees it. */
+function duringNextReadById(write: () => Promise<void>) {
+  const storage = db.register_sessions.storageInstance;
+  const read = storage.findDocumentsById.bind(storage);
+  let landed = false;
+  storage.findDocumentsById = async (ids, withDeleted) => {
+    storage.findDocumentsById = read;
+    const found = await read(ids, withDeleted);
+    await write();
+    landed = true;
+    return found;
+  };
+  return () => landed;
+}
+const paidOut = (sessionId: string) =>
+  recordMovement(db.register_sessions, db.cash_movements, db.closures, {
+    sessionId, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7',
+  });
+
+// Revert: decide requireLiveSession on `sessions.findOne(id).exec()`.
+it('refuses the next stamp after a close that skipped the cached read raced the first stamp', async () => {
+  const { id } = await openSession(db.register_sessions, input);
+  await restart();
+  const raced = duringNextReadById(() => serverClose(id));
+  await stampSession({ id: 'o1' } as PosOrder, id, db.register_sessions); // its read predates the close
+  expect(raced()).toBe(true);
+  await expect(stampSession({ id: 'o2' } as PosOrder, id, db.register_sessions)).rejects.toBeInstanceOf(
+    RegisterSessionClosedError,
+  );
+});
+
+// Revert: decide requireLiveSession and the re-read after the insert on `sessions.findOne(id).exec()`.
+it('never records a movement as live on a session closed by a write that skipped the cached read', async () => {
+  const { id } = await openSession(db.register_sessions, input);
+  await restart();
+  const raced = duringNextReadById(() => serverClose(id));
+  // The check's read predates the close, the re-read sees it, and no closure row exists yet.
+  await expect(paidOut(id)).rejects.toBeInstanceOf(RegisterMovementStrandedError);
+  expect(raced()).toBe(true);
+  await expect(paidOut(id)).rejects.toBeInstanceOf(RegisterSessionClosedError);
+  expect(await db.cash_movements.count().exec()).toBe(1);
+});
+
+// Revert: decide the re-read after the insert on `sessions.findOne(id).exec()`.
+it('keeps a movement stranded when that close lands during its insert, inside another cold findOne', async () => {
+  const { id } = await openSession(db.register_sessions, input);
+  await restart();
+  let raced = () => false;
+  const insert = db.cash_movements.insert.bind(db.cash_movements);
+  db.cash_movements.insert = (async (doc: Parameters<typeof insert>[0]) => {
+    const row = await insert(doc);
+    db.cash_movements.insert = insert;
+    raced = duringNextReadById(() => serverClose(id));
+    await db.register_sessions.findOne(id).exec(); // another reader of the session, such as a screen
+    return row;
+  }) as typeof db.cash_movements.insert;
+  await expect(paidOut(id)).rejects.toBeInstanceOf(RegisterMovementStrandedError);
+  expect(raced()).toBe(true);
+  expect(await db.cash_movements.count().exec()).toBe(1);
 });

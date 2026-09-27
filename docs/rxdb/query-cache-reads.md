@@ -38,8 +38,8 @@ Each point was traced in RxDB 16.21.1's source or shown by a probe during the 20
 
 | Cost | Read | What a stale result costs | Fix |
 |---|---|---|---|
-| MONEY (latent) | `session-store.ts:64` (`requireLiveSession`, used by `stampSession`, `recordMovement` and `voidMovement`) | A sale stamped onto a closed session (on no Z, with no late-sale fact), or a movement recorded on a closed session and missing from its frozen closure. It's safe today only because the one status writer reads through the same `findOne` first; a writer that skips that read (such as a server-side close) would expose it. | A primary-key storage read, before any server-sync work |
-| MONEY (latent) | `session-store.ts:218` (`recordMovement`'s re-read) | As above | The same |
+| MONEY (latent) | `session-store.ts:64` (`requireLiveSession`, used by `stampSession`, `recordMovement` and `voidMovement`) | A sale stamped onto a closed session (on no Z, with no late-sale fact), or a movement recorded on a closed session and missing from its frozen closure. It's safe today only because the one status writer reads through the same `findOne` first; a writer that skips that read (such as a server-side close) would expose it. | **Fixed:** `readSession`, a primary-key storage read |
+| MONEY (latent) | `session-store.ts:218` (`recordMovement`'s re-read) | As above | **Fixed:** the same |
 | SYNC | `id-reconcile.ts:78` | A product inserted during the read is never checked, so a backend delete is never tombstoned. A product deleted during the read is re-enqueued and counted as a tombstone on every pass, which can trip the mass-delete brake. | `readFresh` (the helper moves to `@tallyui/database`) |
 | SYNC | `fingerprint-reconcile.ts:106` | A product inserted during the read is never re-checked, so a missed price is never corrected | The same |
 

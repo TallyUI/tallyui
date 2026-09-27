@@ -258,7 +258,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         refuseDuringTender();
         const { sessions, movements, closures, orders } = live();
         const open = current();
-        // A fresh read by id, not `open` (plain data): `store.closeSession` is idempotent already closed.
+        // By id, not `open` (plain data): `store.closeSession`'s guard runs again inside
+        // `incrementalModify` on the stored document, so a close that already landed keeps its count, time and actor.
         const closed = await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, timezone });
         const { cash = 0, ...otherTenders } = closed.counted ?? input.counted;
         // Read past the query cache: the Z's figures are derived from these rows.

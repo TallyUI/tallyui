@@ -614,6 +614,11 @@ bodies and design docs, and the source is given for each.
     stale result (bug 4 in the local RxDB repro). A Z froze without a sale.
     The live `expected` and `salesCount`, and the outbox's pending query, are
     exposed to the same bug; they are not fixed here.
+  - **The live-session checks read storage by primary key** (the stamp, the
+    movement gate and `recordMovement`'s re-read), not a cached `findOne`, so
+    a status writer that skips that query (registers c2's server sync) can't
+    leave them stale. The 2026-09-28 query-cache audit found them
+    (`docs/rxdb/query-cache-reads.md`).
   - **A double-tapped close logs `session-closed` once.**
   - **Known difference, left for later:** `overdue` keeps WCPOS's rule and
     reads the close time on the device's clock, not the store's timezone.
