@@ -4,6 +4,7 @@ import { expect, it } from 'vitest';
 import {
   addRxPlugin, createRxDatabase, fillWithDefaultSettings, getPrimaryKeyOfInternalDocument, getSingleDocument, INTERNAL_CONTEXT_MIGRATION_STATUS,
   normalizeMangoQuery, prepareQuery, type RxCollectionCreator, type RxDatabase, type RxJsonSchema, type RxStorage,
+  type RxStorageInstanceCreationParams,
 } from 'rxdb';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
@@ -176,6 +177,43 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
     for (const wait of [0, 10, 500]) expect(await cycle(wait)).toEqual({ outcome: 'resolved', v0: [], v1: ids });
     expect((await stored()).v1).toStrictEqual([...orders.slice(0, 450), { ...orders[450], syncStatus: 'pending' }]);
   }, 60000);
+
+  /**
+   * Opens, and closes once the open reaches the first storage instance `pause` matches, which a
+   * timer then delays (like a SQLite worker's round trip). The close must wait for the whole open:
+   * it resolves, every order moves once, and a later open on the same storage (one SQLite handle)
+   * can still write, where a write to a closed instance would have poisoned it (rxdb-premium bug 6).
+   */
+  const closedMidOpen = async (pause: (params: RxStorageInstanceCreationParams<any, any>) => boolean) => {
+    let reached!: () => void;
+    const paused = new Promise<void>((resolve) => { reached = resolve; });
+    const pausing = (storage: RxStorage<any, any>): RxStorage<any, any> => ({ ...storage, createStorageInstance: async (params) => {
+      if (pause(params)) { reached(); await new Promise((resolve) => setTimeout(resolve, 20)); }
+      return storage.createStorageInstance(params);
+    } });
+    const { open, olderApp, stored } = store(makeStorage(), from, pausing);
+    const orders = [order(1), order(2), order(3)];
+    await olderApp((collection) => collection.bulkInsert(orders));
+    const db = await open();
+    const opening = addPosOrderCollection(db).then(() => 'resolved', (error: unknown) => error);
+    await paused;
+    await db.close();
+    expect(await opening).toBe('resolved');
+    expect(await stored()).toMatchObject({ v0: [], v1: orders });
+
+    const next = await open();
+    const pos = await addPosOrderCollection(next);
+    await pos.insert(order(4));
+    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...orders, order(4)]);
+    await next.close();
+    expect(await stored()).toMatchObject({ v0: [], v1: [...orders, order(4)] });
+  };
+
+  it('a close while the open removes the migration checkpoint waits for the whole open, and the same storage writes after', () =>
+    closedMidOpen((params) => params.collectionName.startsWith('rx-migration-state-meta-')));
+
+  it('a close while the open adds the collection waits for the whole open, and the same storage writes after', () =>
+    closedMidOpen((params) => params.collectionName === 'pos_orders' && params.schema.version === posOrderSchema.version));
 
   it(`after a rollback to the version-${from} app, its new sales migrate before the reopen resolves`, async () => {
     const { open, olderApp, stored } = store(makeStorage(), from);
