@@ -1573,8 +1573,21 @@ interface OrderCreatePayload {
     promise, and a call on the receipt does nothing. `newSale()`
     abandons it; abandoning clears the screen, never the record, so an
     order a failed save already stored stays in the outbox.
-    `useOrderOutbox.record` treats an order already stored under the same
-    `commandId` as stored (RxDB's `CONFLICT`) and still flushes.
+    `useOrderOutbox.record` treats an order already stored (RxDB's
+    `CONFLICT`) as stored and still flushes. Since 2026-09-27 it matches on
+    the `id` and the money-bearing content (`sameSale`), not the
+    `commandId`: requiring the `commandId` stuck the tender on Retry after a
+    rejected order was requeued (medusapos #79). Other content throws
+    `OrderContentMismatchError`.
+    - **Continue once stored (the Front desk, 2026-09-27).** After a failed
+      save, `useSale` asks `isStored` (medusapos: the outbox's). Only once
+      this order `id` is confirmed stored with the same content does `Tender`
+      render Continue (`continueSale()`), leaving the order pending in the
+      outbox and never handing it to `onSaleCompleted` again. Until then
+      Retry is the only way out: `newSale()` is refused. A refusal during a
+      save still in flight asks `isStored` afresh, so a hung save whose order
+      is stored can still Continue; its later throw is only logged. The
+      `sale` and `outbox` loggers are exported.
     - **Known gap (2026-09-27):** the pending completion lives only in
       memory. A page reload during the save loses it (same as before #145)
       and builds a new order on retry. Persisting the built order before

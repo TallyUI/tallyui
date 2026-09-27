@@ -29,6 +29,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
    */
   session?: { id: string; sessions: RegisterSessionCollection };
   onSaleCompleted?: (posOrder: PosOrder) => Promise<void> | void;
+  /**
+   * Asked after `onSaleCompleted` throws, or on a `newSale()` refused mid-save: whether that order is confirmed stored
+   * (medusapos: `useOrderOutbox`'s `isStored`). Only a true answer sets `canContinue`; without it, a failed save offers Retry only.
+   */
+  isStored?: (posOrder: PosOrder) => Promise<boolean>;
 }) {
   const taxContext = useTax();
   const madeWith = useRef({ taxContext, currency: settings.currency });
@@ -40,6 +45,15 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   // synchronously by complete() and the lock; `saving` mirrors it (true from complete()'s entry) for rendering.
   const pending = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
   const [saving, setSaving] = useState(false);
+  // The pending completion isStored confirmed stored after its save failed; `canContinue` mirrors it for
+  // rendering. `attempts` counts complete() attempts, so a confirmation that lands after a new one is dropped.
+  const confirmed = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
+  const [canContinue, setCanContinue] = useState(false);
+  const attempts = useRef(0);
+  function confirm(completion: { order: Order; posOrder: PosOrder } | null) {
+    confirmed.current = completion;
+    setCanContinue(!!completion);
+  }
   // The complete() call in flight, and the stage as of the last render or receipt, both read synchronously.
   const inFlight = useRef<Promise<void> | null>(null);
   // Bumped by newSale(): an attempt still building or stamping when newSale() lands checks this before installing pending.
@@ -85,6 +99,15 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     }
   }
 
+  /** Asks `isStored`; Continue is offered only once it confirms, for this attempt, with the completion still pending. */
+  function checkStored(completion: { order: Order; posOrder: PosOrder }) {
+    const attempt = attempts.current;
+    const isStored = opts.isStored; // a throw, even a synchronous one, counts as not stored
+    if (isStored) void Promise.resolve(completion.posOrder).then(isStored).catch(() => false).then((stored) => {
+      if (stored === true && attempts.current === attempt && pending.current === completion) confirm(completion);
+    });
+  }
+
   /** Hands a pending completion to `onSaleCompleted`; the outcome applies only if it wasn't abandoned meanwhile. */
   async function deliver(completion: { order: Order; posOrder: PosOrder }) {
     try {
@@ -92,6 +115,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     } catch (error) {
       if (pending.current === completion) {
         setError(`The sale could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+        checkStored(completion);
       } else {
         saleLogger.error('onSaleCompleted failed for an abandoned attempt', { orderId: completion.posOrder.id,
           error: error instanceof Error ? error.message : String(error) });
@@ -100,6 +124,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     }
     if (pending.current !== completion) return;
     pending.current = null;
+    confirm(null);
     setSaving(false);
     setError(null);
     stageNow.current = { kind: 'receipt', order: completion.order, posOrder: completion.posOrder };
@@ -123,6 +148,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     order, stage, error, idle,
     /** A completion is pending (see `complete()`): the sale is locked, and the UI offers Retry. */
     saving,
+    /** The failed save's order is confirmed stored (see `isStored`): the UI also offers Continue (`continueSale()`). */
+    canContinue,
     add(entry: CatalogueEntry<any>, traits: ProductTraits<any>) {
       if (locked()) return;
       try {
@@ -180,6 +207,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
      * another is in flight returns that call's promise, and a call on the receipt does nothing.
      */
     complete: () => once(async () => {
+      attempts.current++;
+      confirm(null);
       if (pending.current) return deliver(pending.current);
       const myGeneration = generation.current;
       setSaving(true);
@@ -216,19 +245,27 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       return deliver(pending.current);
     }),
     /**
-     * Starts a new, empty sale. It also abandons a pending completion, and any attempt still building or
+     * Starts a new, empty sale. While a pending completion exists (a save failed, or is still running, with the
+     * order built), it's refused with SALE_SAVING, changing nothing, until `canContinue` (the Front desk,
+     * 2026-09-27): the ways out are Retry (`complete()`) or Continue. So an app that doesn't pass `isStored`
+     * gets Retry only after a failed save. A refusal during a save still in flight asks `isStored` afresh, so a
+     * hung save whose order is stored can still offer Continue. It also abandons a confirmed pending completion
+     * (never handed to `onSaleCompleted` again: it's stored; a save still in flight carries on in the
+     * background, a throw logged at error), and any attempt still building or
      * stamping, unlocking the till at once instead of waiting for it. Abandoning clears the screen, never
-     * the record (the Front desk, 2026-09-25): the money is taken, so an order already built — whether a
-     * prior attempt is still delivering it (that attempt's own `deliver()` handles it) or it's parked
-     * after a failed save with nothing in flight — still reaches `onSaleCompleted` in the background,
+     * the record (the Front desk, 2026-09-25): the money is taken, so an order such an abandoned attempt
+     * goes on to build and stamp still reaches `onSaleCompleted` in the background,
      * just never as this new sale's pending completion, lock, error or receipt. An attempt abandoned
      * before its order was built has nothing to store. `newSale()` never deletes, updates or requeues
      * `pos_orders` itself.
      */
     newSale() {
+      if (pending.current && confirmed.current !== pending.current) {
+        if (inFlight.current) checkStored(pending.current);
+        return setError(SALE_SAVING);
+      }
       generation.current++;
-      const parked = !inFlight.current ? pending.current : null;
-      pending.current = null;
+      confirm(null);      pending.current = null;
       inFlight.current = null;
       setSaving(false);
       madeWith.current = { taxContext, currency: settings.currency };
@@ -237,7 +274,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       setOrder(next.getSnapshot());
       setStage({ kind: 'cart' });
       setError(null);
-      if (parked) void handOverAbandoned(parked.posOrder);
+    },
+    /**
+     * Continue after a failed save whose order is confirmed stored (`canContinue`): exactly `newSale()`.
+     * The order stays pending in the outbox, which will send it; it isn't handed to `onSaleCompleted` again, and
+     * its receipt is not shown. Otherwise does nothing.
+     */
+    continueSale() {
+      if (pending.current && confirmed.current === pending.current) result.newSale();
     },
   };
   return result;
