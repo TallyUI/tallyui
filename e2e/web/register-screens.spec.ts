@@ -1,13 +1,17 @@
+import { join } from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 
 const sizes = [
   { width: 360, height: 640, label: '360x640' },
   { width: 1280, height: 800, label: '1280x800' },
 ];
-const SHOT_DIR = '/Users/claude/.claude/jobs/2cb8f46e/tmp/register-screens-a';
+// A machine-local path doesn't belong in the repo, and CI has no such directory: screenshots are
+// taken only when this names a folder to write them into (the Front desk review, 2026-09-28).
+const SHOT_DIR = process.env.REGISTER_SCREENSHOT_DIR;
 
 async function shoot(page: Page, name: string, label: string) {
-  await page.screenshot({ path: `${SHOT_DIR}/${name}-${label}.png`, fullPage: true });
+  if (!SHOT_DIR) return;
+  await page.screenshot({ path: join(SHOT_DIR, `${name}-${label}.png`), fullPage: true });
 }
 
 /**

@@ -19,6 +19,27 @@ export function minorUnitDigits(currency: string): number {
   return digits;
 }
 
+const symbolCache = new Map<string, string>();
+
+/** The currency's symbol for a plain-English label ('€' for EUR, '$' for USD), not a full amount. */
+export function currencySymbol(currency: string, locale?: string): string {
+  const code = currency.toUpperCase();
+  const key = `${code}:${locale ?? ''}`;
+  let symbol = symbolCache.get(key);
+  if (symbol === undefined) {
+    try {
+      const part = new Intl.NumberFormat(locale, { style: 'currency', currency: code })
+        .formatToParts(0)
+        .find((p) => p.type === 'currency');
+      symbol = part?.value ?? code;
+    } catch {
+      symbol = code;
+    }
+    symbolCache.set(key, symbol);
+  }
+  return symbol;
+}
+
 /**
  * Converts a major-unit amount ('12.50', 12.5) into Money.
  * Returns undefined for empty or non-numeric input.

@@ -25,6 +25,11 @@ it('will not record a movement the server would refuse for a blank reason', () =
       {(register) => <MovementSheet register={register} type="paid_in" currency="EUR" onOpenChange={vi.fn()} />}
     </RegisterHarness>,
   );
+  // The Front desk review (2026-09-28): two bare boxes had no visible labels.
+  expect(screen.getByTestId('movement-amount-label').textContent).toBe('Amount (€)');
+  expect(screen.getByTestId('movement-amount').getAttribute('aria-label')).toBe('Amount (€)');
+  expect(screen.getByTestId('movement-reason-label').textContent).toBe('Reason');
+  expect(screen.getByTestId('movement-reason').getAttribute('aria-label')).toBe('Reason');
   fireEvent.change(screen.getByTestId('movement-amount'), { target: { value: '20' } });
   expect(confirmButton().disabled).toBe(true);
   expect(screen.getByTestId('movement-invalid').textContent).toContain('reason');
@@ -50,6 +55,8 @@ it('no sale hides the amount, records zero with its reason, and opens the drawer
     </RegisterHarness>,
   );
   expect(screen.queryByTestId('movement-amount')).toBeNull();
+  expect(screen.queryByTestId('movement-amount-label')).toBeNull();
+  expect(screen.getByTestId('movement-reason-label').textContent).toBe('Reason');
   // No reason yet: the server would refuse a no-sale with a blank one too.
   expect(confirmButton().disabled).toBe(true);
   fireEvent.change(screen.getByTestId('movement-reason'), { target: { value: 'Wrong change' } });

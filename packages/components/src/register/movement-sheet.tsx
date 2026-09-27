@@ -2,10 +2,11 @@ import { useRef, useState } from 'react';
 import type { MovementType, useRegisterSession } from '@tallyui/pos';
 import { movementFieldError, normalizeAmount, parseMinor } from '@tallyui/pos';
 
-import { minorUnitDigits } from '@tallyui/core';
+import { currencySymbol, minorUnitDigits } from '@tallyui/core';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
 import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { Text } from '../ui/text';
 
 const LABELS: Record<MovementType, string> = {
@@ -13,6 +14,9 @@ const LABELS: Record<MovementType, string> = {
   paid_out: 'Paid out',
   no_sale: 'No sale',
 };
+
+const AMOUNT_LABEL_ID = 'movement-amount-label';
+const REASON_LABEL_ID = 'movement-reason-label';
 
 export interface MovementSheetProps {
   /** `useRegisterSession`'s return value: records the movement through `register.actions.recordMovement`. */
@@ -70,12 +74,34 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
       <DialogContent testID="movement-sheet">
         <DialogTitle>{LABELS[type]}</DialogTitle>
         {type !== 'no_sale' && (
-          <Input>
-            <Input.Field testID="movement-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" />
-          </Input>
+          <>
+            <Label testID="movement-amount-label" nativeID={AMOUNT_LABEL_ID}>
+              {`Amount (${currencySymbol(currency)})`}
+            </Label>
+            <Input>
+              <Input.Field
+                testID="movement-amount"
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="decimal-pad"
+                accessibilityLabel={`Amount (${currencySymbol(currency)})`}
+                accessibilityLabelledBy={AMOUNT_LABEL_ID}
+              />
+            </Input>
+          </>
         )}
+        <Label testID="movement-reason-label" nativeID={REASON_LABEL_ID}>
+          Reason
+        </Label>
         <Input>
-          <Input.Field testID="movement-reason" placeholder="Reason" value={reason} onChangeText={setReason} />
+          <Input.Field
+            testID="movement-reason"
+            placeholder="Reason"
+            value={reason}
+            onChangeText={setReason}
+            accessibilityLabel="Reason"
+            accessibilityLabelledBy={REASON_LABEL_ID}
+          />
         </Input>
         {!!error && <Text className="text-destructive">{error}</Text>}
         {!!invalid && (
