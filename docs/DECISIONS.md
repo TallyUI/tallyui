@@ -354,6 +354,13 @@ bodies and design docs, and the source is given for each.
 - **Consequences:** Product push handlers are removed from every connector.
   Demand-driven partial replicas (the WCPOS approach) are adopted only if
   the M2 benchmark misses its budget.
+- **The outbox reads past RxDB's query cache (2026-09-26).** RxDB 16.21.1's
+  bug 4 (TallyUI's local repro): a document written while a cached query's
+  storage read is in flight never reaches that query, so a raced sale stayed
+  unsent until a restart. `createOrderOutbox` reads its pending batch, its
+  pending count, the rejected orders to requeue and an order's state before
+  patching with `readFresh`/`countFresh` (`@tallyui/pos`), which send RxDB's
+  prepared query straight to the storage.
 
 ## ADR-025 No RxDB premium or SSPL code in TallyUI library packages
 

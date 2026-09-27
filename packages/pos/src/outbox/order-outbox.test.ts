@@ -570,6 +570,49 @@ describe('order outbox', () => {
     expect((await collection.findOne(input.id).exec())?.toJSON()).toMatchObject({ syncStatus: 'rejected', error });
   });
 
+  // RxDB 16.21.1 bug 4: a write that lands after a cached query's storage read has answered, but
+  // before its continuation runs, never reaches that query. These insert a sale at that moment.
+  it('sends a sale inserted while the pending read is in flight, and a later sale', async () => {
+    const [first, raced, later] = [order(0), order(1), order(2)];
+    await collection.insert(first);
+    const query = collection.storageInstance.query.bind(collection.storageInstance);
+    let armed = true;
+    vi.spyOn(collection.storageInstance, 'query').mockImplementation(async (prepared) => {
+      const result = await query(prepared);
+      if (armed && prepared.query.limit) { armed = false; await collection.insert(raced); }
+      return result;
+    });
+    const { outbox, send, states } = setup();
+    await outbox.flush();
+    expect(armed).toBe(false);
+    expect(send.mock.calls.flatMap(([batch]) => batch.map((command) => command.id)))
+      .toEqual([first.commandId, raced.commandId]);
+    expect(await collection.count({ selector: { syncStatus: 'applied' } }).exec()).toBe(2);
+    expect(states.at(-1)).toMatchObject({ pending: 0, sending: false });
+    await collection.insert(later);
+    await outbox.flush();
+    expect(send.mock.calls.at(-1)?.[0].map((command) => command.id)).toEqual([later.commandId]);
+    expect(states.at(-1)).toMatchObject({ pending: 0, sending: false });
+  });
+
+  it('counts a sale inserted while the pending count is in flight', async () => {
+    const input = order(0);
+    const count = collection.storageInstance.count.bind(collection.storageInstance);
+    let armed = true;
+    vi.spyOn(collection.storageInstance, 'count').mockImplementation(async (prepared) => {
+      const result = await count(prepared);
+      if (armed) { armed = false; await collection.insert(input); }
+      return result;
+    });
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue({ kind: 'retry', reason: 'network' });
+    await outbox.flush();
+    outbox.stop();
+    expect(armed).toBe(false);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(states.at(-1)).toMatchObject({ pending: 1, sending: false });
+  });
+
   it('delivers 200 sales exactly once across seeded transport faults and reloads', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     vi.setSystemTime(epoch);
