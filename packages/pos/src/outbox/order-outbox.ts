@@ -1,6 +1,7 @@
 import type { RxCollection } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
+import { countFresh, readFresh } from '../rxdb';
 import type { CommandTransport, OutboxState } from './types';
 
 // Pause after three 401s since the server last accepted credentials.
@@ -52,8 +53,10 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   let insertedDuringRun = false;
   let stoppedDuringRun = false;
 
+  // Every read goes past RxDB's query cache: in RxDB 16.21.1 a sale inserted while a cached
+  // query's read is in flight never reaches that query, and stayed unsent until a restart.
   async function updateState(patch: Partial<OutboxState> = {}) {
-    const pending = await collection.count({ selector: { syncStatus: 'pending' } }).exec();
+    const pending = await countFresh(collection, { syncStatus: 'pending' });
     state$.next({ ...state$.value, ...patch, pending });
   }
 
@@ -71,14 +74,14 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     while (!stopped) try {
       await updateState({ sending: true, nextAttemptAt: undefined });
       insertedDuringRun = false;
-      const orders = await collection.find({
+      const orders = await readFresh(collection, {
         selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }], limit: batchSize,
-      }).exec();
+      });
       if (!orders.length || stopped) { stoppedDuringRun = stopped; return; }
       const batch = orders.map((order) => {
         const attempt = (attempts.get(order.commandId) ?? 0) + 1;
         attempts.set(order.commandId, attempt);
-        return toOrderCreateEnvelope(order.toMutableJSON(), deviceId, attempt);
+        return toOrderCreateEnvelope(order, deviceId, attempt);
       });
       const outcome = await transport.send(batch);
       if (outcome.kind === 'retry') {
@@ -103,8 +106,12 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       for (const order of orders) {
         const result = outcome.results.find((entry) => entry.id === order.commandId);
         if (!result) continue;
+        // findOne(id) is cached too, and goes stale the same way when the order isn't in RxDB's
+        // document cache: check the stored state, and use findOne only for the write.
+        const [stored] = await readFresh(collection, { selector: { id: order.id } });
+        if (stored?.syncStatus !== 'pending') continue;
         const current = await collection.findOne(order.id).exec();
-        if (!current || current.syncStatus !== 'pending') continue;
+        if (!current) continue;
         const updatedAt = new Date(now()).toISOString();
         await current.incrementalPatch(result.status === 'rejected'
           ? { syncStatus: 'rejected', error: result.error, updatedAt }
@@ -142,14 +149,15 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     state$,
     flush,
     async requeue(orderIds) {
-      const orders = (await collection.find({ selector: { syncStatus: 'rejected',
-        ...(orderIds ? { id: { $in: orderIds } } : {}) } }).exec())
+      const orders = (await readFresh(collection, { selector: { syncStatus: 'rejected',
+        ...(orderIds ? { id: { $in: orderIds } } : {}) } }))
         .filter((order) => !NOT_REQUEUEABLE.has(order.error?.code ?? ''));
       let count = 0;
       for (const order of orders) {
         const oldCommandId = order.commandId;
         let changed = false;
-        await order.incrementalModify((data) => {
+        // The modifier sees the stored state, even when findOne's cached result is stale.
+        await (await collection.findOne(order.id).exec())?.incrementalModify((data) => {
           changed = data.syncStatus === 'rejected' && !NOT_REQUEUEABLE.has(data.error?.code ?? '');
           if (!changed) return data;
           data.syncStatus = 'pending';

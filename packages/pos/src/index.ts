@@ -17,6 +17,9 @@ export type { TaxRateMap, TaxContext } from './tax';
 export { resolveStoreSettings, useStoreSettings, withPricingContext, taxProviderProps } from './store-settings';
 export type { StoreSettingsResolution, ResolveStoreSettingsOptions, StoreSettingsState } from './store-settings';
 
+// RxDB reads past the query cache (RxDB 16.21.1 bug 4)
+export { readFresh, countFresh } from './rxdb';
+
 // Repository
 export { createRepository } from './repository';
 export type { Repository } from './repository';
