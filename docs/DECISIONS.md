@@ -679,6 +679,16 @@ bodies and design docs, and the source is given for each.
   - **A double-tapped close logs `session-closed` once.**
   - **Known difference, left for later:** `overdue` keeps WCPOS's rule and
     reads the close time on the device's clock, not the store's timezone.
+- **What comes next, in order (the Front desk, 2026-09-28):**
+  1. **The register screens:** the picker, the open card, the bar, the
+     movement sheet, the panel and a column gate, then the count and the
+     closure sheet. They are WCPOS `next`'s `pos/cart/register-*` screens,
+     neutralised and driven by `useRegisterSession`. They come first because
+     they make registers usable by testers, before any migration.
+  2. **The ADR-065 `order.create` v3 envelope,** with `pos_orders` schema v3
+     and a `sessionId` index, so tills migrate once. It is specced on Opus
+     and implemented by Codex once Codex is back.
+  3. **Registers c2 (server sync).**
 
 ## ADR-033 Business model deferred; hardware drivers kept splittable (plan D4)
 
