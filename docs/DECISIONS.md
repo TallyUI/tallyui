@@ -534,6 +534,20 @@ bodies and design docs, and the source is given for each.
         `PosOrderOpenClosedError` (`code: 'POS_ORDER_OPEN_CLOSED'`), which
         means "closed during the open, reopen". Any other rejection is a real
         failure.
+      - **A close that stops waiting mid-migration (2026-09-27, the #152
+        review).** When the wait expires while RxDB's migration is still
+        running, the close goes on to close the current version's store and
+        the internal store, and the migration used to keep writing into them:
+        on SQLite a raw `SQLite.bulkWrite() already closed`, an unhandled
+        rejection, and a poisoned handle whose next open failed the same way
+        (rxdb-premium bug 6). No order was lost. Now, from the moment the
+        close gives up (before it closes any store), the run's reads and
+        writes of those two stores stop in `addPosOrderCollection`: one of the
+        current version rejects the run's push, so the run ends in `ERROR`,
+        and a status write is dropped. SQLite's own close waits for a write
+        called before it, so no write reaches a closed instance; the open
+        rejects with `PosOrderOpenClosedError`, and the next open on the same
+        handle migrates every order.
   - **A closed session is final.** WCPOS's server refuses writes to it;
     until job c the store does: nothing leaves `closed`, movements need an
     `open` or `counting` session, and `writeClosure` a closed one.
