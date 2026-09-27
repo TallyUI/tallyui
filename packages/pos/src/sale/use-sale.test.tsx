@@ -25,7 +25,7 @@ import {
   type ClosureCollection, type RegisterSessionCollection,
 } from '../register';
 import { catalogueEntries } from './catalogue';
-import { DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, useSale } from './use-sale';
+import { DISCOUNTS_UNSUPPORTED, HUNG_SAVE_CHECK_MS, SALE_SAVING, saleLogger, useSale } from './use-sale';
 
 const traits = medusaConnector.traits.product;
 const product = {
@@ -868,6 +868,108 @@ describe('abandoning a hung save and locking from entry', () => {
     } finally {
       await db.remove();
     }
+  });
+
+  // The hung-save poll (the Front desk, 2026-09-28): medusapos's tender has no New sale control while
+  // saving, so the refused-newSale() check above never fires for it. useSale re-asks isStored by
+  // itself every HUNG_SAVE_CHECK_MS while the order is built and its save is in flight and unconfirmed,
+  // with no newSale() call or tap needed. These tests pass the test-only `hungSaveCheckMs` (50 ms) so
+  // they run on real timers without waiting out the real 5 s default (the Front desk, 2026-09-28).
+  describe('the hung-save poll', () => {
+    const checkMs = 50;
+
+    /** As renderHungSave, but never taps newSale(): only the poll's own timer may ask isStored. */
+    async function renderHungSaveNoTap(answer: (stored: boolean) => boolean) {
+      const { db, orders } = await withPosOrders();
+      const completed = vi.fn(async (posOrder: PosOrder) => {
+        await orders.insert(posOrder);
+        await new Promise<void>(() => {}); // deliberately never resolves
+      });
+      const checks: boolean[] = [];
+      const isStored = async (posOrder: PosOrder) => {
+        const reply = answer(!!(await orders.findOne(posOrder.id).exec()));
+        checks.push(reply);
+        return reply;
+      };
+      const { result, unmount } = renderSale(pricing, saleOpts({ onSaleCompleted: completed, isStored, hungSaveCheckMs: checkMs }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      act(() => { result.current.complete(); });
+      await waitFor(async () => expect(await orders.find().exec()).toHaveLength(1));
+      return { db, orders, completed, checks, result, unmount };
+    }
+
+    it('defaults to 5000 ms when hungSaveCheckMs is not given', () => {
+      expect(HUNG_SAVE_CHECK_MS).toBe(5000);
+    });
+
+    it('confirms on its own: with no newSale() or tap, canContinue turns true once the timer\'s isStored confirms; continueSale() then starts a new sale with the order stored exactly once', async () => {
+      const { db, orders, completed, checks, result } = await renderHungSaveNoTap(() => true);
+      try {
+        expect(checks).toEqual([]);
+        expect(result.current.canContinue).toBe(false);
+        await waitFor(() => expect(result.current.canContinue).toBe(true));
+        expect(checks).toEqual([true]);
+        expect(result.current).toMatchObject({ stage: { kind: 'tender' }, saving: true, error: null, canContinue: true });
+        act(() => result.current.continueSale());
+        expect(result.current).toMatchObject({ stage: { kind: 'cart' }, saving: false, error: null, canContinue: false });
+        for (let i = 0; i < 5; i++) await act(async () => {});
+        expect(completed).toHaveBeenCalledTimes(1);
+        expect(await orders.find().exec()).toHaveLength(1);
+      } finally {
+        await db.remove();
+      }
+    });
+
+    it('before confirmation, each tick changes nothing; a later tick confirms once isStored turns true', async () => {
+      let stored = false;
+      const { db, checks, result } = await renderHungSaveNoTap(() => stored);
+      try {
+        await waitFor(() => expect(checks.length).toBeGreaterThanOrEqual(1));
+        expect(checks).toEqual([false]);
+        expect(result.current).toMatchObject({ stage: { kind: 'tender' }, saving: true, error: null, canContinue: false });
+        stored = true;
+        await waitFor(() => expect(result.current.canContinue).toBe(true));
+        expect(checks).toEqual([false, true]);
+      } finally {
+        await db.remove();
+      }
+    });
+
+    it('cleared on settle: a save that resolves before the first tick asks isStored no further times, even several ticks later', async () => {
+      const { db, orders } = await withPosOrders();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const completed = vi.fn(async (posOrder: PosOrder) => { await orders.insert(posOrder); await gate; });
+      const isStored = vi.fn(async () => true);
+      try {
+        const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed, isStored, hungSaveCheckMs: checkMs }));
+        addSaleLines(result);
+        act(() => result.current.startTender('external'));
+        let completion!: Promise<void>;
+        act(() => { completion = result.current.complete(); });
+        await new Promise((resolve) => setTimeout(resolve, checkMs / 2));
+        release();
+        await act(async () => { await completion; });
+        expect(result.current.stage.kind).toBe('receipt');
+        isStored.mockClear();
+        await new Promise((resolve) => setTimeout(resolve, checkMs * 5));
+        expect(isStored).not.toHaveBeenCalled();
+      } finally {
+        await db.remove();
+      }
+    });
+
+    it('cleared on unmount: unmounting during a hung save stops further isStored calls, with no act warning', async () => {
+      const { db, unmount, checks } = await renderHungSaveNoTap(() => false);
+      try {
+        unmount();
+        await new Promise((resolve) => setTimeout(resolve, checkMs * 5));
+        expect(checks).toEqual([]);
+      } finally {
+        await db.remove();
+      }
+    });
   });
 
   // Removed (the Front desk, 2026-09-27; #149 review): this covered newSale() abandoning a built

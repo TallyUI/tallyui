@@ -17,6 +17,13 @@ export type SaleStage = { kind: 'cart' } | { kind: 'tender'; method: 'cash' | 'e
 export const DISCOUNTS_UNSUPPORTED = 'finalize: discounts are not supported by the server yet (order.create v2)';
 /** Every sale change refuses with this while a completion is pending (see `complete()`). */
 export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
+/**
+ * How often a hung save re-asks `isStored`, while the order is built and its save is still in flight
+ * and unconfirmed: an app whose tender has no New sale control while saving (the Front desk,
+ * 2026-09-28) never re-asks otherwise, so the cashier could only wait for a hung post-insert step.
+ * `useSale`'s `hungSaveCheckMs` overrides this; that option is tests only.
+ */
+export const HUNG_SAVE_CHECK_MS = 5000;
 
 /** Call under a `TaxProvider`: its tax context and the settings' currency price every sale. */
 export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
@@ -34,6 +41,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
    * (medusapos: `useOrderOutbox`'s `isStored`). Only a true answer sets `canContinue`; without it, a failed save offers Retry only.
    */
   isStored?: (posOrder: PosOrder) => Promise<boolean>;
+  /** Tests only: overrides HUNG_SAVE_CHECK_MS, so a test can shrink the hung-save poll's interval. */
+  hungSaveCheckMs?: number;
 }) {
   const taxContext = useTax();
   const madeWith = useRef({ taxContext, currency: settings.currency });
@@ -50,9 +59,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   const confirmed = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
   const [canContinue, setCanContinue] = useState(false);
   const attempts = useRef(0);
+  // The hung-save poll (at most one at a time): deliver() arms it while a completion's save is in
+  // flight, and it, confirm() and unmount all clear it.
+  const hungSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  function clearHungSaveTimer() {
+    if (hungSaveTimer.current !== null) { clearInterval(hungSaveTimer.current); hungSaveTimer.current = null; }
+  }
   function confirm(completion: { order: Order; posOrder: PosOrder } | null) {
     confirmed.current = completion;
     setCanContinue(!!completion);
+    clearHungSaveTimer();
   }
   // The complete() call in flight, and the stage as of the last render or receipt, both read synchronously.
   const inFlight = useRef<Promise<void> | null>(null);
@@ -76,6 +92,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   });
   // A screen that unmounts (medusapos: Sign out) mid-save must still leave a trace of the loss.
   useEffect(() => () => {
+    clearHungSaveTimer();
     if (pending.current || inFlight.current) {
       saleLogger.error('useSale unmounted with a save pending or in flight',
         { orderId: pending.current?.posOrder.id, stage: stageNow.current.kind });
@@ -101,9 +118,17 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
 
   /** Hands a pending completion to `onSaleCompleted`; the outcome applies only if it wasn't abandoned meanwhile. */
   async function deliver(completion: { order: Order; posOrder: PosOrder }) {
+    clearHungSaveTimer();
+    // Re-asks isStored every HUNG_SAVE_CHECK_MS while this save is in flight and unconfirmed, so a hung
+    // post-insert step (no throw, no resolve) still offers Continue with no user action.
+    if (opts.isStored) hungSaveTimer.current = setInterval(() => {
+      if (pending.current === completion && inFlight.current && confirmed.current !== completion) checkStored(completion);
+      else clearHungSaveTimer();
+    }, opts.hungSaveCheckMs ?? HUNG_SAVE_CHECK_MS);
     try {
       await opts.onSaleCompleted?.(completion.posOrder);
     } catch (error) {
+      clearHungSaveTimer();
       const message = error instanceof Error ? error.message : String(error);
       // Logged whatever the mount state and whether or not it's still pending (#150 review): a screen
       // unmounted mid-save (medusapos Sign out) must never lose a throw silently. Skipped only once the
@@ -117,6 +142,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       }
       return;
     }
+    clearHungSaveTimer();
     if (pending.current !== completion) return;
     pending.current = null;
     confirm(null);
