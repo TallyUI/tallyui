@@ -50,13 +50,23 @@ const products = [
 
 afterEach(() => cleanup());
 
-function mount(items = products, lastSyncedAt: Date | null = null, lastStockCheckAt: Date | null = null, hour12?: boolean) {
+function mount(items = products, lastSyncedAt: Date | null = null, lastStockCheckAt: Date | null = null, hour12?: boolean, minCodeLength?: number) {
   const onSelect = vi.fn();
   render(<Catalogue products={items} traits={traits} currency="EUR" onSelect={onSelect} statusText="Synced"
-    lastSyncedAt={lastSyncedAt} lastStockCheckAt={lastStockCheckAt} hour12={hour12} />);
+    lastSyncedAt={lastSyncedAt} lastStockCheckAt={lastStockCheckAt} hour12={hour12} minCodeLength={minCodeLength} />);
   const input = screen.getByPlaceholderText('Search or scan barcode / SKU') as HTMLInputElement;
   return { input, onSelect };
 }
+
+// A dedicated product/variant pair per code length, used only by the minCodeLength tests below.
+const scanCodes = [
+  { id: 'scan', title: 'Scan Test', status: 'published', variants: [
+    { id: 'scan-short', title: 'Short', sku: 'SHORT', barcode: 'ABCDE',
+      prices: [{ amount: 5, currency_code: 'eur' }], manage_inventory: false },
+    { id: 'scan-long', title: 'Long', sku: 'LONGCODE', barcode: 'ABCDEFGH',
+      prices: [{ amount: 5, currency_code: 'eur' }], manage_inventory: false },
+  ] },
+];
 
 describe('Catalogue', () => {
   it('follows a 24-hour device clock and drops AM/PM', () => {
@@ -154,6 +164,38 @@ describe('Catalogue', () => {
     expect(input.value).toBe('');
     expect(screen.getByTestId('product-tile-Blue Hat')).toBeTruthy();
     expect(screen.getByTestId('product-tile-Red Shirt')).toBeTruthy();
+  });
+  it('leaves a code shorter than minCodeLength as a plain search, even though it matches', () => {
+    const { input, onSelect } = mount(scanCodes, null, null, undefined, 8);
+    fireEvent.change(input, { target: { value: 'ABCDE' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(input.value).toBe('ABCDE');
+  });
+  it('still does a code lookup at or above minCodeLength', () => {
+    const { input, onSelect } = mount(scanCodes, null, null, undefined, 8);
+    fireEvent.change(input, { target: { value: 'ABCDEFGH' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({
+      product: scanCodes[0], variant: traits.getVariants!(scanCodes[0])[1],
+    });
+    expect(input.value).toBe('');
+  });
+  it('selects a short code as before when minCodeLength is unset', () => {
+    const { input, onSelect } = mount(scanCodes);
+    fireEvent.change(input, { target: { value: 'ABCDE' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({
+      product: scanCodes[0], variant: traits.getVariants!(scanCodes[0])[0],
+    });
+    expect(input.value).toBe('');
+  });
+  it('does not count surrounding whitespace towards minCodeLength', () => {
+    const { input, onSelect } = mount(scanCodes, null, null, undefined, 8);
+    fireEvent.change(input, { target: { value: '   ABCDE   ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(input.value).toBe('   ABCDE   ');
   });
   it('leaves an unknown code and its results intact', () => {
     const { input, onSelect } = mount();
