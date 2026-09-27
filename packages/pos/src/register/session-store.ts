@@ -13,7 +13,9 @@
 import type { RxCollection } from 'rxdb';
 import { taxLinesByRate } from '../tax/exact';
 import type { PosOrder } from '../pos-order/types';
+import { readFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
+import { recordRegisterFact } from './facts';
 import { countVariance } from './register-count.helpers';
 import { advancePerpetual, mintClosureNumber, mintUuid as uuid, readRegister, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
@@ -100,6 +102,47 @@ export async function stampSession(order: PosOrder, sessionId: string, sessions:
   if (order.sessionId !== undefined && order.sessionId !== sessionId) throw new Error('session_already_stamped');
   const session = await requireLiveSession(sessions, sessionId);
   return { ...order, sessionId: session.id };
+}
+
+/**
+ * The orphan-stamp sweep (ADR-032, the #156 review). `stampSession`'s check and the app's insert
+ * aren't atomic, so a close (a server close, which nothing local holds off) can land between them,
+ * and the closure can freeze the session's orders before the insert lands: the order then carries
+ * a closed session's `sessionId` but is on no Z. Each such order, whose session is closed and has
+ * a closure that doesn't list it, becomes a late sale as `useSale` makes one: no `sessionId`,
+ * `lateSessionId` set, and a `late-sale` fact. Never touched: the closure, an order it lists, an
+ * order whose session has no closure yet, a late order and another register's orders. The decision
+ * is made again on the stored order, so a repeat or concurrent sweep patches it once. Returns the
+ * ids it patched.
+ */
+export async function sweepOrphanStamps({ sessions, closures, orders, registerId }: {
+  sessions: RegisterSessionCollection; closures: ClosureCollection; orders: RxCollection<PosOrder>; registerId: string;
+}) {
+  const closed = new Set((await readFresh(sessions, { selector: { register_id: registerId, status: 'closed' } })).map(({ id }) => id));
+  const frozen = new Map((await readFresh(closures, { selector: { register_id: registerId } }))
+    .filter((closure) => closed.has(closure.session_id))
+    .map((closure) => [closure.session_id, new Set(closure.order_ids)]));
+  const patched: string[] = [];
+  if (!frozen.size) return patched;
+  for (const { id, sessionId, cashierRef } of await readFresh(orders, { selector: { sessionId: { $in: [...frozen.keys()] } } })) {
+    if (!sessionId || frozen.get(sessionId)?.has(id) !== false) continue;
+    let late = false;
+    await (await orders.findOne(id).exec())?.incrementalModify((doc) => {
+      late = doc.sessionId === sessionId && doc.lateSessionId === undefined;
+      if (!late) return doc;
+      delete doc.sessionId;
+      return { ...doc, lateSessionId: sessionId };
+    });
+    if (!late) continue;
+    patched.push(id);
+    try {
+      // As `useSale`'s late path: the cashier by ref only, with no display name.
+      recordRegisterFact({ kind: 'late-sale', orderId: id, sessionId, registerId, actor: { id: cashierRef ?? '', name: '' } });
+    } catch {
+      // The logger calls the app's sinks unguarded; the order is already patched.
+    }
+  }
+  return patched;
 }
 
 /**
@@ -241,9 +284,15 @@ export async function recordMovement(
   throw new RegisterSessionClosedError();
 }
 
-/** Reverses a movement with a `void` row while its session is live; repeated or concurrent calls share one reversal. */
+/**
+ * Reverses a movement with a `void` row while its session is live; repeated or concurrent calls
+ * share one reversal. A close that races the writes ends in `RegisterMovementStrandedError` (kept;
+ * don't void it again). Without `closures`, nothing can prove the reversal counted, so a re-read
+ * that finds the session closed always ends in `RegisterMovementStrandedError`.
+ */
 export async function voidMovement(
   sessions: RegisterSessionCollection, movements: CashMovementCollection, movementId: string, actor: string,
+  closures?: ClosureCollection,
 ) {
   const row = await movements.findOne(movementId).exec();
   if (!row || row.type === 'void') throw new Error('invalid_void_target');
@@ -256,7 +305,7 @@ export async function voidMovement(
   });
   const reversalId = claimed.voided_by!;
   const existing = await movements.findOne(reversalId).exec();
-  return (
+  const reversal =
     existing ??
     (await movements.incrementalUpsert({
       id: reversalId,
@@ -267,8 +316,25 @@ export async function voidMovement(
       created_by: actor,
       created_at_gmt: new Date().toISOString(),
       voids: row.id,
-    }))
-  );
+    }));
+  // Not atomic with the check above either (the #156 review): a close can land between the check
+  // and the writes. As in `recordMovement`, once written the reversal is recorded, and it's never
+  // deleted here, because deleting it would leave its target claimed by a missing reversal:
+  // - a closure row that lists it counts it, so it's returned;
+  // - a closure row that doesn't list it, or no closure row yet, leaves it uncounted or unproven,
+  //   so it's kept and flagged stranded, and job c's server resolves it.
+  // If the re-read or the lookup fails, the outcome is unknown, so it's returned as recorded for
+  // the server to reconcile.
+  let counted: readonly string[] | undefined;
+  try {
+    const after = await readSession(sessions, row.session_id);
+    if (after?.status !== 'closed') return reversal;
+    counted = (await closures?.findOne(row.session_id).exec())?.movement_ids;
+  } catch {
+    return reversal;
+  }
+  if (counted?.includes(reversal.id)) return reversal;
+  throw new RegisterMovementStrandedError(reversal);
 }
 
 /**

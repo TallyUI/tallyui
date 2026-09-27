@@ -364,6 +364,7 @@ bodies and design docs, and the source is given for each.
   - Live displays a cashier would act on (`useRegisterSession`, `useOrderOutbox`'s recent list)
     use `watchFresh` (`@tallyui/pos`) instead of a cached `find().$`, for the same reason.
     It re-reads once per bulk write (`collection.eventBulks$`; SQLite: per 199 documents), not per document.
+  - The helpers now live in `@tallyui/core/rxdb`, a side-effect-free subpath with `rxdb`/`rxjs` as optional peers (core's main entry stays RxDB-free; `@tallyui/pos` re-exports them and never imports `@tallyui/database` at runtime), and the id and fingerprint reconciles read their local products with `readFresh`.
 
 ## ADR-025 No RxDB premium or SSPL code in TallyUI library packages
 
@@ -571,6 +572,21 @@ bodies and design docs, and the source is given for each.
     - **A sale:** `stampSession` checks the session, then the caller
       inserts the order into the outbox. A close that lands in between is
       missed, and the closure freezes without the sale.
+    - **Narrowed before c2 (the #156 review, 2026-09-28):** a server close
+      can land in either window, and nothing local holds it off.
+      - **The orphan-stamp sweep** (`sweepOrphanStamps`) finds each order
+        stamped with a closed session whose closure doesn't list it, and
+        makes it a late sale: `sessionId` removed, `lateSessionId` set, a
+        `late-sale` fact. `useRegisterSession` runs it on start, after each
+        `writeClosure` in `closeSession` (a resumed close too), and when a
+        closure it hasn't seen appears, such as one c2 writes. It never
+        touches the closure, an order the closure lists, an order whose
+        session has no closure yet, a late order or another register's
+        orders.
+      - **A void re-reads its session** after its writes, as
+        `recordMovement` does. On a closed session, a reversal its closure
+        doesn't list, or with no closure yet (or no `closures` passed), is
+        kept and flagged stranded (`RegisterMovementStrandedError`).
 
     The server closes both windows in job c, by refusing writes to a
     closed session.

@@ -8,7 +8,7 @@
 // import's closing brace). That excludes a JSDoc usage example
 // (`* import … from '@tallyui/x';`) and an error string quoting one.
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative, basename, sep } from 'node:path';
+import { join, relative, resolve, dirname, basename, sep } from 'node:path';
 const ROOT = process.cwd();
 const GROUPS = ['packages', 'connectors', 'apps'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.turbo', '.expo', '.next', 'out']);
@@ -75,6 +75,53 @@ function layeringViolations(files) {
   }
   return n;
 }
+// Runtime imports some source must never make (Front desk, 2026-09-27). Only a statement-level
+// `import type`/`export type` is allowed; a value, side-effect or dynamic import is not.
+// - pos must not load @tallyui/database: its entry registers RxDB plugins as a module-level side
+//   effect (create-db.ts, dev mode outside production).
+// - core's main entry stays RxDB-free; rxdb and rxjs are optional peers, used only by the
+//   `@tallyui/core/rxdb` subpath (packages/core/src/rxdb/).
+const FORBIDDEN_RUNTIME_IMPORTS = [
+  { pkg: '@tallyui/pos', dir: 'packages/pos/src/', spec: String.raw`@tallyui\/database`, why: 'pos may use only `import type` from @tallyui/database' },
+  { pkg: '@tallyui/core', dir: 'packages/core/src/', except: 'packages/core/src/rxdb/', spec: String.raw`(?:rxdb|rxjs)(?:\/[^'"]*)?`, why: "core's main entry stays RxDB-free; use the @tallyui/core/rxdb subpath" },
+];
+function forbiddenImportViolations(pkgName, files) {
+  let n = 0;
+  for (const { pkg, dir, except, spec, why } of FORBIDDEN_RUNTIME_IMPORTS) {
+    if (pkg !== pkgName) continue;
+    const staticRe = new RegExp(String.raw`^[ \t]*(import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s*)?['"](${spec})['"]`, 'gm');
+    const dynamicRe = new RegExp(String.raw`import\s*\(\s*['"](${spec})['"]`, 'g');
+    for (const file of files) {
+      const relFile = relative(ROOT, file).split(sep).join('/');
+      if (isTestFile(relFile) || !relFile.startsWith(dir) || (except && relFile.startsWith(except))) continue;
+      const content = readFileSync(file, 'utf8');
+      const hits = [...content.matchAll(staticRe)].filter((m) => !m[2]).concat([...content.matchAll(dynamicRe)]);
+      for (const m of hits) {
+        console.error(`${relFile}:${lineOf(content, m.index)} imports ${m.at(-1)} at runtime (${why})`);
+        n++;
+      }
+    }
+  }
+  return n;
+}
+// A relative import/export resolving into rxdb/ pulls it in just as surely (the #157 review).
+const RELATIVE_SPEC_RE = /^[ \t]*(import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s*)?['"](\.[^'"]*)['"]/gm;
+function coreRxdbReexportViolations(pkgName, files) {
+  if (pkgName !== '@tallyui/core') return 0;
+  const rxdbAbs = join(ROOT, 'packages/core/src/rxdb'); let n = 0;
+  for (const file of files) {
+    const relFile = relative(ROOT, file).split(sep).join('/');
+    if (isTestFile(relFile) || !relFile.startsWith('packages/core/src/') || relFile.startsWith('packages/core/src/rxdb/')) continue;
+    const content = readFileSync(file, 'utf8');
+    for (const m of content.matchAll(RELATIVE_SPEC_RE)) {
+      if (m[2]) continue;
+      const r = resolve(dirname(file), m[3]);
+      if (r !== rxdbAbs && !r.startsWith(rxdbAbs + sep)) continue;
+      console.error(`${relFile}:${lineOf(content, m.index)} pulls in the rxdb subpath at runtime (core's main entry stays RxDB-free; import @tallyui/core/rxdb instead)`); n++;
+    }
+  }
+  return n;
+}
 function walk(dir, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
@@ -126,6 +173,8 @@ for (const group of GROUPS) {
       }
     }
     if (pkg.name === '@tallyui/components') violations += layeringViolations(files);
+    violations += forbiddenImportViolations(pkg.name, files);
+    violations += coreRxdbReexportViolations(pkg.name, files);
   }
 }
 if (violations === 0) {

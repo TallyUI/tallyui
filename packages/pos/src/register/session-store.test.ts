@@ -15,7 +15,9 @@ import { createOrderBuilder } from '../order/order-builder';
 import { toOrderCreateEnvelope } from '../pos-order/command';
 import { finalizeOrder } from '../pos-order/finalize';
 import type { PosOrder } from '../pos-order/types';
-import { cashMovementSchema, closureSchema, registerSessionSchema } from './schemas';
+import { ensureRegister } from './register-document';
+import { cashMovementSchema, closureSchema, registerSessionCollection } from './schemas';
+import { serverClose as closeOnServer } from './server-close.test-helper';
 import {
   backToSelling,
   closeSession,
@@ -28,6 +30,7 @@ import {
   stampSession,
   startCounting,
   voidMovement,
+  writeClosure,
   type CashMovementCollection,
   type ClosureCollection,
   type RegisterSessionCollection,
@@ -43,7 +46,7 @@ async function openDatabase(name: string) {
     multiInstance: false,
   });
   await db.addCollections({
-    register_sessions: { schema: registerSessionSchema },
+    register_sessions: registerSessionCollection(),
     cash_movements: { schema: cashMovementSchema },
     closures: { schema: closureSchema },
   });
@@ -220,13 +223,7 @@ async function restart() {
   await db.close();
   await openDatabase(name);
 }
-async function serverClose(id: string) {
-  const storage = db.register_sessions.storageInstance;
-  const [previous] = await storage.findDocumentsById([id], false);
-  const at = new Date().toISOString();
-  const closed = { ...previous, status: 'closed' as const, pending_status: 'closed', status_at: at, closed_at_gmt: at, closure_id: id };
-  expect((await storage.bulkWrite([{ previous, document: closed }], 'server-close')).error).toEqual([]);
-}
+const serverClose = (id: string) => closeOnServer(db.register_sessions, id);
 /** Lands `write` during the next storage read by id: after storage answers, before the reader sees it. */
 function duringNextReadById(write: () => Promise<void>) {
   const storage = db.register_sessions.storageInstance;
@@ -286,4 +283,32 @@ it('keeps a movement stranded when that close lands during its insert, inside an
   await expect(paidOut(id)).rejects.toBeInstanceOf(RegisterMovementStrandedError);
   expect(raced()).toBe(true);
   expect(await db.cash_movements.count().exec()).toBe(1);
+});
+
+// ADR-032 (the #156 review): a void re-reads its session after its writes, as `recordMovement`
+// does after its insert. Revert: drop voidMovement's re-read.
+it('flags a void stranded when a close lands between its check and its writes, and keeps it off the frozen closure', async () => {
+  await ensureRegister(db.register_sessions, 'web');
+  const { id } = await openSession(db.register_sessions, input);
+  const [target, other] = [await paidOut(id), await paidOut(id)];
+  // A void on a live session behaves as before.
+  const live = await voidMovement(db.register_sessions, db.cash_movements, other.id, '7', db.closures);
+  expect(live.toJSON()).toMatchObject({ type: 'void', voids: other.id });
+  let frozen: unknown;
+  const raced = duringNextReadById(async () => {
+    await serverClose(id);
+    const [session] = await db.register_sessions.storageInstance.findDocumentsById([id], false);
+    frozen = (await writeClosure({
+      closures: db.closures, register: db.register_sessions, storeKey: 'store', session, counted: 10000, otherTenders: {},
+      movements: await db.cash_movements.find().exec(), orders: [], softwareVersion: '1.0.0',
+    })).toJSON();
+  });
+  const error = await voidMovement(db.register_sessions, db.cash_movements, target.id, '7', db.closures).catch((e: unknown) => e);
+  expect(raced()).toBe(true);
+  expect(error).toBeInstanceOf(RegisterMovementStrandedError);
+  const reversal = (error as RegisterMovementStrandedError).id;
+  // Kept, not deleted, and not on the closure, which is unchanged.
+  expect((await db.cash_movements.findOne(reversal).exec())?.toJSON()).toMatchObject({ type: 'void', voids: target.id });
+  expect([...(frozen as { movement_ids: string[] }).movement_ids].sort()).toEqual([target.id, other.id, live.id].sort());
+  expect((await db.closures.findOne(id).exec())?.toJSON()).toEqual(frozen);
 });

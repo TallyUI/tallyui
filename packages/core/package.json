@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "source": "./src/index.ts"
+    },
+    "./rxdb": {
+      "types": "./dist/rxdb/index.d.ts",
+      "import": "./dist/rxdb/index.js",
+      "source": "./src/rxdb/index.ts"
     }
   },
   "files": [
@@ -32,7 +37,13 @@
     "test": "echo \"no tests yet\""
   },
   "peerDependencies": {
-    "react": ">=18"
+    "react": ">=18",
+    "rxdb": ">=16",
+    "rxjs": ">=7"
+  },
+  "peerDependenciesMeta": {
+    "rxdb": { "optional": true },
+    "rxjs": { "optional": true }
   },
   "devDependencies": {
     "@types/react": ">=18",
