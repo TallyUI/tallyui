@@ -618,7 +618,8 @@ describe('complete() is idempotent for one tender', () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     let stamps = 0;
-    const slow = { findOne: (id: string) => ({ exec: async () => { stamps++; await gate; return sessions.findOne(id).exec(); } }) };
+    const read = sessions.storageInstance.findDocumentsById.bind(sessions.storageInstance);
+    const slow = { storageInstance: { findDocumentsById: async (...args: Parameters<typeof read>) => { stamps++; await gate; return read(...args); } } };
     const { result, unmount, completed, stored } = await renderWithOutbox({},
       { session: { id: sessionId, sessions: slow as unknown as RegisterSessionCollection } });
     try {
@@ -885,7 +886,8 @@ describe('abandoning a hung save and locking from entry', () => {
     const { db: ordersDb, orders } = await withPosOrders();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    const slow = { findOne: (id: string) => ({ exec: async () => { await gate; return sessions.findOne(id).exec(); } }) };
+    const read = sessions.storageInstance.findDocumentsById.bind(sessions.storageInstance);
+    const slow = { storageInstance: { findDocumentsById: async (...args: Parameters<typeof read>) => { await gate; return read(...args); } } };
     const completed = vi.fn(async (posOrder: PosOrder) => { await orders.insert(posOrder); });
     try {
       const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed,
@@ -1029,7 +1031,8 @@ describe('abandoning a hung save and locking from entry', () => {
     const { db, sessions, sessionId } = await withOpenSession();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    const slow = { findOne: (id: string) => ({ exec: async () => { await gate; return sessions.findOne(id).exec(); } }) };
+    const read = sessions.storageInstance.findDocumentsById.bind(sessions.storageInstance);
+    const slow = { storageInstance: { findDocumentsById: async (...args: Parameters<typeof read>) => { await gate; return read(...args); } } };
     try {
       const { result } = renderSale(pricing, saleOpts({
         onSaleCompleted: async () => { throw new Error('Storage full'); },

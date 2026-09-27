@@ -4,12 +4,17 @@ import {
 } from 'rxdb';
 import { getOldCollectionMeta, migrateDocumentData, type RxMigrationStatus } from 'rxdb/plugins/migration-schema';
 import { Subject, takeUntil } from 'rxjs';
+import { createLogger } from '../logging';
 import { posOrderCollection } from './schema';
 import type { PosOrder } from './types';
 
+/** `addPosOrderCollection`'s logger: attach a sink to see, for example, the status writes a closing open dropped. */
+export const posOrdersLogger = createLogger('pos-orders');
+
 /**
  * After this long waiting for a stuck migration, a close gives up rather than hang forever. The
- * migration is left running: the next open finds the leftover status, resets it and the
+ * migration is left running, but it reads or writes nothing more in a store the close closes (see
+ * `openPosOrders`). The next open finds the leftover status, resets it and the
  * checkpoint (as any DM4 does), and migrates again. An order that run already copied is found
  * equal and skipped, so the worst case is an `ERROR` status on the next open, never a lost order.
  */
@@ -76,8 +81,10 @@ async function writeOverStaleCopies(collection: RxCollection, from: RxStorageIns
  * database's close has begun, or when the close stops waiting, it rejects with
  * `PosOrderOpenClosedError` (`code: 'POS_ORDER_OPEN_CLOSED'`) before any further write: reopen and
  * call it again. Any other rejection (DM4, a storage error) is a real failure.
+ *
+ * `closeWaitMs` is for tests only; the first open on a database sets it for that database's close.
  */
-export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollection<PosOrder>> {
+export async function addPosOrderCollection(db: RxDatabase, closeWaitMs = POS_ORDER_MIGRATION_CLOSE_WAIT_MS): Promise<RxCollection<PosOrder>> {
   // The reset below runs before RxDB elects which tab migrates, so a second tab could reset a
   // migration another tab is running. TallyUI is single-instance (ADR-061).
   if (db.multiInstance) throw new Error('addPosOrderCollection: multiInstance databases are not supported (ADR-061)');
@@ -89,7 +96,7 @@ export async function addPosOrderCollection(db: RxDatabase): Promise<RxCollectio
   // added after an await missed that close, which then closed storage under the open (2026-09-27).
   const previous = latestOpens.get(db);
   if (!previous) {
-    db.onClose.push(() => waitWithTimeout(latestOpens.get(db)!, POS_ORDER_MIGRATION_CLOSE_WAIT_MS)
+    db.onClose.push(() => waitWithTimeout(latestOpens.get(db)!, closeWaitMs)
       .then((settled) => { if (!settled) closedUnderOpen.add(db); }));
   }
   const opening = openPosOrders(db, previous);
@@ -146,8 +153,31 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     // older-version order that has a copy is skipped in writeOverStaleCopies, so RxDB would still
     // loop on it if anything ever deleted a pos_orders document.
     const settled = new Subject<void>();
+    // Once the close stops waiting it closes this version's store and the internal store while RxDB's
+    // migration runs on (rx-database.js:381-385). A write called on a closed SQLite instance throws
+    // inside its transaction and poisons every later write on the handle until restart (rxdb-premium
+    // bug 6), while its close waits for a write called before it (sqlite-storage-instance.js `close`,
+    // openWriteCount$; reproduced). So from the moment the close gives up, before it closes any store,
+    // the run's reads and writes of those two stores stop here. A refused one of this version rejects
+    // the run's push, which RxDB catches as a replication error (upstream.js:372), so the run ends in
+    // ERROR. Status writes are dropped instead: RxDB never awaits the per-order ones
+    // (rx-migration-state.js:274-278), so a rejection there would be unhandled.
+    const gate = <T extends object>(target: T, closed: (key: 'bulkWrite' | 'findDocumentsById', first: any[]) => Promise<unknown>): T =>
+      new Proxy(target, { get: (t, key) => {
+        const value = Reflect.get(t, key);
+        return typeof value !== 'function' ? value : (...args: any[]) =>
+          (closing() && (key === 'bulkWrite' || key === 'findDocumentsById') ? closed(key, args[0]) : value.apply(t, args));
+      } });
+    const internalStore = gate(db.internalStore, async (key, first) => {
+      const ids = key === 'bulkWrite' ? first.map((row: { document: { id: string } }) => row.document.id) : first;
+      posOrdersLogger.warn(`The database closed during the migration: dropped a ${key === 'bulkWrite' ? 'status write' : 'status read'}`,
+        { database: db.name, ids });
+      return key === 'bulkWrite' ? { error: [] } : [];
+    });
+    state.database = new Proxy(db, { get: (target, key) => (key === 'internalStore' ? internalStore : Reflect.get(target, key)) });
     const migrateStorage = state.migrateStorage.bind(state);
-    state.migrateStorage = async (from, to, batchSize) => {
+    state.migrateStorage = async (from, current, batchSize) => {
+      const to = gate(current, () => Promise.reject(new PosOrderOpenClosedError(db.name)));
       if (from.collectionName === collection.name) await writeOverStaleCopies(collection, from, to);
       return migrateStorage(new Proxy(from, { get: (target, key) => {
         const value = key === 'changeStream' ? () => target.changeStream().pipe(takeUntil(settled)) : Reflect.get(target, key);
@@ -159,11 +189,18 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     await state.startMigration().finally(() => settled.next());
     stopIfClosing();
     const status = (await getSingleDocument(db.internalStore, state.statusDocId))?.data as RxMigrationStatus | undefined;
+    stopIfClosing();
     // RxDB deletes the older version's collection record only after every order has moved.
-    if (status?.status === 'DONE' && !(await getOldCollectionMeta(state))) return collection;
+    const oldMeta = status?.status === 'DONE' ? await getOldCollectionMeta(state) : undefined;
+    stopIfClosing();
+    if (status?.status === 'DONE' && !oldMeta) return collection;
     throw newRxError('DM4', { collection: collection.name, error: status?.error });
   } catch (error) {
     await collection.close();
-    throw error;
+    // A backstop: a read of a store the close has closed fails on SQLite with rxdb-premium bug 5's raw
+    // `ReferenceError: context is not defined`. The internal store's reads are locked runs, which the
+    // close's idle waits cover (rx-storage-helper.js:486), and no test reaches this; but once the close
+    // has given up, any failure means the open was closed under, so it gets the coded error.
+    throw closing() ? new PosOrderOpenClosedError(db.name) : error;
   }
 }

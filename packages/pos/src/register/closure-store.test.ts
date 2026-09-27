@@ -483,9 +483,8 @@ it('keeps a movement and flags it stranded when its session closed and no Z has 
 // Revert: throw when the re-read fails.
 it('returns a movement as recorded when the re-read after the insert fails', async () => {
   const { recorded } = await raceClose(async () => {
-    vi.spyOn(db.register_sessions, 'findOne').mockImplementationOnce(() => {
-      throw new Error('disk read');
-    });
+    // The re-read is a primary-key storage read (docs/rxdb/query-cache-reads.md).
+    vi.spyOn(db.register_sessions.storageInstance, 'findDocumentsById').mockRejectedValueOnce(new Error('disk read'));
   });
   const row = await recorded;
   expect(await db.cash_movements.findOne(row.id).exec()).not.toBeNull();
