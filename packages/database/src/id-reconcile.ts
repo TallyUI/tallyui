@@ -1,5 +1,6 @@
 import type { RxCollection } from 'rxdb';
 import type { IdReconcileAdapter, SyncContext } from '@tallyui/core';
+import { readFresh } from '@tallyui/core/rxdb';
 
 import { createPassQueue } from './pass-queue';
 
@@ -75,11 +76,12 @@ export function startIdReconcile<Doc>({
     const entries: Array<{ id: string; local: Doc }> = [];
     let localCount = 0;
     let tombstones = 0;
-    for (const doc of await collection.find().exec()) {
+    // readFresh, not a cached `find()`: a pull write during that query's storage read would
+    // leave it stale for every later pass (RxDB 16.21.1 bug 4, `readFresh`'s doc comment).
+    for (const local of await readFresh(collection, {})) {
       localCount++;
-      const id = doc.primary as string;
+      const id = (local as Record<string, unknown>)[collection.schema.primaryPath] as string;
       const remoteVariantIds = remote.get(id);
-      const local = doc.toJSON() as Doc;
       const vanished = remoteVariantIds && adapter.variantIds(local).some((v) => !remoteVariantIds.includes(v));
       if (!remoteVariantIds) tombstones++;
       if (!remoteVariantIds || vanished) entries.push({ id, local });

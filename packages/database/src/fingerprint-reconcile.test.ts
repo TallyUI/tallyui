@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createRxDatabase, addRxPlugin } from 'rxdb';
+import { createRxDatabase, addRxPlugin, type RxCollection } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
@@ -32,6 +32,21 @@ function fakeAdapter(pages: Array<Record<string, string>>, fail?: Error) {
   });
   const adapter: FingerprintReconcileAdapter<Doc> = { fetchPages, fingerprint: (doc) => doc.price, enqueue };
   return { adapter, fetchPages, enqueue };
+}
+
+/**
+ * Runs `write` once, when `collection`'s next storage query has been answered but before the
+ * reader's continuation runs: the window of RxDB 16.21.1 bug 4 (`readFresh`'s doc comment), where a
+ * cached `find()` counts the write's change event as seen without having its document.
+ */
+function writeDuringNextRead(collection: RxCollection, write: () => Promise<unknown>) {
+  const instance = collection.storageInstance;
+  const query = instance.query.bind(instance);
+  vi.spyOn(instance, 'query').mockImplementationOnce(async (prepared) => {
+    const answered = await query(prepared);
+    await write();
+    return answered;
+  });
 }
 
 describe('startFingerprintReconcile', () => {
@@ -96,6 +111,26 @@ describe('startFingerprintReconcile', () => {
     expect(enqueue).not.toHaveBeenCalled();
     expect(reSync).not.toHaveBeenCalled();
     expect(await revisions()).toEqual(before);
+    stop();
+  });
+
+  it('compares a product the pull inserted during a pass\'s local read on the next pass, and queues it if it differs', async () => {
+    let remote: Record<string, string> = { p1: '10', p2: '20', p4: '40' };
+    const enqueue = vi.fn();
+    const adapter: FingerprintReconcileAdapter<Doc> = {
+      async *fetchPages() { yield new Map(Object.entries(remote)); },
+      fingerprint: (doc) => doc.price,
+      enqueue,
+    };
+    const { reconcile, stop } = start(adapter, vi.fn());
+
+    // The pull inserts p4 while the first pass reads the local products, so that read misses it.
+    writeDuringNextRead(db.products, () => db.products.insert({ id: 'p4', price: '40' }));
+    expect(await reconcile()).toEqual({ pages: 1, compared: 2, queued: 0, truncated: false, unreported: 1 });
+
+    remote = { ...remote, p4: '45' }; // the price changed on the backend, and the pull missed it
+    expect(await reconcile()).toEqual({ pages: 1, compared: 3, queued: 1, truncated: false, unreported: 1 });
+    expect(enqueue).toHaveBeenCalledWith([{ id: 'p4', local: { id: 'p4', price: '40' }, refreshOnly: true }]);
     stop();
   });
 

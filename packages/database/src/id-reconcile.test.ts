@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createRxDatabase, addRxPlugin } from 'rxdb';
+import { createRxDatabase, addRxPlugin, type RxCollection } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
@@ -39,6 +39,21 @@ function fakeAdapter(pages: Array<Array<{ id: string; variantIds: string[] }>>, 
     enqueue,
   };
   return { adapter, fetchPages, enqueue };
+}
+
+/**
+ * Runs `write` once, when `collection`'s next storage query has been answered but before the
+ * reader's continuation runs: the window of RxDB 16.21.1 bug 4 (`readFresh`'s doc comment), where a
+ * cached `find()` counts the write's change event as seen without having its document.
+ */
+function writeDuringNextRead(collection: RxCollection, write: () => Promise<unknown>) {
+  const instance = collection.storageInstance;
+  const query = instance.query.bind(instance);
+  vi.spyOn(instance, 'query').mockImplementationOnce(async (prepared) => {
+    const answered = await query(prepared);
+    await write();
+    return answered;
+  });
 }
 
 describe('startIdReconcile', () => {
@@ -206,6 +221,31 @@ describe('startIdReconcile', () => {
     stop();
   });
 
+  it('checks a product the pull inserted during a pass\'s local read on the next pass, and tombstones it once the backend drops it', async () => {
+    let remote = [
+      { id: 'p1', variantIds: ['v1', 'v2'] },
+      { id: 'p2', variantIds: ['v3'] },
+      { id: 'p3', variantIds: ['v4', 'v5'] },
+      { id: 'p6', variantIds: ['v6'] },
+    ];
+    const enqueue = vi.fn();
+    const adapter: IdReconcileAdapter<Doc> = {
+      async *fetchPages() { yield remote; },
+      variantIds: (doc) => (doc.variants ?? []).map((v) => v.id),
+      enqueue,
+    };
+    const { reconcileIds, stop } = start(adapter, vi.fn());
+
+    // The pull inserts p6 while the first pass reads the local products, so that read misses it.
+    writeDuringNextRead(db.products, () => db.products.insert({ id: 'p6', variants: [{ id: 'v6' }] }));
+    expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: false });
+
+    remote = remote.filter((p) => p.id !== 'p6'); // deleted on the backend, and the pull missed it
+    expect(await reconcileIds()).toEqual({ pages: 1, queued: 1, truncated: false, braked: false });
+    expect(enqueue).toHaveBeenCalledWith([{ id: 'p6', local: { id: 'p6', variants: [{ id: 'v6' }] } }]);
+    stop();
+  });
+
   it('runs a pass at startDelayMs, the next at startDelayMs + intervalMs, and none after stop()', async () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([[]]);
@@ -338,6 +378,24 @@ describe('startIdReconcile', () => {
       const { reconcileIds, stop } = start(adapter, reSync);
 
       expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(reSync).not.toHaveBeenCalled();
+      stop();
+    });
+
+    it('does not count products the pull deleted during a pass\'s local read as tombstones on later passes', async () => {
+      await seed(100);
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      // The backend deleted p76..p100, and the pull removes them while the first pass reads.
+      const { adapter, enqueue } = missingAdapter(100, 25);
+      const reSync = vi.fn();
+      const { reconcileIds, stop } = start(adapter, reSync);
+
+      writeDuringNextRead(db.products, () => db.products.bulkRemove(Array.from({ length: 25 }, (_, i) => `p${76 + i}`)));
+      // The first pass read all 100 before the removal landed: 25 would-be tombstones, so it brakes.
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
+      // The next pass reads the 75 left: no tombstones, no brake, nothing to queue.
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: false });
       expect(enqueue).not.toHaveBeenCalled();
       expect(reSync).not.toHaveBeenCalled();
       stop();
