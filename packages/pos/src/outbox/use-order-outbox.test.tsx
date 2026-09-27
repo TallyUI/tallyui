@@ -262,6 +262,35 @@ describe('useOrderOutbox options', () => {
     await opened.close();
   });
 
+  // complete() is idempotent for one tender (ADR-052): its retry records the order a failed save already stored.
+  describe('recording an order that is already stored', () => {
+    const retryLater: CommandTransport['send'] = async () => ({ kind: 'retry', reason: 'offline', retryAfterMs: 60_000 });
+
+    it('under the same commandId gives one stored order and still flushes', async () => {
+      const send = vi.fn<CommandTransport['send']>(retryLater);
+      renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(send) });
+      await waitFor(() => expect(outbox.orders).not.toBeNull());
+      const order = sale();
+      await act(async () => { await outbox.record(order); });
+      await waitFor(() => expect(outbox.state).toMatchObject({ pending: 1, sending: false, lastRetryReason: 'offline' }));
+      const sends = send.mock.calls.length;
+      await act(async () => { await outbox.record(order); });
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(sends + 1));
+      expect(send.mock.lastCall![0].map((command) => command.id)).toEqual([order.commandId]);
+      expect(await outbox.orders!.count().exec()).toBe(1);
+    });
+
+    it('under another commandId rejects, and keeps the stored order', async () => {
+      renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(retryLater) });
+      await waitFor(() => expect(outbox.orders).not.toBeNull());
+      const order = sale();
+      await act(async () => { await outbox.record(order); });
+      await expect(outbox.record({ ...order, commandId: uuidv7() })).rejects.toMatchObject({ code: 'CONFLICT' });
+      expect((await outbox.orders!.findOne(order.id).exec())?.commandId).toBe(order.commandId);
+      expect(await outbox.orders!.count().exec()).toBe(1);
+    });
+  });
+
   it('throws the opening error from record and reports it to onOpenError', async () => {
     const failure = new Error('worker failed to start');
     const onOpenError = vi.fn();

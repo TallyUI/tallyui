@@ -555,6 +555,48 @@ bodies and design docs, and the source is given for each.
   - `needsAttention` surfaces the order, and `OrdersList` explains it.
 
   A refusal in `finalizeOrder`, before any stamp, still stops the sale.
+- **Registers c1b done (2026-09-25): `useRegisterSession`**, a neutral port
+  of WCPOS `next`'s `use-register-session.ts` at `3b5331b5c`.
+  - **The app supplies every input:** the collections (`pos_orders`
+    included), the register host, `storeKey`, `registerId`, `enabled`, the
+    cashier, the timezone and the labels. There's no context, no WooCommerce
+    store document and no engine query, and nothing is sent to a server.
+  - **Expected cash and the sales count are derived locally**, from the
+    `pos_orders` stamped with the session's id and its movements.
+  - **Not ported:** `retryMovement` and `refusedMovements`, anchor
+    invalidation, the server figures, `unsyncedCount` and the `sync_status`
+    filters (all job c2); refunds and refund parents (no refund model yet).
+  - **The checkout gate has two points.** The app calls `requireOpen()`
+    when tender starts and again just before a card terminal captures, and
+    useSale's `complete()` stamps through `stampSession`.
+  - **The tender block:** while `tenderInProgress` is true, `startCounting`
+    and `closeSession` throw `RegisterTenderInProgressError` before any
+    write, so a till can't close under a payment in progress. The flag is
+    read through a latest-value ref, so older `actions` see it too.
+  - **A second open is refused** (`RegisterSessionAlreadyOpenError`) while
+    the collection has an `open` or `counting` session for the register, or
+    while another open for that register is still running in any hook
+    instance.
+  - **An interrupted close blocks a new open** (`RegisterCloseIncompleteError`,
+    PR #143 review). A new session opened then would lock the till: its own
+    close fails with `closure_write_incomplete` behind the earlier
+    reservation. So `openSession` refuses while the register's closure
+    reservation is unapplied, or while a closed session has no closure row.
+    The current session is the one an unapplied reservation names, even
+    when its closure row exists (the till died before `advancePerpetual`),
+    so the next close finishes it.
+  - **A resumed close uses the count persisted on the session**, not the one
+    typed on the retry. This is a deliberate difference: WCPOS uses the
+    retry's.
+  - **The close reads its orders and movements straight from the storage.**
+    In RxDB 16.21.1 a document written a microtask or so after a query first
+    subscribes never reaches that cached query, and its `exec()` returns the
+    stale result (bug 4 in the local RxDB repro). A Z froze without a sale.
+    The live `expected` and `salesCount`, and the outbox's pending query, are
+    exposed to the same bug; they are not fixed here.
+  - **A double-tapped close logs `session-closed` once.**
+  - **Known difference, left for later:** `overdue` keeps WCPOS's rule and
+    reads the close time on the device's clock, not the store's timezone.
 
 ## ADR-033 Business model deferred; hardware drivers kept splittable (plan D4)
 
@@ -1467,9 +1509,10 @@ interface OrderCreatePayload {
     medusapos/app `a1b981d` into `packages/pos/src/sale/`. Adaptations:
     `useSale` takes an optional `session?: { id, sessions }`; when set,
     `complete()` stamps the finalized order with `stampSession` before
-    `onSaleCompleted`, and a closed or missing session surfaces as `error`
-    and keeps the tender (#126); without `session`, behaviour is
-    unchanged. `DISCOUNTS_UNSUPPORTED` keeps finalize's literal message,
+    `onSaleCompleted` (#126). Since registers c1a, a closed or missing
+    session no longer sets `error`: the sale goes on to `onSaleCompleted`
+    and the receipt with `lateSessionId` (ADR-032, late sale). Without
+    `session`, behaviour is unchanged. `DISCOUNTS_UNSUPPORTED` keeps finalize's literal message,
     with a test pinning the two together, since `finalize.ts` doesn't
     export it as a constant. Follow-up: medusapos/app adopts
     `@tallyui/pos`'s `useSale`/`lib/cart`/`lib/catalogue` and deletes its
@@ -1520,6 +1563,18 @@ interface OrderCreatePayload {
     platform-neutral, and the Vendure app will need them. They're deferred
     until the Vendure app is their second consumer, so the abstraction is
     cut from two real cases rather than one.
+  - **complete() is idempotent for one tender (2026-09-25).** Once
+    `useSale.complete()` has built the order for a tender attempt, that
+    order is the sale (the Front desk). Its `id` and `commandId` are
+    minted once, and every retry hands the same order to
+    `onSaleCompleted`, with no new stamp and no second late-sale fact.
+    Until it saves, `saving` is true and the sale is locked. A second
+    call while one is in flight (a double tap) shares the first call's
+    promise, and a call on the receipt does nothing. `newSale()`
+    abandons it; abandoning clears the screen, never the record, so an
+    order a failed save already stored stays in the outbox.
+    `useOrderOutbox.record` treats an order already stored under the same
+    `commandId` as stored (RxDB's `CONFLICT`) and still flushes.
 - **Consequences:**
   - The second app costs about half the first.
   - A third backend (WooCommerce, or Shopify if it is unparked) gets the
