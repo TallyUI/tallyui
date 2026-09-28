@@ -2,7 +2,7 @@ export { normalizeAmount, isServerDecimal, movementFieldError } from './movement
 export type { MovementType } from './movement-input';
 export { deriveExpected } from './expected';
 export type { LedgerRow, Movement } from './expected';
-export { parseMinor, validAmount, countVariance, overThreshold, denominationTotal, varianceText } from './register-count.helpers';
+export { parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, denominationTotal, varianceText } from './register-count.helpers';
 export { denominations } from './register-count.denominations';
 export { registerSessionSchema, registerSessionCollection, cashMovementSchema, closureSchema } from './schemas';
 export type { RegisterSession, CashMovement, Closure } from './schemas';
@@ -26,5 +26,5 @@ export { minorToDecimal } from './money';
 export { formatClosureDate, buildClosureDocument, buildXReportDocument } from './closure-document';
 export type { ClosureContext } from './closure-document';
 export { registerFactsLogger, recordRegisterFact, type Actor, type RegisterFact } from './facts';
-export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError } from './use-register-session';
+export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError } from './use-register-session';
 export type { UseRegisterSessionOptions } from './use-register-session';

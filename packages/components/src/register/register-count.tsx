@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
 import {
+  closeNeedsApproval,
   countVariance,
   denominationTotal,
   denominations,
   minorToDecimal,
-  overThreshold,
   parseMinor,
   validAmount,
   varianceText,
@@ -113,10 +113,10 @@ export interface RegisterCountProps {
   currency: string;
   /**
    * Above `register.varianceThreshold`, Close asks for this first. `null` refuses and the count
-   * stays; without it, Close refuses outright with `APPROVAL_REQUIRED_TEXT`. Not forwarded to
-   * `closeSession` (its hook action takes no such field) — an approval gate only.
+   * stays; without it, Close refuses outright with `APPROVAL_REQUIRED_TEXT`. Its `approvedBy`
+   * and `approvedByName` go to `closeSession`, which enforces the same gate and puts them on the Z.
    */
-  approve?: () => Promise<{ approvedBy: string } | null>;
+  approve?: () => Promise<{ approvedBy: string; approvedByName?: string } | null>;
   className?: string;
 }
 
@@ -158,7 +158,7 @@ export function RegisterCount({ register, currency, approve, className }: Regist
   const valid = usingTiles || validAmount(cashText, digits);
   const amountMinor = usingTiles ? tilesTotal : valid ? parseMinor(cashText, digits) : NaN;
   const variance = countVariance(amountMinor, expected.cash ?? 0);
-  const needsApproval = valid && overThreshold(variance, varianceThreshold);
+  const needsApproval = valid && closeNeedsApproval(amountMinor, expected.cash ?? 0, varianceThreshold);
 
   const otherMethods = Object.keys(expected).filter((method) => method !== 'cash');
   const otherCounted = otherMethods
@@ -176,7 +176,9 @@ export function RegisterCount({ register, currency, approve, className }: Regist
     try {
       await action();
     } catch (e) {
-      setError(errorMessage(e));
+      // The hook's own gate (by name: components import no class from pos, ADR-064).
+      if (e instanceof Error && e.name === 'RegisterApprovalRequiredError') setRefusal(APPROVAL_REQUIRED_TEXT);
+      else setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -198,7 +200,7 @@ export function RegisterCount({ register, currency, approve, className }: Regist
           setRefusal('Approval was not granted. The count is unchanged.');
           return;
         }
-        await actions.closeSession({ counted });
+        await actions.closeSession({ counted, approvedBy: result.approvedBy, approvedByName: result.approvedByName });
       });
       return;
     }

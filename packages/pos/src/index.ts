@@ -61,7 +61,7 @@ export { tenderReducer, initTenderState, initialTenderState, appliedMinor, chang
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg } from './tender';
 
 // Register
-export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, parseMinor, validAmount, countVariance, overThreshold, denominationTotal, varianceText, denominations } from './register';
+export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, denominationTotal, varianceText, denominations } from './register';
 export type { MovementType, LedgerRow, Movement } from './register';
 export { registerSessionSchema, registerSessionCollection, cashMovementSchema, closureSchema } from './register';
 export type { RegisterSession, CashMovement, Closure } from './register';
@@ -72,4 +72,4 @@ export type { RegisterSessionCollection, CashMovementCollection, ClosureCollecti
 export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows } from './register';
 export type { Correction, RecordedFigures, ClosureScope } from './register';
 export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact } from './register';
-export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, type UseRegisterSessionOptions } from './register';
+export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type UseRegisterSessionOptions } from './register';
