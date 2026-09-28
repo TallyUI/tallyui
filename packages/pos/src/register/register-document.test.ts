@@ -31,6 +31,7 @@ import {
   nextSaleCounter,
   readBoundRegister,
   readRegister,
+  RegisterIdInvalidError,
   unbindRegister,
 } from './register-document';
 import { registerSessionCollection } from './schemas';
@@ -94,6 +95,18 @@ it('caches the register identity and mints v4 with random bytes when randomUUID 
   );
   expect(await readRegister(db)).toEqual(register);
   expect(await ensureRegister(db, 'web')).toEqual(register);
+});
+
+it('bindRegister refuses an empty or over-36 register id', async () => {
+  await ensureRegister(db, 'web');
+  for (const id of ['', 'x'.repeat(37)]) {
+    await expect(bindRegister(db, 'site', { id, name: 'Drawer' })).rejects.toThrow(RegisterIdInvalidError);
+    expect((await readRegister(db))?.stores).toEqual({});
+  }
+  for (const id of ['x'.repeat(36), null]) {
+    await bindRegister(db, 'site', { id, name: null });
+    expect((await readRegister(db))?.stores.site.register_id).toBe(id);
+  }
 });
 
 it('binds and unbinds independently per site without changing counters or the till', async () => {

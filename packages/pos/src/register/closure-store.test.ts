@@ -88,7 +88,7 @@ async function seed() {
       sessionId: session.id,
       type,
       amountMinor,
-      reason: '',
+      reason: 'test',
       actor: '7',
     });
     if (amountMinor === 700) await voidMovement(db.register_sessions, db.cash_movements, row.id, '7');
@@ -369,7 +369,7 @@ it('never leaves a sale or a pay-out taken after a close off every Z report', as
   await expect(requireOpenSession(db.register_sessions, 'register', true)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
   const payOut = (sessionId: string) =>
     recordMovement(db.register_sessions, db.cash_movements, db.closures, {
-      sessionId, type: 'paid_out', amountMinor: 700, reason: '', actor: '7',
+      sessionId, type: 'paid_out', amountMinor: 700, reason: 'test', actor: '7',
     });
   await expect(payOut(input.session.id)).rejects.toBeInstanceOf(RegisterSessionClosedError);
 

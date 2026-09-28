@@ -16,6 +16,7 @@ import type { PosOrder } from '../pos-order/types';
 import { readFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact } from './facts';
+import { MAX_REASON_LENGTH } from './movement-input';
 import { countVariance } from './register-count.helpers';
 import { advancePerpetual, markClosuresSwept, mintClosureNumber, mintUuid as uuid, readRegister, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
@@ -47,10 +48,17 @@ export class RegisterMovementAmountError extends Error {
   }
 }
 
+export class RegisterMovementReasonError extends Error {
+  constructor() {
+    super('movement_reason_invalid');
+    this.name = 'RegisterMovementReasonError';
+  }
+}
+
 /**
  * The movement is recorded, on a session that closed while it was saved, and no closure is known
- * to count it, so it was kept rather than deleted. The caller must not record it again; job c's
- * server resolves stranded movements. The message can be shown to a cashier as it is.
+ * to count it, so it stays local on the till. The caller must not record it again; the server
+ * refuses it once the closure exists (ADR-068 4). The message can be shown to a cashier as it is.
  */
 export class RegisterMovementStrandedError extends Error {
   readonly id: string;
@@ -293,13 +301,15 @@ export async function recordMovement(
     ((input.type === 'paid_in' || input.type === 'paid_out') && input.amountMinor <= 0) ||
     (input.type === 'no_sale' && input.amountMinor !== 0)
   ) throw new RegisterMovementAmountError(input.type, input.amountMinor);
+  const reasonLength = input.reason.trim().length;
+  if (reasonLength === 0 || reasonLength > MAX_REASON_LENGTH) throw new RegisterMovementReasonError();
   await requireLiveSession(sessions, input.sessionId);
   const row = await movements.insert({
     id: uuid(),
     session_id: input.sessionId,
     type: input.type,
     amountMinor: input.amountMinor,
-    reason: input.reason,
+    reason: input.reason.trim(),
     created_by: input.actor,
     created_at_gmt: new Date().toISOString(),
   });
@@ -312,9 +322,8 @@ export async function recordMovement(
   // - with no closure row yet nothing is proven: `writeClosure` freezes the movements its caller
   //   collected, not this collection, and reserves that draft on the register document before
   //   inserting the row, so a caller's array or the reservation may already hold it. It's kept and
-  //   flagged stranded, and job c's server resolves it.
-  // If the re-read or the lookup fails, the outcome is unknown, so it's returned as recorded for
-  // the server to reconcile.
+  //   flagged stranded: it stays local on the till; the server refuses it once the closure exists.
+  // If the re-read or the lookup fails, the outcome is unknown, so it's returned as recorded.
   let counted: readonly string[] | undefined;
   try {
     const after = await readSession(sessions, input.sessionId);
@@ -371,9 +380,8 @@ export async function voidMovement(
   // deleted here, because deleting it would leave its target claimed by a missing reversal:
   // - a closure row that lists it counts it, so it's returned;
   // - a closure row that doesn't list it, or no closure row yet, leaves it uncounted or unproven,
-  //   so it's kept and flagged stranded, and job c's server resolves it.
-  // If the re-read or the lookup fails, the outcome is unknown, so it's returned as recorded for
-  // the server to reconcile.
+  //   so it's kept locally and flagged stranded; the server refuses it once the closure exists.
+  // If the re-read or the lookup fails, the outcome is unknown, so it's returned as recorded.
   let counted: readonly string[] | undefined;
   try {
     const after = await readSession(sessions, row.session_id);

@@ -1,5 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
+  AnyCommandEnvelope,
+  CommandBatchRequest,
   CommandEnvelope,
   CommandType,
   CommandResult,
@@ -12,6 +14,11 @@ import type {
 } from '@tallyui/core';
 
 describe('command types', () => {
+  it('defaults batches to order envelopes and permits register envelopes explicitly', () => {
+    expectTypeOf<CommandBatchRequest['commands']>().toEqualTypeOf<CommandEnvelope[]>();
+    expectTypeOf<CommandBatchRequest<AnyCommandEnvelope>['commands']>().toEqualTypeOf<AnyCommandEnvelope[]>();
+  });
+
   it('pins the order and register command types', () => {
     expectTypeOf<CommandType>().toEqualTypeOf<'order.create'>();
     expectTypeOf<RegisterCommandEnvelope['type']>().toEqualTypeOf<RegisterCommandType>();

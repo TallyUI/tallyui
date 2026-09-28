@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { AnyCommandEnvelope, CommandResult, RegisterCommandEnvelope } from '@tallyui/core';
+import type { AnyCommandEnvelope, CommandError, CommandResult, RegisterCommandEnvelope } from '@tallyui/core';
 import { posOrderCollection, uuidv7, type PosOrder } from '../pos-order';
 import { registerCommandCollection, registerCommandsLogger, type RegisterCommand } from '../register/register-commands';
 import { readFresh } from '../rxdb';
@@ -61,6 +61,82 @@ describe('register outbox', () => {
     expect(send.mock.calls.flatMap(([batch]) => batch.map(({ id }) => id))).toEqual(inputs.map(({ commandId }) => commandId));
     expect((await readFresh(collection, { selector: {} })).every((doc) => doc.syncStatus === 'applied')).toBe(true);
     expect(states.at(-1)).toMatchObject({ pending: 0, sending: false });
+  });
+
+  it.each([0, NaN, Infinity])('batchSize 0, NaN or Infinity still sends at most 10 per batch (%s)', async (batchSize) => {
+    await collection.bulkInsert(Array.from({ length: 23 }, (_, i) => command(i + 1)));
+    const { outbox, send } = setup({ batchSize });
+    await outbox.flush();
+    expect(send.mock.calls.map(([batch]) => batch.length)).toEqual(batchSize === 0 ? Array(23).fill(1) : [10, 10, 3]);
+  });
+
+  it('a command requeued while onResult runs keeps its new id and gets no stale result', async () => {
+    const input = command(1);
+    const row = await collection.insert(input);
+    const commandId = uuidv7();
+    const { outbox, send } = setup({ now: () => epoch + 1000, onResult: async () => {
+      await row.incrementalPatch({ commandId, syncStatus: 'pending' });
+      outbox.stop();
+    } });
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: input.commandId, status: 'applied', register: {
+      counters: { lastClosureNumber: 1, perpetualSalesTotalMinor: 100, perpetualRefundsTotalMinor: 0 },
+    } }] });
+    await outbox.flush();
+    expect(await stored(input.key)).toStrictEqual({ ...input, commandId });
+  });
+
+  it('onResult receives a plain command without RxDB metadata', async () => {
+    const input = command(1, 'a', { error, result: { counters: {
+      lastClosureNumber: 1, perpetualSalesTotalMinor: 100, perpetualRefundsTotalMinor: 0,
+    } } });
+    await collection.insert(input);
+    let received: RegisterCommand | undefined;
+    const { outbox } = setup({ onResult: (doc) => {
+      received = structuredClone(doc);
+      doc.payload.sessionId = 'callback-mutation';
+    } });
+    await outbox.flush();
+    expect(received).toStrictEqual(input);
+    expect((await stored(input.key)).payload).toStrictEqual({ sessionId: 'a-1', registerId: 'a', countedFloatMinor: 0 });
+  });
+
+  it('a rejection with extra error fields stores only code, message and data', async () => {
+    const input = command(1);
+    await collection.insert(input);
+    const serverError = { ...error, extra: 'not in the ledger schema' };
+    const { outbox, send } = setup();
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: input.commandId, status: 'rejected', error: serverError }] });
+    await outbox.flush();
+    expect((await stored(input.key)).syncStatus).toBe('rejected');
+    expect((await stored(input.key)).error).toStrictEqual(error);
+  });
+
+  it('onResult sees a duplicate carrying an error as rejected, without figures', async () => {
+    const input = command(1);
+    await collection.insert(input);
+    const serverError: CommandError & Record<string, unknown> = { ...error, extra: 'not in the ledger schema' };
+    const onResult = vi.fn();
+    const { outbox, send } = setup({ onResult });
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: input.commandId, status: 'duplicate',
+      error: serverError, register: { counters: {
+        lastClosureNumber: 1, perpetualSalesTotalMinor: 100, perpetualRefundsTotalMinor: 0,
+      } } }] });
+    await outbox.flush();
+    expect(onResult).toHaveBeenCalledExactlyOnceWith(input, { id: input.commandId, status: 'rejected', error });
+    expect(await stored(input.key)).toStrictEqual({ ...input, syncStatus: 'rejected', error, updatedAt: expect.any(String) });
+  });
+
+  it('a duplicate with an error is treated as rejected and stops the register', async () => {
+    const inputs = [command(1), command(2), command(1, 'b')];
+    await collection.bulkInsert(inputs);
+    const { outbox, send } = setup({ batchSize: 1, now: () => epoch + 1000 });
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: inputs[0].commandId, status: 'duplicate', error }] });
+    await outbox.flush();
+    await outbox.flush();
+    expect(await stored(inputs[0].key)).toStrictEqual({ ...inputs[0], syncStatus: 'rejected', error,
+      updatedAt: new Date(epoch + 1000).toISOString() });
+    expect(await stored(inputs[1].key)).toStrictEqual(inputs[1]);
+    expect(send.mock.calls.flatMap(([batch]) => batch.map(({ id }) => id))).toEqual([inputs[0].commandId, inputs[2].commandId]);
   });
 
   it('orders equal seqs by key', async () => {

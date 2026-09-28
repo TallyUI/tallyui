@@ -111,7 +111,8 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
         readFresh(movements, { selector: { session_id: session.id } }),
         session.closure_id ? closures.storageInstance.findDocumentsById([session.closure_id], false) : Promise.resolve([]),
       ]);
-      const events = (observed ?? []).filter((row) => row.id === session.id && !transitioned.has(session.id))
+      const events = (observed ?? []).filter((row) => row.id === session.id && !transitioned.has(session.id)
+        && row.status !== session.status && row.status !== 'closed')
         .flatMap((row) => row.status_at == null ? [] : [sessionTransitionCommand({ ...row, status_at: row.status_at })]);
       events.push(...entries.filter((entry) => entry.type !== 'void').map(movementCommand),
         ...entries.filter((entry) => entry.type === 'void').map(movementCommand));

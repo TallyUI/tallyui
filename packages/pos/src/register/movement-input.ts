@@ -13,7 +13,7 @@
  */
 const SERVER_DECIMAL = /^\d+(?:\.\d+)?$/;
 const MAX_INTEGER_DIGITS = 15;
-const MAX_REASON_LENGTH = 500;
+export const MAX_REASON_LENGTH = 500;
 
 export type MovementType = 'paid_in' | 'paid_out' | 'no_sale';
 

@@ -183,8 +183,8 @@ export interface OrderCreatePayload {
 }
 
 /** Batch of commands submitted to the server. */
-export interface CommandBatchRequest {
-  commands: CommandEnvelope[];
+export interface CommandBatchRequest<E extends AnyCommandEnvelope = CommandEnvelope> {
+  commands: E[];
 }
 
 /** Results returned by the server for a command batch. */
