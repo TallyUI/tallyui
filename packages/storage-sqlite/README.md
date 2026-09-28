@@ -10,6 +10,18 @@ worker on the web (ADR-061 in `docs/DECISIONS.md`).
 optional peer dependencies: a native app installs only the first, a web app
 only the second.
 
+## Supported handles
+
+- Native: expo-sqlite 16's `SQLiteDatabase` from `openDatabaseSync`, checked at
+  compile time by `typecheck/expo-handle.ts`. The peer range allows 15, which
+  isn't checked.
+- Node: a `node:sqlite` `DatabaseSync` wrapped like `src/node-sqlite.test-helper.ts`.
+- Web: `getRxStorageSQLiteWasm` takes `workerInput`; the worker opens its own
+  SQLite-wasm `opfs-sahpool` handle, so callers do not supply a database handle.
+
+Any handle with `execSync`, `getAllSync`, and `runSync` matching the minimal
+`SQLiteDatabase` interface works with `getRxStorageSQLite`.
+
 ## Web (SQLite-wasm)
 
 `getRxStorageSQLiteWasm` (from `@tallyui/storage-sqlite/web`) runs SQLite-wasm
