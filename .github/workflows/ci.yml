@@ -26,6 +26,9 @@ jobs:
       - name: Check workspace dependency declarations
         run: pnpm check:deps
 
+      - name: Check the release plan has no unrequested major
+        run: pnpm check:release-plan
+
       - name: Build packages
         run: pnpm build
 

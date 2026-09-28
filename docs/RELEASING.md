@@ -54,7 +54,8 @@ A `@tallyui/*` package's peer dependency on another one is written
 - **The option is unstable:** its key is
   `___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH`, and changesets
   silently ignores a key it doesn't know. A changesets update that renames
-  it brings the 3.0.0 problem back, and nothing in CI catches that yet.
+  it brings the 3.0.0 problem back. CI now runs `pnpm check:release-plan`,
+  which fails on a major no changeset asked for.
 - **Check:** before `pnpm changeset version`, `pnpm changeset status
   --verbose` must show no major unless a changeset asks for one. It is the
   first step of the procedure below.

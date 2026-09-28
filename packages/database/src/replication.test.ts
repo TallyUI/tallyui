@@ -76,6 +76,24 @@ describe('startReplication', () => {
     await state.cancel();
   });
 
+  it('passes adapter.pull.batchSize to RxDB as the pull page size', async () => {
+    const handler = vi.fn().mockResolvedValue({ documents: [], checkpoint: {} });
+    const adapter = { pull: { batchSize: 7, handler } };
+    const state = startReplication({ collection: db.products, adapter, context });
+    await state.awaitInSync();
+    expect(handler.mock.calls[0][1]).toBe(7);
+    await state.cancel();
+  });
+
+  it("uses RxDB's default of 100 when the adapter sets none", async () => {
+    const handler = vi.fn().mockResolvedValue({ documents: [], checkpoint: {} });
+    const adapter = { pull: { handler } };
+    const state = startReplication({ collection: db.products, adapter, context });
+    await state.awaitInSync();
+    expect(handler.mock.calls[0][1]).toBe(100);
+    await state.cancel();
+  });
+
   // Above version 0 a new identifier resets the checkpoint after a drop-and-resync bump (backlog 44).
   it.each([[0, 'test-products'], [2, 'test-products-v2']])('at schema version %i the replication identifier is %s', async (version, identifier) => {
     if (version > 0) {
