@@ -1,9 +1,9 @@
 // RegisterColumn is new to TallyUI (design item 6, LEDGER 53): swaps the cart column for
 // register selection, opening or counting when the till needs it, and offers Close register
 // when an open session runs overdue with an empty cart.
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { closeSession, startCounting } from '@tallyui/pos';
+import { closeSession, startCounting, type useRegisterSession } from '@tallyui/pos';
 import { RegisterColumn } from '../register/register-column';
 import { createRegisterDb, RegisterHarness, seedSession, type RegisterDb } from './register-harness';
 
@@ -149,4 +149,69 @@ it('does not offer Close register when the cart has lines', async () => {
   );
   await waitFor(() => expect(screen.getByTestId('cart')).toBeTruthy());
   expect(screen.queryByTestId('register-column-overdue')).toBeNull();
+});
+
+// Close-in-flight: `closeSession` stores the session closed before its closure lands, and the
+// Finish-closing card mustn't flash (with an enabled button) in that moment.
+type Hook = { current?: ReturnType<typeof useRegisterSession> };
+function renderCounting(hook: Hook) {
+  return render(
+    <RegisterHarness db={db}>
+      {(register) => {
+        hook.current = register;
+        return (
+          <RegisterColumn
+            register={register}
+            registerId="register"
+            registers={registers}
+            onPick={vi.fn()}
+            currency="EUR"
+            countSlot={<div data-testid="count-slot">Counting…</div>}
+          >
+            <div data-testid="cart">Cart</div>
+          </RegisterColumn>
+        );
+      }}
+    </RegisterHarness>,
+  );
+}
+
+it('shows the count slot, not Finish closing, while a close is in flight', async () => {
+  const session = await seedSession(db);
+  await startCounting(db.register_sessions, session.id);
+  const insert = db.closures.insert.bind(db.closures);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const spy = vi.spyOn(db.closures, 'insert').mockImplementation((async (row: Parameters<typeof insert>[0]) => {
+    await gate;
+    return insert(row);
+  }) as typeof insert);
+  const hook: Hook = {};
+  renderCounting(hook);
+  await waitFor(() => expect(screen.getByTestId('count-slot')).toBeTruthy());
+  const close = hook.current!.actions.closeSession({ counted: { cash: 10000 } });
+  await waitFor(() => expect(spy).toHaveBeenCalled());
+  await waitFor(() => expect(hook.current?.session?.status).toBe('closed'));
+  expect(screen.getByTestId('count-slot')).toBeTruthy();
+  expect(screen.queryByTestId('register-column-finish-close')).toBeNull();
+  release();
+  await act(() => close);
+  await waitFor(() => expect(screen.getByTestId('open-register-card')).toBeTruthy());
+});
+
+it('shows Finish closing after a close fails', async () => {
+  const session = await seedSession(db);
+  await startCounting(db.register_sessions, session.id);
+  vi.spyOn(db.closures, 'insert').mockRejectedValueOnce(new Error('Write failed'));
+  const hook: Hook = {};
+  renderCounting(hook);
+  await waitFor(() => expect(screen.getByTestId('count-slot')).toBeTruthy());
+  await act(async () => {
+    await expect(hook.current!.actions.closeSession({ counted: { cash: 10000 } })).rejects.toThrow('Write failed');
+  });
+  await waitFor(() => expect(screen.getByTestId('register-column-finish-close')).toBeTruthy());
+  expect(screen.queryByTestId('count-slot')).toBeNull();
+  const button = screen.getByTestId('register-column-finish-close-button');
+  expect(button.getAttribute('aria-disabled')).not.toBe('true');
+  expect(button.id).toBe('register-column-finish-close-button');
 });

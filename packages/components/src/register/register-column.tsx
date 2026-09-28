@@ -19,7 +19,9 @@ export interface RegisterColumnProps {
   /** ISO 4217 code, forwarded to `OpenRegisterCard`. */
   currency: string;
   configuredFloatMinor?: number | null;
-  /** Rendered instead of `children` while a session is counting (Job B fills this). */
+  /** Rendered instead of `children` while a session is counting (Job B fills this), and while its close is in flight
+   * (`register.closing`). A closed session that isn't closing shows the Finish-closing card instead, whose button has
+   * `nativeID="register-column-finish-close-button"`, so an app's `onPressPill` can focus it on the web. */
   countSlot?: ReactNode;
   /** Whether the cart has no lines; gates the overdue Close register offer (LEDGER 53). */
   cartEmpty?: boolean;
@@ -44,11 +46,13 @@ export function RegisterColumn({
   cartEmpty,
   children,
 }: RegisterColumnProps) {
+  const [finishing, setFinishing] = useState(false); // Lifted, so the card stays up through its own close.
   if (registerId === null) {
     return <RegisterPicker registers={registers} onPick={onPick} className="flex-1" />;
   }
   if (register.session?.status === 'closed') {
-    return <FinishClose register={register} />;
+    // A close in flight stores the session closed before its closure lands: unless the card started it, not an unfinished close.
+    return register.closing && !finishing ? <>{countSlot}</> : <FinishClose register={register} busy={finishing} setBusy={setFinishing} />;
   }
   if (!register.session) {
     return <OpenRegisterCard register={register} currency={currency} configuredFloatMinor={configuredFloatMinor} className="flex-1" />;
@@ -82,8 +86,7 @@ export function RegisterColumn({
  * row. `openSession` then refuses with `RegisterCloseIncompleteError`, so the cashier is stuck
  * behind the cart unless this offers a way to resume the close.
  */
-function FinishClose({ register }: { register: ReturnType<typeof useRegisterSession> }) {
-  const [busy, setBusy] = useState(false);
+function FinishClose({ register, busy, setBusy }: { register: ReturnType<typeof useRegisterSession>; busy: boolean; setBusy: (busy: boolean) => void }) {
   const [error, setError] = useState('');
   const finish = async () => {
     setBusy(true);
@@ -101,7 +104,7 @@ function FinishClose({ register }: { register: ReturnType<typeof useRegisterSess
   return (
     <View testID="register-column-finish-close" className="flex-1 gap-3 p-4">
       <Text>The last close didn&apos;t finish.</Text>
-      <Button testID="register-column-finish-close-button" disabled={busy} onPress={finish}>
+      <Button testID="register-column-finish-close-button" nativeID="register-column-finish-close-button" disabled={busy} onPress={finish}>
         <Text>Finish closing</Text>
       </Button>
       {!!error && (

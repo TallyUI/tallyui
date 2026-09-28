@@ -31,6 +31,9 @@ describe.each([
     'Choose a register',
   ],
   [{ sessionsOn: false, sessionStatus: null }, null],
+  // TallyUI (close-in-flight): an unfinished close blocks selling, so it outranks offline, not choosing.
+  [{ sessionsOn: true, sessionStatus: 'closed' as const, online: false }, 'Close not finished'],
+  [{ sessionsOn: true, sessionStatus: 'closed' as const, registerId: null }, 'Choose a register'],
 ] as const)('session pill priority %j', (state, pill) => {
   it(`resolves to ${pill}`, () => {
     expect(describeRegisterBarPill({ ...base, ...state })).toBe(pill);

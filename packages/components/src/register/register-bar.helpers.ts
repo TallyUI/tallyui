@@ -13,6 +13,7 @@
 
 export type RegisterBarPill =
   | 'Choose a register'
+  | 'Close not finished'
   | 'Offline'
   | 'Approval needed'
   | 'Counting'
@@ -21,7 +22,8 @@ export type RegisterBarPill =
 
 /**
  * Priority, matching WCPOS's ordering: choosing a register outranks everything (LEDGER 48);
- * then an unreachable store reads as offline, ahead of any session state; approval needed
+ * then a closed session whose close isn't in flight (TallyUI: it blocks selling until Finish
+ * closing); then an unreachable store reads as offline, ahead of any session state; approval needed
  * outranks plain counting; an open, overdue session outranks a session-less "closed" pill.
  */
 export function describeRegisterBarPill({
@@ -31,6 +33,7 @@ export function describeRegisterBarPill({
   overdue = false,
   approvalRequired = false,
   sessionsOn = false,
+  closing = false,
 }: {
   /** The register this till is bound to, or `null` when it isn't bound yet. */
   registerId: string | null;
@@ -40,8 +43,11 @@ export function describeRegisterBarPill({
   approvalRequired?: boolean;
   /** The store uses register sessions at all (`useRegisterSession`'s `enabled`). */
   sessionsOn?: boolean;
+  /** A close is in flight (`useRegisterSession`'s `closing`), so a closed session isn't unfinished. */
+  closing?: boolean;
 }): RegisterBarPill | null {
   if (registerId === null) return 'Choose a register';
+  if (sessionStatus === 'closed' && !closing) return 'Close not finished';
   if (!online) return 'Offline';
   if (sessionStatus === 'counting' && !approvalRequired) return 'Counting';
   if (approvalRequired) return 'Approval needed';
