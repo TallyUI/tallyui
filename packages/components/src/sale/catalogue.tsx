@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import type { ProductTraits } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, type CatalogueEntry } from '@tallyui/pos';
@@ -32,12 +32,14 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
   return a.getTime() >= b.getTime() ? a : b;
 }
 
-export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, lastSyncedAt, lastStockCheckAt, hour12, minCodeLength }: {
+export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, lastStockCheckAt, hour12, minCodeLength }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
   onSelect: (entry: CatalogueEntry<Doc>) => void;
   statusText?: string;
+  /** Rendered at the end of the status line, e.g. a register control at phone width; the row renders even without `statusText`. */
+  statusAccessory?: ReactNode;
   lastSyncedAt: Date | null;
   /** The last completed stock reconcile pass, persisted across restarts; the later of this and lastSyncedAt wins. */
   lastStockCheckAt?: Date | null;
@@ -78,9 +80,14 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             const entry = findEntryByCode(entries, query);
             if (entry) { select(entry); setQuery(''); }
           }} />
-        {statusText ? <Text className="text-xs text-muted-foreground">
-          {statusText}{query.trim() ? ` · ${results.length.toLocaleString()} matching` : ''}
-        </Text> : null}
+        {(statusText || statusAccessory) ? (
+          <View testID="catalogue-status-row" className="flex-row items-center gap-2">
+            {statusText ? <Text className="flex-1 text-xs text-muted-foreground">
+              {statusText}{query.trim() ? ` · ${results.length.toLocaleString()} matching` : ''}
+            </Text> : null}
+            {statusAccessory}
+          </View>
+        ) : null}
         {choices.length > 0 ? (
           <View accessibilityLabel="Choose variant" className="gap-2">
             {choices.map((entry) => (

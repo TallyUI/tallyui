@@ -40,10 +40,11 @@ it('prefills the configured float, offers the last count, shows variance only wh
     </RegisterHarness>,
   );
   await waitFor(() => expect(screen.getByTestId('open-register-chip-last')).toBeTruthy());
-  // The Front desk review (2026-09-28): the amount field had no visible label.
-  expect(screen.getByTestId('open-register-amount-label').textContent).toBe('Cash in the drawer to start');
+  // The Front desk review (2026-09-28): the amount field had no visible label. Followup (2026-09-28,
+  // medusapos): the label names the currency too, matching MovementSheet's "Amount (€)".
+  expect(screen.getByTestId('open-register-amount-label').textContent).toBe('Cash in the drawer to start (€)');
   expect(screen.getByTestId('open-register-amount').getAttribute('aria-label')).toBe(
-    'Cash in the drawer to start',
+    'Cash in the drawer to start (€)',
   );
   expect((screen.getByTestId('open-register-amount') as HTMLInputElement).value).toBe('200.00');
   expect(screen.queryByTestId('opening-variance')).toBeNull();

@@ -65,7 +65,7 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
         {/* The heading stays visible; a phone-height viewport must never push it under the page
             header (the Front desk review, 2026-09-28) — only the body below it scrolls. */}
         <DialogTitle testID="register-panel-amount">{registerName ?? 'Register'}</DialogTitle>
-        <Text testID="register-panel-sales-count">{salesCount} sales this session</Text>
+        <Text testID="register-panel-sales-count">{salesCount} sale{salesCount === 1 ? '' : 's'} this session</Text>
         <ScrollView testID="register-panel-body" className="flex-1" contentContainerClassName="gap-3">
           <View className="flex-row gap-2">
             {(['paid_in', 'paid_out', 'no_sale'] as const).map((type) => (
