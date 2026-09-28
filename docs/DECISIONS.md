@@ -2590,31 +2590,44 @@ interface OrderCreatePayload {
      auth, local store settings, advertised capabilities, and a command
      transport that applies `order.create` in-process, idempotently. It
      has no replication and no reconcile passes.
-  3. **No server first.** Every pos-layer feature is designed to work with
-     no server, and gains connector behaviour (auth, capability gates, the
-     outbox, replication, register egress) as an optional layer on top.
-     The pos layer must not assume that auth, capabilities, an outbox or
-     replication exist. A review that finds a new feature needing a server
-     to work at all sends it back.
+  3. **No server first, in the pos layer.** Every `@tallyui/pos` feature
+     is designed to work with no server, and gains connector behaviour
+     (auth, capability gates, the outbox, replication, register egress) as
+     an optional layer on top. The pos layer must not assume that auth,
+     capabilities, an outbox or replication exist. A review that finds a
+     new pos-layer feature needing a server to work at all sends it back.
+     This rule is for the pos layer only: platform connector features
+     (a plugin's journal, server approval, Z posting) are built as layers
+     over it, as registers job c2 is, and need not work without their
+     server.
   4. **Storage and platforms.** RxDB Premium SQLite, one live instance per
      database (ADR-031, ADR-061). Desktop through Electron, as
      `medusapos/apps/desktop` does; iOS and Android through Expo.
   5. **MVP first** (ADR-034): M0 boots with a catalogue seeded from a CSV;
      M1 sells, tenders, prints a receipt and closes with a Z read, all
-     local; M2 adds local product and customer management; M3 adds export,
-     backup and restore. More than one till is left to the platforms, per
+     local, with a manual full backup file; M2 adds local product and
+     customer management; M3 adds exports, automatic backup and restore. More than one till is left to the platforms, per
      single instance.
 - **Consequences:**
   - A new optional connector package (`connectors/local`), and one
     database change: collections a device authors get real migrations and
     never the drop path. It must land before any local schema leaves
     version 0.
-  - M1 needs no change to `@tallyui/pos` beyond one optional receipt field
-    (`ReceiptConfig.orderNumber`). The shims it relies on (no-credential
-    auth, advertised capabilities, the in-process transport) each have a
-    follow-up that turns the assumption into an explicit optional: optional
-    `auth`, the order store split from the outbox, and removing the
-    deprecated `sync`.
+  - M1's one change to `@tallyui/pos` is the receipt number: a
+    `mintSaleNumber` keyed by `commandId` (as `mintClosureNumber` is keyed
+    by the closure), minted once before the order insert and stored on the
+    order as an optional `receiptNumber`, which the receipt and every
+    reprint read. It rides ADR-065's pending `pos_orders` schema bump.
+  - The local transport follows the plan's local transaction contract: the
+    order insert is the commit point, cached stock is recomputed from
+    idempotent movements and never incremented, and transient storage
+    errors retry.
+  - The shims M1 relies on (no-credential auth, advertised capabilities,
+    the in-process transport) each have a follow-up that turns the
+    assumption into an explicit optional: optional `auth`, the order store
+    split from the outbox, and removing the deprecated `sync`. The
+    follow-ups are additive, ship with changesets, and leave medusapos and
+    vendurepos unchanged.
   - Registers job c2 is built as a layer on `useRegisterSession`, never a
     requirement inside it.
   - The standalone e2e suite needs no dev store, so it runs in CI with no

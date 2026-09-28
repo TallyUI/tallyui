@@ -863,8 +863,8 @@ strongest test that the pos layer is separable from any server, so every
 pos-layer feature is now designed to work with no server first and gains
 connector behaviour as an optional layer (ADR-066). Its MVP is M0 (a
 catalogue from a CSV) and M1 (sell, tender, receipt and Z read, all
-local); M2 adds local product and customer management and M3 backup and
-restore. Its first jobs are a `connectors/local` package and a
+local, with a manual backup file); M2 adds local product and customer
+management and M3 automatic backup and restore. Its first jobs are a `connectors/local` package and a
 local-authoritative collection option in `createTallyDatabase`. It needs
 no dev store, so its e2e suite runs in CI with no backend. It runs beside
 the platform tracks and does not change their order (ADR-020).

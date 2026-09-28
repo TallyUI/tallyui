@@ -72,26 +72,37 @@ A tester can:
 - build a cart with correct tax and discounts (line and order, pre-tax,
   ADR-062), take cash with change or record an external card payment, and
   split a tender;
-- see an on-screen receipt with a short sequential number, and print it
-  through the system print dialog;
+- see an on-screen receipt with a short sequential number, and print or
+  reprint it through the system print dialog, always with the same number;
 - count the drawer, close the session with a Z read (manager approval over
   the variance threshold), and export the Z as CSV;
 - see stock fall with every sale, and see past sales;
+- save a manual full backup file (every collection, versioned, with a
+  checksum) through the save dialog or share sheet;
 - quit or crash mid-sale and lose nothing.
 
 Built from: `useSale`, the tender reducer, the order builder,
 `buildReceiptData`, `useRegisterSession` and the register screens
 (ADR-032's next job 1, which standalone needs as much as medusapos), and
-`useOrderOutbox` with the local driver's command transport.
+`useOrderOutbox` with the local driver's command transport, under the
+[local transaction contract](#local-transaction-contract).
 
 Acceptance:
 - Playwright e2e on web, then the same suite on the Electron build: 25
   sales (discounts, split tenders, two movements), then a count and a
   close. The Z's sales total equals the sum of the 25 receipts to the minor
   unit; 0 orders left `pending`; each line's stock falls exactly once.
-- 5 of the 25 sales are interrupted by a page reload or app kill at a
-  random point after `complete()`: 0 lost, 0 duplicated, and stock is still
-  decremented exactly once per line.
+- **Fault injection at every write boundary** (Vitest, on SQLite and
+  memory storage). A storage wrapper stops the sale at each write: the
+  receipt-number reservation, the order insert, each stock movement
+  insert, the cached-stock write, and the `applied` patch. The test then
+  reopens the database, runs the startup repair and flushes. At every
+  boundary: exactly one order (or none, if it stopped before the insert),
+  each line's movement exactly once, cached stock equal to the figure
+  recomputed from movements, and the receipt number unchanged on every
+  read and reprint.
+- The backup file holds every document of every collection: counts and
+  ids match the database, and the checksum verifies.
 
 ### M2: local product and customer management
 
@@ -113,12 +124,11 @@ Acceptance:
   authored documents (migration tests on SQLite and memory storage, like
   `pos_orders`' version 0 → 1 → 2 tests).
 
-### M3: export, backup and restore
+### M3: export, automatic backup and restore
 
 A tester can:
 - export sales, Z reads, products and customers as CSV;
-- save a full backup file (versioned, with a checksum) through the save
-  dialog or share sheet, and get an automatic daily backup to a folder on
+- get an automatic daily backup (the M1 file format) to a folder on
   desktop;
 - restore a backup on a fresh install or another device. Restore replaces
   the database; it never merges.
@@ -182,7 +192,7 @@ optional" means the interface itself changes so the piece can be absent.
 | E | Replication and schemas: `ConnectorSchemas` are "server-owned, pull-replicated"; `createTallyDatabase` creates them through `connectorCollection`, whose **version bump drops every document** and resyncs; ADR-024 pull-only, and "a replicated collection must never take local writes" (#53) | The server holds the real copy of the catalogue, so local documents are disposable | **A drop is data loss**: the device holds the only copy. The local driver's collections are local-authoritative: real migration strategies, never the drop path. That needs an explicit per-collection option in `createTallyDatabase` (as `pos_orders` and `stock_levels` already stay off it) before any local schema reaches version 1. Until then a test pins them at version 0 | Explicit optional (core/database) |
 | F | Reconcile and stock overlay: `reconcile.stock`, `ids`, `prices`, `calculatedPrices`; the `stock_levels` collection; `stockOverlay$`, `stockOverlayAsOf$` | Stock and prices drift on a server and are re-read | Absent. They are already optional; `getProductStock` reads the document when there is no overlay. Stock is written locally by the command handler | Already optional |
 | G | Store settings: `connector.storeSettings(context, choice)`, read once after sign-in; the region/country/channel choice; `pricingContext` | The server owns currency, tax mode and tax rates | The local driver reads a local settings document written at setup (M0) and edited later. No choices are offered | Local driver |
-| H | `PosOrder.serverRefs` (`orderId`, `displayId`, `totalMinor`), `warnings` (`total_mismatch`), `error`; the receipt prints `order.id` as its number | A server gives the order its human number | The local handler sets `serverRefs` from a local sequential number (`nextSaleCounter` on the register document). Because the receipt is built before the order is applied, `ReceiptConfig` gains an optional `orderNumber`, minted at `complete()` | Local driver, plus one optional receipt field |
+| H | `PosOrder.serverRefs` (`orderId`, `displayId`, `totalMinor`), `warnings` (`total_mismatch`), `error`; the receipt prints `order.id` as its number | A server gives the order its human number | **One receipt number, minted once.** A `mintSaleNumber(host, storeKey, commandId)` on the register document reserves the next number under the sale's `commandId`, as `mintClosureNumber` reserves under the closure id, so a retried `complete()` (same `commandId`) gets the same number back. It is minted before the insert and stored on the order as an optional `receiptNumber`; the receipt and every reprint read it from the stored order, and the local handler copies it to `serverRefs.displayId`. `nextSaleCounter` (which increments on every call) is not used. The field rides ADR-065's pending `pos_orders` schema bump, so tills migrate once | Local driver, plus one optional `PosOrder` field |
 | I | Register egress: sessions carry `pending_status`, `server_status`, `status_at`, `approver_token`, `server_expected`, `server_sales_count`; closures carry `server_closure_id`, and `unsynced_count` / `unsynced_total_minor` count orders whose `syncStatus` is `pending`; job c2 (the Z-posting command with the session stamp, movement retry and refusal, the server approval gate, the closure-rows hook paging the server over 92 days); `movement-input` mirrors the server's decimal grammar; `facts.ts` reserves outbox facts | A server will receive sessions, movements and Z reads and may approve or refuse them | Unused and inert: the register is already local-first. **One trap:** with no outbox at all, every order would count as unsynced on the Z. The local transport marks orders `applied` at once, so the Z shows 0 unsynced. Rule for c2: it is a layer on `useRegisterSession`, never a requirement inside it. Approval is local (`approvedBy`); ADR-032's residual window stays unreachable without c2 | Already optional (keep it so) |
 | J | Identity: `storeKey` by convention "the connector id plus the base URL"; `deviceId` on every command envelope | A store is a URL | `storeKey` is `local:<uuid>`, minted at setup; `deviceId` unchanged | Local driver |
 | K | Customers: `customer.create` / `customer.patch` commands (ADR-024); `ConnectorTraits.customer` optional | Customers are server records | A local customers collection for M2, local-authoritative like the catalogue | Local driver (M2) |
@@ -202,18 +212,48 @@ A connector package (proposed `@tallyui/connector-local`, under
 - **`storeSettings`** from the local settings document; **`capabilities`**
   returns `{ orderCreate: 3 }`; **`auth`** is `none`.
 - **A local command transport** (`CommandTransport`) that applies each
-  `order.create` envelope in-process: it checks the envelope, writes one
-  stock movement per line, sets `serverRefs`, and answers `applied`.
-  - **Idempotent by primary key.** RxDB has no transaction across
-    collections, so a crash between the stock write and the order's
-    `applied` patch will replay the command. Each stock movement's id is
-    `<commandId>:<lineId>`, so a replay collides instead of decrementing
-    twice. On-hand stock is the product's base stock plus its movements,
-    kept as a cached figure on the product and rebuildable from the
-    movements.
-  - It never returns `unauthorized` or `retry`; a storage failure is
-    reported as `refused`, so the outbox pauses and the app shows it.
+  `order.create` envelope in-process under the contract below: it writes
+  one stock movement per line, recomputes cached stock, sets `serverRefs`,
+  and answers `applied`.
 - **No `replication`, no `reconcile`.**
+
+### Local transaction contract
+
+RxDB has no transaction across collections, so the sale is made safe by
+ordering and idempotent writes rather than by a transaction.
+
+1. **The `pos_orders` insert is the commit point** (`useOrderOutbox.record`).
+   Before it, the sale does not exist; only its receipt-number reservation
+   may. After it, the sale exists, is `pending`, and must reach `applied`.
+   Nothing else is written for the sale before the insert.
+2. **Applying a sale**, in order, each step idempotent:
+   1. Read the stored order by id (`readFresh`). If it is already
+      `applied`, answer `applied` with its stored `serverRefs`.
+   2. Insert one stock movement per line, with id `<commandId>:<lineId>`
+      and the line's product, variant and negative quantity. An existing id
+      with the same content counts as written.
+   3. Recompute each affected product's cached stock as its base stock
+      plus the sum of its movements, and write that figure. **Cached stock
+      is always recomputed from movements, never incremented.**
+   4. Answer `applied` with `serverRefs` `{ orderId: id, displayId:
+      receiptNumber, totalMinor }`; the outbox patches the order.
+3. **Replay of a partially applied sale.** A stop anywhere between the
+   insert and the `applied` patch leaves the order `pending`. The next
+   flush runs step 2 again: movements already written collide and are
+   skipped, missing ones are written, and step 2.3 recomputes from what is
+   there. Each line is counted exactly once, however many times the sale
+   replays.
+4. **Startup repair.** Before the outbox starts, the app recomputes cached
+   stock from movements for every product with movements (2,000 products
+   is the figure to measure), so a stop between steps 2.2 and 2.3 never
+   leaves a wrong figure on screen. M2's stock adjustments are movements
+   too, so the rule covers every stock write.
+5. **Errors.** A transient storage error (a failed write, a storage worker
+   timeout, a stall reported by ADR-061's watchdog) returns `retry`, and
+   the outbox backs off with the order still `pending`. `refused` is only
+   for envelope faults that a replay cannot fix: a malformed envelope, an
+   unsupported version, or a movement id already holding different
+   content. The transport never returns `unauthorized`.
 
 The driver is also a fit for ADR-027's in-browser demo: a seeded local
 store is the simulated backend that demo needs.
@@ -247,23 +287,27 @@ store is the simulated backend that demo needs.
 ## Risks
 
 1. **The device is the only copy.** A lost laptop or a cleared browser
-   store loses the business's records. Mitigations: the Z CSV export in M1
-   (`exportCsv` exists), the automatic daily backup in M3, and a visible
-   "last backup" date. Web storage can be evicted: request persistent
+   store loses the business's records. Mitigations: the Z CSV export and
+   the manual full backup file in M1 (in M2 at the latest), the automatic
+   daily backup in M3, and a visible "last backup" date. Web storage can be evicted: request persistent
    storage and say plainly that the web build is for trying the app.
 2. **The schema drop path (E).** One version bump through
    `connectorCollection` would wipe a tester's catalogue. The option in
    `createTallyDatabase` and a pinned-version test must land before any
    local schema moves off version 0.
-3. **Double stock decrement on replay (D).** Handled by the
-   `<commandId>:<lineId>` movement ids; the M1 kill-and-restart e2e is the
-   proof.
+3. **Double stock decrement on replay (D).** Handled by the local
+   transaction contract: `<commandId>:<lineId>` movement ids and cached
+   stock recomputed, never incremented. M1's fault-injection tests at every
+   write boundary are the proof.
 4. **Shims hardening into design.** The local driver's `none` auth,
    advertised capabilities and in-process transport make M1 possible with
    no pos changes, but they hide the assumptions they work around. Each
    shim in the table has a follow-up (optional `auth`, the order store split
    from the outbox, removing `sync`), sequenced after M1 and tracked in the
-   programme backlog.
+   programme backlog. The follow-ups are additive: each keeps today's
+   exports and behaviour (`useOrderOutbox` stays, composed from the new
+   order store), ships with a changeset, and leaves medusapos and
+   vendurepos working unchanged on the new release.
 5. **Scope creep toward a platform.** Catalogue editing, customers and
    backup are real features with no server behind them. The line: standalone
    gets what one till needs; anything multi-till goes to a connector.
@@ -284,7 +328,11 @@ store is the simulated backend that demo needs.
    dropped on a version bump.
 3. `apps/standalone` scaffold (web), setup screen, CSV import, catalogue
    screen: M0.
-4. The local command transport with idempotent stock movements, and its
-   contract tests.
-5. `ReceiptConfig.orderNumber`, the sale and register screens wired, and
-   the M1 Playwright suite; then the Electron shell.
+4. The local command transport under the local transaction contract,
+   the startup repair, and the fault-injection tests at every write
+   boundary.
+5. `mintSaleNumber` and the optional `receiptNumber` on `PosOrder` (with
+   ADR-065's `pos_orders` bump), the receipt reading it from the stored
+   order, the sale and register screens wired, and the M1 Playwright
+   suite; then the Electron shell.
+6. The manual full backup file (M1, M2 at the latest).
