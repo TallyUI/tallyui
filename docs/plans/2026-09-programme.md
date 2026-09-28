@@ -857,7 +857,7 @@ TallyUI now carries four product tracks. Each consumes the same
 |---|---|---|---|
 | Medusa | `medusapos` | Medusa connector and plugin | §2.2–2.3 |
 | Vendure | `vendurepos` | Vendure connector and plugin | [vendure/PLAN.md](../vendure/PLAN.md) |
-| WooCommerce | `wcpos/tallyui-woocommerce` | WooCommerce connector; parity with WCPOS v2 | its repository |
+| WooCommerce | `wcpos/tallyui-woocommerce` | The WCPOS sync engine over `wcpos/v2` (ADR-067); parity with WCPOS v2 | its repository, [sync-engine-adoption.md](sync-engine-adoption.md) |
 | Standalone | `apps/standalone` in this repo | The local-only driver: no server | [apps/standalone/PLAN.md](../apps/standalone/PLAN.md), ADR-066 |
 
 **Standalone** is Paul's direction of 2026-09-28: a desktop, iOS and
@@ -871,6 +871,21 @@ management and M3 automatic backup and restore. Its first jobs are a `connectors
 local-authoritative collection option in `createTallyDatabase`. It needs
 no dev store, so its e2e suite runs in CI with no backend. It runs beside
 the platform tracks and does not change their order (ADR-020).
+
+**Sync engine (added 2026-09-28).** Paul has decided that TallyUI consumes
+WCPOS's `@wcpos/sync-core` and `@wcpos/sync-engine` rather than building
+its own, and connectors become drivers in the shape of WCPOS ADR 0029
+(ADR-067). This supersedes TSP v1 (ADR-023) as the target protocol; the
+pull-only reads and `order.create` outbox of ADR-024 stay for the Medusa
+and Vendure testers until their drivers exist. The WooCommerce app goes
+first because it already speaks the engine's `wcpos/v2`. The engine's
+proven mechanics are the input and its WordPress and PHP constraints are
+not: Medusa and Vendure designs keep or replace each mechanism on
+numbers and tests (ADR-067, principle). Phases, the
+spike findings and acceptance:
+[sync-engine-adoption.md](sync-engine-adoption.md) (P0 publish or vendor,
+and RxDB 17; P1 WooCommerce app; P2 driver interface; P3 Medusa driver;
+P4 Vendure driver).
 
 ---
 
