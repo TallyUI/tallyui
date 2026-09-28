@@ -9,6 +9,9 @@ import {
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { callbackSink, type LogEntry } from '../logging';
+import { createOrderBuilder } from '../order/order-builder';
+import { mintUuid } from '../register/register-document';
+import { finalizeOrder } from './finalize';
 import { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from './open';
 import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
@@ -111,6 +114,61 @@ function slow(storage: RxStorage<any, any>): RxStorage<any, any> {
 export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any>, { sqlite = false, from = 0 as Origin } = {}) {
   // A version-1 order carries its session, which the migration keeps.
   const order = (n: number, syncStatus?: string): PosOrder => ({ ...sale(n, syncStatus), ...(from >= 1 ? { sessionId: `session-${n}` } : {}) });
+
+  if (from === 2) {
+    it.each([true, false])('keeps a pending version-2 order with sessionId, lateSessionId, display and taxByRate byte for byte (validated: %s)', async (validated) => {
+      const { open, olderApp, stored } = store(makeStorage(), from);
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
+      builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Item 1', sku: 'SKU1', unitPrice: { amount: 850, currency: 'EUR' }, quantity: 2,
+        taxRates: [{ code: 'VAT', ratePpm: 190000 }] });
+      builder.addLine({ productId: 'p2', name: 'Item 2', unitPrice: { amount: 1200, currency: 'EUR' } });
+      builder.addPayment({ method: 'external', amountMinor: 1000, reference: 'terminal' });
+      builder.addPayment({ method: 'cash', amountMinor: 3000 });
+      builder.setCustomer({ id: 'c1', name: 'Customer', email: 'buyer@example.com' });
+      builder.setNote('Sale note');
+      const finalized = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1', capabilities: { orderCreate: 3 } });
+      const original = { ...finalized, lines: [{ ...finalized.lines[0], taxInclusive: true }, finalized.lines[1]],
+        sessionId: mintUuid(), lateSessionId: mintUuid(), warnings: [{ code: 'total_mismatch', expectedMinor: 3451, serverMinor: 3452 }],
+        error: { code: 'network', message: 'fetch failed' } };
+      let metadata: unknown;
+      await olderApp(async (orders) => { metadata = (await orders.insert(original)).toJSON(true)._meta; });
+      const db = await open(validated);
+      try {
+        const pos = await addPosOrderCollection(db);
+        const migrated = await pos.findOne(original.id).exec();
+        expect(migrated?.toJSON()).toStrictEqual(original);
+        expect(migrated?.toJSON(true)._meta).toStrictEqual(metadata);
+        const pending = await pos.find({ selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }] }).exec();
+        expect(pending.map((doc) => doc.toJSON())).toStrictEqual([original]);
+      } finally {
+        await db.close();
+      }
+      expect(await stored()).toMatchObject({ v0: [], v1: [original] });
+    });
+
+    it.each([true, false])('never drops a version-2 order whose sessionId is longer than 36 characters (validated: %s)', async (validated) => {
+      const { open, olderApp, stored } = store(makeStorage(), from);
+      const original = { ...order(1), sessionId: 's'.repeat(37) };
+      await olderApp((orders) => orders.insert(original));
+      const before = await stored();
+      const db = await open(validated);
+      try {
+        if (validated) {
+          const error = await addPosOrderCollection(db).catch((e: unknown) => e);
+          expect(error).toMatchObject({ code: 'DM4' });
+          expect(JSON.stringify(error)).toContain('/sessionId');
+        } else {
+          const pos = await addPosOrderCollection(db);
+          expect((await pos.findOne(original.id).exec())?.toJSON()).toStrictEqual(original);
+          const pending = await pos.find({ selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }] }).exec();
+          expect(pending.map((doc) => doc.toJSON())).toStrictEqual([original]);
+        }
+      } finally {
+        await db.close();
+      }
+      expect(await stored()).toStrictEqual(validated ? before : { v0: [], v1: [original], ids: { v0: [], v1: [original.id] } });
+    });
+  }
 
   it('after a DM4, the fixed order migrates on the very next open, with every order byte for byte', async () => {
     const { open, olderApp, stored } = store(makeStorage(), from);
