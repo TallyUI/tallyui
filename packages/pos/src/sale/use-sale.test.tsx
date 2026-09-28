@@ -625,6 +625,22 @@ describe('the tender pins its session', () => {
     expect(saleWarnings).toEqual([]);
     expect(facts).toEqual([]);
   });
+
+  // Gap (#170/#172 follow-up): complete() with no startTender falls back to opts.session (use-sale.ts,
+  // `?? opts.session`) — the app called setTender straight from the cart. Nothing tested it.
+  it('stamps the rendered session when complete() runs without startTender', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const view = renderWithSession({ id: sessionId, sessions });
+      act(() => view.result.current.setTender({ method: 'cash', amountMinor: view.result.current.order.totalMinor }));
+      const order = await completed(view);
+      expect(order.sessionId).toBe(sessionId);
+      expect(order).not.toHaveProperty('lateSessionId');
+      expect(saleWarnings).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
 });
 
 // complete() is idempotent for one tender (ADR-052, 2026-09-25): once complete() has built the order,
