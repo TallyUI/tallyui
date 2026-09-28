@@ -87,7 +87,7 @@ export function closureCommand(c: Closure): BuiltCommand {
 
 const chains = new WeakMap<RegisterCommandCollection, Map<string, Promise<void>>>();
 
-/** Appends missing facts in session/time order; the bytes of an existing key never change. */
+/** Appends missing facts in dependency order; the bytes of an existing key never change. */
 export function reconcileRegisterCommands({ commands, sessions, movements, closures, host, storeKey, registerId, now, observed }: {
   commands: RegisterCommandCollection; sessions: RegisterSessionCollection; movements: CashMovementCollection;
   closures: ClosureCollection; host: RegisterHost; storeKey: string; registerId: string; now?: string; observed?: RegisterSession[];
@@ -98,15 +98,9 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
     const since = await markCommandsSince(host, storeKey, registerId, now ?? new Date().toISOString());
     const [highest] = await readFresh(commands, { selector: { registerId }, sort: [{ seq: 'desc' }], limit: 1 });
     let seq = highest?.seq ?? 0;
-    const newestTransition = new Map<string, string>();
-    for (const { payload } of await readFresh(commands, { selector: { registerId, type: 'register.session.transition' } })) {
-      const { sessionId, at } = payload;
-      if (typeof sessionId === 'string' && typeof at === 'string' && at > (newestTransition.get(sessionId) ?? '')) {
-        newestTransition.set(sessionId, at);
-      }
-    }
+    const transitioned = new Set((await readFresh(commands, { selector: { registerId, type: 'register.session.transition' } }))
+      .map(({ payload }) => payload.sessionId));
     const rows = await readFresh(sessions, { selector: { register_id: registerId } });
-    rows.sort((a, b) => a.opened_at_gmt.localeCompare(b.opened_at_gmt));
     const complete = new Set((await commands.storageInstance.findDocumentsById(rows.flatMap((session) =>
       [`session.open:${session.id}`, ...(session.status === 'closed' && session.closure_id ? [`closure.submit:${session.closure_id}`] : [])]), false)).map(({ key }) => key));
     const facts = await Promise.all(rows.filter((session) =>
@@ -117,17 +111,17 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
         readFresh(movements, { selector: { session_id: session.id } }),
         session.closure_id ? closures.storageInstance.findDocumentsById([session.closure_id], false) : Promise.resolve([]),
       ]);
-      const events = entries.map((entry) => ({ at: entry.created_at_gmt, transition: false, command: movementCommand(entry) }));
-      for (const row of [session, ...(observed ?? []).filter((row) => row.id === session.id)]) {
-        if (row.status_at != null && row.status_at < (newestTransition.get(session.id) ?? '')) continue;
-        if (row.status_at != null) events.push({ at: row.status_at, transition: true,
-          command: sessionTransitionCommand({ ...row, status_at: row.status_at }) });
-      }
-      events.sort((a, b) => Number(a.command.payload.status === 'closed') - Number(b.command.payload.status === 'closed')
-        || a.at.localeCompare(b.at) || Number(a.transition) - Number(b.transition));
-      return { session, built: [sessionOpenCommand(session), ...events.map((event) => event.command),
+      const events = (observed ?? []).filter((row) => row.id === session.id && !transitioned.has(session.id))
+        .flatMap((row) => row.status_at == null ? [] : [sessionTransitionCommand({ ...row, status_at: row.status_at })]);
+      events.push(...entries.filter((entry) => entry.type !== 'void').map(movementCommand),
+        ...entries.filter((entry) => entry.type === 'void').map(movementCommand));
+      if (session.status_at != null) events.push(sessionTransitionCommand({ ...session, status_at: session.status_at }));
+      return { session, number: closureRows[0]?.number, built: [sessionOpenCommand(session), ...events,
         ...closureRows.map((closure) => closureCommand(closure))] };
     }));
+    facts.sort((a, b) => Number(a.session.status !== 'closed') - Number(b.session.status !== 'closed')
+      || (a.number ?? Infinity) - (b.number ?? Infinity)
+      || a.session.id.localeCompare(b.session.id));
     const existing = new Set((await commands.storageInstance.findDocumentsById(facts.flatMap(({ built }) => built.map(({ key }) => key)), false))
       .map(({ key }) => key));
     const appended: string[] = [];

@@ -2878,7 +2878,7 @@ interface OrderCreatePayload {
      - **Which sessions:** the moment the gate first turns on for a register
        is stored as `commands_since` in its register document. A session
        **closed before** that moment is history from before the capability,
-       and is never backfilled. Every other session is, whether it is still
+       and is never backfilled unless its open command is already in the ledger. Every other session is, whether it is still
        open or closed later, even if its open command was never recorded.
      - **Transitions are captured when they happen:** each register action
        hands the row it wrote to the queued reconcile, so every transition
@@ -2911,11 +2911,13 @@ interface OrderCreatePayload {
        movements before counting, a void after its target, and the closure
        last.
      - **The till keeps its `seq` order true to the facts:**
-       - it never appends a transition older than one already in the
-         ledger for that session;
-       - a session's closing transition is sequenced after every movement
-         and void of that session, whatever their timestamps, and before
-         its closure.
+       - the till never appends a superseded state, and a session's
+         current state is always appended last among its transitions;
+       - nothing in the till's sequencing compares a clock;
+       - sessions go by closure number, then the open session;
+       - within a session: its open, then any captured transitions not yet
+         superseded, then its movements with voids after their targets,
+         then the current state, then the closure.
      - **The ledger's `seq` can have gaps** (a lost race), and, with two
        collection instances over one database, a duplicate. The sender
        orders by `seq`, then key.

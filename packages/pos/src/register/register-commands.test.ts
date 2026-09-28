@@ -207,27 +207,87 @@ describe('register command ledger', () => {
 
   it('an observed transition is appended even after the row moved on', async () => {
     const s = await open();
-    advance();
+    const m = await record(s.id);
+    vi.setSystemTime(new Date('2026-09-28T08:10:00.000Z'));
     const counting = await startCounting(db.register_sessions, s.id);
-    advance();
+    vi.setSystemTime(new Date('2026-09-28T08:05:00.000Z'));
     const selling = await backToSelling(db.register_sessions, s.id);
     expect(await reconcile([counting.toJSON()])).toStrictEqual([
-      `session.open:${s.id}`, `session.transition:${s.id}:${counting.status_at}`, `session.transition:${s.id}:${selling.status_at}`,
+      `session.open:${s.id}`, `session.transition:${s.id}:${counting.status_at}`,
+      `movement.record:${m.id}`, `session.transition:${s.id}:${selling.status_at}`,
     ]);
-    expect((await ledger()).map((row) => row.payload.status)).toStrictEqual([undefined, 'counting', 'open']);
+    expect((await ledger()).map((row) => row.payload.status)).toStrictEqual([undefined, 'counting', undefined, 'open']);
   });
 
-  it('a transition older than one already recorded is never appended', async () => {
+  it('an observed transition is superseded once any transition is already recorded', async () => {
     const s = await open();
-    advance();
+    vi.setSystemTime(new Date('2026-09-28T08:10:00.000Z'));
     const counting = await startCounting(db.register_sessions, s.id);
-    advance();
+    vi.setSystemTime(new Date('2026-09-28T08:05:00.000Z'));
     const selling = await backToSelling(db.register_sessions, s.id);
     expect(await reconcile()).toStrictEqual([`session.open:${s.id}`, `session.transition:${s.id}:${selling.status_at}`]);
     expect(await reconcile([counting.toJSON()])).toStrictEqual([]);
     expect((await ledger()).map((row) => row.key)).toStrictEqual([
       `session.open:${s.id}`, `session.transition:${s.id}:${selling.status_at}`,
     ]);
+  });
+
+  it('a close made after the device clock stepped back is appended, with the closure after it', async () => {
+    const s = await open();
+    await reconcile();
+    vi.setSystemTime(new Date('2026-09-28T08:10:00.000Z'));
+    await startCounting(db.register_sessions, s.id);
+    await reconcile();
+    vi.setSystemTime(new Date('2026-09-28T08:05:00.000Z'));
+    const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 8600 }, closedBy: '7', approvedBy: 'manager' });
+    const z = await write(closed);
+    expect(await reconcile()).toStrictEqual([`session.transition:${s.id}:${closed.status_at}`, `closure.submit:${z.id}`]);
+    const rows = await ledger();
+    expect(rows.at(-2)?.payload).toStrictEqual({ sessionId: s.id, status: 'closed', at: closed.status_at,
+      counted: { cash: 8600 }, closedBy: '7', approvedBy: 'manager' });
+    expect(rows.at(-1)?.key).toBe(`closure.submit:${z.id}`);
+  });
+
+  it('back to selling after the clock stepped back leaves the ledger on the current state', async () => {
+    const s = await open();
+    vi.setSystemTime(new Date('2026-09-28T08:10:00.000Z'));
+    await startCounting(db.register_sessions, s.id);
+    await reconcile();
+    vi.setSystemTime(new Date('2026-09-28T08:05:00.000Z'));
+    const selling = await backToSelling(db.register_sessions, s.id);
+    await reconcile();
+    expect((await ledger()).filter((row) => row.type === 'register.session.transition' && row.payload.sessionId === s.id)
+      .at(-1)?.payload).toStrictEqual({ sessionId: s.id, status: 'open', at: selling.status_at });
+  });
+
+  it('a void is sequenced after its target even when its timestamp is earlier', async () => {
+    await db.register_sessions.insert(session);
+    await db.cash_movements.insert({ ...movement, id: 'z-target', created_at_gmt: '2026-09-28T08:10:00.000Z' });
+    await db.cash_movements.insert({ ...movement, id: 'a-void', type: 'void', voids: 'z-target',
+      created_at_gmt: '2026-09-28T08:05:00.000Z' });
+    await reconcile();
+    const rows = await ledger();
+    expect(rows.map((row) => row.key)).toStrictEqual(['session.open:session', 'movement.record:z-target', 'movement.void:a-void']);
+    expect(rows.find((row) => row.key === 'movement.void:a-void')!.seq)
+      .toBeGreaterThan(rows.find((row) => row.key === 'movement.record:z-target')!.seq);
+  });
+
+  it('sessions are sequenced by closure number, not by opening time', async () => {
+    for (const { id, number, opened } of [
+      { id: 'z-first', number: 1, opened: '2026-09-28T09:00:00.000Z' }, { id: 'a-second', number: 2, opened: openedAt },
+    ]) {
+      await db.register_sessions.insert({ ...session, id, status: 'closed', opened_at_gmt: opened,
+        status_at: closure.closed_at, closure_id: id });
+      await db.closures.insert({ ...closure, id, session_id: id, number, opened_at: opened });
+      await db.cash_movements.insert({ ...movement, id, session_id: id });
+    }
+    await reconcile();
+    const rows = await ledger();
+    expect(rows.map((row) => row.payload.sessionId)).toStrictEqual([
+      'z-first', 'z-first', 'z-first', 'z-first', 'a-second', 'a-second', 'a-second', 'a-second',
+    ]);
+    expect(Math.max(...rows.filter((row) => row.payload.sessionId === 'z-first').map((row) => row.seq)))
+      .toBeLessThan(Math.min(...rows.filter((row) => row.payload.sessionId === 'a-second').map((row) => row.seq)));
   });
 
   it('a session whose open is recorded is never skipped, even after the register document is reset', async () => {
@@ -284,12 +344,15 @@ describe('register command ledger', () => {
     ]);
   });
 
-  it('orders sessions by opening time and a transition after movements on a tie', async () => {
+  it('orders closed sessions without closure rows by primary key, then the open session, with current state after movements', async () => {
     await db.register_sessions.insert({ ...session, id: 'later', opened_at_gmt: '2026-09-28T09:00:00.000Z' });
-    await db.register_sessions.insert({ ...session, id: 'earlier', status: 'counting', status_at: openedAt });
+    await db.register_sessions.insert({ ...session, id: 'earlier', status: 'closed', status_at: openedAt });
+    await db.register_sessions.insert({ ...session, id: 'before', status: 'closed', status_at: openedAt,
+      opened_at_gmt: '2026-09-28T10:00:00.000Z' });
     await db.register_sessions.insert({ ...session, id: 'other-register', register_id: 'other' });
-    await db.cash_movements.insert({ ...movement, session_id: 'earlier' });
+    await db.cash_movements.insert({ ...movement, session_id: 'earlier', created_at_gmt: '2026-09-28T11:00:00.000Z' });
     expect(await reconcile()).toStrictEqual([
+      'session.open:before', `session.transition:before:${openedAt}`,
       'session.open:earlier', 'movement.record:movement', `session.transition:earlier:${openedAt}`, 'session.open:later',
     ]);
   });
