@@ -14,7 +14,7 @@ export default function RegisterPickerScreen() {
     <>
       <Stack.Screen options={{ title: 'RegisterPicker' }} />
       <View className="flex-1 bg-background p-4 gap-3" testID="register-picker-screen">
-        <RegisterPicker registers={REGISTERS} onPick={setPicked} />
+        <RegisterPicker registers={REGISTERS} onPick={setPicked} className="flex-1" />
         {picked && <Text testID="picked-register">Picked: {picked}</Text>}
       </View>
     </>

@@ -291,4 +291,26 @@ describe('Catalogue', () => {
       expect(grid.getAttribute('data-columns')).toBe(String(columns));
     }
   });
+  // The Front desk review (2026-09-28): an app puts a register control at the end of the status
+  // row, at phone width, without disturbing the status text's own layout.
+  it('renders the status accessory at the end of the status row, alongside the status text', () => {
+    render(
+      <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} statusText="Synced"
+        statusAccessory={<span data-testid="accessory">Register</span>} lastSyncedAt={null} />,
+    );
+    const row = screen.getByTestId('catalogue-status-row');
+    expect(within(row).getByText('Synced')).toBeTruthy();
+    expect(within(row).getByTestId('accessory')).toBeTruthy();
+  });
+  it('renders the status accessory on its own row when there is no status text', () => {
+    render(
+      <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()}
+        statusAccessory={<span data-testid="accessory">Register</span>} lastSyncedAt={null} />,
+    );
+    expect(within(screen.getByTestId('catalogue-status-row')).getByTestId('accessory')).toBeTruthy();
+  });
+  it('renders no status row without either statusText or statusAccessory', () => {
+    render(<Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} />);
+    expect(screen.queryByTestId('catalogue-status-row')).toBeNull();
+  });
 });

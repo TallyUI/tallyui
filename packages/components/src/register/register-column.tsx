@@ -45,10 +45,10 @@ export function RegisterColumn({
   children,
 }: RegisterColumnProps) {
   if (registerId === null) {
-    return <RegisterPicker registers={registers} onPick={onPick} />;
+    return <RegisterPicker registers={registers} onPick={onPick} className="flex-1" />;
   }
   if (!register.session) {
-    return <OpenRegisterCard register={register} currency={currency} configuredFloatMinor={configuredFloatMinor} />;
+    return <OpenRegisterCard register={register} currency={currency} configuredFloatMinor={configuredFloatMinor} className="flex-1" />;
   }
   if (register.session.status === 'counting') {
     return <>{countSlot}</>;

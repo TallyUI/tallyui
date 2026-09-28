@@ -1,5 +1,4 @@
 import { ScrollView } from 'react-native';
-import { cn } from '@tallyui/theme';
 
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -27,7 +26,7 @@ export interface RegisterPickerProps {
  */
 export function RegisterPicker({ registers, onPick, className }: RegisterPickerProps) {
   return (
-    <Card testID="register-picker" className={cn('flex-1', className)}>
+    <Card testID="register-picker" className={className}>
       <CardHeader>
         <CardTitle>Choose a register</CardTitle>
       </CardHeader>
@@ -38,12 +37,14 @@ export function RegisterPicker({ registers, onPick, className }: RegisterPickerP
               key={register.id}
               testID={`register-picker-row-${register.id}`}
               variant="ghost"
-              className="h-11 items-start justify-start"
+              className="h-auto min-h-11 items-start justify-start py-2"
               onPress={() => onPick(register.id)}
             >
               <VStack space="none">
                 <Text numberOfLines={1}>{register.name}</Text>
-                <Text className="text-muted-foreground text-sm">Not opened</Text>
+                <Text testID={`register-picker-row-${register.id}-status`} className="text-muted-foreground text-sm">
+                  Not opened
+                </Text>
               </VStack>
             </Button>
           ))}

@@ -1,4 +1,4 @@
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
 
 import { cn } from '@tallyui/theme';
@@ -19,6 +19,8 @@ export interface RegisterBarProps {
   registerName?: string;
   multiRegister: boolean;
   onOpenPanel: () => void;
+  /** Turns the pill into a button (opens the gate/picker or the panel) when given; the plain badge otherwise. */
+  onPressPill?: () => void;
   className?: string;
 }
 
@@ -38,6 +40,7 @@ export function RegisterBar({
   registerName,
   multiRegister,
   onOpenPanel,
+  onPressPill,
   className,
 }: RegisterBarProps) {
   const { session, overdue, enabled, lastClosure } = register;
@@ -58,7 +61,13 @@ export function RegisterBar({
           </Text>
         )}
       </View>
-      {pill && <Badge testID="register-bar-pill" label={pill} variant="warning" />}
+      {pill && (onPressPill ? (
+        <Pressable testID="register-bar-pill" accessibilityRole="button" accessibilityLabel={pill} onPress={onPressPill}>
+          <Badge label={pill} variant="warning" />
+        </Pressable>
+      ) : (
+        <Badge testID="register-bar-pill" label={pill} variant="warning" />
+      ))}
       {(session || lastClosure) && (
         <Button
           variant="ghost"

@@ -26,7 +26,7 @@ export default function OpenRegisterCardScreen() {
         {!ready ? (
           <Text>Loading…</Text>
         ) : (
-          <OpenRegisterCard register={register} currency="EUR" configuredFloatMinor={20000} />
+          <OpenRegisterCard register={register} currency="EUR" configuredFloatMinor={20000} className="flex-1" />
         )}
       </View>
     </>
