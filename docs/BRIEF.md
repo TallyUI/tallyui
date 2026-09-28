@@ -35,6 +35,9 @@ fixtures live in that platform's own repository and consume TallyUI as a
 dependency. The test for whether something belongs here: would a WooCommerce,
 Shopify or Vendure POS use it unchanged?
 
+For adding registers (cash-drawer sessions) to a platform POS app, see
+[docs/registers/INTEGRATION.md](registers/INTEGRATION.md).
+
 ## Sync engine
 
 Each platform needs a sync engine like WCPOS's: offline-capable and complete.
