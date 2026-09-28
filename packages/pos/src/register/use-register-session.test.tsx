@@ -422,7 +422,7 @@ it('records a no-sale without claiming cash moved', async () => {
   const result = await settled();
   let row!: Awaited<ReturnType<typeof result.current.actions.recordMovement>>;
   await act(async () => {
-    row = await result.current.actions.recordMovement({ type: 'no_sale', amountMinor: 0, reason: '' });
+    row = await result.current.actions.recordMovement({ type: 'no_sale', amountMinor: 0, reason: 'test' });
   });
   expect(row.type).toBe('no_sale');
   expect(logs).not.toContainEqual(expect.objectContaining({

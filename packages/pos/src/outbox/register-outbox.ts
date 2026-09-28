@@ -26,9 +26,16 @@ export interface RegisterOutbox {
   state$: Observable<OutboxState>;
 }
 
+function plainCommand({ key, registerId, seq, commandId, type, version, payload, createdAt, syncStatus,
+  error, result, updatedAt }: RegisterCommand): RegisterCommand {
+  return structuredClone({ key, registerId, seq, commandId, type, version, payload, createdAt, syncStatus,
+    ...(error ? { error } : {}), ...(result ? { result } : {}), updatedAt });
+}
+
 export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOutbox {
   const { collection, transport, deviceId } = options;
-  const batchSize = Math.min(options.batchSize ?? 10, 10);
+  const size = options.batchSize;
+  const batchSize = Math.max(1, Math.min(typeof size === 'number' && Number.isFinite(size) ? Math.floor(size) : 10, 10));
   const initialBackoff = options.initialBackoffMs ?? 1000;
   const maxBackoff = options.maxBackoffMs ?? 60000;
   const random = options.random ?? Math.random;
@@ -75,7 +82,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
         for (const command of ledger) {
           if (command.syncStatus === 'rejected') break;
           commands.push(command);
-          if (commands.length === batchSize) break;
+          if (commands.length >= batchSize) break;
         }
         if (stopped) { stoppedDuringRun = true; return; }
         if (!commands.length) continue;
@@ -112,12 +119,17 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
           if (stored?.syncStatus !== 'pending' || stored.commandId !== command.commandId) continue;
           const current = await collection.findOne(command.key).exec();
           if (!current) continue;
-          try { await options.onResult?.(stored, result); }
+          try { await options.onResult?.(plainCommand(stored), result); }
           catch (cause) { registerCommandsLogger.warn('Failed to apply register command result', { commandId: command.commandId, cause }); }
           const updatedAt = new Date(now()).toISOString();
-          await current.incrementalPatch(result.status === 'rejected'
-            ? { syncStatus: 'rejected', error: result.error, updatedAt }
-            : { syncStatus: 'applied', ...(result.register ? { result: result.register } : {}), updatedAt });
+          const error = result.error && { code: result.error.code, message: result.error.message,
+            ...(result.error.data ? { data: result.error.data } : {}) };
+          await current.incrementalModify((row) => {
+            if (row.syncStatus !== 'pending' || row.commandId !== command.commandId) return row;
+            return Object.assign(row, result.status === 'rejected' || (result.status === 'duplicate' && error)
+              ? { syncStatus: 'rejected', error, updatedAt }
+              : { syncStatus: 'applied', ...(result.register ? { result: result.register } : {}), updatedAt });
+          });
           attempts.delete(command.commandId);
           progressed = true;
           await updateState();

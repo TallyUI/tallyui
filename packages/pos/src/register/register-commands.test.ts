@@ -154,6 +154,32 @@ describe('register command ledger', () => {
     expect(rows.every((row) => /^[0-9a-f-]{14}7[0-9a-f-]{21}$/.test(row.commandId))).toBe(true);
   });
 
+  it('closed sessions are sequenced before the open session, whatever their ids', async () => {
+    await db.register_sessions.bulkInsert([
+      { ...session, id: 'a-open' },
+      { ...session, id: 'z-closed', status: 'closed', status_at: openedAt, closure_id: closure.id },
+      { ...session, id: 'y-awaiting-closure', status: 'closed', status_at: openedAt },
+    ]);
+    await db.closures.insert({ ...closure, session_id: 'z-closed' });
+    await reconcile();
+    const rows = await ledger();
+    expect(rows).toHaveLength(6);
+    expect(rows.filter((row) => row.payload.sessionId === 'z-closed').map((row) => row.key))
+      .toContain(`closure.submit:${closure.id}`);
+    const openSeq = rows.find((row) => row.key === 'session.open:a-open')!.seq;
+    for (const row of rows.filter((row) => row.payload.sessionId !== 'a-open')) expect(row.seq).toBeLessThan(openSeq);
+  });
+
+  it('an observed row with the current status, or a closed one, is not appended separately', async () => {
+    await db.register_sessions.insert({ ...session, status: 'counting', status_at: openedAt });
+    await db.cash_movements.insert(movement);
+    expect(await reconcile([
+      { ...session, status: 'counting', status_at: '2026-09-28T08:10:00.000Z' },
+      { ...session, status: 'closed', status_at: '2026-09-28T08:05:00.000Z' },
+    ])).toStrictEqual(['session.open:session', 'movement.record:movement', `session.transition:session:${openedAt}`]);
+    expect((await ledger()).map((row) => row.payload.status)).toStrictEqual([undefined, undefined, 'counting']);
+  });
+
   it('reconcile is idempotent: a second run appends nothing and keeps every seq and commandId', async () => {
     const s = await open();
     await record(s.id);

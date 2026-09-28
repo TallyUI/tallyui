@@ -69,9 +69,9 @@ export { registerSessionSchema, registerSessionCollection, cashMovementSchema, c
 export type { RegisterSession, CashMovement, Closure } from './register';
 export { registerCommandSchema, registerCommandCollection, registerCommandsLogger, sessionOpenCommand, sessionTransitionCommand, movementCommand, closureCommand, reconcileRegisterCommands } from './register';
 export type { RegisterCommand, RegisterCommandCollection } from './register';
-export { mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegisterId, readBoundRegister, bindRegister, unbindRegister, nextSaleCounter, mintClosureNumber, advancePerpetual } from './register';
+export { mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegisterId, readBoundRegister, bindRegister, unbindRegister, nextSaleCounter, mintClosureNumber, advancePerpetual, RegisterIdInvalidError } from './register';
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register';
-export { RegisterSessionRequiredError, RegisterSessionClosedError, RegisterMovementAmountError, RegisterMovementStrandedError, openSessionSelector, requireOpenSession, stampSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure } from './register';
+export { RegisterSessionRequiredError, RegisterSessionClosedError, RegisterMovementAmountError, RegisterMovementReasonError, RegisterMovementStrandedError, openSessionSelector, requireOpenSession, stampSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure } from './register';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';
 export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows } from './register';
 export type { Correction, RecordedFigures, ClosureScope } from './register';

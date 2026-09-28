@@ -122,7 +122,17 @@ export async function readBoundRegister(host: RegisterHost, storeKey: string) {
   return id ? { id, name: register?.stores[storeKey]?.register_name ?? '' } : null;
 }
 
+export class RegisterIdInvalidError extends Error {
+  constructor() {
+    super('register_id_invalid');
+    this.name = 'RegisterIdInvalidError';
+  }
+}
+
 export function bindRegister(host: RegisterHost, storeKey: string, register: { id: string | null; name: string | null }) {
+  if (typeof register.id === 'string' && (register.id.length === 0 || register.id.length > 64)) {
+    throw new RegisterIdInvalidError();
+  }
   return modifyStore(host, storeKey, (store) => ({
     ...(store ?? { sale_counter: 0 }),
     register_id: register.id,

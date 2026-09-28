@@ -7,7 +7,7 @@
 //     outbox-only and moves to registers job c.
 // Changed: the outbox's `sync_status` assertions are gone (no outbox on these collections), and
 // so is the gate's refusal of a `sync_status: 'failed'` session, which only the outbox sets.
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
@@ -24,6 +24,7 @@ import {
   openSession,
   recordMovement,
   RegisterMovementAmountError,
+  RegisterMovementReasonError,
   RegisterMovementStrandedError,
   RegisterSessionClosedError,
   RegisterSessionRequiredError,
@@ -78,6 +79,26 @@ it('opens pending and retains the pending transition through each local state', 
     counted: { cash: 10500 },
   });
 });
+it('recordMovement refuses a reason the server would refuse, before writing', async () => {
+  const session = await openSession(db.register_sessions, input);
+  const reads = vi.spyOn(db.register_sessions.storageInstance, 'findDocumentsById');
+  for (const reason of ['', '   ', 'x'.repeat(501)]) {
+    await expect(recordMovement(db.register_sessions, db.cash_movements, db.closures, {
+      sessionId: session.id, type: 'paid_out', amountMinor: 700, reason, actor: '7',
+    })).rejects.toThrow(RegisterMovementReasonError);
+    expect(await db.cash_movements.find().exec()).toHaveLength(0);
+  }
+  expect(reads).not.toHaveBeenCalled();
+  reads.mockRestore();
+  for (const reason of [' ok ', 'x'.repeat(500)]) {
+    const row = await recordMovement(db.register_sessions, db.cash_movements, db.closures, {
+      sessionId: session.id, type: 'paid_out', amountMinor: 700, reason, actor: '7',
+    });
+    expect(row.reason).toBe(reason);
+  }
+  expect(await db.cash_movements.find().exec()).toHaveLength(2);
+});
+
 it('void inserts a write-once reversal and marks its target', async () => {
   const session = await openSession(db.register_sessions, input);
   const row = await recordMovement(db.register_sessions, db.cash_movements, db.closures, {
