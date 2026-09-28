@@ -1,3 +1,4 @@
+import type { OrderCreateEnvelope } from '@tallyui/core';
 import type { RxCollection } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { outboxLogger } from './logger';
@@ -14,7 +15,7 @@ const NOT_REQUEUEABLE = new Set(['idempotency_mismatch']);
 
 export interface OrderOutboxOptions {
   collection: RxCollection<PosOrder>;
-  transport: CommandTransport;
+  transport: CommandTransport<OrderCreateEnvelope>;
   deviceId: string;
   getMaxOrderCreateVersion?: () => number | undefined | Promise<number | undefined>;
   refreshCapabilities?: () => Promise<void>;

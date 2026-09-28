@@ -7,6 +7,25 @@ function fetchReturning(body: unknown, status = 200) {
 }
 
 describe('readCapabilities', () => {
+  it('reads contracts.register into capabilities.register', async () => {
+    const fetch = fetchReturning({ contracts: { 'order.create': [1], register: [1] } });
+    await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toStrictEqual({ orderCreate: 1, register: 1 });
+  });
+
+  it('omits register when the contract is absent', async () => {
+    const fetch = fetchReturning({ contracts: { 'order.create': [1, 2] } });
+    await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toStrictEqual({ orderCreate: 2 });
+  });
+
+  it('reads the highest valid register version and omits an invalid list', async () => {
+    const fetch = fetchReturning({ contracts: { register: [0, '4', 1, 3, 2.5, -1, Number.MAX_SAFE_INTEGER + 1] } });
+    await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toStrictEqual({ orderCreate: 1, register: 3 });
+    for (const register of [[], [0, '1', -1, 1.5], null, 1]) {
+      await expect(readCapabilities('https://medusa.test', {}, { fetch: fetchReturning({ contracts: { register } }) }))
+        .resolves.toStrictEqual({ orderCreate: 1 });
+    }
+  });
+
   it('reads [1, 2, 3] as orderCreate 3', async () => {
     const fetch = fetchReturning({ contracts: { 'order.create': [1, 2, 3] } });
     await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toEqual({ orderCreate: 3 });

@@ -17,11 +17,13 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
+import type { ServerCapabilities } from '@tallyui/core';
 import type { PosOrder } from '../pos-order/types';
 import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval } from './register-count.helpers';
+import { reconcileRegisterCommands, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
 import * as store from './session-store';
@@ -79,6 +81,9 @@ export interface UseRegisterSessionOptions {
   movements: CashMovementCollection | null;
   /** `closures`; `null` while it opens. */
   closures: ClosureCollection | null;
+  /** `register_commands`, created with `registerCommandCollection()`; `null` while it opens. */
+  commands?: RegisterCommandCollection | null;
+  capabilities?: ServerCapabilities;
   /** `pos_orders`: a session's sales are those whose `sessionId` is its id. */
   orders: RxCollection<PosOrder> | null;
   /** The register document's host, for the closure number and perpetual totals (`writeClosure`); `null` while it opens. */
@@ -142,6 +147,22 @@ function ledgerRows(orders: readonly PosOrder[]): LedgerRow[] {
 
 export function useRegisterSession(options: UseRegisterSessionOptions) {
   const { sessions, movements, closures, orders, register, storeKey, registerId, enabled, actor, timezone, tenderInProgress, expectedCloseTime, labels } = options;
+  const { commands } = options;
+  const commandEnabled = (options.capabilities?.register ?? 0) >= 1;
+  const commandTarget = useMemo(() => enabled && commandEnabled && commands && sessions && movements && closures && register && registerId
+    ? { commands, sessions, movements, closures, host: register, storeKey, registerId } : null,
+  [enabled, commandEnabled, commands, sessions, movements, closures, register, storeKey, registerId]);
+  const reconcile = () => {
+    if (!commandTarget) return;
+    void reconcileRegisterCommands(commandTarget).catch((error: unknown) => {
+      try {
+        registerCommandsLogger.error('Register command reconcile failed', { context: { registerId: commandTarget.registerId, error: String(error) } });
+      } catch {
+        // A failing log sink must not affect a register action either.
+      }
+    });
+  };
+  useEffect(reconcile, [commandTarget]);
   const source = useMemo(() => {
     if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register) return null;
     return combineLatest([
@@ -312,18 +333,27 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           return await run;
         } finally {
           openingByRegister.delete(key);
+          reconcile();
         }
       },
       startCounting: async () => {
+        try {
         refuseDuringTender();
         const row = await store.startCounting(live().sessions, current().id);
         recordRegisterFact({ kind: 'counting-started', actor, sessionId: row.id, registerId: row.register_id });
         return row;
+        } finally {
+          reconcile();
+        }
       },
       backToSelling: async () => {
+        try {
         const row = await store.backToSelling(live().sessions, current().id);
         recordRegisterFact({ kind: 'counting-abandoned', actor, sessionId: row.id, registerId: row.register_id });
         return row;
+        } finally {
+          reconcile();
+        }
       },
       /**
        * `counted` maps each tender to its counted minor units. An interrupted close resumes with
@@ -397,9 +427,11 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         } finally {
           closingByRegister.delete(key);
           notifyClosing();
+          reconcile();
         }
       },
       recordMovement: async (input: { type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string }) => {
+        try {
         // `live()` first: missing collections or host refuse before `requireOpen` writes anything.
         const { sessions, movements, closures, registerId } = live();
         const sessionId = await requireOpen();
@@ -409,8 +441,12 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           movementId: row.id, movementType: row.type, amount: row.amountMinor,
         });
         return row;
+        } finally {
+          reconcile();
+        }
       },
       voidMovement: async (id: string) => {
+        try {
         const { sessions, movements, closures, registerId } = live();
         await requireOpen();
         const row = await store.voidMovement(sessions, movements, id, actor.id, closures);
@@ -419,6 +455,9 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           movementId: row.id, movementType: row.type, amount: row.amountMinor, voids: id,
         });
         return row;
+        } finally {
+          reconcile();
+        }
       },
     },
   };

@@ -1,3 +1,4 @@
+import type { OrderCreateEnvelope } from '@tallyui/core';
 import { useEffect, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
 import { outboxLogger } from './logger';
@@ -15,7 +16,7 @@ export interface UseOrderOutboxOptions {
   /** Opens the order store for `storeKey`; `close()` is called when the key or device id changes, or on unmount. */
   open(storeKey: string): Promise<{ orders: RxCollection<PosOrder>; close(): Promise<void> }>;
   /** Builds the command transport for `storeKey` (the app's HTTP transport and auth headers). Read once per open. */
-  transport(storeKey: string): CommandTransport;
+  transport(storeKey: string): CommandTransport<OrderCreateEnvelope>;
   /** The device id sent on every command (see `getDeviceId`). A change reopens. */
   deviceId: string;
   /** Presence is fixed when the store opens; calls use the latest function. Reopen to add or remove. */

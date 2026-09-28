@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { CommandEnvelope, CommandResult, OrderCreatePayload } from '@tallyui/core';
+import type { CommandEnvelope, CommandResult, OrderCreateEnvelope, OrderCreatePayload } from '@tallyui/core';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder, posOrderCollection, toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import { createOrderOutbox, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
@@ -54,7 +54,7 @@ function unsupported(input: Pick<PosOrder, 'commandId'>, max?: unknown): Command
 }
 
 function setup(overrides: Partial<OrderOutboxOptions> = {}) {
-  const send = vi.fn<CommandTransport['send']>().mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
+  const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>().mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
   const outbox = createOrderOutbox({ collection, transport: { send }, deviceId: 'device-1', random: () => 0.5, ...overrides });
   outboxes.push(outbox);
   const states: OutboxState[] = [];
@@ -657,7 +657,7 @@ describe('order outbox', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     await collection.insert(order(0));
     const { outbox, send } = setup();
-    let resolve!: (outcome: Awaited<ReturnType<CommandTransport['send']>>) => void;
+    let resolve!: (outcome: Awaited<ReturnType<CommandTransport<OrderCreateEnvelope>['send']>>) => void;
     send.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
     outbox.start();
     const running = outbox.flush();
@@ -992,7 +992,7 @@ describe('order outbox', () => {
     let reloads = 0;
     let restart = false;
     let current: OrderOutbox;
-    const transport: CommandTransport = { async send(batch) {
+    const transport: CommandTransport<OrderCreateEnvelope> = { async send(batch) {
       expect(++calls).toBeLessThanOrEqual(5000);
       for (const command of batch) {
         const doc = await collection.findOne(command.payload.clientOrderId).exec();

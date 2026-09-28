@@ -1,4 +1,4 @@
-import type { CommandEnvelope, OrderCreatePayload } from '@tallyui/core';
+import type { OrderCreateEnvelope } from '@tallyui/core';
 import type { PosOrder } from './types';
 
 export class UnsupportedOrderVersionError extends Error {
@@ -14,7 +14,7 @@ export class UnsupportedOrderVersionError extends Error {
  * ADR-065's figures make version 3; otherwise a discounted order is version 2 (ADR-062), else version 1, byte-identical.
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
-  options?: { maxVersion?: number }): CommandEnvelope<OrderCreatePayload> {
+  options?: { maxVersion?: number }): OrderCreateEnvelope {
   // The order's discount is the sum of its lines', so the payload's two always agree.
   const discountMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
   const contentVersion = order.display && order.taxByRate ? 3 : discountMinor > 0 ? 2 : 1;

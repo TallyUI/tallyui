@@ -50,6 +50,7 @@ import type { LogEntry } from '../logging';
 import { addPosOrderCollection } from '../pos-order/open';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
 import { registerFactsLogger } from './facts';
+import { registerCommandCollection, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
 import { readFresh } from '../rxdb';
 import { ensureRegister, readRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCollection } from './schemas';
@@ -59,6 +60,7 @@ import {
   openSession,
   recordMovement,
   RegisterSessionRequiredError,
+  RegisterMovementStrandedError,
   stampSession,
   startCounting,
   sweepOrphanStamps,
@@ -74,13 +76,17 @@ import { RegisterApprovalRequiredError, RegisterCloseIncompleteError, RegisterSe
 let db: RxDatabase<{
   register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection; closures: ClosureCollection;
   pos_orders: RxCollection<PosOrder>;
+  register_commands: RegisterCommandCollection;
 }>;
 const logs: LogEntry[] = [];
+const commandLogs: LogEntry[] = [];
+registerCommandsLogger.addSink({ id: 'commands-capture', levels: ['error'], write: (entry) => commandLogs.push(entry) });
 registerFactsLogger.addSink({ id: 'hook-capture', levels: ['debug', 'info', 'warn', 'error'], write: (e) => logs.push(e) });
 const actor = { id: '7', name: 'Pat' };
 
 beforeEach(async () => {
   logs.length = 0;
+  commandLogs.length = 0;
   const created: RxDatabase = await createRxDatabase({
     name: `hook${Math.random().toString(36).slice(2)}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
@@ -90,6 +96,7 @@ beforeEach(async () => {
     register_sessions: registerSessionCollection(),
     cash_movements: { schema: cashMovementSchema },
     closures: { schema: closureSchema },
+    register_commands: registerCommandCollection(),
   });
   await addPosOrderCollection(created);
   db = created as unknown as typeof db;
@@ -122,6 +129,105 @@ function seed(openedBy = '7', registerId = 'register') {
     registerId, expectedFloatMinor: 10000, countedFloatMinor: 10000, openedBy, businessDay: { year: 2026, month: 9, day: 16 },
   });
 }
+
+describe('register commands', () => {
+  const ledger = async () => (await readFresh(db.register_commands, { selector: {} })).sort((a, b) => a.seq - b.seq);
+  const keys = async () => (await ledger()).map((row) => row.key);
+
+  it.each([undefined, { orderCreate: 3 }, { orderCreate: 3, register: 0 }])(
+    'records no register command without the register capability', async (capabilities) => {
+      const read = vi.spyOn(db.register_commands.storageInstance, 'findDocumentsById');
+      const insert = vi.spyOn(db.register_commands, 'insert');
+      const { result } = render({ commands: db.register_commands, capabilities });
+      await act(() => result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 }));
+      await waitFor(() => expect(result.current.session?.status).toBe('open'));
+      await act(() => result.current.actions.recordMovement({ type: 'paid_out', amountMinor: 700, reason: 'Milk' }));
+      await act(() => result.current.actions.closeSession({ counted: { cash: 9300 } }));
+      expect(read).not.toHaveBeenCalled();
+      expect(insert).not.toHaveBeenCalled();
+      expect(await ledger()).toStrictEqual([]);
+    },
+  );
+
+  it('records every register fact as a command when the server has the register capability', async () => {
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 1 } });
+    let id = '';
+    await act(async () => { id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    const expected = [`session.open:${id}`];
+    await waitFor(async () => expect(await keys()).toStrictEqual(expected));
+    await waitFor(() => expect(result.current.session?.id).toBe(id));
+    let movementId = '';
+    await act(async () => {
+      movementId = (await result.current.actions.recordMovement({ type: 'paid_out', amountMinor: 700, reason: 'Milk' })).id;
+    });
+    expected.push(`movement.record:${movementId}`);
+    await waitFor(async () => expect(await keys()).toStrictEqual(expected));
+    await act(async () => { expected.push(`movement.void:${(await result.current.actions.voidMovement(movementId)).id}`); });
+    await waitFor(async () => expect(await keys()).toStrictEqual(expected));
+    await act(async () => {
+      const row = await result.current.actions.startCounting();
+      expected.push(`session.transition:${id}:${row.status_at}`);
+    });
+    await waitFor(async () => expect(await keys()).toStrictEqual(expected));
+    await waitFor(() => expect(result.current.session?.status).toBe('counting'));
+    await act(() => result.current.actions.closeSession({ counted: { cash: 9500 }, approvedBy: 'manager' }));
+    const [closed] = await db.register_sessions.storageInstance.findDocumentsById([id], false);
+    expected.push(`session.transition:${id}:${closed.status_at}`, `closure.submit:${id}`);
+    await waitFor(async () => expect(await keys()).toStrictEqual(expected));
+    const rows = await ledger();
+    expect(rows.at(-2)?.payload).toStrictEqual({ sessionId: id, status: 'closed', at: closed.status_at,
+      counted: { cash: 9500 }, closedBy: '7', approvedBy: 'manager' });
+    expect(rows.at(-1)?.payload.approvedBy).toBe('manager');
+  });
+
+  it('a failing reconcile never fails the register action', async () => {
+    vi.spyOn(db.register_commands, 'insert').mockRejectedValue(new Error('command disk failure'));
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 1 } });
+    await act(async () => {
+      await expect(result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 }))
+        .resolves.toMatchObject({ status: 'open', counted_float_minor: 10000, opening_variance_minor: 0 });
+    });
+    await waitFor(() => expect(commandLogs).toContainEqual(expect.objectContaining({
+      scope: 'register-commands', level: 'error', message: 'Register command reconcile failed',
+      data: { context: { registerId: 'register', error: 'Error: command disk failure' } },
+    })));
+    expect(await ledger()).toStrictEqual([]);
+    expect(await readFresh(db.register_sessions, { selector: { status: 'open' } })).toHaveLength(1);
+  });
+
+  it('a stranded movement still gets its command', async () => {
+    const s = await seed();
+    const result = await settled({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 1 } });
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${s.id}`]));
+    // The existing stranded-movement race: a real close between the insert and its re-read, with no Z yet.
+    const insert = db.cash_movements.insert.bind(db.cash_movements);
+    vi.spyOn(db.cash_movements, 'insert').mockImplementationOnce((async (doc: Parameters<typeof insert>[0]) => {
+      const row = await insert(doc);
+      await closeSession(db.register_sessions, s.id, { counted: { cash: 10000 }, closedBy: '7' });
+      return row;
+    }) as typeof insert);
+    await act(async () => {
+      await expect(result.current.actions.recordMovement({ type: 'paid_out', amountMinor: 700, reason: 'Milk' }))
+        .rejects.toBeInstanceOf(RegisterMovementStrandedError);
+    });
+    const [m] = await readFresh(db.cash_movements, { selector: { session_id: s.id } });
+    const [closed] = await db.register_sessions.storageInstance.findDocumentsById([s.id], false);
+    await waitFor(async () => expect(await keys()).toStrictEqual([
+      `session.open:${s.id}`, `movement.record:${m.id}`, `session.transition:${s.id}:${closed.status_at}`,
+    ]));
+  });
+
+  it('reconciles when the capability turns on or the commands collection becomes available', async () => {
+    const s = await seed();
+    const view = render({ commands: db.register_commands, capabilities: { orderCreate: 1 } });
+    await waitFor(() => expect(view.result.current.session?.id).toBe(s.id));
+    expect(await ledger()).toStrictEqual([]);
+    view.rerender(options({ commands: null, capabilities: { orderCreate: 1, register: 1 } }));
+    expect(await ledger()).toStrictEqual([]);
+    view.rerender(options({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 1 } }));
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${s.id}`]));
+  });
+});
 function movement(sessionId: string, type: 'paid_in' | 'paid_out' | 'no_sale', amountMinor: number, reason = 'Float top-up') {
   return recordMovement(db.register_sessions, db.cash_movements, db.closures, { sessionId, type, amountMinor, reason, actor: '7' });
 }

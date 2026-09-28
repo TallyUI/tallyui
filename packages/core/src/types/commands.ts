@@ -1,17 +1,21 @@
 /** Supported command operation. */
-export type CommandType = 'order.create';
+export type CommandType = 'order.create' | 'register.session.open' | 'register.session.transition'
+  | 'register.movement.record' | 'register.movement.void' | 'register.closure.submit';
 
 /** Client command with a stable idempotency key and typed payload. */
 export interface CommandEnvelope<P = unknown> {
   id: string; // UUIDv7, the idempotency key; never reused
   type: CommandType;
-  /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1. */
-  version: 1 | 2 | 3;
+  /** Each type versions independently; order.create is 3 with ADR-065's display and taxByRate, 2 when discounted, else 1. */
+  version: number;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
   attempt: number; // 1-based, informational
 }
+
+/** An order.create envelope: its version stays 1 | 2 | 3 (ADR-062, ADR-065). */
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -43,6 +47,42 @@ export interface CommandResult {
   serverRefs?: CommandServerRefs;
   warnings?: CommandWarning[];
   error?: CommandError;
+  register?: RegisterCommandResult;
+}
+
+/** A register command's server figures (registers c2b applies them). */
+export interface RegisterCommandResult {
+  /** The session's server state after this command. `expected` is absent when the server redacts it (blind). */
+  session?: { id: string; status: 'open' | 'counting' | 'closed'; expected?: Record<string, number>; salesCount?: number };
+  /** The register's counters: a floor for the till's own, never lowered. */
+  counters?: { lastClosureNumber: number; perpetualSalesTotalMinor: number; perpetualRefundsTotalMinor: number };
+  /** `register.closure.submit` only. */
+  closure?: { serverClosureId: string; number: number; expected?: Record<string, number>; variance?: Record<string, number> };
+}
+
+export interface RegisterSessionOpenPayload {
+  sessionId: string; registerId: string; storeKey?: string; businessDay?: string; openedAt: string; openedBy?: string;
+  expectedFloatMinor?: number; countedFloatMinor: number; openingVarianceMinor?: number;
+}
+export interface RegisterSessionTransitionPayload {
+  sessionId: string; status: 'open' | 'counting' | 'closed'; at: string;
+  /** Closing only. */ counted?: Record<string, number>; closedBy?: string; approvedBy?: string;
+}
+export interface RegisterMovementRecordPayload {
+  movementId: string; sessionId: string; type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string;
+  createdAt: string; createdBy?: string;
+}
+export interface RegisterMovementVoidPayload {
+  movementId: string; sessionId: string; voids: string; createdAt: string; createdBy?: string;
+}
+export interface RegisterClosureSubmitPayload {
+  closureId: string; sessionId: string; registerId: string; number: number; businessDay?: string;
+  openedAt: string; closedAt: string; closedBy?: string; approvedBy?: string;
+  tillExpected: Record<string, number>; counted: Record<string, number>;
+  periodSalesTotalMinor: number; periodRefundsTotalMinor: number;
+  perpetualSalesTotalMinor: number; perpetualRefundsTotalMinor: number;
+  unsyncedCount: number; unsyncedTotalMinor: number; softwareVersion: string;
+  orderIds: string[]; movementIds: string[];
 }
 
 /** Order line with client identity and price in minor units. */

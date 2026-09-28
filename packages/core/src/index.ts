@@ -34,9 +34,11 @@ export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-setti
 export type {
   CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
-  PaymentMethodKind, OrderCreatePayment, OrderCreatePayload,
+  PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
   CommandBatchRequest, CommandBatchResponse,
+  RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionTransitionPayload,
+  RegisterMovementRecordPayload, RegisterMovementVoidPayload, RegisterClosureSubmitPayload,
 } from './types';
 
 export {

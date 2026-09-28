@@ -3,6 +3,7 @@ import type {
   CommandEnvelope,
   CommandResult,
   CommandWarning,
+  OrderCreateEnvelope,
   OrderCreatePayload,
   OrderCreatePayment,
 } from '@tallyui/core';
@@ -25,7 +26,8 @@ describe('command types', () => {
   });
 
   it('pins the envelope versions: 2 for a discounted order.create (ADR-062), 3 for one carrying ADR-065\'s figures', () => {
-    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<1 | 2 | 3>();
+    expectTypeOf<OrderCreateEnvelope['version']>().toEqualTypeOf<1 | 2 | 3>();
+    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<number>();
     expectTypeOf<OrderCreatePayload['discountMinor']>().toEqualTypeOf<number | undefined>();
     expectTypeOf<OrderCreatePayload['sessionId']>().toEqualTypeOf<string | undefined>();
   });

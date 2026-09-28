@@ -38,6 +38,8 @@ export interface SignInResult {
 /** The highest `order.create` contract version a store's server currently accepts (ADR-062). */
 export interface ServerCapabilities {
   orderCreate: number;
+  /** The highest `register` contract version; absent or 0 means no register sync. */
+  register?: number;
 }
 
 /**
