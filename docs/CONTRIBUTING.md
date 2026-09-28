@@ -7,6 +7,13 @@ The `rxdb-premium` package's install script downloads and decrypts the
 licensed plugins, so `pnpm install` needs a licence token. Without one, the
 install fails.
 
+**Never publish the decrypted plugins.** This repo is public, and its Actions
+caches and artifacts can be read from fork PRs. So:
+- CI never caches the pnpm store or `node_modules`;
+- `sideEffectsCache` stays `false` in `pnpm-workspace.yaml`, and CI checks it;
+- CI uploads no build output, trace or HTML report that could contain the
+  worker bundle.
+
 1. Put the token in your environment before installing. The installer reads
    the `RXDB_PREMIUM` environment variable:
 

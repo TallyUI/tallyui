@@ -4,6 +4,10 @@ packages:
   - "connectors/*"
 minimumReleaseAge: 1440
 blockExoticSubdeps: true
+# Never keep post-install builds in the store: rxdb-premium's postinstall decrypts licensed
+# code, and a cached store (CI caches of this public repo are readable by fork PRs) would
+# carry it. CI checks this stays false.
+sideEffectsCache: false
 minimumReleaseAgeIgnoreMissingTime: true
 # Build-script allowlist moved from package.json for pnpm 11.
 allowBuilds:

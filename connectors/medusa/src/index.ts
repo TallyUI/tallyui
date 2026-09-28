@@ -160,3 +160,5 @@ export { medusaStoreSettings } from './store-settings';
 export { withCalculatedPrices } from './pricing/calculated';
 export { MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS } from './reconcile/calculated-prices';
 export type { MedusaCalculatedPrice, MedusaProductDocument, MedusaVariantDocument } from './schemas/products';
+
+export { ConnectorUnauthorizedError } from '@tallyui/core';
