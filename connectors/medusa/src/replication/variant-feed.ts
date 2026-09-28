@@ -1,3 +1,4 @@
+import { ConnectorUnauthorizedError } from '@tallyui/core';
 import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
 import { fetchByIds } from '../reconcile/ids';
 import { MEDUSA_PRODUCT_FIELDS, toDocument, type MedusaProductCheckpoint } from './products';
@@ -16,6 +17,7 @@ async function get(path: string, context: SyncContext) {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
+    if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status);
     throw new Error(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`);
   }
   return response.json();

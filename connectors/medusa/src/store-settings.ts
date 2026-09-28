@@ -1,4 +1,4 @@
-import { StoreSettingsError } from '@tallyui/core';
+import { ConnectorUnauthorizedError, StoreSettingsError } from '@tallyui/core';
 import type { StoreSettings, StoreSettingsChoice, SyncContext } from '@tallyui/core';
 
 type Store = { id: string; default_region_id: string | null };
@@ -10,7 +10,7 @@ type ApiKey = { id: string; title: string; token: string; revoked_at: string | n
 type TaxRate = { rate: number | null; is_default: boolean; rules?: unknown[] };
 type TaxRegion = { country_code: string; province_code: string | null; tax_rates?: TaxRate[] };
 
-/** A non-OK response becomes `StoreSettingsError('failed')`, carrying the HTTP status and Medusa's own `message`. */
+/** Except for 401/403 (`ConnectorUnauthorizedError`), a non-OK response becomes `StoreSettingsError('failed')`, carrying the HTTP status and Medusa's own `message`. */
 async function get(context: SyncContext, path: string): Promise<any> {
   const response = await fetch(`${context.baseUrl}${path}`, {
     headers: { ...context.headers, 'Content-Type': 'application/json' },
@@ -18,6 +18,7 @@ async function get(context: SyncContext, path: string): Promise<any> {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa store settings request failed (HTTP ${response.status})${body?.message ? `: ${body.message}` : ''}`, response.status);
     throw new StoreSettingsError('failed', `Medusa store settings request failed (HTTP ${response.status})${body?.message ? `: ${body.message}` : ''}`);
   }
   return response.json();
