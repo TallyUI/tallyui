@@ -2881,10 +2881,13 @@ interface OrderCreatePayload {
        and is never backfilled unless its open command is already in the ledger. Every other session is, whether it is still
        open or closed later, even if its open command was never recorded.
      - **Transitions are captured when they happen:** each register action
-       hands the row it wrote to the queued reconcile, so every transition
-       it made is appended, even if a later transition has overwritten the
-       row by the time the reconcile runs. If that append fails, the next
-       reconcile sees only the current state; decision 5a makes that safe.
+       hands the row it wrote to the queued reconcile.
+       - A captured transition is appended when the ledger holds no
+         transition for that session yet, even if a later transition has
+         overwritten the row by the time the reconcile runs.
+       - Otherwise the session's current state supersedes it.
+       - Either way the current state is appended last, and a missing
+         intermediate state is safe (decision 5a).
      - A session whose `closure.submit` command is recorded is complete,
        and the reconcile skips it.
      - **The ledger is never pruned.** An applied command stays as the
@@ -2907,14 +2910,17 @@ interface OrderCreatePayload {
        `seq` order. `seq` itself isn't on the wire, and the server doesn't
        need it. Replay safety by command id makes a redelivery a no-op.
      - `at` is a fact carried in the payload, never an ordering key.
-     - That gives the dependencies for free: open before a transition,
-       movements before counting, a void after its target, and the closure
-       last.
+     - That gives the dependencies for free: the open before a transition,
+       a void after its target, the closing transition after every
+       movement, and the closure last. A movement may follow a counting
+       transition, since movements are accepted on any non-closed session.
      - **The till keeps its `seq` order true to the facts:**
-       - the till never appends a superseded state, and a session's
-         current state is always appended last among its transitions;
+       - it never appends a captured state that a transition already in the
+         ledger supersedes, and a session's current state is always
+         appended last among its transitions;
        - nothing in the till's sequencing compares a clock;
-       - sessions go by closure number, then the open session;
+       - sessions go by closure number, then any closed session without a
+         closure row yet (by id), then the open session;
        - within a session: its open, then any captured transitions not yet
          superseded, then its movements with voids after their targets,
          then the current state, then the closure.
