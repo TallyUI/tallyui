@@ -1,5 +1,17 @@
 # @tallyui/components
 
+## 2.1.0
+
+### Patch Changes
+
+- [#186](https://github.com/TallyUI/tallyui/pull/186) [`d225c58`](https://github.com/TallyUI/tallyui/commit/d225c5819954f7c3e91e0c9180cb634530304061) Thanks [@kilbot](https://github.com/kilbot)! - Internal `@tallyui/*` peer dependencies are published as a caret range (for example `^2.1.0`) instead of an exact version. The packages still release together at one version.
+
+- Updated dependencies [[`901fa66`](https://github.com/TallyUI/tallyui/commit/901fa666f4ab345bf07b2d6b38c6e5dc58596f39), [`ca0beac`](https://github.com/TallyUI/tallyui/commit/ca0beacdafb14f3b5cae7c7593de23ed82b0d2d5), [`d225c58`](https://github.com/TallyUI/tallyui/commit/d225c5819954f7c3e91e0c9180cb634530304061), [`4122dc8`](https://github.com/TallyUI/tallyui/commit/4122dc8e1bbe97a62af35c93fed9d72a1067705f)]:
+  - @tallyui/core@2.1.0
+  - @tallyui/pos@2.1.0
+  - @tallyui/primitives@2.1.0
+  - @tallyui/theme@2.1.0
+
 ## 2.0.0
 
 ### Major Changes

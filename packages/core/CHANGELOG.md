@@ -1,5 +1,17 @@
 # @tallyui/core
 
+## 2.1.0
+
+### Minor Changes
+
+- [#179](https://github.com/TallyUI/tallyui/pull/179) [`901fa66`](https://github.com/TallyUI/tallyui/commit/901fa666f4ab345bf07b2d6b38c6e5dc58596f39) Thanks [@kilbot](https://github.com/kilbot)! - Add `order.create` envelope version 3, its display and tax-rate wire types, and the payload's `sessionId` and customer reference.
+
+  At capability 3, `finalizeOrder` copies the receipt's `display` and `taxByRate` into the sale. Version 3 sends those figures and the sale's session (stamped or late) as `sessionId`. Older orders keep their existing envelope version.
+
+  Move `pos_orders` to schema version 3 with a `sessionId` index and the optional `sentVersion` and `downgradedFrom` fields (declared for the outbox's version fallback, not yet written). Apps must open `pos_orders` with `addPosOrderCollection`, which migrates it.
+
+- [#182](https://github.com/TallyUI/tallyui/pull/182) [`ca0beac`](https://github.com/TallyUI/tallyui/commit/ca0beacdafb14f3b5cae7c7593de23ed82b0d2d5) Thanks [@kilbot](https://github.com/kilbot)! - Fall back to the server's supported order.create version while preserving stored fiscal figures and command IDs. Record the sent version and downgrade in the order audit, and expose command error details.
+
 ## 2.0.0
 
 ### Minor Changes
