@@ -132,6 +132,11 @@ export {
   type RegisterPanelProps,
   RegisterColumn,
   type RegisterColumnProps,
+  RegisterCount,
+  APPROVAL_REQUIRED_TEXT,
+  type RegisterCountProps,
+  ClosureSheet,
+  type ClosureSheetProps,
 } from './register';
 
 // Settings components

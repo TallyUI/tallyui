@@ -15,8 +15,8 @@ const format = (n: number) => `£${n.toFixed(2)}`;
 
 // Fixtures are minor units at exponent 2 (GBP-style): '463.30' becomes 46330.
 it.each([
-  [46330, '−£17.50 register.short'],
-  [48380, '+£3.00 register.over'],
+  [46330, '£17.50 register.short'],
+  [48380, '£3.00 register.over'],
   [48080, 'register.exact'],
 ])('formats %s', (countedMinor, text) => {
   expect(varianceText(countVariance(countedMinor, 48080), 2, format, t)).toBe(text);
