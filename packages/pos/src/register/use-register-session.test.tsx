@@ -346,6 +346,18 @@ describe('the session', () => {
     await expect(render({ enabled: false }).result.current.requireOpen()).resolves.toBeNull();
   });
 
+  it('requireSaleSession returns the open session\'s id and collection, like requireOpen', async () => {
+    const { result } = render();
+    await expect(result.current.requireSaleSession()).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+    const session = await seed();
+    await session.incrementalPatch({ server_expected: { cash: 10000 }, server_sales_count: 2 });
+    await expect(result.current.requireSaleSession()).resolves.toEqual({ id: session.id, sessions: db.register_sessions });
+    // The server anchor is cleared, as requireOpen clears it (checked before requireOpen runs).
+    expect((await db.register_sessions.findOne(session.id).exec())!.toJSON()).toMatchObject({ server_expected: null, server_sales_count: null });
+    await expect(result.current.requireOpen()).resolves.toBe(session.id);
+    await expect(render({ enabled: false }).result.current.requireSaleSession()).resolves.toBeNull();
+  });
+
   it('is off with enabled false', async () => {
     await seed();
     const { result } = render({ enabled: false });
