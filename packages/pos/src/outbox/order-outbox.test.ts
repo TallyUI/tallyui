@@ -48,7 +48,7 @@ function v3Order(i = 0, discounted = true): PosOrder {
     registerId: 'register_golden', cashierRef: 'cashier_golden' }), sessionId: '019f6d2e-7800-7000-8000-000000000003' };
 }
 
-function unsupported(input: PosOrder, max?: unknown): CommandResult {
+function unsupported(input: Pick<PosOrder, 'commandId'>, max?: unknown): CommandResult {
   return { id: input.commandId, status: 'rejected', error: { code: 'unsupported_version',
     message: 'order.create version is not supported', ...(max !== undefined ? { data: { orderCreate: max } } : {}) } };
 }
