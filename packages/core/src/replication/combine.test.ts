@@ -15,6 +15,16 @@ const fake = (result: { documents?: Doc[]; checkpoint?: any } | (() => Promise<a
 };
 
 describe('combinePullAdapters', () => {
+  it('carries options.batchSize as pull.batchSize', () => {
+    const { adapter: a } = fake({});
+    expect(combinePullAdapters({ a }, { batchSize: 500 }).pull.batchSize).toBe(500);
+  });
+
+  it('leaves pull.batchSize undefined without the option', () => {
+    const { adapter: a } = fake({});
+    expect(combinePullAdapters({ a }).pull.batchSize).toBeUndefined();
+  });
+
   it('passes each sub-adapter only its own checkpoint', async () => {
     const a = fake({ checkpoint: { skip: 1 } });
     const b = fake({ checkpoint: { skip: 2 } });

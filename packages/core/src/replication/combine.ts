@@ -12,11 +12,13 @@ import type { ReplicationAdapter } from '../types';
  * checkpoint with none of the keys becomes that key's checkpoint. With no stored
  * checkpoint at all, each sub-adapter with `pull.seedCheckpoint` starts from its seed.
  *
+ * `options.batchSize` sets the combined pull page size; sub-adapters' own
+ * `pull.batchSize` is ignored.
  * Pull only: a sub-adapter with `push` or `pull.stream$` throws here.
  */
 export function combinePullAdapters<Doc>(
   adapters: Record<string, ReplicationAdapter<Doc, any>>,
-  options: { legacyKey?: string } = {},
+  options: { legacyKey?: string; batchSize?: number } = {},
 ): ReplicationAdapter<Doc, Record<string, any>> {
   const keys = Object.keys(adapters);
   for (const key of keys) {
@@ -26,6 +28,7 @@ export function combinePullAdapters<Doc>(
   }
   return {
     pull: {
+      batchSize: options.batchSize,
       async handler(lastCheckpoint, batchSize, context) {
         let previous = lastCheckpoint;
         if (options.legacyKey && previous && typeof previous === 'object'
