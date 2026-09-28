@@ -34,8 +34,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
    * missing) never stops the sale: it goes on to `onSaleCompleted` and the receipt with
    * `lateSessionId` instead of `sessionId`, and a `late-sale` register fact is recorded (ADR-032).
    * The session stamped is the one in force when the tender started (`startTender`), pinned for that
-   * tender: this option going undefined mid-tender (the session closed) doesn't skip the stamp, and
-   * a session appearing mid-tender isn't stamped.
+   * tender: this option going undefined mid-tender (the session closed) doesn't skip the stamp. A
+   * tender that pinned none, with a session here at `complete()`, stamps it and logs a warning.
    */
   session?: { id: string; sessions: RegisterSessionCollection };
   onSaleCompleted?: (posOrder: PosOrder) => Promise<void> | void;
@@ -217,11 +217,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       return null;
     },
     removeDiscount(id: string) { if (!locked()) builder.removeDiscount(id); },
-    startTender(method: 'cash' | 'external') {
+    /**
+     * Pins `options.session` for this tender when given, else the rendered `session` option. Pass the
+     * session `useRegisterSession`'s `requireSaleSession()` returned: the rendered one can lag a session
+     * opened just before (#170 race). A repeat call mid-tender keeps the first pin.
+     */
+    startTender(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
       if (locked()) return;
       const current = builder.getSnapshot();
       if (!current.lineItems.length) return;
-      tenderSession.current ??= { session: opts.session }; // a repeat call mid-tender keeps the pin
+      tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
       setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
       setStage({ kind: 'tender', method });
     },
@@ -259,8 +264,17 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
         setError((error as Error).message);
         return;
       }
-      // The tender's pinned session; opts.session only for a complete() with no startTender (setTender from the cart).
-      const session = tenderSession.current ? tenderSession.current.session : opts.session;
+      // The tender's pinned session; opts.session only for a complete() with no startTender (setTender from the cart),
+      // or when the tender pinned none but a session has rendered since (the backstop, warned: see startTender).
+      const session = tenderSession.current?.session ?? opts.session;
+      if (tenderSession.current && !tenderSession.current.session && session) {
+        try {
+          saleLogger.warn('the tender started before its session rendered; pass the confirmed session to startTender',
+            { orderId: posOrder.id, sessionId: session.id });
+        } catch {
+          // A failing sink must never lose the sale.
+        }
+      }
       if (session) {
         try {
           posOrder = await stampSession(posOrder, session.id, session.sessions);
