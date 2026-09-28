@@ -32,7 +32,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@tallyui/core": "workspace:*",
+    "@tallyui/core": "workspace:^",
     "react": ">=18",
     "rxdb": ">=16",
     "rxjs": ">=7"

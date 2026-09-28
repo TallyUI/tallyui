@@ -34,6 +34,23 @@ Every PR that changes a published package adds a changeset
 next version PR consumes them. While any are pending, the Release workflow
 does nothing.
 
+### Internal peer ranges are `workspace:^`, never `workspace:*`
+
+A `@tallyui/*` package's peer dependency on another one is written
+`workspace:^`, and published as a caret range (`^2.1.0`).
+
+- **Why:** changesets reads a `workspace:*` peer as the exact current version,
+  and bumps a dependent major when its peer leaves that range. So with
+  `workspace:*`, a minor changeset on `@tallyui/core` turns every
+  peer-dependent into a major, and the fixed group lifts all the packages
+  to the next major. That's what happened with the first 2.1.0 version run,
+  which came out as 3.0.0.
+- **The config that goes with it:** `.changeset/config.json` sets
+  `onlyUpdatePeerDependentsWhenOutOfRange`, so a peer-dependent goes major
+  only when its peer really leaves the range.
+- **Check:** before opening a version PR, `pnpm changeset status --verbose`
+  must show no major unless a changeset asks for one.
+
 ## Worker procedure: open the version PR
 
 Run these from a worktree on a fresh branch off `main`:
