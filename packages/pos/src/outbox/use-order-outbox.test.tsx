@@ -446,6 +446,36 @@ describe('useOrderOutbox options', () => {
       await act(async () => { release(); await Promise.all([first, second]); });
       expect(outbox.savesInFlight).toBe(0);
     });
+
+    // record() increments savesInFlight before checking readiness (the increment is above the not-ready
+    // throw), so even this early throw is counted, and the shared `finally` still settles it: it is
+    // counted and settled, never left stuck above 0 (and, since every increment is paired with that same
+    // finally's decrement, it can't go negative either).
+    it('a not-ready throw counts and settles: savesInFlight returns to 0 each time, never staying above 0', async () => {
+      renderOptions({ storeKey: null, deviceId: 'register-1', open: openStore, transport: fakeTransport(appliedResults) });
+      expect(outbox.savesInFlight).toBe(0);
+      for (let i = 0; i < 3; i++) {
+        await act(async () => { await expect(outbox.record(sale())).rejects.toThrow('Orders are not ready'); });
+        expect(outbox.savesInFlight).toBe(0);
+      }
+    });
+
+    it('the count survives a store-key change: stays at 1 until the in-flight record settles, then returns to 0', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const options = { storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(appliedResults) };
+      const view = renderOptions(options);
+      await waitFor(() => expect(outbox.orders).not.toBeNull());
+      gateInsert(outbox.orders!, gate);
+      let recording!: Promise<void>;
+      act(() => { recording = outbox.record(sale()); });
+      await waitFor(() => expect(outbox.savesInFlight).toBe(1));
+      view.rerender({ ...options, storeKey: `${session.baseUrl}/other` });
+      // Not reset by the key change: the record is still in flight on the old store.
+      expect(outbox.savesInFlight).toBe(1);
+      await act(async () => { release(); await recording.catch(() => {}); });
+      expect(outbox.savesInFlight).toBe(0);
+    });
   });
 
   it('throws the opening error from record and reports it to onOpenError', async () => {
