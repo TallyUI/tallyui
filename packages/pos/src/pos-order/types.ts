@@ -53,6 +53,10 @@ export interface PosOrder {
    * counts it. Sent at `order.create` version 3 as the payload's `sessionId` (the stamped or late session, one field).
    */
   lateSessionId?: string;
+  /** The `order.create` version the outbox sends this order at, set only after a server refused a higher one (`unsupported_version`); absent means the content decides (ADR-065). The order's own figures are never changed. */
+  sentVersion?: 1 | 2 | 3;
+  /** The version first tried, before the downgrade (the order's audit). */
+  downgradedFrom?: 1 | 2 | 3;
   /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. */
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */

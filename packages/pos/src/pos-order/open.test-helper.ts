@@ -19,6 +19,7 @@ export function versionTwo(): RxJsonSchema<PosOrder> {
   const schema = structuredClone(posOrderSchema);
   schema.indexes = schema.indexes!.filter((index) => index !== 'sessionId');
   delete schema.properties.sessionId.maxLength;
+  for (const key of ['sentVersion', 'downgradedFrom']) delete (schema.properties as Record<string, unknown>)[key];
   return { ...schema, version: 2 };
 }
 

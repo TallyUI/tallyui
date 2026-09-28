@@ -8,7 +8,7 @@ import type { PosOrder } from './types';
  * sale), and ADR-065's `display` and `taxByRate`, declared ahead of the job that writes them so a
  * till migrates once. Create the collection with `posOrderCollection()`, never with this schema
  * alone: RxDB refuses a version above 0 without its migration strategies.
- * Version 3 adds an index on `sessionId` (with its `maxLength`) and changes nothing else.
+ * Version 3 adds an index on `sessionId` (with its `maxLength`), and the optional `sentVersion` and `downgradedFrom` (the outbox's version fallback), and changes nothing else.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
   version: 3, primaryKey: 'id', type: 'object', additionalProperties: false,
@@ -51,6 +51,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     } },
     error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'] },
     lateSessionId: { type: 'string' },
+    sentVersion: { type: 'integer', minimum: 1, maximum: 3 },
+    downgradedFrom: { type: 'integer', minimum: 1, maximum: 3 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
     display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },

@@ -67,6 +67,24 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   }
 });
 
+it('stores sentVersion and downgradedFrom, and refuses values outside 1–3', async () => {
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const order = { ...finalizeOrder(builder.getSnapshot()), sentVersion: 2 as const, downgradedFrom: 3 as const };
+    await pos_orders.insert(order);
+    expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 4 })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 0 })).rejects.toThrow();
+  } finally {
+    await db.remove();
+  }
+});
+
 it('finds orders by sessionId through its index, and never returns an unstamped order', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
