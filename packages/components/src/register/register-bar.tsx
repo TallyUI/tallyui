@@ -43,7 +43,7 @@ export function RegisterBar({
   onPressPill,
   className,
 }: RegisterBarProps) {
-  const { session, overdue, enabled, lastClosure } = register;
+  const { session, overdue, enabled, lastClosure, closing } = register;
   const pill = describeRegisterBarPill({
     registerId,
     online,
@@ -51,6 +51,7 @@ export function RegisterBar({
     overdue,
     approvalRequired: session?.approval_required,
     sessionsOn: enabled,
+    closing,
   });
   return (
     <HStack testID="register-bar" className={cn('bg-card border-border h-12 border-b px-3', className)}>

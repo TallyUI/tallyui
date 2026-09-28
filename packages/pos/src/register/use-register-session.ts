@@ -14,7 +14,7 @@
  * - `unsyncedCount` and the `sync_status` filters: nothing is sent (c2).
  * - The binding (`useRegisterBinding`) and `blind` from WooCommerce capabilities: app inputs.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { PosOrder } from '../pos-order/types';
@@ -61,6 +61,14 @@ export class RegisterApprovalRequiredError extends Error {
 
 // Module-wide, so two hook instances for one register can't both open (keyed by `registerId`).
 const openingByRegister = new Map<string, Promise<unknown>>();
+// The close in flight per register, which a second close joins; its listeners re-render `closing`.
+const closingByRegister = new Map<string, ReturnType<typeof store.writeClosure>>();
+const closingListeners = new Set<() => void>();
+const notifyClosing = () => closingListeners.forEach((listener) => listener());
+const subscribeClosing = (listener: () => void) => {
+  closingListeners.add(listener);
+  return () => { closingListeners.delete(listener); };
+};
 // Closures whose `session-closed` fact is logged, so a double-tapped close logs it once.
 const closedFacts = new Set<string>();
 
@@ -152,6 +160,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   // A latest-value ref: an `actions` object from an earlier render still sees the current flag.
   const tender = useRef(tenderInProgress);
   tender.current = tenderInProgress;
+  const closing = useSyncExternalStore(subscribeClosing, () => closingByRegister.has(registerId ?? ''));
   const [observed, setObserved] = useState<{ source: typeof source; snapshot: Snapshot } | null>(null);
   useEffect(() => {
     if (!source) return;
@@ -252,6 +261,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     expected,
     salesCount: sales.length,
     overdue,
+    /** A `closeSession` for this register is in flight, in any hook instance: the session can already be stored `closed` while its closure isn't written yet. */
+    closing,
     lastClosure: [...(data?.closureRows ?? [])].sort((a, b) => b.closed_at.localeCompare(a.closed_at))[0] ?? null,
     lastClosed: (data?.rows ?? []).filter((row) => row.status === 'closed')
       .sort((a, b) => (b.closed_at_gmt ?? '').localeCompare(a.closed_at_gmt ?? ''))[0] ?? null,
@@ -321,9 +332,14 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
        * `approvedBy` throws `RegisterApprovalRequiredError` before any write, blind or not; a
        * resumed close (the stored session already closed) isn't gated again. `approvedBy` reaches the Z
        * (`breakdowns.approved_by`), and `approvedByName` its `approved_by_name`.
+       * One close per register runs at a time, in any hook instance: a call while one is in flight joins
+       * it, getting its closure or error, and its own `counted`, `approvedBy` and `approvedByName` are ignored.
        */
       closeSession: async (input: { counted: Record<string, number>; approvedBy?: string; approvedByName?: string }) => {
         refuseDuringTender();
+        const key = registerId ?? '';
+        if (closingByRegister.has(key)) return closingByRegister.get(key)!;
+        const run = (async () => {
         const { sessions, movements, closures, orders, register } = live();
         const open = current();
         // The gate reads the stored session and the Z's own inputs past the query cache, not this
@@ -373,6 +389,15 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           });
         }
         return closure;
+        })();
+        closingByRegister.set(key, run); // Before this call's first await, so a second call sees it.
+        notifyClosing();
+        try {
+          return await run;
+        } finally {
+          closingByRegister.delete(key);
+          notifyClosing();
+        }
       },
       recordMovement: async (input: { type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string }) => {
         // `live()` first: missing collections or host refuse before `requireOpen` writes anything.

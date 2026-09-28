@@ -696,6 +696,81 @@ it('logs a double-tapped close once', async () => {
   expect(logs.filter((entry) => entry.message === 'Register session closed')).toHaveLength(1);
 });
 
+// TallyUI (close-in-flight): `closeSession` stores the session closed before its closure lands,
+// so a second close (a tap on the Finish-closing card, say) joins the one in flight.
+describe('one close in flight per register', () => {
+  /** Holds every closure insert until `release()`, counting them. */
+  function holdInserts() {
+    const insert = db.closures.insert.bind(db.closures);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const spy = vi.spyOn(db.closures, 'insert').mockImplementation((async (row: Parameters<typeof insert>[0]) => {
+      await gate;
+      return insert(row);
+    }) as typeof insert);
+    return { spy, release };
+  }
+  const closureNumber = async () => (await readRegister(db.register_sessions))?.stores.store?.registers?.register?.last_closure_number ?? 0;
+
+  it.each(['one hook', 'two hook instances'])('two overlapping closes of one register make one closure with one number (%s)', async (mode) => {
+    await seed();
+    const one = await settled();
+    const two = mode === 'one hook' ? one : await settled();
+    const before = await closureNumber();
+    const { spy, release } = holdInserts();
+    const first = one.current.actions.closeSession({ counted: { cash: 10000 } });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    // Not awaiting the first: the joining call's count is ignored.
+    const second = two.current.actions.closeSession({ counted: { cash: 12345 } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+    let closed!: Awaited<typeof first>[];
+    await act(async () => {
+      closed = await Promise.all([first, second]);
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(closed[1].id).toBe(closed[0].id);
+    expect(closed[1].number).toBe(closed[0].number);
+    expect(closed[0].counted).toEqual({ cash: 10000 });
+    expect(await db.closures.find().exec()).toHaveLength(1);
+    expect(await closureNumber()).toBe(before + 1);
+    expect(logs.filter((entry) => entry.message === 'Register session closed')).toHaveLength(1);
+  });
+
+  it('closing is true while a close is in flight, and false after', async () => {
+    await seed();
+    const result = await settled();
+    const other = render();
+    const elsewhere = render({ registerId: 'elsewhere' });
+    expect(result.current.closing).toBe(false);
+    const { spy, release } = holdInserts();
+    const close = result.current.actions.closeSession({ counted: { cash: 10000 } });
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    // The session is already stored closed, its closure held: the state the card used to flash in.
+    await waitFor(() => expect(result.current.session?.status).toBe('closed'));
+    expect(result.current.closing).toBe(true);
+    expect(other.result.current.closing).toBe(true);
+    expect(elsewhere.result.current.closing).toBe(false);
+    release();
+    await act(() => close);
+    expect(result.current.closing).toBe(false);
+    expect(other.result.current.closing).toBe(false);
+  });
+
+  it('a failed close leaves closing false, so the Finish-closing card can show', async () => {
+    const session = await seed();
+    const result = await settled();
+    vi.spyOn(db.closures, 'insert').mockRejectedValueOnce(new Error('killed'));
+    await act(async () => {
+      await expect(result.current.actions.closeSession({ counted: { cash: 10000 } })).rejects.toThrow('killed');
+    });
+    await waitFor(() => expect(result.current.session?.status).toBe('closed'));
+    expect(result.current.session?.id).toBe(session.id);
+    expect(result.current.closing).toBe(false);
+    expect(await db.closures.find().exec()).toEqual([]);
+  });
+});
+
 it('writes the closure once, and a repeated close returns the same closure', async () => {
   const session = await seed('8');
   await sale('sale-1', session.id, [{ method: 'cash', amountMinor: 1500 }, { method: 'external', amountMinor: 500 }]);
