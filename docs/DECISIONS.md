@@ -2915,6 +2915,10 @@ interface OrderCreatePayload {
       this status, as of `at`".
       - A transition to the status the session already has is applied as a
         no-op.
+      - A transition whose `at` is older than the session's current status
+        time on the server is also an applied no-op. The till can send a
+        transition it captured at action time after a newer one, when the
+        reconcile lags, and this keeps the newer state.
       - Intermediate states may be missing: the till can send open, then
         closed, without the counting in between.
       - The closing transition is terminal, and carries `counted`.
@@ -2958,6 +2962,17 @@ interface OrderCreatePayload {
         expected cash from its own ledger.
       - `approvedBy` is `breakdowns.approved_by` when that is a non-empty
         string.
+      - **Movement amounts:** `amountMinor` is always positive, and `type`
+        gives the direction. `paid_in` and `paid_out` carry an integer
+        greater than 0, and `no_sale` carries exactly 0. The server refuses
+        anything else as `invalid_payload`. The till's `recordMovement`
+        refuses the same amounts before any write
+        (`RegisterMovementAmountError`), so it never queues one.
+      - **A closure's register:** `register.closure.submit`'s `registerId`
+        must be its session's register, or the server refuses it as
+        `invalid_payload`. Decision 8's "an unknown register id is accepted
+        as written" applies to `register.session.open`, which creates the
+        register. A closure never creates one.
       - The TypeScript shapes are `Register*Payload` in
         `packages/core/src/types/commands.ts`.
   7. **Approval.**
@@ -2968,7 +2983,8 @@ interface OrderCreatePayload {
        then on.
      - The server's variance threshold is a plugin option.
   8. **Register ids are minted locally,** and the server holds soft
-     references to them: an unknown register id is accepted as written.
+     references to them: an unknown register id in `register.session.open`
+     is accepted as written, and creates the register.
      There's no register-creation flow in the POS.
   9. **Refunds are out of scope** until Paul's refund model.
      `period_refunds` stays 0, and the server figures exclude refunds.
@@ -3016,6 +3032,9 @@ interface OrderCreatePayload {
     - a transition is a state snapshot: a same-status transition is an
       applied no-op, and intermediate states may be missing (decision 5a);
     - a void names a row of its own session, once;
+    - a movement's `amountMinor` is > 0 for `paid_in` and `paid_out`, and
+      exactly 0 for `no_sale` (decision 6a);
+    - a closure's `registerId` is its session's register (decision 6a);
     - a closure number is the register's last number plus one;
     - one closure per session;
     - ledger-derived `expected` and `salesCount` from `order.create`'s
