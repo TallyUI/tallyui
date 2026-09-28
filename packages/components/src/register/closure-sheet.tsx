@@ -95,7 +95,9 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
             {'✓'}
           </Text>
         </Animated.View>
-        <DialogTitle testID="closure-title">{`Closure ${closure.number} written`}</DialogTitle>
+        <DialogTitle testID="closure-title">Register closed</DialogTitle>
+        {/* The number stays visible, blind or not: the Z report references it (the Front desk, 2026-09-28). */}
+        <Text testID="closure-number" className="text-muted-foreground min-h-11">{`Closure #${closure.number}`}</Text>
         {!blind && (
           <View testID="closure-figures" className="gap-3">
             {methods.map((method) => {

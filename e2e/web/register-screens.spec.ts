@@ -223,13 +223,15 @@ for (const size of sizes) {
       await page.getByTestId('count-amount').fill('200.00');
       await page.getByTestId('count-close').click();
       await expect(page.getByTestId('closure-sheet')).toBeVisible();
-      await expect(page.getByTestId('closure-title')).toHaveText('Closure 1 written');
+      await expect(page.getByTestId('closure-title')).toHaveText('Register closed');
+      await expect(page.getByTestId('closure-number')).toHaveText('Closure #1');
     });
 
     test('ClosureSheet shows the local closure number and figures per tender', async ({ page }) => {
       await page.goto('/pos/register/closure');
       await expect(page.getByTestId('closure-sheet')).toBeVisible();
-      await expect(page.getByTestId('closure-title')).toHaveText('Closure 1 written');
+      await expect(page.getByTestId('closure-title')).toHaveText('Register closed');
+      await expect(page.getByTestId('closure-number')).toHaveText('Closure #1');
       await expect(page.getByTestId('closure-counted-cash')).toBeVisible();
       await shoot(page, 'closure', size.label);
     });

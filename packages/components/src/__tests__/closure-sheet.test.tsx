@@ -57,10 +57,11 @@ it('shows the closure number, and figures and variance per tender, and dismisses
       {(register) => <ClosureSheet register={register} currency="EUR" onDone={onDone} />}
     </RegisterHarness>,
   );
-  await waitFor(() => expect(screen.getByTestId('closure-title').textContent).toBe('Closure 1 written'));
+  await waitFor(() => expect(screen.getByTestId('closure-title').textContent).toBe('Register closed'));
+  expect(screen.getByTestId('closure-number').textContent).toBe('Closure #1');
   expect(screen.getByTestId('closure-counted-cash').textContent).toBe('Counted €63.30');
   expect(screen.getByTestId('closure-expected-cash').textContent).toBe('Expected €100.00');
-  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('−€36.70 short');
+  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('€36.70 short');
   expect(screen.getByTestId('closure-counted-external').textContent).toBe('Counted €22.00');
   fireEvent.click(screen.getByTestId('closure-done'));
   expect(onDone).toHaveBeenCalledTimes(1);
@@ -69,7 +70,8 @@ it('shows the closure number, and figures and variance per tender, and dismisses
 it('blind closure hides every figure, but still shows the closure number', async () => {
   await closeWithCount(6330);
   await renderClosure({ blind: true }, vi.fn());
-  expect(screen.getByTestId('closure-title').textContent).toBe('Closure 1 written');
+  expect(screen.getByTestId('closure-title').textContent).toBe('Register closed');
+  expect(screen.getByTestId('closure-number').textContent).toBe('Closure #1');
   expect(screen.queryByTestId('closure-figures')).toBeNull();
   expect(screen.queryByTestId('closure-print')).toBeNull();
 });

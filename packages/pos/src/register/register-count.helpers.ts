@@ -41,6 +41,9 @@ export const denominationTotal = (pieces: Record<number, number>) =>
  * amount, as an app's currency formatter expects, so `exponent` converts `variance` back for
  * it; `t` supplies the translated words for the `register.exact`/`register.short`/
  * `register.over` keys. Both are the app's own — neutral here.
+ *
+ * The direction lives in the word, not a sign (the Front desk, 2026-09-28): a signed amount
+ * next to "short" read as a double negative, so the amount here is always its absolute value.
  */
 export function varianceText(
   variance: number,
@@ -49,5 +52,5 @@ export function varianceText(
   t: (key: string) => string,
 ) {
   if (!variance) return t('register.exact');
-  return `${variance < 0 ? '−' : '+'}${format(Math.abs(variance) / 10 ** exponent)} ${t(variance < 0 ? 'register.short' : 'register.over')}`;
+  return `${format(Math.abs(variance) / 10 ** exponent)} ${t(variance < 0 ? 'register.short' : 'register.over')}`;
 }

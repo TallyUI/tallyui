@@ -67,7 +67,7 @@ it('labels the amount field, and shows a live variance line against the expected
   expect(screen.getByTestId('count-amount-label').textContent).toBe('Cash counted (€)');
   expect(screen.getByTestId('count-amount').getAttribute('aria-label')).toBe('Cash counted (€)');
   enter('63.30');
-  expect(screen.getByTestId('count-variance').textContent).toBe('Expected €100.00 · −€36.70 short');
+  expect(screen.getByTestId('count-variance').textContent).toBe('Expected €100.00 · €36.70 short');
   enter('100.00');
   expect(screen.getByTestId('count-variance').textContent).toContain('Exact');
 });
