@@ -494,9 +494,13 @@ bodies and design docs, and the source is given for each.
     string. Adopting the server's counters is job c.
   - **A sale's session:**
     - `PosOrder.sessionId` is set only by `stampSession`, which checks the
-      session is live (`finalizeOrder` takes no session), and stays on the
-      device. It is **not** sent in `order.create`.
-    - The server gets the session stamp later, with the Z-posting command.
+      session is live (`finalizeOrder` takes no session).
+    - **Amended (the Front desk, 2026-09-28):** it is no longer device-only.
+      `order.create` version 3 sends the sale's session, stamped or late, as
+      one payload field, `sessionId` (see ADR-065's amendment). Registers c2
+      needs it to anchor each session's expected cash on the server, and
+      adding it later would have cost a version 4. Below version 3 it is
+      never sent.
     - Adding it bumped `posOrderSchema` to version 1, with an identity
       migration.
     - Apps create `pos_orders` with `posOrderCollection()`, which carries
@@ -2556,3 +2560,22 @@ interface OrderCreatePayload {
   - Every sale made against a version-3 server carries its fiscal figures.
   - Old plugins and old clients are unchanged.
   - Apps must adopt the new `addPosOrderCollection` release before they rely on version 3.
+- **Amended: what version 3 ships (the Front desk, 2026-09-28).**
+  - **The content decides the version,** as ADR-062 does for discounts.
+    - `finalizeOrder` writes `display` and `taxByRate` onto the `PosOrder` only when the store's `capabilities.orderCreate` is at least 3.
+    - `toOrderCreateEnvelope` sends version 3 exactly when the order carries both.
+    - So each order's bytes are fixed at finalize, and every retry under its `commandId` is byte-identical. A plugin downgraded after finalize is handled by the outbox's version fallback, which is specified separately.
+    - `finalizeOrder` refuses an order whose `display` total or tax disagrees with the order, or whose tax by rate doesn't sum to its tax.
+    - `taxByRate` carries no English `label`; it is receipt copy, not data.
+  - **`sessionId` (version 3 only)** is the sale's session, stamped or late: `order.sessionId ?? order.lateSessionId`.
+    - It's one field, not two, because the orphan-stamp sweep can demote a pending order from `sessionId: X` to `lateSessionId: X` after a send whose response was lost. Two fields would change the resent bytes and give a non-requeueable `idempotency_mismatch`.
+    - The server tells a late sale by its session's closure `orderIds`.
+  - **`customer.customerId` (version 3 only)** is the platform id of the customer picked at the till, a soft reference of at most 64 characters (programme item 14). A longer id is omitted client-side, so the sale still goes with its email.
+  - **`pos_orders` is schema version 3,** not 2 as the title says, since version 2 had already landed:
+    - an index on `sessionId`, with `maxLength` 36. Every writer stamps a `mintUuid()` session id, and medusapos confirmed it writes none of its own;
+    - the optional `sentVersion` and `downgradedFrom`, for the outbox's version fallback;
+    - an identity migration through `addPosOrderCollection`, tested from versions 0, 1 and 2 on memory and SQLite.
+    - Measured: RxDB's planner picks the `sessionId` index for an equality query, and the `createdAt` index for the orphan sweep's `$in` form. It's reported here, not forced.
+  - **The golden envelope** (`packages/pos/src/pos-order/__fixtures__/order-create-v3.json`) is the fullest version-3 envelope, and the medusapos plugin pins the same file.
+    - TallyUI's pipeline (builder, then `finalizeOrder`, the stamp, then the envelope) is its source of truth: the hand-built first draft was regenerated from it.
+    - A structural test checks its figures agree with each other.
