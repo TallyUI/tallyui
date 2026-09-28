@@ -66,6 +66,14 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
   const [error, setError] = useState('');
   if (!closure) return null;
   const methods = Object.keys(closure.counted);
+  const approvedByName = closure.breakdowns.approved_by_name;
+  const approvedById = closure.breakdowns.approved_by;
+  const approvedBy =
+    typeof approvedByName === 'string' && approvedByName
+      ? approvedByName
+      : typeof approvedById === 'string' && approvedById
+        ? approvedById
+        : '';
   const print = async () => {
     if (!onPrint) return;
     setBusy(true);
@@ -126,6 +134,8 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
             })}
           </View>
         )}
+        {/* Not a figure: shows who approved the close even while blind. */}
+        {!!approvedBy && <Text testID="closure-approved-by">Approved by {approvedBy}</Text>}
         {!!error && (
           <Text testID="closure-print-error" className="text-destructive">
             {error}

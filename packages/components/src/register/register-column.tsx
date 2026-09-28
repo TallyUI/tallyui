@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
 
@@ -47,6 +47,9 @@ export function RegisterColumn({
   if (registerId === null) {
     return <RegisterPicker registers={registers} onPick={onPick} className="flex-1" />;
   }
+  if (register.session?.status === 'closed') {
+    return <FinishClose register={register} />;
+  }
   if (!register.session) {
     return <OpenRegisterCard register={register} currency={currency} configuredFloatMinor={configuredFloatMinor} className="flex-1" />;
   }
@@ -69,6 +72,43 @@ export function RegisterColumn({
         </View>
       )}
       {children}
+    </View>
+  );
+}
+
+/**
+ * `currentSession` (`use-register-session.ts` ~110-125) can return a closed session whose closure
+ * row was never written: an unapplied reservation's session, or a closed session with no closure
+ * row. `openSession` then refuses with `RegisterCloseIncompleteError`, so the cashier is stuck
+ * behind the cart unless this offers a way to resume the close.
+ */
+function FinishClose({ register }: { register: ReturnType<typeof useRegisterSession> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const finish = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      // A resumed close: the store keeps the count persisted on the session (a retry's count is
+      // ignored for a session already closed), and the approval gate doesn't run again.
+      await register.actions.closeSession({ counted: register.session?.counted ?? {} });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <View testID="register-column-finish-close" className="flex-1 gap-3 p-4">
+      <Text>The last close didn&apos;t finish.</Text>
+      <Button testID="register-column-finish-close-button" disabled={busy} onPress={finish}>
+        <Text>Finish closing</Text>
+      </Button>
+      {!!error && (
+        <Text testID="register-column-finish-close-error" className="text-destructive">
+          {error}
+        </Text>
+      )}
     </View>
   );
 }

@@ -12,7 +12,7 @@
 // declarations, not 6. #134 review: "matches the local-row fixture to the server fixture
 // key-for-key at every template section" is plain data comparison needing no renderer, so it's
 // ported below instead of deferred — 3 of 7 kept, 4 deferred.
-import { expect, it } from 'vitest';
+import { expect, expectTypeOf, it } from 'vitest';
 import { buildClosureDocument, buildXReportDocument, type ClosureContext } from './closure-document';
 import closureFixture from './__fixtures__/closure.json';
 import closureLocalRow from './__fixtures__/closure-local-row.json';
@@ -131,6 +131,15 @@ it('maps a local snapshot into the server closure envelope and display companion
   expect(doc.register.name).toBe('Main register');
   expect(doc.order).toMatchObject({ currency: 'USD', printed: { time: '11:00' } });
   expect(JSON.stringify(row)).toBe(before);
+});
+// Type-only: no assertion runs, but `pnpm typecheck` fails if a caller needs a cast for these
+// (closure-trio job 2) — `unsynced_count` is on `Closure` itself, and each movement's `id`/
+// `reason` come from `writeClosure`'s own `breakdowns.movements` (session-store.ts).
+it("types unsynced_count and each movement's id/reason without a cast", () => {
+  const doc = buildClosureDocument(row, context);
+  expectTypeOf(doc.closure.unsynced_count).toEqualTypeOf<number>();
+  expectTypeOf(doc.closure.breakdowns.movements[0].id).toEqualTypeOf<string>();
+  expectTypeOf(doc.closure.breakdowns.movements[0].reason).toEqualTypeOf<string>();
 });
 // Revert: omit local copy marking or number the X-report.
 it('marks local copies but never numbers or persists an X-report', () => {
