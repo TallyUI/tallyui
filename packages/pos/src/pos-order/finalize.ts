@@ -1,5 +1,6 @@
-import type { ServerCapabilities } from '@tallyui/core';
+import { minorUnitDigits, type ServerCapabilities } from '@tallyui/core';
 import type { Order } from '../order/types';
+import { taxLinesByRate } from '../tax/exact';
 import type { PosOrder, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -66,12 +67,34 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   if (payments.reduce((sum, p) => sum + p.amountMinor, 0) !== order.totalMinor) {
     throw new Error('finalize: payments do not reconcile');
   }
+  let display: PosOrder['display'];
+  let taxByRate: PosOrder['taxByRate'];
+  if ((options.capabilities?.orderCreate ?? 1) >= 3) {
+    display = { currency: order.currency, exponent: minorUnitDigits(order.currency), ...order.display,
+      lines: order.display.lines.map((line, i) => ({
+        lineId: lines[i].id, amountMinor: line.amountMinor,
+        discounts: line.discounts.map(({ discountId, label, amountMinor }) => ({
+          discountId, ...(label !== undefined ? { label } : {}), amountMinor,
+        })),
+      })),
+    };
+    taxByRate = taxLinesByRate(order.lineItems, order.taxMinor).map(({ ratePpm, code, netMinor, amountMinor }) => ({
+      ratePpm, ...(code !== undefined ? { code } : {}), netMinor, amountMinor, grossMinor: netMinor + amountMinor,
+    }));
+    if (display.totalMinor !== order.totalMinor || display.taxMinor !== order.taxMinor) {
+      throw new Error('finalize: display does not match the order');
+    }
+    if (taxByRate.reduce((sum, rate) => sum + rate.amountMinor, 0) !== order.taxMinor) {
+      throw new Error('finalize: tax by rate does not sum to the order tax');
+    }
+  }
   const now = (options.now ?? new Date()).toISOString();
   return {
     id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
     currency: order.currency, pricesIncludeTax: order.pricesIncludeTax, lines, payments,
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor,
+    ...(display && taxByRate ? { display, taxByRate } : {}),
     customer: order.customer ? { id: order.customer.id, name: order.customer.name,
       ...(order.customer.email !== undefined ? { email: order.customer.email } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),

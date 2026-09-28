@@ -14,9 +14,17 @@ import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
+/** The shipped version-2 schema: before the sessionId index and maxLength. */
+export function versionTwo(): RxJsonSchema<PosOrder> {
+  const schema = structuredClone(posOrderSchema);
+  schema.indexes = schema.indexes!.filter((index) => index !== 'sessionId');
+  delete schema.properties.sessionId.maxLength;
+  return { ...schema, version: 2 };
+}
+
 /** The shipped version-1 schema: version 2 with its only additions, `lateSessionId`, `display` and `taxByRate`, taken out. */
 export function versionOne(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
+  const schema = versionTwo();
   for (const key of ['lateSessionId', 'display', 'taxByRate']) delete (schema.properties as Record<string, unknown>)[key];
   return { ...schema, version: 1 };
 }
@@ -29,11 +37,12 @@ export function versionZero(): RxJsonSchema<PosOrder> {
 }
 
 /** A stored older `pos_orders` version, which `addPosOrderCollection` migrates to the current one. */
-export type Origin = 0 | 1;
+export type Origin = 0 | 1 | 2;
 
 /** `pos_orders` as the shipped app at `from` added it: version 1 came with its identity strategy. */
 export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
   addRxPlugin(RxDBMigrationSchemaPlugin);
+  if (from === 2) return { schema: versionTwo(), migrationStrategies: { 1: (doc: PosOrder) => doc, 2: (doc: PosOrder) => doc } };
   return from === 0 ? { schema: versionZero() } : { schema: versionOne(), migrationStrategies: { 1: (doc: PosOrder) => doc } };
 }
 
@@ -100,7 +109,7 @@ function slow(storage: RxStorage<any, any>): RxStorage<any, any> {
  */
 export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any>, { sqlite = false, from = 0 as Origin } = {}) {
   // A version-1 order carries its session, which the migration keeps.
-  const order = (n: number, syncStatus?: string): PosOrder => ({ ...sale(n, syncStatus), ...(from === 1 ? { sessionId: `session-${n}` } : {}) });
+  const order = (n: number, syncStatus?: string): PosOrder => ({ ...sale(n, syncStatus), ...(from >= 1 ? { sessionId: `session-${n}` } : {}) });
 
   it('after a DM4, the fixed order migrates on the very next open, with every order byte for byte', async () => {
     const { open, olderApp, stored } = store(makeStorage(), from);

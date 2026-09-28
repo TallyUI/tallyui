@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { resolveCapabilities } from '@tallyui/core';
 import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order/order-builder';
+import { taxLinesByRate } from '../tax/exact';
 import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
 import { uuidv7 } from './uuidv7';
@@ -228,5 +229,91 @@ describe('finalizeOrder capability gate (ADR-062)', () => {
     const order = discountedSale().getSnapshot();
     const posOrder = finalizeOrder(order, { capabilities });
     expect(toOrderCreateEnvelope(posOrder, 'device1').version).toBe(2);
+  });
+});
+
+describe('finalizeOrder version 3 (ADR-065)', () => {
+  it('writes no display or taxByRate below capability 3', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const now = new Date('2026-09-23T12:00:00.000Z');
+    for (const capabilities of [undefined, { orderCreate: 1 }, { orderCreate: 2 }]) {
+      let n = 0;
+      const result = finalizeOrder(builder.getSnapshot(), { now, newId: () => `id-${++n}`, capabilities });
+      expect(result).toStrictEqual({
+        id: 'id-1', createdAt: now.toISOString(), updatedAt: now.toISOString(), commandId: 'id-5', syncStatus: 'pending',
+        currency: 'EUR', pricesIncludeTax: false,
+        lines: [
+          { id: 'id-2', productId: 'p1', variantId: 'v1', name: 'Item 1', sku: 'SKU1', quantity: 2,
+            unitPriceMinor: 850, discountMinor: 0, netMinor: 1700, taxLines: [{ ratePpm: 190000, taxMicros: '323000000' }] },
+          { id: 'id-3', productId: 'p2', name: 'Item 2', sku: '', quantity: 1,
+            unitPriceMinor: 1200, discountMinor: 0, netMinor: 1200, taxLines: [{ ratePpm: 190000, taxMicros: '228000000' }] },
+        ],
+        payments: [{ id: 'id-4', method: 'cash', amountMinor: 3451, tenderedMinor: 5000, changeMinor: 1549 }],
+        subtotalMinor: 2900, discountMinor: 0, taxMinor: 551, totalMinor: 3451, customer: null,
+      });
+    }
+  });
+
+  it("copies the receipt's display figures at capability 3, with lines joined to the order's line ids", () => {
+    for (const [currency, exponent] of [['EUR', 2], ['JPY', 0]] as const) {
+      const builder = createOrderBuilder({ currency, taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
+      builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency } });
+      builder.addLine({ productId: 'p2', name: 'Other', unitPrice: { amount: 500, currency } });
+      builder.applyLineDiscount(builder.getSnapshot().lineItems[0].id, { type: 'fixed', value: 100, label: 'Sale' });
+      builder.addPayment({ method: 'cash', amountMinor: 2000 });
+      const input = builder.getSnapshot();
+      const result = finalizeOrder(input, { capabilities: { orderCreate: 3 } });
+      const { currency: storedCurrency, exponent: storedExponent, ...display } = result.display!;
+      expect([storedCurrency, storedExponent]).toEqual([currency, exponent]);
+      expect(display.lines.map((line) => line.lineId)).toEqual(result.lines.map((line) => line.id));
+      expect({ ...display, lines: display.lines.map((line, i) => ({ ...line, lineId: input.lineItems[i].id })) }).toStrictEqual(input.display);
+    }
+  });
+
+  it("taxByRate at capability 3 equals the receipt's taxLinesByRate and sums to taxMinor", () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Inclusive', unitPrice: { amount: 1190, currency: 'EUR', taxInclusive: true },
+      taxRates: [{ ratePpm: 190000, code: 'VAT' }] });
+    builder.addLine({ productId: 'p2', name: 'Exclusive', unitPrice: { amount: 700, currency: 'EUR' }, taxRates: [{ ratePpm: 70000 }] });
+    builder.applyLineDiscount(builder.getSnapshot().lineItems[0].id, { type: 'fixed', value: 100 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    builder.addPayment({ method: 'cash', amountMinor: 3000 });
+    const input = builder.getSnapshot();
+    const result = finalizeOrder(input, { capabilities: { orderCreate: 3 } });
+    expect(result.taxByRate).toStrictEqual(taxLinesByRate(input.lineItems, input.taxMinor).map(({ label, code, ...rate }) => ({
+      ...rate, ...(code !== undefined ? { code } : {}), grossMinor: rate.netMinor + rate.amountMinor,
+    })));
+    expect(result.taxByRate).toHaveLength(2);
+    expect(result.taxByRate!.reduce((sum, rate) => sum + rate.amountMinor, 0)).toBe(input.taxMinor);
+    for (const rate of result.taxByRate!) {
+      expect(rate.grossMinor).toBe(rate.netMinor + rate.amountMinor);
+      expect(rate).not.toHaveProperty('label');
+    }
+    expect(result.display!.lines[0].discounts[0]).not.toHaveProperty('label');
+  });
+
+  it("the display copy shares no reference with the builder's snapshot", () => {
+    const input = discountedSale().getSnapshot();
+    const result = finalizeOrder(input, { capabilities: { orderCreate: 3 } });
+    const before = structuredClone(result);
+    expect(result.display).not.toBe(input.display);
+    expect(result.display!.lines).not.toBe(input.display.lines);
+    input.display.totalMinor = 1;
+    input.display.lines[0].amountMinor = 2;
+    input.display.lines[0].discounts[0].amountMinor = 3;
+    input.display.lines[0].discounts.push({ discountId: 'extra', amountMinor: 4 });
+    input.display.lines.push({ lineId: 'extra', amountMinor: 5, discounts: [] });
+    expect(result).toStrictEqual(before);
+  });
+
+  it('refuses display or tax-by-rate figures inconsistent with the order', () => {
+    const input = discountedSale().getSnapshot();
+    for (const key of ['totalMinor', 'taxMinor'] as const) {
+      expect(() => finalizeOrder({ ...input, display: { ...input.display, [key]: input.display[key] + 1 } },
+        { capabilities: { orderCreate: 3 } })).toThrow('finalize: display does not match the order');
+    }
+    expect(() => finalizeOrder({ ...input, lineItems: input.lineItems.map((line) => ({ ...line, taxLines: [] })) },
+      { capabilities: { orderCreate: 3 } })).toThrow('finalize: tax by rate does not sum to the order tax');
   });
 });

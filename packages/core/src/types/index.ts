@@ -27,5 +27,6 @@ export type {
   CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload,
+  OrderCreateDisplay, OrderCreateTaxRate,
   CommandBatchRequest, CommandBatchResponse,
 } from './commands';

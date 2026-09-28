@@ -8,9 +8,10 @@ import type { PosOrder } from './types';
  * sale), and ADR-065's `display` and `taxByRate`, declared ahead of the job that writes them so a
  * till migrates once. Create the collection with `posOrderCollection()`, never with this schema
  * alone: RxDB refuses a version above 0 without its migration strategies.
+ * Version 3 adds an index on `sessionId` (with its `maxLength`) and changes nothing else.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 2, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 3, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     commandId: { type: 'string', maxLength: 36 },
@@ -21,7 +22,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     subtotalMinor: { type: 'integer' }, discountMinor: { type: 'integer' },
     taxMinor: { type: 'integer' }, totalMinor: { type: 'integer' },
     syncStatus: { type: 'string', enum: ['pending', 'applied', 'rejected'], maxLength: 10 },
-    note: { type: 'string' }, registerId: { type: 'string' }, sessionId: { type: 'string' }, cashierRef: { type: 'string' },
+    note: { type: 'string' }, registerId: { type: 'string' }, sessionId: { type: 'string', maxLength: 36 }, cashierRef: { type: 'string' },
     lines: { type: 'array', items: {
       type: 'object', properties: {
         id: { type: 'string', maxLength: 36 }, productId: { type: 'string' }, variantId: { type: 'string' },
@@ -75,7 +76,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
   },
   required: ['id', 'createdAt', 'currency', 'pricesIncludeTax', 'lines', 'subtotalMinor', 'discountMinor', 'taxMinor',
     'totalMinor', 'payments', 'customer', 'syncStatus', 'commandId', 'updatedAt'],
-  indexes: ['createdAt', 'syncStatus', ['syncStatus', 'createdAt']],
+  indexes: ['createdAt', 'syncStatus', ['syncStatus', 'createdAt'], 'sessionId'],
 };
 
 /**
@@ -96,5 +97,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // addRxPlugin ignores a plugin it already has.
   addRxPlugin(RxDBMigrationSchemaPlugin);
   const identity = (doc: PosOrder) => doc;
-  return { schema: posOrderSchema, migrationStrategies: { 1: identity, 2: identity } };
+  return { schema: posOrderSchema, migrationStrategies: { 1: identity, 2: identity, 3: identity } };
 }

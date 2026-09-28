@@ -5,8 +5,8 @@ export type CommandType = 'order.create';
 export interface CommandEnvelope<P = unknown> {
   id: string; // UUIDv7, the idempotency key; never reused
   type: CommandType;
-  /** 2 only when an `order.create` carries a discount (ADR-062); a discount-free payload stays 1, byte-identical. */
-  version: 1 | 2;
+  /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1. */
+  version: 1 | 2 | 3;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -77,6 +77,32 @@ export interface OrderCreatePayment {
   reference?: string;
 }
 
+/** Version 3 (ADR-065): the receipt's display figures, integer minor units of `currency` at `exponent`. */
+export interface OrderCreateDisplay {
+  currency: string;
+  exponent: number;
+  taxInclusive: boolean;
+  subtotalMinor: number;
+  discountMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+  orderDiscountMinor: number;
+  lines: Array<{
+    clientLineId: string;
+    amountMinor: number;
+    discounts: Array<{ discountId: string; label?: string; amountMinor: number }>;
+  }>;
+}
+
+/** Version 3 (ADR-065): one tax rate's net, tax and gross, as the receipt's tax summary splits them. */
+export interface OrderCreateTaxRate {
+  ratePpm: number;
+  code?: string;
+  netMinor: number;
+  taxMinor: number;
+  grossMinor: number;
+}
+
 /** Client order data submitted by an order.create command. */
 export interface OrderCreatePayload {
   clientOrderId: string;
@@ -90,10 +116,20 @@ export interface OrderCreatePayload {
   taxMinor: number;
   totalMinor: number;
   payments: OrderCreatePayment[];
-  customer?: { email?: string } | null;
+  /** version 3 only; both or neither. */
+  display?: OrderCreateDisplay;
+  /** version 3 only; both or neither. */
+  taxByRate?: OrderCreateTaxRate[];
+  customer?: {
+    email?: string;
+    /** Version 3 only: the platform's id for the customer picked at the till, a soft reference of at most 64 characters. Absent for a guest sale, or when no customer was picked. */
+    customerId?: string;
+  } | null;
   registerId?: string;
   cashierRef?: string;
   locationId?: string;
+  /** Version 3 only: the register session the sale was taken for, stamped or late (ADR-032). A late sale names the session that refused its stamp; the server tells the two apart by the session's closure `orderIds`. Absent when the sale had no session. */
+  sessionId?: string;
 }
 
 /** Batch of commands submitted to the server. */
