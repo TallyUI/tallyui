@@ -17,6 +17,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          # setup-node v5+ caches the package manager's store by default when package.json has
+          # `packageManager`. Never cache it here (docs/CONTRIBUTING.md). v4 warns it has no such input; harmless.
+          package-manager-cache: false
+
+      - name: Check no pnpm store was restored from a cache
+        run: test ! -e "$(pnpm store path)"
 
       - run: pnpm install --frozen-lockfile
         env:
@@ -63,6 +69,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          # setup-node v5+ caches the package manager's store by default when package.json has
+          # `packageManager`. Never cache it here (docs/CONTRIBUTING.md). v4 warns it has no such input; harmless.
+          package-manager-cache: false
+
+      - name: Check no pnpm store was restored from a cache
+        run: test ! -e "$(pnpm store path)"
 
       - run: pnpm install --frozen-lockfile
         env:
