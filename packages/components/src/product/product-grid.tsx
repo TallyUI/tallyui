@@ -1,8 +1,15 @@
 import type { ReactNode } from 'react';
-import { ScrollView, View } from 'react-native';
+import { FlatList, View } from 'react-native';
 import { cn } from '@tallyui/theme';
 import { useProductTraits } from '@tallyui/core';
 import { VStack, type VStackProps } from '../ui';
+
+// Limit initial mounts for a 2,000-product catalogue to eight rows.
+const INITIAL_ROWS = 8;
+// Keep each render batch small for a 2,000-product catalogue.
+const BATCH_ROWS = 8;
+// Keep nearby rows mounted without rendering the whole 2,000-product catalogue.
+const WINDOW_SIZE = 5;
 
 export interface ProductGridProps extends Omit<VStackProps, 'children'> {
   /** Array of product documents to render */
@@ -27,10 +34,9 @@ export interface ProductGridProps extends Omit<VStackProps, 'children'> {
 }
 
 /**
- * A scrollable product grid with optional search and filter slots.
+ * A virtualized product grid with optional search and filter slots.
  *
- * Uses ScrollView + flexWrap for cross-platform grid layout rather than
- * FlatList numColumns, which keeps things predictable in both native and web.
+ * Uses FlatList numColumns to render rows near the viewport on native and web.
  *
  * ```tsx
  * <ProductGrid
@@ -70,13 +76,21 @@ export function ProductGrid({
       {filterSlot && <View className="px-3 pb-2">{filterSlot}</View>}
 
       {hasItems ? (
-        <ScrollView contentContainerClassName="flex-row flex-wrap p-1">
-          {visibleItems.map((item, index) => (
-            <View key={item.id ?? index} style={{ width: `${100 / numColumns}%` }} className="p-1">
+        <FlatList
+          key={numColumns}
+          data={visibleItems}
+          numColumns={numColumns}
+          keyExtractor={(item, index) => String(item.id ?? index)}
+          contentContainerClassName="p-1"
+          initialNumToRender={INITIAL_ROWS}
+          maxToRenderPerBatch={BATCH_ROWS}
+          windowSize={WINDOW_SIZE}
+          renderItem={({ item, index }) => (
+            <View style={{ width: `${100 / numColumns}%` }} className="p-1">
               {renderItem(item, index)}
             </View>
-          ))}
-        </ScrollView>
+          )}
+        />
       ) : (
         emptyState ?? null
       )}
