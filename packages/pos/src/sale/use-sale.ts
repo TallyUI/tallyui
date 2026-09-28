@@ -33,6 +33,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
    * `complete()` runs after the money is taken, so a refused stamp (the session closed or went
    * missing) never stops the sale: it goes on to `onSaleCompleted` and the receipt with
    * `lateSessionId` instead of `sessionId`, and a `late-sale` register fact is recorded (ADR-032).
+   * The session stamped is the one in force when the tender started (`startTender`), pinned for that
+   * tender: this option going undefined mid-tender (the session closed) doesn't skip the stamp, and
+   * a session appearing mid-tender isn't stamped.
    */
   session?: { id: string; sessions: RegisterSessionCollection };
   onSaleCompleted?: (posOrder: PosOrder) => Promise<void> | void;
@@ -54,6 +57,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   // synchronously by complete() and the lock; `saving` mirrors it (true from complete()'s entry) for rendering.
   const pending = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
   const [saving, setSaving] = useState(false);
+  // The session pinned by startTender for this tender (`undefined` inside: none); null until a tender starts.
+  const tenderSession = useRef<{ session: typeof opts.session } | null>(null);
   // The pending completion isStored confirmed stored after its save failed; `canContinue` mirrors it for
   // rendering. `attempts` counts complete() attempts, so a confirmation that lands after a new one is dropped.
   const confirmed = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
@@ -216,6 +221,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       if (locked()) return;
       const current = builder.getSnapshot();
       if (!current.lineItems.length) return;
+      tenderSession.current ??= { session: opts.session }; // a repeat call mid-tender keeps the pin
       setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
       setStage({ kind: 'tender', method });
     },
@@ -223,6 +229,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     cancelTender() {
       if (locked()) return;
       setTender(null);
+      tenderSession.current = null;
       setStage({ kind: 'cart' });
     },
     /**
@@ -252,16 +259,18 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
         setError((error as Error).message);
         return;
       }
-      if (opts.session) {
+      // The tender's pinned session; opts.session only for a complete() with no startTender (setTender from the cart).
+      const session = tenderSession.current ? tenderSession.current.session : opts.session;
+      if (session) {
         try {
-          posOrder = await stampSession(posOrder, opts.session.id, opts.session.sessions);
+          posOrder = await stampSession(posOrder, session.id, session.sessions);
         } catch {
           // The money is taken: keep the sale, outside every closure (ADR-032, late sale).
           const { sessionId: _unstamped, ...unstamped } = posOrder;
-          posOrder = { ...unstamped, lateSessionId: opts.session.id };
+          posOrder = { ...unstamped, lateSessionId: session.id };
           try {
             // useSale knows the cashier only by ref, so the actor carries no display name.
-            recordRegisterFact({ kind: 'late-sale', orderId: posOrder.id, sessionId: opts.session.id, registerId: opts.registerId,
+            recordRegisterFact({ kind: 'late-sale', orderId: posOrder.id, sessionId: session.id, registerId: opts.registerId,
               actor: { id: opts.cashierRef, name: '' } });
           } catch {
             // The logger calls the app's sinks unguarded; a failing sink must never lose the sale.
@@ -292,6 +301,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       }
       confirm(null); pending.current = null;
       inFlight.current = null;
+      tenderSession.current = null;
       setSaving(false);
       madeWith.current = { taxContext, currency: settings.currency };
       const next = createOrderBuilder({ currency: settings.currency, taxContext });

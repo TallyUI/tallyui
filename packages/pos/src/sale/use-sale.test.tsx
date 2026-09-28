@@ -423,6 +423,138 @@ describe('late sale', () => {
   });
 });
 
+// The tender pins its session (medusapos #88 review): useRegisterSession's saleSession goes undefined
+// once the session closes, so a close between startTender and complete() skipped the stamp, and the
+// order landed on no Z, unflagged. complete() now stamps the session in force when the tender started.
+describe('the tender pins its session', () => {
+  const facts: LogEntry[] = [];
+  registerFactsLogger.addSink({ id: 'pin-capture', levels: ['warn'], write: (entry) => facts.push(entry) });
+  const lateFacts = () => facts.filter((entry) => (entry.data?.context as { type?: string })?.type === 'register.late-sale');
+  beforeEach(() => { facts.length = 0; });
+
+  type Session = Parameters<typeof useSale>[1]['session'];
+  /** Renders useSale whose `session` option the test changes by `rerender`, as the app's saleSession changes. */
+  function renderWithSession(session: Session, onSaleCompleted = vi.fn()) {
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
+    }
+    const view = renderHook(({ session: current }: { session: Session }) => useSale(pricing, saleOpts({ onSaleCompleted, session: current })),
+      { wrapper: Wrapper, initialProps: { session } });
+    addSaleLines(view.result);
+    return { ...view, onSaleCompleted };
+  }
+  async function completed(view: ReturnType<typeof renderWithSession>) {
+    await act(async () => { await view.result.current.complete(); });
+    expect(view.onSaleCompleted).toHaveBeenCalledTimes(1);
+    expect(view.result.current.stage.kind).toBe('receipt');
+    return view.onSaleCompleted.mock.calls[0][0] as PosOrder;
+  }
+
+  it("a session closed mid-tender (saleSession gone undefined) makes a late sale on it, not an unstamped one", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const view = renderWithSession({ id: sessionId, sessions });
+      act(() => view.result.current.startTender('external'));
+      await closeSession(sessions, sessionId, { counted: { cash: 0 } });
+      view.rerender({ session: undefined });
+      const order = await completed(view);
+      expect(order.lateSessionId).toBe(sessionId);
+      expect(order).not.toHaveProperty('sessionId');
+      expect(lateFacts()).toHaveLength(1);
+      expect(lateFacts()[0]).toMatchObject({ data: { context: { type: 'register.late-sale', orderId: order.id, sessionId, registerId } } });
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('a session open throughout stamps sessionId', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const view = renderWithSession({ id: sessionId, sessions });
+      act(() => view.result.current.startTender('external'));
+      view.rerender({ session: { id: sessionId, sessions } });
+      const order = await completed(view);
+      expect(order.sessionId).toBe(sessionId);
+      expect(order).not.toHaveProperty('lateSessionId');
+      expect(lateFacts()).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('a tender started with no session stays unstamped, even with a session present at complete()', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const view = renderWithSession(undefined);
+      act(() => view.result.current.startTender('external'));
+      view.rerender({ session: { id: sessionId, sessions } });
+      const order = await completed(view);
+      expect(order).not.toHaveProperty('sessionId');
+      expect(order).not.toHaveProperty('lateSessionId');
+      expect(lateFacts()).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('a repeat startTender mid-tender keeps the pinned session', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const view = renderWithSession({ id: sessionId, sessions });
+      act(() => view.result.current.startTender('external'));
+      await closeSession(sessions, sessionId, { counted: { cash: 0 } });
+      view.rerender({ session: undefined });
+      act(() => view.result.current.startTender('external'));
+      const order = await completed(view);
+      expect(order.lateSessionId).toBe(sessionId);
+      expect(lateFacts()).toHaveLength(1);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('a cancelled tender drops its pin: a new tender after the app switches to session B stamps B', async () => {
+    const { db, sessions, sessionId: first } = await withOpenSession();
+    try {
+      const view = renderWithSession({ id: first, sessions });
+      act(() => view.result.current.startTender('external'));
+      act(() => view.result.current.cancelTender());
+      expect(view.result.current.stage.kind).toBe('cart');
+      await closeSession(sessions, first, { counted: { cash: 0 } });
+      const second = await openSession(sessions, {
+        registerId, expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: cashierRef, businessDay: { year: 2026, month: 9, day: 26 },
+      });
+      view.rerender({ session: { id: second.id, sessions } });
+      act(() => view.result.current.startTender('external'));
+      const order = await completed(view);
+      expect(order.sessionId).toBe(second.id);
+      expect(order).not.toHaveProperty('lateSessionId');
+      expect(lateFacts()).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it("newSale() drops the pin: the next sale's tender pins the session then in force", async () => {
+    const { db, sessions, sessionId: first } = await withOpenSession();
+    try {
+      const view = renderWithSession({ id: first, sessions });
+      act(() => view.result.current.startTender('external'));
+      expect((await completed(view)).sessionId).toBe(first);
+      act(() => view.result.current.newSale());
+      view.rerender({ session: undefined });
+      addSaleLines(view.result);
+      act(() => view.result.current.startTender('external'));
+      await act(async () => { await view.result.current.complete(); });
+      const next = view.onSaleCompleted.mock.calls[1][0] as PosOrder;
+      expect(next).not.toHaveProperty('sessionId');
+      expect(next).not.toHaveProperty('lateSessionId');
+    } finally {
+      await db.remove();
+    }
+  });
+});
+
 // complete() is idempotent for one tender (ADR-052, 2026-09-25): once complete() has built the order,
 // that order is the sale. A retry reuses it, so a save that failed after storing it never duplicates it.
 describe('complete() is idempotent for one tender', () => {
