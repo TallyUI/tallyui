@@ -2594,10 +2594,13 @@ interface OrderCreatePayload {
       - **Once per order:** a second refusal at the downgraded version is terminal.
       - **Why the same `commandId`:** in both behaviours the server recorded nothing, so the rebuilt bytes can't collide. And if that ever proved wrong, the same id gives a visible `idempotency_mismatch`, whereas a new id would create a second sale. So minting a new id is never the safer choice.
     - `finalizeOrder` refuses an order whose `display` total or tax disagrees with the order, or whose tax by rate doesn't sum to its tax.
+      - It also refuses display lines that don't join the order's lines by count and by id, and a `display.taxInclusive` that differs from `pricesIncludeTax` (#185).
+      - It never recomputes the other display figures (subtotal, discount, order discount). They are the builder's, copied as they are, and a second copy of its conversion would refuse good sales the day the builder's rounding changes.
     - `taxByRate` carries no English `label`; it is receipt copy, not data.
   - **`sessionId` (version 3 only)** is the sale's session, stamped or late: `order.sessionId ?? order.lateSessionId`.
     - It's one field, not two, because the orphan-stamp sweep can demote a pending order from `sessionId: X` to `lateSessionId: X` after a send whose response was lost. Two fields would change the resent bytes and give a non-requeueable `idempotency_mismatch`.
     - The server tells a late sale by its session's closure `orderIds`.
+    - A `sessionId` that is empty, or longer than 36 characters, is omitted client-side (#185), as `customerId` is. The plugin would refuse the whole sale as `invalid_payload`, and every writer stamps a 36-character `mintUuid()`.
   - **`customer.customerId` (version 3 only)** is the platform id of the customer picked at the till, a soft reference of at most 64 characters (programme item 14). A longer id is omitted client-side, so the sale still goes with its email.
   - **`pos_orders` is schema version 3,** not 2 as the title says, since version 2 had already landed:
     - an index on `sessionId`, with `maxLength` 36. Every writer stamps a `mintUuid()` session id, and medusapos confirmed it writes none of its own;
