@@ -55,8 +55,9 @@ export function combinePullAdapters<Doc>(
         // Call sub-adapters strictly one after another, in key order: a
         // correctness rule, not politeness. Each feed writes whole documents.
         // Sequential calls with the last duplicate winning mean every document
-        // comes from the latest fetch of this call, and every fetch in the next
-        // call happens after this call's writes. Concurrent feeds could let a
+        // comes from the latest fetch of this call. RxDB 16.21.1 can fetch the next
+        // call before these writes finish, but its persistence queue keeps fetch
+        // order (pending duplicates keep the latest). Concurrent feeds could let a
         // fetch made before another feed's newer write land after it and revert
         // it, with neither checkpoint ever revisiting the document.
         for (const key of keys) {

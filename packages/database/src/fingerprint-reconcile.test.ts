@@ -5,12 +5,14 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 
 import { startFingerprintReconcile, isFingerprintResultCurrent, type FingerprintReconcileState } from './fingerprint-reconcile';
+import { BACKGROUND_CHUNK_SIZE as C } from './chunks';
 import type { FingerprintReconcileAdapter, SyncContext } from '@tallyui/core';
 
 addRxPlugin(RxDBDevModePlugin);
 
 const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
 const context: SyncContext = { connectorId: 'test', baseUrl: 'https://example.com', headers: {} };
+const N = 2 * C + 7;
 const productSchema = {
   version: 0,
   primaryKey: 'id',
@@ -73,6 +75,28 @@ describe('startFingerprintReconcile', () => {
   );
   const start = (adapter: FingerprintReconcileAdapter<Doc>, reSync: () => void, options: { startDelayMs?: number | null; intervalMs?: number; maxPages?: number; now?: () => number } = {}) =>
     startFingerprintReconcile({ collection: db.products, adapter, context, reSync, ...options });
+
+  it('compares every product of a catalogue larger than one chunk exactly once', async () => {
+    const extra = Array.from({ length: N }, (_, i) => ({ id: `k${String(i).padStart(4, '0')}`, price: '1' }));
+    await db.products.bulkInsert(extra);
+    const { adapter, enqueue } = fakeAdapter([{
+      p1: '10', p2: '20', ...Object.fromEntries(extra.map((doc) => [doc.id, doc.id === 'k0300' ? '2' : '1'])),
+    }]);
+    const instance = db.products.storageInstance;
+    const query = instance.query.bind(instance);
+    const sizes: number[] = [];
+    vi.spyOn(instance, 'query').mockImplementation(async (prepared) => {
+      const result = await query(prepared);
+      sizes.push(result.documents.length);
+      return result;
+    });
+    const { reconcile, stop } = start(adapter, vi.fn());
+    expect(await reconcile()).toEqual({ pages: 1, compared: N + 2, queued: 1, truncated: false, unreported: 1 });
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: 'k0300', local: extra[300], refreshOnly: true }]);
+    expect(sizes).toEqual([C, C, 10]);
+    expect(sizes.every((size) => size <= C)).toBe(true);
+    stop();
+  });
 
   it('queues exactly the mismatched products, skips ones the remote side does not report, and calls reSync once', async () => {
     const before = await revisions();
