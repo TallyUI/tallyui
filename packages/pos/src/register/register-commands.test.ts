@@ -217,6 +217,34 @@ describe('register command ledger', () => {
     expect((await ledger()).map((row) => row.payload.status)).toStrictEqual([undefined, 'counting', 'open']);
   });
 
+  it('a transition older than one already recorded is never appended', async () => {
+    const s = await open();
+    advance();
+    const counting = await startCounting(db.register_sessions, s.id);
+    advance();
+    const selling = await backToSelling(db.register_sessions, s.id);
+    expect(await reconcile()).toStrictEqual([`session.open:${s.id}`, `session.transition:${s.id}:${selling.status_at}`]);
+    expect(await reconcile([counting.toJSON()])).toStrictEqual([]);
+    expect((await ledger()).map((row) => row.key)).toStrictEqual([
+      `session.open:${s.id}`, `session.transition:${s.id}:${selling.status_at}`,
+    ]);
+  });
+
+  it('a session whose open is recorded is never skipped, even after the register document is reset', async () => {
+    const s = await open();
+    await reconcile();
+    const doc = await db.register_sessions.getLocal<RegisterDocument>('register');
+    await doc!.incrementalModify((data) => ({ ...data,
+      stores: { ...data.stores, store: { ...data.stores.store, registers: {} } } }));
+    advance();
+    const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 10000 } });
+    const z = await write(closed);
+    advance();
+    expect(await reconcile(undefined, new Date().toISOString())).toStrictEqual([
+      `session.transition:${s.id}:${closed.status_at}`, `closure.submit:${z.id}`,
+    ]);
+  });
+
   it('seq continues from the ledger after the register document is reset', async () => {
     const s = await open();
     await record(s.id);
@@ -263,6 +291,23 @@ describe('register command ledger', () => {
     await db.cash_movements.insert({ ...movement, session_id: 'earlier' });
     expect(await reconcile()).toStrictEqual([
       'session.open:earlier', 'movement.record:movement', `session.transition:earlier:${openedAt}`, 'session.open:later',
+    ]);
+  });
+
+  it('the closing transition sorts after every movement, even one timestamped after it', async () => {
+    const s = await open();
+    await reconcile();
+    advance();
+    const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 10000 } });
+    advance();
+    await db.cash_movements.insert({ ...movement, session_id: s.id, created_at_gmt: new Date().toISOString() });
+    advance();
+    await db.cash_movements.insert({ ...movement, id: 'reversal', type: 'void', voids: movement.id,
+      session_id: s.id, created_at_gmt: new Date().toISOString() });
+    const z = await write(closed);
+    expect(await reconcile()).toStrictEqual([
+      `movement.record:${movement.id}`, 'movement.void:reversal',
+      `session.transition:${s.id}:${closed.status_at}`, `closure.submit:${z.id}`,
     ]);
   });
 

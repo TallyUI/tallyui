@@ -1,6 +1,6 @@
 import type { RxCollection, RxError, RxJsonSchema } from 'rxdb';
 import type {
-  CommandError, CommandType, RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionTransitionPayload,
+  CommandError, RegisterCommandType, RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionTransitionPayload,
   RegisterMovementRecordPayload, RegisterMovementVoidPayload, RegisterClosureSubmitPayload,
 } from '@tallyui/core';
 import { createLogger } from '../logging';
@@ -13,7 +13,7 @@ import type { CashMovementCollection, ClosureCollection, RegisterSessionCollecti
 export const registerCommandsLogger = createLogger('register-commands');
 
 export interface RegisterCommand {
-  key: string; registerId: string; seq: number; commandId: string; type: CommandType; version: number;
+  key: string; registerId: string; seq: number; commandId: string; type: RegisterCommandType; version: number;
   payload: Record<string, unknown>; createdAt: string; syncStatus: 'pending' | 'applied' | 'rejected';
   error?: CommandError; result?: RegisterCommandResult; updatedAt: string;
 }
@@ -98,12 +98,20 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
     const since = await markCommandsSince(host, storeKey, registerId, now ?? new Date().toISOString());
     const [highest] = await readFresh(commands, { selector: { registerId }, sort: [{ seq: 'desc' }], limit: 1 });
     let seq = highest?.seq ?? 0;
+    const newestTransition = new Map<string, string>();
+    for (const { payload } of await readFresh(commands, { selector: { registerId, type: 'register.session.transition' } })) {
+      const { sessionId, at } = payload;
+      if (typeof sessionId === 'string' && typeof at === 'string' && at > (newestTransition.get(sessionId) ?? '')) {
+        newestTransition.set(sessionId, at);
+      }
+    }
     const rows = await readFresh(sessions, { selector: { register_id: registerId } });
     rows.sort((a, b) => a.opened_at_gmt.localeCompare(b.opened_at_gmt));
     const complete = new Set((await commands.storageInstance.findDocumentsById(rows.flatMap((session) =>
-      session.status === 'closed' && session.closure_id ? [`closure.submit:${session.closure_id}`] : []), false)).map(({ key }) => key));
+      [`session.open:${session.id}`, ...(session.status === 'closed' && session.closure_id ? [`closure.submit:${session.closure_id}`] : [])]), false)).map(({ key }) => key));
     const facts = await Promise.all(rows.filter((session) =>
-      session.status !== 'closed' || ((session.status_at == null || session.status_at >= since) && !complete.has(`closure.submit:${session.closure_id}`)))
+      session.status !== 'closed' || ((session.status_at == null || session.status_at >= since || complete.has(`session.open:${session.id}`))
+        && !complete.has(`closure.submit:${session.closure_id}`)))
       .map(async (session) => {
       const [entries, closureRows] = await Promise.all([
         readFresh(movements, { selector: { session_id: session.id } }),
@@ -111,10 +119,12 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
       ]);
       const events = entries.map((entry) => ({ at: entry.created_at_gmt, transition: false, command: movementCommand(entry) }));
       for (const row of [session, ...(observed ?? []).filter((row) => row.id === session.id)]) {
+        if (row.status_at != null && row.status_at < (newestTransition.get(session.id) ?? '')) continue;
         if (row.status_at != null) events.push({ at: row.status_at, transition: true,
           command: sessionTransitionCommand({ ...row, status_at: row.status_at }) });
       }
-      events.sort((a, b) => a.at.localeCompare(b.at) || Number(a.transition) - Number(b.transition));
+      events.sort((a, b) => Number(a.command.payload.status === 'closed') - Number(b.command.payload.status === 'closed')
+        || a.at.localeCompare(b.at) || Number(a.transition) - Number(b.transition));
       return { session, built: [sessionOpenCommand(session), ...events.map((event) => event.command),
         ...closureRows.map((closure) => closureCommand(closure))] };
     }));

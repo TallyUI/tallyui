@@ -1,18 +1,26 @@
 /** Supported command operation. */
-export type CommandType = 'order.create' | 'register.session.open' | 'register.session.transition'
-  | 'register.movement.record' | 'register.movement.void' | 'register.closure.submit';
+export type CommandType = 'order.create';
 
 /** Client command with a stable idempotency key and typed payload. */
 export interface CommandEnvelope<P = unknown> {
   id: string; // UUIDv7, the idempotency key; never reused
   type: CommandType;
-  /** Each type versions independently; order.create is 3 with ADR-065's display and taxByRate, 2 when discounted, else 1. */
-  version: P extends OrderCreatePayload ? 1 | 2 | 3 : number;
+  /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1. */
+  version: 1 | 2 | 3;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
   attempt: number; // 1-based, informational
 }
+
+/** The register commands (ADR-068); each versions on its own, from 1. */
+export type RegisterCommandType = 'register.session.open' | 'register.session.transition'
+  | 'register.movement.record' | 'register.movement.void' | 'register.closure.submit';
+/** A register command's envelope: the same fields as CommandEnvelope, with its own type and a numeric version. */
+export type RegisterCommandEnvelope<P = Record<string, unknown>> =
+  Omit<CommandEnvelope<P>, 'type' | 'version'> & { type: RegisterCommandType; version: number };
+/** Any command a transport can carry. */
+export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown>;
 
 /** An order.create envelope: its version stays 1 | 2 | 3 (ADR-062, ADR-065). */
 export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 };

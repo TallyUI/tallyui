@@ -33,6 +33,7 @@ export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-setti
 
 export type {
   CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,
+  RegisterCommandType, RegisterCommandEnvelope, AnyCommandEnvelope,
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
