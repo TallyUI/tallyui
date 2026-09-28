@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { Stack } from 'expo-router';
-import { Button, RegisterColumn, Text } from '@tallyui/components';
+import { Button, RegisterColumn, RegisterCount, Text } from '@tallyui/components';
 import { openSession } from '@tallyui/pos';
 import { useDemoRegister, type DemoRegisterDb } from '../../../lib/use-demo-register';
 
@@ -44,7 +44,7 @@ export default function RegisterColumnScreen() {
               onPick={() => setBound(true)}
               currency="EUR"
               cartEmpty={cartEmpty}
-              countSlot={<Text testID="count-slot">Counting…</Text>}
+              countSlot={<RegisterCount register={register} currency="EUR" />}
             >
               <Text testID="cart-slot">The cart goes here.</Text>
             </RegisterColumn>

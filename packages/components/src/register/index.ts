@@ -8,3 +8,5 @@ export { describeRegisterBarPill, type RegisterBarPill } from './register-bar.he
 export { MovementSheet, type MovementSheetProps } from './movement-sheet';
 export { RegisterPanel, type RegisterPanelProps } from './register-panel';
 export { RegisterColumn, type RegisterColumnProps } from './register-column';
+export { RegisterCount, APPROVAL_REQUIRED_TEXT, type RegisterCountProps } from './register-count';
+export { ClosureSheet, type ClosureSheetProps } from './closure-sheet';

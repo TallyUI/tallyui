@@ -28,6 +28,9 @@ const screens = [
   { href: '/pos/register/panel', label: 'RegisterPanel' },
   { href: '/pos/register/column', label: 'RegisterColumn' },
   { href: '/pos/register/blind', label: 'RegisterPanel (blind)' },
+  { href: '/pos/register/count', label: 'RegisterCount' },
+  { href: '/pos/register/count-blind', label: 'RegisterCount (blind)' },
+  { href: '/pos/register/closure', label: 'ClosureSheet' },
   // Settings
   { href: '/pos/connector-status', label: 'ConnectorStatus' },
   { href: '/pos/settings-group', label: 'SettingsGroup' },
