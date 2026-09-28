@@ -56,6 +56,8 @@ export type { SaleStage, CatalogueEntry } from './sale';
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, sameSale, OrderContentMismatchError } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';
 export { createHttpCommandTransport, createOrderOutbox, useOrderOutbox, outboxLogger } from './outbox';
+export { createRegisterOutbox } from './outbox';
+export type { RegisterOutboxOptions, RegisterOutbox } from './outbox';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
 export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR } from './tender';
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg } from './tender';
