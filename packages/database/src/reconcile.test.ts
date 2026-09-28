@@ -7,6 +7,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { filter, firstValueFrom, lastValueFrom, toArray } from 'rxjs';
 
 import { startStockReconcile, type StockReconcileState } from './reconcile';
+import { BACKGROUND_CHUNK_SIZE as C } from './chunks';
 import { STOCK_LEVELS_COLLECTION, STOCK_LEVELS_LAST_PASS, stockLevelsCollection, stockLevelsSchema } from './stock-levels';
 import type { StockReconcileAdapter, SyncContext } from '@tallyui/core';
 
@@ -15,6 +16,7 @@ addRxPlugin(RxDBLocalDocumentsPlugin);
 
 const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
 const context: SyncContext = { connectorId: 'test', baseUrl: 'https://example.com', headers: {} };
+const N = 2 * C + 7;
 
 /** Fake adapter; fetchPages yields the given pages, then throws `fail` if set. */
 function fakeAdapter(pages: Array<Record<string, unknown>>, fail?: Error) {
@@ -51,6 +53,62 @@ describe('startStockReconcile', () => {
   const lastPass = async () => (await db.stock_levels.getLocal(STOCK_LEVELS_LAST_PASS))?.get('completedAt');
   const start = (adapter: StockReconcileAdapter, options: { maxPages?: number; intervalMs?: number } = {}) =>
     startStockReconcile({ collection: db.stock_levels, adapter, context, ...options });
+
+  it('writes a large pass in storage writes of at most BACKGROUND_CHUNK_SIZE rows, and every row lands', async () => {
+    const values = Object.fromEntries(Array.from({ length: N }, (_, i) => [`k${String(i).padStart(4, '0')}`, i]));
+    const { adapter } = fakeAdapter([values]);
+    const instance = db.stock_levels.storageInstance;
+    const bulkWrite = instance.bulkWrite.bind(instance);
+    const sizes: number[] = [];
+    vi.spyOn(instance, 'bulkWrite').mockImplementation(async (rows, context) => {
+      sizes.push((rows as unknown[]).length);
+      return bulkWrite(rows, context);
+    });
+    const { reconcileStock, stop } = start(adapter);
+    const result = await reconcileStock();
+    expect(result).toEqual({ pages: 1, written: N, removed: 3, truncated: false, completedAt: expect.any(String) });
+    const stored = await snapshot();
+    expect(Object.fromEntries(Object.entries(stored).map(([id, row]: [string, any]) => [id, row.value]))).toEqual(values);
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(sizes.every((size) => size <= C)).toBe(true);
+    expect(await lastPass()).toBe(result.completedAt);
+    stop();
+  });
+
+  it('removes a large set of missing rows in writes of at most BACKGROUND_CHUNK_SIZE rows', async () => {
+    await db.stock_levels.bulkInsert(Array.from({ length: N }, (_, i) => ({
+      id: `k${String(i).padStart(4, '0')}`, value: i, updatedAt: '2026-01-01T00:00:00.000Z',
+    })));
+    const { adapter } = fakeAdapter([{ v1: [{ onHand: 5 }] }]);
+    const instance = db.stock_levels.storageInstance;
+    const bulkWrite = instance.bulkWrite.bind(instance);
+    const sizes: number[] = [];
+    vi.spyOn(instance, 'bulkWrite').mockImplementation(async (rows, context) => {
+      sizes.push((rows as unknown[]).length);
+      return bulkWrite(rows, context);
+    });
+    const { reconcileStock, stop } = start(adapter);
+    expect(await reconcileStock()).toMatchObject({ removed: N + 2 });
+    expect(Object.keys(await snapshot())).toEqual(['v1']);
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(sizes.every((size) => size <= C)).toBe(true);
+    stop();
+  });
+
+  it('stop() between two write chunks rejects the pass, makes no further write, and leaves last-pass unwritten', async () => {
+    const { adapter } = fakeAdapter([Object.fromEntries(Array.from({ length: N }, (_, i) => [`k${String(i).padStart(4, '0')}`, i]))]);
+    const { reconcileStock, stop } = start(adapter);
+    const instance = db.stock_levels.storageInstance;
+    const bulkWrite = instance.bulkWrite.bind(instance);
+    const write = vi.spyOn(instance, 'bulkWrite').mockImplementation(async (rows, context) => {
+      const result = await bulkWrite(rows, context);
+      stop();
+      return result;
+    });
+    await expect(reconcileStock()).rejects.toThrow();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(await db.stock_levels.getLocal(STOCK_LEVELS_LAST_PASS)).toBeNull();
+  });
 
   it('writes only changed rows and removes rows missing from a complete pass', async () => {
     const before = await snapshot();

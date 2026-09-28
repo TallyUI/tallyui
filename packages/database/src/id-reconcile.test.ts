@@ -5,12 +5,14 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 
 import { startIdReconcile } from './id-reconcile';
+import { BACKGROUND_CHUNK_SIZE as C } from './chunks';
 import type { IdReconcileAdapter, SyncContext } from '@tallyui/core';
 
 addRxPlugin(RxDBDevModePlugin);
 
 const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
 const context: SyncContext = { connectorId: 'test', baseUrl: 'https://example.com', headers: {} };
+const N = 2 * C + 7;
 const productSchema = {
   version: 0,
   primaryKey: 'id',
@@ -80,6 +82,29 @@ describe('startIdReconcile', () => {
   );
   const start = (adapter: IdReconcileAdapter<Doc>, reSync: () => void, options: { startDelayMs?: number | null; intervalMs?: number; maxPages?: number; maxDeleteShare?: number; allowMassDelete?: boolean } = {}) =>
     startIdReconcile({ collection: db.products, adapter, context, reSync, startDelayMs: null, ...options });
+
+  it('reads a catalogue larger than one chunk in bounded reads and tombstones a product in the last chunk', async () => {
+    const extra = Array.from({ length: N }, (_, i) => ({ id: `k${String(i).padStart(4, '0')}`, variants: [{ id: `kv${i}` }] }));
+    await db.products.bulkInsert(extra);
+    const { adapter, enqueue } = fakeAdapter([[
+      { id: 'p1', variantIds: ['v1', 'v2'] }, { id: 'p2', variantIds: ['v3'] }, { id: 'p3', variantIds: ['v4', 'v5'] },
+      ...extra.slice(0, -1).map((doc) => ({ id: doc.id, variantIds: doc.variants.map((variant) => variant.id) })),
+    ]]);
+    const instance = db.products.storageInstance;
+    const query = instance.query.bind(instance);
+    const sizes: number[] = [];
+    vi.spyOn(instance, 'query').mockImplementation(async (prepared) => {
+      const result = await query(prepared);
+      sizes.push(result.documents.length);
+      return result;
+    });
+    const { reconcileIds, stop } = start(adapter, vi.fn());
+    expect(await reconcileIds()).toEqual({ pages: 1, queued: 1, braked: false, truncated: false });
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: extra[N - 1].id, local: extra[N - 1] }]);
+    expect(sizes).toEqual([C, C, 10]);
+    expect(sizes.every((size) => size <= C)).toBe(true);
+    stop();
+  });
 
   it('queues products missing remotely or listing a vanished variant, and calls reSync once', async () => {
     const before = await revisions();

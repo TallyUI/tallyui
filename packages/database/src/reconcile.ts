@@ -3,6 +3,7 @@ import { BehaviorSubject, type Observable } from 'rxjs';
 
 import { STOCK_LEVELS_LAST_PASS, type StockReconcileAdapter, type SyncContext } from '@tallyui/core';
 
+import { BACKGROUND_CHUNK_SIZE, pauseBetweenChunks, readFreshInChunks } from './chunks';
 import { createPassQueue } from './pass-queue';
 import type { StockLevelRow } from './stock-levels';
 
@@ -47,6 +48,8 @@ export interface StockReconcileState {
  * follow-up pass (later calls share it), so a change made after the pass
  * read is picked up straight after, not at the next interval. stop() clears
  * the timer and aborts a running pass.
+ * A stop during writes leaves earlier chunks written and `last-pass` unchanged.
+ * ADR-060: these server-truth passes are idempotent, so the next pass finishes what a stopped pass left.
  */
 export function startStockReconcile({
   collection,
@@ -95,7 +98,11 @@ export function startStockReconcile({
     }
 
     // Phase 2: write only rows that changed; remove keys the backend no longer returns.
-    const rows = (await collection.find().exec()).map((doc) => doc.toJSON() as StockLevelRow);
+    const rows: StockLevelRow[] = [];
+    for await (const chunk of readFreshInChunks(collection)) {
+      checkAborted();
+      rows.push(...chunk);
+    }
     const stored = new Map(rows.map((row) => [row.id, JSON.stringify(row.value)]));
     const updatedAt = new Date().toISOString();
     const upserts = [...stock]
@@ -103,14 +110,20 @@ export function startStockReconcile({
       .map(([id, value]) => ({ id, value, updatedAt }));
     const removals = rows.filter((row) => !stock.has(row.id)).map((row) => row.id);
 
-    checkAborted();
-    if (upserts.length) {
-      const { error } = await collection.bulkUpsert(upserts);
+    let wroteChunk = false;
+    for (let i = 0; i < upserts.length; i += BACKGROUND_CHUNK_SIZE) {
+      if (wroteChunk) await pauseBetweenChunks();
+      checkAborted();
+      const { error } = await collection.bulkUpsert(upserts.slice(i, i + BACKGROUND_CHUNK_SIZE));
       if (error.length) throw error[0];
+      wroteChunk = true;
     }
-    if (removals.length) {
-      const { error } = await collection.bulkRemove(removals);
+    for (let i = 0; i < removals.length; i += BACKGROUND_CHUNK_SIZE) {
+      if (wroteChunk) await pauseBetweenChunks();
+      checkAborted();
+      const { error } = await collection.bulkRemove(removals.slice(i, i + BACKGROUND_CHUNK_SIZE));
       if (error.length) throw error[0];
+      wroteChunk = true;
     }
     // Rows written by this pass carry the same time.
     const completedAt = updatedAt;
