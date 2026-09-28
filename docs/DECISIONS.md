@@ -460,7 +460,8 @@ bodies and design docs, and the source is given for each.
 ## ADR-032 How WCPOS code reaches TallyUI (plan D3)
 
 - **Date:** 2026-09-23 · **Status:** Accepted (Front desk, on the MVP
-  criterion) · **Source:** plan D3
+  criterion) · **Source:** plan D3 · **Amended by ADR-068:** registers
+  sync to the server as `register.*` commands (c2)
 - **Decision:**
   - Port the neutral payments, tender and register logic from WCPOS `next`
     into `@tallyui/pos`, carrying the WCPOS tests over.
@@ -874,7 +875,8 @@ bodies and design docs, and the source is given for each.
 
 - **Date:** 2026-09-23 · **Status:** Accepted (programme lead); the
   interface between the TallyUI and medusapos tracks · **Source:** plan §2.2,
-  ADR-036, ADR-037
+  ADR-036, ADR-037 · **Amended by ADR-068:** the five `register.*` command
+  types, the `register_*` conflict codes and `CommandError.data`
 - **Transport:** `POST /tally/v1/commands`, header `X-Tally-Protocol: 1`.
   - Body: `{ commands: CommandEnvelope[] }`, at most 50, processed in
     order.
@@ -2822,3 +2824,141 @@ interface OrderCreatePayload {
   - A second consumer turns the engine's two doors (`@wcpos/sync-engine`
     and `/testing`) into a contract. Breaking changes need a version bump
     and a note for TallyUI.
+
+## ADR-068 Registers sync to the server as `register.*` commands on the command outbox
+
+- **Date:** 2026-09-28 · **Status:** Accepted (design agreed by the Front
+  desk and the medusapos track, 2026-09-28) · Amends ADR-032 and ADR-038 ·
+  Relates to ADR-067 decision 7
+- **Context:**
+  - Before c2, a TallyUI register is entirely local. Its sessions,
+    movements and closures never leave the device, and the Z is the till's
+    word alone. Nothing stops two tills opening one drawer, or a server
+    closing a session the till still thinks is open.
+  - The fiscal principle is "the till records facts; the server keeps
+    them". The server must:
+    - keep the write-once record;
+    - anchor expected cash and the sales count on its own ledger;
+    - refuse what one till can't know is wrong;
+    - hand back the register's counters and closure number.
+  - It must stay backend-agnostic. Every plugin (Medusa first, then
+    Vendure, WooCommerce and Shopify) implements the same commands.
+  - ADR-067 makes the WCPOS sync engine the target. Its drivers are weeks
+    out, behind P0, P1 and the G4 experiment. Testers need register closes
+    now, and MVP-first means they don't wait for an engine migration.
+- **Decision:**
+  1. **The transport is the existing command channel.**
+     - Register facts ride `POST /tally/v1/commands` (ADR-038), with the
+       same envelope, auth, batch limits, retry rules and idempotency
+       ledger. There are no per-platform register routes.
+     - Five new command types, each versioned from 1:
+       - `register.session.open`;
+       - `register.session.transition`;
+       - `register.movement.record`;
+       - `register.movement.void`;
+       - `register.closure.submit`.
+  2. **A capability gates it.**
+     - `/tally/v1/info` lists `"register": [1]`, and `ServerCapabilities`
+       gains `register?: number` (missing means 0).
+     - Below 1, nothing is recorded or sent: a till against an old plugin
+       stays exactly as local as before.
+  3. **There's a local `register_commands` collection,** which is both the
+     queue and the sync ledger.
+     - Its key is deterministic (`session.open:<sessionId>`,
+       `session.transition:<sessionId>:<status_at>`,
+       `movement.record:<movementId>`, `movement.void:<movementId>`,
+       `closure.submit:<closureId>`), so an append is idempotent.
+     - `reconcileRegisterCommands` appends every missing fact in fact order,
+       serialised per register. Each append gets a per-register `seq`, minted
+       in the register document; a gap from a lost race is harmless.
+     - A closed session with no open command is history from before the
+       capability, and is never backfilled.
+     - The envelope id is minted once at append and stored, so a retry
+       sends the same bytes, as ADR-065 does for orders.
+     - The local register write comes first, then the append. A recovery
+       scan on start and after each flush appends any missing command. A
+       crash delays a command; it never loses one.
+     - The collection is local and never replicated. The three register
+       collections get no schema bump.
+  4. **Sending is serial per register.**
+     - Commands go strictly by `seq`, and the queue stops at the first
+       command not applied. That gives the dependencies for free: open
+       before a transition, movements before counting, a void after its
+       target, and the closure last.
+     - Orders stay on their own outbox. A closure binds its orders by
+       `orderIds` whenever they land (soft references, never refusals).
+  5. **Conflict codes are neutral, and byte for byte the same on both
+     tracks** (confirmed in writing to medusapos, 2026-09-28).
+     - Each is a per-command `rejected` result inside a 200, with details
+       in the new optional `CommandError.data`:
+
+       | Code | `error.data` |
+       |---|---|
+       | `register_session_already_open` | `{ sessionId }`, the winner's |
+       | `register_session_closed` | none |
+       | `register_approval_required` | none |
+       | `register_closure_exists` | `{ closureId }` |
+       | `register_closure_number_invalid` | `{ counters: { lastClosureNumber, perpetualSalesTotalMinor, perpetualRefundsTotalMinor } }` |
+
+     - Shape errors stay `invalid_payload`. A business refusal is never a
+       whole-batch 4xx.
+  6. **Server results.** `RegisterCommandResult.closure` is
+     `{ serverClosureId, number, expected?, variance? }`.
+     `closure.findings` stays absent or untyped until both tracks type it.
+  7. **Approval.**
+     - In the v1 transition, `approvedBy` stays soft: it's accepted as
+       sent.
+     - The signed, session-bound `approverToken` arrives only with c2c's
+       approve route, and `register_approval_required` is raised only from
+       then on.
+     - The server's variance threshold is a plugin option.
+  8. **Register ids are minted locally,** and the server holds soft
+     references to them: an unknown register id is accepted as written.
+     There's no register-creation flow in the POS.
+  9. **Refunds are out of scope** until Paul's refund model.
+     `period_refunds` stays 0, and the server figures exclude refunds.
+  10. **The residual window of ADR-032** (a sale stamped between the
+      count gate and `writeClosure`) closes by refusing stamps while the
+      session is counting (c2b-1).
+  11. **The job split** is c2a (the types, the outbox and the capability
+      gate), c2b (results, anchoring and counters) and c2c (conflict
+      handling, approval tokens and UI). c2a sits behind the capability,
+      so it can merge before any plugin supports it.
+  12. **Under ADR-067.**
+      - `register.*` commands ride the command outbox under ADR-067
+        decision 7, as `order.create` does.
+      - When a platform's driver lands, they carry across to the engine's
+        mutation queue with the command id as the `Idempotency-Key`. The
+        register outbox is retired only after the same two tests as the
+        order outbox pass on that platform.
+      - The `register_*` conflict codes become driver-mapped.
+      - Register facts are a named input to the driver interface (G2 in
+        [plans/sync-engine-adoption.md](plans/sync-engine-adoption.md)).
+- **Consequences:**
+  - **ADR-038's shapes grow additively:**
+    - `CommandType` gains the five types;
+    - `CommandEnvelope.version` becomes `number`, because each type
+      versions on its own. `order.create` keeps `1 | 2 | 3` through
+      `OrderCreateEnvelope`, which `toOrderCreateEnvelope` returns;
+    - `CommandResult` gains `register?`;
+    - `CommandError` gains `data?`;
+    - `CommandTransport<E>` is generic, defaulting to
+      `CommandEnvelope<unknown>`. The order outbox takes
+      `CommandTransport<OrderCreateEnvelope>`, and one HTTP transport serves
+      both outboxes.
+    The order outbox is unchanged in behaviour.
+  - **What shipped when:** c2a-1 records the commands locally behind the
+    gate and sends nothing. c2a-2 sends them.
+  - **Every plugin's checklist:**
+    - `"register": [1]` in `/tally/v1/info`;
+    - the five handlers, with ledger and fingerprint idempotency;
+    - write-once register, session, movement and closure tables;
+    - at most one non-closed session per register;
+    - a movement's session must be open;
+    - a void names a row of its own session, once;
+    - a closure number is the register's last number plus one;
+    - one closure per session;
+    - ledger-derived `expected` and `salesCount` from `order.create`'s
+      `sessionId` (ADR-065) and the movements.
+  - **Until c2c ships,** an over-threshold close isn't refused by the
+    server.
