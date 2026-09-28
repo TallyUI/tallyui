@@ -876,7 +876,7 @@ bodies and design docs, and the source is given for each.
 - **Date:** 2026-09-23 · **Status:** Accepted (programme lead); the
   interface between the TallyUI and medusapos tracks · **Source:** plan §2.2,
   ADR-036, ADR-037 · **Amended by ADR-068:** the five `register.*` command
-  types, the `register_*` conflict codes and `CommandError.data`
+  types and the `register_*` conflict codes
 - **Transport:** `POST /tally/v1/commands`, header `X-Tally-Protocol: 1`.
   - Body: `{ commands: CommandEnvelope[] }`, at most 50, processed in
     order.
@@ -2829,7 +2829,8 @@ interface OrderCreatePayload {
 
 - **Date:** 2026-09-28 · **Status:** Accepted (design agreed by the Front
   desk and the medusapos track, 2026-09-28) · Amends ADR-032 and ADR-038 ·
-  Relates to ADR-067 decision 7
+  Widens ADR-067 decision 7, which kept the command outbox to
+  `order.create`, to the register commands (the Front desk, 2026-09-28)
 - **Context:**
   - Before c2, a TallyUI register is entirely local. Its sessions,
     movements and closures never leave the device, and the Z is the till's
@@ -2858,8 +2859,9 @@ interface OrderCreatePayload {
        - `register.movement.void`;
        - `register.closure.submit`.
   2. **A capability gates it.**
-     - `/tally/v1/info` lists `"register": [1]`, and `ServerCapabilities`
-       gains `register?: number` (missing means 0).
+     - `/tally/v1/info` lists `"register": [1]` under `contracts`, beside
+       `order.create`, and `ServerCapabilities` gains `register?: number`
+       (the highest listed version; missing means 0).
      - Below 1, nothing is recorded or sent: a till against an old plugin
        stays exactly as local as before.
   3. **There's a local `register_commands` collection,** which is both the
@@ -2869,10 +2871,26 @@ interface OrderCreatePayload {
        `movement.record:<movementId>`, `movement.void:<movementId>`,
        `closure.submit:<closureId>`), so an append is idempotent.
      - `reconcileRegisterCommands` appends every missing fact in fact order,
-       serialised per register. Each append gets a per-register `seq`, minted
-       in the register document; a gap from a lost race is harmless.
-     - A closed session with no open command is history from before the
-       capability, and is never backfilled.
+       serialised per register. Each append gets the next per-register
+       `seq`, read from the ledger itself (the highest `seq` plus one), so
+       the order survives a reset of the register document. A gap from a
+       lost race is harmless.
+     - **Which sessions:** the moment the gate first turns on for a register
+       is stored as `commands_since` in its register document. A session
+       **closed before** that moment is history from before the capability,
+       and is never backfilled. Every other session is, whether it is still
+       open or closed later, even if its open command was never recorded.
+     - **Transitions are captured when they happen:** each register action
+       hands the row it wrote to the queued reconcile, so every transition
+       it made is appended, even if a later transition has overwritten the
+       row by the time the reconcile runs. If that append fails, the next
+       reconcile sees only the current state; decision 5a makes that safe.
+     - A session whose `closure.submit` command is recorded is complete,
+       and the reconcile skips it.
+     - **The ledger is never pruned.** An applied command stays as the
+       record that its fact was sent. Deleting one would make the next
+       reconcile append the fact again under a new command id, which the
+       server would take as a new fact.
      - The envelope id is minted once at append and stored, so a retry
        sends the same bytes, as ADR-065 does for orders.
      - The local register write comes first, then the append. A recovery
@@ -2887,10 +2905,24 @@ interface OrderCreatePayload {
        target, and the closure last.
      - Orders stay on their own outbox. A closure binds its orders by
        `orderIds` whenever they land (soft references, never refusals).
+     - **Movements are accepted on any non-closed session,** open or
+       counting, as ADR-032 allows them locally. They are refused only when
+       the session is closed or its closure has been submitted. So a
+       movement that races `startCounting`, or a stranded one found late,
+       doesn't wedge the queue.
+  5a. **A transition is a state snapshot** (agreed for both tracks,
+      2026-09-28). `register.session.transition` says "the session is now in
+      this status, as of `at`".
+      - A transition to the status the session already has is applied as a
+        no-op.
+      - Intermediate states may be missing: the till can send open, then
+        closed, without the counting in between.
+      - The closing transition is terminal, and carries `counted`.
   5. **Conflict codes are neutral, and byte for byte the same on both
      tracks** (confirmed in writing to medusapos, 2026-09-28).
      - Each is a per-command `rejected` result inside a 200, with details
-       in the new optional `CommandError.data`:
+       in the optional `CommandError.data`, which the outbox version
+       fallback already added (ADR-065):
 
        | Code | `error.data` |
        |---|---|
@@ -2905,6 +2937,29 @@ interface OrderCreatePayload {
   6. **Server results.** `RegisterCommandResult.closure` is
      `{ serverClosureId, number, expected?, variance? }`.
      `closure.findings` stays absent or untyped until both tracks type it.
+     - A closure renumbered after `register_closure_number_invalid` can't be
+       resent through the same command: its key and bytes are fixed, and a
+       new payload under the same command id gets `idempotency_mismatch`.
+       The resend path is c2c's to define.
+  6a. **The payloads (version 1),** byte for byte on both tracks. They use
+      camelCase and integer minor units. An optional field is **omitted**
+      when the till's value is `null` or missing, never sent as `null`.
+
+      | Type | Payload |
+      |---|---|
+      | `register.session.open` | `sessionId`, `registerId`, `openedAt`, `countedFloatMinor`; optional `storeKey`, `businessDay`, `openedBy`, `expectedFloatMinor`, `openingVarianceMinor` |
+      | `register.session.transition` | `sessionId`, `status` (`open`, `counting` or `closed`), `at`; when closing only, optional `counted` (tender → minor units), `closedBy`, `approvedBy` |
+      | `register.movement.record` | `movementId`, `sessionId`, `type` (`paid_in`, `paid_out` or `no_sale`), `amountMinor`, `reason`, `createdAt`; optional `createdBy` |
+      | `register.movement.void` | `movementId` (the void's own id), `sessionId`, `voids` (the voided movement's id), `createdAt`; optional `createdBy` |
+      | `register.closure.submit` | `closureId`, `sessionId`, `registerId`, `number`, `openedAt`, `closedAt`, `tillExpected`, `counted`, `periodSalesTotalMinor`, `periodRefundsTotalMinor`, `perpetualSalesTotalMinor`, `perpetualRefundsTotalMinor`, `unsyncedCount`, `unsyncedTotalMinor`, `softwareVersion`, `orderIds`, `movementIds`; optional `businessDay`, `closedBy`, `approvedBy` |
+
+      - The closure payload leaves out the till's `expected`, `variance`,
+        `breakdowns`, print fields and server fields. The server derives
+        expected cash from its own ledger.
+      - `approvedBy` is `breakdowns.approved_by` when that is a non-empty
+        string.
+      - The TypeScript shapes are `Register*Payload` in
+        `packages/core/src/types/commands.ts`.
   7. **Approval.**
      - In the v1 transition, `approvedBy` stays soft: it's accepted as
        sent.
@@ -2935,16 +2990,18 @@ interface OrderCreatePayload {
       - Register facts are a named input to the driver interface (G2 in
         [plans/sync-engine-adoption.md](plans/sync-engine-adoption.md)).
 - **Consequences:**
-  - **ADR-038's shapes grow additively:**
+  - **ADR-038's shapes grow additively, and no existing type narrows or
+    breaks** (it's a minor release):
     - `CommandType` gains the five types;
-    - `CommandEnvelope.version` becomes `number`, because each type
-      versions on its own. `order.create` keeps `1 | 2 | 3` through
-      `OrderCreateEnvelope`, which `toOrderCreateEnvelope` returns;
+    - `CommandEnvelope<P>.version` is `1 | 2 | 3` for an `order.create`
+      payload, as before, and `number` for the others, because each type
+      versions on its own. `OrderCreateEnvelope` names the order case, and
+      `toOrderCreateEnvelope` returns it;
     - `CommandResult` gains `register?`;
-    - `CommandError` gains `data?`;
-    - `CommandTransport<E>` is generic, defaulting to
-      `CommandEnvelope<unknown>`. The order outbox takes
-      `CommandTransport<OrderCreateEnvelope>`, and one HTTP transport serves
+    - `CommandTransport<E>` is generic, and its default stays the
+      `order.create` envelope, so an existing transport type-checks
+      unchanged. The HTTP transport declares the wide
+      `CommandTransport<CommandEnvelope<unknown>>`, so one transport serves
       both outboxes.
     The order outbox is unchanged in behaviour.
   - **What shipped when:** c2a-1 records the commands locally behind the
@@ -2954,7 +3011,10 @@ interface OrderCreatePayload {
     - the five handlers, with ledger and fingerprint idempotency;
     - write-once register, session, movement and closure tables;
     - at most one non-closed session per register;
-    - a movement's session must be open;
+    - a movement's session must not be closed, and its closure not yet
+      submitted (decision 4);
+    - a transition is a state snapshot: a same-status transition is an
+      applied no-op, and intermediate states may be missing (decision 5a);
     - a void names a row of its own session, once;
     - a closure number is the register's last number plus one;
     - one closure per session;
