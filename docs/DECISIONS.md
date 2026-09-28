@@ -2898,27 +2898,46 @@ interface OrderCreatePayload {
        crash delays a command; it never loses one.
      - The collection is local and never replicated. The three register
        collections get no schema bump.
-  4. **Sending is serial per register.**
-     - Commands go strictly by `seq`, and the queue stops at the first
-       command not applied. That gives the dependencies for free: open
-       before a transition, movements before counting, a void after its
-       target, and the closure last.
+  4. **Sending is serial per register, and order is the ledger's, not the
+     clock's** (the Front desk, 2026-09-28).
+     - A register's commands are never sent concurrently from one till.
+       They go strictly by `seq`, in batches applied in array order, and
+       the queue stops at the first command not applied. So the order in
+       which the server applies a register's commands **is** the ledger's
+       `seq` order. `seq` itself isn't on the wire, and the server doesn't
+       need it. Replay safety by command id makes a redelivery a no-op.
+     - `at` is a fact carried in the payload, never an ordering key.
+     - That gives the dependencies for free: open before a transition,
+       movements before counting, a void after its target, and the closure
+       last.
+     - **The till keeps its `seq` order true to the facts:**
+       - it never appends a transition older than one already in the
+         ledger for that session;
+       - a session's closing transition is sequenced after every movement
+         and void of that session, whatever their timestamps, and before
+         its closure.
+     - **The ledger's `seq` can have gaps** (a lost race), and, with two
+       collection instances over one database, a duplicate. The sender
+       orders by `seq`, then key.
      - Orders stay on their own outbox. A closure binds its orders by
        `orderIds` whenever they land (soft references, never refusals).
-     - **Movements are accepted on any non-closed session,** open or
-       counting, as ADR-032 allows them locally. They are refused only when
-       the session is closed or its closure has been submitted. So a
-       movement that races `startCounting`, or a stranded one found late,
+     - **Movements and voids are accepted on any non-closed session,** open
+       or counting, as ADR-032 allows them locally, whatever their `at`.
+       They are refused once the session's closing transition, or its
+       closure, has been applied. So a movement that races `startCounting`
        doesn't wedge the queue.
+     - **A movement stranded after its closure stays local.** The server
+       refuses it once the closure exists, and the reconcile skips a
+       session whose closure is recorded. It is on the till (ADR-032's
+       stranded row), not on the server.
   5a. **A transition is a state snapshot** (agreed for both tracks,
       2026-09-28). `register.session.transition` says "the session is now in
-      this status, as of `at`".
+      this status", and `at` records when.
+      - The last applied transition sets the status (decision 4's order).
+        Nothing compares `at`.
       - A transition to the status the session already has is applied as a
         no-op.
-      - A transition whose `at` is older than the session's current status
-        time on the server is also an applied no-op. The till can send a
-        transition it captured at action time after a newer one, when the
-        reconcile lags, and this keeps the newer state.
+      - A transition out of `closed` is refused (`register_session_closed`).
       - Intermediate states may be missing: the till can send open, then
         closed, without the counting in between.
       - The closing transition is terminal, and carries `counted`.
@@ -2938,6 +2957,14 @@ interface OrderCreatePayload {
 
      - Shape errors stay `invalid_payload`. A business refusal is never a
        whole-batch 4xx.
+     - **The business conflicts (`register_*`) are recorded** in the
+       server's ledger. A state-dependent refusal isn't recorded, so a
+       resend of the same command id re-evaluates once the state is fixed.
+       The state-dependent refusals are an unknown session, a missing void
+       target, and a closure whose register isn't its session's.
+     - **An unsupported register version** gets a per-command `rejected`
+       with `unsupported_version` and `error.data: { register: <highest
+       supported> }`, mirroring `order.create`'s `data.orderCreate`.
   6. **Server results.** `RegisterCommandResult.closure` is
      `{ serverClosureId, number, expected?, variance? }`.
      `closure.findings` stays absent or untyped until both tracks type it.
@@ -2968,6 +2995,16 @@ interface OrderCreatePayload {
         anything else as `invalid_payload`. The till's `recordMovement`
         refuses the same amounts before any write
         (`RegisterMovementAmountError`), so it never queues one.
+      - **`reason`** is required on every `register.movement.record`,
+        `no_sale` included. It must be non-empty after trimming, and at most
+        500 characters, as the till's movement sheet requires.
+      - **Ids** are at most 64 characters. Session, movement and closure ids
+        are 36-character UUIDs. The register id is the one the app binds.
+      - **Only the sheet has checked `reason` and the register id's length
+        so far.** The till's store will refuse both before any write (c2a-2),
+        as it already does amounts. Movements recorded before the
+        amount guard were checked only by the sheet, the one writer
+        TallyUI has.
       - **A closure's register:** `register.closure.submit`'s `registerId`
         must be its session's register, or the server refuses it as
         `invalid_payload`. Decision 8's "an unknown register id is accepted
@@ -3071,17 +3108,21 @@ interface OrderCreatePayload {
 - **Consequences:**
   - **ADR-038's shapes grow additively, and no existing type narrows or
     breaks** (it's a minor release):
-    - `CommandType` gains the five types;
-    - `CommandEnvelope<P>.version` is `1 | 2 | 3` for an `order.create`
-      payload, as before, and `number` for the others, because each type
-      versions on its own. `OrderCreateEnvelope` names the order case, and
+    - `CommandType` and `CommandEnvelope` are exactly as before
+      (`'order.create'`, version `1 | 2 | 3`);
+    - new beside them:
+      - `RegisterCommandType`, the five types;
+      - `RegisterCommandEnvelope`, the same fields with its own type and a
+        numeric version, since each register type versions on its own;
+      - `AnyCommandEnvelope`, the union;
+    - `OrderCreateEnvelope` names the order case, and
       `toOrderCreateEnvelope` returns it;
     - `CommandResult` gains `register?`;
-    - `CommandTransport<E>` is generic, and its default stays the
-      `order.create` envelope, so an existing transport type-checks
-      unchanged. The HTTP transport declares the wide
-      `CommandTransport<CommandEnvelope<unknown>>`, so one transport serves
-      both outboxes.
+    - `CommandTransport<E>` is generic, bounded by `AnyCommandEnvelope`, and
+      defaults to `CommandEnvelope<OrderCreatePayload>`, so an existing
+      transport type-checks unchanged. The HTTP transport declares
+      `CommandTransport<AnyCommandEnvelope>`, so one transport serves both
+      outboxes.
     The order outbox is unchanged in behaviour.
   - **What shipped when:** c2a-1 records the commands locally behind the
     gate and sends nothing. c2a-2 sends them.
@@ -3092,8 +3133,17 @@ interface OrderCreatePayload {
     - at most one non-closed session per register;
     - a movement's session must not be closed, and its closure not yet
       submitted (decision 4);
-    - a transition is a state snapshot: a same-status transition is an
-      applied no-op, and intermediate states may be missing (decision 5a);
+    - a register's commands are applied in the order received, with a
+      batch in array order, and nothing compares `at` (decision 4);
+    - a transition is a state snapshot: the last applied one sets the
+      status, a same-status transition is an applied no-op, a transition
+      out of `closed` is refused, and intermediate states may be missing
+      (decision 5a);
+    - `reason` is required, non-empty after trimming, at most 500
+      characters, and ids are at most 64 characters (decision 6a);
+    - an unsupported register version answers `unsupported_version` with
+      `data.register`; state-dependent refusals aren't recorded
+      (decision 5);
     - a void names a row of its own session, once;
     - a movement's `amountMinor` is > 0 for `paid_in` and `paid_out`, and
       exactly 0 for `no_sale` (decision 6a);
