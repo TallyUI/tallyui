@@ -2564,7 +2564,8 @@ interface OrderCreatePayload {
   - **The content decides the version,** as ADR-062 does for discounts.
     - `finalizeOrder` writes `display` and `taxByRate` onto the `PosOrder` only when the store's `capabilities.orderCreate` is at least 3.
     - `toOrderCreateEnvelope` sends version 3 exactly when the order carries both.
-    - So each order's bytes are fixed at finalize, and every retry under its `commandId` is byte-identical. A plugin downgraded after finalize is handled by the outbox's version fallback, which is specified separately.
+    - So each order's bytes are fixed at finalize, and every retry under its `commandId` is byte-identical.
+    - **Accepted risk until the outbox's version fallback lands** (specified, queued next): a version-3 order sent to a plugin downgraded after finalize is rejected, and a requeue resends the same version 3, just as a discounted order is rejected by a plugin downgraded below 2 today.
     - `finalizeOrder` refuses an order whose `display` total or tax disagrees with the order, or whose tax by rate doesn't sum to its tax.
     - `taxByRate` carries no English `label`; it is receipt copy, not data.
   - **`sessionId` (version 3 only)** is the sale's session, stamped or late: `order.sessionId ?? order.lateSessionId`.

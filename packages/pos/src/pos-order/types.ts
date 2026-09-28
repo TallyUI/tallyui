@@ -53,7 +53,7 @@ export interface PosOrder {
    * counts it. Sent at `order.create` version 3 as the payload's `sessionId` (the stamped or late session, one field).
    */
   lateSessionId?: string;
-  /** The `order.create` version the outbox sends this order at, set only after a server refused a higher one (`unsupported_version`); absent means the content decides (ADR-065). The order's own figures are never changed. */
+  /** Declared for the outbox's version fallback (ADR-065 amendment), which will set it after a server refuses a higher version (`unsupported_version`). Nothing writes it yet; absent means the content decides the version. */
   sentVersion?: 1 | 2 | 3;
   /** The version first tried, before the downgrade (the order's audit). */
   downgradedFrom?: 1 | 2 | 3;
