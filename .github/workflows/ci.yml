@@ -83,6 +83,9 @@ jobs:
       - name: Run Playwright tests
         run: pnpm test:e2e:web
 
+      # The CI reporter is 'github', so this uploads nothing today. Never upload an HTML report,
+      # traces or test-results/: they capture the storage-sqlite worker bundle, which contains
+      # the decrypted RxDB Premium plugins (docs/CONTRIBUTING.md).
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
