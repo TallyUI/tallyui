@@ -316,8 +316,13 @@ bodies and design docs, and the source is given for each.
 
 ## ADR-023 The TallyUI Sync Protocol, with a conformance suite
 
-- **Date:** 2026-09-23 · **Status:** Accepted · **Source:** plan §1.3,
-  §1.5, §2.1
+- **Date:** 2026-09-23 · **Status:** Superseded as the target protocol
+  by ADR-067 · **Source:** plan §1.3, §1.5, §2.1
+- **Superseded by ADR-067 (2026-09-28):** TSP v1 is no longer the target
+  protocol. TallyUI consumes the WCPOS sync engine, and the target is the
+  engine's protocol as each driver maps it onto its platform. The TSP
+  plugin and connector stay in service for the Medusa and Vendure testers
+  until their drivers exist.
 - **Context:** RxDB's server package is SSPL. replication-graphql would need
   subscriptions Vendure lacks. ElectricSQL, PowerSync and Zero read the
   platform's Postgres directly, bypass price, channel and tax logic, and
@@ -338,7 +343,7 @@ bodies and design docs, and the source is given for each.
 ## ADR-024 Reads by pull-only RxDB replication; writes by a command outbox
 
 - **Date:** 2026-09-23 · **Status:** Accepted; supersedes the server-wins
-  part of ADR-003 · **Source:** plan §2.1
+  part of ADR-003; amended by ADR-061 and ADR-067 · **Source:** plan §2.1
 - **Decision:** Server-owned collections (catalogue, prices, stock levels,
   tax, config) replicate pull-only. POS facts are commands in a durable,
   leader-elected outbox, keyed by UUIDv7 as the idempotency key:
@@ -351,6 +356,10 @@ bodies and design docs, and the source is given for each.
   caps a realm at 13), and `multiInstance` with leader election.
   **Amended by ADR-061:** databases are single-instance, and
   `multiInstance` with leader election is unsupported.
+  **Amended by ADR-067:** pull-only reads and the `order.create` outbox
+  remain for Medusa and Vendure until their engine drivers exist, then
+  retire platform by platform. The WooCommerce app uses the engine's
+  demand-driven partial replicas and mutation queue from the start.
 - **Consequences:** Product push handlers are removed from every connector.
   Demand-driven partial replicas (the WCPOS approach) are adopted only if
   the M2 benchmark misses its budget.
@@ -2635,3 +2644,90 @@ interface OrderCreatePayload {
   - The local driver can also serve as ADR-027's in-browser demo backend.
   - The platform order of ADR-020 is unchanged; standalone is a track
     beside the platforms, not ahead of them.
+
+## ADR-067 Sync engine: TallyUI consumes @wcpos/sync-core and @wcpos/sync-engine; connectors become drivers
+
+- **Date:** 2026-09-28 · **Status:** Accepted (Paul's decision; design by
+  the Front desk) · Supersedes ADR-023 as the target protocol; amends
+  ADR-024 · **Source:** Paul, 2026-09-28; the spike and phased plan are in
+  [plans/sync-engine-adoption.md](plans/sync-engine-adoption.md)
+- **Context:**
+  - Paul: TallyUI may consume the WCPOS packages `@wcpos/sync-core` and
+    `@wcpos/sync-engine` (monorepo `next`, `packages/sync-core` and
+    `packages/sync-engine`), generalising them for TallyUI where
+    necessary.
+  - The engine is WCPOS's answer to everything ADR-023 and ADR-024 set out
+    to build: a demand-driven require plane with lanes, partial replicas
+    with coverage and checkpoints, conflict states, politeness toward the
+    server (server-pressure, cadence, demand-flood detection), and a
+    durable mutation queue that sends `Idempotency-Key` and `If-Match`.
+    It is about 42,700 lines of source with about 120 test files, and it
+    already speaks `wcpos/v2`, the surface the WooCommerce app writes
+    through (tallyui-woocommerce D1(b)).
+  - The spike (plan §1) found the packages are private, ship TypeScript
+    source with no build, depend on `workspace:*` and on `@wcpos/utils` at
+    runtime, and pin RxDB 17.4.0 where TallyUI is on 16.21.1. There is no
+    driver interface yet: WCPOS ADR 0029 (wiki
+    `architecture/decisions/2026-08-17-backend-direction-driver-identity-envelope.md`)
+    deliberately gathers one Woo driver instead of designing a `Backend`
+    interface from a single adapter, and 77 of the engine's 168 source
+    files still reach WooCommerce shapes or `wcpos/v2` URLs directly.
+- **Decision:**
+  1. **The engine is shared.** The require plane, lanes, partial replicas,
+     checkpoints, conflict states, politeness and the mutation queue
+     (`Idempotency-Key` = mutation id, `If-Match` = base revision) are
+     WCPOS's, consumed by TallyUI. TallyUI does not build a second sync
+     engine.
+  2. **A TallyUI connector becomes a driver** in the shape of ADR 0029:
+     auth, journal tick, fetch by id, push with idempotency and revision,
+     and declared capabilities. The driver owns every platform fact (ids,
+     routes, payload mapping, the POS envelope carrier); the engine above
+     it stays backend-agnostic.
+  3. **Adoption order.** The WooCommerce app (`wcpos/tallyui-woocommerce`)
+     first, on the engine as it is, since it already speaks `wcpos/v2`.
+     Then the driver interface and generalisation, then a Medusa driver,
+     then a Vendure driver. The standalone app (ADR-066) becomes the
+     local-only driver once the interface exists.
+  4. **The engine is changed only in the monorepo**, by a worker there,
+     on WCPOS `next`. Each change is behaviour-neutral for WCPOS and
+     passes its suite. TallyUI consumes published packages (GitHub
+     Packages, prerelease versions tied to `next` commits) or, if
+     publishing slips, an unedited vendored snapshot checked byte for
+     byte against a monorepo commit. TallyUI never patches engine code.
+  5. **RxDB 17.4.0 is a prerequisite.** The rxdb and rxdb-premium upgrade
+     that ADR-031 chose and ADR-044/ADR-045 deferred is done before the
+     WooCommerce app takes the engine.
+  6. **ADR-023 is superseded as the target protocol.** TSP v1 (`manifest`,
+     `pull/:collection`, `commands`, `stream`, `ids/:collection`) is no
+     longer where TallyUI is heading. The target is the engine's
+     protocol, as each driver maps it onto its platform. The conformance
+     idea survives as the engine's own contract fixtures and fakes
+     (`sync-core/contracts`, `fakePullServer`, `fakeWriteServer`) and the
+     driver contract tests of plan P2.
+  7. **ADR-024 is amended, not withdrawn.** Pull-only reads and the
+     `order.create` command outbox stay in service for the Medusa and
+     Vendure testers until their drivers exist (plan P3 and P4), and are
+     retired platform by platform as each moves to the engine.
+- **Consequences:**
+  - Phases (plan §2): P0 publish or vendor, and RxDB 17; P1 the
+    WooCommerce app on the engine; P2 driver interface and
+    generalisation; P3 Medusa driver; P4 Vendure driver.
+  - The monorepo work for P0 is small (a build, dependency fixes, and
+    moving `apps/main/lib/engine-fetcher.ts` into a
+    `@wcpos/sync-engine/woo-transport` door). P2 is about 10–14 working
+    days; the Medusa driver on top of it about 9–14 (plan §1e).
+  - P2 amends WCPOS ADR 0029 decision 4 on the WCPOS side: a second
+    backend is now real, so the driver interface is named from what the
+    engine asks of the Woo driver, with two adapters from the first day.
+  - The engine's document model is Woo-shaped (ADR 0029 decision 5).
+    TallyUI's own models stay: the pos layer keeps the neutral sale
+    (ADR-062, ADR-065) and reads the catalogue through traits (ADR-002).
+    The app maps a sale onto `engine.write()`, and whether a non-Woo
+    driver materialises the Woo shape or the engine's `payload` becomes
+    driver-typed is decided in P2 by measuring the Medusa mapping.
+  - Programme §2.3's M1 (the TSP conformance kit) and M2 (the Medusa sync
+    plugin on TSP) are frozen at what testers use today; new sync work
+    goes to the plan's phases.
+  - A second consumer turns the engine's two doors (`@wcpos/sync-engine`
+    and `/testing`) into a contract. Breaking changes need a version bump
+    and a note for TallyUI.
