@@ -90,11 +90,11 @@ it('recordMovement refuses a reason the server would refuse, before writing', as
   }
   expect(reads).not.toHaveBeenCalled();
   reads.mockRestore();
-  for (const reason of [' ok ', 'x'.repeat(500)]) {
+  for (const reason of ['  ok  ', 'x'.repeat(500)]) {
     const row = await recordMovement(db.register_sessions, db.cash_movements, db.closures, {
       sessionId: session.id, type: 'paid_out', amountMinor: 700, reason, actor: '7',
     });
-    expect(row.reason).toBe(reason);
+    expect(row.reason).toBe(reason.trim());
   }
   expect(await db.cash_movements.find().exec()).toHaveLength(2);
 });

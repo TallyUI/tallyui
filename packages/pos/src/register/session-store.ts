@@ -309,7 +309,7 @@ export async function recordMovement(
     session_id: input.sessionId,
     type: input.type,
     amountMinor: input.amountMinor,
-    reason: input.reason,
+    reason: input.reason.trim(),
     created_by: input.actor,
     created_at_gmt: new Date().toISOString(),
   });

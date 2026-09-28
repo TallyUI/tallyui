@@ -119,16 +119,19 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
           if (stored?.syncStatus !== 'pending' || stored.commandId !== command.commandId) continue;
           const current = await collection.findOne(command.key).exec();
           if (!current) continue;
-          try { await options.onResult?.(plainCommand(stored), result); }
-          catch (cause) { registerCommandsLogger.warn('Failed to apply register command result', { commandId: command.commandId, cause }); }
-          const updatedAt = new Date(now()).toISOString();
           const error = result.error && { code: result.error.code, message: result.error.message,
             ...(result.error.data ? { data: result.error.data } : {}) };
+          const normalized: CommandResult = result.status === 'duplicate' && error
+            ? { id: result.id, status: 'rejected', error }
+            : { ...result, ...(error ? { error } : {}) };
+          try { await options.onResult?.(plainCommand(stored), normalized); }
+          catch (cause) { registerCommandsLogger.warn('Failed to apply register command result', { commandId: command.commandId, cause }); }
+          const updatedAt = new Date(now()).toISOString();
           await current.incrementalModify((row) => {
             if (row.syncStatus !== 'pending' || row.commandId !== command.commandId) return row;
-            return Object.assign(row, result.status === 'rejected' || (result.status === 'duplicate' && error)
-              ? { syncStatus: 'rejected', error, updatedAt }
-              : { syncStatus: 'applied', ...(result.register ? { result: result.register } : {}), updatedAt });
+            return Object.assign(row, normalized.status === 'rejected'
+              ? { syncStatus: 'rejected', error: normalized.error, updatedAt }
+              : { syncStatus: 'applied', ...(normalized.register ? { result: normalized.register } : {}), updatedAt });
           });
           attempts.delete(command.commandId);
           progressed = true;

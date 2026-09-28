@@ -53,6 +53,8 @@ export interface RegisterDocument {
 }
 
 const REGISTER = 'register';
+// Matches register_sessions/closures in schemas.ts and register_commands in register-commands.ts.
+const MAX_REGISTER_ID_LENGTH = 36;
 
 export function mintUuid(): string {
   const id = globalThis.crypto?.randomUUID?.();
@@ -129,8 +131,8 @@ export class RegisterIdInvalidError extends Error {
   }
 }
 
-export function bindRegister(host: RegisterHost, storeKey: string, register: { id: string | null; name: string | null }) {
-  if (typeof register.id === 'string' && (register.id.length === 0 || register.id.length > 64)) {
+export async function bindRegister(host: RegisterHost, storeKey: string, register: { id: string | null; name: string | null }) {
+  if (typeof register.id === 'string' && (register.id.length === 0 || register.id.length > MAX_REGISTER_ID_LENGTH)) {
     throw new RegisterIdInvalidError();
   }
   return modifyStore(host, storeKey, (store) => ({

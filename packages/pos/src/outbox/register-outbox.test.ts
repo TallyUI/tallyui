@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { AnyCommandEnvelope, CommandResult, RegisterCommandEnvelope } from '@tallyui/core';
+import type { AnyCommandEnvelope, CommandError, CommandResult, RegisterCommandEnvelope } from '@tallyui/core';
 import { posOrderCollection, uuidv7, type PosOrder } from '../pos-order';
 import { registerCommandCollection, registerCommandsLogger, type RegisterCommand } from '../register/register-commands';
 import { readFresh } from '../rxdb';
@@ -109,6 +109,21 @@ describe('register outbox', () => {
     await outbox.flush();
     expect((await stored(input.key)).syncStatus).toBe('rejected');
     expect((await stored(input.key)).error).toStrictEqual(error);
+  });
+
+  it('onResult sees a duplicate carrying an error as rejected, without figures', async () => {
+    const input = command(1);
+    await collection.insert(input);
+    const serverError: CommandError & Record<string, unknown> = { ...error, extra: 'not in the ledger schema' };
+    const onResult = vi.fn();
+    const { outbox, send } = setup({ onResult });
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: input.commandId, status: 'duplicate',
+      error: serverError, register: { counters: {
+        lastClosureNumber: 1, perpetualSalesTotalMinor: 100, perpetualRefundsTotalMinor: 0,
+      } } }] });
+    await outbox.flush();
+    expect(onResult).toHaveBeenCalledExactlyOnceWith(input, { id: input.commandId, status: 'rejected', error });
+    expect(await stored(input.key)).toStrictEqual({ ...input, syncStatus: 'rejected', error, updatedAt: expect.any(String) });
   });
 
   it('a duplicate with an error is treated as rejected and stops the register', async () => {

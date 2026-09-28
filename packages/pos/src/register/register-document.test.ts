@@ -97,13 +97,13 @@ it('caches the register identity and mints v4 with random bytes when randomUUID 
   expect(await ensureRegister(db, 'web')).toEqual(register);
 });
 
-it('bindRegister refuses an empty or over-64 register id', async () => {
+it('bindRegister refuses an empty or over-36 register id', async () => {
   await ensureRegister(db, 'web');
-  for (const id of ['', 'x'.repeat(65)]) {
-    expect(() => bindRegister(db, 'site', { id, name: 'Drawer' })).toThrow(RegisterIdInvalidError);
+  for (const id of ['', 'x'.repeat(37)]) {
+    await expect(bindRegister(db, 'site', { id, name: 'Drawer' })).rejects.toThrow(RegisterIdInvalidError);
     expect((await readRegister(db))?.stores).toEqual({});
   }
-  for (const id of ['x'.repeat(64), null]) {
+  for (const id of ['x'.repeat(36), null]) {
     await bindRegister(db, 'site', { id, name: null });
     expect((await readRegister(db))?.stores.site.register_id).toBe(id);
   }
