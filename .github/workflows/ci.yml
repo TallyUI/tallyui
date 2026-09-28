@@ -17,11 +17,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       - run: pnpm install --frozen-lockfile
         env:
           RXDB_PREMIUM: ${{ secrets.RXDB_PREMIUM }}
+
+      # rxdb-premium's postinstall decrypts licensed code. pnpm's side-effects cache would keep
+      # that build in the store, and this public repo's caches are readable by fork PRs, so
+      # the store is never cached and the setting must stay off (pnpm-workspace.yaml).
+      - name: Check pnpm keeps no post-install builds in its store
+        run: test "$(pnpm config get side-effects-cache)" = false
 
       - name: Check workspace dependency declarations
         run: pnpm check:deps
@@ -58,11 +63,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       - run: pnpm install --frozen-lockfile
         env:
           RXDB_PREMIUM: ${{ secrets.RXDB_PREMIUM }}
+
+      # rxdb-premium's postinstall decrypts licensed code. pnpm's side-effects cache would keep
+      # that build in the store, and this public repo's caches are readable by fork PRs, so
+      # the store is never cached and the setting must stay off (pnpm-workspace.yaml).
+      - name: Check pnpm keeps no post-install builds in its store
+        run: test "$(pnpm config get side-effects-cache)" = false
 
       - name: Build packages
         run: pnpm build
