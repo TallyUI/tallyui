@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/core",
-  "version": "0.2.0",
+  "version": "2.0.0",
   "type": "module",
   "description": "Core interfaces, traits, and context providers for Tally UI",
   "main": "./dist/index.js",
@@ -42,8 +42,12 @@
     "rxjs": ">=7"
   },
   "peerDependenciesMeta": {
-    "rxdb": { "optional": true },
-    "rxjs": { "optional": true }
+    "rxdb": {
+      "optional": true
+    },
+    "rxjs": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/react": ">=18",
