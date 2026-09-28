@@ -51,6 +51,7 @@
   "devDependencies": {
     "@sqlite.org/sqlite-wasm": "3.53.4-build1",
     "esbuild": "0.27.3",
+    "expo-sqlite": "16.0.10",
     "rxdb-premium": "16.21.1"
   },
   "peerDependencies": {
