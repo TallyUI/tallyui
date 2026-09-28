@@ -875,7 +875,10 @@ its own, and connectors become drivers in the shape of WCPOS ADR 0029
 (ADR-067). This supersedes TSP v1 (ADR-023) as the target protocol; the
 pull-only reads and `order.create` outbox of ADR-024 stay for the Medusa
 and Vendure testers until their drivers exist. The WooCommerce app goes
-first because it already speaks the engine's `wcpos/v2`. Phases, the
+first because it already speaks the engine's `wcpos/v2`. The engine's
+proven mechanics are the input and its WordPress and PHP constraints are
+not: Medusa and Vendure designs keep or replace each mechanism on
+numbers and tests (ADR-067, principle). Phases, the
 spike findings and acceptance:
 [sync-engine-adoption.md](sync-engine-adoption.md) (P0 publish or vendor,
 and RxDB 17; P1 WooCommerce app; P2 driver interface; P3 Medusa driver;

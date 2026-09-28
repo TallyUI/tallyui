@@ -2661,7 +2661,7 @@ interface OrderCreatePayload {
     with coverage and checkpoints, conflict states, politeness toward the
     server (server-pressure, cadence, demand-flood detection), and a
     durable mutation queue that sends `Idempotency-Key` and `If-Match`.
-    It is about 42,700 lines of source with about 120 test files, and it
+    It is about 42,700 lines of source with 191 test files, and it
     already speaks `wcpos/v2`, the surface the WooCommerce app writes
     through (tallyui-woocommerce D1(b)).
   - The spike (plan §1) found the packages are private, ship TypeScript
@@ -2696,35 +2696,81 @@ interface OrderCreatePayload {
      byte against a monorepo commit. TallyUI never patches engine code.
   5. **RxDB 17.4.0 is a prerequisite.** The rxdb and rxdb-premium upgrade
      that ADR-031 chose and ADR-044/ADR-045 deferred is done before the
-     WooCommerce app takes the engine.
+     WooCommerce app takes the engine. vendurepos and medusapos move in
+     lockstep with it, and no tester's unsent command is lost: pending
+     outbox commands are sent before the database is replaced, or the
+     outbox is carried by RxDB's storage migration.
   6. **ADR-023 is superseded as the target protocol.** TSP v1 (`manifest`,
      `pull/:collection`, `commands`, `stream`, `ids/:collection`) is no
      longer where TallyUI is heading. The target is the engine's
-     protocol, as each driver maps it onto its platform. The conformance
+     protocol, as each driver maps it onto its platform and improves on it
+     where the principle below allows. The conformance
      idea survives as the engine's own contract fixtures and fakes
      (`sync-core/contracts`, `fakePullServer`, `fakeWriteServer`) and the
      driver contract tests of plan P2.
   7. **ADR-024 is amended, not withdrawn.** Pull-only reads and the
      `order.create` command outbox stay in service for the Medusa and
      Vendure testers until their drivers exist (plan P3 and P4), and are
-     retired platform by platform as each moves to the engine.
+     retired platform by platform as each moves to the engine. An outbox
+     is retired only after two tests pass on its platform: pending
+     commands are carried across the switch, and a crash after the server
+     commits but before the device records the acknowledgement leaves no
+     duplicate order.
+  8. **The document model gates the driver interface.** Before the
+     interface is designed (plan G2), a narrow real Medusa experiment on
+     the seeded demo store (plan G4) decides whether a driver
+     materialises the engine's Woo-shaped `payload` (ADR 0029 decision 5)
+     or `payload` becomes driver-typed. That decision gates P2 and is
+     logged as its own ADR.
+- **Principle: the engine's mechanics are the input, its constraints are
+  not.** Paul, 2026-09-28: "We don't have to be limited by the
+  WooCommerce use-case. I am open to suggestions and cross pollination
+  based on what will produce the best results. The WCPOS sync engine and
+  core may be limited by PHP or server considerations that do not apply
+  to Medusa or Vendure."
+  - What the engine has proven (demand-driven partial replicas, coverage
+    and checkpoints, conflict states, politeness, an idempotent durable
+    mutation queue) is where each driver starts.
+  - Where a WCPOS choice exists because of WordPress and PHP, a Node
+    platform may do better, and should when the numbers say so:
+    - a polled change tick and a journal of pointers, because the server
+      cannot push: Medusa and Vendure can push over SSE or websockets;
+    - full-document REST writes: GraphQL mutations or Medusa workflow
+      APIs;
+    - monotonic integer ids and existence-manifest buckets: string ids
+      with timestamps or a server-side journal;
+    - no cross-resource transactions on the server: real database
+      transactions;
+    - opaque revisions: typed revisions.
+  - Every Medusa or Vendure design states which engine mechanisms it
+    keeps and which it replaces, with the reason and the measurement.
+    The criterion is the best result, backed by numbers and tests, not
+    the smallest departure from WCPOS.
+  - An improvement proven on Medusa or Vendure is a candidate for WCPOS
+    v2, raised with Paul with its numbers.
 - **Consequences:**
   - Phases (plan §2): P0 publish or vendor, and RxDB 17; P1 the
     WooCommerce app on the engine; P2 driver interface and
     generalisation; P3 Medusa driver; P4 Vendure driver.
-  - The monorepo work for P0 is small (a build, dependency fixes, and
-    moving `apps/main/lib/engine-fetcher.ts` into a
-    `@wcpos/sync-engine/woo-transport` door). P2 is about 10–14 working
-    days; the Medusa driver on top of it about 9–14 (plan §1e).
+  - The monorepo packaging work for P0 is small (a build and dependency
+    fixes). Moving `apps/main/lib/engine-fetcher.ts` into a
+    `@wcpos/sync-engine/woo-transport` door is its own job of about 3–4
+    days: it imports `@wcpos/query`, four `@wcpos/utils` modules and
+    apps/main's clock-skew and metrics helpers, so the logger, request
+    preamble and metrics move behind injected ports. P2 is about 15–22
+    working days, provisional until the G4 decision; the Medusa driver on
+    top of it about 9–14 (plan §1e).
   - P2 amends WCPOS ADR 0029 decision 4 on the WCPOS side: a second
     backend is now real, so the driver interface is named from what the
-    engine asks of the Woo driver, with two adapters from the first day.
+    engine asks of the Woo driver, on G4's document model, with two
+    adapters from the first day.
   - The engine's document model is Woo-shaped (ADR 0029 decision 5).
     TallyUI's own models stay: the pos layer keeps the neutral sale
     (ADR-062, ADR-065) and reads the catalogue through traits (ADR-002).
     The app maps a sale onto `engine.write()`, and whether a non-Woo
     driver materialises the Woo shape or the engine's `payload` becomes
-    driver-typed is decided in P2 by measuring the Medusa mapping.
+    driver-typed is decided by the G4 experiment (Decision 8), which
+    opens P2.
   - Programme §2.3's M1 (the TSP conformance kit) and M2 (the Medusa sync
     plugin on TSP) are frozen at what testers use today; new sync work
     goes to the plan's phases.
