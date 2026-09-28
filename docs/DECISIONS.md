@@ -2556,3 +2556,82 @@ interface OrderCreatePayload {
   - Every sale made against a version-3 server carries its fiscal figures.
   - Old plugins and old clients are unchanged.
   - Apps must adopt the new `addPosOrderCollection` release before they rely on version 3.
+
+## ADR-066 Standalone app: TallyUI with no backend
+
+- **Date:** 2026-09-28 · **Status:** Accepted (Paul's direction, via the
+  Front desk); amends ADR-014 for this one app · **Source:** Paul,
+  2026-09-28; the plan is [apps/standalone/PLAN.md](apps/standalone/PLAN.md)
+- **Context:**
+  - Paul: "There should be a version of a POS app that uses TallyUI without
+    any backend at all, ie: it should just be a standalone
+    desktop/ios/android app."
+  - Every POS so far pairs TallyUI with a server (Medusa, Vendure, and the
+    WooCommerce track added the same day), so nothing yet proves that
+    `@tallyui/pos` works without one. Reading `packages/pos/src` at
+    `9408d3e` found eleven places that assume a server (the plan's table
+    A–K). Two bite at once: discounts are refused when no capability has
+    been read (`finalizeOrder`, `useSale`), and a connector schema's
+    version bump drops every document, which is data loss when the device
+    holds the only copy.
+  - WCPOS `next` ADR 0029 (wiki
+    `architecture/decisions/2026-08-17-backend-direction-driver-identity-envelope.md`)
+    is the model: one driver per platform gathers every backend fact, the
+    engine above it stays backend-agnostic, and a seam counts as real only
+    once it has two adapters.
+- **Decision:**
+  1. **Location.** The app lives in this monorepo as `apps/standalone`,
+     TallyUI's reference app. It has no platform of its own, so ADR-014's
+     rule (platform apps live in their platform's repository) does not
+     apply to it.
+  2. **The local-only driver.** In ADR 0029's model, standalone is a
+     driver whose backend is the device. It implements the same
+     `TallyConnector` interface with local implementations: no-credential
+     auth, local store settings, advertised capabilities, and a command
+     transport that applies `order.create` in-process, idempotently. It
+     has no replication and no reconcile passes.
+  3. **No server first, in the pos layer.** Every `@tallyui/pos` feature
+     is designed to work with no server, and gains connector behaviour
+     (auth, capability gates, the outbox, replication, register egress) as
+     an optional layer on top. The pos layer must not assume that auth,
+     capabilities, an outbox or replication exist. A review that finds a
+     new pos-layer feature needing a server to work at all sends it back.
+     This rule is for the pos layer only: platform connector features
+     (a plugin's journal, server approval, Z posting) are built as layers
+     over it, as registers job c2 is, and need not work without their
+     server.
+  4. **Storage and platforms.** RxDB Premium SQLite, one live instance per
+     database (ADR-031, ADR-061). Desktop through Electron, as
+     `medusapos/apps/desktop` does; iOS and Android through Expo.
+  5. **MVP first** (ADR-034): M0 boots with a catalogue seeded from a CSV;
+     M1 sells, tenders, prints a receipt and closes with a Z read, all
+     local, with a manual full backup file; M2 adds local product and
+     customer management; M3 adds exports, automatic backup and restore. More than one till is left to the platforms, per
+     single instance.
+- **Consequences:**
+  - A new optional connector package (`connectors/local`), and one
+    database change: collections a device authors get real migrations and
+    never the drop path. It must land before any local schema leaves
+    version 0.
+  - M1's one change to `@tallyui/pos` is the receipt number: a
+    `mintSaleNumber` keyed by `commandId` (as `mintClosureNumber` is keyed
+    by the closure), minted once before the order insert and stored on the
+    order as an optional `receiptNumber`, which the receipt and every
+    reprint read. It rides ADR-065's pending `pos_orders` schema bump.
+  - The local transport follows the plan's local transaction contract: the
+    order insert is the commit point, cached stock is recomputed from
+    idempotent movements and never incremented, and transient storage
+    errors retry.
+  - The shims M1 relies on (no-credential auth, advertised capabilities,
+    the in-process transport) each have a follow-up that turns the
+    assumption into an explicit optional: optional `auth`, the order store
+    split from the outbox, and removing the deprecated `sync`. The
+    follow-ups are additive, ship with changesets, and leave medusapos and
+    vendurepos unchanged.
+  - Registers job c2 is built as a layer on `useRegisterSession`, never a
+    requirement inside it.
+  - The standalone e2e suite needs no dev store, so it runs in CI with no
+    backend.
+  - The local driver can also serve as ADR-027's in-browser demo backend.
+  - The platform order of ADR-020 is unchanged; standalone is a track
+    beside the platforms, not ahead of them.
