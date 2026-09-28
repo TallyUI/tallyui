@@ -228,6 +228,11 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     && now.getTime() > new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute).getTime();
 
   const requireOpen = () => store.requireOpenSession(sessions ?? undefined, registerId, enabled);
+  // A non-null id means `sessions` was there to find it.
+  const requireSaleSession = async () => {
+    const id = await requireOpen();
+    return id === null ? null : { id, sessions: sessions as RegisterSessionCollection };
+  };
   const live = () => {
     if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register) throw new RegisterSessionRequiredError();
     return { sessions, movements, closures, orders, registerId, register };
@@ -257,6 +262,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     saleSession: session && sessions && session.status !== 'closed' ? { id: session.id, sessions } : undefined,
     /** The open session's id, `null` when sessions are off, else `RegisterSessionRequiredError`. Call it when tender starts and before a card terminal captures. */
     requireOpen,
+    /** `requireOpen()`, returning `{ id, sessions }`: pass it to useSale's `startTender`, which pins it (the rendered `saleSession` can lag). */
+    requireSaleSession,
     actions: {
       /**
        * Refuses with `RegisterSessionAlreadyOpenError` while the register has a live session or

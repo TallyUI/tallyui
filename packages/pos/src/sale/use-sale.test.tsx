@@ -430,7 +430,9 @@ describe('the tender pins its session', () => {
   const facts: LogEntry[] = [];
   registerFactsLogger.addSink({ id: 'pin-capture', levels: ['warn'], write: (entry) => facts.push(entry) });
   const lateFacts = () => facts.filter((entry) => (entry.data?.context as { type?: string })?.type === 'register.late-sale');
-  beforeEach(() => { facts.length = 0; });
+  const saleWarnings: LogEntry[] = [];
+  saleLogger.addSink({ id: 'pin-sale-warn', levels: ['warn'], write: (entry) => saleWarnings.push(entry) });
+  beforeEach(() => { facts.length = 0; saleWarnings.length = 0; });
 
   type Session = Parameters<typeof useSale>[1]['session'];
   /** Renders useSale whose `session` option the test changes by `rerender`, as the app's saleSession changes. */
@@ -482,16 +484,18 @@ describe('the tender pins its session', () => {
     }
   });
 
-  it('a tender started with no session stays unstamped, even with a session present at complete()', async () => {
+  // Changed meaning (the Front desk's backstop, #170 race): this used to stay unstamped.
+  it('a tender started with no session, with a session present at complete(), now stamps the current session and warns', async () => {
     const { db, sessions, sessionId } = await withOpenSession();
     try {
       const view = renderWithSession(undefined);
       act(() => view.result.current.startTender('external'));
       view.rerender({ session: { id: sessionId, sessions } });
       const order = await completed(view);
-      expect(order).not.toHaveProperty('sessionId');
+      expect(order.sessionId).toBe(sessionId);
       expect(order).not.toHaveProperty('lateSessionId');
       expect(lateFacts()).toEqual([]);
+      expect(saleWarnings).toHaveLength(1);
     } finally {
       await db.remove();
     }
@@ -552,6 +556,74 @@ describe('the tender pins its session', () => {
     } finally {
       await db.remove();
     }
+  });
+
+  // medusapos #88 re-review: the cashier taps Open, then Cash at once. requireSaleSession() has
+  // resolved, but the rendered session option is still undefined when startTender runs.
+  it.each([
+    ['rerendered with the session before complete()', true],
+    ['with no rerender before complete()', false],
+  ])('pins the session passed to startTender, even before it renders (%s)', async (_label, rerender) => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const view = renderWithSession(undefined);
+      act(() => {
+        view.result.current.startTender('cash', { session: { id: sessionId, sessions } });
+        view.result.current.setTender({ method: 'cash', amountMinor: view.result.current.order.totalMinor });
+      });
+      if (rerender) view.rerender({ session: { id: sessionId, sessions } });
+      const order = await completed(view);
+      expect(order.sessionId).toBe(sessionId);
+      expect(order).not.toHaveProperty('lateSessionId');
+      expect(saleWarnings).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('falls back to the current session, with a warning, when the tender pinned none before the session rendered', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const view = renderWithSession(undefined);
+      act(() => view.result.current.startTender('cash'));
+      act(() => view.result.current.setTender({ method: 'cash', amountMinor: view.result.current.order.totalMinor }));
+      view.rerender({ session: { id: sessionId, sessions } });
+      const order = await completed(view);
+      expect(order.sessionId).toBe(sessionId);
+      expect(saleWarnings).toHaveLength(1);
+      expect(saleWarnings[0]).toMatchObject({ level: 'warn', data: { orderId: order.id, sessionId } });
+      expect(saleWarnings[0].message).toContain('pass the confirmed session to startTender');
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('an explicit session wins over a stale rendered one', async () => {
+    const { db, sessions, sessionId: a } = await withOpenSession();
+    try {
+      await closeSession(sessions, a, { counted: { cash: 0 } });
+      const b = await openSession(sessions, {
+        registerId, expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: cashierRef, businessDay: { year: 2026, month: 9, day: 26 },
+      });
+      const view = renderWithSession({ id: a, sessions });
+      act(() => view.result.current.startTender('external', { session: { id: b.id, sessions } }));
+      const order = await completed(view);
+      expect(order.sessionId).toBe(b.id);
+      expect(order).not.toHaveProperty('lateSessionId');
+      expect(lateFacts()).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('a tender with no session anywhere stays unstamped', async () => {
+    const view = renderWithSession(undefined);
+    act(() => view.result.current.startTender('external'));
+    const order = await completed(view);
+    expect(order).not.toHaveProperty('sessionId');
+    expect(order).not.toHaveProperty('lateSessionId');
+    expect(saleWarnings).toEqual([]);
+    expect(facts).toEqual([]);
   });
 });
 
