@@ -6,7 +6,7 @@ import type {
 import { createLogger } from '../logging';
 import { uuidv7 } from '../pos-order/uuidv7';
 import { readFresh } from '../rxdb';
-import { mintCommandSeq, type RegisterHost } from './register-document';
+import { markCommandsSince, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
 import type { CashMovementCollection, ClosureCollection, RegisterSessionCollection } from './session-store';
 
@@ -88,23 +88,32 @@ export function closureCommand(c: Closure): BuiltCommand {
 const chains = new WeakMap<RegisterCommandCollection, Map<string, Promise<void>>>();
 
 /** Appends missing facts in session/time order; the bytes of an existing key never change. */
-export function reconcileRegisterCommands({ commands, sessions, movements, closures, host, storeKey, registerId, now }: {
+export function reconcileRegisterCommands({ commands, sessions, movements, closures, host, storeKey, registerId, now, observed }: {
   commands: RegisterCommandCollection; sessions: RegisterSessionCollection; movements: CashMovementCollection;
-  closures: ClosureCollection; host: RegisterHost; storeKey: string; registerId: string; now?: string;
+  closures: ClosureCollection; host: RegisterHost; storeKey: string; registerId: string; now?: string; observed?: RegisterSession[];
 }): Promise<string[]> {
   let registers = chains.get(commands);
   if (!registers) chains.set(commands, registers = new Map());
   const run = (registers.get(registerId) ?? Promise.resolve()).then(async () => {
+    const since = await markCommandsSince(host, storeKey, registerId, now ?? new Date().toISOString());
+    const [highest] = await readFresh(commands, { selector: { registerId }, sort: [{ seq: 'desc' }], limit: 1 });
+    let seq = highest?.seq ?? 0;
     const rows = await readFresh(sessions, { selector: { register_id: registerId } });
     rows.sort((a, b) => a.opened_at_gmt.localeCompare(b.opened_at_gmt));
-    const facts = await Promise.all(rows.map(async (session) => {
+    const complete = new Set((await commands.storageInstance.findDocumentsById(rows.flatMap((session) =>
+      session.status === 'closed' && session.closure_id ? [`closure.submit:${session.closure_id}`] : []), false)).map(({ key }) => key));
+    const facts = await Promise.all(rows.filter((session) =>
+      session.status !== 'closed' || ((session.status_at == null || session.status_at >= since) && !complete.has(`closure.submit:${session.closure_id}`)))
+      .map(async (session) => {
       const [entries, closureRows] = await Promise.all([
         readFresh(movements, { selector: { session_id: session.id } }),
         session.closure_id ? closures.storageInstance.findDocumentsById([session.closure_id], false) : Promise.resolve([]),
       ]);
       const events = entries.map((entry) => ({ at: entry.created_at_gmt, transition: false, command: movementCommand(entry) }));
-      if (session.status_at != null) events.push({ at: session.status_at, transition: true,
-        command: sessionTransitionCommand({ ...session, status_at: session.status_at }) });
+      for (const row of [session, ...(observed ?? []).filter((row) => row.id === session.id)]) {
+        if (row.status_at != null) events.push({ at: row.status_at, transition: true,
+          command: sessionTransitionCommand({ ...row, status_at: row.status_at }) });
+      }
       events.sort((a, b) => a.at.localeCompare(b.at) || Number(a.transition) - Number(b.transition));
       return { session, built: [sessionOpenCommand(session), ...events.map((event) => event.command),
         ...closureRows.map((closure) => closureCommand(closure))] };
@@ -112,11 +121,10 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
     const existing = new Set((await commands.storageInstance.findDocumentsById(facts.flatMap(({ built }) => built.map(({ key }) => key)), false))
       .map(({ key }) => key));
     const appended: string[] = [];
-    for (const { session, built } of facts) {
-      if (session.status === 'closed' && !existing.has(`session.open:${session.id}`)) continue;
+    for (const { built } of facts) {
       for (const command of built) {
         if (existing.has(command.key)) continue;
-        const seq = await mintCommandSeq(host, storeKey, registerId);
+        seq++;
         const at = now ?? new Date().toISOString();
         try {
           await commands.insert({ ...command, registerId, seq, commandId: uuidv7(), createdAt: at, updatedAt: at, syncStatus: 'pending' });

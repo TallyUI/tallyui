@@ -5,7 +5,7 @@ import { checkSchema } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { readFresh } from '../rxdb';
-import { ensureRegister, readRegister } from './register-document';
+import { ensureRegister, readRegister, type RegisterDocument } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCollection, type CashMovement, type Closure, type RegisterSession } from './schemas';
 import { backToSelling, closeSession, openSession, recordMovement, startCounting, voidMovement, writeClosure,
   type CashMovementCollection, type ClosureCollection, type RegisterSessionCollection } from './session-store';
@@ -109,14 +109,14 @@ describe('register command ledger', () => {
       closures: { schema: closureSchema }, register_commands: registerCommandCollection() });
     await ensureRegister(db.register_sessions, 'web');
   });
-  afterEach(async () => { vi.useRealTimers(); await db.remove(); });
+  afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); await db.remove(); });
   const advance = () => vi.setSystemTime(Date.now() + 1000);
   const open = () => openSession(db.register_sessions, { registerId: 'register', storeKey: 'store', openedBy: '7',
     expectedFloatMinor: 10000, countedFloatMinor: 10000, businessDay: { year: 2026, month: 9, day: 28 } });
   const record = (sessionId: string) => recordMovement(db.register_sessions, db.cash_movements, db.closures,
     { sessionId, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7' });
-  const reconcile = () => reconcileRegisterCommands({ commands: db.register_commands, sessions: db.register_sessions,
-    movements: db.cash_movements, closures: db.closures, host: db.register_sessions, storeKey: 'store', registerId: 'register', now: openedAt });
+  const reconcile = (observed?: RegisterSession[], now = openedAt) => reconcileRegisterCommands({ commands: db.register_commands, sessions: db.register_sessions,
+    movements: db.cash_movements, closures: db.closures, host: db.register_sessions, storeKey: 'store', registerId: 'register', now, observed });
   const ledger = async () => (await readFresh(db.register_commands, { selector: {} })).sort((a, b) => a.seq - b.seq);
   const write = (closed: RegisterSession) => writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store',
     session: closed, counted: 8600, otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0' });
@@ -152,7 +152,6 @@ describe('register command ledger', () => {
     expect(rows.map((row) => row.seq)).toStrictEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(rows.every((row) => row.version === 1 && row.syncStatus === 'pending' && row.createdAt === openedAt && row.updatedAt === openedAt)).toBe(true);
     expect(rows.every((row) => /^[0-9a-f-]{14}7[0-9a-f-]{21}$/.test(row.commandId))).toBe(true);
-    expect(await readRegister(db.register_sessions)).toMatchObject({ stores: { store: { registers: { register: { next_command_seq: 8 } } } } });
   });
 
   it('reconcile is idempotent: a second run appends nothing and keeps every seq and commandId', async () => {
@@ -174,13 +173,74 @@ describe('register command ledger', () => {
     expect(new Set(rows.map((row) => row.commandId)).size).toBe(2);
   });
 
-  it('never backfills a closed session that has no open command', async () => {
+  it('backfills a session closed after the gate turned on even without its open command', async () => {
+    await reconcile();
+    advance();
+    const s = await open();
+    advance();
+    const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 10000 } });
+    const z = await write(closed);
+    expect(await ledger()).toStrictEqual([]);
+    expect(await reconcile()).toStrictEqual([
+      `session.open:${s.id}`, `session.transition:${s.id}:${closed.status_at}`, `closure.submit:${z.id}`,
+    ]);
+  });
+
+  it('never backfills a session closed before the gate first turned on', async () => {
     const s = await open();
     await record(s.id);
     const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 9300 } });
     await write(closed);
-    expect(await reconcile()).toStrictEqual([]);
+    advance();
+    expect(await reconcile(undefined, new Date().toISOString())).toStrictEqual([]);
     expect(await ledger()).toStrictEqual([]);
+  });
+
+  it('commands_since is set once', async () => {
+    await reconcile();
+    const since = async () => (await readRegister(db.register_sessions))?.stores.store.registers?.register.commands_since;
+    expect(await since()).toBe(openedAt);
+    advance();
+    await reconcile(undefined, new Date().toISOString());
+    expect(await since()).toBe(openedAt);
+  });
+
+  it('an observed transition is appended even after the row moved on', async () => {
+    const s = await open();
+    advance();
+    const counting = await startCounting(db.register_sessions, s.id);
+    advance();
+    const selling = await backToSelling(db.register_sessions, s.id);
+    expect(await reconcile([counting.toJSON()])).toStrictEqual([
+      `session.open:${s.id}`, `session.transition:${s.id}:${counting.status_at}`, `session.transition:${s.id}:${selling.status_at}`,
+    ]);
+    expect((await ledger()).map((row) => row.payload.status)).toStrictEqual([undefined, 'counting', 'open']);
+  });
+
+  it('seq continues from the ledger after the register document is reset', async () => {
+    const s = await open();
+    await record(s.id);
+    await reconcile();
+    const before = await ledger();
+    const doc = await db.register_sessions.getLocal<RegisterDocument>('register');
+    await doc!.incrementalModify((data) => ({ ...data,
+      stores: { ...data.stores, store: { ...data.stores.store, registers: {} } } }));
+    const m = await record(s.id);
+    expect(await reconcile()).toStrictEqual([`movement.record:${m.id}`]);
+    expect((await ledger()).at(-1)?.seq).toBe(before.at(-1)!.seq + 1);
+  });
+
+  it('a session whose closure command exists is skipped', async () => {
+    const s = await open();
+    await reconcile();
+    const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 10000 } });
+    const z = await write(closed);
+    expect(await reconcile()).toContain(`closure.submit:${z.id}`);
+    const movements = vi.spyOn(db.cash_movements.storageInstance, 'query');
+    const closures = vi.spyOn(db.closures.storageInstance, 'findDocumentsById');
+    expect(await reconcile()).toStrictEqual([]);
+    expect(movements).not.toHaveBeenCalled();
+    expect(closures).not.toHaveBeenCalled();
   });
 
   it('recovers after a crash between a write and its append', async () => {

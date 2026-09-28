@@ -1,4 +1,4 @@
-import { COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, isCommandBatchResponse } from '@tallyui/core';
+import { COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, isCommandBatchResponse, type CommandEnvelope } from '@tallyui/core';
 import type { CommandTransport } from './types';
 
 // These HTTP statuses permanently refuse the entire command batch.
@@ -11,7 +11,7 @@ export interface HttpTransportOptions {
   timeoutMs?: number;
 }
 
-export function createHttpCommandTransport(options: HttpTransportOptions): CommandTransport {
+export function createHttpCommandTransport(options: HttpTransportOptions): CommandTransport<CommandEnvelope<unknown>> {
   const fetch = options.fetch ?? globalThis.fetch;
   let end = options.baseUrl.length;
   while (end > 0 && options.baseUrl[end - 1] === '/') {

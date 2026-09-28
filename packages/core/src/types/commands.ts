@@ -7,7 +7,7 @@ export interface CommandEnvelope<P = unknown> {
   id: string; // UUIDv7, the idempotency key; never reused
   type: CommandType;
   /** Each type versions independently; order.create is 3 with ADR-065's display and taxByRate, 2 when discounted, else 1. */
-  version: number;
+  version: P extends OrderCreatePayload ? 1 | 2 | 3 : number;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;

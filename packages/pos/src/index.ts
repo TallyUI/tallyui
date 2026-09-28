@@ -65,7 +65,7 @@ export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, p
 export type { MovementType, LedgerRow, Movement } from './register';
 export { registerSessionSchema, registerSessionCollection, cashMovementSchema, closureSchema } from './register';
 export type { RegisterSession, CashMovement, Closure } from './register';
-export { registerCommandSchema, registerCommandCollection, registerCommandsLogger, sessionOpenCommand, sessionTransitionCommand, movementCommand, closureCommand, reconcileRegisterCommands, mintCommandSeq } from './register';
+export { registerCommandSchema, registerCommandCollection, registerCommandsLogger, sessionOpenCommand, sessionTransitionCommand, movementCommand, closureCommand, reconcileRegisterCommands } from './register';
 export type { RegisterCommand, RegisterCommandCollection } from './register';
 export { mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegisterId, readBoundRegister, bindRegister, unbindRegister, nextSaleCounter, mintClosureNumber, advancePerpetual } from './register';
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register';

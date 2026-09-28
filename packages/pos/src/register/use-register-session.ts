@@ -152,11 +152,14 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const commandTarget = useMemo(() => enabled && commandEnabled && commands && sessions && movements && closures && register && registerId
     ? { commands, sessions, movements, closures, host: register, storeKey, registerId } : null,
   [enabled, commandEnabled, commands, sessions, movements, closures, register, storeKey, registerId]);
-  const reconcile = () => {
-    if (!commandTarget) return;
-    void reconcileRegisterCommands(commandTarget).catch((error: unknown) => {
+  const commandTargetRef = useRef(commandTarget);
+  commandTargetRef.current = commandTarget;
+  const reconcile = (row?: RegisterSession) => {
+    const target = commandTargetRef.current;
+    if (!target) return;
+    void reconcileRegisterCommands({ ...target, observed: row ? [row] : undefined }).catch((error: unknown) => {
       try {
-        registerCommandsLogger.error('Register command reconcile failed', { context: { registerId: commandTarget.registerId, error: String(error) } });
+        registerCommandsLogger.error('Register command reconcile failed', { context: { registerId: target.registerId, error: String(error) } });
       } catch {
         // A failing log sink must not affect a register action either.
       }
@@ -337,22 +340,24 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         }
       },
       startCounting: async () => {
+        let row: Awaited<ReturnType<typeof store.startCounting>> | undefined;
         try {
         refuseDuringTender();
-        const row = await store.startCounting(live().sessions, current().id);
+        row = await store.startCounting(live().sessions, current().id);
         recordRegisterFact({ kind: 'counting-started', actor, sessionId: row.id, registerId: row.register_id });
         return row;
         } finally {
-          reconcile();
+          reconcile(row?.toJSON());
         }
       },
       backToSelling: async () => {
+        let row: Awaited<ReturnType<typeof store.backToSelling>> | undefined;
         try {
-        const row = await store.backToSelling(live().sessions, current().id);
+        row = await store.backToSelling(live().sessions, current().id);
         recordRegisterFact({ kind: 'counting-abandoned', actor, sessionId: row.id, registerId: row.register_id });
         return row;
         } finally {
-          reconcile();
+          reconcile(row?.toJSON());
         }
       },
       /**

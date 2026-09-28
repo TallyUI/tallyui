@@ -227,6 +227,60 @@ describe('register commands', () => {
     view.rerender(options({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 1 } }));
     await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${s.id}`]));
   });
+
+  it.each([true, false])('an old actions object follows the current gate (initially on: %s)', async (on) => {
+    const s = await seed();
+    const view = render({ commands: db.register_commands, capabilities: { orderCreate: 3, ...(on ? { register: 1 } : {}) } });
+    await waitFor(() => expect(view.result.current.session?.id).toBe(s.id));
+    if (on) await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${s.id}`]));
+    const oldActions = view.result.current.actions;
+    view.rerender(options({ commands: db.register_commands, capabilities: { orderCreate: 3, ...(on ? {} : { register: 1 }) } }));
+    if (!on) await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${s.id}`]));
+    const query = vi.spyOn(db.register_commands.storageInstance, 'query');
+    const read = vi.spyOn(db.register_commands.storageInstance, 'findDocumentsById');
+    const insert = vi.spyOn(db.register_commands, 'insert');
+    let id = '';
+    await act(async () => { id = (await oldActions.recordMovement({ type: 'paid_out', amountMinor: 700, reason: 'Milk' })).id; });
+    if (on) {
+      expect(query).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+      expect(insert).not.toHaveBeenCalled();
+      expect(await keys()).toStrictEqual([`session.open:${s.id}`]);
+    } else {
+      await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${s.id}`, `movement.record:${id}`]));
+    }
+  });
+
+  it('startCounting hands its row to the reconcile', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-28T08:00:00.000Z'));
+    const s = await seed();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const find = db.register_commands.storageInstance.findDocumentsById.bind(db.register_commands.storageInstance);
+    // Hold the initial run after it read the open session; both actions queue behind it.
+    const read = vi.spyOn(db.register_commands.storageInstance, 'findDocumentsById').mockImplementationOnce(async (ids, deleted) => {
+      await held;
+      return find(ids, deleted);
+    });
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 3, register: 1 } });
+    await waitFor(() => expect(result.current.session?.id).toBe(s.id));
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    const expected = [`session.open:${s.id}`];
+    try {
+      await act(async () => {
+        const counting = await result.current.actions.startCounting();
+        expected.push(`session.transition:${s.id}:${counting.status_at}`);
+        vi.setSystemTime(Date.now() + 1000);
+        const selling = await result.current.actions.backToSelling();
+        expected.push(`session.transition:${s.id}:${selling.status_at}`);
+      });
+    } finally {
+      release();
+    }
+    await waitFor(async () => expect(await keys()).toStrictEqual(expected));
+    expect((await ledger()).map((row) => row.payload.status)).toStrictEqual([undefined, 'counting', 'open']);
+  });
 });
 function movement(sessionId: string, type: 'paid_in' | 'paid_out' | 'no_sale', amountMinor: number, reason = 'Float top-up') {
   return recordMovement(db.register_sessions, db.cash_movements, db.closures, { sessionId, type, amountMinor, reason, actor: '7' });

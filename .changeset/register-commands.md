@@ -4,6 +4,6 @@
 '@tallyui/connector-medusa': patch
 ---
 
-Add register command payloads and results, per-type numeric command versions, refusal details, and the register server capability.
+Add register command types, payloads and results, and the register server capability. The `order.create` envelope typing is unchanged.
 
-Add the local `register_commands` ledger and `reconcileRegisterCommands`, gated in `useRegisterSession` by its new `commands` and `capabilities` options. Nothing is sent yet. Medusa reads the `register` contract.
+Record the local `register_commands` ledger through `reconcileRegisterCommands`, gated in `useRegisterSession` by its new `commands` and `capabilities` options. Commands are recorded but not sent. Medusa reads the `register` contract.

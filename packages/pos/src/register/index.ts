@@ -30,4 +30,3 @@ export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlrea
 export type { UseRegisterSessionOptions } from './use-register-session';
 export { registerCommandSchema, registerCommandCollection, registerCommandsLogger, sessionOpenCommand, sessionTransitionCommand, movementCommand, closureCommand, reconcileRegisterCommands } from './register-commands';
 export type { RegisterCommand, RegisterCommandCollection } from './register-commands';
-export { mintCommandSeq } from './register-document';

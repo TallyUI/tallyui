@@ -27,7 +27,7 @@ export type RegisterCounters = {
  * same atomic write as its number, and `applied` once its period is in the perpetual totals.
  */
 export type RegisterBucket = Partial<RegisterCounters> & {
-  next_command_seq?: number;
+  commands_since?: string;
   closure_reservation?: { row: Closure; applied: boolean };
   /** Closure ids the orphan-stamp sweep has already checked (ADR-032, the #158 follow-ups): a
    *  local-document field, so bounding the sweep needs no schema bump. */
@@ -148,15 +148,16 @@ function withRegister(store: RegisterStore | undefined, registerId: string, buck
   return { ...base, registers: { ...base.registers, [registerId]: bucket } };
 }
 
-/** Atomically mints the next command sequence for this register, starting at 1. */
-export async function mintCommandSeq(host: RegisterHost, storeKey: string, registerId: string): Promise<number> {
-  let seq = 0;
+/** Records when this register first enabled commands, once, in an atomic write. */
+export async function markCommandsSince(host: RegisterHost, storeKey: string, registerId: string, now: string): Promise<string> {
+  let since = now;
   await modifyStore(host, storeKey, (store) => {
     const register = store?.registers?.[registerId] ?? {};
-    seq = (register.next_command_seq ?? 0) + 1;
-    return withRegister(store, registerId, { ...register, next_command_seq: seq });
+    since = register.commands_since ?? now;
+    if (register.commands_since !== undefined) return undefined;
+    return withRegister(store, registerId, { ...register, commands_since: since });
   });
-  return seq;
+  return since;
 }
 
 /**
