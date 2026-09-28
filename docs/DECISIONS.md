@@ -3113,6 +3113,21 @@ interface OrderCreatePayload {
          - The server computes variance over the keys of `counted`, as the
            Z does. The till's corrections figure (`deriveSettled`, all keys
            of either map) is separate, and not part of this contract.
+      6. **Later admin actions never change the figure** (the Front desk,
+         2026-09-28; medusapos/app#100 implements it).
+         - The server's figure counts every order it received from the
+           till, whatever an admin does to it later.
+           - Archiving or cancelling an order after the fact never changes
+             a session's live or closed figure.
+           - Only an order that was never placed is excluded. On Medusa,
+             an order carrying `tally_payments` counts when its status is
+             `completed`, `archived` or `canceled`; `pending` and `draft`
+             don't.
+         - Refunds (after c2) go into a refund figure. They are never taken
+           out of `expected`.
+         - The reason: the till's `tillExpected` and `counted` are the
+           fiscal record, so the server's view must stay comparable to
+           them.
 - **Consequences:**
   - **ADR-038's shapes grow additively, and no existing type narrows or
     breaks** (it's a minor release):
