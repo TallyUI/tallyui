@@ -312,16 +312,25 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
        * the count persisted on the session, not the one passed to the retry (WCPOS uses the retry's).
        * Over `varianceThreshold` (`closeNeedsApproval`, as `RegisterCount`), a close without
        * `approvedBy` throws `RegisterApprovalRequiredError` before any write, blind or not; a
-       * resumed close (the session already closed) isn't gated again. `approvedBy` reaches the Z
+       * resumed close (the stored session already closed) isn't gated again. `approvedBy` reaches the Z
        * (`breakdowns.approved_by`), and `approvedByName` its `approved_by_name`.
        */
       closeSession: async (input: { counted: Record<string, number>; approvedBy?: string; approvedByName?: string }) => {
         refuseDuringTender();
         const { sessions, movements, closures, orders, register } = live();
         const open = current();
-        if (open.status !== 'closed' && !input.approvedBy
-          && closeNeedsApproval(input.counted.cash ?? 0, expected.cash ?? 0, options.varianceThreshold)) {
-          throw new RegisterApprovalRequiredError();
+        // The gate reads the stored session and the Z's own inputs past the query cache, not this
+        // render's snapshot, which can lag a sale or a close that already landed (#168 review).
+        const stored = await store.readSession(sessions, open.id);
+        if (!stored) throw new RegisterSessionRequiredError();
+        if (stored.status !== 'closed' && !input.approvedBy) {
+          // As `writeClosure` derives the Z's expected figures, from the same rows.
+          const fresh = deriveExpected({
+            session: { id: stored.id, countedFloatMinor: stored.counted_float_minor },
+            movements: await readFresh(movements, { selector: { session_id: stored.id } }),
+            ledgerRowsBySession: ledgerRows(await readFresh(orders, { selector: { sessionId: stored.id } })),
+          });
+          if (closeNeedsApproval(input.counted.cash ?? 0, fresh.cash ?? 0, options.varianceThreshold)) throw new RegisterApprovalRequiredError();
         }
         // By id, not `open` (plain data): `store.closeSession`'s guard runs again inside
         // `incrementalModify` on the stored document, so a close that already landed keeps its count, time, actor and approver.
@@ -359,8 +368,9 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         return closure;
       },
       recordMovement: async (input: { type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string }) => {
-        const sessionId = await requireOpen();
+        // `live()` first: missing collections or host refuse before `requireOpen` writes anything.
         const { sessions, movements, closures, registerId } = live();
+        const sessionId = await requireOpen();
         const row = await store.recordMovement(sessions, movements, closures, { ...input, sessionId: sessionId!, actor: actor.id });
         recordRegisterFact({
           kind: 'movement-recorded', actor, sessionId: row.session_id, registerId,
@@ -369,8 +379,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         return row;
       },
       voidMovement: async (id: string) => {
-        await requireOpen();
         const { sessions, movements, closures, registerId } = live();
+        await requireOpen();
         const row = await store.voidMovement(sessions, movements, id, actor.id, closures);
         recordRegisterFact({
           kind: 'movement-voided', actor, sessionId: row.session_id, registerId,

@@ -67,7 +67,7 @@ const TRANSITIONS: Record<RegisterSession['status'], readonly RegisterSession['s
  * query (a server sync) can't leave a live-session check stale (docs/rxdb/query-cache-reads.md). A
  * deleted document counts as missing.
  */
-async function readSession(sessions: RegisterSessionCollection, id: string) {
+export async function readSession(sessions: RegisterSessionCollection, id: string) {
   const [stored] = await sessions.storageInstance.findDocumentsById([id], false);
   return stored;
 }

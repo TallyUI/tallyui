@@ -203,6 +203,20 @@ it('never overwrites approved_by on a repeat close', async () => {
   expect((await db.register_sessions.findOne(doc.id).exec())?.approved_by).toBe('mgr-1');
 });
 
+// #168 review: two concurrent closes with different approvers. `transition`'s guard runs again
+// inside `incrementalModify`, so exactly one approver is stored and both calls return it.
+it('stores one approver when two closes race, and both return it', async () => {
+  const doc = await openSession(db.register_sessions, input);
+  await startCounting(db.register_sessions, doc.id);
+  const results = await Promise.all([
+    closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, approvedBy: 'mgr-1' }),
+    closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, approvedBy: 'mgr-2' }),
+  ]);
+  const stored = (await db.register_sessions.findOne(doc.id).exec())?.approved_by;
+  expect(['mgr-1', 'mgr-2']).toContain(stored);
+  expect(results.map((row) => row.approved_by)).toEqual([stored, stored]);
+});
+
 // TallyUI (#123 review, F2): movements check their session. Revert: drop the session check.
 it('refuses movements on a closed or missing session, and voids on a closed one', async () => {
   const session = await openSession(db.register_sessions, input);

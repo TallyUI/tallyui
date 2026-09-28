@@ -449,6 +449,40 @@ describe('the approval gate', () => {
     expect(logs.some((entry) => entry.message === 'Register session approval granted')).toBe(false);
   });
 
+  // #168 review: the gate reads the Z's own inputs, not the render's `expected`.
+  // Revert: gate on the snapshot `expected` again.
+  it('gates on a sale stored after the actions were rendered, not on their stale expected', async () => {
+    const { session, result } = await counting();
+    const { closeSession: close } = result.current.actions;
+    // Stored straight to the database, with no wait for the hook to see it.
+    await sale('late-cash', session.id, [{ method: 'cash', amountMinor: 1000 }]);
+    await expect(close({ counted: { cash: 10000 } })).rejects.toBeInstanceOf(RegisterApprovalRequiredError);
+    expect(await db.closures.find().exec()).toEqual([]);
+    expect((await db.register_sessions.findOne(session.id).exec())?.status).toBe('counting');
+    expect(await reservation()).toBeUndefined();
+  });
+
+  // #168 review: a close already stored as closed is a resumed close, whatever the render says.
+  // Revert: gate on the snapshot `open.status`.
+  it('lets a retry through stale actions finish a close interrupted after it was stored as closed', async () => {
+    const { session, result } = await counting();
+    const { closeSession: close } = result.current.actions;
+    // The till dies at the first register-document read after the closure row exists: `advancePerpetual`.
+    const getLocal = db.register_sessions.getLocal.bind(db.register_sessions);
+    vi.spyOn(db.register_sessions, 'getLocal').mockImplementation((async (id: string) => {
+      if ((await db.closures.storageInstance.findDocumentsById([session.id], false)).length) throw new Error('killed');
+      return getLocal(id);
+    }) as typeof getLocal);
+    await expect(close({ counted: { cash: 9000 }, approvedBy: 'mgr-1' })).rejects.toThrow('killed');
+    vi.restoreAllMocks();
+    expect(await reservation()).toMatchObject({ applied: false });
+    // At once, through the actions rendered while the session was counting, with no approver.
+    const closure = await close({ counted: { cash: 9000 } });
+    expect(closure.toJSON()).toMatchObject({ id: session.id, counted: { cash: 9000 }, breakdowns: { approved_by: 'mgr-1' } });
+    expect(await reservation()).toMatchObject({ applied: true });
+    expect((await db.register_sessions.findOne(session.id).exec())?.approved_by).toBe('mgr-1');
+  });
+
   it('does not gate a resumed close again, and keeps its approver', async () => {
     const session = await seed();
     await closeSession(db.register_sessions, session.id, { counted: { cash: 9000 }, approvedBy: 'mgr-1' });
@@ -474,6 +508,19 @@ describe('a null register host (its collection still opening)', () => {
     await expect(actions.closeSession({ counted: { cash: 10000 } })).rejects.toBeInstanceOf(RegisterSessionRequiredError);
     await expect(actions.recordMovement({ type: 'paid_in', amountMinor: 100, reason: 'x' })).rejects.toBeInstanceOf(RegisterSessionRequiredError);
     expect(await db.closures.find().exec()).toEqual([]);
+  });
+
+  // #168 review: `live()` runs before `requireOpen`, whose gate clears the server figures.
+  // Revert: call `requireOpen()` before `live()` again.
+  it('refuses a movement before requireOpen writes to the session', async () => {
+    const session = await seed();
+    await session.incrementalPatch({ server_expected: { cash: 10000 }, server_sales_count: 2 });
+    const before = (await db.register_sessions.findOne(session.id).exec())!.toJSON(true);
+    const { result } = render({ register: null });
+    await expect(result.current.actions.recordMovement({ type: 'paid_in', amountMinor: 100, reason: 'x' }))
+      .rejects.toBeInstanceOf(RegisterSessionRequiredError);
+    expect((await db.register_sessions.findOne(session.id).exec())!.toJSON(true)).toEqual(before);
+    expect(await db.cash_movements.find().exec()).toEqual([]);
   });
 });
 
