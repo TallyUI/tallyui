@@ -39,6 +39,14 @@ export class RegisterSessionClosedError extends Error {
   }
 }
 
+/** ADR-068 6a: movement amounts must be safe integers, positive for paid_in/paid_out and zero for no_sale. */
+export class RegisterMovementAmountError extends Error {
+  constructor(type: 'paid_in' | 'paid_out' | 'no_sale', amountMinor: number) {
+    super(`movement_amount_invalid:${type}:${amountMinor}`);
+    this.name = 'RegisterMovementAmountError';
+  }
+}
+
 /**
  * The movement is recorded, on a session that closed while it was saved, and no closure is known
  * to count it, so it was kept rather than deleted. The caller must not record it again; job c's
@@ -280,6 +288,11 @@ export async function recordMovement(
   closures: ClosureCollection,
   input: { sessionId: string; type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string; actor: string },
 ) {
+  if (
+    !Number.isSafeInteger(input.amountMinor) ||
+    ((input.type === 'paid_in' || input.type === 'paid_out') && input.amountMinor <= 0) ||
+    (input.type === 'no_sale' && input.amountMinor !== 0)
+  ) throw new RegisterMovementAmountError(input.type, input.amountMinor);
   await requireLiveSession(sessions, input.sessionId);
   const row = await movements.insert({
     id: uuid(),
