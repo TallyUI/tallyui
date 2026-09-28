@@ -44,6 +44,16 @@ afterEach(async () => {
   await db.remove();
 });
 
+/** A hand-built pending sale stamped to the seeded session, enough for `salesCount` to count it. */
+function seedSale(id: string) {
+  return db.pos_orders.insert({
+    id, commandId: `command-${id}`, createdAt: '2026-09-20T10:00:00.000Z', updatedAt: '2026-09-20T10:00:00.000Z',
+    currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: 1000, discountMinor: 0, taxMinor: 0,
+    totalMinor: 1000, customer: null, syncStatus: 'pending', sessionId, cashierRef: '7',
+    payments: [{ id: `${id}-payment-0`, method: 'cash', amountMinor: 1000 }],
+  });
+}
+
 async function renderPanel(overrides?: Parameters<typeof RegisterHarness>[0]['overrides']) {
   render(
     <RegisterHarness db={db} overrides={overrides}>
@@ -75,6 +85,20 @@ it('labels the heading with the register name and sales count, and the figures u
   expect(expectedSection.textContent).toContain('Expected in the drawer');
   expect(expectedSection.textContent).toContain('Cash');
   expect(expectedSection.textContent).toContain('€93.00');
+});
+
+// The Front desk review (2026-09-28): "1 sales this session" reads wrong; "sale" pluralises for
+// 0, 1 and more.
+it.each([
+  [0, '0 sales this session'],
+  [1, '1 sale this session'],
+  [2, '2 sales this session'],
+])('pluralises the sales count for %i', async (count, expected) => {
+  for (let i = 0; i < count; i += 1) {
+    await seedSale(`sale-${i}`);
+  }
+  await renderPanel();
+  await waitFor(() => expect(screen.getByTestId('register-panel-sales-count').textContent).toBe(expected));
 });
 
 // The Front desk review (2026-09-28): at 360x640 the dialog was taller than the viewport and its

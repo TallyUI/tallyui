@@ -74,3 +74,20 @@ it('shows no pill once a register is chosen, online, with no session and session
   render(<RegisterBar register={stub()} registerId="r" online multiRegister={false} onOpenPanel={vi.fn()} />);
   expect(screen.queryByTestId('register-bar-pill')).toBeNull();
 });
+
+// The Front desk review (2026-09-28): the pill opens the gate/picker or the panel when given onPressPill, otherwise it stays a plain badge.
+it('makes the pill a button that calls onPressPill when given', () => {
+  const onPressPill = vi.fn();
+  render(
+    <RegisterBar register={stub()} registerId={null} online={false} multiRegister={false} onOpenPanel={vi.fn()} onPressPill={onPressPill} />,
+  );
+  const pill = screen.getByTestId('register-bar-pill');
+  expect(pill.getAttribute('role')).toBe('button');
+  fireEvent.click(pill);
+  expect(onPressPill).toHaveBeenCalledTimes(1);
+});
+
+it('leaves the pill a plain badge, not a button, when onPressPill is not given', () => {
+  render(<RegisterBar register={stub()} registerId={null} online={false} multiRegister={false} onOpenPanel={vi.fn()} />);
+  expect(screen.getByTestId('register-bar-pill').getAttribute('role')).not.toBe('button');
+});

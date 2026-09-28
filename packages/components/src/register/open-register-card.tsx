@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
 import { parseMinor, validAmount } from '@tallyui/pos';
 
-import { formatMoney, minorUnitDigits } from '@tallyui/core';
+import { currencySymbol, formatMoney, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -53,11 +53,12 @@ export function OpenRegisterCard({ register, currency, configuredFloatMinor, cla
       setBusy(false);
     }
   };
+  const amountLabel = `Cash in the drawer to start (${currencySymbol(currency)})`;
   return (
-    <View testID="open-register-card" className={cn('bg-card flex-1 gap-3 rounded-md p-4', className)}>
+    <View testID="open-register-card" className={cn('bg-card gap-3 rounded-md p-4', className)}>
       <Text className="text-lg font-semibold">Open register</Text>
       <Label testID="open-register-amount-label" nativeID={AMOUNT_LABEL_ID}>
-        Cash in the drawer to start
+        {amountLabel}
       </Label>
       <Input>
         <Input.Field
@@ -65,7 +66,7 @@ export function OpenRegisterCard({ register, currency, configuredFloatMinor, cla
           value={amount}
           onChangeText={setEnteredAmount}
           keyboardType="decimal-pad"
-          accessibilityLabel="Cash in the drawer to start"
+          accessibilityLabel={amountLabel}
           accessibilityLabelledBy={AMOUNT_LABEL_ID}
         />
       </Input>

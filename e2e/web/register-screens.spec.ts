@@ -78,6 +78,21 @@ for (const size of sizes) {
       await shoot(page, 'picker', size.label);
     });
 
+    // The Front desk review (2026-09-28): a row fixed at h-11 clipped its second line ("Not
+    // opened"). Rows now size to their content with a minimum height, so both lines fit inside
+    // the row's own box at every width.
+    test('RegisterPicker rows are tall enough for their second line', async ({ page }) => {
+      await page.goto('/pos/register/picker');
+      const row = page.getByTestId('register-picker-row-front');
+      const status = page.getByTestId('register-picker-row-front-status');
+      const rowBox = await row.boundingBox();
+      const statusBox = await status.boundingBox();
+      expect(rowBox).not.toBeNull();
+      expect(statusBox).not.toBeNull();
+      expect(statusBox!.y).toBeGreaterThanOrEqual(rowBox!.y - 0.5);
+      expect(statusBox!.y + statusBox!.height).toBeLessThanOrEqual(rowBox!.y + rowBox!.height + 0.5);
+    });
+
     test('OpenRegisterCard prefills the last count and opens', async ({ page }) => {
       await page.goto('/pos/register/open');
       await expect(page.getByTestId('open-register-card')).toBeVisible();
