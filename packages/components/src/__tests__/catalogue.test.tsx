@@ -313,4 +313,25 @@ describe('Catalogue', () => {
     render(<Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} />);
     expect(screen.queryByTestId('catalogue-status-row')).toBeNull();
   });
+  // Front desk review of medusapos #88: with an accessory (e.g. a register pill) at phone width, the
+  // status text wrapped to three lines and pushed the accessory out of place. react-native-web renders
+  // Text's numberOfLines={1} as a single-line, ellipsis-truncated element in this jsdom harness (observed
+  // via getComputedStyle: textOverflow: 'ellipsis', whiteSpace: 'nowrap'); without it, whiteSpace is 'pre-wrap'.
+  it('keeps the status text to one line when an accessory is present, and wraps as before without one', () => {
+    const { rerender } = render(
+      <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} statusText="Synced"
+        statusAccessory={<span data-testid="accessory">Register</span>} lastSyncedAt={null} />,
+    );
+    const withAccessory = within(screen.getByTestId('catalogue-status-row')).getByText('Synced');
+    expect(getComputedStyle(withAccessory).textOverflow).toBe('ellipsis');
+    expect(getComputedStyle(withAccessory).whiteSpace).toBe('nowrap');
+
+    rerender(
+      <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} statusText="Synced"
+        lastSyncedAt={null} />,
+    );
+    const withoutAccessory = within(screen.getByTestId('catalogue-status-row')).getByText('Synced');
+    expect(getComputedStyle(withoutAccessory).textOverflow).not.toBe('ellipsis');
+    expect(getComputedStyle(withoutAccessory).whiteSpace).toBe('pre-wrap');
+  });
 });
