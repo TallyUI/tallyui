@@ -686,6 +686,23 @@ bodies and design docs, and the source is given for each.
   mode included (until registers c2's server gate); a resumed close isn't
   gated again. `approvedBy` is written in the closing write and reaches the Z
   as `breakdowns.approved_by`, and a supplied name as `approved_by_name`.
+  The gate reads the stored session and derives expected cash from
+  `readFresh` movements and orders, as `writeClosure` does, never from the
+  rendered snapshot (the #168 review).
+  - **Residual window, a registers c2 item:** a sale stamped after the
+    gate's read, whose insert lands before `writeClosure` reads the orders,
+    is frozen into the Z without a fresh approval check.
+    - `stampSession` accepts a counting session, and the orphan sweep skips
+      orders the closure lists.
+    - It's unreachable through this hook today: `requireOpen` accepts only
+      an open session, and `startCounting` refuses during a tender. It
+      becomes reachable with c2's server sync, a direct store call, or an
+      app stamping outside the tender flag.
+    - **The two ways to close it** (the Front desk, 2026-09-28): re-check
+      the variance on `writeClosure`'s own rows and mark the Z
+      `approval_required` if it crossed, or refuse stamps once the session
+      is counting. Both are decisions about a session already closed, so
+      they belong with c2's server gate.
 - **What comes next, in order (the Front desk, 2026-09-28):**
   1. **The register screens:** the picker, the open card, the bar, the
      movement sheet, the panel and a column gate, then the count and the
