@@ -39,17 +39,28 @@ does nothing.
 A `@tallyui/*` package's peer dependency on another one is written
 `workspace:^`, and published as a caret range (`^2.1.0`).
 
-- **Why:** changesets reads a `workspace:*` peer as the exact current version,
-  and bumps a dependent major when its peer leaves that range. So with
-  `workspace:*`, a minor changeset on `@tallyui/core` turns every
-  peer-dependent into a major, and the fixed group lifts all the packages
-  to the next major. That's what happened with the first 2.1.0 version run,
-  which came out as 3.0.0.
-- **The config that goes with it:** `.changeset/config.json` sets
-  `onlyUpdatePeerDependentsWhenOutOfRange`, so a peer-dependent goes major
-  only when its peer really leaves the range.
-- **Check:** before opening a version PR, `pnpm changeset status --verbose`
-  must show no major unless a changeset asks for one.
+- **Why both changes are needed:** by default, changesets bumps a
+  peer-dependent major on *any* minor or major release of its peer, whatever
+  the range. `.changeset/config.json` sets
+  `onlyUpdatePeerDependentsWhenOutOfRange`, so it goes major only when the
+  new version leaves the peer's range. And changesets reads a `workspace:*`
+  peer as the exact current version, so with `workspace:*` every minor
+  leaves the range anyway.
+  - Either change alone still turns a minor changeset on `@tallyui/core`
+    into a major for every peer-dependent, and the fixed group then lifts
+    all the packages to the next major.
+  - That's what happened with the first 2.1.0 version run, which came out
+    as 3.0.0.
+- **The option is unstable:** its key is
+  `___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH`, and changesets
+  silently ignores a key it doesn't know. A changesets update that renames
+  it brings the 3.0.0 problem back, and nothing in CI catches that yet.
+- **Check:** before `pnpm changeset version`, `pnpm changeset status
+  --verbose` must show no major unless a changeset asks for one. It is the
+  first step of the procedure below.
+- **Pre-release mode** (not used today): a prerelease such as
+  `2.1.0-next.0` doesn't satisfy `^2.0.0`, so a core minor in pre mode
+  still gives a major. The status check shows it.
 
 ## Worker procedure: open the version PR
 
@@ -58,6 +69,7 @@ Run these from a worktree on a fresh branch off `main`:
 ```sh
 git pull --ff-only origin main
 pnpm install --frozen-lockfile
+pnpm changeset status --verbose          # no major unless a changeset asks for one
 export GITHUB_TOKEN="$(gh auth token)"   # changelog-github looks up PRs and authors
 pnpm changeset version
 pnpm install --frozen-lockfile
