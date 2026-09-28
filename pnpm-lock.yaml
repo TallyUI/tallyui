@@ -241,7 +241,7 @@ importers:
   connectors/medusa:
     dependencies:
       '@tallyui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
     devDependencies:
       '@tallyui/database':
@@ -254,7 +254,7 @@ importers:
   connectors/shopify:
     dependencies:
       '@tallyui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
     devDependencies:
       rxdb:
@@ -264,7 +264,7 @@ importers:
   connectors/vendure:
     dependencies:
       '@tallyui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
     devDependencies:
       '@tallyui/database':
@@ -280,7 +280,7 @@ importers:
   connectors/woocommerce:
     dependencies:
       '@tallyui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
     devDependencies:
       rxdb:
@@ -290,16 +290,16 @@ importers:
   packages/components:
     dependencies:
       '@tallyui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@tallyui/pos':
         specifier: workspace:*
         version: link:../pos
       '@tallyui/primitives':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../primitives
       '@tallyui/theme':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../theme
       class-variance-authority:
         specifier: ^0.7.1
@@ -354,7 +354,7 @@ importers:
   packages/database:
     dependencies:
       '@tallyui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       rxdb:
         specifier: 16.21.1

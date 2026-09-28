@@ -32,7 +32,7 @@
     "test": "echo \"no tests yet\""
   },
   "peerDependencies": {
-    "@tallyui/core": "workspace:*"
+    "@tallyui/core": "workspace:^"
   },
   "devDependencies": {
     "@tallyui/database": "workspace:*",

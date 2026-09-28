@@ -34,6 +34,6 @@
     "rxjs": "7.8.2"
   },
   "peerDependencies": {
-    "@tallyui/core": "workspace:*"
+    "@tallyui/core": "workspace:^"
   }
 }
