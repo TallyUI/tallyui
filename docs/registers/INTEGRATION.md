@@ -182,6 +182,10 @@ and the tender pins exactly the session it confirmed. If a tender still pins
 none while a session is present at `complete()`, `useSale` stamps that
 session and logs a warning.
 
+This is one case of a general rule — a decision that gates money or a Z
+always reads stored state, never a rendered value — documented in
+[`docs/rxdb/query-cache-reads.md`](../rxdb/query-cache-reads.md#rule-decisions-that-gate-money-or-a-z-read-stored-state).
+
 Call `register.requireOpen()` again just before a card terminal captures.
 Both calls throw
 `RegisterSessionRequiredError` when there's no open session — map that to a
