@@ -845,6 +845,30 @@ T1–T11) is complete at `3996453`. The A-track (medusapos) is in progress.
 8. Item 22, Vendure. Its MVP starts once items 1–5 and 7 have merged
    (ADR-053). Its M6 proper still waits for item 10 to be green on Medusa.
 
+## 2.6 Tracks (added 2026-09-28)
+
+TallyUI now carries four product tracks. Each consumes the same
+`@tallyui/pos`; only the driver underneath differs (WCPOS `next` ADR 0029).
+
+| Track | Where | Driver | Plan |
+|---|---|---|---|
+| Medusa | `medusapos` | Medusa connector and plugin | §2.2–2.3 |
+| Vendure | `vendurepos` | Vendure connector and plugin | [vendure/PLAN.md](../vendure/PLAN.md) |
+| WooCommerce | `wcpos/tallyui-woocommerce` | WooCommerce connector; parity with WCPOS v2 | its repository |
+| Standalone | `apps/standalone` in this repo | The local-only driver: no server | [apps/standalone/PLAN.md](../apps/standalone/PLAN.md), ADR-066 |
+
+**Standalone** is Paul's direction of 2026-09-28: a desktop, iOS and
+Android POS with no backend at all. It is TallyUI's reference app and the
+strongest test that the pos layer is separable from any server, so every
+pos-layer feature is now designed to work with no server first and gains
+connector behaviour as an optional layer (ADR-066). Its MVP is M0 (a
+catalogue from a CSV) and M1 (sell, tender, receipt and Z read, all
+local); M2 adds local product and customer management and M3 backup and
+restore. Its first jobs are a `connectors/local` package and a
+local-authoritative collection option in `createTallyDatabase`. It needs
+no dev store, so its e2e suite runs in CI with no backend. It runs beside
+the platform tracks and does not change their order (ADR-020).
+
 ---
 
 # Part 3: Decisions that needed Paul
