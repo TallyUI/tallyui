@@ -3040,8 +3040,14 @@ interface OrderCreatePayload {
            reflect as local-pending, and never anchors while one exists.
       2. **The closed figure:** at and after the closure, the server's
          `expected` is the float, plus the cash of the orders in the
-         closure's `orderIds` that it has received, plus the movements.
-         `salesCount` is the number of those orders.
+         closure's `orderIds` that it has received, plus the movements in
+         the closure's `movementIds`. A void row in the session excludes
+         its target, as on the till. `salesCount` is the number of those
+         orders.
+         - `movementIds` is the till's frozen list (`writeClosure`).
+         - A movement stranded by a racing close (ADR-032) can reach the
+           server before `closure.submit` without being in that list. The
+           Z doesn't count it, so neither does the closed figure.
          - That excludes late sales, as the till does, and matches the till
            exactly once every order has landed.
          - Order ids not yet received are the closure's unsynced figures.
