@@ -128,7 +128,7 @@ The fields this guide's screens need: `session`, `expected`, `salesCount`,
 `overdue`, `lastClosure`, `saleSession` (pass this straight to `useSale`,
 below) and `actions` (`openSession`, `startCounting`, `backToSelling`,
 `closeSession`, `recordMovement`, `voidMovement`). There's also a top-level
-`requireOpen()` — not one of the `actions` — described under
+`requireOpen()` and `requireSaleSession()` — not among the `actions` — described under
 [wiring the sale](#wiring-the-sale).
 
 ### Errors
@@ -160,23 +160,39 @@ session through `stampSession` before handing it to `onSaleCompleted`.
 The session stamped is the one in force when the tender started, not
 whatever `saleSession` is by the time the sale completes: `startTender` pins
 it for that tender, so a session that closes mid-tender doesn't change which
-session the sale belongs to (fixed by #170). `useRegisterSession`'s
+session the sale belongs to (#170, and #172 for a session opened just before). `useRegisterSession`'s
 `tenderInProgress` option must reflect the sale being at tender (that is,
 `sale.stage.kind === 'tender'`), so counting or closing can't start under a
 payment in progress.
 
-**The tender gate has two points**, per ADR-032: the app calls
-`register.requireOpen()` (not under `actions`) when tender starts, and again
-just before a card terminal captures. Both throw
+**The tender gate has two points**, per ADR-032.
+
+When tender starts, call `register.requireSaleSession()` (not under
+`actions`), and pass what it returns to `startTender`:
+
+```ts
+const confirmed = await register.requireSaleSession();
+sale.startTender('cash', { session: confirmed ?? undefined });
+```
+
+The rendered `saleSession` lags a session opened a moment earlier. A cashier
+who taps Open and then Cash straight away would otherwise start a tender
+before the new session has rendered. `requireSaleSession()` reads storage,
+and the tender pins exactly the session it confirmed. If a tender still pins
+none while a session is present at `complete()`, `useSale` stamps that
+session and logs a warning.
+
+Call `register.requireOpen()` again just before a card terminal captures.
+Both calls throw
 `RegisterSessionRequiredError` when there's no open session — map that to a
 cashier-facing prompt to open the register — and resolve to `null` when
 `enabled` is `false`, which also means "sessions are off for this store".
 An app whose database is still opening must refuse payment on its own in
-that window, since `requireOpen()` can't yet tell "not open" from "still
+that window, since neither call can yet tell "not open" from "still
 opening".
 
 Browsing the catalogue and building the cart are **never** blocked by the
-register — only taking payment is gated. Don't call `requireOpen()` before
+register — only taking payment is gated. Don't call `requireSaleSession()` before
 the cashier reaches the tender step.
 
 ## The screens
@@ -323,7 +339,7 @@ Collected from a real app's first integration:
 - **One hook instance.** Run one `useRegisterSession` per backend connection, high enough (in a provider, say) that the sale screen and the count screen share it. `tenderInProgress` has to be reported up from wherever tender actually starts and ends.
 - **Same `storeKey`.** Use the same `storeKey` for the register as for everything else scoped to that backend connection.
 - **`registerId` means the drawer.** `useRegisterSession`'s `registerId` is the cash drawer. If the app already has a device or till id (for example the value it passes as `PosOrder.registerId`), give the drawer a distinct name in app code, such as `boundRegisterId`.
-- **A store that's still opening.** `requireOpen()` resolves `null` when `enabled` is `false`. An app whose store is still opening must refuse payment itself in that window, or a sale can complete with no session.
+- **A store that's still opening.** `requireOpen()` and `requireSaleSession()` resolve `null` when `enabled` is `false`. An app whose store is still opening must refuse payment itself in that window, or a sale can complete with no session.
 - **`RegisterColumn` replaces its children wholesale.** If the cart needs to stay visible next to the picker or the open card, compose those two directly above the cart, and use `RegisterColumn` only once a session exists, for its `countSlot`.
 - **The pill must never be a dead label.** Wire `onPressPill` so that with no session it opens whatever the app shows to start one (on a phone, that likely means showing the cart area even while it's empty), and with a session it opens the register panel.
 - **Phone layout:**
