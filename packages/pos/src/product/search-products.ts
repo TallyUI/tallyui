@@ -14,9 +14,12 @@ export function searchProducts<Doc>(docs: Doc[], term: string, traits: ProductTr
   if (!query) return docs;
 
   const codes = (doc: Doc) =>
-    [traits.getSku(doc), traits.getBarcode(doc)]
+    [...new Set([
+      traits.getSku(doc), traits.getBarcode(doc),
+      ...(traits.getVariants?.(doc) ?? []).flatMap((variant) => [variant.sku, variant.barcode]),
+    ]
       .filter((code): code is string => Boolean(code))
-      .map((code) => code.toLowerCase());
+      .map((code) => code.toLowerCase()))];
 
   const exact = docs.filter((doc) => codes(doc).includes(query));
   if (exact.length) return exact;

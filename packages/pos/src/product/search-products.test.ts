@@ -29,6 +29,24 @@ describe('searchProducts', () => {
     expect(ids).toEqual(['p2']);
   });
 
+  it("matches a second variant's barcode and SKU through getVariants", () => {
+    const product = {
+      id: 'p4', title: 'Variant Tee', variants: [
+        { id: 'v1', sku: 'TEE-S', barcode: '5000000000001' },
+        { id: 'v2', sku: 'TEE-M', barcode: '5000000000002' },
+      ],
+    };
+    expect(searchProducts([product], '5000000000002', medusaProductTraits)).toEqual([product]);
+    expect(searchProducts([product], 'TEE-M', medusaProductTraits)).toEqual([product]);
+  });
+
+  it('without getVariants, search behaves as before', () => {
+    const traits = { ...medusaProductTraits };
+    delete traits.getVariants;
+    expect(searchProducts(medusaDocs, '2000002000004', traits)).toEqual([medusaDocs[1]]);
+    expect(searchProducts(medusaDocs, 'TLY-00002', traits)).toEqual([medusaDocs[1]]);
+  });
+
   it('works on another backend shape through its traits', () => {
     const wooDocs = [
       { id: 1, name: 'Espresso Beans', sku: 'ESP-1' },
