@@ -1,4 +1,4 @@
-import type { CommandEnvelope, CommandResult, OrderCreatePayload } from '@tallyui/core';
+import type { AnyCommandEnvelope, CommandEnvelope, CommandResult, OrderCreatePayload } from '@tallyui/core';
 
 export type TransportOutcome =
   | { kind: 'results'; results: CommandResult[] }
@@ -6,8 +6,8 @@ export type TransportOutcome =
   | { kind: 'refused'; status: number; reason: string }
   | { kind: 'retry'; reason: string; retryAfterMs?: number };
 
-export interface CommandTransport {
-  send(batch: CommandEnvelope<OrderCreatePayload>[]): Promise<TransportOutcome>;
+export interface CommandTransport<E extends AnyCommandEnvelope = CommandEnvelope<OrderCreatePayload>> {
+  send(batch: E[]): Promise<TransportOutcome>;
 }
 
 export interface OutboxState {

@@ -36,5 +36,10 @@ export async function readCapabilities(
   const valid = Array.isArray(contracts)
     ? contracts.filter((v): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0)
     : [];
-  return { orderCreate: valid.length > 0 ? Math.max(...valid) : 1 };
+  const register = (body as { contracts?: Record<string, unknown> } | null)?.contracts?.register;
+  const registerVersions = Array.isArray(register)
+    ? register.filter((v): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0)
+    : [];
+  return { orderCreate: valid.length > 0 ? Math.max(...valid) : 1,
+    ...(registerVersions.length > 0 ? { register: Math.max(...registerVersions) } : {}) };
 }

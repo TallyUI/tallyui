@@ -27,6 +27,7 @@ export type RegisterCounters = {
  * same atomic write as its number, and `applied` once its period is in the perpetual totals.
  */
 export type RegisterBucket = Partial<RegisterCounters> & {
+  commands_since?: string;
   closure_reservation?: { row: Closure; applied: boolean };
   /** Closure ids the orphan-stamp sweep has already checked (ADR-032, the #158 follow-ups): a
    *  local-document field, so bounding the sweep needs no schema bump. */
@@ -145,6 +146,18 @@ export async function nextSaleCounter(host: RegisterHost, storeKey: string): Pro
 function withRegister(store: RegisterStore | undefined, registerId: string, bucket: RegisterBucket): RegisterStore {
   const base = store ?? { sale_counter: 0 };
   return { ...base, registers: { ...base.registers, [registerId]: bucket } };
+}
+
+/** Records when this register first enabled commands, once, in an atomic write. */
+export async function markCommandsSince(host: RegisterHost, storeKey: string, registerId: string, now: string): Promise<string> {
+  let since = now;
+  await modifyStore(host, storeKey, (store) => {
+    const register = store?.registers?.[registerId] ?? {};
+    since = register.commands_since ?? now;
+    if (register.commands_since !== undefined) return undefined;
+    return withRegister(store, registerId, { ...register, commands_since: since });
+  });
+  return since;
 }
 
 /**

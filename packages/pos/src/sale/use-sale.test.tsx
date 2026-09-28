@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { CommandEnvelope, OrderCreatePayload, StoreSettings as PricingSettings } from '@tallyui/core';
+import type { CommandEnvelope, OrderCreateEnvelope, OrderCreatePayload, StoreSettings as PricingSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import type { LogEntry } from '../logging';
 import { createOrderBuilder } from '../order';
@@ -994,7 +994,7 @@ describe('complete() is idempotent for one tender', () => {
     const logged: LogEntry[] = [];
     outboxLogger.addSink({ id: 'requeue-retry-capture', levels: ['warn'], write: (entry) => logged.push(entry) });
     let sends = 0;
-    const send: CommandTransport['send'] = async (batch) => ({ kind: 'results', results: batch.map((command) => sends++ === 0
+    const send: CommandTransport<OrderCreateEnvelope>['send'] = async (batch) => ({ kind: 'results', results: batch.map((command) => sends++ === 0
       ? { id: command.id, status: 'rejected', error: { code: 'unknown_variant', message: 'gone' } }
       : { id: command.id, status: 'applied', serverRefs: { orderId: 'server-order', totalMinor: command.payload.totalMinor } }) });
     const { result, unmount, completed, stored, send: transport } = await renderWithOutbox({ after: 1, send });

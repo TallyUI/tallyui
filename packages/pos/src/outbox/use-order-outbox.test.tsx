@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import type { OrderCreateEnvelope } from '@tallyui/core';
 import { createOrderBuilder } from '../order';
 import type { LogEntry } from '../logging';
 import { addPosOrderCollection, finalizeOrder, needsAttention, OrderContentMismatchError, uuidv7, type PosOrder } from '../pos-order';
@@ -189,8 +190,8 @@ describe('useOrderOutbox options', () => {
       { initialProps: initial });
     return view;
   }
-  const fakeTransport = (send: CommandTransport['send']) => () => ({ send });
-  const appliedResults: CommandTransport['send'] = async (batch) => ({ kind: 'results', results: batch.map((command) =>
+  const fakeTransport = (send: CommandTransport<OrderCreateEnvelope>['send']) => () => ({ send });
+  const appliedResults: CommandTransport<OrderCreateEnvelope>['send'] = async (batch) => ({ kind: 'results', results: batch.map((command) =>
     ({ id: command.id, status: 'applied', serverRefs: { orderId: `server-${command.id}`, totalMinor: command.payload.totalMinor } })) });
 
   it('the outbox reads the latest getMaxOrderCreateVersion at call time', async () => {
@@ -202,7 +203,7 @@ describe('useOrderOutbox options', () => {
     const newGetter = vi.fn(() => 2);
     const oldRefresh = vi.fn(async () => {});
     const newRefresh = vi.fn(async () => {});
-    const send = vi.fn<CommandTransport['send']>().mockImplementation(appliedResults)
+    const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>().mockImplementation(appliedResults)
       .mockResolvedValueOnce({ kind: 'results', results: [{ id: order.commandId, status: 'rejected',
         error: { code: 'unsupported_version', message: 'not supported' } }] });
     const options = { storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(send) };
@@ -228,7 +229,7 @@ describe('useOrderOutbox options', () => {
     let max = 3;
     const refreshCapabilities = vi.fn(async () => { max = 2; });
     const getMaxOrderCreateVersion = vi.fn(() => max);
-    const send = vi.fn<CommandTransport['send']>().mockImplementation(appliedResults)
+    const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>().mockImplementation(appliedResults)
       .mockResolvedValueOnce({ kind: 'results', results: [{ id: order.commandId, status: 'rejected',
         error: { code: 'unsupported_version', message: 'not supported' } }] });
     renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(send),
@@ -244,7 +245,7 @@ describe('useOrderOutbox options', () => {
 
   it('records then flushes through the given transport, reporting busy while sending and idle after', async () => {
     const sending = deferred<void>();
-    const send = vi.fn<CommandTransport['send']>(async (batch) => { await sending.promise; return appliedResults(batch); });
+    const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>(async (batch) => { await sending.promise; return appliedResults(batch); });
     const onBusy = vi.fn();
     const view = renderOptions({ storeKey: session.baseUrl, deviceId: 'device-7', open: openStore, transport: fakeTransport(send), onBusy });
     await waitFor(() => expect(outbox.orders).not.toBeNull());
@@ -265,7 +266,7 @@ describe('useOrderOutbox options', () => {
 
   it('requeues a rejected order and resends it under a new command id; resolves to 0 before the store is ready', async () => {
     const order = sale();
-    const send = vi.fn<CommandTransport['send']>()
+    const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>()
       .mockResolvedValueOnce({ kind: 'results', results: [{ id: order.commandId, status: 'rejected', error: { code: 'unknown_variant', message: 'gone' } }] })
       .mockImplementation(appliedResults);
     const view = renderOptions({ storeKey: null, deviceId: 'register-1', open: openStore, transport: fakeTransport(send) });

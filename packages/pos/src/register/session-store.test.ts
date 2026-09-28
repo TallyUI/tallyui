@@ -23,6 +23,7 @@ import {
   closeSession,
   openSession,
   recordMovement,
+  RegisterMovementAmountError,
   RegisterMovementStrandedError,
   RegisterSessionClosedError,
   RegisterSessionRequiredError,
@@ -215,6 +216,27 @@ it('stores one approver when two closes race, and both return it', async () => {
   const stored = (await db.register_sessions.findOne(doc.id).exec())?.approved_by;
   expect(['mgr-1', 'mgr-2']).toContain(stored);
   expect(results.map((row) => row.approved_by)).toEqual([stored, stored]);
+});
+
+it('recordMovement refuses an amount the server would refuse, before writing', async () => {
+  const session = await openSession(db.register_sessions, input);
+  for (const [type, amountMinor] of [
+    ['paid_in', 0], ['paid_out', -300], ['paid_in', 1.5], ['no_sale', 100],
+  ] as const) {
+    await expect(recordMovement(db.register_sessions, db.cash_movements, db.closures, {
+      sessionId: session.id, type, amountMinor, reason: 'Test', actor: '7',
+    })).rejects.toBeInstanceOf(RegisterMovementAmountError);
+  }
+  expect(await db.cash_movements.count().exec()).toBe(0);
+  for (const [type, amountMinor] of [
+    ['paid_in', 700], ['paid_out', 300], ['no_sale', 0],
+  ] as const) {
+    const row = await recordMovement(db.register_sessions, db.cash_movements, db.closures, {
+      sessionId: session.id, type, amountMinor, reason: 'Test', actor: '7',
+    });
+    expect(row.toJSON()).toMatchObject({ type, amountMinor });
+  }
+  expect(await db.cash_movements.count().exec()).toBe(3);
 });
 
 // TallyUI (#123 review, F2): movements check their session. Revert: drop the session check.

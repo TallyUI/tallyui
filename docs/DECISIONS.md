@@ -460,7 +460,8 @@ bodies and design docs, and the source is given for each.
 ## ADR-032 How WCPOS code reaches TallyUI (plan D3)
 
 - **Date:** 2026-09-23 · **Status:** Accepted (Front desk, on the MVP
-  criterion) · **Source:** plan D3
+  criterion) · **Source:** plan D3 · **Amended by ADR-068:** registers
+  sync to the server as `register.*` commands (c2)
 - **Decision:**
   - Port the neutral payments, tender and register logic from WCPOS `next`
     into `@tallyui/pos`, carrying the WCPOS tests over.
@@ -874,7 +875,8 @@ bodies and design docs, and the source is given for each.
 
 - **Date:** 2026-09-23 · **Status:** Accepted (programme lead); the
   interface between the TallyUI and medusapos tracks · **Source:** plan §2.2,
-  ADR-036, ADR-037
+  ADR-036, ADR-037 · **Amended by ADR-068:** the five `register.*` command
+  types and the `register_*` conflict codes
 - **Transport:** `POST /tally/v1/commands`, header `X-Tally-Protocol: 1`.
   - Body: `{ commands: CommandEnvelope[] }`, at most 50, processed in
     order.
@@ -2822,3 +2824,341 @@ interface OrderCreatePayload {
   - A second consumer turns the engine's two doors (`@wcpos/sync-engine`
     and `/testing`) into a contract. Breaking changes need a version bump
     and a note for TallyUI.
+
+## ADR-068 Registers sync to the server as `register.*` commands on the command outbox
+
+- **Date:** 2026-09-28 · **Status:** Accepted (design agreed by the Front
+  desk and the medusapos track, 2026-09-28) · Amends ADR-032 and ADR-038 ·
+  Widens ADR-067 decision 7, which kept the command outbox to
+  `order.create`, to the register commands (the Front desk, 2026-09-28)
+- **Context:**
+  - Before c2, a TallyUI register is entirely local. Its sessions,
+    movements and closures never leave the device, and the Z is the till's
+    word alone. Nothing stops two tills opening one drawer, or a server
+    closing a session the till still thinks is open.
+  - The fiscal principle is "the till records facts; the server keeps
+    them". The server must:
+    - keep the write-once record;
+    - anchor expected cash and the sales count on its own ledger;
+    - refuse what one till can't know is wrong;
+    - hand back the register's counters and closure number.
+  - It must stay backend-agnostic. Every plugin (Medusa first, then
+    Vendure, WooCommerce and Shopify) implements the same commands.
+  - ADR-067 makes the WCPOS sync engine the target. Its drivers are weeks
+    out, behind P0, P1 and the G4 experiment. Testers need register closes
+    now, and MVP-first means they don't wait for an engine migration.
+- **Decision:**
+  1. **The transport is the existing command channel.**
+     - Register facts ride `POST /tally/v1/commands` (ADR-038), with the
+       same envelope, auth, batch limits, retry rules and idempotency
+       ledger. There are no per-platform register routes.
+     - Five new command types, each versioned from 1:
+       - `register.session.open`;
+       - `register.session.transition`;
+       - `register.movement.record`;
+       - `register.movement.void`;
+       - `register.closure.submit`.
+  2. **A capability gates it.**
+     - `/tally/v1/info` lists `"register": [1]` under `contracts`, beside
+       `order.create`, and `ServerCapabilities` gains `register?: number`
+       (the highest listed version; missing means 0).
+     - Below 1, nothing is recorded or sent: a till against an old plugin
+       stays exactly as local as before.
+  3. **There's a local `register_commands` collection,** which is both the
+     queue and the sync ledger.
+     - Its key is deterministic (`session.open:<sessionId>`,
+       `session.transition:<sessionId>:<status_at>`,
+       `movement.record:<movementId>`, `movement.void:<movementId>`,
+       `closure.submit:<closureId>`), so an append is idempotent.
+     - `reconcileRegisterCommands` appends every missing fact in fact order,
+       serialised per register. Each append gets the next per-register
+       `seq`, read from the ledger itself (the highest `seq` plus one), so
+       the order survives a reset of the register document. A gap from a
+       lost race is harmless.
+     - **Which sessions:** the moment the gate first turns on for a register
+       is stored as `commands_since` in its register document. A session
+       **closed before** that moment is history from before the capability,
+       and is never backfilled unless its open command is already in the ledger. Every other session is, whether it is still
+       open or closed later, even if its open command was never recorded.
+     - **Transitions are captured when they happen:** each register action
+       hands the row it wrote to the queued reconcile.
+       - A captured transition is appended when the ledger holds no
+         transition for that session yet, even if a later transition has
+         overwritten the row by the time the reconcile runs.
+       - Otherwise the session's current state supersedes it.
+       - Either way the current state is appended last, and a missing
+         intermediate state is safe (decision 5a).
+     - A session whose `closure.submit` command is recorded is complete,
+       and the reconcile skips it.
+     - **The ledger is never pruned.** An applied command stays as the
+       record that its fact was sent. Deleting one would make the next
+       reconcile append the fact again under a new command id, which the
+       server would take as a new fact.
+     - The envelope id is minted once at append and stored, so a retry
+       sends the same bytes, as ADR-065 does for orders.
+     - The local register write comes first, then the append. A recovery
+       scan on start and after each flush appends any missing command. A
+       crash delays a command; it never loses one.
+     - The collection is local and never replicated. The three register
+       collections get no schema bump.
+  4. **Sending is serial per register, and order is the ledger's, not the
+     clock's** (the Front desk, 2026-09-28).
+     - A register's commands are never sent concurrently from one till.
+       They go strictly by `seq`, in batches applied in array order, and
+       the queue stops at the first command not applied. So the order in
+       which the server applies a register's commands **is** the ledger's
+       `seq` order. `seq` itself isn't on the wire, and the server doesn't
+       need it. Replay safety by command id makes a redelivery a no-op.
+     - `at` is a fact carried in the payload, never an ordering key.
+     - That gives the dependencies for free: the open before a transition,
+       a void after its target, the closing transition after every
+       movement, and the closure last. A movement may follow a counting
+       transition, since movements are accepted on any non-closed session.
+     - **The till keeps its `seq` order true to the facts:**
+       - it never appends a captured state that a transition already in the
+         ledger supersedes, and a session's current state is always
+         appended last among its transitions;
+       - nothing in the till's sequencing compares a clock;
+       - sessions go by closure number, then any closed session without a
+         closure row yet (by id), then the open session;
+       - within a session: its open, then any captured transitions not yet
+         superseded, then its movements with voids after their targets,
+         then the current state, then the closure.
+     - **The ledger's `seq` can have gaps** (a lost race), and, with two
+       collection instances over one database, a duplicate. The sender
+       orders by `seq`, then key.
+     - Orders stay on their own outbox. A closure binds its orders by
+       `orderIds` whenever they land (soft references, never refusals).
+     - **Movements and voids are accepted on any non-closed session,** open
+       or counting, as ADR-032 allows them locally, whatever their `at`.
+       They are refused once the session's closing transition, or its
+       closure, has been applied. So a movement that races `startCounting`
+       doesn't wedge the queue.
+     - **A movement stranded after its closure stays local.** The server
+       refuses it once the closure exists, and the reconcile skips a
+       session whose closure is recorded. It is on the till (ADR-032's
+       stranded row), not on the server.
+  5a. **A transition is a state snapshot** (agreed for both tracks,
+      2026-09-28). `register.session.transition` says "the session is now in
+      this status", and `at` records when.
+      - The last applied transition sets the status (decision 4's order).
+        Nothing compares `at`.
+      - A transition to the status the session already has is applied as a
+        no-op.
+      - A transition out of `closed` is refused (`register_session_closed`).
+      - Intermediate states may be missing: the till can send open, then
+        closed, without the counting in between.
+      - The closing transition is terminal, and carries `counted`.
+  5. **Conflict codes are neutral, and byte for byte the same on both
+     tracks** (confirmed in writing to medusapos, 2026-09-28).
+     - Each is a per-command `rejected` result inside a 200, with details
+       in the optional `CommandError.data`, which the outbox version
+       fallback already added (ADR-065):
+
+       | Code | `error.data` |
+       |---|---|
+       | `register_session_already_open` | `{ sessionId }`, the winner's |
+       | `register_session_closed` | none |
+       | `register_approval_required` | none |
+       | `register_closure_exists` | `{ closureId }` |
+       | `register_closure_number_invalid` | `{ counters: { lastClosureNumber, perpetualSalesTotalMinor, perpetualRefundsTotalMinor } }` |
+
+     - Shape errors stay `invalid_payload`. A business refusal is never a
+       whole-batch 4xx.
+     - **The business conflicts (`register_*`) are recorded** in the
+       server's ledger. A state-dependent refusal isn't recorded, so a
+       resend of the same command id re-evaluates once the state is fixed.
+       The state-dependent refusals are an unknown session, a missing void
+       target, and a closure whose register isn't its session's.
+     - **An unsupported register version** gets a per-command `rejected`
+       with `unsupported_version` and `error.data: { register: <highest
+       supported> }`, mirroring `order.create`'s `data.orderCreate`.
+  6. **Server results.** `RegisterCommandResult.closure` is
+     `{ serverClosureId, number, expected?, variance? }`.
+     `closure.findings` stays absent or untyped until both tracks type it.
+     - A closure renumbered after `register_closure_number_invalid` can't be
+       resent through the same command: its key and bytes are fixed, and a
+       new payload under the same command id gets `idempotency_mismatch`.
+       The resend path is c2c's to define.
+  6a. **The payloads (version 1),** byte for byte on both tracks. They use
+      camelCase and integer minor units. An optional field is **omitted**
+      when the till's value is `null` or missing, never sent as `null`.
+
+      | Type | Payload |
+      |---|---|
+      | `register.session.open` | `sessionId`, `registerId`, `openedAt`, `countedFloatMinor`; optional `storeKey`, `businessDay`, `openedBy`, `expectedFloatMinor`, `openingVarianceMinor` |
+      | `register.session.transition` | `sessionId`, `status` (`open`, `counting` or `closed`), `at`; when closing only, optional `counted` (tender → minor units), `closedBy`, `approvedBy` |
+      | `register.movement.record` | `movementId`, `sessionId`, `type` (`paid_in`, `paid_out` or `no_sale`), `amountMinor`, `reason`, `createdAt`; optional `createdBy` |
+      | `register.movement.void` | `movementId` (the void's own id), `sessionId`, `voids` (the voided movement's id), `createdAt`; optional `createdBy` |
+      | `register.closure.submit` | `closureId`, `sessionId`, `registerId`, `number`, `openedAt`, `closedAt`, `tillExpected`, `counted`, `periodSalesTotalMinor`, `periodRefundsTotalMinor`, `perpetualSalesTotalMinor`, `perpetualRefundsTotalMinor`, `unsyncedCount`, `unsyncedTotalMinor`, `softwareVersion`, `orderIds`, `movementIds`; optional `businessDay`, `closedBy`, `approvedBy` |
+
+      - The closure payload leaves out the till's `expected`, `variance`,
+        `breakdowns`, print fields and server fields. The server derives
+        expected cash from its own ledger.
+      - `approvedBy` is `breakdowns.approved_by` when that is a non-empty
+        string.
+      - **Movement amounts:** `amountMinor` is always positive, and `type`
+        gives the direction. `paid_in` and `paid_out` carry an integer
+        greater than 0, and `no_sale` carries exactly 0. The server refuses
+        anything else as `invalid_payload`. The till's `recordMovement`
+        refuses the same amounts before any write
+        (`RegisterMovementAmountError`), so it never queues one.
+      - **`reason`** is required on every `register.movement.record`,
+        `no_sale` included. It must be non-empty after trimming, and at most
+        500 characters, as the till's movement sheet requires.
+      - **Ids** are at most 64 characters. Session, movement and closure ids
+        are 36-character UUIDs. The register id is the one the app binds.
+      - **Only the sheet has checked `reason` and the register id's length
+        so far.** The till's store will refuse both before any write (c2a-2),
+        as it already does amounts. Movements recorded before the
+        amount guard were checked only by the sheet, the one writer
+        TallyUI has.
+      - **A closure's register:** `register.closure.submit`'s `registerId`
+        must be its session's register, or the server refuses it as
+        `invalid_payload`. Decision 8's "an unknown register id is accepted
+        as written" applies to `register.session.open`, which creates the
+        register. A closure never creates one.
+      - The TypeScript shapes are `Register*Payload` in
+        `packages/core/src/types/commands.ts`.
+  7. **Approval.**
+     - In the v1 transition, `approvedBy` stays soft: it's accepted as
+       sent.
+     - The signed, session-bound `approverToken` arrives only with c2c's
+       approve route, and `register_approval_required` is raised only from
+       then on.
+     - The server's variance threshold is a plugin option.
+  8. **Register ids are minted locally,** and the server holds soft
+     references to them: an unknown register id in `register.session.open`
+     is accepted as written, and creates the register.
+     There's no register-creation flow in the POS.
+  9. **Refunds are out of scope** until Paul's refund model.
+     `period_refunds` stays 0, and the server figures exclude refunds.
+  10. **The residual window of ADR-032** (a sale stamped between the
+      count gate and `writeClosure`) closes by refusing stamps while the
+      session is counting (c2b-1).
+  11. **The job split** is c2a (the types, the outbox and the capability
+      gate), c2b (results, anchoring and counters) and c2c (conflict
+      handling, approval tokens and UI). c2a sits behind the capability,
+      so it can merge before any plugin supports it.
+  12. **Under ADR-067.**
+      - `register.*` commands ride the command outbox under ADR-067
+        decision 7, as `order.create` does.
+      - When a platform's driver lands, they carry across to the engine's
+        mutation queue with the command id as the `Idempotency-Key`. The
+        register outbox is retired only after the same two tests as the
+        order outbox pass on that platform.
+      - The `register_*` conflict codes become driver-mapped.
+      - Register facts are a named input to the driver interface (G2 in
+        [plans/sync-engine-adoption.md](plans/sync-engine-adoption.md)).
+  13. **Expected cash: the till's figures are the record, the server's a
+      reconciliation view** (the Front desk, 2026-09-28, consistent with
+      ADR 0012). This is the contract for the server's `expected` and
+      `salesCount` (medusapos P2). The till's derivation, cited to its
+      code, is in the c2 handoff note `c2-expected-derivation.md`.
+      - **The fiscal record:** `register.closure.submit` carries the
+        till's own `tillExpected` and `counted`, and the till's variance
+        follows from them (`counted − tillExpected` for each key of
+        `counted`). Those are the fiscal record.
+        - The server's computed `expected` and `salesCount`, live or at
+          the closure, are a reconciliation view. They never overwrite the
+          till's figures.
+        - Any difference (a rejected order, an unreceived order id, a late
+          sale) is shown as a discrepancy with its cause, never silently
+          resolved.
+      - **The derivation both sides share:**
+        - integer minor units only;
+        - keys are payment `method` strings, with `cash` always present;
+        - a sale adds each payment's `amountMinor` (net of change);
+        - the float is the open's `countedFloatMinor`, on `cash`;
+        - `paid_in` adds to `cash`, `paid_out` subtracts, `no_sale` and
+          void rows add nothing, and a voided movement is excluded;
+        - `salesCount` counts orders, not payments;
+        - variance is `counted − expected` over the keys of `counted`
+          (negative means short), with no rounding and no tolerance.
+      1. **Late sales:** the server can't tell a late sale from a stamped
+         one, since `order.create` carries one `sessionId`
+         (`sessionId ?? lateSessionId`, ADR-065).
+         - The server's **live** figure counts every received order with
+           that `sessionId`.
+         - The till's c2b anchor rule treats any local order tagged to the
+           session, stamped or late, that the server's figure doesn't yet
+           reflect as local-pending, and never anchors while one exists.
+      2. **The closed figure:** at and after the closure, the server's
+         `expected` is the float, plus the cash of the orders in the
+         closure's `orderIds` that it has received, plus the movements in
+         the closure's `movementIds`. A void row in the session excludes
+         its target, as on the till. `salesCount` is the number of those
+         orders.
+         - `movementIds` is the till's frozen list (`writeClosure`).
+         - A movement stranded by a racing close (ADR-032) can reach the
+           server before `closure.submit` without being in that list. The
+           Z doesn't count it, so neither does the closed figure.
+         - That excludes late sales, as the till does, and matches the till
+           exactly once every order has landed.
+         - Order ids not yet received are the closure's unsynced figures.
+      3. **Rejected orders:** the till counts their cash, which was taken,
+         and lists them in `orderIds`. The server never records them, so
+         its figure is lower by that cash. This is correct, and shown as
+         a discrepancy with its cause (clause above). An order later
+         applied, for example after a `store_configuration` retry
+         (backlog 52), closes the gap.
+      4. **Orders sent without a `sessionId`** (versions 1 and 2, or a
+         version 3 order downgraded by the outbox fallback): the server's
+         live figure misses them until the closure binds them by
+         `orderIds`. The till's c2b anchor rule treats them as
+         local-pending too.
+      5. **Blind counts and variance keys:**
+         - In c2 the server always returns `expected`. Blind is a till UI
+           option, and any redaction waits for c2c.
+         - The server computes variance over the keys of `counted`, as the
+           Z does. The till's corrections figure (`deriveSettled`, all keys
+           of either map) is separate, and not part of this contract.
+- **Consequences:**
+  - **ADR-038's shapes grow additively, and no existing type narrows or
+    breaks** (it's a minor release):
+    - `CommandType` and `CommandEnvelope` are exactly as before
+      (`'order.create'`, version `1 | 2 | 3`);
+    - new beside them:
+      - `RegisterCommandType`, the five types;
+      - `RegisterCommandEnvelope`, the same fields with its own type and a
+        numeric version, since each register type versions on its own;
+      - `AnyCommandEnvelope`, the union;
+    - `OrderCreateEnvelope` names the order case, and
+      `toOrderCreateEnvelope` returns it;
+    - `CommandResult` gains `register?`;
+    - `CommandTransport<E>` is generic, bounded by `AnyCommandEnvelope`, and
+      defaults to `CommandEnvelope<OrderCreatePayload>`, so an existing
+      transport type-checks unchanged. The HTTP transport declares
+      `CommandTransport<AnyCommandEnvelope>`, so one transport serves both
+      outboxes.
+    The order outbox is unchanged in behaviour.
+  - **What shipped when:** c2a-1 records the commands locally behind the
+    gate and sends nothing. c2a-2 sends them.
+  - **Every plugin's checklist:**
+    - `"register": [1]` in `/tally/v1/info`;
+    - the five handlers, with ledger and fingerprint idempotency;
+    - write-once register, session, movement and closure tables;
+    - at most one non-closed session per register;
+    - a movement's session must not be closed, and its closure not yet
+      submitted (decision 4);
+    - a register's commands are applied in the order received, with a
+      batch in array order, and nothing compares `at` (decision 4);
+    - a transition is a state snapshot: the last applied one sets the
+      status, a same-status transition is an applied no-op, a transition
+      out of `closed` is refused, and intermediate states may be missing
+      (decision 5a);
+    - `reason` is required, non-empty after trimming, at most 500
+      characters, and ids are at most 64 characters (decision 6a);
+    - an unsupported register version answers `unsupported_version` with
+      `data.register`; state-dependent refusals aren't recorded
+      (decision 5);
+    - a void names a row of its own session, once;
+    - a movement's `amountMinor` is > 0 for `paid_in` and `paid_out`, and
+      exactly 0 for `no_sale` (decision 6a);
+    - a closure's `registerId` is its session's register (decision 6a);
+    - a closure number is the register's last number plus one;
+    - one closure per session;
+    - ledger-derived `expected` and `salesCount` from `order.create`'s
+      `sessionId` (ADR-065) and the movements.
+  - **Until c2c ships,** an over-threshold close isn't refused by the
+    server.

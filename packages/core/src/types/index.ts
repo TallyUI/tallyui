@@ -7,6 +7,7 @@ export type {
   CollectionSync,
   RemoteIdEntry,
   SyncContext,
+  ServerCapabilities,
 } from './connector';
 
 export type { ReplicationAdapter } from './replication';
@@ -25,8 +26,11 @@ export type { CustomerTraits } from './traits/customer';
 
 export type {
   CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,
+  RegisterCommandType, RegisterCommandEnvelope, AnyCommandEnvelope,
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
-  PaymentMethodKind, OrderCreatePayment, OrderCreatePayload,
+  PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
   CommandBatchRequest, CommandBatchResponse,
+  RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionTransitionPayload,
+  RegisterMovementRecordPayload, RegisterMovementVoidPayload, RegisterClosureSubmitPayload,
 } from './commands';
