@@ -171,7 +171,7 @@ const traits: ProductTraits = {
 
   getBarcode: (doc) => {
     // Vendure has no native barcode — check custom fields
-    return barcodeField ? doc.variants?.[0]?.customFields?.[barcodeField] || undefined : undefined;
+    return barcodeField ? liveVariants(doc)[0]?.customFields?.[barcodeField] || undefined : undefined;
   },
 
   getCategoryNames: (doc) =>

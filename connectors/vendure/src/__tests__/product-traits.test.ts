@@ -6,7 +6,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { findVariantByCode } from '@tallyui/core';
 import { connectorCollection } from '@tallyui/database';
-import { createOrderBuilder } from '@tallyui/pos';
+import { createOrderBuilder, searchProducts } from '@tallyui/pos';
 import { vendureProductTraits } from '../traits/product';
 import { createVendureConnector } from '../index';
 import { vendureProductSchema } from '../schemas/products';
@@ -318,6 +318,18 @@ describe('Vendure product traits', () => {
   });
 
   describe('getBarcode', () => {
+    it("a disabled variant's barcode doesn't match, and getBarcode skips a disabled first variant", () => {
+      const traits = createVendureConnector({ barcodeField: 'barcode' }).traits.product;
+      const product = {
+        id: 'p1', name: 'Grinder', variants: [
+          { id: 'v1', enabled: false, customFields: { barcode: '111' } },
+          { id: 'v2', enabled: true, customFields: { barcode: '222' } },
+        ],
+      };
+      expect(traits.getBarcode(product)).toBe('222');
+      expect(searchProducts([product], '111', traits)).toEqual([]);
+    });
+
     it('returns barcode from custom fields', () => {
       expect(createVendureConnector({ barcodeField: 'barcode' }).traits.product.getBarcode(fullProduct)).toBe('5901234123457');
       expect(vendureProductTraits.getBarcode(fullProduct)).toBeUndefined();
