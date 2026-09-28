@@ -1,5 +1,0 @@
----
-"@tallyui/pos": patch
----
-
-`useSale().newSale()` now refuses (with the saving error, changing nothing) while a `complete()` attempt is still building or stamping its order — not only once a pending completion exists. Previously that window let `newSale()` abandon the attempt and start a new sale at once, handing the built order to `onSaleCompleted` in the background once it finished; a failure there was money taken with only an error log. Now the cashier waits for the short stamp, then gets Retry or Continue as usual, and abandoning a save is possible only once its order is confirmed stored (`continueSale()`) or from the receipt. The generation-mismatch hand-over this replaces, and `handOverAbandoned`, are removed. Also fixes three gaps the #149 review found no test caught: `complete()` now clears a stale `canContinue` at every new attempt's entry (including a Retry after Continue was offered), and a confirmation from `isStored` that arrives after the completion is no longer pending, or after a newer attempt has started, no longer sets `canContinue`.

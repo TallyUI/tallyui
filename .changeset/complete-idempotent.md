@@ -1,5 +1,0 @@
----
-"@tallyui/pos": patch
----
-
-`useSale().complete()` is idempotent for one tender. It builds the order once per tender attempt and keeps it as the pending completion. A retry after `onSaleCompleted` throws hands over the same order (the same `id`, `commandId` and `createdAt`, with no second session stamp or late-sale fact), so a save that failed after storing the order no longer queues a duplicate sale. A second `complete()` while one is in flight (a double tap) returns the first call's promise instead of building a second order, and `complete()` on the receipt does nothing. While a completion is pending, the new `saving` flag is true and the sale is locked: `add`, `setQuantity`, `remove`, `applyDiscount`, `removeDiscount`, `setTender`, `startTender` and `cancelTender` change nothing and set the error "This sale is being saved. Retry to finish it." `newSale()` abandons it, and leaves any order already stored in `pos_orders` untouched. `useOrderOutbox().record` treats an order already stored under the same `commandId` as stored, and still flushes; the same `id` under another `commandId` still rejects.
