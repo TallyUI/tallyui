@@ -30,6 +30,9 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // table (denomination faces by currency, not a hook or the store) RegisterCount/ClosureSheet
   // read, never write, from.
   'countVariance', 'overThreshold', 'denominationTotal', 'denominations', 'varianceText', 'minorToDecimal',
+  // the approval gate (approved-by): the one "over threshold" definition RegisterCount and
+  // useRegisterSession's closeSession share.
+  'closeNeedsApproval',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

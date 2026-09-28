@@ -32,6 +32,14 @@ export const countVariance = (countedMinor: number, expectedMinor: number) =>
 export const overThreshold = (variance: number, thresholdMinor?: number | null) =>
   thresholdMinor != null && Math.abs(variance) > thresholdMinor;
 
+/**
+ * Whether a close's cash count needs a manager's approval: its cash variance against the expected
+ * cash is over the threshold. The one definition `RegisterCount` and `useRegisterSession`'s
+ * `closeSession` gate share (ADR-032).
+ */
+export const closeNeedsApproval = (countedCashMinor: number, expectedCashMinor: number, thresholdMinor?: number | null) =>
+  overThreshold(countVariance(countedCashMinor, expectedCashMinor), thresholdMinor);
+
 /** Sums denomination face values (already minor units) by piece count. */
 export const denominationTotal = (pieces: Record<number, number>) =>
   Object.entries(pieces).reduce((sum, [value, count]) => sum + Number(value) * count, 0);

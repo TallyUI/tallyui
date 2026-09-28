@@ -21,6 +21,7 @@ import type { PosOrder } from '../pos-order/types';
 import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
+import { closeNeedsApproval } from './register-count.helpers';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
 import * as store from './session-store';
@@ -50,6 +51,14 @@ export class RegisterCloseIncompleteError extends Error {
   }
 }
 
+/** The count is over `varianceThreshold` and the close carries no `approvedBy`. Its message is `RegisterCount`'s refusal copy, so it can be shown to a cashier as it is. */
+export class RegisterApprovalRequiredError extends Error {
+  constructor() {
+    super('Manager approval needed. Ask a manager to approve, or count again.');
+    this.name = 'RegisterApprovalRequiredError';
+  }
+}
+
 // Module-wide, so two hook instances for one register can't both open (keyed by `registerId`).
 const openingByRegister = new Map<string, Promise<unknown>>();
 // Closures whose `session-closed` fact is logged, so a double-tapped close logs it once.
@@ -64,8 +73,8 @@ export interface UseRegisterSessionOptions {
   closures: ClosureCollection | null;
   /** `pos_orders`: a session's sales are those whose `sessionId` is its id. */
   orders: RxCollection<PosOrder> | null;
-  /** The register document's host, for the closure number and perpetual totals (`writeClosure`). */
-  register: RegisterHost;
+  /** The register document's host, for the closure number and perpetual totals (`writeClosure`); `null` while it opens. */
+  register: RegisterHost | null;
   /** The app's neutral store key (see `bindRegister`). */
   storeKey: string;
   /** The register (drawer) this till is bound to, or `null` when it isn't bound. */
@@ -126,7 +135,7 @@ function ledgerRows(orders: readonly PosOrder[]): LedgerRow[] {
 export function useRegisterSession(options: UseRegisterSessionOptions) {
   const { sessions, movements, closures, orders, register, storeKey, registerId, enabled, actor, timezone, tenderInProgress, expectedCloseTime, labels } = options;
   const source = useMemo(() => {
-    if (!enabled || !sessions || !movements || !closures || !orders || !registerId) return null;
+    if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register) return null;
     return combineLatest([
       watchFresh(sessions, { selector: { register_id: registerId } }),
       watchFresh(closures, { selector: { register_id: registerId } }),
@@ -167,7 +176,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     running?: Promise<void>; queued?: Promise<void>; queuedFull?: boolean;
     target?: Parameters<typeof store.sweepOrphanStamps>[0];
   }>({});
-  sweeper.current.target = enabled && sessions && closures && orders && registerId
+  sweeper.current.target = enabled && sessions && closures && orders && registerId && register
     ? { sessions, closures, orders, registerId, register, storeKey } : undefined;
   const sweep = (full = false): Promise<void> => {
     const state = sweeper.current;
@@ -220,8 +229,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
 
   const requireOpen = () => store.requireOpenSession(sessions ?? undefined, registerId, enabled);
   const live = () => {
-    if (!enabled || !sessions || !movements || !closures || !orders || !registerId) throw new RegisterSessionRequiredError();
-    return { sessions, movements, closures, orders, registerId };
+    if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register) throw new RegisterSessionRequiredError();
+    return { sessions, movements, closures, orders, registerId, register };
   };
   const current = () => {
     if (!session) throw new RegisterSessionRequiredError();
@@ -259,7 +268,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         const key = registerId ?? '';
         if (openingByRegister.has(key)) throw new RegisterSessionAlreadyOpenError();
         const run = (async () => {
-          const { sessions, closures, registerId } = live();
+          const { sessions, closures, registerId, register } = live();
           // The storage, not the rendered snapshot or a cached query, which can lag a new write.
           const rows = await readFresh(sessions, { selector: { register_id: registerId } });
           if (rows.some((row) => row.status !== 'closed')) throw new RegisterSessionAlreadyOpenError();
@@ -301,14 +310,34 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
       /**
        * `counted` maps each tender to its counted minor units. An interrupted close resumes with
        * the count persisted on the session, not the one passed to the retry (WCPOS uses the retry's).
+       * Over `varianceThreshold` (`closeNeedsApproval`, as `RegisterCount`), a close without
+       * `approvedBy` throws `RegisterApprovalRequiredError` before any write, blind or not; a
+       * resumed close (the stored session already closed) isn't gated again. `approvedBy` reaches the Z
+       * (`breakdowns.approved_by`), and `approvedByName` its `approved_by_name`.
        */
-      closeSession: async (input: { counted: Record<string, number> }) => {
+      closeSession: async (input: { counted: Record<string, number>; approvedBy?: string; approvedByName?: string }) => {
         refuseDuringTender();
-        const { sessions, movements, closures, orders } = live();
+        const { sessions, movements, closures, orders, register } = live();
         const open = current();
+        // The gate reads the stored session and the Z's own inputs past the query cache, not this
+        // render's snapshot, which can lag a sale or a close that already landed (#168 review).
+        const stored = await store.readSession(sessions, open.id);
+        if (!stored) throw new RegisterSessionRequiredError();
+        if (stored.status !== 'closed' && !input.approvedBy) {
+          // As `writeClosure` derives the Z's expected figures, from the same rows.
+          const fresh = deriveExpected({
+            session: { id: stored.id, countedFloatMinor: stored.counted_float_minor },
+            movements: await readFresh(movements, { selector: { session_id: stored.id } }),
+            ledgerRowsBySession: ledgerRows(await readFresh(orders, { selector: { sessionId: stored.id } })),
+          });
+          if (closeNeedsApproval(input.counted.cash ?? 0, fresh.cash ?? 0, options.varianceThreshold)) throw new RegisterApprovalRequiredError();
+        }
         // By id, not `open` (plain data): `store.closeSession`'s guard runs again inside
-        // `incrementalModify` on the stored document, so a close that already landed keeps its count, time and actor.
-        const closed = await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, timezone });
+        // `incrementalModify` on the stored document, so a close that already landed keeps its count, time, actor and approver.
+        const closed = await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, approvedBy: input.approvedBy, timezone });
+        // The session stores no approver name, so a close resumed without this call's name (after
+        // a restart, say) falls back to `nameOf`.
+        const approvedByName = (input.approvedBy && closed.approved_by === input.approvedBy && input.approvedByName) || nameOf(closed.approved_by);
         const { cash = 0, ...otherTenders } = closed.counted ?? input.counted;
         // Read past the query cache: the Z's figures are derived from these rows.
         const closure = await store.writeClosure({
@@ -319,7 +348,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           resolveCashierName: labels?.resolveCashierName,
           labels: {
             register_name: labels?.registerName ?? '', closed_by_name: nameOf(closed.closed_by),
-            opened_by_name: nameOf(closed.opened_by), approved_by_name: nameOf(closed.approved_by),
+            opened_by_name: nameOf(closed.opened_by), approved_by_name: approvedByName,
           },
         });
         // A stamp that raced this close, a resumed one included, is swept before the close returns.
@@ -327,6 +356,10 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         // The fact's operationId is the closure id: a repeated or concurrent close logs it once.
         if (!closedFacts.has(closure.id)) {
           closedFacts.add(closure.id);
+          // The approver the Z froze, not this call's: a repeat close never replaces it.
+          if (closed.approved_by) {
+            recordRegisterFact({ kind: 'approval-granted', actor, sessionId: closed.id, registerId: closed.register_id, approvedBy: closed.approved_by });
+          }
           recordRegisterFact({
             kind: 'session-closed', actor, sessionId: closed.id, registerId: closed.register_id,
             closureId: closure.id, number: closure.number, counted: closure.counted, variance: closure.variance,
@@ -335,8 +368,9 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         return closure;
       },
       recordMovement: async (input: { type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string }) => {
-        const sessionId = await requireOpen();
+        // `live()` first: missing collections or host refuse before `requireOpen` writes anything.
         const { sessions, movements, closures, registerId } = live();
+        const sessionId = await requireOpen();
         const row = await store.recordMovement(sessions, movements, closures, { ...input, sessionId: sessionId!, actor: actor.id });
         recordRegisterFact({
           kind: 'movement-recorded', actor, sessionId: row.session_id, registerId,
@@ -345,8 +379,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         return row;
       },
       voidMovement: async (id: string) => {
-        await requireOpen();
         const { sessions, movements, closures, registerId } = live();
+        await requireOpen();
         const row = await store.voidMovement(sessions, movements, id, actor.id, closures);
         recordRegisterFact({
           kind: 'movement-voided', actor, sessionId: row.session_id, registerId,
