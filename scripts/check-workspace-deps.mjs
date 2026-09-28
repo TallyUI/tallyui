@@ -26,6 +26,10 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // register screens (ADR-032 amendment 1, register-screens-a): the pure movement/amount grammar
   // the register screens validate against before a money action, never a hook or the store.
   'parseMinor', 'validAmount', 'movementFieldError', 'normalizeAmount',
+  // register screens, job B (register-screens-b): the count/closure maths and one pure data
+  // table (denomination faces by currency, not a hook or the store) RegisterCount/ClosureSheet
+  // read, never write, from.
+  'countVariance', 'overThreshold', 'denominationTotal', 'denominations', 'varianceText', 'minorToDecimal',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
