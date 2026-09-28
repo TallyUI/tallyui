@@ -3005,6 +3005,63 @@ interface OrderCreatePayload {
       - The `register_*` conflict codes become driver-mapped.
       - Register facts are a named input to the driver interface (G2 in
         [plans/sync-engine-adoption.md](plans/sync-engine-adoption.md)).
+  13. **Expected cash: the till's figures are the record, the server's a
+      reconciliation view** (the Front desk, 2026-09-28, consistent with
+      ADR 0012). This is the contract for the server's `expected` and
+      `salesCount` (medusapos P2). The till's derivation, cited to its
+      code, is in the c2 handoff note `c2-expected-derivation.md`.
+      - **The fiscal record:** `register.closure.submit` carries the
+        till's own `tillExpected` and `counted`, and the till's variance
+        follows from them (`counted − tillExpected` for each key of
+        `counted`). Those are the fiscal record.
+        - The server's computed `expected` and `salesCount`, live or at
+          the closure, are a reconciliation view. They never overwrite the
+          till's figures.
+        - Any difference (a rejected order, an unreceived order id, a late
+          sale) is shown as a discrepancy with its cause, never silently
+          resolved.
+      - **The derivation both sides share:**
+        - integer minor units only;
+        - keys are payment `method` strings, with `cash` always present;
+        - a sale adds each payment's `amountMinor` (net of change);
+        - the float is the open's `countedFloatMinor`, on `cash`;
+        - `paid_in` adds to `cash`, `paid_out` subtracts, `no_sale` and
+          void rows add nothing, and a voided movement is excluded;
+        - `salesCount` counts orders, not payments;
+        - variance is `counted − expected` over the keys of `counted`
+          (negative means short), with no rounding and no tolerance.
+      1. **Late sales:** the server can't tell a late sale from a stamped
+         one, since `order.create` carries one `sessionId`
+         (`sessionId ?? lateSessionId`, ADR-065).
+         - The server's **live** figure counts every received order with
+           that `sessionId`.
+         - The till's c2b anchor rule treats any local order tagged to the
+           session, stamped or late, that the server's figure doesn't yet
+           reflect as local-pending, and never anchors while one exists.
+      2. **The closed figure:** at and after the closure, the server's
+         `expected` is the float, plus the cash of the orders in the
+         closure's `orderIds` that it has received, plus the movements.
+         `salesCount` is the number of those orders.
+         - That excludes late sales, as the till does, and matches the till
+           exactly once every order has landed.
+         - Order ids not yet received are the closure's unsynced figures.
+      3. **Rejected orders:** the till counts their cash, which was taken,
+         and lists them in `orderIds`. The server never records them, so
+         its figure is lower by that cash. This is correct, and shown as
+         a discrepancy with its cause (clause above). An order later
+         applied, for example after a `store_configuration` retry
+         (backlog 52), closes the gap.
+      4. **Orders sent without a `sessionId`** (versions 1 and 2, or a
+         version 3 order downgraded by the outbox fallback): the server's
+         live figure misses them until the closure binds them by
+         `orderIds`. The till's c2b anchor rule treats them as
+         local-pending too.
+      5. **Blind counts and variance keys:**
+         - In c2 the server always returns `expected`. Blind is a till UI
+           option, and any redaction waits for c2c.
+         - The server computes variance over the keys of `counted`, as the
+           Z does. The till's corrections figure (`deriveSettled`, all keys
+           of either map) is separate, and not part of this contract.
 - **Consequences:**
   - **ADR-038's shapes grow additively, and no existing type narrows or
     breaks** (it's a minor release):
