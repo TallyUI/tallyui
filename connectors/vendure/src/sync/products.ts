@@ -1,3 +1,4 @@
+import { ConnectorUnauthorizedError } from '@tallyui/core';
 import type { CollectionSync, SyncContext } from '@tallyui/core';
 
 /**
@@ -150,6 +151,10 @@ async function gql(
     signal: context.signal,
   });
 
+  if (res.status === 401 || res.status === 403) throw new ConnectorUnauthorizedError(`Vendure API error: ${res.status}`, res.status);
   if (!res.ok) throw new Error(`Vendure API error: ${res.status}`);
-  return res.json();
+  const body: { data?: any; errors?: Array<{ message?: string; extensions?: { code?: string } }> } = await res.json();
+  const forbidden = body.errors?.find((error) => error.extensions?.code === 'FORBIDDEN');
+  if (forbidden) throw new ConnectorUnauthorizedError(`Vendure GraphQL error: ${forbidden.message}`);
+  return body;
 }

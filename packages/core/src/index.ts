@@ -27,6 +27,7 @@ export type {
 export type { SignInResult, ServerCapabilities } from './types/connector';
 export { resolveCapabilities } from './types/connector';
 export { SignInError } from './sign-in';
+export { ConnectorUnauthorizedError } from './unauthorized';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
