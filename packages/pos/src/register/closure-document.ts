@@ -17,6 +17,9 @@ import { minorToDecimal } from './money';
 import type { Closure, RegisterSession } from './schemas';
 
 type Values = Record<string, unknown>;
+/** `writeClosure`'s own `breakdowns.movements` shape (session-store.ts): every entry carries at
+ * least a string `id` and `reason`, so callers can read them without a cast. */
+type BreakdownMovement = Values & { id: string; reason: string };
 
 export type ClosureContext = {
   store: Values;
@@ -75,7 +78,7 @@ function decimalizeBreakdowns(breakdowns: Values, exponent: number): Values {
         }
       : {}),
     ...(breakdowns.movements
-      ? { movements: (breakdowns.movements as Values[]).map((m) => ({ ...m, amount: dec(m.amountMinor) })) }
+      ? { movements: (breakdowns.movements as BreakdownMovement[]).map((m) => ({ ...m, amount: dec(m.amountMinor) })) }
       : {}),
   };
 }
@@ -120,7 +123,10 @@ export function formatClosureDate(
   return result;
 }
 
-function envelope(row: Values, context: ClosureContext, xreport = false) {
+// Generic over the row so its own literal fields (e.g. `Closure`'s `unsynced_count: number`)
+// survive the `money(row, [...])` spread below into the return type, instead of widening to
+// `Values`'s `unknown` — the same reason `BreakdownMovement` types the movements mapping.
+function envelope<R extends Values>(row: R, context: ClosureContext, xreport = false) {
   const money = <T extends Values, K extends string>(values: T, fields: K[]) =>
     Object.assign(
       {},
@@ -180,7 +186,7 @@ function envelope(row: Values, context: ClosureContext, xreport = false) {
         payment_methods: rows('payment_methods', ['sales', 'refunds']),
         tax_rates: rows('tax_rates', ['net', 'tax', 'gross']),
         opening_float: money((breakdowns.opening_float ?? {}) as Values, ['expected', 'counted', 'variance']),
-        movements: ((breakdowns.movements ?? []) as Values[]).map((m) => ({
+        movements: ((breakdowns.movements ?? []) as BreakdownMovement[]).map((m) => ({
           ...money(m, ['amount']),
           created_at: formatClosureDate((m.created_at_gmt ?? m.created_at) as string, context),
           type_label: context.i18n[String(m.type)] ?? m.type,

@@ -31,12 +31,21 @@ afterEach(async () => {
   await db.remove();
 });
 
-async function closeWithCount(counted: number, otherTenders: Record<string, number> = {}) {
+async function closeWithCount(
+  counted: number,
+  otherTenders: Record<string, number> = {},
+  approval?: { approvedBy?: string; approvedByName?: string },
+) {
   const session = await seedSession(db, 10000);
-  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: counted, ...otherTenders } });
+  const closed = await closeSession(db.register_sessions, session.id, {
+    counted: { cash: counted, ...otherTenders }, approvedBy: approval?.approvedBy,
+  });
   return writeClosure({
     closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted,
     otherTenders, movements: [], orders: [], softwareVersion: '1.0.0',
+    labels: approval?.approvedByName
+      ? { register_name: '', closed_by_name: '', approved_by_name: approval.approvedByName }
+      : undefined,
   });
 }
 
@@ -99,6 +108,33 @@ it('shows a failed print as its own message', async () => {
   await renderClosure(undefined, onPrint);
   fireEvent.click(screen.getByTestId('closure-print'));
   await waitFor(() => expect(screen.getByTestId('closure-print-error').textContent).toBe('Printer offline'));
+});
+
+it('shows who approved the close, under the figures, blind or not', async () => {
+  await closeWithCount(10000, {}, { approvedByName: 'Morgan Lee' });
+  await renderClosure();
+  const figures = screen.getByTestId('closure-figures');
+  const approved = screen.getByTestId('closure-approved-by');
+  const done = screen.getByTestId('closure-done');
+  expect(approved.textContent).toBe('Approved by Morgan Lee');
+  expect(figures.compareDocumentPosition(approved) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(approved.compareDocumentPosition(done) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  cleanup();
+  // The blind variant: same closure, re-rendered blind — not a figure, so it still shows.
+  await renderClosure({ blind: true });
+  expect(screen.getByTestId('closure-approved-by').textContent).toBe('Approved by Morgan Lee');
+});
+
+it('falls back to the approver id without a name', async () => {
+  await closeWithCount(10000, {}, { approvedBy: 'mgr-9' });
+  await renderClosure();
+  expect(screen.getByTestId('closure-approved-by').textContent).toBe('Approved by mgr-9');
+});
+
+it('shows no approved-by line without an approver', async () => {
+  await closeWithCount(10000);
+  await renderClosure();
+  expect(screen.queryByTestId('closure-approved-by')).toBeNull();
 });
 
 it('renders nothing before any session has closed', async () => {
