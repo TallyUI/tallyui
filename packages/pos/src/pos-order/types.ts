@@ -44,18 +44,22 @@ export interface PosOrder {
   registerId?: string;
   /**
    * The register session the sale was taken in (ADR-032): its closure counts this order.
-   * Local only: `toOrderCreateEnvelope` never sends it.
+   * Sent at `order.create` version 3 as the payload's `sessionId` (the stamped or late session, one field).
    */
   sessionId?: string;
   /**
    * Set only by `useSale`'s late-sale path (ADR-032): the session the sale was taken for, which
    * refused the stamp after the money was taken. Such an order has no `sessionId`, so no closure
-   * counts it. Local only: `toOrderCreateEnvelope` never sends it.
+   * counts it. Sent at `order.create` version 3 as the payload's `sessionId` (the stamped or late session, one field).
    */
   lateSessionId?: string;
-  /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. Not written yet. */
+  /** Declared for the outbox's version fallback (ADR-065 amendment), which will set it after a server refuses a higher version (`unsupported_version`). Nothing writes it yet; absent means the content decides the version. */
+  sentVersion?: 1 | 2 | 3;
+  /** The version first tried, before the downgrade (the order's audit). */
+  downgradedFrom?: 1 | 2 | 3;
+  /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. */
   display?: DisplayTotals & { currency: string; exponent: number };
-  /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). Not written yet. */
+  /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */
   taxByRate?: Array<{ ratePpm: number; code?: string; label?: string; netMinor: number; amountMinor: number; grossMinor: number }>;
   cashierRef?: string;
   syncStatus: PosOrderSyncStatus;

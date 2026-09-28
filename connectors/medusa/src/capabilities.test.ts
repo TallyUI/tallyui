@@ -7,6 +7,11 @@ function fetchReturning(body: unknown, status = 200) {
 }
 
 describe('readCapabilities', () => {
+  it('reads [1, 2, 3] as orderCreate 3', async () => {
+    const fetch = fetchReturning({ contracts: { 'order.create': [1, 2, 3] } });
+    await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toEqual({ orderCreate: 3 });
+  });
+
   it('gives the max of the supported versions', async () => {
     const fetch = fetchReturning({ contracts: { 'order.create': [1, 2] } });
     await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toEqual({ orderCreate: 2 });

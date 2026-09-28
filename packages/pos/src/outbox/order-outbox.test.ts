@@ -4,7 +4,7 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandEnvelope, CommandResult, OrderCreatePayload } from '@tallyui/core';
-import { posOrderCollection, uuidv7, type PosOrder } from '../pos-order';
+import { posOrderCollection, toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import { createOrderOutbox, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -52,6 +52,22 @@ afterEach(async () => {
 });
 
 describe('order outbox', () => {
+  it('sends a version-3 order as version 3 and a pre-v3 pending order as before', async () => {
+    const legacy = order(0);
+    const current = order(1);
+    current.display = { currency: 'EUR', exponent: 2, taxInclusive: false, subtotalMinor: 101, discountMinor: 0,
+      taxMinor: 0, totalMinor: 101, orderDiscountMinor: 0, lines: [{ lineId: current.lines[0].id, amountMinor: 101, discounts: [] }] };
+    current.taxByRate = [{ ratePpm: 0, netMinor: 101, amountMinor: 0, grossMinor: 101 }];
+    await collection.bulkInsert([legacy, current]);
+    const { outbox, send } = setup();
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    const batch = send.mock.calls[0][0];
+    expect(batch.map((command) => command.version)).toEqual([1, 3]);
+    expect(batch).toStrictEqual([toOrderCreateEnvelope(legacy, 'device-1'), toOrderCreateEnvelope(current, 'device-1')]);
+    expect((await collection.find().exec()).map((doc) => doc.syncStatus)).toEqual(['applied', 'applied']);
+  });
+
   it.each([false, true])('pauses after three 401s, with intervening 500: %s, and resumes on flush', async (interleave) => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     vi.setSystemTime(epoch);

@@ -1,13 +1,14 @@
 // @vitest-environment node
 // `pos_orders` holds sales not yet sent, so its version 0 to 1 bump (ADR-032, `sessionId`) and its
 // version 2 bump (`lateSessionId`, ADR-065's `display` and `taxByRate`) must never lose one. Each
-// test runs from version 0 and again from version 1. Replaces WCPOS's `closure-migration.test.ts`
+// test runs from versions 0, 1 and 2 to version 3. Replaces WCPOS's `closure-migration.test.ts`
 // (its closures v0 to v1 migration).
 import { describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, fillWithDefaultSettings, type RxCollectionCreator, type RxStorage } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
+import { mintUuid } from '../register/register-document';
 import { finalizeOrder } from './finalize';
 import { addPosOrderCollection, POS_ORDER_MIGRATION_CLOSE_WAIT_MS, PosOrderOpenClosedError } from './open';
 import { addPosOrderCollectionTests, olderCollection, type Origin } from './open.test-helper';
@@ -25,10 +26,12 @@ function pendingOrder(from: Origin = 0): PosOrder {
   builder.addPayment({ method: 'cash', amountMinor: 3000 });
   builder.setCustomer({ id: 'c1', name: 'Customer', email: 'buyer@example.com' });
   builder.setNote('Sale note');
-  const order = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1' });
+  const order = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
+    ...(from === 2 ? { capabilities: { orderCreate: 3 } } : {}) });
   return { ...order, lines: [{ ...order.lines[0], taxInclusive: true }, order.lines[1]],
     warnings: [{ code: 'total_mismatch', expectedMinor: 3451, serverMinor: 3452 }],
-    error: { code: 'network', message: 'fetch failed' }, ...(from === 1 ? { sessionId: 'session-1' } : {}) };
+    error: { code: 'network', message: 'fetch failed' }, ...(from === 1 ? { sessionId: 'session-1' } : {}),
+    ...(from === 2 ? { sessionId: mintUuid(), lateSessionId: mintUuid() } : {}) };
 }
 
 async function open(name: string, storage: RxStorage<any, any>, collection: RxCollectionCreator) {
@@ -100,7 +103,7 @@ async function neverDropsInvalidOrder(from: Origin) {
   // so a document can reach storage that no schema would accept.
   const invalid = { ...pendingOrder(from), syncStatus: 'queued' } as unknown as PosOrder;
 
-  // 1. Dev mode's validating storage refuses to write it at version 2 (a 422 inside the
+  // 1. Dev mode's validating storage refuses to write it at version 3 (a 422 inside the
   // migration's write, which RxDB raises as SNH "non conflict error"), and the migration stops.
   const refused = await seed(memory, invalid, from);
   const validating = await open(refused, wrappedValidateAjvStorage({ storage: memory }), posOrderCollection());
@@ -121,11 +124,11 @@ async function neverDropsInvalidOrder(from: Origin) {
   }
 }
 
-it('keeps a pending, unsynced version-0 order byte for byte through the migration to version 2', () => keepsPendingOrder(0));
+it('keeps a pending, unsynced version-0 order byte for byte through the migration to version 3', () => keepsPendingOrder(0));
 
-it('refuses version 2 without its migration strategies, and keeps the order', () => refusedWithoutStrategies(0));
+it('refuses version 3 without its migration strategies, and keeps the order', () => refusedWithoutStrategies(0));
 
-it('never drops a version-0 order that fails validation at version 2: a validating storage stops with DM4 and keeps it, an unvalidated one copies it as is',
+it('never drops a version-0 order that fails validation at version 3: a validating storage stops with DM4 and keeps it, an unvalidated one copies it as is',
   () => neverDropsInvalidOrder(0));
 
 describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory()));
@@ -279,11 +282,11 @@ async function stopsOnceCloseGivesUp(from: Origin) {
 it('an open held past the close-wait limit stops with the coded error before any write, and the next open migrates the order',
   () => stopsOnceCloseGivesUp(0));
 
-// The same set from version 1 to 2 (registers c1a): a version-1 order carries its `sessionId`, and keeps it.
+// The same set from version 1 to 3: a version-1 order carries its `sessionId`, and keeps it.
 describe('from version 1', () => {
-  it('keeps a pending, unsynced version-1 order, with its sessionId, byte for byte through the migration to version 2', () => keepsPendingOrder(1));
-  it('refuses version 2 without its migration strategies, and keeps the version-1 order', () => refusedWithoutStrategies(1));
-  it('never drops a version-1 order that fails validation at version 2: a validating storage stops with DM4 and keeps it, an unvalidated one copies it as is',
+  it('keeps a pending, unsynced version-1 order, with its sessionId, byte for byte through the migration to version 3', () => keepsPendingOrder(1));
+  it('refuses version 3 without its migration strategies, and keeps the version-1 order', () => refusedWithoutStrategies(1));
+  it('never drops a version-1 order that fails validation at version 3: a validating storage stops with DM4 and keeps it, an unvalidated one copies it as is',
     () => neverDropsInvalidOrder(1));
   describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory(), { from: 1 }));
   it('closes within the close-wait limit even when a migration never settles, and never loses the version-1 order', () => closesWithinWaitLimit(1));
@@ -292,4 +295,52 @@ describe('from version 1', () => {
   it('an open on a database whose close has begun rejects with the coded error and keeps the version-1 order', () => refusesClosingDatabase(1));
   it('an open held past the close-wait limit stops with the coded error before any write, and the next open migrates the version-1 order',
     () => stopsOnceCloseGivesUp(1));
+});
+
+describe('from version 2', () => {
+  it('keeps a pending, unsynced version-2 order with sessionId, lateSessionId, display and taxByRate byte for byte through the migration to version 3', async () => {
+    const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
+    const order = pendingOrder(2);
+    const original = structuredClone(order);
+    expect(order.sessionId).toHaveLength(36);
+    expect(order.lateSessionId).toHaveLength(36);
+    expect(order.display).toBeDefined();
+    expect(order.taxByRate).toBeDefined();
+    const name = await seed(storage, order, 2);
+    const stored = await olderDocument(storage, name, order.id, 2);
+    const after = await open(name, storage, posOrderCollection());
+    try {
+      const { pos_orders } = await after.added;
+      const migrated = await pos_orders.findOne(order.id).exec();
+      expect(migrated?.toJSON()).toStrictEqual(original);
+      expect(migrated?.toJSON(true)._meta).toEqual(stored._meta);
+      const pending = await pos_orders.find({ selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }] }).exec();
+      expect(pending.map((doc) => doc.id)).toEqual([order.id]);
+    } finally {
+      await after.db.close();
+    }
+  });
+  it('refuses version 3 without its migration strategies, and keeps the version-2 order', () => refusedWithoutStrategies(2));
+  it('never drops a version-2 order that fails validation at version 3: a validating storage stops with DM4 and keeps it, an unvalidated one copies it as is',
+    () => neverDropsInvalidOrder(2));
+  it('never drops a version-2 order whose sessionId is longer than 36 characters: a validating storage stops with DM4 and keeps it', async () => {
+    const memory = getRxStorageMemory();
+    const order = { ...pendingOrder(2), sessionId: 's'.repeat(37) };
+    const storage = wrappedValidateAjvStorage({ storage: memory });
+    const name = await seed(storage, order, 2);
+    const before = await olderDocument(storage, name, order.id, 2);
+    const after = await open(name, storage, posOrderCollection());
+    const error = await after.added.catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'DM4' });
+    expect(JSON.stringify(error)).toContain('/sessionId');
+    await after.db.close();
+    expect(await olderDocument(storage, name, order.id, 2)).toStrictEqual(before);
+  });
+  describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory(), { from: 2 }));
+  it('closes within the close-wait limit even when a migration never settles, and never loses the version-2 order', () => closesWithinWaitLimit(2));
+  it('refuses a multiInstance database before any reset, adds no collection, and keeps the version-2 order', () => refusesMultiInstance(2));
+  it('keeps at most one db.onClose handler across DM4 retries, and the fixed reopen of the same database gets its own one', () => oneOnCloseHandler(2));
+  it('an open on a database whose close has begun rejects with the coded error and keeps the version-2 order', () => refusesClosingDatabase(2));
+  it('an open held past the close-wait limit stops with the coded error before any write, and the next open migrates the version-2 order',
+    () => stopsOnceCloseGivesUp(2));
 });

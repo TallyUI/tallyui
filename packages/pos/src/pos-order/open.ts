@@ -50,7 +50,7 @@ function waitWithTimeout(promise: Promise<unknown>, ms: number): Promise<boolean
 /**
  * Writes each order of the stored older version over its differing copy in the current version,
  * through the same write RxDB's migration makes, and leaves orders without a copy (and any deleted
- * one) to the migration. `from` is whichever older version is stored, 0 or 1.
+ * one) to the migration. `from` is whichever older version is stored, 0, 1 or 2.
  */
 async function writeOverStaleCopies(collection: RxCollection, from: RxStorageInstance<any, any, any>, to: RxStorageInstance<any, any, any>) {
   const handler = rxStorageInstanceToReplicationHandler(to, defaultConflictHandler, collection.database.token, true);
