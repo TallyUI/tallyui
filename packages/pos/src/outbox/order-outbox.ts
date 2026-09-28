@@ -1,6 +1,7 @@
 import type { RxCollection } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
-import { toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
+import { createLogger } from '../logging';
+import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, type PosOrder } from '../pos-order';
 import { countFresh, readFresh } from '../rxdb';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -10,11 +11,14 @@ const AUTH_FAILURES_BEFORE_PROMPT = 3;
 // Rejections that may hide an order the server already created: resending under a new
 // command id could duplicate it, so requeue() leaves these for manual reconciliation.
 const NOT_REQUEUEABLE = new Set(['idempotency_mismatch']);
+const logger = createLogger('outbox');
 
 export interface OrderOutboxOptions {
   collection: RxCollection<PosOrder>;
   transport: CommandTransport;
   deviceId: string;
+  getMaxOrderCreateVersion?: () => number | undefined | Promise<number | undefined>;
+  refreshCapabilities?: () => Promise<void>;
   batchSize?: number;
   initialBackoffMs?: number;
   maxBackoffMs?: number;
@@ -71,6 +75,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
 
   async function run() {
     stoppedDuringRun = false;
+    let batchDowngraded = false;
     while (!stopped) try {
       await updateState({ sending: true, nextAttemptAt: undefined });
       insertedDuringRun = false;
@@ -83,7 +88,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         attempts.set(order.commandId, attempt);
         return toOrderCreateEnvelope(order, deviceId, attempt);
       });
-      const outcome = await transport.send(batch);
+      let outcome = await transport.send(batch);
+      let batchMax: number | undefined;
       if (outcome.kind === 'retry') {
         return scheduleRetry(outcome.reason, outcome.retryAfterMs);
       }
@@ -94,6 +100,22 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           sending: false, nextAttemptAt: undefined });
         return;
       }
+      if (outcome.kind === 'refused' && outcome.status === 400 && options.getMaxOrderCreateVersion && !batchDowngraded) {
+        const match = /^Invalid commands\[(\d+)\]\.version$/.exec(outcome.reason);
+        if (match) {
+          await options.refreshCapabilities?.();
+          const max = await options.getMaxOrderCreateVersion();
+          if (max !== undefined && max < batch[Number(match[1])]?.version) {
+            batchMax = max;
+            batchDowngraded = true;
+            const message = outcome.reason;
+            // Validation refused the whole batch before processing: only orders above the cap need changes.
+            outcome = { kind: 'results', results: batch.filter((command) => command.version > max).map((command) => ({
+              id: command.id, status: 'rejected', error: { code: 'unsupported_version', message, data: { orderCreate: max } },
+            })) };
+          }
+        }
+      }
       if (outcome.kind === 'refused') {
         unauthorizedSinceAccepted = 0;
         state$.next({ ...state$.value, refused: { status: outcome.status, reason: outcome.reason },
@@ -103,6 +125,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       unauthorizedSinceAccepted = 0;
       state$.next({ ...state$.value, authRequired: false, refused: undefined });
       let progressed = false;
+      let downgraded = false;
       for (const order of orders) {
         const result = outcome.results.find((entry) => entry.id === order.commandId);
         if (!result) continue;
@@ -113,9 +136,37 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         if (stored?.syncStatus !== 'pending' || stored.commandId !== order.commandId) continue;
         const current = await collection.findOne(order.id).exec();
         if (!current) continue;
+        let error = result.error;
+        if (result.status === 'rejected' && error?.code === 'unsupported_version' && options.getMaxOrderCreateVersion) {
+          if (batchMax === undefined) await options.refreshCapabilities?.();
+          const advertised = error.data?.orderCreate;
+          const max = batchMax ?? (typeof advertised === 'number' && Number.isSafeInteger(advertised) && advertised > 0
+            ? advertised : await options.getMaxOrderCreateVersion());
+          const from = batch.find((command) => command.id === order.commandId)!.version;
+          if (stored.sentVersion === undefined && max !== undefined && max < from) {
+            try {
+              const to = toOrderCreateEnvelope(stored, deviceId, 1, { maxVersion: max }).version;
+              let changed = false;
+              await current.incrementalModify((data) => {
+                changed = data.syncStatus === 'pending' && data.commandId === order.commandId && data.sentVersion === undefined;
+                if (changed) { data.sentVersion = to; data.downgradedFrom = from; }
+                return data;
+              });
+              if (changed) {
+                logger.warn('Sent an order at a lower order.create version', { orderId: order.id, from, to });
+                progressed = downgraded = true;
+              }
+              continue;
+            } catch (cause) {
+              if (!(cause instanceof UnsupportedOrderVersionError)) throw cause;
+              error = { code: 'unsupported_version', message: cause.message };
+            }
+          }
+        }
+        if (result.status === 'rejected' && error?.code === 'unsupported_version') logger.error(error.message, { orderId: order.id });
         const updatedAt = new Date(now()).toISOString();
         await current.incrementalPatch(result.status === 'rejected'
-          ? { syncStatus: 'rejected', error: result.error, updatedAt }
+          ? { syncStatus: 'rejected', error, updatedAt }
           : { syncStatus: 'applied', serverRefs: result.serverRefs,
             ...(result.warnings ? { warnings: result.warnings } : {}), updatedAt });
         attempts.delete(order.commandId);
@@ -124,7 +175,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       }
       if (!progressed) return scheduleRetry('no_progress');
       backoff = initialBackoff;
-      state$.next({ ...state$.value, lastRetryReason: undefined });
+      state$.next({ ...state$.value, lastRetryReason: downgraded ? 'downgraded' : undefined });
     } catch (error) {
       scheduleRetry('error: ' + (error instanceof Error ? error.message : String(error)));
       return;

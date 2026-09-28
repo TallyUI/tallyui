@@ -32,6 +32,8 @@ export type CommandWarning =
 export interface CommandError {
   code: string;
   message: string;
+  /** A refusal's details, e.g. the server's supported version. */
+  data?: Record<string, unknown>;
 }
 
 /** Server result for a single command. */

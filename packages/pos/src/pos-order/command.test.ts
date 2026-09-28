@@ -1,5 +1,10 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { toOrderCreateEnvelope } from './command';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath, URL } from 'node:url';
+import { createOrderBuilder } from '../order/order-builder';
+import { toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
+import { finalizeOrder } from './finalize';
 import type { PosOrder } from './types';
 
 const order: PosOrder = {
@@ -23,7 +28,70 @@ const v3: PosOrder = { ...order,
   taxByRate: [{ ratePpm: 190000, code: 'VAT', label: 'Tax 19%', netMinor: 2900, amountMinor: 551, grossMinor: 3451 }],
 };
 
+// The same full pipeline and deterministic identities as golden-v3.test.ts.
+function goldenV3(): PosOrder {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 200000 } });
+  const inclusive = builder.addLine({ productId: 'variant_inclusive', variantId: 'variant_inclusive', name: 'Inclusive item', sku: 'INCLUSIVE',
+    unitPrice: { amount: 1200, currency: 'EUR', taxInclusive: true }, quantity: 2, taxRates: [{ code: 'VAT20', ratePpm: 200000 }] });
+  builder.addLine({ productId: 'variant_exclusive', variantId: 'variant_exclusive', name: 'Exclusive item', sku: 'EXCLUSIVE',
+    unitPrice: { amount: 1000, currency: 'EUR', taxInclusive: false }, quantity: 1, taxRates: [{ ratePpm: 100000 }] });
+  builder.applyLineDiscount(inclusive, { type: 'fixed', value: 120, label: 'Line discount' });
+  builder.applyOrderDiscount({ type: 'fixed', value: 120 });
+  builder.addPayment({ method: 'cash', amountMinor: 4000, reference: 'cash_receipt_1' });
+  builder.setCustomer({ id: 'cus_golden_v3', name: 'Golden Buyer', email: 'buyer@example.com' });
+  const ids = ['019f6d2e-7800-7000-8000-000000000002', 'line_inclusive', 'line_exclusive', 'payment_cash',
+    '019f6d2e-7800-7000-8000-000000000001'];
+  let nextId = 0;
+  const finalized = finalizeOrder(builder.getSnapshot(), { now: new Date('2026-09-28T10:00:00.000Z'), newId: () => ids[nextId++],
+    capabilities: { orderCreate: 3 }, registerId: 'register_golden', cashierRef: 'cashier_golden' });
+  for (const discount of finalized.display!.lines[0].discounts) discount.discountId = 'discount_line';
+  return { ...finalized, sessionId: '019f6d2e-7800-7000-8000-000000000003' };
+}
+
 describe('toOrderCreateEnvelope', () => {
+  it('no cap is byte-identical to today for v1, v2 and the golden v3', () => {
+    const full = goldenV3();
+    const legacy = { ...full, display: undefined, taxByRate: undefined };
+    for (const [sale, version] of [[order, 1], [legacy, 2], [full, 3]] as const) {
+      const envelope = toOrderCreateEnvelope(sale, 'device_golden');
+      expect(envelope.version).toBe(version);
+      expect(JSON.stringify(toOrderCreateEnvelope(sale, 'device_golden', 1, {}))).toBe(JSON.stringify(envelope));
+    }
+    expect(JSON.stringify(toOrderCreateEnvelope(full, 'device_golden'), null, 2) + '\n')
+      .toBe(readFileSync(fileURLToPath(new URL('./__fixtures__/order-create-v3.json', import.meta.url)), 'utf8'));
+  });
+
+  it('caps v3 to 2, dropping only display, taxByRate, sessionId and customerId', () => {
+    const full = goldenV3();
+    const capped = toOrderCreateEnvelope(full, 'device_golden', 1, { maxVersion: 2 });
+    const legacy = { ...full, display: undefined, taxByRate: undefined, sessionId: undefined, customer: { email: full.customer!.email } };
+    expect(capped.version).toBe(2);
+    expect(JSON.stringify(capped)).toBe(JSON.stringify(toOrderCreateEnvelope(legacy, 'device_golden')));
+    const { display, taxByRate, sessionId, ...payload } = toOrderCreateEnvelope(full, 'device_golden').payload;
+    expect(capped.payload).toStrictEqual({ ...payload, customer: { email: full.customer!.email } });
+    expect(toOrderCreateEnvelope({ ...full, customer: { id: 'cus_golden_v3' } }, 'device_golden', 1, { maxVersion: 2 }).payload.customer).toBeNull();
+  });
+
+  it('caps a discount-free v3 order to 1', () => {
+    const capped = toOrderCreateEnvelope({ ...v3, sessionId: 'session-1' }, 'device1', 1, { maxVersion: 1 });
+    expect(capped.version).toBe(1);
+    expect(JSON.stringify(capped)).toBe(JSON.stringify(toOrderCreateEnvelope(order, 'device1')));
+  });
+
+  it('throws UnsupportedOrderVersionError for a discounted order capped at 1', () => {
+    const build = () => toOrderCreateEnvelope(goldenV3(), 'device1', 1, { maxVersion: 1 });
+    expect(build).toThrow(UnsupportedOrderVersionError);
+    expect(build).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_ORDER_VERSION', needed: 2, supported: 1 }));
+  });
+
+  it("an order's sentVersion caps its envelope without options", () => {
+    const full = goldenV3();
+    const saved = { ...full, sentVersion: 2 as const, downgradedFrom: 3 as const };
+    expect(JSON.stringify(toOrderCreateEnvelope(saved, 'device1')))
+      .toBe(JSON.stringify(toOrderCreateEnvelope(full, 'device1', 1, { maxVersion: 2 })));
+    expect(toOrderCreateEnvelope(saved, 'device1', 1, { maxVersion: 3 })).toStrictEqual(toOrderCreateEnvelope(full, 'device1'));
+  });
+
   it('sends version 1 and 2 byte-identical to before when the order has no ADR-065 fields', () => {
     const plain: PosOrder = { ...order, lines: [order.lines[0]], payments: [], customer: null, registerId: undefined,
       cashierRef: undefined, subtotalMinor: 1700, taxMinor: 323, totalMinor: 2023 };

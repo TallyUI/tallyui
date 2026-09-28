@@ -19,6 +19,8 @@ export interface UseOrderOutboxOptions {
   transport(storeKey: string): CommandTransport;
   /** The device id sent on every command (see `getDeviceId`). A change reopens. */
   deviceId: string;
+  getMaxOrderCreateVersion?: () => number | undefined | Promise<number | undefined>;
+  refreshCapabilities?: () => Promise<void>;
   /** Called with `state.sending`, and with `false` on cleanup (medusapos: live-tab's `markBusy('outbox', …)`). */
   onBusy?(busy: boolean): void;
   /** Called when `open` rejects, even if the key has changed since (medusapos: reports storage worker failures). */
@@ -83,7 +85,9 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
     if (!storeKey) return;
     void latest.current.open(storeKey).then(async (store) => {
       if (!active) { await store.close(); return; }
-      const outbox = createOrderOutbox({ collection: store.orders, deviceId, transport: latest.current.transport(storeKey) });
+      const outbox = createOrderOutbox({ collection: store.orders, deviceId, transport: latest.current.transport(storeKey),
+        getMaxOrderCreateVersion: latest.current.getMaxOrderCreateVersion,
+        refreshCapabilities: latest.current.refreshCapabilities });
       current.current = { storeKey, orders: store.orders, outbox };
       const status = outbox.state$.subscribe(setState);
       // watchFresh: find().$ can leave this stale forever, hiding a new order (RxDB 16.21.1 bug 4).

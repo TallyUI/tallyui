@@ -193,6 +193,28 @@ describe('useOrderOutbox options', () => {
   const appliedResults: CommandTransport['send'] = async (batch) => ({ kind: 'results', results: batch.map((command) =>
     ({ id: command.id, status: 'applied', serverRefs: { orderId: `server-${command.id}`, totalMinor: command.payload.totalMinor } })) });
 
+  it('threads capability refresh and maximum version into the outbox', async () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
+    builder.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: 1200, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 1200 });
+    const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 3 } });
+    let max = 3;
+    const refreshCapabilities = vi.fn(async () => { max = 2; });
+    const getMaxOrderCreateVersion = vi.fn(() => max);
+    const send = vi.fn<CommandTransport['send']>().mockImplementation(appliedResults)
+      .mockResolvedValueOnce({ kind: 'results', results: [{ id: order.commandId, status: 'rejected',
+        error: { code: 'unsupported_version', message: 'not supported' } }] });
+    renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(send),
+      refreshCapabilities, getMaxOrderCreateVersion });
+    await waitFor(() => expect(outbox.orders).not.toBeNull());
+    await act(async () => { await outbox.record(order); });
+    await waitFor(() => expect(outbox.recent[0]?.syncStatus).toBe('applied'));
+    expect(refreshCapabilities).toHaveBeenCalledTimes(1);
+    expect(getMaxOrderCreateVersion).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls.map(([batch]) => [batch[0].id, batch[0].version])).toEqual([[order.commandId, 3], [order.commandId, 2]]);
+    expect(outbox.recent[0]).toMatchObject({ sentVersion: 2, downgradedFrom: 3 });
+  });
+
   it('records then flushes through the given transport, reporting busy while sending and idle after', async () => {
     const sending = deferred<void>();
     const send = vi.fn<CommandTransport['send']>(async (batch) => { await sending.promise; return appliedResults(batch); });

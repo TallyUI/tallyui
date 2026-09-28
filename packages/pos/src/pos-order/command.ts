@@ -1,14 +1,26 @@
 import type { CommandEnvelope, OrderCreatePayload } from '@tallyui/core';
 import type { PosOrder } from './types';
 
+export class UnsupportedOrderVersionError extends Error {
+  readonly code = 'UNSUPPORTED_ORDER_VERSION';
+  constructor(readonly needed: number, readonly supported: number) {
+    super(`This sale needs order.create version ${needed}; the server supports up to ${supported}.`);
+    this.name = 'UnsupportedOrderVersionError';
+  }
+}
+
 /**
  * Builds the ADR-038 order.create envelope for a PosOrder.
  * ADR-065's figures make version 3; otherwise a discounted order is version 2 (ADR-062), else version 1, byte-identical.
  */
-export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1): CommandEnvelope<OrderCreatePayload> {
+export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
+  options?: { maxVersion?: number }): CommandEnvelope<OrderCreatePayload> {
   // The order's discount is the sum of its lines', so the payload's two always agree.
   const discountMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
-  const version = order.display && order.taxByRate ? 3 : discountMinor > 0 ? 2 : 1;
+  const contentVersion = order.display && order.taxByRate ? 3 : discountMinor > 0 ? 2 : 1;
+  const cap = options?.maxVersion ?? order.sentVersion;
+  if (discountMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
+  const version = Math.min(contentVersion, cap ?? contentVersion) as 1 | 2 | 3;
   const email = order.customer?.email;
   const id = order.customer?.id;
   const customerId = typeof id === 'string' && id.length > 0 && id.length <= 64 ? id : undefined;
