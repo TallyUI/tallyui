@@ -961,6 +961,13 @@ interface OrderCreatePayload {
   validation. This check runs before the ledger claim; it is deterministic,
   so a replay of the same command returns the same rejection. It is not
   retried. Introduced by medusapos/app ADR 0004.
+- **Amendment (2026-09-28):** a new rejection code `store_configuration`.
+  - It is returned as `status: 'rejected'`, with `error: { code: 'store_configuration', message }`, when the plugin's own pre-workflow checks find the store can't take the sale: a missing sales channel, stock location, address or shipping option, or a shipping-profile mismatch.
+  - The `message` is the reason for an admin, for example "Missing shipping option; set plugin option shippingOptionId".
+  - The check runs **before any write**, and the command is **not recorded in the ledger**. Once the store is fixed, resending the **same** command id applies it; a new id also works.
+  - So unlike `invalid_payload`, it isn't final. The outbox should keep the order `rejected` with its reason, and let Retry resend it after the store is fixed (backlog item 52).
+  - The platform's own internal failures stay transient: 503, retried.
+  - Introduced by medusapos/app#94.
 - **Amendment 2 (2026-09-24):** `OrderCreateLine` gains an optional
   `taxInclusive?: boolean` — this line's own tax mode, when it differs from
   the order's `pricesIncludeTax` (a price that carries its own flag, D2c).
