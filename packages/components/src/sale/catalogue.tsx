@@ -82,7 +82,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           }} />
         {(statusText || statusAccessory) ? (
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">
-            {statusText ? <Text className="flex-1 text-xs text-muted-foreground">
+            {statusText ? <Text className="flex-1 text-xs text-muted-foreground" numberOfLines={statusAccessory ? 1 : undefined}>
               {statusText}{query.trim() ? ` · ${results.length.toLocaleString()} matching` : ''}
             </Text> : null}
             {statusAccessory}
