@@ -46,6 +46,11 @@ export const MEDUSA_PRODUCT_FIELDS = [
   '*options.values',
 ].join(',');
 
+// A first sync of about 2,000 products took 21 sequential pages at RxDB's default 100
+// (perf spike, 2026-09-28). 500 is within the 1,000 Admin API list limit;
+// tune it against a real store.
+export const MEDUSA_PULL_BATCH_SIZE = 500;
+
 /**
  * Replication adapter for Medusa v2 products.
  *

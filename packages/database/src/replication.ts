@@ -43,6 +43,7 @@ export function startReplication<RxDocType, CheckpointType = any>({
       handler: (checkpoint, batchSize) =>
         adapter.pull.handler(checkpoint as CheckpointType | undefined, batchSize, context),
       stream$: adapter.pull.stream$,
+      batchSize: adapter.pull.batchSize,
     },
     push: adapter.push
       ? {

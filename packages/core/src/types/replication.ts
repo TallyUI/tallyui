@@ -27,6 +27,12 @@ export interface ReplicationAdapter<RxDocType, CheckpointType = any> {
     }>;
 
     /**
+     * Documents per pull page, passed to handler as batchSize. RxDB treats a
+     * shorter page as the end of the cycle. Defaults to RxDB's 100.
+     */
+    batchSize?: number;
+
+    /**
      * Fresh install only: the checkpoint this feed starts from instead of a full first pass,
      * read before any feed runs (combinePullAdapters). Absent: a full first pass, as today.
      */

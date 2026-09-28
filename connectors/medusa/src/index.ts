@@ -4,7 +4,7 @@ import { readCapabilities } from './capabilities';
 import { medusaProductSchema } from './schemas/products';
 import { medusaProductTraits } from './traits/product';
 import { medusaProductSync } from './sync/products';
-import { medusaProductReplication } from './replication/products';
+import { MEDUSA_PULL_BATCH_SIZE, medusaProductReplication } from './replication/products';
 import { createMedusaVariantFeedReplication } from './replication/variant-feed';
 import { medusaStockReconcile } from './reconcile/stock';
 import { fetchByIds, fetchPages, variantIds } from './reconcile/ids';
@@ -130,7 +130,7 @@ export const medusaConnector: TallyConnector = {
       products: medusaProductReplication,
       variants: createMedusaVariantFeedReplication(),
       reconcile: idFeed.adapter,
-    }, { legacyKey: 'products' }),
+    }, { legacyKey: 'products', batchSize: MEDUSA_PULL_BATCH_SIZE }),
   },
 
   reconcile: {
