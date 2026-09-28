@@ -2,6 +2,8 @@
 
 **The rule:** in TallyUI and every connector built on it, a read that decides **money** (a sale, a payment, a closure, a stock decision) or **sync** (what is sent, pulled, tombstoned or re-fetched) never goes through a cached `RxQuery`. It uses `readFresh`/`countFresh` (from `@tallyui/core/rxdb`, re-exported by `@tallyui/pos`), a primary-key read of storage (`collection.storageInstance.findDocumentsById`), or a live `watchFresh`. A cached `find()`/`findOne()`/`count()` is fine only for display, or where the safety argument below applies and is written down next to the read.
 
+The same trap reaches past RxDB: a **rendered** value (a hook's return, a cached query's last result) can lag the stored record the same way a stale `RxQuery` handle can. See [Rule: decisions that gate money or a Z read stored state](#rule-decisions-that-gate-money-or-a-z-read-stored-state) below.
+
 ## Why
 
 RxDB 16.21.1 has a bug in its query cache. A document written while a cached `RxQuery`'s storage read is in flight is counted as seen, but is missing from the result. RxDB caches the `RxQuery` per query string, so:
@@ -86,3 +88,30 @@ Each point was traced in RxDB 16.21.1's source or shown by a probe during the 20
 ## For connector authors
 
 A new backend's connector (pull and push handlers, reconcile passes, stock feeds) follows the rule at the top. Reads that decide what to send, tombstone, re-fetch or charge go through `readFresh`/`countFresh`/`watchFresh` or a primary-key storage read. Where a cached read is kept on purpose, a comment next to it says which safety argument above applies.
+
+## Rule: decisions that gate money or a Z read stored state
+
+The query-cache bug above is one instance of a wider trap: a decision made from a **rendered** value (a React hook's return, a cached query's last result) can lag the stored record the same way a stale `RxQuery` handle can. The weekend of 2026-09-28 turned up three cases of it in the register/sale path, so the rule is written down on its own:
+
+- Any decision that gates money or a Z (stamp a sale, close, approve, refuse, choose a closure number) **reads the stored record at the moment of the decision**:
+  - by primary key (`storageInstance.findDocumentsById(ids, false)`, as `readSession` does);
+  - or through `readFresh`/`countFresh`.
+  - It never uses a hook's rendered value or a cached query's last result.
+- It **writes conditionally on what it read**: the guard re-runs inside `incrementalModify` on the stored document (`transition` in `session-store.ts`), or the write is keyed so a repeat is idempotent.
+- **Work in flight is state too.** A decision that depends on "is something already happening" (a close, an open) uses an explicit in-flight guard (`openingByRegister`, `closingByRegister`), not an inference from half-written records.
+- **Rendered values are for display.** A UI may show a stale figure for a frame; it must never act on one.
+
+### Cases
+
+- **#168, the approval gate:** `closeSession` (the `useRegisterSession` action) read `open.status` and `expected.cash` off the rendered snapshot, while `writeClosure` froze figures it read fresh. A stale action could close an unapproved over-threshold Z, or refuse a legitimate retry. Fixed by reading the stored session with `readSession` and deriving `expected` from `readFresh` rows, before deciding whether the close needs approval.
+- **#172, the tender pin (a race in #170):** `startTender` pinned the **rendered** `saleSession`. Open, then Cash in the same tick, pinned `undefined` even though `requireOpen()` had already confirmed the session from storage, and the sale saved with no stamp, outside every closure. Fixed by passing `startTender` the session `requireSaleSession()` confirmed.
+- **#174 and #175, the Finish-closing flash:** `RegisterColumn` decided "unfinished close" from the rendered session, which was already stored `closed` while its closure was still being written by `closeSession`. An enabled Finish-closing card could start an overlapping close. Fixed with a per-register close-in-flight guard (`closingByRegister`, exposed to the hook's callers as `closing`) that a second `closeSession` call joins instead of racing.
+
+### A reviewer's checklist
+
+For any new money or Z action:
+
+- Where did each input it decides on come from — a stored read (`readSession`, `readFresh`/`countFresh`, a primary-key storage read) or a rendered value (a hook return, a cached query, a prop passed down from one)?
+- If it depends on "is this already happening," is that an explicit in-flight guard, or an inference from a record that may be half-written?
+- Does the write re-check its guard inside `incrementalModify` (or is it otherwise keyed so a repeat is idempotent), so a race between the read and the write can't slip a bad write through?
+- Is every rendered value it touches used only to decide what to show, never what to do?
