@@ -70,6 +70,10 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   let display: PosOrder['display'];
   let taxByRate: PosOrder['taxByRate'];
   if ((options.capabilities?.orderCreate ?? 1) >= 3) {
+    if (order.display.lines.length !== order.lineItems.length
+      || order.display.lines.some((line, i) => line.lineId !== order.lineItems[i].id)) {
+      throw new Error('finalize: display lines do not match the order lines');
+    }
     display = { currency: order.currency, exponent: minorUnitDigits(order.currency), ...order.display,
       lines: order.display.lines.map((line, i) => ({
         lineId: lines[i].id, amountMinor: line.amountMinor,
@@ -81,7 +85,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     taxByRate = taxLinesByRate(order.lineItems, order.taxMinor).map(({ ratePpm, code, netMinor, amountMinor }) => ({
       ratePpm, ...(code !== undefined ? { code } : {}), netMinor, amountMinor, grossMinor: netMinor + amountMinor,
     }));
-    if (display.totalMinor !== order.totalMinor || display.taxMinor !== order.taxMinor) {
+    if (display.totalMinor !== order.totalMinor || display.taxMinor !== order.taxMinor
+      || display.taxInclusive !== order.pricesIncludeTax) {
       throw new Error('finalize: display does not match the order');
     }
     if (taxByRate.reduce((sum, rate) => sum + rate.amountMinor, 0) !== order.taxMinor) {

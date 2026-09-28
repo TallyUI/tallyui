@@ -57,7 +57,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         : (email ? { email } : null),
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
-      ...(version === 3 && sessionId !== undefined ? { sessionId } : {}),
+      ...(version === 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
     },
   };
 }

@@ -32,9 +32,9 @@
     "test": "echo \"no tests yet\""
   },
   "peerDependencies": {
-    "@tallyui/core": "workspace:*",
-    "@tallyui/primitives": "workspace:*",
-    "@tallyui/theme": "workspace:*",
+    "@tallyui/core": "workspace:^",
+    "@tallyui/primitives": "workspace:^",
+    "@tallyui/theme": "workspace:^",
     "react": ">=18",
     "react-native": ">=0.74",
     "react-native-svg": ">=15"
