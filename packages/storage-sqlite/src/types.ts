@@ -1,7 +1,9 @@
+import type { SQLResultRow } from 'rxdb/plugins/storage-sqlite';
+
 export interface SQLiteDatabase {
   execSync(source: string): void;
-  getAllSync<T>(source: string, params?: any[]): T[];
-  runSync(source: string, params?: any[]): { changes: number; lastInsertRowId: number };
+  getAllSync(source: string, params: (string | number)[]): SQLResultRow[];
+  runSync(source: string, params: (string | number)[]): unknown;
 }
 
 export interface SQLiteStorageSettings {

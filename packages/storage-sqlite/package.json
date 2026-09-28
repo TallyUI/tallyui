@@ -41,7 +41,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.expo-handle.json",
     "test": "vitest run"
   },
   "dependencies": {
