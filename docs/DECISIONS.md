@@ -931,7 +931,7 @@ interface OrderCreatePayload {
     reference?: string;
   }>;
   customer?: { email?: string } | null; // null = walk-in
-  registerId?: string;
+  registerId?: string;            // the till's DEVICE id (amendment 2026-09-29), not the drawer
   cashierRef?: string;
   locationId?: string;            // stock location; server default if absent
 }
@@ -2965,6 +2965,19 @@ interface OrderCreatePayload {
 
      - Shape errors stay `invalid_payload`. A business refusal is never a
        whole-batch 4xx.
+     - **A replay returns the originally recorded result** (the Front desk,
+       2026-09-29).
+       - An applied command's replay comes back `duplicate`, carrying the
+         result recorded when it was applied, not the current state.
+       - A command whose rejection was recorded comes back `rejected`, with
+         the same code and message, never `duplicate`.
+       - Current state is read through `GET /tally/v1/registers/{id}`, or
+         the order, never inferred from a replay. Both plugin paths already
+         do this (medusapos #108, ADR 0019).
+       - A refusal that wasn't recorded (state-dependent, below) is
+         re-evaluated on resend, and may then apply.
+       - As a belt, the till treats a `duplicate` that carries an `error` as
+         rejected, and its register stops.
      - **The business conflicts (`register_*`) are recorded** in the
        server's ledger. A state-dependent refusal isn't recorded, so a
        resend of the same command id re-evaluates once the state is fixed.
@@ -3027,6 +3040,21 @@ interface OrderCreatePayload {
        approve route, and `register_approval_required` is raised only from
        then on.
      - The server's variance threshold is a plugin option.
+  7a. **Two meanings of `registerId`** (vendurepos ADR 0002 review, the
+      Front desk, 2026-09-29).
+      - In the `register.*` commands, `registerId` is the drawer: the
+        register whose sessions, movements and closures they carry.
+      - In `order.create` (ADR-038), `registerId` is the till's **device**
+        id, as the medusapos ADRs 0017 and 0019 already read it.
+      - A sale's drawer is identified through its `sessionId` (ADR-065).
+      - Every plugin must read the two fields this way, and never join an
+        order to a drawer by `registerId`.
+      - **On the wire, `order.create.registerId` carries the device id; in
+        the till, `registerId` always means the drawer.** c2b splits
+        `useSale`'s option: `deviceId` feeds `order.create`'s `registerId`,
+        which the wire keeps for compatibility, and `registerId` means the
+        drawer everywhere in the fact log, the late-sale fact included. The
+        old single option is deprecated, in a minor release.
   8. **Register ids are minted locally,** and the server holds soft
      references to them: an unknown register id in `register.session.open`
      is accepted as written, and creates the register.
