@@ -89,7 +89,14 @@ describe('toOrderCreateEnvelope', () => {
     const saved = { ...full, sentVersion: 2 as const, downgradedFrom: 3 as const };
     expect(JSON.stringify(toOrderCreateEnvelope(saved, 'device1')))
       .toBe(JSON.stringify(toOrderCreateEnvelope(full, 'device1', 1, { maxVersion: 2 })));
-    expect(toOrderCreateEnvelope(saved, 'device1', 1, { maxVersion: 3 })).toStrictEqual(toOrderCreateEnvelope(full, 'device1'));
+    expect(toOrderCreateEnvelope(saved, 'device1', 1, { maxVersion: 3 })).toStrictEqual(toOrderCreateEnvelope(saved, 'device1'));
+  });
+
+  it('the cap is the lower of maxVersion and sentVersion', () => {
+    for (const [sentVersion, maxVersion] of [[1, 2], [2, 1], [2, 3], [3, 2]] as const) {
+      const envelope = toOrderCreateEnvelope({ ...v3, sentVersion }, 'device1', 1, { maxVersion });
+      expect(envelope).toStrictEqual(toOrderCreateEnvelope(v3, 'device1', 1, { maxVersion: Math.min(sentVersion, maxVersion) }));
+    }
   });
 
   it('sends version 1 and 2 byte-identical to before when the order has no ADR-065 fields', () => {

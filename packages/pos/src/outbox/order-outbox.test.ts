@@ -7,6 +7,7 @@ import type { CommandEnvelope, CommandResult, OrderCreatePayload } from '@tallyu
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder, posOrderCollection, toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import { createOrderOutbox, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
+import { outboxLogger } from './index';
 import type { CommandTransport, OutboxState } from './types';
 
 let db: RxDatabase<{ pos_orders: RxCollection<PosOrder> }>;
@@ -75,6 +76,116 @@ afterEach(async () => {
 });
 
 describe('order outbox', () => {
+  it('a backlog larger than one batch on an old plugin downgrades batch by batch and never enters refused', async () => {
+    const inputs = Array.from({ length: 25 }, (_, i) => v3Order(i));
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states } = setup({ getMaxOrderCreateVersion: () => 2 });
+    send.mockImplementation(async (batch) => {
+      const index = batch.findIndex((command) => command.version > 2);
+      return index < 0 ? { kind: 'results', results: applied(batch) }
+        : { kind: 'refused', status: 400, reason: `Invalid commands[${index}].version` };
+    });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(6);
+    for (const input of inputs) {
+      expect(send.mock.calls.flatMap(([batch]) => batch.filter((command) => command.payload.clientOrderId === input.id))
+        .map((command) => [command.id, command.version])).toEqual([[input.commandId, 3], [input.commandId, 2]]);
+      const stored = (await collection.findOne(input.id).exec())!.toJSON();
+      expect(stored).toMatchObject({ syncStatus: 'applied', commandId: input.commandId, sentVersion: 2, downgradedFrom: 3 });
+      expect(stored.display).toStrictEqual(input.display);
+      expect(stored.taxByRate).toStrictEqual(input.taxByRate);
+    }
+    expect(states.some((state) => state.refused)).toBe(false);
+  });
+
+  it('logs downgrades and unsupported rejections through outboxLogger', async () => {
+    const inputs = [v3Order(0, false), v3Order(1)];
+    await collection.bulkInsert(inputs);
+    const write = vi.fn();
+    outboxLogger.addSink({ id: 'fallback-capture', levels: ['warn', 'error'], write });
+    try {
+      const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 1 });
+      send.mockResolvedValueOnce({ kind: 'results', results: inputs.map((input) => unsupported(input, 1)) });
+      await outbox.flush();
+      expect(write).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn', scope: 'outbox',
+        message: 'Sent an order at a lower order.create version', data: { orderId: inputs[0].id, from: 3, to: 1 } }));
+      expect(write).toHaveBeenCalledWith(expect.objectContaining({ level: 'error', scope: 'outbox',
+        message: 'This sale needs order.create version 2; the server supports up to 1.', data: { orderId: inputs[1].id } }));
+    } finally { outboxLogger.removeSink('fallback-capture'); }
+  });
+
+  it.each([0, 2.5, -1])('an invalid app max (0, 2.5, -1) never downgrades or stalls: %s', async (max) => {
+    const input = v3Order(0, false);
+    await collection.insert(input);
+    const { outbox, send, states } = setup({ getMaxOrderCreateVersion: () => max });
+    const result = unsupported(input);
+    send.mockResolvedValue({ kind: 'results', results: [result] });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    const stored = (await collection.findOne(input.id).exec())!.toJSON();
+    expect(stored).toMatchObject({ syncStatus: 'rejected', error: result.error, commandId: input.commandId });
+    expect(stored.sentVersion).toBeUndefined();
+    expect(states.at(-1)).toMatchObject({ pending: 0, sending: false, nextAttemptAt: undefined });
+  });
+
+  it("a failing refreshCapabilities doesn't block a downgrade the server already specified", async () => {
+    const input = v3Order();
+    await collection.insert(input);
+    const cause = new Error('refresh offline');
+    const refreshCapabilities = vi.fn(async () => { throw cause; });
+    const { outbox, send } = setup({ refreshCapabilities, getMaxOrderCreateVersion: () => 3 });
+    const write = vi.fn();
+    outboxLogger.addSink({ id: 'refresh-capture', levels: ['warn'], write });
+    try {
+      send.mockResolvedValueOnce({ kind: 'results', results: [unsupported(input, 2)] });
+      await outbox.flush();
+      expect(refreshCapabilities).toHaveBeenCalledTimes(1);
+      expect(write).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn', data: { cause } }));
+      expect(send.mock.calls.map(([batch]) => [batch[0].id, batch[0].version])).toEqual([[input.commandId, 3], [input.commandId, 2]]);
+      expect((await collection.findOne(input.id).exec())!.toJSON()).toMatchObject({ syncStatus: 'applied', sentVersion: 2 });
+    } finally { outboxLogger.removeSink('refresh-capture'); }
+  });
+
+  it("an order can be lowered again when the server's max drops, and downgradedFrom keeps the first version", async () => {
+    const input = v3Order(0, false);
+    await collection.insert(input);
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 2 });
+    send.mockResolvedValueOnce({ kind: 'results', results: [unsupported(input, 2)] });
+    await outbox.flush();
+    const current = (await collection.findOne(input.id).exec())!;
+    expect(current.toJSON()).toMatchObject({ syncStatus: 'applied', sentVersion: 2, downgradedFrom: 3 });
+    // A persisted refusal after the server's maximum drops is requeueable, with the prior cap intact.
+    await current.incrementalPatch({ syncStatus: 'rejected', error: unsupported(input, 1).error });
+    outbox.stop();
+    expect(await outbox.requeue([input.id])).toBe(1);
+    const requeued = (await collection.findOne(input.id).exec())!.toJSON();
+    send.mockResolvedValueOnce({ kind: 'results', results: [unsupported(requeued, 1)] });
+    await outbox.flush();
+    expect(send.mock.calls.map(([batch]) => [batch[0].id, batch[0].version])).toEqual([
+      [input.commandId, 3], [input.commandId, 2], [requeued.commandId, 2], [requeued.commandId, 1],
+    ]);
+    const stored = (await collection.findOne(input.id).exec())!.toJSON();
+    expect(stored).toMatchObject({ syncStatus: 'applied', sentVersion: 1, downgradedFrom: 3 });
+    for (const key of ['display', 'taxByRate', 'lines', 'payments', 'subtotalMinor', 'discountMinor', 'taxMinor', 'totalMinor'] as const) {
+      expect(stored[key]).toStrictEqual(input[key]);
+    }
+  });
+
+  it('refreshCapabilities runs once per batch', async () => {
+    const inputs = [v3Order(0, false), v3Order(1, false)];
+    await collection.bulkInsert(inputs);
+    const refreshCapabilities = vi.fn(async () => {});
+    const getMaxOrderCreateVersion = vi.fn().mockReturnValueOnce(2).mockReturnValue(1);
+    const { outbox, send } = setup({ refreshCapabilities, getMaxOrderCreateVersion });
+    send.mockResolvedValueOnce({ kind: 'results', results: inputs.map((input) => unsupported(input)) });
+    await outbox.flush();
+    expect(refreshCapabilities).toHaveBeenCalledTimes(1);
+    expect(getMaxOrderCreateVersion).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1][0].map((command) => [command.id, command.version])).toEqual(inputs.map((input) => [input.commandId, 2]));
+    for (const input of inputs) expect((await collection.findOne(input.id).exec())!.syncStatus).toBe('applied');
+  });
+
   it('a per-command unsupported_version refreshes, records the downgrade and resends at v2 under the same commandId', async () => {
     const input = v3Order();
     await collection.insert(input);
@@ -168,7 +279,7 @@ describe('order outbox', () => {
     expect((await collection.findOne(input.id).exec())!.toJSON()).toMatchObject({ syncStatus: 'applied', sentVersion: 2, downgradedFrom: 3 });
   });
 
-  it('a second unsupported answer at the downgraded version is terminal, not a loop', async () => {
+  it('a second unsupported answer with a lower maximum lowers the order again', async () => {
     const input = v3Order(0, false);
     await collection.insert(input);
     const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 1 });
@@ -176,9 +287,21 @@ describe('order outbox', () => {
     send.mockResolvedValueOnce({ kind: 'results', results: [unsupported(input, 2)] })
       .mockResolvedValueOnce({ kind: 'results', results: [second] });
     await outbox.flush();
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(3);
+    expect((await collection.findOne(input.id).exec())!.toJSON()).toMatchObject({ syncStatus: 'applied',
+      sentVersion: 1, downgradedFrom: 3, commandId: input.commandId });
+  });
+
+  it('a refusal at the current sentVersion is terminal', async () => {
+    const input = { ...v3Order(0, false), sentVersion: 2 as const, downgradedFrom: 3 as const };
+    await collection.insert(input);
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 2 });
+    const result = unsupported(input, 2);
+    send.mockResolvedValue({ kind: 'results', results: [result] });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
     expect((await collection.findOne(input.id).exec())!.toJSON()).toMatchObject({ syncStatus: 'rejected',
-      error: second.error, sentVersion: 2, downgradedFrom: 3, commandId: input.commandId });
+      error: result.error, sentVersion: 2, downgradedFrom: 3, commandId: input.commandId });
   });
 
   it('a downgraded order resends the same bytes after the outbox is recreated', async () => {
@@ -227,17 +350,17 @@ describe('order outbox', () => {
     expect((await collection.findOne(input.id).exec())!.syncStatus).toBe('rejected');
   });
 
-  it('a second matching batch 400 is refused without another downgrade', async () => {
+  it('a matching batch 400 is refused once the order cannot be lowered again', async () => {
     const input = v3Order(0, false);
     await collection.insert(input);
     const refreshCapabilities = vi.fn(async () => {});
     const { outbox, send, states } = setup({ refreshCapabilities, getMaxOrderCreateVersion: vi.fn().mockReturnValueOnce(2).mockReturnValue(1) });
     send.mockResolvedValue({ kind: 'refused', status: 400, reason: 'Invalid commands[0].version' });
     await outbox.flush();
-    expect(send).toHaveBeenCalledTimes(2);
-    expect(refreshCapabilities).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(refreshCapabilities).toHaveBeenCalledTimes(3);
     expect(states.at(-1)?.refused).toStrictEqual({ status: 400, reason: 'Invalid commands[0].version' });
-    expect((await collection.findOne(input.id).exec())!.sentVersion).toBe(2);
+    expect((await collection.findOne(input.id).exec())!.sentVersion).toBe(1);
   });
 
   it.each(['malformed batch', 'Invalid commands[0].payload', 'Invalid commands[0].version extra'])('a 400 with any other reason is refused: %s', async (reason) => {

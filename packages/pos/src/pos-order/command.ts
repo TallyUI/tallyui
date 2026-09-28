@@ -18,7 +18,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   // The order's discount is the sum of its lines', so the payload's two always agree.
   const discountMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
   const contentVersion = order.display && order.taxByRate ? 3 : discountMinor > 0 ? 2 : 1;
-  const cap = options?.maxVersion ?? order.sentVersion;
+  const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
   if (discountMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
   const version = Math.min(contentVersion, cap ?? contentVersion) as 1 | 2 | 3;
   const email = order.customer?.email;
