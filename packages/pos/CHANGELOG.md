@@ -1,5 +1,30 @@
 # @tallyui/pos
 
+## 2.1.0
+
+### Minor Changes
+
+- [#179](https://github.com/TallyUI/tallyui/pull/179) [`901fa66`](https://github.com/TallyUI/tallyui/commit/901fa666f4ab345bf07b2d6b38c6e5dc58596f39) Thanks [@kilbot](https://github.com/kilbot)! - Add `order.create` envelope version 3, its display and tax-rate wire types, and the payload's `sessionId` and customer reference.
+
+  At capability 3, `finalizeOrder` copies the receipt's `display` and `taxByRate` into the sale. Version 3 sends those figures and the sale's session (stamped or late) as `sessionId`. Older orders keep their existing envelope version.
+
+  Move `pos_orders` to schema version 3 with a `sessionId` index and the optional `sentVersion` and `downgradedFrom` fields (declared for the outbox's version fallback, not yet written). Apps must open `pos_orders` with `addPosOrderCollection`, which migrates it.
+
+- [#182](https://github.com/TallyUI/tallyui/pull/182) [`ca0beac`](https://github.com/TallyUI/tallyui/commit/ca0beacdafb14f3b5cae7c7593de23ed82b0d2d5) Thanks [@kilbot](https://github.com/kilbot)! - Fall back to the server's supported order.create version while preserving stored fiscal figures and command IDs. Record the sent version and downgrade in the order audit, and expose command error details.
+
+- [#188](https://github.com/TallyUI/tallyui/pull/188) [`222543b`](https://github.com/TallyUI/tallyui/commit/222543b8c9130d2c79a294603195940143bd611c) Thanks [@kilbot](https://github.com/kilbot)! - Add `RegisterCommandType`, `RegisterCommandEnvelope` and `AnyCommandEnvelope`, register payloads and results, and the register server capability. `CommandType` and `CommandEnvelope` are unchanged.
+
+  Record the local `register_commands` ledger through `reconcileRegisterCommands`, gated in `useRegisterSession` by its new `commands` and `capabilities` options. Commands are recorded but not sent. Medusa reads the `register` contract.
+
+### Patch Changes
+
+- [#186](https://github.com/TallyUI/tallyui/pull/186) [`d225c58`](https://github.com/TallyUI/tallyui/commit/d225c5819954f7c3e91e0c9180cb634530304061) Thanks [@kilbot](https://github.com/kilbot)! - Internal `@tallyui/*` peer dependencies are published as a caret range (for example `^2.1.0`) instead of an exact version. The packages still release together at one version.
+
+- [#185](https://github.com/TallyUI/tallyui/pull/185) [`4122dc8`](https://github.com/TallyUI/tallyui/commit/4122dc8e1bbe97a62af35c93fed9d72a1067705f) Thanks [@kilbot](https://github.com/kilbot)! - order.create v3 omits a malformed session ID (empty or longer than 36 characters) instead of sending it, so the plugin never refuses the sale for it. At capability 3, `finalizeOrder` refuses a sale whose display lines don't join the order's lines by id and count, or whose display tax mode differs from the order's.
+
+- Updated dependencies [[`faa7cda`](https://github.com/TallyUI/tallyui/commit/faa7cda925c6ca52e47357bd09d920813051c62b), [`2ecaa36`](https://github.com/TallyUI/tallyui/commit/2ecaa3661eae0ad8ec5d0ce3a344dc24262f387b), [`901fa66`](https://github.com/TallyUI/tallyui/commit/901fa666f4ab345bf07b2d6b38c6e5dc58596f39), [`ca0beac`](https://github.com/TallyUI/tallyui/commit/ca0beacdafb14f3b5cae7c7593de23ed82b0d2d5), [`222543b`](https://github.com/TallyUI/tallyui/commit/222543b8c9130d2c79a294603195940143bd611c)]:
+  - @tallyui/core@2.1.0
+
 ## 2.0.0
 
 ### Major Changes

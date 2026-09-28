@@ -1,5 +1,20 @@
 # @tallyui/database
 
+## 2.1.0
+
+### Minor Changes
+
+- [#192](https://github.com/TallyUI/tallyui/pull/192) [`2ecaa36`](https://github.com/TallyUI/tallyui/commit/2ecaa3661eae0ad8ec5d0ce3a344dc24262f387b) Thanks [@kilbot](https://github.com/kilbot)! - A replication adapter can set `pull.batchSize`, and the Medusa connector pulls 500 products per page.
+
+### Patch Changes
+
+- [#193](https://github.com/TallyUI/tallyui/pull/193) [`539d2ff`](https://github.com/TallyUI/tallyui/commit/539d2ff658a388163fa6902eaecbd60a1f798ac2) Thanks [@kilbot](https://github.com/kilbot)! - The stock, id and fingerprint reconciles read and write in bounded chunks, so app queries don't wait behind a whole pass.
+
+- [#186](https://github.com/TallyUI/tallyui/pull/186) [`d225c58`](https://github.com/TallyUI/tallyui/commit/d225c5819954f7c3e91e0c9180cb634530304061) Thanks [@kilbot](https://github.com/kilbot)! - Internal `@tallyui/*` peer dependencies are published as a caret range (for example `^2.1.0`) instead of an exact version. The packages still release together at one version.
+
+- Updated dependencies [[`faa7cda`](https://github.com/TallyUI/tallyui/commit/faa7cda925c6ca52e47357bd09d920813051c62b), [`2ecaa36`](https://github.com/TallyUI/tallyui/commit/2ecaa3661eae0ad8ec5d0ce3a344dc24262f387b), [`901fa66`](https://github.com/TallyUI/tallyui/commit/901fa666f4ab345bf07b2d6b38c6e5dc58596f39), [`ca0beac`](https://github.com/TallyUI/tallyui/commit/ca0beacdafb14f3b5cae7c7593de23ed82b0d2d5), [`222543b`](https://github.com/TallyUI/tallyui/commit/222543b8c9130d2c79a294603195940143bd611c)]:
+  - @tallyui/core@2.1.0
+
 ## 2.0.0
 
 ### Major Changes

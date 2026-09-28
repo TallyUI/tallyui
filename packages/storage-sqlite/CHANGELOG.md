@@ -1,5 +1,11 @@
 # @tallyui/storage-sqlite
 
+## 2.1.0
+
+### Patch Changes
+
+- [#198](https://github.com/TallyUI/tallyui/pull/198) [`f96d185`](https://github.com/TallyUI/tallyui/commit/f96d1851ef6732f3f69dccb5f5008eaf81889a57) Thanks [@kilbot](https://github.com/kilbot)! - Make the SQLite handle type the minimal interface used by the adapter, accepting expo-sqlite 16's `SQLiteDatabase`.
+
 ## 2.0.0
 
 ### Minor Changes
