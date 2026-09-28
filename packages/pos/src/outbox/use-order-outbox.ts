@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
-import { createLogger } from '../logging';
+import { outboxLogger } from './logger';
 import { OrderContentMismatchError, sameSale, type PosOrder } from '../pos-order';
 import { watchFresh } from '../rxdb';
 import { createOrderOutbox } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
 const idle: OutboxState = { pending: 0, sending: false };
-/** Logs a retried order found stored under another `commandId` (warn), and a content mismatch (error). */
-export const outboxLogger = createLogger('outbox');
+export { outboxLogger } from './logger';
 
 export interface UseOrderOutboxOptions {
   /** Which order store to use (medusapos: the backend's base URL); `null` means no store. A change reopens. */
@@ -19,6 +18,10 @@ export interface UseOrderOutboxOptions {
   transport(storeKey: string): CommandTransport;
   /** The device id sent on every command (see `getDeviceId`). A change reopens. */
   deviceId: string;
+  /** Presence is fixed when the store opens; calls use the latest function. Reopen to add or remove. */
+  getMaxOrderCreateVersion?: () => number | undefined | Promise<number | undefined>;
+  /** Presence is fixed when the store opens; calls use the latest function. Reopen to add or remove. */
+  refreshCapabilities?: () => Promise<void>;
   /** Called with `state.sending`, and with `false` on cleanup (medusapos: live-tab's `markBusy('outbox', …)`). */
   onBusy?(busy: boolean): void;
   /** Called when `open` rejects, even if the key has changed since (medusapos: reports storage worker failures). */
@@ -83,7 +86,9 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
     if (!storeKey) return;
     void latest.current.open(storeKey).then(async (store) => {
       if (!active) { await store.close(); return; }
-      const outbox = createOrderOutbox({ collection: store.orders, deviceId, transport: latest.current.transport(storeKey) });
+      const outbox = createOrderOutbox({ collection: store.orders, deviceId, transport: latest.current.transport(storeKey),
+        getMaxOrderCreateVersion: latest.current.getMaxOrderCreateVersion ? () => latest.current.getMaxOrderCreateVersion?.() : undefined,
+        refreshCapabilities: latest.current.refreshCapabilities ? async () => { await latest.current.refreshCapabilities?.(); } : undefined });
       current.current = { storeKey, orders: store.orders, outbox };
       const status = outbox.state$.subscribe(setState);
       // watchFresh: find().$ can leave this stale forever, hiding a new order (RxDB 16.21.1 bug 4).

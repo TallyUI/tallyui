@@ -2574,7 +2574,18 @@ interface OrderCreatePayload {
     - `finalizeOrder` writes `display` and `taxByRate` onto the `PosOrder` only when the store's `capabilities.orderCreate` is at least 3.
     - `toOrderCreateEnvelope` sends version 3 exactly when the order carries both.
     - So each order's bytes are fixed at finalize, and every retry under its `commandId` is byte-identical.
-    - **Accepted risk until the outbox's version fallback lands** (specified, queued next): a version-3 order sent to a plugin downgraded after finalize is rejected, and a requeue resends the same version 3, just as a discounted order is rejected by a plugin downgraded below 2 today.
+    - **The outbox's version fallback (the Front desk, 2026-09-28)** handles a plugin that can't take an order's version.
+      - **Both server behaviours:**
+        - newer plugins answer a per-command `rejected` with `error: { code: 'unsupported_version', data: { orderCreate: <max> } }`, checked **before the ledger claim**, so the command id is recorded nowhere;
+        - already-deployed plugins answer the whole batch with a 400 `Invalid commands[i].version`, at request validation, before any command is processed.
+      - **What the outbox does:**
+        - it records `sentVersion` (the capped version) and `downgradedFrom` on the stored order;
+        - it resends under the **same `commandId`**, dropping only `display`, `taxByRate`, `sessionId` and `customerId`;
+        - the order's own figures, `display` and `taxByRate` are never changed: the receipt and the frozen Z stay the fiscal record;
+        - the envelope builder caps at `order.sentVersion`, so a resend after a restart has the same bytes.
+      - **A discounted order the server can only take at version 1** is rejected `unsupported_version` (requeueable), never sent without its discount.
+      - **Once per order:** a second refusal at the downgraded version is terminal.
+      - **Why the same `commandId`:** in both behaviours the server recorded nothing, so the rebuilt bytes can't collide. And if that ever proved wrong, the same id gives a visible `idempotency_mismatch`, whereas a new id would create a second sale. So minting a new id is never the safer choice.
     - `finalizeOrder` refuses an order whose `display` total or tax disagrees with the order, or whose tax by rate doesn't sum to its tax.
     - `taxByRate` carries no English `label`; it is receipt copy, not data.
   - **`sessionId` (version 3 only)** is the sale's session, stamped or late: `order.sessionId ?? order.lateSessionId`.
