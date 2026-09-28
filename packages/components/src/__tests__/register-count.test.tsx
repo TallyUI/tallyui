@@ -173,6 +173,40 @@ it('calls approve over threshold and closes once it resolves, refusing when it r
   );
 });
 
+// approved-by: approve()'s approver reaches closeSession, and through it the Z.
+it("passes approve()'s approvedBy and approvedByName to closeSession, and the Z carries them", async () => {
+  const approve = vi.fn(async () => ({ approvedBy: 'mgr-1', approvedByName: 'Morgan Lee' }));
+  const session = await renderCounting({ varianceThreshold: 500 }, approve);
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(async () => expect(await db.closures.findOne(session.id).exec()).not.toBeNull());
+  const closure = await db.closures.findOne(session.id).exec();
+  expect(closure?.breakdowns).toMatchObject({ approved_by: 'mgr-1', approved_by_name: 'Morgan Lee' });
+  expect((await db.register_sessions.findOne(session.id).exec())?.approved_by).toBe('mgr-1');
+});
+
+// approved-by: the hook gates too. Here the screen is handed no threshold, so only the hook's gate
+// (threshold 500) stands between Close and the write, and its refusal shows the same copy.
+it("shows the hook's RegisterApprovalRequiredError with the refusal copy, and does not close", async () => {
+  const session = await seedSession(db, 10000);
+  await (await db.register_sessions.findOne(session.id).exec())?.incrementalPatch({ status: 'counting' });
+  render(
+    <RegisterHarness db={db} overrides={{ varianceThreshold: 500 }}>
+      {(register) => <RegisterCount register={{ ...register, varianceThreshold: undefined }} currency="EUR" />}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(screen.getByTestId('register-count')).toBeTruthy());
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(() =>
+    expect(screen.getByTestId('count-manager-line').textContent).toBe(
+      'Manager approval needed. Ask a manager to approve, or count again.',
+    ),
+  );
+  expect(screen.queryByTestId('count-error')).toBeNull();
+  expect(await db.register_sessions.find({ selector: { status: 'closed' } }).exec()).toHaveLength(0);
+});
+
 it('returns to selling without closing', async () => {
   const session = await renderCounting();
   fireEvent.click(screen.getByTestId('count-back'));

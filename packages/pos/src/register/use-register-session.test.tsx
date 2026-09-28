@@ -69,7 +69,7 @@ import {
   type ClosureCollection,
   type RegisterSessionCollection,
 } from './session-store';
-import { RegisterCloseIncompleteError, RegisterSessionAlreadyOpenError, RegisterTenderInProgressError, useRegisterSession, type UseRegisterSessionOptions } from './use-register-session';
+import { RegisterApprovalRequiredError, RegisterCloseIncompleteError, RegisterSessionAlreadyOpenError, RegisterTenderInProgressError, useRegisterSession, type UseRegisterSessionOptions } from './use-register-session';
 
 let db: RxDatabase<{
   register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection; closures: ClosureCollection;
@@ -385,6 +385,94 @@ describe('a sale at tender', () => {
     await expect(close({ counted: { cash: 10000 } })).rejects.toBeInstanceOf(RegisterTenderInProgressError);
     await expect(count()).rejects.toBeInstanceOf(RegisterTenderInProgressError);
     expect(session.getLatest().status).toBe('open');
+    expect(await db.closures.find().exec()).toEqual([]);
+  });
+});
+
+// TallyUI (approved-by, ADR-032): the hook is the approval gate as well as RegisterCount, and the
+// approver reaches the Z. The float is 10000 with no sales, so expected cash is 10000.
+describe('the approval gate', () => {
+  const counting = async (overrides: Partial<UseRegisterSessionOptions> = {}) => {
+    const session = await seed();
+    await startCounting(db.register_sessions, session.id);
+    const result = await settled({ varianceThreshold: 500, ...overrides });
+    await waitFor(() => expect(result.current.expected.cash).toBe(10000));
+    return { session, result };
+  };
+
+  // Revert: drop the hook's gate.
+  it.each([false, true])('refuses an over-threshold close without approvedBy before any write (blind: %s)', async (blind) => {
+    const { session, result } = await counting({ blind });
+    const before = session.getLatest().toJSON();
+    await expect(result.current.actions.closeSession({ counted: { cash: 9000 } })).rejects.toBeInstanceOf(RegisterApprovalRequiredError);
+    await expect(result.current.actions.closeSession({ counted: { cash: 9000 } }))
+      .rejects.toThrow('Manager approval needed. Ask a manager to approve, or count again.');
+    const stored = (await db.register_sessions.findOne(session.id).exec())?.toJSON();
+    expect(stored).toEqual(before);
+    expect(stored?.status).toBe('counting');
+    expect(await db.closures.find().exec()).toEqual([]);
+    expect(await reservation()).toBeUndefined();
+    expect((await readRegister(db.register_sessions))?.stores.store?.registers?.register?.last_closure_number ?? 0).toBe(0);
+  });
+
+  it('puts approvedBy and approvedByName on the Z, and logs approval-granted', async () => {
+    const { session, result } = await counting();
+    let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
+    await act(async () => {
+      closure = await result.current.actions.closeSession({ counted: { cash: 9000 }, approvedBy: 'mgr-1', approvedByName: 'Morgan Lee' });
+    });
+    expect(closure.breakdowns).toMatchObject({ approved_by: 'mgr-1', approved_by_name: 'Morgan Lee' });
+    expect((await db.register_sessions.findOne(session.id).exec())?.approved_by).toBe('mgr-1');
+    logged('Register session approval granted', { type: 'register.approval-granted', sessionId: session.id, approvedBy: 'mgr-1' });
+  });
+
+  it("names the approver through labels.resolveCashierName when the close gives no approvedByName", async () => {
+    const { result } = await counting({ labels: { resolveCashierName: (id) => (id === 'mgr-1' ? 'Morgan Lee' : id) } });
+    let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
+    await act(async () => {
+      closure = await result.current.actions.closeSession({ counted: { cash: 9000 }, approvedBy: 'mgr-1' });
+    });
+    expect(closure.breakdowns).toMatchObject({ approved_by: 'mgr-1', approved_by_name: 'Morgan Lee' });
+  });
+
+  it.each([
+    ['under the threshold', { varianceThreshold: 500 }, 9500],
+    ['with no threshold', { varianceThreshold: undefined }, 1],
+  ] as const)('closes %s without approval, leaving approved_by unset', async (_, overrides, cash) => {
+    const { session, result } = await counting(overrides);
+    let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
+    await act(async () => {
+      closure = await result.current.actions.closeSession({ counted: { cash } });
+    });
+    expect(closure.breakdowns).toMatchObject({ approved_by: null, approved_by_name: '' });
+    expect((await db.register_sessions.findOne(session.id).exec())?.toJSON().approved_by).toBeUndefined();
+    expect(logs.some((entry) => entry.message === 'Register session approval granted')).toBe(false);
+  });
+
+  it('does not gate a resumed close again, and keeps its approver', async () => {
+    const session = await seed();
+    await closeSession(db.register_sessions, session.id, { counted: { cash: 9000 }, approvedBy: 'mgr-1' });
+    const result = await settled({ varianceThreshold: 500 });
+    let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
+    await act(async () => {
+      closure = await result.current.actions.closeSession({ counted: { cash: 9000 } });
+    });
+    expect(closure.breakdowns.approved_by).toBe('mgr-1');
+  });
+});
+
+describe('a null register host (its collection still opening)', () => {
+  it('renders no session, and every action refuses', async () => {
+    await seed();
+    const { result } = render({ register: null });
+    // Give the collections a chance to emit: nothing may appear.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(result.current.session).toBeNull();
+    const { actions } = result.current;
+    await expect(actions.openSession(openInput)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+    await expect(actions.startCounting()).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+    await expect(actions.closeSession({ counted: { cash: 10000 } })).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+    await expect(actions.recordMovement({ type: 'paid_in', amountMinor: 100, reason: 'x' })).rejects.toBeInstanceOf(RegisterSessionRequiredError);
     expect(await db.closures.find().exec()).toEqual([]);
   });
 });

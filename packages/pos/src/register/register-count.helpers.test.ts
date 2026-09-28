@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import {
+  closeNeedsApproval,
   countVariance,
   denominationTotal,
   overThreshold,
@@ -31,6 +32,17 @@ it.each([
   [500, 500, false],
 ])('threshold %s / %s', (thresholdMinor, variance, result) => {
   expect(overThreshold(variance, thresholdMinor)).toBe(result);
+});
+
+// approved-by: the one rule RegisterCount and useRegisterSession's closeSession gate on.
+it.each([
+  [9000, 10000, 500, true],
+  [11000, 10000, 500, true],
+  [9500, 10000, 500, false],
+  [1, 10000, undefined, false],
+  [1, 10000, null, false],
+])('closeNeedsApproval(%s counted, %s expected, threshold %s) is %s', (counted, expected, threshold, result) => {
+  expect(closeNeedsApproval(counted, expected, threshold)).toBe(result);
 });
 
 it('totals denominations in minor units', () => {

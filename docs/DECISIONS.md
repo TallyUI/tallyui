@@ -679,6 +679,13 @@ bodies and design docs, and the source is given for each.
   - **A double-tapped close logs `session-closed` once.**
   - **Known difference, left for later:** `overdue` keeps WCPOS's rule and
     reads the close time on the device's clock, not the store's timezone.
+- **The approval gate (the Front desk, 2026-09-28)** is enforced in
+  `useRegisterSession`'s `closeSession` as well as `RegisterCount`, by one
+  rule (`closeNeedsApproval`): over `varianceThreshold`, a close without
+  `approvedBy` throws `RegisterApprovalRequiredError` before any write, blind
+  mode included (until registers c2's server gate); a resumed close isn't
+  gated again. `approvedBy` is written in the closing write and reaches the Z
+  as `breakdowns.approved_by`, and a supplied name as `approved_by_name`.
 - **What comes next, in order (the Front desk, 2026-09-28):**
   1. **The register screens:** the picker, the open card, the bar, the
      movement sheet, the panel and a column gate, then the count and the

@@ -248,11 +248,15 @@ async function transition(
 export const startCounting = (sessions: RegisterSessionCollection, id: string) => transition(sessions, id, 'counting');
 export const backToSelling = (sessions: RegisterSessionCollection, id: string) => transition(sessions, id, 'open');
 
-/** Closes the session with its counted tenders (minor units); `timezone` dates a session opened without a business day. */
+/**
+ * Closes the session with its counted tenders (minor units); `timezone` dates a session opened
+ * without a business day. `approvedBy`, the manager who approved the count, is written in the same
+ * write as the close, and a repeat close keeps the first close's approver as it keeps its count.
+ */
 export async function closeSession(
   sessions: RegisterSessionCollection,
   id: string,
-  input: { counted: Record<string, number>; closedBy?: string; timezone?: string },
+  input: { counted: Record<string, number>; closedBy?: string; approvedBy?: string; timezone?: string },
 ) {
   const session = await sessions.findOne(id).exec();
   if (!session) throw new RegisterSessionRequiredError();
@@ -260,6 +264,7 @@ export async function closeSession(
     business_day: session.business_day || businessDayOf(session.opened_at_gmt, input.timezone ?? 'device'),
     counted: input.counted,
     closed_by: input.closedBy ?? null,
+    ...(input.approvedBy ? { approved_by: input.approvedBy } : {}),
     closure_id: id,
   });
 }
