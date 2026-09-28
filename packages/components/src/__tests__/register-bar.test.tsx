@@ -70,6 +70,21 @@ it('shows the choose-a-register pill ahead of offline', () => {
   expect(screen.getByTestId('register-bar-pill').textContent).toBe('Choose a register');
 });
 
+// Close-in-flight: a closed session is an unfinished close only when no close is in flight.
+it('shows "Close not finished" for a closed session that isn\'t closing', () => {
+  render(
+    <RegisterBar register={stub({ session: { status: 'closed' } as never, enabled: true, closing: false })} registerId="r" online multiRegister={false} onOpenPanel={vi.fn()} />,
+  );
+  expect(screen.getByTestId('register-bar-pill').textContent).toBe('Close not finished');
+});
+
+it('shows no Close-not-finished pill while closing', () => {
+  render(
+    <RegisterBar register={stub({ session: { status: 'closed' } as never, enabled: true, closing: true })} registerId="r" online multiRegister={false} onOpenPanel={vi.fn()} />,
+  );
+  expect(screen.queryByTestId('register-bar-pill')).toBeNull();
+});
+
 it('shows no pill once a register is chosen, online, with no session and sessions off', () => {
   render(<RegisterBar register={stub()} registerId="r" online multiRegister={false} onOpenPanel={vi.fn()} />);
   expect(screen.queryByTestId('register-bar-pill')).toBeNull();
