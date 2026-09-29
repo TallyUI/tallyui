@@ -1,9 +1,16 @@
-import type { TallyConnector } from '@tallyui/core';
+import { ConnectorUnauthorizedError, type TallyConnector } from '@tallyui/core';
 
 import { wooProductSchema } from './schemas/products';
 import { wooProductTraits } from './traits/product';
 import { wooProductSync } from './sync/products';
 import { wooProductReplication } from './replication/products';
+
+export class WooMissingTokenError extends ConnectorUnauthorizedError {
+  constructor() {
+    super('WooCommerce credentials have no WCPOS access token: sign in again');
+    this.name = 'WooMissingTokenError';
+  }
+}
 
 /**
  * WooCommerce connector for Tally UI.
@@ -45,6 +52,9 @@ export const woocommerceConnector: TallyConnector = {
       },
     ],
     getHeaders: (credentials) => {
+      if (typeof credentials.token !== 'string' || credentials.token.length === 0) {
+        throw new WooMissingTokenError();
+      }
       return {
         Authorization: `Bearer ${credentials.token}`,
         'X-WCPOS': '1',
@@ -70,6 +80,7 @@ export const woocommerceConnector: TallyConnector = {
 };
 
 // Re-export pieces for advanced usage
+export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { wooProductSchema } from './schemas/products';
 export { wooProductTraits } from './traits/product';
 export { wooProductSync } from './sync/products';
