@@ -38,6 +38,9 @@ const hasIpv6Loopback = await new Promise((resolve) => {
 test('a port held on 127.0.0.1 only is refused, and passes once released', () =>
   checkHeld('127.0.0.1', (port) => `127.0.0.1:${port}`));
 
+test('a port held on 0.0.0.0 only is refused, and passes once released', () =>
+  checkHeld('0.0.0.0', (port) => `0.0.0.0:${port}`));
+
 test('a port held on ::1 only is refused, and passes once released', { skip: !hasIpv6Loopback }, () =>
   checkHeld('::1', (port) => `[::1]:${port}`));
 

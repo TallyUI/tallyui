@@ -52,6 +52,9 @@ caches and artifacts can be read from fork PRs. So:
    already running on those ports. Without `E2E_REUSE=1`, a port that is
    already taken fails the run before any test, naming the process that
    holds it: stop that process, or set `E2E_REUSE=1` to test its server.
+   Then, before the first test, the `server-identity` setup project fails
+   the run unless each server's process was started from this worktree
+   (skipped under CI and with `E2E_REUSE=1`).
    CI keeps 8081 and 8090.
 
 The installer prints the token in its output. Don't paste install logs
