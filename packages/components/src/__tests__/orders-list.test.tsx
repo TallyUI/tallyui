@@ -154,6 +154,29 @@ describe('OrdersList', () => {
     expect(screen.queryByText('This sale needs checking against the store before it can be sent again.') !== null).toBe(kind === 'idempotency_mismatch');
   });
 
+  it('renders no warning line and no NaN for an unknown warning code', () => {
+    const warned = order('w', { syncStatus: 'applied', warnings: [{ code: 'future_code' }] as unknown as PosOrder['warnings'] });
+    render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
+    expect(screen.queryByText(/NaN/)).toBeNull();
+    expect(headers()).toEqual(['Recent']);
+  });
+
+  it('renders a tax_rate_mismatch with the rate as a percentage and both amounts', () => {
+    const warned = order('w', { syncStatus: 'applied',
+      warnings: [{ code: 'tax_rate_mismatch', ratePpm: 55000, expectedMinor: 120, serverMinor: 100 }] });
+    render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
+    const expected = `Tax at 5.5%: store ${formatMoney({ amount: 100, currency: 'EUR' })} vs POS ${formatMoney({ amount: 120, currency: 'EUR' })}`;
+    expect(screen.getAllByText(expected)).toHaveLength(2);
+  });
+
+  it('renders the rounding note for a total_mismatch with bridgeMinor', () => {
+    const warned = order('w', { syncStatus: 'applied',
+      warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: 5 }] });
+    render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
+    const expected = `Store total ${formatMoney({ amount: 1195, currency: 'EUR' })} vs POS ${formatMoney({ amount: 1200, currency: 'EUR' })} (rounding of ${formatMoney({ amount: 5, currency: 'EUR' })} added)`;
+    expect(screen.getAllByText(expected)).toHaveLength(2);
+  });
+
   it.each([0, 1])('blocks repeat Retry taps until requeue resolves %s or the order leaves rejected', async (result) => {
     const rejected: PosOrder = { ...order('r'), syncStatus: 'rejected' };
     let resolve!: (count: number) => void;

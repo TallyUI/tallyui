@@ -35,10 +35,30 @@ export interface CommandServerRefs {
   totalMinor: number;
 }
 
-/** Non-fatal discrepancies reported while processing a command. */
+/**
+ * Non-fatal discrepancies reported while processing a command. A server may send codes not
+ * listed here (a newer contract); readers go through `knownWarnings`, which drops them, and a
+ * warning never rejects a sale.
+ */
 export type CommandWarning =
-  | { code: 'total_mismatch'; expectedMinor: number; serverMinor: number }
-  | { code: 'insufficient_stock'; variantId: string; quantity: number };
+  | {
+      code: 'total_mismatch'; expectedMinor: number; serverMinor: number;
+      /**
+       * Present if and only if the server added an untaxed rounding surcharge so its total
+       * matches the till's; signed, in minor units, `expectedMinor - serverMinor`, where
+       * `serverMinor` is the platform's total before the bridge.
+       */
+      bridgeMinor?: number;
+    }
+  | { code: 'insufficient_stock'; variantId: string; quantity: number }
+  | {
+      /**
+       * One warning per tax rate whose tax differs by more than the server's rounding tolerance
+       * (order.create v3 only); `expectedMinor` is the till's `taxByRate[].taxMinor` for that
+       * rate and `serverMinor` the platform's tax for it.
+       */
+      code: 'tax_rate_mismatch'; ratePpm: number; expectedMinor: number; serverMinor: number;
+    };
 
 /** Error reported when a command is rejected. */
 export interface CommandError {

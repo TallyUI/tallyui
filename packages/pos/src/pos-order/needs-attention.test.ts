@@ -24,6 +24,15 @@ describe('needsAttention', () => {
     expect(orders[0]).toBe(rejected);
   });
 
+  it('does not flag an applied order whose only warning has an unknown code, and flags a tax_rate_mismatch', () => {
+    const base = sale();
+    const unknown: PosOrder = { ...base, id: 'unknown', syncStatus: 'applied',
+      warnings: [{ code: 'future_code' }] as unknown as PosOrder['warnings'] };
+    const taxed: PosOrder = { ...base, id: 'taxed', syncStatus: 'applied',
+      warnings: [{ code: 'tax_rate_mismatch', ratePpm: 200000, expectedMinor: 120, serverMinor: 100 }] };
+    expect(needsAttention([unknown, taxed])).toEqual([taxed]);
+  });
+
   // Registers c1a (ADR-032, late sale). Revert: drop the lateSessionId case from needsAttention.
   it('selects a late sale whatever its sync status, newest first, without changing the input', () => {
     const base = sale();

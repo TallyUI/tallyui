@@ -37,7 +37,11 @@ describe('command types', () => {
   });
 
   it('defines the warning codes', () => {
-    expectTypeOf<CommandWarning['code']>().toEqualTypeOf<'total_mismatch' | 'insufficient_stock'>();
+    expectTypeOf<CommandWarning['code']>().toEqualTypeOf<'total_mismatch' | 'insufficient_stock' | 'tax_rate_mismatch'>();
+  });
+
+  it('pins bridgeMinor as optional on total_mismatch', () => {
+    expectTypeOf<Extract<CommandWarning, { code: 'total_mismatch' }>['bridgeMinor']>().toEqualTypeOf<number | undefined>();
   });
 
   it('pins the envelope versions: 2 for a discounted order.create (ADR-062), 3 for one carrying ADR-065\'s figures', () => {

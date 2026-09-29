@@ -52,6 +52,7 @@ export {
 // Money helpers
 export { currencySymbol, formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from './money';
 export { findVariantByCode } from './variants';
+export { knownWarnings } from './known-warnings';
 export { compareIds } from './utils/compare-ids';
 export { STOCK_LEVELS_LAST_PASS, withStockOverlay, getProductStock } from './stock-overlay';
 export { combinePullAdapters } from './replication/combine';
