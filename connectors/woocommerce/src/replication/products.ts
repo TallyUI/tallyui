@@ -57,7 +57,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
           throw new WooMissingUuidError(product.id);
         }
       }
-      const documents = products.map((p) => ({ ...p, _deleted: false }));
+      const documents = products.map((p) => ({ ...p, _deleted: p.status !== 'publish' }));
 
       const checkpoint: WooProductCheckpoint = products.length > 0
         ? {
