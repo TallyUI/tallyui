@@ -1,0 +1,111 @@
+// @vitest-environment node
+import { expect, it } from 'vitest'
+import { CommandResultError, parseCommandResult } from './command-result'
+
+const serverRefs = { orderId: 'order_123', displayId: '123', totalMinor: 1200 }
+const warnings = [
+  { code: 'total_mismatch', expectedMinor: 1100, serverMinor: 1200 },
+  { code: 'insufficient_stock', variantId: 'variant_123', quantity: 1 },
+]
+const applied = { id: 'command_123', status: 'applied', serverRefs, warnings }
+const rejected = { id: 'command_123', status: 'rejected', error: { code: 'invalid', message: '' } }
+
+const thrown = (value: unknown): unknown => {
+  try {
+    parseCommandResult(value)
+  } catch (error) {
+    return error
+  }
+  throw new Error('Expected parseCommandResult to throw')
+}
+
+it.each([applied, rejected, { id: 'command_123', status: 'duplicate', serverRefs }])(
+  'parses a valid $status result', value => {
+    expect(parseCommandResult(value)).toEqual(value)
+  }
+)
+
+it('accepts absent optional fields and an empty displayId', () => {
+  expect(parseCommandResult({ id: 'c', status: 'duplicate' })).toEqual({ id: 'c', status: 'duplicate' })
+  expect(parseCommandResult({ ...applied, serverRefs: { ...serverRefs, displayId: '' } }).serverRefs?.displayId).toBe('')
+  const { displayId, ...refs } = serverRefs
+  expect(parseCommandResult({ ...applied, serverRefs: refs }).serverRefs).toEqual(refs)
+})
+
+it.each([
+  ['result', null],
+  ['result', []],
+  ['result', 'text'],
+  ['id', { ...applied, id: '' }],
+  ['id', { ...applied, id: 1 }],
+  ['status', { ...applied, status: 'in_progress' }],
+  ['serverRefs', { ...applied, serverRefs: undefined }],
+  ['serverRefs', { ...applied, serverRefs: null }],
+  ['serverRefs', { ...applied, serverRefs: [] }],
+  ['serverRefs.orderId', { ...applied, serverRefs: { totalMinor: 1 } }],
+  ['serverRefs.orderId', { ...applied, serverRefs: { ...serverRefs, orderId: '' } }],
+  ['serverRefs.displayId', { ...applied, serverRefs: { ...serverRefs, displayId: 1 } }],
+  ['serverRefs.totalMinor', { ...applied, serverRefs: { ...serverRefs, totalMinor: 1.5 } }],
+  ['serverRefs.totalMinor', { ...applied, serverRefs: { ...serverRefs, totalMinor: Number.MAX_SAFE_INTEGER + 1 } }],
+  ['warnings', { ...applied, warnings: {} }],
+  ['warnings[0]', { ...applied, warnings: [null] }],
+  ['warnings[0]', { ...applied, warnings: [[]] }],
+  ['warnings[0].code', { ...applied, warnings: [{ code: 'unknown' }] }],
+  ['warnings[0].expectedMinor', { ...applied, warnings: [{ ...warnings[0], expectedMinor: 1.5 }] }],
+  ['warnings[0].serverMinor', { ...applied, warnings: [{ ...warnings[0], serverMinor: '1' }] }],
+  ['warnings[0].variantId', { ...applied, warnings: [{ ...warnings[1], variantId: '' }] }],
+  ['warnings[0].quantity', { ...applied, warnings: [{ ...warnings[1], quantity: 1.5 }] }],
+  ['warnings[0].quantity', { ...applied, warnings: [{ ...warnings[1], quantity: 0 }] }],
+  ['error', { ...rejected, error: undefined }],
+  ['error', { ...rejected, error: null }],
+  ['error', { ...rejected, error: [] }],
+  ['error.code', { ...rejected, error: { code: '', message: '' } }],
+  ['error.message', { ...rejected, error: { code: 'invalid', message: 1 } }],
+])('rejects an invalid %s', (field, value) => {
+  const error = thrown(value)
+  expect(error).toBeInstanceOf(CommandResultError)
+  expect(error).toBeInstanceOf(Error)
+  expect((error as Error).message).toContain(field)
+})
+
+it('names the first bad field', () => {
+  expect(() => parseCommandResult({ id: '', status: 'unknown' })).toThrow('Invalid id')
+})
+
+it("names its error 'CommandResultError'", () => {
+  expect((thrown(null) as Error).name).toBe('CommandResultError')
+})
+
+it('parses a register applied result without serverRefs and keeps register', () => {
+  const register = { session: { id: 's', status: 'open' }, counters: { lastClosureNumber: 0 } }
+  const value = { id: 'c', status: 'applied', register }
+  expect(parseCommandResult(value)).toEqual(value)
+  expect(parseCommandResult(value)).toHaveProperty('register', register)
+})
+
+it('keeps error.data on a rejected result', () => {
+  const data = { sessionId: 's', counters: { lastClosureNumber: 1 } }
+  const value = { ...rejected, error: { ...rejected.error, data } }
+  expect(parseCommandResult(value)).toEqual(value)
+})
+
+it('refuses applied with neither serverRefs nor register', () => {
+  expect(() => parseCommandResult({ id: 'c', status: 'applied' })).toThrow('Invalid serverRefs: required for applied')
+})
+
+it.each([null, [], 'text', 1, new Date()])('refuses non-object error.data and register: %s', value => {
+  expect(() => parseCommandResult({ ...rejected, error: { ...rejected.error, data: value } })).toThrow('Invalid error.data')
+  expect(() => parseCommandResult({ ...applied, register: value })).toThrow('Invalid register')
+})
+
+it('drops unknown keys at every level without mutating the input', () => {
+  const value = {
+    ...applied, extra: true,
+    serverRefs: { ...serverRefs, extra: true },
+    warnings: warnings.map(warning => ({ ...warning, extra: true })),
+    error: { ...rejected.error, extra: true },
+  }
+  expect(parseCommandResult(value)).toEqual({ ...applied, error: rejected.error })
+  expect(value.serverRefs.extra).toBe(true)
+  expect(value.warnings.every(warning => warning.extra)).toBe(true)
+})

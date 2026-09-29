@@ -16,6 +16,12 @@
       "types": "./dist/rxdb/index.d.ts",
       "import": "./dist/rxdb/index.js",
       "source": "./src/rxdb/index.ts"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "source": "./src/server/index.ts",
+      "default": "./dist/server/index.js"
     }
   },
   "files": [
