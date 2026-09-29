@@ -1,16 +1,19 @@
 import { defineConfig, devices } from '@playwright/test';
-import { e2ePorts } from './e2e/ports';
+import { e2ePorts, isCI } from './e2e/ports';
 
+const ci = isCI(process.env);
 // Per-worktree ports (fixed 8081/8090 under CI); see e2e/ports.ts.
 const ports = e2ePorts(__dirname, process.env);
+// Unless reusing, fail before starting a server whose port is taken (see e2e/port-free.mjs).
+const preflight = (port: number) => (ports.reuse ? '' : `node e2e/port-free.mjs ${port} && `);
 
 export default defineConfig({
   testDir: './e2e/web',
   fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? 'github' : 'html',
+  forbidOnly: ci,
+  retries: ci ? 1 : 0,
+  workers: ci ? 1 : undefined,
+  reporter: ci ? 'github' : 'html',
   timeout: 30_000,
 
   use: {
@@ -32,13 +35,13 @@ export default defineConfig({
 
   webServer: [
     {
-      command: `pnpm --filter @tallyui/demo exec expo start --web --port ${ports.web}`,
+      command: `${preflight(ports.web)}pnpm --filter @tallyui/demo exec expo start --web --port ${ports.web}`,
       url: `http://localhost:${ports.web}`,
       reuseExistingServer: ports.reuse,
       timeout: 120_000,
     },
     {
-      command: 'node e2e/storage-sqlite/page/build-and-serve.mjs',
+      command: `${preflight(ports.sqlite)}node e2e/storage-sqlite/page/build-and-serve.mjs`,
       url: `http://localhost:${ports.sqlite}`,
       env: { PORT: String(ports.sqlite) },
       reuseExistingServer: ports.reuse,

@@ -49,7 +49,10 @@ caches and artifacts can be read from fork PRs. So:
    ports derived from the worktree's path, so two worktrees never test each
    other's servers; `node e2e/ports.ts` prints them. `E2E_WEB_PORT` and
    `E2E_SQLITE_PORT` override them, and `E2E_REUSE=1` reuses a server
-   already running on those ports. CI keeps 8081 and 8090.
+   already running on those ports. Without `E2E_REUSE=1`, a port that is
+   already taken fails the run before any test, naming the process that
+   holds it: stop that process, or set `E2E_REUSE=1` to test its server.
+   CI keeps 8081 and 8090.
 
 The installer prints the token in its output. Don't paste install logs
 anywhere public.
