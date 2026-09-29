@@ -1,0 +1,139 @@
+[
+  {
+    "name": "order-create-v3 golden fixture",
+    "envelope": {
+      "type": "order.create",
+      "version": 3,
+      "payload": {
+        "clientOrderId": "019f6d2e-7800-7000-8000-000000000002",
+        "createdAt": "2026-09-28T10:00:00.000Z",
+        "currency": "EUR",
+        "pricesIncludeTax": true,
+        "lines": [
+          {
+            "clientLineId": "line_inclusive",
+            "variantId": "variant_inclusive",
+            "title": "Inclusive item",
+            "quantity": 2,
+            "unitPriceMinor": 1200,
+            "discountMinor": 203
+          },
+          {
+            "clientLineId": "line_exclusive",
+            "variantId": "variant_exclusive",
+            "title": "Exclusive item",
+            "quantity": 1,
+            "unitPriceMinor": 1000,
+            "taxInclusive": false,
+            "discountMinor": 37
+          }
+        ],
+        "payments": [
+          {
+            "clientPaymentId": "payment_cash",
+            "method": "cash",
+            "amountMinor": 3256,
+            "tenderedMinor": 4000,
+            "changeMinor": 744,
+            "reference": "cash_receipt_1"
+          }
+        ],
+        "subtotalMinor": 2794,
+        "discountMinor": 240,
+        "taxMinor": 462,
+        "totalMinor": 3256,
+        "display": {
+          "currency": "EUR",
+          "exponent": 2,
+          "taxInclusive": true,
+          "subtotalMinor": 3500,
+          "discountMinor": 244,
+          "taxMinor": 462,
+          "totalMinor": 3256,
+          "lines": [
+            {
+              "clientLineId": "line_inclusive",
+              "amountMinor": 2400,
+              "discounts": [
+                {
+                  "discountId": "discount_line",
+                  "label": "Line discount",
+                  "amountMinor": 120
+                }
+              ]
+            },
+            {
+              "clientLineId": "line_exclusive",
+              "amountMinor": 1100,
+              "discounts": []
+            }
+          ],
+          "orderDiscountMinor": 124
+        },
+        "taxByRate": [
+          {
+            "ratePpm": 200000,
+            "code": "VAT20",
+            "netMinor": 1831,
+            "taxMinor": 366,
+            "grossMinor": 2197
+          },
+          {
+            "ratePpm": 100000,
+            "netMinor": 963,
+            "taxMinor": 96,
+            "grossMinor": 1059
+          }
+        ],
+        "customer": {
+          "email": "buyer@example.com",
+          "customerId": "cus_golden_v3"
+        },
+        "registerId": "register_golden",
+        "cashierRef": "cashier_golden",
+        "sessionId": "019f6d2e-7800-7000-8000-000000000003"
+      }
+    },
+    "canonical": "{\"payload\":{\"cashierRef\":\"cashier_golden\",\"clientOrderId\":\"019f6d2e-7800-7000-8000-000000000002\",\"createdAt\":\"2026-09-28T10:00:00.000Z\",\"currency\":\"EUR\",\"customer\":{\"customerId\":\"cus_golden_v3\",\"email\":\"buyer@example.com\"},\"discountMinor\":240,\"display\":{\"currency\":\"EUR\",\"discountMinor\":244,\"exponent\":2,\"lines\":[{\"amountMinor\":2400,\"clientLineId\":\"line_inclusive\",\"discounts\":[{\"amountMinor\":120,\"discountId\":\"discount_line\",\"label\":\"Line discount\"}]},{\"amountMinor\":1100,\"clientLineId\":\"line_exclusive\",\"discounts\":[]}],\"orderDiscountMinor\":124,\"subtotalMinor\":3500,\"taxInclusive\":true,\"taxMinor\":462,\"totalMinor\":3256},\"lines\":[{\"clientLineId\":\"line_inclusive\",\"discountMinor\":203,\"quantity\":2,\"title\":\"Inclusive item\",\"unitPriceMinor\":1200,\"variantId\":\"variant_inclusive\"},{\"clientLineId\":\"line_exclusive\",\"discountMinor\":37,\"quantity\":1,\"taxInclusive\":false,\"title\":\"Exclusive item\",\"unitPriceMinor\":1000,\"variantId\":\"variant_exclusive\"}],\"payments\":[{\"amountMinor\":3256,\"changeMinor\":744,\"clientPaymentId\":\"payment_cash\",\"method\":\"cash\",\"reference\":\"cash_receipt_1\",\"tenderedMinor\":4000}],\"pricesIncludeTax\":true,\"registerId\":\"register_golden\",\"sessionId\":\"019f6d2e-7800-7000-8000-000000000003\",\"subtotalMinor\":2794,\"taxByRate\":[{\"code\":\"VAT20\",\"grossMinor\":2197,\"netMinor\":1831,\"ratePpm\":200000,\"taxMinor\":366},{\"grossMinor\":1059,\"netMinor\":963,\"ratePpm\":100000,\"taxMinor\":96}],\"taxMinor\":462,\"totalMinor\":3256},\"type\":\"order.create\",\"version\":3}",
+    "fingerprint": "aea62fe9f460bbdfd93771cbe08b3bb98e5761f172b974b62d72dfe30f6bc436"
+  },
+  {
+    "name": "key order, nested objects, undefined field dropped",
+    "envelope": {
+      "type": "order.create",
+      "version": 1,
+      "payload": {
+        "z": 1,
+        "a": {
+          "d": [
+            3,
+            1,
+            2
+          ],
+          "c": "x"
+        },
+        "m": null
+      }
+    },
+    "canonical": "{\"payload\":{\"a\":{\"c\":\"x\",\"d\":[3,1,2]},\"m\":null,\"z\":1},\"type\":\"order.create\",\"version\":1}",
+    "fingerprint": "cecf2c94e7da1867b95b66d5e46e686bf274f780e312efb2d8387841cc00d483"
+  },
+  {
+    "name": "undefined array item becomes null; unicode and negative numbers",
+    "envelope": {
+      "type": "register.movement.record",
+      "version": 1,
+      "payload": {
+        "items": [
+          1,
+          null,
+          "é",
+          -0.5
+        ],
+        "reason": "café \"quoted\""
+      }
+    },
+    "canonical": "{\"payload\":{\"items\":[1,null,\"é\",-0.5],\"reason\":\"café \\\"quoted\\\"\"},\"type\":\"register.movement.record\",\"version\":1}",
+    "fingerprint": "95316177d791a50f25937d646cae922766e33dc77e3287b3dbec791f9c410948"
+  }
+]
