@@ -33,6 +33,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
 
       if (lastCheckpoint?.modified) {
         params.set('modified_after', lastCheckpoint.modified);
+        params.set('dates_are_gmt', 'true');
       }
 
       const response = await fetch(`${context.baseUrl}/products?${params}`, {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SyncContext } from '@tallyui/core';
 
 import { woocommerceConnector, WooMissingUuidError } from '../index';
+import { wooProductSync } from '../sync/products';
 import { wooProductReplication } from './products';
 
 const context: SyncContext = {
@@ -59,6 +60,45 @@ describe('wooProductReplication.pull.handler', () => {
     expect(calledUrl).toContain('modified_after=2026-01-01T00%3A00%3A00');
     expect(calledUrl).toContain('orderby=modified');
     expect(calledUrl).toContain('order=asc');
+  });
+
+  it('sends dates_are_gmt=true with modified_after', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+    const checkpoint = { id: 'abc', modified: '2026-01-01T00:00:00' };
+
+    await wooProductReplication.pull.handler(checkpoint, 100, context);
+
+    const params = new URL(String(fetchSpy.mock.calls[0][0])).searchParams;
+    expect(params.get('modified_after')).toBe(checkpoint.modified);
+    expect(params.get('dates_are_gmt')).toBe('true');
+  });
+
+  it('sends neither modified_after nor dates_are_gmt on the first pull', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+
+    await wooProductReplication.pull.handler(undefined, 100, context);
+
+    const params = new URL(String(fetchSpy.mock.calls[0][0])).searchParams;
+    expect(params.has('modified_after')).toBe(false);
+    expect(params.has('dates_are_gmt')).toBe(false);
+  });
+
+  it('sends a GMT modified_after query from the deprecated sync', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+    const date = '2026-01-01T00:00:00';
+
+    await wooProductSync.fetchModifiedAfter!(date, context);
+
+    const params = new URL(String(fetchSpy.mock.calls[0][0])).searchParams;
+    expect(params.get('modified_after')).toBe(date);
+    expect(params.get('dates_are_gmt')).toBe('true');
+    expect(params.get('per_page')).toBe('100');
   });
 
   it('uses batchSize as per_page', async () => {
