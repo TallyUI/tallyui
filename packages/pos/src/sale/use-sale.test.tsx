@@ -1757,22 +1757,53 @@ describe('app configuration outside the order.create bounds', () => {
     expect(result.current).toMatchObject({ order: { customer: null }, error: null });
   });
 
-  it('setTender refuses a terminal reference finalize would refuse, as it is entered', () => {
-    const { result } = renderSale(pricing);
-    addSaleLines(result);
-    act(() => result.current.startTender('external'));
-    const total = result.current.order.totalMinor;
-    for (const [reference, message] of [['r'.repeat(256), 'The payment reference is too long (max 255 characters)'],
-      ['A\u0000', 'The payment reference contains a NUL character']]) {
-      act(() => result.current.setTender({ method: 'external', amountMinor: total, reference }));
-      expect(result.current.error).toBe(message);
-      expect(result.current.order.payments).toHaveLength(1);
-      expect(result.current.order.payments[0]).toMatchObject({ amountMinor: total });
-      expect(result.current.order.payments[0].reference).toBeUndefined();
+  it("setTender applies a tender whose terminal reference finalize would refuse without the reference, warns, and complete() stores it", async () => {
+    const logged: LogEntry[] = [];
+    saleLogger.addSink({ id: 'dropped-reference', levels: ['warn'], write: (entry) => logged.push(entry) });
+    try {
+      const onSaleCompleted = vi.fn();
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      const total = result.current.order.totalMinor;
+      for (const [reference, reason] of [['r'.repeat(256), 'it is over 255 characters'], ['A\u0000', 'it contains a NUL character']]) {
+        act(() => result.current.setTender({ method: 'external', amountMinor: total - 1, reference: 'OLD' }));
+        act(() => result.current.setTender({ method: 'external', amountMinor: total, reference }));
+        expect(result.current.order.payments).toHaveLength(1);
+        expect(result.current.order.payments[0]).toMatchObject({ method: 'external', amountMinor: total });
+        expect(result.current.order.payments[0]).not.toHaveProperty('reference');
+        expect(result.current.error)
+          .toBe(`The terminal's payment reference couldn't be kept (${reason}); the payment is recorded without it.`);
+      }
+      expect(logged).toEqual([expect.objectContaining({ level: 'warn', data: { reason: 'it is over 255 characters', method: 'external' } }),
+        expect.objectContaining({ level: 'warn', data: { reason: 'it contains a NUL character', method: 'external' } })]);
+      await act(async () => { await result.current.complete(); });
+      expect(onSaleCompleted).toHaveBeenCalledTimes(1);
+      expect(onSaleCompleted.mock.calls[0][0].payments).toEqual([{ id: expect.any(String), method: 'external', amountMinor: total }]);
+      expect(result.current).toMatchObject({ stage: { kind: 'receipt' }, error: null });
+    } finally {
+      saleLogger.removeSink('dropped-reference');
     }
-    act(() => result.current.setTender({ method: 'external', amountMinor: total, reference: 'A1B2' }));
+  });
+
+  it('a successful setCustomer clears only a customer refusal: a finalize error and a dropped-reference message stay', async () => {
+    const jane = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: vi.fn() }));
+    addSaleLines(result);
+    act(() => result.current.startTender('cash'));
+    act(() => result.current.setTender({ method: 'cash', amountMinor: 1000 }));
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBe('finalize: underpaid');
+    act(() => result.current.setCustomer(jane));
+    expect(result.current).toMatchObject({ error: 'finalize: underpaid', order: { customer: jane } });
+    act(() => result.current.setTender({ method: 'external', amountMinor: 1000, reference: 'A\u0000' }));
+    const dropped = result.current.error;
+    act(() => result.current.setCustomer(null));
+    expect(result.current.error).toBe(dropped);
+    act(() => result.current.setCustomer({ id: 'x\u0000', name: 'Nul' }));
+    expect(result.current.error).toMatch(/^This customer's id/);
+    act(() => result.current.setCustomer(jane));
     expect(result.current.error).toBeNull();
-    expect(result.current.order.payments).toEqual([expect.objectContaining({ reference: 'A1B2' })]);
   });
 
   it('a failed save, then an out-of-bounds cashierRef: the save error shows first, and Retry still delivers the pending order', async () => {

@@ -195,6 +195,16 @@ describe('finalizeOrder refuses a pass-through reference outside the order.creat
     expect(() => finalizeOrder(lines('v'.repeat(255)))).not.toThrow();
   });
 
+  it('names the line by at most 60 units of its name plus …, NUL stripped, never splitting a surrogate pair', () => {
+    const input = paid();
+    const named = (name: string) => ({ ...input, lineItems: [{ ...input.lineItems[0], name, variantId: 'v'.repeat(256) }, input.lineItems[1]] });
+    const name = `N\u0000${'n'.repeat(4998)}`;
+    expect(name).toHaveLength(5000);
+    expect(() => finalizeOrder(named(name))).toThrow(new Error(`finalize: "N${'n'.repeat(59)}…": the variant id is too long (max 255 characters)`));
+    expect(() => finalizeOrder(named(`${'x'.repeat(59)}😀tail`))).toThrow(new Error(`finalize: "${'x'.repeat(59)}…": the variant id is too long (max 255 characters)`));
+    expect(() => finalizeOrder(named('x'.repeat(61)))).toThrow(new Error(`finalize: "${'x'.repeat(61)}": the variant id is too long (max 255 characters)`));
+  });
+
   it('at capability 3, also refuses a line discount id or a tax code the envelope sends; below 3 neither is sent', () => {
     const input = discountedSale().getSnapshot();
     expect(input.display.lines[0].discounts).toHaveLength(1);

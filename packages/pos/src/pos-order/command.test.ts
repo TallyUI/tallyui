@@ -51,9 +51,9 @@ function goldenV3(): PosOrder {
 describe('toOrderCreateEnvelope', () => {
   it('omits a malformed sessionId at version 3, and never refuses the sale for it', () => {
     for (const key of ['sessionId', 'lateSessionId'] as const) {
-      for (const sessionId of ['', 's'.repeat(37), 's'.repeat(36), 'session-1', 123] as const) {
+      for (const sessionId of ['', 's'.repeat(37), 's'.repeat(36), 'session-1', 'session\u00001', 123] as const) {
         const sale = { ...v3, [key]: sessionId } as PosOrder;
-        const valid = typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36;
+        const valid = typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 && !sessionId.includes('\u0000');
         const envelope = toOrderCreateEnvelope(sale, 'device1');
         const expected = toOrderCreateEnvelope(v3, 'device1');
         expect(envelope).toStrictEqual({ ...expected, payload: { ...expected.payload, ...(valid ? { sessionId } : {}) } });

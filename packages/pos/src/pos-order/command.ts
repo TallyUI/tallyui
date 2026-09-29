@@ -24,18 +24,23 @@ const sendable = (value: unknown, max: number): value is string =>
  * (over 254 units, or a NUL) or its id (over 64, or a NUL) would be refused by order.create's shape check.
  */
 export function customerRefusal(customer: { id?: string; email?: string }): string | null {
-  const bad = customer.email !== undefined && customer.email !== '' && !sendable(customer.email, 254) ? 'email'
-    : customer.id !== undefined && customer.id !== '' && !sendable(customer.id, 64) ? 'id' : null;
-  return bad && `This customer's ${bad} can't be sent to the store, so they weren't added to the sale.`;
+  return customer.email !== undefined && customer.email !== '' && !sendable(customer.email, 254) ? CUSTOMER_REFUSALS[0]
+    : customer.id !== undefined && customer.id !== '' && !sendable(customer.id, 64) ? CUSTOMER_REFUSALS[1] : null;
+}
+/** Every message `customerRefusal` returns (email, then id). */
+export const CUSTOMER_REFUSALS = (['email', 'id'] as const)
+  .map((field) => `This customer's ${field} can't be sent to the store, so they weren't added to the sale.`);
+
+/** Text with NUL stripped, and over `max` UTF-16 units cut to `max - 1` plus '…', never inside a surrogate pair. */
+export function cutText(text: string, max: number): string {
+  const clean = text.replaceAll('\u0000', '');
+  if (clean.length <= max) return clean;
+  const high = clean.charCodeAt(max - 2);
+  return `${clean.slice(0, high >= 0xd800 && high <= 0xdbff ? max - 2 : max - 1)}…`;
 }
 
-/** Display text as sent: NUL stripped, and over the bound cut to 254 units plus '…', never inside a surrogate pair. */
-function sendText(text: string): string {
-  const clean = text.replaceAll('\u0000', '');
-  if (clean.length <= PAYLOAD_STRING_MAX) return clean;
-  const high = clean.charCodeAt(PAYLOAD_STRING_MAX - 2);
-  return `${clean.slice(0, high >= 0xd800 && high <= 0xdbff ? PAYLOAD_STRING_MAX - 2 : PAYLOAD_STRING_MAX - 1)}…`;
-}
+/** Display text as sent: `cutText` at the shared bound, so a sent name is at most 255 units. */
+const sendText = (text: string): string => cutText(text, PAYLOAD_STRING_MAX);
 
 /**
  * Builds the ADR-038 order.create envelope for a PosOrder. The names it sends (line titles and v3 discount labels)
@@ -88,7 +93,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         : (email ? { email } : null),
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
-      ...(version === 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
+      ...(version === 3 && sendable(sessionId, 36) ? { sessionId } : {}),
     },
   };
 }
