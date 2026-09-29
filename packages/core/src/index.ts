@@ -30,6 +30,7 @@ export { SignInError } from './sign-in';
 export { ConnectorUnauthorizedError } from './unauthorized';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
+export { CustomerServiceError, type Customer, type CustomerInput } from './types/customers';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 
 export type {

@@ -1,6 +1,7 @@
-import { combinePullAdapters, createReconcileFeed, SignInError, type ConnectorAuth, type ServerCapabilities, type SyncContext, type TallyConnector } from '@tallyui/core';
+import { combinePullAdapters, createReconcileFeed, SignInError, type ConnectorAuth, type CustomerInput, type ServerCapabilities, type SyncContext, type TallyConnector } from '@tallyui/core';
 
 import { readCapabilities } from './capabilities';
+import { searchMedusaCustomers, createMedusaCustomer, getMedusaCustomer } from './customers';
 import { medusaProductSchema } from './schemas/products';
 import { medusaProductTraits } from './traits/product';
 import { medusaProductSync } from './sync/products';
@@ -72,6 +73,12 @@ export const medusaSignIn: NonNullable<ConnectorAuth['signIn']> = async (baseUrl
 /** Re-reads the store's `order.create` capability (ADR-062) for a restored session, with the connector's own headers. */
 export const medusaCapabilities = (context: SyncContext): Promise<ServerCapabilities | undefined> =>
   readCapabilities(context.baseUrl, context.headers, { signal: context.signal });
+export const medusaSearchCustomers = (context: SyncContext, query: string, options?: { limit?: number }) =>
+  searchMedusaCustomers(context.baseUrl, context.headers, query, { ...options, signal: context.signal });
+export const medusaCreateCustomer = (context: SyncContext, input: CustomerInput) =>
+  createMedusaCustomer(context.baseUrl, context.headers, input, { signal: context.signal });
+export const medusaGetCustomer = (context: SyncContext, id: string) =>
+  getMedusaCustomer(context.baseUrl, context.headers, id, { signal: context.signal });
 
 // The JWT from Medusa's emailpass sign-in (POST /auth/user/emailpass) is stored as token.
 // email and password are only sign-in form fields and are never sent as headers.
@@ -147,7 +154,7 @@ export const medusaConnector: TallyConnector = {
 };
 
 /** Medusa connector using an admin user's Bearer JWT. */
-export const medusaAdminUserConnector: TallyConnector = { ...medusaConnector, auth: medusaAdminUserAuth, capabilities: medusaCapabilities };
+export const medusaAdminUserConnector: TallyConnector = { ...medusaConnector, auth: medusaAdminUserAuth, capabilities: medusaCapabilities, searchCustomers: medusaSearchCustomers, createCustomer: medusaCreateCustomer, getCustomer: medusaGetCustomer };
 
 // Re-export pieces for advanced usage
 export { medusaProductSchema } from './schemas/products';
@@ -157,6 +164,7 @@ export { medusaProductReplication } from './replication/products';
 export { createMedusaVariantFeedReplication } from './replication/variant-feed';
 export { medusaStockReconcile } from './reconcile/stock';
 export { medusaStoreSettings } from './store-settings';
+export { searchMedusaCustomers, createMedusaCustomer, getMedusaCustomer, toCustomer } from './customers';
 export { withCalculatedPrices } from './pricing/calculated';
 export { MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS } from './reconcile/calculated-prices';
 export type { MedusaCalculatedPrice, MedusaProductDocument, MedusaVariantDocument } from './schemas/products';
