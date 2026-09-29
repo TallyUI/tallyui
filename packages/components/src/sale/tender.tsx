@@ -3,6 +3,9 @@ import { formatMoney } from '@tallyui/core';
 import type { useSale } from '@tallyui/pos';
 import { CashTendered, ChangeDisplay } from '../checkout';
 
+/** order.create's bound on `payments[].reference`, in UTF-16 units: a typed reference never goes past what finalize keeps. */
+const REFERENCE_MAX = 255;
+
 export function Tender({ sale }: { sale: ReturnType<typeof useSale> }) {
   const { order, stage } = sale;
   if (stage.kind !== 'tender') return null;
@@ -18,7 +21,7 @@ export function Tender({ sale }: { sale: ReturnType<typeof useSale> }) {
       </Pressable>
     </> : <>
       <Text className="text-foreground">Card terminal: {formatMoney(money(order.totalMinor))}</Text>
-      <TextInput accessibilityLabel="Terminal reference" placeholder="Terminal reference"
+      <TextInput accessibilityLabel="Terminal reference" placeholder="Terminal reference" maxLength={REFERENCE_MAX}
         value={order.payments[0]?.reference ?? ''}
         onChangeText={(reference) => sale.setTender({ method: 'external', amountMinor: order.totalMinor, reference })} className="rounded-md border border-border px-3 py-2 text-foreground" />
       <Pressable accessibilityRole="button" onPress={sale.complete} className="rounded-md bg-primary px-4 py-3"><Text className="text-center font-semibold text-primary-foreground">Payment approved on terminal</Text></Pressable>

@@ -147,6 +147,26 @@ describe('precheckCommand', () => {
     expect(result?.error?.message.split('; ').length).toBeLessThanOrEqual(10)
   })
 
+  const valid = { clientOrderId: 'order_1', createdAt: command.createdAt, currency: 'EUR', pricesIncludeTax: true,
+    lines: [{ clientLineId: 'line_1', variantId: 'variant_1', title: 'Coffee', quantity: 1, unitPriceMinor: 1000 }],
+    subtotalMinor: 1000, taxMinor: 0, totalMinor: 1000, payments: [{ clientPaymentId: 'payment_1', method: 'cash', amountMinor: 1000 }] }
+  const titled = (title: string) => ({ ...command, payload: { ...valid, lines: [{ ...valid.lines[0], title }] } })
+
+  it('rejects an otherwise valid v1 order.create with a 256-character title as invalid_payload naming lines[0].title', () => {
+    expect(precheckCommand(titled('x'.repeat(255)) as never)).toBeUndefined()
+    expect(precheckCommand(titled('x'.repeat(256)) as never)).toEqual({ id: command.id, status: 'rejected', error: {
+      code: 'invalid_payload', message: 'lines[0].title: expected at most 255 characters',
+    } })
+  })
+
+  it('a handler in the documented order (shape, replay lookup, precheckCommand) replays an applied 300-character title as duplicate', () => {
+    const applied = new Map([[command.id, { id: command.id, status: 'duplicate' as const }]])
+    const handle = (envelope: ReturnType<typeof titled>) => payloadShapeErrors(envelope.payload).length ? 'invalid_shape'
+      : applied.get(envelope.id) ?? precheckCommand(envelope as never)
+    expect(handle(titled('x'.repeat(300)))).toEqual({ id: command.id, status: 'duplicate' })
+    expect(handle({ ...titled('x'.repeat(300)), id: 'sale-new' })).toMatchObject({ status: 'rejected', error: { code: 'invalid_payload' } })
+  })
+
   it('caps the message at the first 10 fiscal-figure errors when more than 10 fields are invalid', () => {
     const envelope = structuredClone(fixture)
     const { display, taxByRate } = envelope.payload

@@ -1,6 +1,6 @@
 export { currencyDecimals, minorToMajor, majorToMinor } from './money'
 export { canonicalJson, commandFingerprint } from './fingerprint'
-export { payloadShapeErrors } from './order-payload-shape'
+export { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
 export { fiscalFiguresErrors } from './fiscal-figures'
 export type { CommandErrorWithData, OrderCreateDisplay, OrderCreateTaxRate, OrderCreatePayloadV3 } from './fiscal-figures'
 export { SUPPORTED_ORDER_CREATE_VERSIONS, SUPPORTED_REGISTER_VERSIONS } from './versions'

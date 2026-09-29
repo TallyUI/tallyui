@@ -1005,14 +1005,11 @@ interface OrderCreatePayload {
       turned it into that rollback.
     - **The order of the steps** (Front desk, 2026-09-29), for
       `order.create`:
-      - **Shape** first (types, bounds, a NUL character), before any
-        database access. A NUL in `clientOrderId` would make the lookup
-        itself fail (Postgres 22021) before any claim exists. The shared
-        bounds are in `@tallyui/core/server`'s `payloadShapeErrors`:
-        `customer.email` at most 254 characters, `customerId` 64,
-        `sessionId` 36, and every other string field 255; U+0000 is
-        refused in any string. The v3 `display` and `taxByRate` strings
-        get the same 255 bound and NUL check in `fiscalFiguresErrors`.
+      - **Shape** first, before any database access, in
+        `@tallyui/core/server`'s `payloadShapeErrors`: types, the
+        existing `customerId` 64 and `sessionId` 36 checks, and U+0000 in
+        any string. A NUL in `clientOrderId` would make the lookup itself
+        fail (Postgres 22021) before any claim exists.
       - **Then the replay lookup and the collision lookup**, so a resent
         command that was already applied always replays as `duplicate`,
         whatever the later checks say.
@@ -1020,6 +1017,12 @@ interface OrderCreatePayload {
         - amount ranges and the v3 fiscal-figure checks. These are
           `@tallyui/core/server`'s `precheckCommand`, which a plugin calls
           after its replay lookup, never before it;
+        - the string lengths, in `payloadBoundErrors`, called by
+          `precheckCommand`: `customer.email` at most 254 characters and
+          every other string field 255. The v3 `display` and `taxByRate`
+          strings get the same 255 bound and NUL check in
+          `fiscalFiguresErrors`. A length rule tightened later must never
+          turn an applied command's resend into `invalid_payload`;
         - on the Vendure plugin, a future bound on `payload.createdAt`
           (Vendure's `tallySaleAt`). It may be at most 24 hours ahead of
           the server's clock. There is no lower bound, because an offline

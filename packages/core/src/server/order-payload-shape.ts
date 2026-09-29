@@ -1,9 +1,9 @@
 /** Shape errors of an order.create payload, e.g. ['lines: expected a non-empty array',
  * 'payments[0].method: expected a string']; [] when the shape is valid, at most ten. Checks
- * presence, types, string bounds (in UTF-16 code units: `customer.email` 254, `customerId` 64,
- * `sessionId` 36, every other string 255) and U+0000 in any string; numbers are finite numbers,
- * and value ranges are the planner's job. The bound and NUL checks run last, so the earlier
- * checks' errors keep their order. */
+ * presence, types, the `customerId` (64) and `sessionId` (36) bounds, and U+0000 in any string;
+ * numbers are finite numbers, and value ranges are the planner's job. A plugin runs it before its
+ * replay lookup; every other length bound is payloadBoundErrors', after that lookup. The NUL check
+ * runs last, so the earlier checks' errors keep their order. */
 export function payloadShapeErrors(payload: unknown): string[] {
   const errors: string[] = []
   const object = (value: unknown): value is Record<string, unknown> =>
@@ -73,25 +73,40 @@ export function payloadShapeErrors(payload: unknown): string[] {
   for (const field of ['registerId', 'cashierRef', 'locationId']) {
     if (payload[field] !== undefined) check(typeof payload[field] === 'string', field, 'a string')
   }
-  // Bounds and NUL, only on strings (the checks above name any other type); no max keeps an existing bound.
-  const text = (value: unknown, path: string, max?: number) => {
-    if (typeof value !== 'string') return
-    if (max !== undefined) check(value.length <= max, path, `at most ${max} characters`)
-    check(!value.includes('\u0000'), path, 'no NUL character')
-  }
-  for (const field of ['clientOrderId', 'createdAt', 'currency', 'registerId', 'cashierRef', 'locationId']) text(payload[field], field, 255)
+  // NUL, only on strings (the checks above name any other type): Postgres text can't hold it, and the lookup keys must be clean.
+  for (const [value, path] of payloadStrings(payload)) check(!value.includes('\u0000'), path, 'no NUL character')
+  return errors
+}
+
+/** Length-bound errors of an order.create payload, e.g. ['lines[0].title: expected at most 255
+ * characters']; [] when every string is within its bound, at most ten. Bounds in UTF-16 code units:
+ * `customer.email` 254, every other string 255 (`customerId` and `sessionId` keep theirs in
+ * payloadShapeErrors); only strings are checked. A plugin calls it through precheckCommand, after
+ * its replay lookup, so a bound tightened later never turns an applied command's resend into
+ * `invalid_payload`. */
+export function payloadBoundErrors(payload: unknown): string[] {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return []
+  return payloadStrings(payload as Record<string, unknown>)
+    .filter(([value, , max]) => max !== undefined && value.length > max)
+    .map(([, path, max]) => `${path}: expected at most ${max} characters`).slice(0, 10)
+}
+
+/** Every string field order.create's checks cover, as [value, path, bound]; no bound for `customerId`
+ *  and `sessionId`, whose bounds payloadShapeErrors checks with their own messages. */
+function payloadStrings(payload: Record<string, unknown>): Array<[string, string, number | undefined]> {
+  const found: Array<[unknown, string, number | undefined]> = []
+  const object = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+  for (const field of ['clientOrderId', 'createdAt', 'currency', 'registerId', 'cashierRef', 'locationId']) found.push([payload[field], field, 255])
   for (const field of ['lines', 'payments']) {
     const items = payload[field]
     if (Array.isArray(items)) items.forEach((item, index) => {
       if (object(item)) for (const key of field === 'lines' ? ['clientLineId', 'variantId', 'title'] : ['clientPaymentId', 'method', 'reference']) {
-        text(item[key], `${field}[${index}].${key}`, 255)
+        found.push([item[key], `${field}[${index}].${key}`, 255])
       }
     })
   }
-  if (object(payload.customer)) {
-    text(payload.customer.email, 'customer.email', 254)
-    text(payload.customer.customerId, 'customer.customerId')
-  }
-  text(payload.sessionId, 'sessionId')
-  return errors
+  if (object(payload.customer)) found.push([payload.customer.email, 'customer.email', 254], [payload.customer.customerId, 'customer.customerId', undefined])
+  found.push([payload.sessionId, 'sessionId', undefined])
+  return found.filter((entry): entry is [string, string, number | undefined] => typeof entry[0] === 'string')
 }

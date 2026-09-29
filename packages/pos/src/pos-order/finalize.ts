@@ -18,7 +18,7 @@ export interface FinalizeOptions {
 }
 
 /** A line name in a refusal message: 60 UTF-16 units of it plus '…' at most, so a cashier-facing message stays short. */
-const MESSAGE_NAME_MAX = 61;
+export const MESSAGE_NAME_MAX = 61;
 
 /**
  * Why a reference the till passes through without minting would fail order.create's shape check
@@ -26,9 +26,16 @@ const MESSAGE_NAME_MAX = 61;
  * checks its options and an entered payment reference with it.
  */
 export function referenceError(label: string, value: string | undefined): string | null {
+  const reason = referenceReason(value);
+  return reason === 'long' ? `${label} is too long (max ${PAYLOAD_STRING_MAX} characters)`
+    : reason === 'nul' ? `${label} contains a NUL character` : null;
+}
+
+/** referenceError's rule as a reason: 'long' (over PAYLOAD_STRING_MAX), 'nul', or null when finalize accepts the value. */
+export function referenceReason(value: string | undefined): 'long' | 'nul' | null {
   if (value === undefined) return null;
-  if (value.length > PAYLOAD_STRING_MAX) return `${label} is too long (max ${PAYLOAD_STRING_MAX} characters)`;
-  return value.includes('\u0000') ? `${label} contains a NUL character` : null;
+  if (value.length > PAYLOAD_STRING_MAX) return 'long';
+  return value.includes('\u0000') ? 'nul' : null;
 }
 
 /** Turns a fully paid builder Order into a pending PosOrder without mutating it. */
