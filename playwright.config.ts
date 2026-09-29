@@ -1,4 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
+import { e2ePorts } from './e2e/ports';
+
+// Per-worktree ports (fixed 8081/8090 under CI); see e2e/ports.ts.
+const ports = e2ePorts(__dirname, process.env);
 
 export default defineConfig({
   testDir: './e2e/web',
@@ -10,7 +14,7 @@ export default defineConfig({
   timeout: 30_000,
 
   use: {
-    baseURL: 'http://localhost:8081',
+    baseURL: `http://localhost:${ports.web}`,
     trace: 'on-first-retry',
   },
 
@@ -22,21 +26,22 @@ export default defineConfig({
     {
       name: 'storage-sqlite',
       testDir: './e2e/storage-sqlite',
-      use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:8090' },
+      use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${ports.sqlite}` },
     },
   ],
 
   webServer: [
     {
-      command: 'pnpm --filter @tallyui/demo exec expo start --web --port 8081',
-      url: 'http://localhost:8081',
-      reuseExistingServer: !process.env.CI,
+      command: `pnpm --filter @tallyui/demo exec expo start --web --port ${ports.web}`,
+      url: `http://localhost:${ports.web}`,
+      reuseExistingServer: ports.reuse,
       timeout: 120_000,
     },
     {
       command: 'node e2e/storage-sqlite/page/build-and-serve.mjs',
-      url: 'http://localhost:8090',
-      reuseExistingServer: !process.env.CI,
+      url: `http://localhost:${ports.sqlite}`,
+      env: { PORT: String(ports.sqlite) },
+      reuseExistingServer: ports.reuse,
       timeout: 120_000,
     },
   ],
