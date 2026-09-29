@@ -16,9 +16,10 @@ export type CommandRejectionCode =
  * so register refusals use the ADR-068 codes.
  *
  * Return it only when the platform made no durable change for this command: the plugin threw so its
- * transaction rolled back, or it compensated. Otherwise the plugin applies the command, with a warning
- * where one fits, or stays transient — the till offers Retry for `platform_error`, and requeue resends
- * under a new command id, which would duplicate a sale that had partly been written.
+ * transaction rolled back, or it compensated. Otherwise the plugin applies the command (with a warning
+ * where one fits), or compensates the partial write and then stays transient (ADR-039). The till offers
+ * Retry for `platform_error` and requeue resends under a new command id, and a transient result resends
+ * the same id after the ledger claim is released, so either would duplicate a partly written sale.
  *
  * It is stored in the ledger and replayed as recorded; the order shows under "Needs attention" with
  * Retry. An error the plugin can't classify stays transient (503, retried), never platform_error.
