@@ -2,10 +2,11 @@ import { minorUnitDigits, type ServerCapabilities } from '@tallyui/core';
 import type { Order, SentOrder } from '../order/types';
 import { taxLinesByRate } from '../tax/exact';
 import { cutText, PAYLOAD_STRING_MAX, sendable } from './command';
-import type { PosOrder, PosOrderPayment } from './types';
+import type { PosOrder, PosOrderLocalWarning, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
 
 export interface FinalizeOptions {
+  localWarnings?: PosOrderLocalWarning[];
   registerId?: string;
   // No `sessionId`: `stampSession` is the only way to set a sale's session, because it checks the
   // session is live. Tests and migrations that need a stamped order spread `{ ...order, sessionId }`.
@@ -58,10 +59,14 @@ export function freezeSentForm(order: PosOrder): PosOrder {
     return { ...payment, reference };
   });
   const customer = order.customer && { ...order.customer };
+  const localWarnings = [...(order.localWarnings ?? [])];
   for (const [field, max] of [['email', 254], ['id', 64]] as const) {
-    if (customer && field in customer && !sendable(customer[field], max)) { delete customer[field]; changed = true; }
+    if (customer && field in customer && !sendable(customer[field], max)) {
+      delete customer[field]; changed = true;
+      if (!localWarnings.some((warning) => warning.code === 'customer_omitted' && warning.field === field)) localWarnings.push({ code: 'customer_omitted', field });
+    }
   }
-  return changed ? { ...order, lines, payments, customer, ...(display ? { display } : {}) } : order;
+  return changed ? { ...order, lines, payments, customer, ...(display ? { display } : {}), ...(localWarnings.length ? { localWarnings } : {}) } : order;
 }
 
 /**
@@ -142,6 +147,12 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     id: newId(), method: payment.method as PosOrderPayment['method'], amountMinor: payment.amountMinor,
     ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
   }));
+  const localWarnings = options.localWarnings?.map((warning) => {
+    if (warning.code !== 'payment_reference_dropped') return { ...warning };
+    const index = order.payments.findIndex((payment) => payment.id === warning.paymentId);
+    if (index === -1) throw new Error('finalize: localWarnings names an unknown payment');
+    return { ...warning, paymentId: payments[index].id };
+  });
   for (let i = payments.length - 1; i >= 0; i--) {
     const payment = payments[i];
     if (payment.method !== 'cash') continue;
@@ -191,5 +202,6 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(order.note ? { note: order.note } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),
+    ...(localWarnings ? { localWarnings } : {}),
   });
 }

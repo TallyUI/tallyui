@@ -55,7 +55,7 @@ export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart
 export type { SaleStage, CatalogueEntry } from './sale';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, sameSale, OrderContentMismatchError } from './pos-order';
-export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrder, FinalizeOptions } from './pos-order';
+export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions } from './pos-order';
 export { createHttpCommandTransport, createOrderOutbox, useOrderOutbox, outboxLogger } from './outbox';
 export { createRegisterOutbox } from './outbox';
 export type { RegisterOutboxOptions, RegisterOutbox } from './outbox';

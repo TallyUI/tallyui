@@ -3,6 +3,12 @@ import type { DisplayTotals } from '../order/types';
 
 export type PosOrderSyncStatus = 'pending' | 'applied' | 'rejected';
 
+export type PosOrderLocalWarning = { code: 'customer_omitted'; field: 'email' | 'id' }
+  | { code: 'payment_reference_dropped'; paymentId: string };
+/** Server-answered failures of this order, persisted by job #32b. `since` is the outbox's stuck-clock
+ * start in ms, excluding offline pauses; `reason` is the latest reason. */
+export interface PosOrderServerFailures { count: number; since: number; reason: string }
+
 export interface PosOrderLine {
   id: string;
   productId: string;
@@ -66,6 +72,8 @@ export interface PosOrder {
   commandId: string;
   serverRefs?: CommandServerRefs;
   warnings?: CommandWarning[];
+  localWarnings?: PosOrderLocalWarning[];
+  serverFailures?: PosOrderServerFailures;
   error?: CommandError;
   updatedAt: string;
 }

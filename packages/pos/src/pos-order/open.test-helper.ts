@@ -17,9 +17,16 @@ import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
+/** The shipped version-3 schema: before localWarnings and serverFailures. */
+export function versionThree(): RxJsonSchema<PosOrder> {
+  const schema = structuredClone(posOrderSchema);
+  for (const key of ['localWarnings', 'serverFailures']) delete (schema.properties as Record<string, unknown>)[key];
+  return { ...schema, version: 3 };
+}
+
 /** The shipped version-2 schema: before the sessionId index and maxLength. */
 export function versionTwo(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
+  const schema = versionThree();
   schema.indexes = schema.indexes!.filter((index) => index !== 'sessionId');
   delete schema.properties.sessionId.maxLength;
   for (const key of ['sentVersion', 'downgradedFrom']) delete (schema.properties as Record<string, unknown>)[key];
@@ -41,11 +48,12 @@ export function versionZero(): RxJsonSchema<PosOrder> {
 }
 
 /** A stored older `pos_orders` version, which `addPosOrderCollection` migrates to the current one. */
-export type Origin = 0 | 1 | 2;
+export type Origin = 0 | 1 | 2 | 3;
 
 /** `pos_orders` as the shipped app at `from` added it: version 1 came with its identity strategy. */
 export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
   addRxPlugin(RxDBMigrationSchemaPlugin);
+  if (from === 3) return { schema: versionThree(), migrationStrategies: { 1: (doc: PosOrder) => doc, 2: (doc: PosOrder) => doc, 3: (doc: PosOrder) => doc } };
   if (from === 2) return { schema: versionTwo(), migrationStrategies: { 1: (doc: PosOrder) => doc, 2: (doc: PosOrder) => doc } };
   return from === 0 ? { schema: versionZero() } : { schema: versionOne(), migrationStrategies: { 1: (doc: PosOrder) => doc } };
 }

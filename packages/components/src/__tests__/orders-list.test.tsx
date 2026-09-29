@@ -28,6 +28,16 @@ const formatDate = (iso: string) => `date:${iso.slice(0, 10)}`;
 const headers = () => screen.getAllByRole('heading').map((heading) => heading.textContent);
 
 describe('OrdersList', () => {
+  it('shows customer omissions and dropped payment references under Needs attention', () => {
+    render(<OrdersList orders={[order('local', { syncStatus: 'applied', localWarnings: [
+      { code: 'customer_omitted', field: 'email' }, { code: 'customer_omitted', field: 'id' },
+      { code: 'payment_reference_dropped', paymentId: 'payment-local' },
+    ] })]} onRetry={async () => 0} />);
+    expect(headers()).toEqual(['Needs attention', 'Recent']);
+    for (const field of ['email', 'id']) expect(screen.getAllByText(`The customer's ${field} couldn't be sent to the store, so the order isn't linked to them.`)).toHaveLength(2);
+    expect(screen.getAllByText("The terminal's payment reference couldn't be kept; the payment is recorded without it.")).toHaveLength(2);
+  });
+
   it('shows only Recent when no order needs attention, with each status label, money and date', () => {
     render(<OrdersList orders={[order('a'), order('b', { syncStatus: 'applied', serverRefs: { orderId: 'o', displayId: '42', totalMinor: 1200 } })]}
       onRetry={async () => 0} formatDate={formatDate} />);

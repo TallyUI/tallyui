@@ -46,6 +46,11 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             {order.syncStatus === 'rejected' && order.error ? <Text className="text-destructive">{order.error.code}: {order.error.message}</Text> : null}
             {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
             {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
+            {order.localWarnings?.map((warning, index) => <Text key={index} className="text-foreground">
+              {warning.code === 'customer_omitted'
+                ? `The customer's ${warning.field} couldn't be sent to the store, so the order isn't linked to them.`
+                : "The terminal's payment reference couldn't be kept; the payment is recorded without it."}
+            </Text>)}
             {section.title === 'Needs attention' && order.syncStatus === 'rejected' ? order.error?.code === 'idempotency_mismatch'
               ? <Text className="text-foreground">This sale needs checking against the store before it can be sent again.</Text>
               : <Pressable accessibilityRole="button" disabled={retryingIds.has(order.id)} onPress={async () => {
