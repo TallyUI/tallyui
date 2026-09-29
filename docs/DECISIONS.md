@@ -1012,9 +1012,18 @@ interface OrderCreatePayload {
       - Then the replay lookup and the collision lookup.
       - Then the claim.
       - Then the plugin's deterministic checks, before the first write of
-        the sale. A failure there is stored on the claim with no savepoint:
-        nothing of the sale exists yet. A stored rejection is safe, because
-        the till's Retry mints a new command id and re-evaluates.
+        the sale. They split into two classes (Front desk, 2026-09-29):
+        - **Stored on the claim, with no savepoint:** `unknown_variant` (a
+          variant that is missing, deleted or disabled, a product that isn't
+          published, a variant in the wrong channel), `underpaid`, and the
+          other state-dependent permanent rejections. Nothing of the sale
+          exists yet. A stored rejection is safe, because the till's Retry
+          mints a new command id and re-evaluates.
+        - **Not stored, claim released:** `store_configuration` (the
+          2026-09-28 amendment), and `unsupported_currency`, which this
+          ruling gives the same treatment because it too depends on the
+          store's configuration. Once the store is fixed, the **same**
+          command id applies.
       - Only a permanent condition that appears after those checks (for
         example, a variant deleted concurrently), and `internal_error`, are
         left on the savepoint path.
@@ -1028,6 +1037,13 @@ interface OrderCreatePayload {
       - So a savepoint rejection is allowed only for an error raised
         **before the first event is published**, which is before the order's
         step-6 state transition (ADR-047).
+      - **In practice no recipe error is stored on Vendure** (Front desk,
+        2026-09-29). The first event fires as early as creating the
+        customer or the draft order, so nothing in the recipe runs before an
+        event.
+        - Races and errors roll back as transient.
+        - A plugin bug after a write parks the row as needing an admin.
+        - `internal_error` is never raised on Vendure.
       - A permanent error after that point means part of the sale remains.
         The plugin applies the sale with a warning, or marks the row as
         needing an admin if it can't complete it.
