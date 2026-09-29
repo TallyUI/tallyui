@@ -437,8 +437,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     start() {
       stopped = false;
       if (!subscription) subscription = collection.$.subscribe((event) => {
-        if (event.documentData?.syncStatus === 'pending' && (event.operation === 'INSERT' ||
-          event.operation === 'UPDATE' && !failuresOnly(event.previousDocumentData, event.documentData))) {
+        // An UPDATE without previousDocumentData counts as a change: a needless send costs a request, a skipped one a sale.
+        if (event.documentData?.syncStatus === 'pending' && (event.operation === 'INSERT' || event.operation === 'UPDATE' &&
+          !(event.previousDocumentData !== undefined && failuresOnly(event.previousDocumentData, event.documentData)))) {
           insertedDuringRun = true;
           flush().catch(() => {});
         }

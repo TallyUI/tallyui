@@ -1,9 +1,13 @@
 // @vitest-environment node
 // `addPosOrderCollection` on SQLite, the production storage, where a close can interrupt a
-// migration that RxDB's own open path leaves running (ADR-032 amendment 2), from version 0, 1 and 2.
-import { describe, expect, it } from 'vitest';
+// migration that RxDB's own open path leaves running (ADR-032 amendment 2), from version 0, 1 and 2;
+// and the order outbox restoring a stored serverFailures there.
+import { describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, normalizeMangoQuery, prepareQuery } from 'rxdb';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import type { OrderCreateEnvelope } from '@tallyui/core';
+import { createOrderOutbox, type OrderOutbox } from '@tallyui/pos/outbox/order-outbox';
+import type { CommandTransport } from '@tallyui/pos/outbox/types';
 import { addPosOrderCollectionTests } from '@tallyui/pos/pos-order/open.test-helper';
 import { createOrderBuilder } from '@tallyui/pos/order/order-builder';
 import { finalizeOrder } from '@tallyui/pos/pos-order/finalize';
@@ -53,6 +57,38 @@ if (!getRxStorageSQLite && process.env.CI) {
       expect(prepareQuery(schema, normalizeMangoQuery(schema, query.getPreparedQuery().query)).queryPlan.index).toEqual(index);
     }
   } finally {
+    await db.remove();
+  }
+});
+
+(getRxStorageSQLite ? it : it.skip)('restores an isolated order from its stored serverFailures: the first send is a batch without it, then it goes alone', async () => {
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageSQLite!(openNodeSQLite().database) }), multiInstance: false });
+  let outbox: OrderOutbox | undefined;
+  try {
+    const orders = await addPosOrderCollection(db);
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const order = finalizeOrder(builder.getSnapshot());
+    const createdAt = (i: number) => new Date(Date.parse(order.createdAt) + i * 1000).toISOString();
+    const bad = { ...order, id: uuidv7(), commandId: uuidv7(), createdAt: createdAt(0),
+      serverFailures: { since: Date.now() - 60_000, reason: 'status_503', isolated: true } };
+    const good = { ...order, id: uuidv7(), commandId: uuidv7(), createdAt: createdAt(1) };
+    expect((await orders.bulkInsert([bad, good])).error).toEqual([]);
+    // The store answers 503 for any batch holding the stored order, and applies every other batch.
+    const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>(async (batch) => batch.some((command) => command.id === bad.commandId)
+      ? { kind: 'retry', reason: 'status_503' }
+      : { kind: 'results', results: batch.map((command) => ({ id: command.id, status: 'applied' as const,
+        serverRefs: { orderId: `server-${command.id}`, totalMinor: command.payload.totalMinor } })) });
+    outbox = createOrderOutbox({ collection: orders, transport: { send }, deviceId: 'sqlite-restore', random: () => 0.5 });
+    await outbox.flush();
+    expect(send.mock.calls.map(([batch]) => batch.map((command) => command.id))).toEqual([[good.commandId], [bad.commandId]]);
+    expect((await orders.findOne(good.id).exec())!.syncStatus).toBe('applied');
+    expect((await orders.findOne(bad.id).exec())!.toJSON()).toMatchObject({ syncStatus: 'pending',
+      serverFailures: { reason: 'status_503', isolated: true } });
+  } finally {
+    outbox?.stop();
     await db.remove();
   }
 });

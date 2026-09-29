@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
+import { createRxDatabase, type RxChangeEvent, type RxCollection, type RxDatabase } from 'rxdb';
+import { Subject, type Observable } from 'rxjs';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandEnvelope, CommandResult, OrderCreateEnvelope, OrderCreatePayload } from '@tallyui/core';
@@ -886,6 +887,34 @@ describe('order outbox', () => {
     await collection.insert(order(2));
     await vi.advanceTimersByTimeAsync(0);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('an UPDATE event without previousDocumentData counts as a change: it flushes, and the watch goes on', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const input = order(0);
+    await collection.insert(input);
+    // A hand-built event stream stands in for the collection's.
+    const events = new Subject<RxChangeEvent<PosOrder>>();
+    const watched = collection as { $: Observable<RxChangeEvent<PosOrder>> };
+    const real = watched.$;
+    watched.$ = events;
+    try {
+      const { outbox, send } = setup();
+      send.mockResolvedValue({ kind: 'retry', reason: 'network' });
+      outbox.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(1);
+      const update = { operation: 'UPDATE', documentId: input.id, isLocal: false, collectionName: 'pos_orders',
+        documentData: (await collection.findOne(input.id).exec())!.toJSON(true) } as unknown as RxChangeEvent<PosOrder>;
+      events.next(update);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(2);
+      events.next(update);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(3);
+    } finally {
+      watched.$ = real;
+    }
   });
 
   it('sends a pending order already in the collection on start(), with no flush() call', async () => {
