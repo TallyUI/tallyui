@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
-import { createOrderBuilder, type Discount, type Order } from '../order';
+import { createOrderBuilder, type CustomerSummary, type Discount, type Order } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
 import { useTax } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
@@ -90,15 +90,34 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     if (active) setError(SALE_SAVING);
     return active;
   }
+  // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale(null)`.
+  function resetSale(customer: CustomerSummary | null) {
+    if (inFlight.current && !pending.current) return setError(SALE_SAVING);
+    if (pending.current && confirmed.current !== pending.current) {
+      if (inFlight.current) checkStored(pending.current);
+      return setError(SALE_SAVING);
+    }
+    confirm(null); pending.current = null;
+    inFlight.current = null;
+    tenderSession.current = null;
+    setSaving(false);
+    madeWith.current = { taxContext, currency: settings.currency };
+    const next = createOrderBuilder({ currency: settings.currency, taxContext });
+    if (customer !== null) next.setCustomer(customer);
+    setBuilder(next);
+    setOrder(next.getSnapshot());
+    setStage({ kind: 'cart' });
+    setError(null);
+  }
   useEffect(() => {
     const subscription = builder.order$.subscribe(setOrder);
     return () => subscription.unsubscribe();
   }, [builder]);
-  // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale on them:
+  // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
   // a sale in progress (lines, tender or receipt) finishes on the settings it started with (a money rule).
   const idle = stage.kind === 'cart' && !order.lineItems.length;
   useEffect(() => {
-    if (idle && (madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency)) result.newSale();
+    if (idle && (madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency)) resetSale(order.customer ?? null);
   });
   // A screen that unmounts (medusapos: Sign out) mid-save must still leave a trace of the loss.
   useEffect(() => () => {
@@ -217,6 +236,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       return null;
     },
     removeDiscount(id: string) { if (!locked()) builder.removeDiscount(id); },
+    /** the picked customer reaches the server as order.create v3's customer.customerId */
+    setCustomer(customer: CustomerSummary | null) { if (!locked()) builder.setCustomer(customer); },
     /**
      * Pins `options.session` for this tender when given, else the rendered `session` option. Pass the
      * session `useRegisterSession`'s `requireSaleSession()` returned: the rendered one can lag a session
@@ -307,23 +328,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
      * clears the screen, never the record (the Front desk, 2026-09-25). `newSale()` never deletes,
      * updates or requeues `pos_orders` itself.
      */
-    newSale() {
-      if (inFlight.current && !pending.current) return setError(SALE_SAVING);
-      if (pending.current && confirmed.current !== pending.current) {
-        if (inFlight.current) checkStored(pending.current);
-        return setError(SALE_SAVING);
-      }
-      confirm(null); pending.current = null;
-      inFlight.current = null;
-      tenderSession.current = null;
-      setSaving(false);
-      madeWith.current = { taxContext, currency: settings.currency };
-      const next = createOrderBuilder({ currency: settings.currency, taxContext });
-      setBuilder(next);
-      setOrder(next.getSnapshot());
-      setStage({ kind: 'cart' });
-      setError(null);
-    },
+    newSale() { resetSale(null); },
     /**
      * Continue after a failed save whose order is confirmed stored (`canContinue`): exactly `newSale()`.
      * The order stays pending in the outbox, which will send it; it isn't handed to `onSaleCompleted` again, and

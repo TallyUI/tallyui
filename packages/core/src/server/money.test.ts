@@ -48,3 +48,36 @@ it.each([0, 2, 3])('round trips safe minor amounts at exponent %s', decimals => 
     expect(majorToMinor(minorToMajor(minor, decimals), decimals)).toBe(minor)
   }
 })
+
+const ORIGINAL_PATTERN = /^([+-]?)(\d+\.?\d*|\.\d+)(?:e([+-]?\d+))?$/i
+const NEW_PATTERN = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:e([+-]?\d+))?$/i
+
+it('majorToMinor accepts exactly what the original pattern accepted', () => {
+  const inputs = [
+    '12', '12.', '12.5', '.5', '-0.005', '+1e3', '1.5E-2',
+    '', '.', '1..2', 'e5', '1e', ' 1', '1_000', '0x10', 'Infinity', 'NaN',
+    '0', '0.0', '+.5', '-.5', '5.', '+5.', '-5.', '1e+3', '1e-3', '1E3',
+    '..', '1.2.3', 'abc', '1a', '--1', '1-', '1.2e', '1.2e+', '1.2e-',
+  ]
+  for (const input of inputs) {
+    const originalResult = ORIGINAL_PATTERN.exec(input)
+    const newResult = NEW_PATTERN.exec(input)
+    if (originalResult === null || newResult === null) {
+      expect(newResult).toBe(originalResult)
+    } else {
+      expect([...newResult]).toEqual([...originalResult])
+    }
+    // Tie NEW_PATTERN to the real implementation: majorToMinor must accept or reject each
+    // input exactly as the pattern documented above predicts (decimals: 2 keeps every accepted
+    // value well inside the safe-integer range, so only the regex step can cause a mismatch).
+    if (newResult === null) expect(() => majorToMinor(input, 2)).toThrow(RangeError)
+    else expect(() => majorToMinor(input, 2)).not.toThrow()
+  }
+})
+
+it('majorToMinor rejects a long malformed digit string quickly', () => {
+  const value = '9'.repeat(100_000) + 'x'
+  const start = performance.now()
+  expect(() => majorToMinor(value, 2)).toThrow(RangeError)
+  expect(performance.now() - start).toBeLessThan(200)
+})

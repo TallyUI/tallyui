@@ -2,7 +2,9 @@ import type { CommandError, OrderCreatePayload } from '../types'
 import { currencyDecimals } from './money'
 
 export type { OrderCreateDisplay, OrderCreateTaxRate } from '../types'
+/** @deprecated Use `CommandError` from `@tallyui/core`; kept for plugins migrating from local copies. */
 export type CommandErrorWithData = CommandError
+/** @deprecated Use `OrderCreatePayload` from `@tallyui/core`; kept for plugins migrating from local copies. */
 export type OrderCreatePayloadV3 = OrderCreatePayload
 
 export function fiscalFiguresErrors(payload: OrderCreatePayloadV3): string[] {

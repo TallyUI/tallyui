@@ -1,17 +1,18 @@
-import { ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { Select } from '@tallyui/primitives';
-import { useCustomerTraits } from '@tallyui/core';
+import { useCustomerTraits, type CustomerTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { VStack, type VStackProps } from '../ui';
 import { CustomerCard } from './customer-card';
 
-export interface CustomerSelectProps extends Omit<VStackProps, 'children'> {
+export interface CustomerSelectProps<Doc = any> extends Omit<VStackProps, 'children'> {
   /** Customer documents to display as options */
-  customers: any[];
+  customers: Doc[];
   /** Currently selected customer (if any) */
-  selected?: any;
+  selected?: Doc | null;
   /** Called when a customer is selected */
-  onSelect: (customer: any) => void;
+  onSelect: (customer: Doc) => void;
+  traits?: CustomerTraits<Doc>;
   /** Called when the search text changes */
   onSearch: (query: string) => void;
   /** Placeholder text for the search input */
@@ -39,16 +40,24 @@ export interface CustomerSelectProps extends Omit<VStackProps, 'children'> {
  * />
  * ```
  */
-export function CustomerSelect({
+export function CustomerSelect<Doc>(props: CustomerSelectProps<Doc>) {
+  return props.traits ? <CustomerSelectView {...props} /> : <CustomerSelectFromContext {...props} />;
+}
+
+function CustomerSelectFromContext<Doc>(props: CustomerSelectProps<Doc>) {
+  return <CustomerSelectView {...props} traits={useCustomerTraits()} />;
+}
+
+function CustomerSelectView<Doc>({
   customers,
   selected,
   onSelect,
   onSearch,
   placeholder = 'Search customers...',
   className,
+  traits,
   ...props
-}: CustomerSelectProps) {
-  const traits = useCustomerTraits();
+}: CustomerSelectProps<Doc>) {
 
   // Map selected customer to Select primitive's Option format
   const selectedOption = selected && traits
@@ -56,7 +65,7 @@ export function CustomerSelect({
     : undefined;
 
   // Build a lookup so we can resolve the original customer doc on selection
-  const customerById = new Map<string, any>();
+  const customerById = new Map<string, Doc>();
   if (traits) {
     for (const customer of customers) {
       customerById.set(traits.getId(customer), customer);
@@ -78,7 +87,7 @@ export function CustomerSelect({
         {selected && traits && (
           <Select.Trigger asChild>
             <View className="rounded-lg border border-primary bg-primary/5 px-3 py-2">
-              <CustomerCard doc={selected} />
+              <CustomerCard doc={selected} traits={traits} />
             </View>
           </Select.Trigger>
         )}
@@ -89,6 +98,7 @@ export function CustomerSelect({
               {customers.map((customer, index) => {
                 const id = traits?.getId(customer) ?? String(index);
                 const label = traits?.getName(customer) ?? '';
+                const email = traits?.getEmail(customer);
                 return (
                   <Select.Item
                     key={id}
@@ -96,9 +106,9 @@ export function CustomerSelect({
                     label={label}
                     asChild
                   >
-                    <View className="border-b border-border px-3 py-2">
-                      <CustomerCard doc={customer} />
-                    </View>
+                    <Pressable accessibilityLabel={email ? `${label}, ${email}` : label} className="border-b border-border px-3 py-2">
+                      <CustomerCard doc={customer} traits={traits} />
+                    </Pressable>
                   </Select.Item>
                 );
               })}

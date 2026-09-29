@@ -10,6 +10,15 @@ const store = { name: 'Shop' };
 afterEach(() => cleanup());
 
 describe('Receipt', () => {
+  it('shows the customer under the cashier when there is one', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    act(() => sale.setCustomer({ id: 'customer-1', name: 'Jane Smith' }));
+    const { rerender } = render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    expect(screen.getByText('Cashier: Alex').nextElementSibling).toBe(screen.getByText('Customer: Jane Smith'));
+    rerender(<Receipt order={{ ...sale.order, customer: null }} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    expect(screen.queryByText(/^Customer:/)).toBeNull();
+  });
+
   // Ported from medusapos/app `563b03c4` `tests/sale.test.tsx` (ADR-052, TV6b), `settings` -> `store`.
   it('shows the cashier display name when supplied to the receipt', () => {
     render(<SaleHarness>{() => null}</SaleHarness>);

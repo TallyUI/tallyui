@@ -20,7 +20,8 @@
     "./server": {
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js",
-      "source": "./src/server/index.ts"
+      "source": "./src/server/index.ts",
+      "default": "./dist/server/index.js"
     }
   },
   "files": [

@@ -5,6 +5,17 @@ import { CustomerCard } from '../customer/customer-card';
 import { createTestConnector, wooCustomerDoc } from './helpers';
 
 describe('CustomerCard', () => {
+  it('uses the traits prop instead of the context', () => {
+    const connector = createTestConnector('woo');
+    const traits = { ...connector.traits.customer!, getName: () => 'Override name',
+      getEmail: () => 'override@test.com', getAddressSummary: () => 'Override address' };
+    render(<ConnectorProvider connector={connector}><CustomerCard doc={wooCustomerDoc} traits={traits} /></ConnectorProvider>);
+    expect(screen.getByText('Override name')).toBeDefined();
+    expect(screen.getByText('override@test.com')).toBeDefined();
+    expect(screen.getByText('Override address')).toBeDefined();
+    expect(screen.queryByText('Jane Smith')).toBeNull();
+  });
+
   it('renders the customer name', () => {
     const connector = createTestConnector('woo');
     render(

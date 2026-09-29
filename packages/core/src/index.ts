@@ -30,7 +30,7 @@ export { SignInError } from './sign-in';
 export { ConnectorUnauthorizedError } from './unauthorized';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
-export { CustomerServiceError, type Customer, type CustomerInput } from './types/customers';
+export { customerTraits, CustomerServiceError, type Customer, type CustomerInput } from './types/customers';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 
 export type {
@@ -52,6 +52,7 @@ export {
 // Money helpers
 export { currencySymbol, formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from './money';
 export { findVariantByCode } from './variants';
+export { knownWarnings } from './known-warnings';
 export { compareIds } from './utils/compare-ids';
 export { STOCK_LEVELS_LAST_PASS, withStockOverlay, getProductStock } from './stock-overlay';
 export { combinePullAdapters } from './replication/combine';

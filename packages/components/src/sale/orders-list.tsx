@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { formatMoney, knownWarnings } from '@tallyui/core';
 import { needsAttention, type PosOrder } from '@tallyui/pos';
 
 const STATUS_LABEL = { pending: 'Waiting to sync', applied: 'Synced', rejected: 'Not accepted' };
@@ -51,10 +51,12 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               }} className="rounded-md bg-primary px-4 py-2">
                 <Text className="text-center font-semibold text-primary-foreground">Retry</Text>
               </Pressable> : null}
-            {order.warnings?.map((warning, index) => <View key={index} className="border-l-4 border-warning pl-2"><Text className="text-foreground">
+            {knownWarnings(order.warnings).map((warning, index) => <View key={index} className="border-l-4 border-warning pl-2"><Text className="text-foreground">
               {warning.code === 'insufficient_stock'
                 ? `Stock short by ${warning.quantity} for ${order.lines.find((line) => line.variantId === warning.variantId)?.name}`
-                : `Store total ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`}
+                : warning.code === 'tax_rate_mismatch'
+                ? `Tax at ${warning.ratePpm / 10000}%: store ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
+                : `Store total ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}${warning.bridgeMinor !== undefined ? ` (rounding of ${formatMoney({ amount: warning.bridgeMinor, currency: order.currency })} added)` : ''}`}
             </Text></View>)}
           </View>
           );

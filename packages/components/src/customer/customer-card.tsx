@@ -1,15 +1,20 @@
-import { useCustomerTraits } from '@tallyui/core';
+import { useCustomerTraits, type CustomerTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, VStack, type VStackProps } from '../ui';
 
-export interface CustomerCardProps extends Omit<VStackProps, 'children'> {
-  doc: any;
+export interface CustomerCardProps<Doc = any> extends Omit<VStackProps, 'children'> {
+  doc: Doc;
+  traits?: CustomerTraits<Doc>;
   className?: string;
 }
 
-export function CustomerCard({ doc, className, ...props }: CustomerCardProps) {
+function CustomerCardFromContext<Doc>(props: CustomerCardProps<Doc>) {
   const traits = useCustomerTraits();
-  if (!traits) return null;
+  return traits ? <CustomerCard {...props} traits={traits} /> : null;
+}
+
+export function CustomerCard<Doc>({ doc, traits, className, ...props }: CustomerCardProps<Doc>) {
+  if (!traits) return <CustomerCardFromContext doc={doc} className={className} {...props} />;
 
   const name = traits.getName(doc);
   const email = traits.getEmail(doc);
