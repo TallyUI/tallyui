@@ -7,7 +7,7 @@ import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order/order-builder';
 import { taxLinesByRate } from '../tax/exact';
 import { toOrderCreateEnvelope } from './command';
-import { finalizeOrder, withSentForm } from './finalize';
+import { finalizeOrder, freezeSentForm, withSentForm } from './finalize';
 import { uuidv7 } from './uuidv7';
 
 function sale() {
@@ -225,6 +225,40 @@ describe('finalizeOrder refuses a pass-through reference outside the order.creat
   });
 });
 
+describe('freezeSentForm', () => {
+  it('freezes an older stored order once, changing only display strings and unsendable customer fields', () => {
+    const stored = finalizeOrder(discountedSale().getSnapshot(), { capabilities: { orderCreate: 3 } });
+    const longId = 'id-'.repeat(100);
+    Object.assign(stored, { id: longId, commandId: longId, registerId: longId, cashierRef: longId,
+      sessionId: longId, lateSessionId: longId, customer: { id: 'c\u00001', name: 'Customer', email: 'e'.repeat(255) } });
+    Object.assign(stored.lines[0], { id: longId, productId: longId, variantId: longId, name: 'N'.repeat(300) });
+    stored.display!.lines[0].lineId = longId;
+    Object.assign(stored.display!.lines[0].discounts[0], { discountId: longId, label: 'D'.repeat(300) });
+    Object.assign(stored.payments[0], { id: longId, reference: 'R'.repeat(300) });
+    const before = structuredClone(stored);
+    const frozen = freezeSentForm(stored);
+    expect(frozen).not.toBe(stored);
+    expect(frozen.lines[0].name).toBe(`${'N'.repeat(254)}…`);
+    expect(frozen.display!.lines[0].discounts[0].label).toBe(`${'D'.repeat(254)}…`);
+    expect(frozen.payments[0].reference).toBe(`${'R'.repeat(254)}…`);
+    expect(frozen.customer).toStrictEqual({ name: 'Customer' });
+    // An exact comparison pins every id, figure, timestamp and other field to the original.
+    const expected = structuredClone(before);
+    expected.lines[0].name = `${'N'.repeat(254)}…`;
+    expected.display!.lines[0].discounts[0].label = `${'D'.repeat(254)}…`;
+    expected.payments[0].reference = `${'R'.repeat(254)}…`;
+    expected.customer = { name: 'Customer' };
+    expect(frozen).toStrictEqual(expected);
+    expect(stored).toStrictEqual(before);
+    expect(freezeSentForm(frozen)).toBe(frozen);
+  });
+
+  it('returns the same object for an already-frozen order', () => {
+    const stored = finalizeOrder(discountedSale().getSnapshot(), { capabilities: { orderCreate: 3 } });
+    expect(freezeSentForm(stored)).toBe(stored);
+  });
+});
+
 describe('finalizeOrder freezes the sent form (task #36)', () => {
   const lone = /[\uD800-\uDFFF]/u; // with the u flag, only a lone surrogate matches, never half of a pair
 
@@ -291,6 +325,16 @@ describe('finalizeOrder freezes the sent form (task #36)', () => {
     builder.setCustomer(customer);
     expect(finalizeOrder(builder.getSnapshot()).customer).toStrictEqual(expected);
     expect(builder.getSnapshot().customer).toStrictEqual(customer);
+  });
+
+  it('withSentForm leaves out a customer id the stored customer lacks', () => {
+    const builder = discountedSale();
+    builder.setCustomer({ id: 'c\u00001', name: 'Customer', email: 'buyer@example.com' });
+    const order = builder.getSnapshot();
+    const stored = finalizeOrder(order, { capabilities: { orderCreate: 3 } });
+    expect(stored.customer).not.toHaveProperty('id');
+    expect(withSentForm(order, stored).customer).toStrictEqual({ name: 'Customer', email: 'buyer@example.com' });
+    expect(order.customer?.id).toBe('c\u00001');
   });
 });
 

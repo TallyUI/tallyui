@@ -1,5 +1,5 @@
 import { minorUnitDigits, type ServerCapabilities } from '@tallyui/core';
-import type { Order } from '../order/types';
+import type { Order, SentOrder } from '../order/types';
 import { taxLinesByRate } from '../tax/exact';
 import { cutText, PAYLOAD_STRING_MAX, sendable } from './command';
 import type { PosOrder, PosOrderPayment } from './types';
@@ -21,12 +21,10 @@ export interface FinalizeOptions {
 export const MESSAGE_NAME_MAX = 61;
 
 /** The receipt shows the order as it was stored and sent (Front desk, 2026-09-29). */
-export function withSentForm(order: Order, posOrder: PosOrder): Order {
-  let customer = order.customer;
-  if (customer && posOrder.customer?.email === undefined) {
-    customer = { ...customer };
-    delete customer.email;
-  }
+export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
+  const customer: SentOrder['customer'] = order.customer && { ...order.customer };
+  if (customer && posOrder.customer?.email === undefined) delete customer.email;
+  if (customer && posOrder.customer?.id === undefined) delete customer.id;
   return { ...order, customer,
     lineItems: order.lineItems.map((line, i) => ({ ...line, name: posOrder.lines[i].name })),
     display: posOrder.display ? { ...order.display,
@@ -35,6 +33,35 @@ export function withSentForm(order: Order, posOrder: PosOrder): Order {
       })),
     } : order.display,
   };
+}
+
+/** Bounds apply when the sent form is frozen; the outbox freezes older tills' stored orders before their first send. */
+export function freezeSentForm(order: PosOrder): PosOrder {
+  let changed = false;
+  const lines = order.lines.map((line) => {
+    const name = cutText(line.name, PAYLOAD_STRING_MAX);
+    changed ||= name !== line.name;
+    return { ...line, name };
+  });
+  const display = order.display && { ...order.display, lines: order.display.lines.map((line) => ({ ...line,
+    discounts: line.discounts.map((discount) => {
+      if (discount.label === undefined) return discount;
+      const label = cutText(discount.label, PAYLOAD_STRING_MAX);
+      changed ||= label !== discount.label;
+      return { ...discount, label };
+    }),
+  })) };
+  const payments = order.payments.map((payment) => {
+    if (payment.reference === undefined) return payment;
+    const reference = cutText(payment.reference, PAYLOAD_STRING_MAX);
+    changed ||= reference !== payment.reference;
+    return { ...payment, reference };
+  });
+  const customer = order.customer && { ...order.customer };
+  for (const [field, max] of [['email', 254], ['id', 64]] as const) {
+    if (customer && field in customer && !sendable(customer[field], max)) { delete customer[field]; changed = true; }
+  }
+  return changed ? { ...order, lines, payments, customer, ...(display ? { display } : {}) } : order;
 }
 
 /**
@@ -106,7 +133,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const lines = order.lineItems.map((line) => ({
     id: newId(), productId: line.productId,
     ...(line.variantId !== undefined ? { variantId: line.variantId } : {}),
-    name: cutText(line.name, PAYLOAD_STRING_MAX), sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
+    name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
     discountMinor: line.discountMinor, netMinor: line.netMinor,
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
     ...(line.priceTaxModeConverted ? { taxInclusive: line.taxInclusive } : {}),
@@ -137,7 +164,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       lines: order.display.lines.map((line, i) => ({
         lineId: lines[i].id, amountMinor: line.amountMinor,
         discounts: line.discounts.map(({ discountId, label, amountMinor }) => ({
-          discountId, ...(label !== undefined ? { label: cutText(label, PAYLOAD_STRING_MAX) } : {}), amountMinor,
+          discountId, ...(label !== undefined ? { label } : {}), amountMinor,
         })),
       })),
     };
@@ -153,17 +180,16 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     }
   }
   const now = (options.now ?? new Date()).toISOString();
-  return {
+  return freezeSentForm({
     id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
     currency: order.currency, pricesIncludeTax: order.pricesIncludeTax, lines, payments,
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor,
     ...(display && taxByRate ? { display, taxByRate } : {}),
-    // An email or id order.create's shape check would refuse is left out; the name stays. Task #32 adds a localWarnings entry here.
-    customer: order.customer ? { ...(sendable(order.customer.id, 64) ? { id: order.customer.id } : {}), name: order.customer.name,
-      ...(sendable(order.customer.email, 254) ? { email: order.customer.email } : {}) } : null,
+    customer: order.customer ? { id: order.customer.id, name: order.customer.name,
+      ...(order.customer.email !== undefined ? { email: order.customer.email } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),
-  };
+  });
 }

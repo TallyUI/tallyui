@@ -3,6 +3,7 @@ import type { RxCollection } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { outboxLogger } from './logger';
 import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, type PosOrder } from '../pos-order';
+import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -195,11 +196,14 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       const alone = due && orders[0] === due ? 'isolated' : probe ? 'probe' : undefined;
       if (alone === 'isolated') sentAlone.add(orders[0].commandId);
       turn = alone === 'isolated' ? 'batch' : 'isolated';
-      const batch = orders.map((order) => {
+      // Bounds apply when frozen: persist older tills' sent forms before sending (Front desk, 2026-09-29).
+      const batch = await Promise.all(orders.map(async (order) => {
+        const frozen = freezeSentForm(order);
+        if (frozen !== order) await (await collection.findOne(order.id).exec())?.incrementalModify((data) => freezeSentForm(data));
         const attempt = (attempts.get(order.commandId) ?? 0) + 1;
         attempts.set(order.commandId, attempt);
-        return toOrderCreateEnvelope(order, deviceId, attempt);
-      });
+        return toOrderCreateEnvelope(frozen, deviceId, attempt);
+      }));
       let outcome = await transport.send(batch);
       if (outcome.kind !== 'retry' || outcome.reason !== 'network') {
         // The store answered: every paused clock resumes, leaving out the offline gap. A device clock set back

@@ -1,8 +1,8 @@
-import type { Discount, Order } from '../order/types';
+import type { Discount, SentOrder } from '../order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import type { ReceiptConfig, ReceiptData } from './types';
 
-export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptData {
+export function buildReceiptData(order: SentOrder, config: ReceiptConfig): ReceiptData {
   // Drops the shared helper's `netMinor` (the Z report's own use): the receipt's tax summary
   // never showed it, and an exact-shape test elsewhere in this package pins that.
   const taxLines = taxLinesByRate(order.lineItems, order.taxMinor, config.taxLabels).map(
