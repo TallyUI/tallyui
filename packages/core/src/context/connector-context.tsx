@@ -99,15 +99,23 @@ export function useStockOverlaid<Doc>(products: readonly Doc[]): readonly Doc[] 
   const connector = useContext(ConnectorContext);
   const { overlay } = useContext(StockOverlayContext);
   const adapter = connector?.reconcile?.stock;
-  return useMemo(
-    () => (adapter && overlay ? products.map((doc) => withStockOverlay(doc, adapter, overlay as Map<string, unknown>)) : products),
-    [products, overlay, adapter],
-  );
+  return useMemo(() => {
+    if (!adapter || !overlay) return products;
+    let changed = false;
+    const mapped = products.map((doc) => {
+      const next = withStockOverlay(doc, adapter, overlay as Map<string, unknown>);
+      if (next !== doc) changed = true;
+      return next;
+    });
+    return changed ? mapped : products;
+  }, [products, overlay, adapter]);
 }
 
-/** The reconciled stock overlay's confirmed-as-of time from the nearest ConnectorProvider, or undefined without one. */
+/** The reconciled stock overlay's confirmed-as-of time from the nearest ConnectorProvider, or undefined without one or when its connector has no `reconcile.stock` (the same gate `useProductStock` uses). */
 export function useStockOverlayAsOf(): string | undefined {
-  return useContext(StockOverlayContext).asOf;
+  const connector = useContext(ConnectorContext);
+  const { asOf } = useContext(StockOverlayContext);
+  return connector?.reconcile?.stock ? asOf : undefined;
 }
 
 /**

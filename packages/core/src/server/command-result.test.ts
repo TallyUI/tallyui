@@ -56,6 +56,10 @@ it.each([
   ['warnings[0].variantId', { ...applied, warnings: [{ ...warnings[1], variantId: '' }] }],
   ['warnings[0].quantity', { ...applied, warnings: [{ ...warnings[1], quantity: 1.5 }] }],
   ['warnings[0].quantity', { ...applied, warnings: [{ ...warnings[1], quantity: 0 }] }],
+  ['warnings[0].bridgeMinor', { ...applied, warnings: [{ ...warnings[0], bridgeMinor: 1.5 }] }],
+  ['warnings[0].bridgeMinor', { ...applied, warnings: [{ ...warnings[0], bridgeMinor: '5' }] }],
+  ['warnings[0].ratePpm', { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: -1, expectedMinor: 120, serverMinor: 100 }] }],
+  ['warnings[0].expectedMinor', { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: 200000, expectedMinor: 1.5, serverMinor: 100 }] }],
   ['error', { ...rejected, error: undefined }],
   ['error', { ...rejected, error: null }],
   ['error', { ...rejected, error: [] }],
@@ -98,14 +102,39 @@ it.each([null, [], 'text', 1, new Date()])('refuses non-object error.data and re
   expect(() => parseCommandResult({ ...applied, register: value })).toThrow('Invalid register')
 })
 
+it('round-trips a total_mismatch with bridgeMinor', () => {
+  const value = { ...applied, warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: 5 }] }
+  expect(parseCommandResult(value)).toEqual(value)
+})
+
+it('round-trips a tax_rate_mismatch, including through JSON', () => {
+  const value = { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: 200000, expectedMinor: 120, serverMinor: 100 }] }
+  expect(parseCommandResult(value)).toEqual(value)
+  expect(parseCommandResult(JSON.parse(JSON.stringify(value)))).toEqual(value)
+})
+
+it('accepts a tax_rate_mismatch with ratePpm: 0', () => {
+  const value = { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: 0, expectedMinor: 120, serverMinor: 100 }] }
+  expect(parseCommandResult(value)).toEqual(value)
+})
+
+it('accepts a null bridgeMinor and omits it from the output', () => {
+  const value = { ...applied, warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: null }] }
+  expect(parseCommandResult(value).warnings).toEqual([{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195 }])
+})
+
 it('drops unknown keys at every level without mutating the input', () => {
+  const moreWarnings = [
+    { code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: 5 },
+    { code: 'tax_rate_mismatch', ratePpm: 200000, expectedMinor: 120, serverMinor: 100 },
+  ]
   const value = {
     ...applied, extra: true,
     serverRefs: { ...serverRefs, extra: true },
-    warnings: warnings.map(warning => ({ ...warning, extra: true })),
+    warnings: [...warnings, ...moreWarnings].map(warning => ({ ...warning, extra: true })),
     error: { ...rejected.error, extra: true },
   }
-  expect(parseCommandResult(value)).toEqual({ ...applied, error: rejected.error })
+  expect(parseCommandResult(value)).toEqual({ ...applied, warnings: [...warnings, ...moreWarnings], error: rejected.error })
   expect(value.serverRefs.extra).toBe(true)
   expect(value.warnings.every(warning => warning.extra)).toBe(true)
 })

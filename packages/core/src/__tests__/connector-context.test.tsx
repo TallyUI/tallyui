@@ -152,6 +152,12 @@ describe('useStockOverlaid', () => {
     rerender();
     expect(result.current).toBe(first);
   });
+
+  it('returns the identical array when the overlay has no entry for any product', () => {
+    const overlay = new Map([['no-such-id', 9]]);
+    const { result } = renderHook(() => useStockOverlaid(stockDocs), { wrapper: stockWrapper(stockConnector(true), overlay) });
+    expect(result.current).toBe(stockDocs);
+  });
 });
 
 describe('useStockOverlayAsOf', () => {
@@ -166,5 +172,13 @@ describe('useStockOverlayAsOf', () => {
       wrapper: stockWrapper(stockConnector(true), new Map([['p1', 9]]), asOf),
     });
     expect(result.current).toBe(asOf);
+  });
+
+  it('is undefined when the connector has no reconcile.stock', () => {
+    const asOf = '2026-09-29T00:00:00.000Z';
+    const { result } = renderHook(() => useStockOverlayAsOf(), {
+      wrapper: stockWrapper(stockConnector(false), new Map([['p1', 9]]), asOf),
+    });
+    expect(result.current).toBeUndefined();
   });
 });
