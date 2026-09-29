@@ -74,7 +74,7 @@ async function writeOverStaleCopies(collection: RxCollection, from: RxStorageIns
  * stopped and closes the collection, so the app can surface the error and open again; it never
  * deletes an order.
  *
- * RxDB 16.21 trusts the status its last migration stored: a leftover `ERROR` rejects
+ * RxDB 17.5.0 trusts the status its last migration stored: a leftover `ERROR` rejects
  * `migratePromise` at once while the migration keeps running (a close then interrupts it), and a
  * `DONE` left before a rollback resolves it before the older version's new orders have moved. So the
  * collection is added without `autoMigrate`, the status and a failed run's checkpoint are reset
@@ -92,11 +92,11 @@ export async function addPosOrderCollection(db: RxDatabase, closeWaitMs = POS_OR
   // The reset below runs before RxDB elects which tab migrates, so a second tab could reset a
   // migration another tab is running. TallyUI is single-instance (ADR-061).
   if (db.multiInstance) throw new Error('addPosOrderCollection: multiInstance databases are not supported (ADR-061)');
-  // RxDB 16.21.1 sets the private `closePromise` as `close()` begins (rx-database.js:356), and that
-  // close may already have read `db.onClose` (:381), so it would not wait for this open.
+  // RxDB 17.5.0 sets the private `closePromise` as `close()` begins (rx-database.js:447), and that
+  // close may already have read `db.onClose` (:473-476), so it would not wait for this open.
   if (db.closed || (db as unknown as { closePromise: unknown }).closePromise) throw new PosOrderOpenClosedError(db.name);
   // Registered before the first await. RxDB's close reads `db.onClose` once, when the database is
-  // idle (rx-database.js:381), and creating or removing a store doesn't keep it busy: a handler
+  // idle (rx-database.js:473-476), and creating or removing a store doesn't keep it busy: a handler
   // added after an await missed that close, which then closed storage under the open (2026-09-27).
   const previous = latestOpens.get(db);
   if (!previous) {
@@ -111,7 +111,7 @@ export async function addPosOrderCollection(db: RxDatabase, closeWaitMs = POS_OR
 async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefined): Promise<RxCollection<PosOrder>> {
   // Set once RxDB cancels this open's migration while it runs (see `startMigration` below).
   let cancelled = false;
-  // The backstop, after each await: `closed` is set only once every store is closed (rx-database.js:353).
+  // The backstop, after each await: `closed` is set only once every store is closed (rx-database.js:444).
   const closing = () => cancelled || closedUnderOpen.has(db) || db.closed;
   const stopIfClosing = () => { if (closing()) throw new PosOrderOpenClosedError(db.name); };
   const { pos_orders: collection } = await db.addCollections({ pos_orders: { ...posOrderCollection(), autoMigrate: false } });
@@ -121,15 +121,11 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     const mustMigrate = await state.mustMigrate;
     stopIfClosing();
     if (!mustMigrate) {
-      // RxDB 17 refuses writes (COL25) to a collection above version 0 from its creation until its
-      // own `migrationNeeded()` read (migration-schema's `createRxCollection` hook), not this one,
-      // finds nothing to migrate. That promise is not exposed, and on the worker storage it answers
-      // later, so a sale saved straight after the open failed (e2e). So wait until RxDB clears the
-      // block, for at most 500 macrotasks (a close ends the wait sooner).
-      for (let tries = 0; collection.migrationInProgress && tries < 500; tries++) {
-        await new Promise((resolve) => setTimeout(resolve, 1));
-        stopIfClosing();
-      }
+      // RxDB 17 blocks writes (COL25) from collection creation until its own `migrationNeeded()` read.
+      // With nothing to migrate, `startMigration()` sets and clears that block on the same memoised `mustMigrate`,
+      // as `migratePromise()` does for `autoMigrate` (rx-collection.js:939-941), so the open resolves only once writes are allowed.
+      await state.startMigration();
+      stopIfClosing();
       return collection;
     }
     // Never reset a still-settling earlier attempt's checkpoint out from under it: each new
@@ -174,14 +170,14 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     // deleted a pos_orders document, its stale copy would win (17.5.0) or RxDB would loop on it (earlier).
     const settled = new Subject<void>();
     // Once the close stops waiting it closes this version's store and the internal store while RxDB's
-    // migration runs on (rx-database.js:381-385). A write called on a closed SQLite instance throws
+    // migration runs on (rx-database.js:476-485). A write called on a closed SQLite instance throws
     // inside its transaction and poisons every later write on the handle until restart (rxdb-premium
     // bug 6, which still reproduces on 17.5.0, repro 2026-09-29), while its close waits for a write called before it (sqlite-storage-instance.js `close`,
     // openWriteCount$; reproduced). So from the moment the close gives up, before it closes any store,
     // the run's reads and writes of those two stores stop here. A refused one of this version rejects
     // the run's push, which RxDB catches as a replication error (upstream.js:372), so the run ends in
     // ERROR. Status writes are dropped instead: RxDB never awaits the per-order ones
-    // (rx-migration-state.js:274-278), so a rejection there would be unhandled.
+    // (rx-migration-state.js:357-362), so a rejection there would be unhandled.
     // Every call a gate lets through that returns a promise is counted until it settles, so a cancelled
     // open (below) settles only once none of the run's calls can still reach a store the close closes.
     let inFlight = 0;
@@ -206,8 +202,12 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     state.database = new Proxy(db, { get: (target, key) => (key === 'internalStore' ? internalStore : Reflect.get(target, key)) });
     const migrateStorage = state.migrateStorage.bind(state);
     state.migrateStorage = async (from, current, batchSize) => {
+      stopIfClosing();
+      // RxDB 17.5 sets `canceled` but never reads it, so a cancelled run would otherwise still
+      // create a checkpoint store and a replication after `cancel()` returned.
       const to = gate(current, () => Promise.reject(new PosOrderOpenClosedError(db.name)));
       if (from.collectionName === collection.name) await writeOverStaleCopies(collection, from, to, stopIfClosing);
+      stopIfClosing();
       return migrateStorage(new Proxy(from, { get: (target, key) => {
         const value = key === 'changeStream' ? () => target.changeStream().pipe(takeUntil(settled)) : Reflect.get(target, key);
         return typeof value === 'function' ? value.bind(target) : value;
@@ -225,7 +225,8 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     // below closes the collection) changes nothing.
     // This assumes 17.5's `cancel()` comes only from the close hooks. RxDB 16.x also calls it at the
     // end of a successful run, while `running` is still true: the gates would then drop its last
-    // writes and pos_orders would never open, so @tallyui/pos requires rxdb >=17.5.0 <18.
+    // writes and pos_orders would never open. The wrapper depends on 17.5's `cancel()` and `startMigration()`
+    // behaviour, which changed within a minor release before, so @tallyui/pos requires rxdb ~17.5.0.
     let running = true;
     let onCancel!: () => void;
     const cancelledRun = new Promise<void>((resolve) => { onCancel = resolve; });

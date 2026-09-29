@@ -267,6 +267,8 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
     const reachedWrite = new Promise<void>((resolve) => { reached = resolve; });
     hold = { reached, released: new Promise<void>((resolve) => { release = resolve; }) };
     const opening = addPosOrderCollection(db).then(() => 'resolved', (e) => e.code);
+    let settledOpen = false;
+    opening.finally(() => { settledOpen = true; }).catch(() => {});
     await reachedWrite;
     // Pushed after RxDB's own cancel hook, and every `onClose` handler starts at once: once this one runs, the run is cancelled.
     let cancelling!: () => void;
@@ -274,6 +276,8 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
     db.onClose.push(async () => cancelling());
     const closing = db.close();
     await cancelled;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(settledOpen).toBe(false);
     release();
     await closing;
     const first = { outcome: await opening, ...(await stored()).ids };

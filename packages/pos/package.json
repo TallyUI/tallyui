@@ -34,7 +34,7 @@
   "peerDependencies": {
     "@tallyui/core": "workspace:^",
     "react": ">=18",
-    "rxdb": ">=17.5.0 <18",
+    "rxdb": "~17.5.0",
     "rxjs": ">=7"
   },
   "devDependencies": {

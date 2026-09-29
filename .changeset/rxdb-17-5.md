@@ -16,7 +16,7 @@ RxDB 17.5.0.
   - Its `rxdb-premium` peer is now `17.5.0`. Apps install `rxdb-premium@17.5.0` together with `rxdb@17.5.0`.
   - Its storages set RxDB 17's premium flag at import and when called, so the 13-collection cap never applies.
 - **`@tallyui/pos`:**
-  - Its `rxdb` peer is now `>=17.5.0 <18`.
+  - Its `rxdb` peer is now `~17.5.0`.
   - Opening `pos_orders` rejects with `PosOrderOpenClosedError` when the database closes during a migration: RxDB 17.5.0 cancels the migration on close. The open first waits for any write already in flight, so none reaches a closed store.
   - An open that needs no migration resolves only once RxDB allows writes, so a sale saved straight after it is never refused with COL25.
 - **`@tallyui/database`:**
