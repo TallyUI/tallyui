@@ -1027,7 +1027,10 @@ interface OrderCreatePayload {
   `{ code: 'total_mismatch'; expectedMinor; serverMinor } | { code: 'insufficient_stock'; variantId: string; quantity: number }`.
   Clients must ignore warning codes they don't know. From now on, adding a
   warning code is additive and needs only an ADR. Changing an existing
-  shape still needs a `version` bump.
+  shape still needs a `version` bump; adding an optional field is not a
+  change. ADR-048's amendment (2026-09-29) adds `total_mismatch.bridgeMinor`
+  and `tax_rate_mismatch`, and the till's `knownWarnings()` enforces this
+  rule.
 - **Server semantics adopted from the A-track proposal:**
   - A `409 in_progress` stops the batch at that command. The response is
     HTTP 409 `{ code: 'in_progress', id }`. The client retries the whole
@@ -1463,6 +1466,35 @@ interface OrderCreatePayload {
   - A surcharge far above the guard means the POS and Vendure disagree
     about rates. The warning makes that visible, and the order is still
     recorded (ADR-038: the ledger records facts).
+- **Amendment (2026-09-29, spike S1; Front desk ruling):** the Vendure
+  plugin's warnings, as spike S1 emits them. Both are additive under
+  ADR-039's warning rule (no `version` bump): a new code, and a new
+  *optional* field that a till which doesn't know it never reads. Neither
+  ever rejects a sale.
+  - `total_mismatch` gains an optional `bridgeMinor`. It is present if and
+    only if the plugin added the `TALLY-ROUNDING` surcharge, and the warning
+    is emitted only then. `bridgeMinor = expectedMinor − serverMinor`,
+    signed, in minor units, where `expectedMinor` is the till's
+    `totalMinor` and `serverMinor` is Vendure's `totalWithTax` **before**
+    the surcharge.
+  - A new code, `tax_rate_mismatch`:
+    `{ code: 'tax_rate_mismatch'; ratePpm; expectedMinor; serverMinor }`,
+    for `order.create` version 3 only. It is emitted **once per rate**
+    whose |`expectedMinor` − `serverMinor`| exceeds the tolerance
+    T = ⌈(lines + surcharges) / 2⌉ minor units, and never carries several
+    rates. `expectedMinor` is the till's `taxByRate[].taxMinor` for that
+    rate, and `serverMinor` is that rate's tax in Vendure's `taxSummary`.
+  - Across spike S1's 12 tax cases (2 strategies × 2 pricing modes, with
+    discounts, mixed rates and a negative tie), the largest per-rate
+    difference was 1 and the largest bridge was 1.
+  - **The till ignores warning codes it does not know** (TallyUI #207).
+    `knownWarnings()` in `@tallyui/core` is the till's single reader of
+    stored warnings: it keeps only known codes with well-formed fields, and
+    `needsAttention` and the orders list read through it. Stored results
+    keep every warning exactly as the server sent it, so a newer till can
+    still show a warning an older one skipped. Before #207, the orders
+    list rendered any code other than `insufficient_stock` as a store
+    total.
 
 ## ADR-049 Vendure connector conventions
 
