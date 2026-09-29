@@ -1023,6 +1023,13 @@ interface OrderCreatePayload {
           strings get the same 255 bound and NUL check in
           `fiscalFiguresErrors`. A length rule tightened later must never
           turn an applied command's resend into `invalid_payload`;
+        - the till freezes the sent form when it stores the order (Front
+          desk, 2026-09-29, reversing #222's rule): a line name or
+          discount label is cut to 255 characters with NUL stripped, and
+          a customer email or id the shape check would refuse is left
+          out. The envelope sends the stored values unchanged, so every
+          resend is byte-identical, and an order stored by an older till
+          is sent exactly as that till sent it;
         - on the Vendure plugin, a future bound on `payload.createdAt`
           (Vendure's `tallySaleAt`). It may be at most 24 hours ahead of
           the server's clock. There is no lower bound, because an offline

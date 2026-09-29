@@ -1,7 +1,7 @@
 import { minorUnitDigits, type ServerCapabilities } from '@tallyui/core';
 import type { Order } from '../order/types';
 import { taxLinesByRate } from '../tax/exact';
-import { cutText, PAYLOAD_STRING_MAX } from './command';
+import { cutText, PAYLOAD_STRING_MAX, sendable } from './command';
 import type { PosOrder, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -38,7 +38,11 @@ export function referenceReason(value: string | undefined): 'long' | 'nul' | nul
   return value.includes('\u0000') ? 'nul' : null;
 }
 
-/** Turns a fully paid builder Order into a pending PosOrder without mutating it. */
+/**
+ * Turns a fully paid builder Order into a pending PosOrder without mutating it. The PosOrder holds the sent form,
+ * frozen: line names and v3 discount labels are cut to PAYLOAD_STRING_MAX with NUL stripped (`cutText`), and a
+ * customer email or id the shape check would refuse is left out, so `toOrderCreateEnvelope` sends it unchanged.
+ */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
   if (!order.lineItems.length) throw new Error('finalize: no lines');
   // Defence in depth: the builder already clamps every discount to >= 0, so this should never fire.
@@ -85,7 +89,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const lines = order.lineItems.map((line) => ({
     id: newId(), productId: line.productId,
     ...(line.variantId !== undefined ? { variantId: line.variantId } : {}),
-    name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
+    name: cutText(line.name, PAYLOAD_STRING_MAX), sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
     discountMinor: line.discountMinor, netMinor: line.netMinor,
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
     ...(line.priceTaxModeConverted ? { taxInclusive: line.taxInclusive } : {}),
@@ -116,7 +120,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       lines: order.display.lines.map((line, i) => ({
         lineId: lines[i].id, amountMinor: line.amountMinor,
         discounts: line.discounts.map(({ discountId, label, amountMinor }) => ({
-          discountId, ...(label !== undefined ? { label } : {}), amountMinor,
+          discountId, ...(label !== undefined ? { label: cutText(label, PAYLOAD_STRING_MAX) } : {}), amountMinor,
         })),
       })),
     };
@@ -138,8 +142,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor,
     ...(display && taxByRate ? { display, taxByRate } : {}),
-    customer: order.customer ? { id: order.customer.id, name: order.customer.name,
-      ...(order.customer.email !== undefined ? { email: order.customer.email } : {}) } : null,
+    // An email or id order.create's shape check would refuse is left out; the name stays. Task #32 adds a localWarnings entry here.
+    customer: order.customer ? { ...(sendable(order.customer.id, 64) ? { id: order.customer.id } : {}), name: order.customer.name,
+      ...(sendable(order.customer.email, 254) ? { email: order.customer.email } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),
