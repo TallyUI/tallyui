@@ -6,7 +6,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandEnvelope, CommandResult, OrderCreateEnvelope, OrderCreatePayload } from '@tallyui/core';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder, posOrderCollection, toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
-import { createOrderOutbox, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
+import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS, STUCK_AFTER_MS, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
 import { outboxLogger } from './index';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -1044,5 +1044,248 @@ describe('order outbox', () => {
     expect(serverOrders.size).toBe(200);
     for (const input of orders) expect(serverOrders.get(input.commandId)).toEqual({ totalMinor: input.totalMinor, applications: 1 });
     expect(sendsAfterApply.size).toBe(0);
+  });
+});
+
+describe('order outbox isolation', () => {
+  const ids = (batch: OrderCreateEnvelope[]) => batch.map((command) => command.id);
+  const status = async (input: PosOrder) => (await collection.findOne(input.id).exec())?.syncStatus;
+  const fail = { kind: 'retry', reason: 'status_503' } as const;
+  // The store answers 503 for any batch holding `input`, and applies every other batch.
+  const failing = (input: PosOrder): CommandTransport<OrderCreateEnvelope>['send'] => async (batch) =>
+    batch.some((command) => command.id === input.commandId) ? fail : { kind: 'results', results: applied(batch) };
+
+  function timed() {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    const harness = setup();
+    const next = () => vi.advanceTimersByTimeAsync(harness.states.at(-1)!.nextAttemptAt! - Date.now());
+    return { ...harness, next };
+  }
+
+  it('isolates an order the store keeps failing, and the orders around it apply', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states, next } = timed();
+    send.mockImplementation(failing(inputs[1]));
+    await outbox.flush();
+    // The fifth failure starts the walk; its first probe goes one backoff interval later.
+    for (let i = 1; i <= ISOLATE_AFTER_ATTEMPTS; i++) await next();
+    const all = inputs.map((input) => input.commandId);
+    expect(send.mock.calls.map(([batch]) => ids(batch)))
+      .toEqual([...Array(ISOLATE_AFTER_ATTEMPTS).fill(all), [all[0]], [all[1]], [all[2]]]);
+    expect([await status(inputs[0]), await status(inputs[1]), await status(inputs[2])]).toEqual(['applied', 'pending', 'applied']);
+    expect(states.at(-1)).toMatchObject({ pending: 1, sending: false, lastRetryReason: 'status_503', nextAttemptAt: Date.now() + 1000 });
+    // Retried alone on its own backoff, while later sales are batched without it.
+    await next();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual([all[1]]);
+    expect(states.at(-1)?.nextAttemptAt).toBe(Date.now() + 2000);
+    const later = [order(3), order(4)];
+    await collection.bulkInsert(later);
+    await outbox.flush();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual(later.map((input) => input.commandId));
+    await next();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual([all[1]]);
+    expect([await status(inputs[1]), await status(later[0]), await status(later[1])]).toEqual(['pending', 'applied', 'applied']);
+    expect(states.some((state) => state.stuck)).toBe(false);
+  });
+
+  it('flags an isolated order as stuck after STUCK_AFTER_MS, and clears it when the store applies it', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states, next } = timed();
+    send.mockImplementation(failing(inputs[1]));
+    await outbox.flush();
+    while (Date.now() < epoch + STUCK_AFTER_MS - 60_000) await next();
+    expect(states.some((state) => state.stuck)).toBe(false);
+    while (Date.now() < epoch + STUCK_AFTER_MS + 60_000) await next();
+    expect(states.at(-1)?.stuck).toEqual({ commandIds: [inputs[1].commandId], since: epoch, reason: 'status_503' });
+    expect(await status(inputs[1])).toBe('pending');
+    // An offline attempt clears the flag, and the clock starts again at the next 503.
+    send.mockResolvedValueOnce({ kind: 'retry', reason: 'network' });
+    await next();
+    expect(states.at(-1)).toMatchObject({ stuck: undefined, lastRetryReason: 'network' });
+    await next();
+    const restarted = Date.now();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual([inputs[1].commandId]);
+    expect(states.at(-1)?.stuck).toBeUndefined();
+    while (Date.now() < restarted + STUCK_AFTER_MS - 60_000) await next();
+    expect(states.at(-1)?.stuck).toBeUndefined();
+    while (Date.now() < restarted + STUCK_AFTER_MS) await next();
+    expect(states.at(-1)?.stuck).toEqual({ commandIds: [inputs[1].commandId], since: restarted, reason: 'status_503' });
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
+    await next();
+    expect(await status(inputs[1])).toBe('applied');
+    expect(states.at(-1)).toMatchObject({ pending: 0, stuck: undefined, nextAttemptAt: undefined });
+    const later = [order(3), order(4)];
+    await collection.bulkInsert(later);
+    await outbox.flush();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual(later.map((input) => input.commandId));
+    expect(await status(later[1])).toBe('applied');
+  });
+
+  it('a lone order the store keeps failing is not isolated, and is flagged at STUCK_AFTER_MS', async () => {
+    const lone = order(0);
+    await collection.insert(lone);
+    const { outbox, send, states, next } = timed();
+    send.mockImplementation(failing(lone));
+    await outbox.flush();
+    while (Date.now() < epoch + STUCK_AFTER_MS - 60_000) await next();
+    expect(states.some((state) => state.stuck)).toBe(false);
+    while (Date.now() < epoch + STUCK_AFTER_MS) await next();
+    expect(states.at(-1)?.stuck).toEqual({ commandIds: [lone.commandId], since: epoch, reason: 'status_503' });
+    // Not isolated: a new sale is batched behind it, and fails with it.
+    const later = order(1);
+    await collection.insert(later);
+    await outbox.flush();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual([lone.commandId, later.commandId]);
+    expect(states.at(-1)?.stuck).toEqual({ commandIds: [lone.commandId, later.commandId], since: epoch, reason: 'status_503' });
+  });
+
+  it('an outage: no isolation, one request per backoff interval honouring Retry-After, the head batch flagged, then recovery', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states, next } = timed();
+    const times: number[] = [];
+    send.mockImplementation(async () => { times.push(Date.now()); return { ...fail, retryAfterMs: 30_000 }; });
+    await outbox.flush();
+    while (Date.now() < epoch + STUCK_AFTER_MS - 60_000) await next();
+    expect(Date.now()).toBeLessThan(epoch + STUCK_AFTER_MS);
+    expect(states.some((state) => state.stuck)).toBe(false);
+    while (Date.now() < epoch + STUCK_AFTER_MS + 60_000) await next();
+    // Each gap is the outbox's backoff (1 s doubling, capped at 60 s), floored at Retry-After's 30 s.
+    const gaps = times.slice(1).map((time, i) => time - times[i]);
+    expect(gaps).toEqual(gaps.map((_, i) => Math.min(Math.max(30_000, 1000 * 2 ** i), 60_000)));
+    // Five batches, then one probe per interval through the batch; all fail, so batching resumes.
+    const all = inputs.map((input) => input.commandId);
+    const cycle = [...Array(ISOLATE_AFTER_ATTEMPTS).fill(all), [all[0]], [all[1]], [all[2]]];
+    expect(send.mock.calls.map(([batch]) => ids(batch))).toEqual(times.map((_, i) => cycle[i % cycle.length]));
+    expect(states.at(-1)?.stuck).toEqual({ commandIds: all, since: epoch, reason: 'status_503' });
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
+    for (let i = 0; i < 5 && states.at(-1)!.pending; i++) await next();
+    expect(await Promise.all(inputs.map(status))).toEqual(['applied', 'applied', 'applied']);
+    expect(states.at(-1)).toMatchObject({ pending: 0, stuck: undefined, nextAttemptAt: undefined });
+  });
+
+  it('when the head order is the bad one, the probe moves past it: the others apply and it is isolated', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states, next } = timed();
+    const times: number[] = [];
+    const bad = failing(inputs[0]);
+    send.mockImplementation(async (batch) => { times.push(Date.now()); return bad(batch); });
+    await outbox.flush();
+    for (let i = 0; i < ISOLATE_AFTER_ATTEMPTS + 1; i++) await next();
+    const all = inputs.map((input) => input.commandId);
+    expect(send.mock.calls.map(([batch]) => ids(batch)))
+      .toEqual([...Array(ISOLATE_AFTER_ATTEMPTS).fill(all), [all[0]], [all[1]], [all[2]]]);
+    // The second probe waits one interval after the failed first; the third goes at once.
+    const interval = 2 ** ISOLATE_AFTER_ATTEMPTS * 1000;
+    expect(times.slice(-3).map((time) => time - times.at(-3)!)).toEqual([0, interval, interval]);
+    expect(await Promise.all(inputs.map(status))).toEqual(['pending', 'applied', 'applied']);
+    expect(states.at(-1)).toMatchObject({ pending: 1, lastRetryReason: 'status_503' });
+    await next();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual([all[0]]);
+    const later = order(3);
+    await collection.insert(later);
+    await outbox.flush();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual([later.commandId]);
+    expect(await status(later)).toBe('applied');
+  });
+
+  it('a network failure during the walk stops it and schedules the usual retry', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states, next } = timed();
+    for (let i = 0; i < ISOLATE_AFTER_ATTEMPTS; i++) send.mockResolvedValueOnce(fail);
+    send.mockResolvedValueOnce({ kind: 'retry', reason: 'network' });
+    await outbox.flush();
+    while (send.mock.calls.length < ISOLATE_AFTER_ATTEMPTS + 1) await next();
+    expect(send).toHaveBeenCalledTimes(ISOLATE_AFTER_ATTEMPTS + 1);
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual([inputs[0].commandId]);
+    expect(states.at(-1)).toMatchObject({ pending: 3, lastRetryReason: 'network' });
+    await next();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual(inputs.map((input) => input.commandId));
+    expect(states.at(-1)).toMatchObject({ pending: 0 });
+  });
+
+  it('a sale inserted while a run ends waiting on an isolated order is sent at once', async () => {
+    const inputs = [order(0), order(1)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, next } = timed();
+    send.mockImplementation(failing(inputs[0]));
+    outbox.start();
+    await vi.advanceTimersByTimeAsync(0);
+    while (send.mock.calls.length < ISOLATE_AFTER_ATTEMPTS + 2) await next();
+    expect(await status(inputs[1])).toBe('applied');
+    // The race of 'sends a sale inserted while the pending read is in flight', on the batch read.
+    const raced = order(2);
+    const query = collection.storageInstance.query.bind(collection.storageInstance);
+    let armed = true;
+    vi.spyOn(collection.storageInstance, 'query').mockImplementation(async (prepared) => {
+      const result = await query(prepared);
+      if (armed && JSON.stringify(prepared.query.selector).includes('$nin')) { armed = false; await collection.insert(raced); }
+      return result;
+    });
+    const before = Date.now();
+    await next();
+    expect(armed).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(Date.now() - before).toBe(1000);
+    expect(ids(send.mock.calls.at(-2)![0])).toEqual([inputs[0].commandId]);
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual([raced.commandId]);
+    expect(await status(raced)).toBe('applied');
+  });
+
+  it('offline never counts toward isolation or stuck', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states, next } = timed();
+    send.mockResolvedValue({ kind: 'retry', reason: 'network' });
+    await outbox.flush();
+    while (Date.now() < epoch + STUCK_AFTER_MS + 5 * 60_000) await next();
+    expect(send.mock.calls.length).toBeGreaterThan(ISOLATE_AFTER_ATTEMPTS * 2);
+    for (const [batch] of send.mock.calls) expect(ids(batch)).toEqual(inputs.map((input) => input.commandId));
+    expect(states.some((state) => state.stuck)).toBe(false);
+    expect(states.at(-1)).toMatchObject({ pending: 3, lastRetryReason: 'network' });
+  });
+
+  it('a failure that comes back with results that apply resets the count', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, next } = timed();
+    for (let i = 0; i < ISOLATE_AFTER_ATTEMPTS - 1; i++) send.mockResolvedValueOnce(fail);
+    // Progress that keeps the same head: the store applies only the last order of the batch.
+    send.mockImplementationOnce(async (batch) => ({ kind: 'results', results: applied(batch).slice(-1) }));
+    for (let i = 0; i < ISOLATE_AFTER_ATTEMPTS - 1; i++) send.mockResolvedValueOnce(fail);
+    await outbox.flush();
+    while (send.mock.calls.length < 2 * ISOLATE_AFTER_ATTEMPTS - 1) await next();
+    expect(send.mock.calls.every(([batch]) => batch[0].id === inputs[0].commandId && batch.length > 1)).toBe(true);
+    expect(await status(inputs[2])).toBe('applied');
+    // The fifth failure since the progress starts the walk, as the bound says: probe 1 fails, probe 2 applies.
+    send.mockResolvedValueOnce(fail).mockResolvedValueOnce(fail);
+    for (let i = 0; i < 3; i++) await next();
+    expect(send.mock.calls.slice(-3).map(([batch]) => ids(batch)))
+      .toEqual([[inputs[0].commandId, inputs[1].commandId], [inputs[0].commandId], [inputs[1].commandId]]);
+    expect([await status(inputs[0]), await status(inputs[1])]).toEqual(['pending', 'applied']);
+  });
+
+  it('a new head order restarts the count', async () => {
+    const inputs = [order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, next } = timed();
+    send.mockResolvedValue(fail);
+    await outbox.flush();
+    for (let i = 1; i < ISOLATE_AFTER_ATTEMPTS - 1; i++) await next();
+    // An older sale now heads the batch.
+    const older = order(0);
+    await collection.insert(older);
+    for (let i = 0; i < ISOLATE_AFTER_ATTEMPTS - 1; i++) await next();
+    expect(send).toHaveBeenCalledTimes(2 * ISOLATE_AFTER_ATTEMPTS - 2);
+    expect(send.mock.calls.every(([batch]) => batch.length > 1)).toBe(true);
+    // The fifth failure with the new head starts the walk: one probe per interval, all failing, so batching resumes.
+    for (let i = 0; i < 5; i++) await next();
+    const all = [older, ...inputs].map((input) => input.commandId);
+    expect(send.mock.calls.slice(-5).map(([batch]) => ids(batch))).toEqual([all, [all[0]], [all[1]], [all[2]], all]);
   });
 });

@@ -7,6 +7,7 @@ import type { AnyCommandEnvelope, CommandError, CommandResult, RegisterCommandEn
 import { posOrderCollection, uuidv7, type PosOrder } from '../pos-order';
 import { registerCommandCollection, registerCommandsLogger, type RegisterCommand } from '../register/register-commands';
 import { readFresh } from '../rxdb';
+import { ISOLATE_AFTER_ATTEMPTS } from './order-outbox';
 import { createRegisterOutbox, type RegisterOutbox, type RegisterOutboxOptions } from './register-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -289,6 +290,20 @@ describe('register outbox', () => {
     await outbox.flush();
     expect(send).toHaveBeenCalledTimes(2);
     expect(states.at(-1)?.pending).toBe(0);
+  });
+
+  it('the register outbox never isolates', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    const inputs = [command(1), command(2), command(3)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue({ kind: 'retry', reason: 'status_503' });
+    await outbox.flush();
+    for (let i = 0; i < ISOLATE_AFTER_ATTEMPTS + 2; i++) await vi.advanceTimersByTimeAsync(states.at(-1)!.nextAttemptAt! - Date.now());
+    expect(send.mock.calls.map(([batch]) => batch.map(({ id }) => id)))
+      .toEqual(Array(ISOLATE_AFTER_ATTEMPTS + 3).fill(inputs.map(({ commandId }) => commandId)));
+    expect(states.some((state) => state.stuck)).toBe(false);
   });
 
   it('retry behaves as the order outbox', async () => {

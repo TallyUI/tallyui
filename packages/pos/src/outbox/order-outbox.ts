@@ -13,6 +13,15 @@ const AUTH_FAILURES_BEFORE_PROMPT = 3;
 // command id could duplicate it, so requeue() leaves these for manual reconciliation.
 const NOT_REQUEUEABLE = new Set(['idempotency_mismatch']);
 
+// After this many consecutive failures the store answered (not offline) with the same head order and
+// no progress, that batch is probed one order at a time, so an order the store can't take holds up only
+// itself. With the default backoff the first probe goes after about 30 s: sales keep flowing within minutes.
+export const ISOLATE_AFTER_ATTEMPTS = 5;
+
+// The head batch, or an isolated order, still failing server-answered this long after its failures began
+// is flagged in OutboxState.stuck. It stays pending and keeps retrying.
+export const STUCK_AFTER_MS = 15 * 60_000;
+
 export interface OrderOutboxOptions {
   collection: RxCollection<PosOrder>;
   transport: CommandTransport<OrderCreateEnvelope>;
@@ -24,6 +33,10 @@ export interface OrderOutboxOptions {
   maxBackoffMs?: number;
   random?: () => number;
   now?: () => number;
+  /** Tests only: overrides ISOLATE_AFTER_ATTEMPTS. */
+  isolateAfterAttempts?: number;
+  /** Tests only: overrides STUCK_AFTER_MS. */
+  stuckAfterMs?: number;
 }
 
 export interface OrderOutbox {
@@ -56,32 +69,120 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   let stopped = false;
   let insertedDuringRun = false;
   let stoppedDuringRun = false;
+  const isolateAfter = options.isolateAfterAttempts ?? ISOLATE_AFTER_ATTEMPTS;
+  const stuckAfter = options.stuckAfterMs ?? STUCK_AFTER_MS;
+  // In memory only: a restart starts the counts again. `head` is the batch at the front of the queue
+  // while the store keeps failing it: its orders, the failure count (by head order), when the failures
+  // began and the latest reason (both unset after an offline attempt, which never flags an order).
+  let head: { ids: string[]; count: number; since?: number; seq: number; reason?: string } | undefined;
+  // After `isolateAfter` failures the head batch is walked: its orders are sent alone, in order. Until one
+  // makes progress the store may be down, so one probe per backoff interval; then the rest go at once.
+  let walk: { ids: string[]; failed: Map<string, string>; since: number; proven: boolean } | undefined;
+  // An isolated order is retried alone on its own backoff while it stays pending under its commandId.
+  const isolated = new Map<string, { since: number; seq: number; reason?: string; backoff: number; nextAt: number }>();
+  let isolatedWait = false;
+  let failureSeq = 0; // numbers failures, so `stuck` can name the latest reason
+  let runProgressed = false;
+
+  function stuckState(): OutboxState['stuck'] {
+    const failing = [...isolated].filter(([, entry]) => entry.reason)
+      .map(([id, { since, seq, reason }]) => ({ ids: [id], since, seq, reason }));
+    if (head?.reason && head.since !== undefined) failing.push({ ids: head.ids, since: head.since, seq: head.seq, reason: head.reason });
+    const stuck = failing.filter((entry) => now() - entry.since >= stuckAfter);
+    if (!stuck.length) return undefined;
+    return { commandIds: [...new Set(stuck.flatMap((entry) => entry.ids))], since: Math.min(...stuck.map((entry) => entry.since)),
+      reason: stuck.reduce((latest, entry) => (entry.seq > latest.seq ? entry : latest)).reason! };
+  }
+
+  // An isolated order is due once its backoff has passed, or when the clock was set back further than any backoff.
+  function isDue(id: string) {
+    const entry = isolated.get(id);
+    return !!entry && (entry.nextAt <= now() || entry.nextAt - now() > maxBackoff);
+  }
 
   // Every read goes past RxDB's query cache: in RxDB 16.21.1 a sale inserted while a cached
   // query's read is in flight never reaches that query, and stayed unsent until a restart.
   async function updateState(patch: Partial<OutboxState> = {}) {
     const pending = await countFresh(collection, { syncStatus: 'pending' });
-    state$.next({ ...state$.value, ...patch, pending });
+    state$.next({ ...state$.value, ...patch, pending, stuck: stuckState() });
   }
 
-  function scheduleRetry(reason: string, retryAfterMs = 0) {
+  function isolate(id: string, reason: string, since: number, retryAfterMs = 0) {
+    const prior = isolated.get(id);
+    const entry = prior ?? { since, seq: 0, backoff: initialBackoff, nextAt: 0 };
+    const delay = Math.min(Math.max(retryAfterMs, entry.backoff * (0.9 + 0.2 * random())), maxBackoff);
+    isolated.set(id, { ...entry, since: prior && !prior.reason ? now() : entry.since, seq: ++failureSeq, reason,
+      backoff: Math.min(entry.backoff * 2, maxBackoff), nextAt: now() + delay });
+  }
+
+  // A failure the store answered (not offline). Returns undefined when the run goes on at once, or the
+  // floor for the retry: an isolated order's own backoff, or the store's Retry-After.
+  function serverFailed(orders: PosOrder[], alone: 'walk' | 'isolated' | undefined, reason: string, retryAfterMs = 0) {
+    const id = orders[0].commandId;
+    if (alone === 'isolated') {
+      isolate(id, reason, now(), retryAfterMs);
+      // Unless the store took something this run, it may be down: one request per backoff interval,
+      // except that a sale inserted during the run is still sent now, as without isolation.
+      return runProgressed || insertedDuringRun ? undefined : isolated.get(id)!.nextAt - now();
+    }
+    if (walk?.proven) {
+      walk.ids.shift();
+      isolate(id, reason, walk.since, retryAfterMs);
+      if (!walk.ids.length) walk = undefined;
+      return undefined;
+    }
+    const same = !!walk || head?.ids[0] === id;
+    head = { ids: walk && head ? head.ids : orders.map((order) => order.commandId), count: (same ? head?.count ?? 0 : 0) + (walk ? 0 : 1),
+      since: (same ? head?.since : undefined) ?? now(), seq: ++failureSeq, reason };
+    if (walk) {
+      walk.failed.set(id, reason);
+      walk.ids.shift();
+      // No probe made progress: the store is down, not one order. Isolate nothing; batch again, and walk
+      // again only after another `isolateAfter` failures.
+      if (!walk.ids.length) { walk = undefined; head.count = 0; }
+    } else if (head.count >= isolateAfter) walk = { ids: [...head.ids], failed: new Map(), since: head.since!, proven: false };
+    return retryAfterMs;
+  }
+
+  // `wait` arms the timer for an isolated order's own backoff, leaving the outbox's backoff alone.
+  function scheduleRetry(reason: string, retryAfterMs = 0, wait?: number) {
     state$.next({ ...state$.value, lastRetryReason: reason });
     if (stopped) { stoppedDuringRun = true; return; }
-    const delay = Math.min(Math.max(retryAfterMs, backoff * (0.9 + 0.2 * random())), maxBackoff);
-    backoff = Math.min(backoff * 2, maxBackoff);
+    const delay = wait ?? Math.min(Math.max(retryAfterMs, backoff * (0.9 + 0.2 * random())), maxBackoff);
+    if (wait === undefined) backoff = Math.min(backoff * 2, maxBackoff);
+    isolatedWait = wait !== undefined;
     timer = setTimeout(() => { timer = undefined; flush().catch(() => {}); }, delay);
     state$.next({ ...state$.value, sending: false, nextAttemptAt: now() + delay });
   }
 
   async function run() {
     stoppedDuringRun = false;
+    runProgressed = false;
+    const sentAlone = new Set<string>();
     while (!stopped) try {
       await updateState({ sending: true, nextAttemptAt: undefined });
       insertedDuringRun = false;
-      const orders = await readFresh(collection, {
-        selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }], limit: batchSize,
+      // An order no longer pending under its commandId leaves the walk and the isolated set.
+      const held = walk || isolated.size ? await readFresh(collection, { selector: { syncStatus: 'pending',
+        commandId: { $in: [...walk?.ids ?? [], ...isolated.keys()] } } }) : [];
+      for (const id of isolated.keys()) if (!held.some((order) => order.commandId === id)) isolated.delete(id);
+      if (walk) walk.ids = walk.ids.filter((id) => held.some((order) => order.commandId === id));
+      if (walk && !walk.ids.length) walk = undefined;
+      // A walk's next order alone; else a batch without the isolated orders; else a due isolated order alone (once per run).
+      const probe = walk && held.find((order) => order.commandId === walk!.ids[0]);
+      let orders = probe ? [probe] : await readFresh(collection, {
+        selector: { syncStatus: 'pending', ...(isolated.size ? { commandId: { $nin: [...isolated.keys()] } } : {}) },
+        sort: [{ createdAt: 'asc' }], limit: batchSize,
       });
-      if (!orders.length || stopped) { stoppedDuringRun = stopped; return; }
+      const retrying = !probe && !orders.length ? held.find((order) => isDue(order.commandId) && !sentAlone.has(order.commandId)) : undefined;
+      if (retrying) { orders = [retrying]; sentAlone.add(retrying.commandId); }
+      const alone = probe ? 'walk' : retrying ? 'isolated' : undefined;
+      if (!orders.length || stopped) {
+        if (stopped || !isolated.size) { stoppedDuringRun = stopped; return; }
+        if (insertedDuringRun) continue;
+        const next = [...isolated.values()].sort((a, b) => a.nextAt - b.nextAt)[0];
+        return scheduleRetry(next.reason ?? 'network', 0, Math.min(maxBackoff, Math.max(0, next.nextAt - now())));
+      }
       const batch = orders.map((order) => {
         const attempt = (attempts.get(order.commandId) ?? 0) + 1;
         attempts.set(order.commandId, attempt);
@@ -91,7 +192,16 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       let batchMax: number | undefined;
       let capabilitiesRefreshed = false;
       if (outcome.kind === 'retry') {
-        return scheduleRetry(outcome.reason, outcome.retryAfterMs);
+        let floor = outcome.retryAfterMs;
+        if (outcome.reason === 'network') {
+          // Offline neither counts nor resets the count, but it ends a walk, and the stuck clock
+          // starts again at the next failure the store answers.
+          if (head) head = { ...head, since: undefined, reason: undefined };
+          walk = undefined;
+          const entry = alone === 'isolated' && isolated.get(orders[0].commandId);
+          if (entry) entry.reason = undefined;
+        } else if ((floor = serverFailed(orders, alone, outcome.reason, outcome.retryAfterMs)) === undefined) continue;
+        return scheduleRetry(outcome.reason, floor);
       }
       if (outcome.kind === 'unauthorized') {
         unauthorizedSinceAccepted++;
@@ -176,10 +286,24 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           : { syncStatus: 'applied', serverRefs: result.serverRefs,
             ...(result.warnings ? { warnings: result.warnings } : {}), updatedAt });
         attempts.delete(order.commandId);
+        isolated.delete(order.commandId);
         progressed = true;
         await updateState();
       }
-      if (!progressed) return scheduleRetry('no_progress');
+      if (!progressed) {
+        const floor = serverFailed(orders, alone, 'no_progress');
+        if (floor === undefined) continue;
+        return scheduleRetry('no_progress', floor);
+      }
+      runProgressed = true;
+      if (alone !== 'isolated') head = undefined;
+      if (walk && alone === 'walk') {
+        // The store took a probe, so it is up: earlier failed probes are isolated and the rest go at once.
+        walk.ids.shift();
+        if (!walk.proven) for (const [id, reason] of walk.failed) isolate(id, reason, walk.since);
+        walk.proven = true;
+        if (!walk.ids.length) walk = undefined;
+      }
       backoff = initialBackoff;
       state$.next({ ...state$.value, lastRetryReason: downgraded ? 'downgraded' : undefined });
     } catch (error) {
@@ -197,7 +321,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     running = Promise.resolve().then(run).finally(async () => {
       try { await updateState({ sending: false }); } catch {}
       running = undefined;
-      if ((insertedDuringRun || stoppedDuringRun) && !stopped && timer === undefined) flush().catch(() => {});
+      // A sale inserted while only isolated orders wait goes now, not on their backoff.
+      if ((insertedDuringRun || stoppedDuringRun) && !stopped && (timer === undefined || insertedDuringRun && isolatedWait)) flush().catch(() => {});
     });
     return running;
   }

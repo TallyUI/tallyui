@@ -19,4 +19,7 @@ export interface OutboxState {
   authRequired?: boolean;
   /** Set when the server refused a whole batch (HTTP 400, 403, 413, 415, 422). No order is changed; sending pauses until the next flush(). */
   refused?: { status: number; reason: string };
+  /** Set while the store (not offline) has kept failing the head batch, or an isolated order, for 15 minutes. Those
+   * orders stay pending and keep retrying. `since` is the earliest start of their failures; `reason` the latest. */
+  stuck?: { commandIds: string[]; since: number; reason: string };
 }
