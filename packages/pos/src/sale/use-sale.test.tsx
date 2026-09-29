@@ -77,6 +77,23 @@ async function withOpenSession() {
 }
 
 describe('sale', () => {
+  it('setCustomer is refused while the sale is locked', async () => {
+    let saved!: () => void;
+    const customer = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: () => new Promise<void>((resolve) => { saved = resolve; }) }));
+    addSaleLines(result);
+    act(() => result.current.setCustomer(customer));
+    act(() => result.current.startTender('external'));
+    let completion!: Promise<void>;
+    act(() => { completion = result.current.complete(); });
+    expect(result.current.saving).toBe(true);
+    act(() => result.current.setCustomer(null));
+    expect(result.current.order.customer).toEqual(customer);
+    act(() => result.current.setCustomer({ id: 'other', name: 'Other' }));
+    expect(result.current.order.customer).toEqual(customer);
+    await act(async () => { saved(); await completion; });
+  });
+
   it('merges variants and displays builder quantities, unit prices, line totals and order totals', () => {
     const { result } = renderSale(pricing);
     addSaleLines(result);
@@ -225,6 +242,26 @@ describe('sale', () => {
     expect(result.current.order.lineItems[0]).toMatchObject({ taxInclusive: true, taxLines: [expect.objectContaining({ ratePpm: 190000 })] });
     expect(result.current.order.totalMinor).toBe(1000);
     expect(result.current.order.taxMinor).toBe(160); // 1000 × 19/119, rounded
+  });
+
+  it('a settings change on an idle cart keeps the customer', () => {
+    const customer = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+    let current: PricingSettings = pricing;
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProviderProps(current)}>{children}</TaxProvider>;
+    }
+    const { result, rerender } = renderHook(() => useSale(current, saleOpts()), { wrapper: Wrapper });
+    act(() => result.current.setCustomer(customer));
+    for (const next of [{ ...pricing, pricesIncludeTax: true }, { ...pricing, currency: 'USD' }]) {
+      const previousId = result.current.order.id;
+      current = next;
+      rerender();
+      expect(result.current.idle).toBe(true);
+      expect(result.current.order.id).not.toBe(previousId);
+      expect(result.current.order.currency).toBe(current.currency);
+      expect(result.current.order.pricesIncludeTax).toBe(current.pricesIncludeTax);
+      expect(result.current.order.customer).toEqual(customer);
+    }
   });
 
   it('holds new tax settings while a card sale is in progress: it completes on the old ones, the next sale uses the new', async () => {
@@ -688,6 +725,34 @@ describe('complete() is idempotent for one tender', () => {
     act(() => { result.current.sale.add(entries[0], traits); result.current.sale.add(entries[1], traits); });
     act(() => result.current.sale.startTender('external'));
   }
+
+  it('setCustomer puts the customer on the order, and a new sale starts without it', async () => {
+    const customer = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+    for (const failsAfterSave of [false, true]) {
+      const { result, unmount, completed, stored } = await renderWithOutbox({ after: failsAfterSave ? 1 : 0 });
+      try {
+        act(() => result.current.sale.setCustomer(customer));
+        expect(result.current.sale.order.customer).toEqual(customer);
+        act(() => result.current.sale.setCustomer(null));
+        expect(result.current.sale.order.customer).toBeNull();
+        act(() => result.current.sale.setCustomer(customer));
+        startCardSale(result);
+        await act(async () => { await result.current.sale.complete(); });
+        expect(completed.mock.calls[0][0].customer).toEqual(customer);
+        expect((await stored())[0].customer).toEqual(customer);
+        if (failsAfterSave) {
+          await waitFor(() => expect(result.current.sale.canContinue).toBe(true));
+          act(() => result.current.sale.continueSale());
+        } else {
+          expect(result.current.sale.stage.kind).toBe('receipt');
+          act(() => result.current.sale.newSale());
+        }
+        expect(result.current.sale.order.customer).toBeNull();
+      } finally {
+        unmount();
+      }
+    }
+  });
 
   it("a throw after the insert, then a retry, ends with exactly one order in the outbox: the first attempt's", async () => {
     const { result, unmount, completed, stored } = await renderWithOutbox({ after: 1 });

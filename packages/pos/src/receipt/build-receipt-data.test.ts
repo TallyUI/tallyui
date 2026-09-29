@@ -88,6 +88,19 @@ const config: ReceiptConfig = {
 };
 
 describe('buildReceiptData', () => {
+  it("puts the customer's name, or else email, in the header, and nothing for a guest", () => {
+    const guestHeader = {
+      storeName: 'Test Coffee Shop', storeAddress: '123 Main St', orderNumber: 'order-001',
+      date: '2026-02-26T10:00:00Z', cashier: 'Bob', register: 'POS-1',
+    };
+    expect(buildReceiptData({ ...baseOrder, customer: null }, config).header).toStrictEqual(guestHeader);
+    expect(buildReceiptData({ ...baseOrder, customer: { id: 'c1', name: '', email: '' } }, config).header).toStrictEqual(guestHeader);
+    expect(buildReceiptData({ ...baseOrder, customer: { id: 'c1', name: 'Alice', email: 'alice@test.com' } }, config).header)
+      .toStrictEqual({ ...guestHeader, customer: 'Alice' });
+    expect(buildReceiptData({ ...baseOrder, customer: { id: 'c1', name: '', email: 'alice@test.com' } }, config).header)
+      .toStrictEqual({ ...guestHeader, customer: 'alice@test.com' });
+  });
+
   it.each([
     { rates: [190000, 70000], amount: 1000, expected: [190, 70] },
     { rates: [190000, 70000, 50000], amount: 5, expected: [1, 1, 0] },

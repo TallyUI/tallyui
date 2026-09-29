@@ -15,6 +15,7 @@ export interface CustomerFormProps extends Omit<ViewProps, 'children'> {
   onChangeField: (field: keyof CustomerFormValues, value: string) => void;
   onSubmit?: () => void;
   submitLabel?: string;
+  showAddress?: boolean;
   className?: string;
 }
 
@@ -43,6 +44,7 @@ export function CustomerForm({
   onChangeField,
   onSubmit,
   submitLabel = 'Save Customer',
+  showAddress = true,
   className,
   ...viewProps
 }: CustomerFormProps) {
@@ -58,7 +60,7 @@ export function CustomerForm({
       </View>
       <FormField label="Email" value={values.email} onChangeText={(v) => onChangeField('email', v)} placeholder="email@example.com" keyboardType="email-address" />
       <FormField label="Phone" value={values.phone} onChangeText={(v) => onChangeField('phone', v)} placeholder="Phone number" keyboardType="phone-pad" />
-      <FormField label="Address" value={values.address} onChangeText={(v) => onChangeField('address', v)} placeholder="Street address" multiline />
+      {showAddress && <FormField label="Address" value={values.address} onChangeText={(v) => onChangeField('address', v)} placeholder="Street address" multiline />}
 
       {onSubmit && (
         <Pressable onPress={onSubmit} className="items-center rounded-lg bg-primary px-4 py-3">

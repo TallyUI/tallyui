@@ -17,6 +17,7 @@ export interface ReceiptData {
     orderNumber: string;
     date: string;
     cashier?: string;
+    customer?: string;
     register?: string;
   };
   lineItems: ReceiptLineItem[];

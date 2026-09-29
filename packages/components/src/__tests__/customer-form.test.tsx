@@ -5,6 +5,16 @@ import { CustomerForm } from '../customer/customer-form';
 describe('CustomerForm', () => {
   const values = { firstName: 'Jane', lastName: 'Smith', email: 'jane@test.com', phone: '', address: '' };
 
+  it('hides the address field with showAddress false', () => {
+    const { rerender } = render(<CustomerForm values={values} onChangeField={() => {}} />);
+    expect(screen.getByText('Address')).toBeDefined();
+    expect(screen.getByPlaceholderText('Street address')).toBeDefined();
+    rerender(<CustomerForm values={values} onChangeField={() => {}} showAddress={false} />);
+    expect(screen.queryByText('Address')).toBeNull();
+    expect(screen.queryByPlaceholderText('Street address')).toBeNull();
+    expect(screen.getByDisplayValue('jane@test.com')).toBeDefined();
+  });
+
   it('renders form fields with values', () => {
     render(<CustomerForm values={values} onChangeField={() => {}} />);
     expect(screen.getByDisplayValue('Jane')).toBeDefined();

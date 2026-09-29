@@ -21,6 +21,7 @@ export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptDa
     return li.taxInclusive ? li.netMinor - share : li.netMinor + share;
   });
   const label = (d: Discount) => d.label ?? d.couponCode ?? `${d.type} discount`;
+  const customer = order.customer?.name || order.customer?.email;
 
   return {
     header: {
@@ -29,6 +30,7 @@ export function buildReceiptData(order: Order, config: ReceiptConfig): ReceiptDa
       orderNumber: order.id,
       date: order.createdAt,
       cashier: config.cashier,
+      ...(customer ? { customer } : {}),
       register: config.register,
     },
     lineItems: order.lineItems.map((li, index) => ({

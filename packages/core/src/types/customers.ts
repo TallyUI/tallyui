@@ -1,3 +1,5 @@
+import type { CustomerTraits } from './traits/customer';
+
 /** A store customer, as the till shows and picks it (programme item 14). Platform-neutral. */
 export interface Customer {
   /** The platform's id: order.create v3 sends it as `customer.customerId`. */
@@ -9,6 +11,14 @@ export interface Customer {
 
 /** What the till collects to create a customer. v1 requires an email. */
 export interface CustomerInput { email: string; firstName?: string; lastName?: string; phone?: string; company?: string }
+
+export const customerTraits: CustomerTraits<Customer> = {
+  getId: (customer) => customer.id,
+  getName: (customer) => customer.name,
+  getEmail: (customer) => customer.email,
+  getPhone: (customer) => customer.phone,
+  getAddressSummary: () => undefined,
+};
 
 /** A customer call that failed for a reason other than credentials (credentials throw ConnectorUnauthorizedError). */
 export class CustomerServiceError extends Error {
