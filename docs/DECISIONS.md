@@ -1036,6 +1036,30 @@ interface OrderCreatePayload {
         admin has an order to apply or reject.
       - The plugin's own event subscribers ignore events for an order that no
         longer exists.
+    - **A full transaction rollback, by contrast, drops the events published
+      inside it** (verified by the vendurepos worker, 2026-09-29, on
+      `@vendure/core` 3.7.3 with TypeORM 0.3.x on Postgres). This applies to
+      `EventBus.ofType()` and `filter()` subscribers such as EmailPlugin and
+      the search index.
+      - `event-bus.js` lines 241–268 (`awaitActiveTransactions`) wait on
+        `TransactionSubscriber.awaitCommit`. On a
+        `TransactionSubscriberError` they return `undefined`, which the
+        `filter(notNullOrUndefined)` at lines 95 and 107 drops.
+      - TypeORM's `PostgresQueryRunner.js` lines 155–167: a full `ROLLBACK`
+        clears `isTransactionActive` and broadcasts
+        `AfterTransactionRollback`, which makes `awaitCommit` throw
+        (`transaction-subscriber.js` lines 48–66). `ROLLBACK TO SAVEPOINT`
+        keeps the transaction active, so the event is released at the
+        outer `COMMIT`.
+      - So ADR-047's transient path (a thrown error, a full rollback, 503)
+        is safe after the first event for core and EmailPlugin subscribers.
+      - Two constraints on merchant plugins remain:
+        - **Blocking event handlers** (`event-bus.js` lines 83 and 166) run
+          inside `publish()`, inside the transaction, so their external side
+          effects survive a rollback. Core and EmailPlugin register none for
+          order events; a merchant plugin could.
+        - **Events without a `RequestContext`**, or with no transaction
+          manager on it, are delivered immediately (lines 243–249).
     - This amends ADR-047's "a thrown error rolls back and returns 503" for
       classified permanent errors only.
   - **If part of the sale remains and can't be undone**, the plugin finishes
