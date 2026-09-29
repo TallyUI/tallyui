@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CustomerServiceError, type Customer, type CustomerInput } from '@tallyui/core';
+import { ConnectorUnauthorizedError, CustomerServiceError, type Customer, type CustomerInput } from '@tallyui/core';
 import { CustomerPicker } from '../customer/customer-picker';
 
 const alice: Customer = { id: 'alice', name: 'Alice', email: 'alice@test.com' };
@@ -33,7 +33,7 @@ describe('CustomerPicker', () => {
     await advance(1);
     expect(search).toHaveBeenCalledExactlyOnceWith('al');
     await act(async () => response.resolve([alice]));
-    expect(screen.getByRole('option', { name: 'Alice' })).toBeDefined();
+    expect(screen.getByRole('option', { name: 'Alice, alice@test.com' })).toBeDefined();
     expect(screen.getByText('alice@test.com')).toBeDefined();
   });
 
@@ -48,9 +48,9 @@ describe('CustomerPicker', () => {
     await advance(50);
     expect(search.mock.calls).toEqual([['a'], ['ab']]);
     await act(async () => newer.resolve([abby]));
-    expect(screen.getByRole('option', { name: 'Abby' })).toBeDefined();
+    expect(screen.getByRole('option', { name: 'Abby, abby@test.com' })).toBeDefined();
     await act(async () => older.resolve([alice]));
-    expect(screen.getByRole('option', { name: 'Abby' })).toBeDefined();
+    expect(screen.getByRole('option', { name: 'Abby, abby@test.com' })).toBeDefined();
     expect(screen.queryByText('Alice')).toBeNull();
   });
 
@@ -71,29 +71,27 @@ describe('CustomerPicker', () => {
     }
   });
 
-  it.each(['picking a result selects it and clears the query', 'choosing a search result selects it'])(
-    '%s', async () => {
-      const response = deferred<Customer[]>();
-      const search = vi.fn(() => response.promise);
-      const onSelect = vi.fn();
-      render(<CustomerPicker search={search} selected={null} onSelect={onSelect} online />);
-      typeQuery('a');
-      await advance();
-      await act(async () => response.resolve([alice]));
-      fireEvent.click(screen.getByRole('option', { name: 'Alice' }));
-      expect(onSelect).toHaveBeenCalledExactlyOnceWith(alice);
-      expect(screen.getByLabelText('Search customers')).toHaveProperty('value', '');
-      expect(screen.queryByRole('option')).toBeNull();
-      await advance();
-      expect(search).toHaveBeenCalledTimes(1);
-    },
-  );
+  it('picking a result selects it and clears the query', async () => {
+    const response = deferred<Customer[]>();
+    const search = vi.fn(() => response.promise);
+    const onSelect = vi.fn();
+    render(<CustomerPicker search={search} selected={null} onSelect={onSelect} online />);
+    typeQuery('a');
+    await advance();
+    await act(async () => response.resolve([alice]));
+    fireEvent.click(screen.getByRole('option', { name: 'Alice, alice@test.com' }));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(alice);
+    expect(screen.getByLabelText('Search customers')).toHaveProperty('value', '');
+    expect(screen.queryByRole('option')).toBeNull();
+    await advance();
+    expect(search).toHaveBeenCalledTimes(1);
+  });
 
-  it('Guest clears the selected customer', () => {
+  it('Remove customer clears the selection', () => {
     const onSelect = vi.fn();
     render(<CustomerPicker search={vi.fn()} selected={alice} onSelect={onSelect} online />);
     expect(screen.getByText('Alice')).toBeDefined();
-    click('Guest');
+    click('Remove customer');
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
   });
 
@@ -122,35 +120,127 @@ describe('CustomerPicker', () => {
     expect(screen.queryByPlaceholderText('email@example.com')).toBeNull();
   });
 
-  it("shows the network message on a network error, and the server's message otherwise", async () => {
+  it.each([
+    { name: 'a network error shows the network message', error: new CustomerServiceError('network', 'offline'), message: "Couldn't reach the store. Try again.", report: false },
+    { name: "a server error shows a generic message, never the backend's text", error: new CustomerServiceError('server', 'HTTP 500'), message: "The store couldn't do that. Try again.", report: false },
+    { name: "an invalid error shows the backend's reason", error: new CustomerServiceError('invalid', 'Email already in use'), message: 'Email already in use', report: false },
+    { name: 'an unauthorized error asks to sign in again and reaches onError', error: new ConnectorUnauthorizedError('expired credentials'), message: 'Sign in again to continue.', report: true },
+    { name: 'an unknown error shows a generic message and reaches onError', error: new Error('boom'), message: 'Something went wrong. Try again.', report: true },
+  ])('$name', async ({ error, message, report }) => {
     for (const source of ['search', 'create']) {
-      for (const code of ['network', 'server'] as const) {
-        const response = deferred<Customer[] & Customer>();
-        const search = vi.fn(() => response.promise);
-        const create = vi.fn(() => response.promise);
-        const { unmount } = render(<CustomerPicker search={search} create={create} selected={null} onSelect={vi.fn()} online />);
-        if (source === 'search') {
-          typeQuery('a');
-          await advance();
-          expect(search).toHaveBeenCalledTimes(1);
-        } else {
-          click('New customer');
-          fireEvent.change(screen.getByPlaceholderText('email@example.com'), { target: { value: 'alice@test.com' } });
-          click('Save Customer');
-          expect(create).toHaveBeenCalledTimes(1);
-        }
-        await act(async () => response.reject(new CustomerServiceError(code, 'Customer service unavailable')));
-        expect(screen.getByRole('alert').textContent).toBe(code === 'network'
-          ? "Couldn't reach the store. Try again." : 'Customer service unavailable');
-        typeQuery('retry');
-        expect(screen.getByLabelText('Search customers')).toHaveProperty('value', 'retry');
-        if (source === 'create') expect(screen.getByRole('button', { name: 'Save Customer' }).getAttribute('aria-disabled')).not.toBe('true');
-        unmount();
+      const response = deferred<Customer[] & Customer>();
+      const search = vi.fn(() => response.promise);
+      const create = vi.fn(() => response.promise);
+      const onError = vi.fn();
+      const { unmount } = render(<CustomerPicker search={search} create={create} selected={null} onSelect={vi.fn()} onError={onError} online />);
+      if (source === 'search') {
+        typeQuery('a');
+        await advance();
+        expect(search).toHaveBeenCalledTimes(1);
+      } else {
+        click('New customer');
+        fireEvent.change(screen.getByPlaceholderText('email@example.com'), { target: { value: 'alice@test.com' } });
+        click('Save Customer');
+        expect(create).toHaveBeenCalledTimes(1);
       }
+      await act(async () => response.reject(error));
+      expect(screen.getByRole('alert').textContent).toBe(message);
+      if (message !== error.message) expect(screen.getByRole('alert').textContent).not.toContain(error.message);
+      if (report) expect(onError).toHaveBeenCalledExactlyOnceWith(error);
+      else expect(onError).not.toHaveBeenCalled();
+      typeQuery('retry');
+      expect(screen.getByLabelText('Search customers')).toHaveProperty('value', 'retry');
+      if (source === 'create') expect(screen.getByRole('button', { name: 'Save Customer' }).getAttribute('aria-disabled')).not.toBe('true');
+      unmount();
     }
   });
 
-  it('offline disables search and create, makes no calls, and still allows Guest', async () => {
+  it('a parent re-render with a new search function does not resend or drop the search', async () => {
+    const response = deferred<Customer[]>();
+    const search = vi.fn((_query: string) => response.promise);
+    const props = { selected: null, onSelect: vi.fn(), online: true };
+    const { rerender } = render(<CustomerPicker {...props} search={(query) => search(query)} />);
+    typeQuery('al');
+    await advance(200);
+    rerender(<CustomerPicker {...props} search={(query) => search(query)} />);
+    await advance(50);
+    expect(search).toHaveBeenCalledExactlyOnceWith('al');
+    rerender(<CustomerPicker {...props} search={(query) => search(query)} />);
+    await advance();
+    expect(search).toHaveBeenCalledTimes(1);
+    await act(async () => response.resolve([alice]));
+    expect(screen.getByRole('option', { name: 'Alice, alice@test.com' })).toBeDefined();
+    rerender(<CustomerPicker {...props} search={(query) => search(query)} />);
+    await advance();
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('option', { name: 'Alice, alice@test.com' })).toBeDefined();
+  });
+
+  it('shows no customers found for an empty result', async () => {
+    const response = deferred<Customer[]>();
+    render(<CustomerPicker search={() => response.promise} selected={null} onSelect={vi.fn()} online />);
+    expect(screen.queryByText('No customers found.')).toBeNull();
+    typeQuery('missing');
+    await advance();
+    expect(screen.queryByText('No customers found.')).toBeNull();
+    await act(async () => response.resolve([]));
+    expect(screen.getByText('No customers found.')).toBeDefined();
+    typeQuery('another');
+    expect(screen.queryByText('No customers found.')).toBeNull();
+    typeQuery('');
+    await advance();
+    expect(screen.queryByText('No customers found.')).toBeNull();
+  });
+
+  it('after a create the form reopens empty', async () => {
+    const create = vi.fn(async () => alice);
+    render(<CustomerPicker search={vi.fn()} create={create} selected={null} onSelect={vi.fn()} online />);
+    click('New customer');
+    for (const placeholder of ['First name', 'Last name', 'email@example.com', 'Phone number']) {
+      fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: 'filled' } });
+    }
+    await act(async () => click('Save Customer'));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(screen.queryByPlaceholderText('email@example.com')).toBeNull();
+    click('New customer');
+    for (const placeholder of ['First name', 'Last name', 'email@example.com', 'Phone number']) {
+      expect(screen.getByPlaceholderText(placeholder)).toHaveProperty('value', '');
+    }
+  });
+
+  it('Cancel closes the form without creating', () => {
+    const create = vi.fn();
+    render(<CustomerPicker search={vi.fn()} create={create} selected={null} onSelect={vi.fn()} online />);
+    click('New customer');
+    for (const placeholder of ['First name', 'Last name', 'email@example.com', 'Phone number']) {
+      fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: 'filled' } });
+    }
+    click('Cancel');
+    expect(screen.queryByPlaceholderText('email@example.com')).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+    click('New customer');
+    for (const placeholder of ['First name', 'Last name', 'email@example.com', 'Phone number']) {
+      expect(screen.getByPlaceholderText(placeholder)).toHaveProperty('value', '');
+    }
+  });
+
+  it('create trims fields and omits blank ones', async () => {
+    const create = vi.fn(async () => alice);
+    render(<CustomerPicker search={vi.fn()} create={create} selected={null} onSelect={vi.fn()} online />);
+    for (const filled of [true, false]) {
+      click('New customer');
+      for (const [placeholder, value] of [['First name', ' Alice '], ['Last name', ' Smith '], ['Phone number', ' 123 ']]) {
+        fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: filled ? value : '   ' } });
+      }
+      fireEvent.change(screen.getByPlaceholderText('email@example.com'), { target: { value: ' alice@test.com ' } });
+      await act(async () => click('Save Customer'));
+      expect(create).toHaveBeenLastCalledWith(filled
+        ? { email: 'alice@test.com', firstName: 'Alice', lastName: 'Smith', phone: '123' } : { email: 'alice@test.com' });
+    }
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('offline disables search and create, makes no calls, and still allows Remove customer', async () => {
     const search = vi.fn(async () => [alice]);
     const create = vi.fn(async () => alice);
     const onSelect = vi.fn();
@@ -166,7 +256,7 @@ describe('CustomerPicker', () => {
     expect(search).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
     expect(screen.getByText('Alice')).toBeDefined();
-    click('Guest');
+    click('Remove customer');
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
     rerender(<CustomerPicker {...props} online />);
     typeQuery('a');

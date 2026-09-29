@@ -1,10 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ConnectorProvider } from '@tallyui/core';
 import { CustomerSelect } from '../customer/customer-select';
 import { createTestConnector, wooCustomerDoc } from './helpers';
-import { fireEvent } from '@testing-library/react';
-import { vi } from 'vitest';
 
 describe('CustomerSelect', () => {
   it('uses the traits prop instead of the context', () => {
@@ -13,7 +11,7 @@ describe('CustomerSelect', () => {
     render(<ConnectorProvider connector={connector}>
       <CustomerSelect customers={[wooCustomerDoc]} traits={traits} onSelect={() => {}} onSearch={() => {}} />
     </ConnectorProvider>);
-    expect(screen.getByRole('option', { name: 'Override name' })).toBeDefined();
+    expect(screen.getByRole('option', { name: 'Override name, jane@example.com' })).toBeDefined();
     expect(screen.getByText('Override name')).toBeDefined();
     expect(screen.queryByText('Jane Smith')).toBeNull();
   });
@@ -23,8 +21,16 @@ describe('CustomerSelect', () => {
     render(<ConnectorProvider connector={createTestConnector('woo')}>
       <CustomerSelect customers={[wooCustomerDoc]} onSelect={onSelect} onSearch={() => {}} />
     </ConnectorProvider>);
-    fireEvent.click(screen.getByRole('option', { name: 'Jane Smith' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Jane Smith, jane@example.com' }));
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(wooCustomerDoc);
+  });
+
+  it("a row's accessible name has the name and email", () => {
+    render(<ConnectorProvider connector={createTestConnector('woo')}>
+      <CustomerSelect customers={[wooCustomerDoc, { ...wooCustomerDoc, id: 2, first_name: 'Bob', email: '' }]} onSelect={() => {}} onSearch={() => {}} />
+    </ConnectorProvider>);
+    expect(screen.getByRole('option', { name: 'Jane Smith, jane@example.com' })).toBeDefined();
+    expect(screen.getByRole('option', { name: 'Bob Smith' })).toBeDefined();
   });
 
   const customers = [

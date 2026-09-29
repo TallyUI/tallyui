@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { customerTraits, CustomerServiceError, type Customer, type CustomerInput } from '@tallyui/core';
+import { customerTraits, CustomerServiceError, ConnectorUnauthorizedError, type Customer, type CustomerInput } from '@tallyui/core';
+import { cn } from '@tallyui/theme';
 import { CustomerCard } from './customer-card';
 import { CustomerSelect } from './customer-select';
 import { CustomerForm, type CustomerFormValues } from './customer-form';
@@ -12,6 +13,8 @@ export interface CustomerPickerProps {
   create?: (input: CustomerInput) => Promise<Customer>;
   selected: Customer | null;
   onSelect: (customer: Customer | null) => void;
+  /** Called for errors the picker can't explain to the cashier, including ConnectorUnauthorizedError, which means the app should sign in again. */
+  onError?: (error: unknown) => void;
   /** false disables search and create (online only in v1). */
   online: boolean;
   /** Debounce before a search, ms. */
@@ -19,7 +22,7 @@ export interface CustomerPickerProps {
   className?: string;
 }
 
-export function CustomerPicker({ search, create, selected, onSelect, online, debounceMs = 250, className }: CustomerPickerProps) {
+export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className }: CustomerPickerProps) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -27,63 +30,87 @@ export function CustomerPicker({ search, create, selected, onSelect, online, deb
   const [creating, setCreating] = useState(false);
   const [values, setValues] = useState<CustomerFormValues>({ firstName: '', lastName: '', email: '', phone: '', address: '' });
   const sequence = useRef(0);
+  const searchRef = useRef(search);
+  searchRef.current = search;
+  const [noResults, setNoResults] = useState(false);
+
+  function handleError(error: unknown) {
+    if (error instanceof CustomerServiceError) {
+      setError(error.code === 'network' ? "Couldn't reach the store. Try again."
+        : error.code === 'server' ? "The store couldn't do that. Try again." : error.message);
+    } else {
+      setError(error instanceof ConnectorUnauthorizedError ? 'Sign in again to continue.' : 'Something went wrong. Try again.');
+      onError?.(error);
+    }
+  }
 
   useEffect(() => {
     const current = ++sequence.current;
+    setNoResults(false);
     setError(null);
     if (!online || !query.trim()) { setCustomers([]); return; }
     const timer = setTimeout(async () => {
       try {
-        const results = await search(query);
-        if (current === sequence.current) setCustomers(results);
+        const results = await searchRef.current(query);
+        if (current === sequence.current) { setCustomers(results); setNoResults(results.length === 0); }
       } catch (error) {
-        if (current === sequence.current) setError(error instanceof CustomerServiceError && error.code === 'network'
-          ? "Couldn't reach the store. Try again." : error instanceof Error ? error.message : String(error));
+        if (current === sequence.current) handleError(error);
       }
     }, debounceMs);
     return () => { clearTimeout(timer); sequence.current++; };
-  }, [query, online, search, debounceMs]);
+  }, [query, online, debounceMs]);
 
   async function submit() {
     if (!online || !create || creating || !values.email.trim()) return;
     setCreating(true);
     setError(null);
     try {
-      const created = await create({ email: values.email,
-        ...(values.firstName ? { firstName: values.firstName } : {}),
-        ...(values.lastName ? { lastName: values.lastName } : {}),
-        ...(values.phone ? { phone: values.phone } : {}),
+      const created = await create({ email: values.email.trim(),
+        ...(values.firstName.trim() ? { firstName: values.firstName.trim() } : {}),
+        ...(values.lastName.trim() ? { lastName: values.lastName.trim() } : {}),
+        ...(values.phone.trim() ? { phone: values.phone.trim() } : {}),
       });
       onSelect(created);
+      setValues({ firstName: '', lastName: '', email: '', phone: '', address: '' });
       setShowForm(false);
     } catch (error) {
-      setError(error instanceof CustomerServiceError && error.code === 'network'
-        ? "Couldn't reach the store. Try again." : error instanceof Error ? error.message : String(error));
+      handleError(error);
     } finally {
       setCreating(false);
     }
   }
 
-  return <View className={className}>
+  return <View className={cn('gap-3', className)}>
     {selected && <View>
       <CustomerCard doc={selected} traits={customerTraits} />
-      <Pressable accessibilityRole="button" onPress={() => onSelect(null)}><Text>Guest</Text></Pressable>
+      <Pressable accessibilityRole="button" className="items-center rounded-lg border border-border px-4 py-3" onPress={() => onSelect(null)}><Text className="text-sm font-semibold text-foreground">Remove customer</Text></Pressable>
     </View>}
-    <Text>Search customers</Text>
-    <TextInput accessibilityLabel="Search customers" value={query} onChangeText={setQuery} editable={online} />
-    {!online && <Text>Connect to search or add customers.</Text>}
-    {error && <Text accessibilityRole="alert">{error}</Text>}
+    <Text className="text-xs font-medium text-muted-foreground">Search customers</Text>
+    <TextInput accessibilityLabel="Search customers" value={query} onChangeText={setQuery} editable={online}
+      className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
+      placeholderTextColorClassName="accent-muted-foreground" placeholder="Name or email" />
+    {!online && <Text className="text-sm text-muted-foreground">Connect to search or add customers.</Text>}
+    {noResults && <Text className="text-sm text-muted-foreground">No customers found.</Text>}
+    {error && <Text accessibilityRole="alert" className="text-sm text-destructive">{error}</Text>}
     <CustomerSelect customers={customers} traits={customerTraits} onSearch={setQuery}
       onSelect={(customer) => { onSelect(customer); setQuery(''); }} />
-    {create && <Pressable accessibilityRole="button" disabled={!online || creating} onPress={() => setShowForm(true)}>
-      <Text>New customer</Text>
+    {create && <Pressable accessibilityRole="button" disabled={!online || creating} onPress={() => setShowForm(true)}
+      className={cn('items-center rounded-lg border border-border px-4 py-3', (!online || creating) && 'opacity-50')}>
+      <Text className="text-sm font-semibold text-foreground">New customer</Text>
     </Pressable>}
     {showForm && <View>
       <CustomerForm values={values} showAddress={false}
         onChangeField={(field, value) => setValues((current) => ({ ...current, [field]: value }))} />
-      <Pressable accessibilityRole="button" disabled={!online || creating || !values.email.trim()} onPress={submit}>
-        <Text>Save Customer</Text>
-      </Pressable>
+      <View className="flex-row gap-3">
+        <Pressable accessibilityRole="button" disabled={!online || creating || !values.email.trim()} onPress={submit}
+          className={cn('items-center rounded-lg bg-primary px-4 py-3', (!online || creating || !values.email.trim()) && 'opacity-50')}>
+          <Text className="text-sm font-semibold text-primary-foreground">Save Customer</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" className="items-center rounded-lg border border-border px-4 py-3"
+          onPress={() => { setShowForm(false); setValues({ firstName: '', lastName: '', email: '', phone: '', address: '' }); }}>
+          <Text className="text-sm font-semibold text-foreground">Cancel</Text>
+        </Pressable>
+      </View>
     </View>}
   </View>;
 }

@@ -98,6 +98,7 @@ function CustomerSelectView<Doc>({
               {customers.map((customer, index) => {
                 const id = traits?.getId(customer) ?? String(index);
                 const label = traits?.getName(customer) ?? '';
+                const email = traits?.getEmail(customer);
                 return (
                   <Select.Item
                     key={id}
@@ -105,7 +106,7 @@ function CustomerSelectView<Doc>({
                     label={label}
                     asChild
                   >
-                    <Pressable accessibilityLabel={label} className="border-b border-border px-3 py-2">
+                    <Pressable accessibilityLabel={email ? `${label}, ${email}` : label} className="border-b border-border px-3 py-2">
                       <CustomerCard doc={customer} traits={traits} />
                     </Pressable>
                   </Select.Item>

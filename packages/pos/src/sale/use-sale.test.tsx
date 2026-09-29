@@ -244,6 +244,26 @@ describe('sale', () => {
     expect(result.current.order.taxMinor).toBe(160); // 1000 × 19/119, rounded
   });
 
+  it('a settings change on an idle cart keeps the customer', () => {
+    const customer = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+    let current: PricingSettings = pricing;
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProviderProps(current)}>{children}</TaxProvider>;
+    }
+    const { result, rerender } = renderHook(() => useSale(current, saleOpts()), { wrapper: Wrapper });
+    act(() => result.current.setCustomer(customer));
+    for (const next of [{ ...pricing, pricesIncludeTax: true }, { ...pricing, currency: 'USD' }]) {
+      const previousId = result.current.order.id;
+      current = next;
+      rerender();
+      expect(result.current.idle).toBe(true);
+      expect(result.current.order.id).not.toBe(previousId);
+      expect(result.current.order.currency).toBe(current.currency);
+      expect(result.current.order.pricesIncludeTax).toBe(current.pricesIncludeTax);
+      expect(result.current.order.customer).toEqual(customer);
+    }
+  });
+
   it('holds new tax settings while a card sale is in progress: it completes on the old ones, the next sale uses the new', async () => {
     const completed = vi.fn();
     const inclusive: PricingSettings = { currency: 'EUR', pricesIncludeTax: true, taxRatesPpm: { default: 190000 } };
