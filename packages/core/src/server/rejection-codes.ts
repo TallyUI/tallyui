@@ -6,7 +6,7 @@ import type { RegisterConflictCode } from './register-outcome'
  *  except `register_approval_required`, which arrives with registers c2c. */
 export type CommandRejectionCode =
   | 'invalid_payload' | 'unsupported_version' | 'idempotency_mismatch' | 'store_configuration' | 'platform_error'
-  | 'insufficient_stock' | 'unsupported_tax_mode'
+  | 'insufficient_stock' | 'unsupported_tax_mode' | 'internal_error'
   | OrderRejectionCode | RegisterConflictCode
 
 /**
@@ -26,4 +26,20 @@ export type CommandRejectionCode =
  */
 export function platformErrorResult(id: string, platformCode: string, platformMessage: string): CommandResult {
   return { id, status: 'rejected', error: { code: 'platform_error', message: `${platformCode}: ${platformMessage}`, data: { platformCode, platformMessage } } }
+}
+
+/**
+ * The rejected result for an exception from the plugin's own code (a programming error, not the
+ * database, the network, or an unknown SQLSTATE), raised after a complete rollback so that nothing
+ * of the sale remains, in the database or outside it.
+ *
+ * It is stored in the ledger and replayed as recorded, because it fails the same way on every retry
+ * and a retry loop would hide the bug. The message is generic so no internal detail reaches the till;
+ * the correlation id links it to the plugin's log.
+ *
+ * Database, network, unknown-SQLSTATE and any other unclassifiable errors stay transient (503), never
+ * `internal_error`. `order.create` only, as for `platform_error`.
+ */
+export function internalErrorResult(id: string, correlationId: string): CommandResult {
+  return { id, status: 'rejected', error: { code: 'internal_error', message: `Internal error (ref ${correlationId})`, data: { correlationId } } }
 }
