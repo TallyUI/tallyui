@@ -130,3 +130,41 @@ it.each(['x'.repeat(65), '', null, 1])('rejects invalid customerId %p', customer
 it('keeps unknown top-level and customer fields lenient', () => {
   expect(payloadShapeErrors({ ...payload, extra: true, customer: { extra: true } })).toEqual([])
 })
+
+describe('string bounds and NUL', () => {
+  const at = (field: string, value: string): Record<string, unknown> => {
+    const [head, key] = field.split('.')
+    if (head === 'lines[0]' || head === 'payments[0]') {
+      const list = head === 'lines[0]' ? 'lines' : 'payments'
+      return { ...payload, [list]: [{ ...payload[list][0], [key]: value }] }
+    }
+    return head === 'customer' ? { ...payload, customer: { [key]: value } } : { ...payload, [field]: value }
+  }
+
+  it.each([
+    ['clientOrderId', 255], ['createdAt', 255], ['currency', 255], ['registerId', 255], ['cashierRef', 255], ['locationId', 255],
+    ['lines[0].clientLineId', 255], ['lines[0].variantId', 255], ['lines[0].title', 255],
+    ['payments[0].clientPaymentId', 255], ['payments[0].method', 255], ['payments[0].reference', 255], ['customer.email', 254],
+  ] as const)('accepts %s at %i characters and refuses one more', (field, max) => {
+    expect(payloadShapeErrors(at(field, 'x'.repeat(max)))).toEqual([])
+    expect(payloadShapeErrors(at(field, 'x'.repeat(max + 1)))).toEqual([`${field}: expected at most ${max} characters`])
+  })
+
+  it('keeps the customerId and sessionId bounds and messages', () => {
+    expect(payloadShapeErrors(at('customer.customerId', 'x'.repeat(64)))).toEqual([])
+    expect(payloadShapeErrors(at('customer.customerId', 'x'.repeat(65)))).toEqual(['customer.customerId: expected a string of at most 64 characters'])
+    expect(payloadShapeErrors(at('sessionId', 'x'.repeat(36)))).toEqual([])
+    expect(payloadShapeErrors(at('sessionId', 'x'.repeat(37)))).toEqual(['sessionId: expected a string of at most 36 characters'])
+  })
+
+  it.each(['clientOrderId', 'lines[0].title', 'customer.email', 'sessionId', 'customer.customerId', 'payments[0].reference'])('refuses a NUL in %s', field => {
+    expect(payloadShapeErrors(at(field, 'a\u0000b'))).toEqual([`${field}: expected no NUL character`])
+  })
+
+  it('adds the bound errors after every earlier error, within the cap of ten', () => {
+    expect(payloadShapeErrors({ ...payload, currency: 1, clientOrderId: 'x'.repeat(256) }))
+      .toEqual(['currency: expected a string', 'clientOrderId: expected at most 255 characters'])
+    const long = { ...payload.lines[0], title: 'x'.repeat(256) }
+    expect(payloadShapeErrors({ ...payload, lines: Array.from({ length: 12 }, () => long) })).toHaveLength(10)
+  })
+})

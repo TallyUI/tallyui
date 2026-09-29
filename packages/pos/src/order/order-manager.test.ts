@@ -77,6 +77,21 @@ describe('OrderManager', () => {
     await db?.close();
   });
 
+  it.each([
+    ['a 255-character email', { id: 'c1', name: 'Alice', email: `${'a'.repeat(246)}@test.com` }],
+    ['a customerId with a NUL', { id: 'c\u00001', name: 'Alice' }],
+  ])('resume restores no customer with %s, which order.create would refuse', async (_name, customer) => {
+    const mgr = createOrderManager({ currency: 'usd', taxContext, draftsCollection: db.pos_drafts });
+    const builder = await firstValueFrom(mgr.activeOrder$);
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 850, currency: 'USD' } });
+    builder.setCustomer(customer);
+    const parked = builder.getSnapshot();
+    await mgr.parkCurrentOrder();
+    const resumed = (await mgr.resumeOrder(parked.id)).getSnapshot();
+    expect(resumed.customer).toBeNull();
+    expect(resumed.lineItems).toHaveLength(1);
+  });
+
   it('preserves two lines, their taxes, discounts and payments through JSON park/resume', async () => {
     const mgr = createOrderManager({ currency: 'usd', taxContext, draftsCollection: db.pos_drafts });
     const builder = await firstValueFrom(mgr.activeOrder$);

@@ -70,5 +70,15 @@ export function fiscalFiguresErrors(payload: OrderCreatePayloadV3): string[] {
   } catch {
     // Leave unsupported currencies to the planner's unsupported_currency rejection.
   }
+  // The shared string bound and NUL check (payloadShapeErrors' rule) on the v3 strings, after every check above.
+  const text = (value: unknown, path: string) => {
+    if (typeof value !== 'string') return
+    check(value.length <= 255, path, 'at most 255 characters')
+    check(!value.includes('\u0000'), path, 'no NUL character')
+  }
+  display.lines.forEach((line, index) => line.discounts.forEach((discount, i) => {
+    for (const key of ['discountId', 'label'] as const) text(discount[key], `display.lines[${index}].discounts[${i}].${key}`)
+  }))
+  taxByRate.forEach((rate, index) => text(rate.code, `taxByRate[${index}].code`))
   return errors
 }

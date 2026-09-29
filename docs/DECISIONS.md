@@ -1007,7 +1007,12 @@ interface OrderCreatePayload {
       `order.create`:
       - **Shape** first (types, bounds, a NUL character), before any
         database access. A NUL in `clientOrderId` would make the lookup
-        itself fail (Postgres 22021) before any claim exists.
+        itself fail (Postgres 22021) before any claim exists. The shared
+        bounds are in `@tallyui/core/server`'s `payloadShapeErrors`:
+        `customer.email` at most 254 characters, `customerId` 64,
+        `sessionId` 36, and every other string field 255; U+0000 is
+        refused in any string. The v3 `display` and `taxByRate` strings
+        get the same 255 bound and NUL check in `fiscalFiguresErrors`.
       - **Then the replay lookup and the collision lookup**, so a resent
         command that was already applied always replays as `duplicate`,
         whatever the later checks say.
@@ -1015,11 +1020,12 @@ interface OrderCreatePayload {
         - amount ranges and the v3 fiscal-figure checks. These are
           `@tallyui/core/server`'s `precheckCommand`, which a plugin calls
           after its replay lookup, never before it;
-        - on the Vendure plugin, a future bound on `createdAt` (the till's
-          sale time). It may be at most 24 hours ahead of the server's
-          clock. There is no lower bound, because an offline till
-          legitimately sends old sales. The Medusa plugin has no such
-          bound.
+        - on the Vendure plugin, a future bound on `payload.createdAt`
+          (Vendure's `tallySaleAt`). It may be at most 24 hours ahead of
+          the server's clock. There is no lower bound, because an offline
+          till legitimately sends old sales. The Medusa plugin has no such
+          bound. On Vendure this needs a replay read before ADR-047's
+          `INSERT … ON CONFLICT` claim.
       - **Shape and value refusals answer `invalid_payload`.** It keeps its
         single meaning for `order.create`: decided before the claim, never
         stored. This widens the 2026-09-24 amendment's "fails shape
@@ -1144,9 +1150,10 @@ interface OrderCreatePayload {
   - **If part of the sale remains and can't be undone**, the plugin finishes
     and applies the sale (with a warning where one fits), and never rejects
     it. After a complete compensation, either `platform_error` (if the error
-    is permanent) or transient (ADR-039) is allowed. A transient result
-    releases the claim and the till resends the **same** id, so it too is
-    safe only once nothing remains.
+    is permanent) or transient (ADR-039) is allowed, or, for
+    `unsupported_tax_mode`, the unstored answer described in the step
+    order. A transient result releases the claim and the till resends the
+    **same** id, so it too is safe only once nothing remains.
   - **If compensation itself fails**, the plugin never returns
     `platform_error` and never releases the claim. The claim stays in
     progress, so the till's resends of the same id get `409 in_progress`,

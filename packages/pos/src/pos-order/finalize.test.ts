@@ -169,6 +169,62 @@ describe('finalizeOrder', () => {
   });
 });
 
+describe('finalizeOrder refuses a pass-through reference outside the order.create bounds', () => {
+  const paid = (reference?: string) => {
+    const builder = sale();
+    builder.addPayment({ method: 'external', amountMinor: 3451, ...(reference !== undefined ? { reference } : {}) });
+    return builder.getSnapshot();
+  };
+
+  it.each([
+    ['an over-long cashierRef', paid(), { cashierRef: 'c'.repeat(256) }, 'cashierRef is too long (max 255 characters)'],
+    ['a payment reference with a NUL', paid('ref\u0000'), {}, "the external payment's reference contains a NUL character"],
+    ['an over-long registerId', paid(), { registerId: 'r'.repeat(256) }, 'registerId is too long (max 255 characters)'],
+  ] as const)('refuses %s, naming the field, before any id is minted', (_name, input, options, message) => {
+    const newId = vi.fn(uuidv7);
+    expect(() => finalizeOrder(input, { ...options, newId })).toThrow(new Error(`finalize: ${message}`));
+    expect(newId).not.toHaveBeenCalled();
+  });
+
+  it("checks the variantId the envelope sends, or the productId when there's none, naming the line", () => {
+    const input = paid();
+    const lines = (variantId?: string, productId = 'p') =>
+      ({ ...input, lineItems: [{ ...input.lineItems[0], variantId, productId: 'x'.repeat(300) }, { ...input.lineItems[1], productId }] });
+    expect(() => finalizeOrder(lines('v'.repeat(256)))).toThrow(new Error('finalize: "Item 1": the variant id is too long (max 255 characters)'));
+    expect(() => finalizeOrder(lines('v', 'p\u0000'))).toThrow(new Error('finalize: "Item 2": the product id contains a NUL character'));
+    expect(() => finalizeOrder(lines('v'.repeat(255)))).not.toThrow();
+  });
+
+  it('names the line by at most 60 units of its name plus …, NUL stripped, never splitting a surrogate pair', () => {
+    const input = paid();
+    const named = (name: string) => ({ ...input, lineItems: [{ ...input.lineItems[0], name, variantId: 'v'.repeat(256) }, input.lineItems[1]] });
+    const name = `N\u0000${'n'.repeat(4998)}`;
+    expect(name).toHaveLength(5000);
+    expect(() => finalizeOrder(named(name))).toThrow(new Error(`finalize: "N${'n'.repeat(59)}…": the variant id is too long (max 255 characters)`));
+    expect(() => finalizeOrder(named(`${'x'.repeat(59)}😀tail`))).toThrow(new Error(`finalize: "${'x'.repeat(59)}…": the variant id is too long (max 255 characters)`));
+    expect(() => finalizeOrder(named('x'.repeat(61)))).toThrow(new Error(`finalize: "${'x'.repeat(61)}": the variant id is too long (max 255 characters)`));
+  });
+
+  it('at capability 3, also refuses a line discount id or a tax code the envelope sends; below 3 neither is sent', () => {
+    const input = discountedSale().getSnapshot();
+    expect(input.display.lines[0].discounts).toHaveLength(1);
+    const longId = { ...input, display: { ...input.display, lines: input.display.lines.map((line, i) => i > 0 ? line
+      : { ...line, discounts: line.discounts.map((discount) => ({ ...discount, discountId: 'd'.repeat(256) })) }) } };
+    const nulCode = { ...input, lineItems: input.lineItems.map((line, i) => i === 0 ? line
+      : { ...line, taxLines: line.taxLines.map((tax) => ({ ...tax, code: 'VAT\u0000' })) }) };
+    expect(nulCode.lineItems[1].taxLines).toHaveLength(1);
+    expect(() => finalizeOrder(longId, { capabilities: { orderCreate: 3 } }))
+      .toThrow(new Error('finalize: "Item 1": the discount id is too long (max 255 characters)'));
+    expect(() => finalizeOrder(nulCode, { capabilities: { orderCreate: 3 } }))
+      .toThrow(new Error('finalize: "Item 2": the tax code contains a NUL character'));
+    for (const order of [longId, nulCode]) expect(() => finalizeOrder(order, { capabilities: { orderCreate: 2 } })).not.toThrow();
+  });
+
+  it('accepts every reference at 255 characters', () => {
+    expect(() => finalizeOrder(paid('p'.repeat(255)), { cashierRef: 'c'.repeat(255), registerId: 'r'.repeat(255) })).not.toThrow();
+  });
+});
+
 describe('finalizeOrder capability gate (ADR-062)', () => {
   it('rejects a discount when the capability is explicitly 1, same as no capabilities', () => {
     const order = discountedSale().getSnapshot();

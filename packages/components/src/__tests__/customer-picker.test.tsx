@@ -197,7 +197,7 @@ describe('CustomerPicker', () => {
     render(<CustomerPicker search={vi.fn()} create={create} selected={null} onSelect={vi.fn()} online />);
     click('New customer');
     for (const placeholder of ['First name', 'Last name', 'email@example.com', 'Phone number']) {
-      fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: 'filled' } });
+      fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: placeholder === 'email@example.com' ? 'filled@test.com' : 'filled' } });
     }
     await act(async () => click('Save Customer'));
     expect(create).toHaveBeenCalledTimes(1);
@@ -238,6 +238,33 @@ describe('CustomerPicker', () => {
         ? { email: 'alice@test.com', firstName: 'Alice', lastName: 'Smith', phone: '123' } : { email: 'alice@test.com' });
     }
     expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['a 255-character email', `${'a'.repeat(246)}@test.com`],
+    ['no @', 'alice.test.com'], ['two @', 'alice@bob@test.com'], ['an empty local part', '@test.com'],
+    ['a domain without a dot', 'alice@test'], ['inner whitespace', 'ali ce@test.com'], ['a NUL', 'alice\u0000@test.com'],
+    ['nothing before the dot', 'a@.com'], ['nothing after the dot', 'a@b.'],
+  ])('refuses %s with the alert, without calling create', async (_name, email) => {
+    const create = vi.fn(async () => alice);
+    render(<CustomerPicker search={vi.fn()} create={create} selected={null} onSelect={vi.fn()} online />);
+    click('New customer');
+    fireEvent.change(screen.getByPlaceholderText('email@example.com'), { target: { value: email } });
+    await act(async () => click('Save Customer'));
+    expect(screen.getByRole('alert').textContent).toBe('Enter a valid email address (up to 254 characters)');
+    expect(create).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText('email@example.com')).toHaveProperty('value', email);
+  });
+
+  it('still creates with a valid email of 254 characters', async () => {
+    const create = vi.fn(async () => alice);
+    const email = `${'a'.repeat(245)}@test.com`;
+    render(<CustomerPicker search={vi.fn()} create={create} selected={null} onSelect={vi.fn()} online />);
+    click('New customer');
+    fireEvent.change(screen.getByPlaceholderText('email@example.com'), { target: { value: email } });
+    await act(async () => click('Save Customer'));
+    expect(create).toHaveBeenCalledExactlyOnceWith({ email });
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('offline disables search and create, makes no calls, and still allows Remove customer', async () => {

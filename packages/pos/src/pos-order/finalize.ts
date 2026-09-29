@@ -1,6 +1,7 @@
 import { minorUnitDigits, type ServerCapabilities } from '@tallyui/core';
 import type { Order } from '../order/types';
 import { taxLinesByRate } from '../tax/exact';
+import { cutText, PAYLOAD_STRING_MAX } from './command';
 import type { PosOrder, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -10,9 +11,24 @@ export interface FinalizeOptions {
   // session is live. Tests and migrations that need a stamped order spread `{ ...order, sessionId }`.
   cashierRef?: string;
   now?: Date;
+  /** Tests only: replaces uuidv7. Every id it returns must be at most 255 characters with no NUL (order.create's bound). */
   newId?: () => string;
   /** The store's `order.create` capability (ADR-062); `undefined` is treated as 1. */
   capabilities?: ServerCapabilities;
+}
+
+/** A line name in a refusal message: 60 UTF-16 units of it plus '…' at most, so a cashier-facing message stays short. */
+const MESSAGE_NAME_MAX = 61;
+
+/**
+ * Why a reference the till passes through without minting would fail order.create's shape check
+ * (over PAYLOAD_STRING_MAX, or a NUL), or null; `label` names it for the cashier. `useSale` also
+ * checks its options and an entered payment reference with it.
+ */
+export function referenceError(label: string, value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (value.length > PAYLOAD_STRING_MAX) return `${label} is too long (max ${PAYLOAD_STRING_MAX} characters)`;
+  return value.includes('\u0000') ? `${label} contains a NUL character` : null;
 }
 
 /** Turns a fully paid builder Order into a pending PosOrder without mutating it. */
@@ -42,6 +58,21 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   let change = order.paidMinor - order.totalMinor;
   const cash = order.payments.reduce((sum, p) => sum + (p.method === 'cash' ? p.amountMinor : 0), 0);
   if (change > cash) throw new Error('finalize: change exceeds cash');
+  // Refused before any id is minted, so such a value never reaches the stored order or the outbox.
+  // v3 also sends each line discount's id and each tax code (as taxByRate's codes); an id is never clamped.
+  const v3 = (options.capabilities?.orderCreate ?? 1) >= 3;
+  const references: Array<[string, string | undefined]> = [['registerId', options.registerId], ['cashierRef', options.cashierRef],
+    ...order.lineItems.flatMap((line, i): Array<[string, string | undefined]> => {
+      const name = `"${cutText(line.name, MESSAGE_NAME_MAX)}"`;
+      return [line.variantId !== undefined ? [`${name}: the variant id`, line.variantId] : [`${name}: the product id`, line.productId],
+        ...(v3 ? order.display.lines[i]?.discounts ?? [] : []).map((d): [string, string] => [`${name}: the discount id`, d.discountId]),
+        ...(v3 ? line.taxLines : []).map((tax): [string, string | undefined] => [`${name}: the tax code`, tax.code])];
+    }),
+    ...order.payments.map((payment): [string, string | undefined] => [`the ${payment.method} payment's reference`, payment.reference])];
+  for (const [field, value] of references) {
+    const message = referenceError(field, value);
+    if (message) throw new Error(`finalize: ${message}`);
+  }
   const newId = options.newId ?? uuidv7;
   const id = newId();
   const lines = order.lineItems.map((line) => ({

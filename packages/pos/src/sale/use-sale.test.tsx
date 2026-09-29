@@ -1717,3 +1717,117 @@ describe('unmount logs a save that would otherwise be lost silently', () => {
     }
   });
 });
+
+describe('app configuration outside the order.create bounds', () => {
+  function renderWithOpts(initialProps: Parameters<typeof useSale>[1]) {
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
+    }
+    return renderHook((opts: Parameters<typeof useSale>[1]) => useSale(pricing, opts), { wrapper: Wrapper, initialProps });
+  }
+
+  it('a 300-character cashierRef shows the error before any sale, complete() refuses, and fixing it clears the error', async () => {
+    const onSaleCompleted = vi.fn();
+    const { result, rerender } = renderWithOpts(saleOpts({ cashierRef: 'c'.repeat(300), onSaleCompleted }));
+    expect(result.current.error).toBe('cashierRef is too long (max 255 characters)');
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    expect(result.current.error).toBe('cashierRef is too long (max 255 characters)');
+    await act(async () => { await result.current.complete(); });
+    expect(onSaleCompleted).not.toHaveBeenCalled();
+    expect(result.current).toMatchObject({ stage: { kind: 'tender' }, saving: false, error: 'cashierRef is too long (max 255 characters)' });
+    rerender(saleOpts({ onSaleCompleted }));
+    expect(result.current.error).toBeNull();
+    await act(async () => { await result.current.complete(); });
+    expect(onSaleCompleted).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ cashierRef }));
+    expect(result.current.stage.kind).toBe('receipt');
+  });
+
+  it.each([
+    ['a 255-character email', { id: 'cus_1', name: 'Long', email: `${'a'.repeat(246)}@test.com` }, 'email'],
+    ['a customerId with a NUL', { id: 'cus\u00001', name: 'Nul', email: 'nul@test.com' }, 'id'],
+  ])("setCustomer refuses a searched customer with %s, keeping the sale's customer", (_name, customer, field) => {
+    const jane = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+    const { result } = renderSale(pricing);
+    act(() => result.current.setCustomer(jane));
+    act(() => result.current.setCustomer(customer));
+    expect(result.current.error).toBe(`This customer's ${field} can't be sent to the store, so they weren't added to the sale.`);
+    expect(result.current.order.customer).toEqual(jane);
+    act(() => result.current.setCustomer(null));
+    expect(result.current).toMatchObject({ order: { customer: null }, error: null });
+  });
+
+  it("setTender applies a tender whose terminal reference finalize would refuse without the reference, warns, and complete() stores it", async () => {
+    const logged: LogEntry[] = [];
+    saleLogger.addSink({ id: 'dropped-reference', levels: ['warn'], write: (entry) => logged.push(entry) });
+    try {
+      const onSaleCompleted = vi.fn();
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      const total = result.current.order.totalMinor;
+      for (const [reference, reason] of [['r'.repeat(256), 'it is over 255 characters'], ['A\u0000', 'it contains a NUL character']]) {
+        act(() => result.current.setTender({ method: 'external', amountMinor: total - 1, reference: 'OLD' }));
+        act(() => result.current.setTender({ method: 'external', amountMinor: total, reference }));
+        expect(result.current.order.payments).toHaveLength(1);
+        expect(result.current.order.payments[0]).toMatchObject({ method: 'external', amountMinor: total });
+        expect(result.current.order.payments[0]).not.toHaveProperty('reference');
+        expect(result.current.error)
+          .toBe(`The terminal's payment reference couldn't be kept (${reason}); the payment is recorded without it.`);
+      }
+      expect(logged).toEqual([expect.objectContaining({ level: 'warn', data: { reason: 'it is over 255 characters', method: 'external' } }),
+        expect.objectContaining({ level: 'warn', data: { reason: 'it contains a NUL character', method: 'external' } })]);
+      await act(async () => { await result.current.complete(); });
+      expect(onSaleCompleted).toHaveBeenCalledTimes(1);
+      expect(onSaleCompleted.mock.calls[0][0].payments).toEqual([{ id: expect.any(String), method: 'external', amountMinor: total }]);
+      expect(result.current).toMatchObject({ stage: { kind: 'receipt' }, error: null });
+    } finally {
+      saleLogger.removeSink('dropped-reference');
+    }
+  });
+
+  it('a successful setCustomer clears only a customer refusal: a finalize error and a dropped-reference message stay', async () => {
+    const jane = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: vi.fn() }));
+    addSaleLines(result);
+    act(() => result.current.startTender('cash'));
+    act(() => result.current.setTender({ method: 'cash', amountMinor: 1000 }));
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBe('finalize: underpaid');
+    act(() => result.current.setCustomer(jane));
+    expect(result.current).toMatchObject({ error: 'finalize: underpaid', order: { customer: jane } });
+    act(() => result.current.setTender({ method: 'external', amountMinor: 1000, reference: 'A\u0000' }));
+    const dropped = result.current.error;
+    act(() => result.current.setCustomer(null));
+    expect(result.current.error).toBe(dropped);
+    act(() => result.current.setCustomer({ id: 'x\u0000', name: 'Nul' }));
+    expect(result.current.error).toMatch(/^This customer's id/);
+    act(() => result.current.setCustomer(jane));
+    expect(result.current.error).toBeNull();
+  });
+
+  it('a failed save, then an out-of-bounds cashierRef: the save error shows first, and Retry still delivers the pending order', async () => {
+    let fail = true;
+    const onSaleCompleted = vi.fn(async (_order: PosOrder) => { if (fail) throw new Error('Storage full'); });
+    const { result, rerender } = renderWithOpts(saleOpts({ onSaleCompleted }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.saving).toBe(true);
+    rerender(saleOpts({ onSaleCompleted, cashierRef: 'c'.repeat(300) }));
+    expect(result.current.error).toBe('The sale could not be saved: Storage full');
+    fail = false;
+    await act(async () => { await result.current.complete(); });
+    expect(onSaleCompleted).toHaveBeenCalledTimes(2);
+    expect(onSaleCompleted.mock.calls[1][0]).toBe(onSaleCompleted.mock.calls[0][0]);
+    expect(onSaleCompleted.mock.calls[1][0].cashierRef).toBe(cashierRef);
+    expect(result.current).toMatchObject({ stage: { kind: 'receipt' }, error: 'cashierRef is too long (max 255 characters)' });
+  });
+
+  it('a registerId with a NUL is refused the same way', () => {
+    const { result, rerender } = renderWithOpts(saleOpts({ registerId: 'register\u00001' }));
+    expect(result.current.error).toBe('registerId contains a NUL character');
+    rerender(saleOpts());
+    expect(result.current.error).toBeNull();
+  });
+});

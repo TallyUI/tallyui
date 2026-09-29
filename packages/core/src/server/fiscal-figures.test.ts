@@ -29,6 +29,28 @@ it('accepts a discount-free v3 and a discounted v3', () => {
   expect(fiscalFiguresErrors(discounted)).toEqual([])
 })
 
+it.each([
+  ['display.lines[0].discounts[0].discountId', 'discountId'], ['display.lines[0].discounts[0].label', 'label'], ['taxByRate[0].code', 'code'],
+] as const)('bounds %s at 255 characters and refuses a NUL in it', (path, key) => {
+  const at = (value: string) => {
+    const v3 = structuredClone(payload)
+    v3.display!.lines[0].discounts = [{ discountId: 'discount_1', label: 'Sale', amountMinor: 0 }]
+    if (key === 'code') v3.taxByRate![0].code = value
+    else v3.display!.lines[0].discounts[0][key] = value
+    return v3
+  }
+  expect(fiscalFiguresErrors(at('x'.repeat(255)))).toEqual([])
+  expect(fiscalFiguresErrors(at('x'.repeat(256)))).toEqual([`${path}: expected at most 255 characters`])
+  expect(fiscalFiguresErrors(at('a\u0000b'))).toEqual([`${path}: expected no NUL character`])
+})
+
+it('runs the string checks after the existing ones, keeping their order', () => {
+  const v3 = structuredClone(payload)
+  v3.taxByRate![0].code = 'x'.repeat(256)
+  v3.display!.totalMinor = 999
+  expect(fiscalFiguresErrors(v3)).toEqual(['display.totalMinor: expected payload.totalMinor', 'taxByRate[0].code: expected at most 255 characters'])
+})
+
 it('an unsupported currency adds no exponent error, leaving it to the planner', () => {
   expect(fiscalFiguresErrors({ ...payload, currency: 'INVALID', display: { ...payload.display!, currency: 'INVALID' } })).toEqual([])
 })
