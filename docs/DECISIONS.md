@@ -970,8 +970,8 @@ interface OrderCreatePayload {
   - So unlike `invalid_payload`, it isn't final. The outbox should keep the order `rejected` with its reason, and let Retry resend it after the store is fixed (backlog item 52).
   - The platform's own internal failures stay transient: 503, retried.
   - Introduced by medusapos/app#94.
-- **Amendment (2026-09-29, `platform_error`):** a new rejection code `platform_error` (Front
-  desk ruling; TallyUI #211).
+- **Amendment (2026-09-29, `platform_error`):** a new rejection code
+  `platform_error` (Front desk ruling; TallyUI #211).
   - It is returned as `status: 'rejected'`, with `error: { code:
     'platform_error', message: '<platformCode>: <platformMessage>', data: {
     platformCode, platformMessage } }`, for a platform-native error that no
@@ -1003,6 +1003,39 @@ interface OrderCreatePayload {
     - On Vendure, an `ErrorResult` is a returned value, not a thrown error,
       so it counts as this rollback's trigger only once the plugin has
       turned it into that rollback.
+    - **The order of the steps** (Front desk, 2026-09-29):
+      - Pure **shape** validation (types, bounds, a NUL character) comes
+        first, before any lookup. A NUL in `clientOrderId` would make the
+        lookup itself fail (Postgres 22021) before any claim exists. A shape
+        failure answers `invalid_payload` and is not stored; the till's
+        Retry mints a new id.
+      - Then the replay lookup and the collision lookup.
+      - Then the claim.
+      - Then the plugin's deterministic checks, before the first write of
+        the sale. A failure there is stored on the claim with no savepoint:
+        nothing of the sale exists yet. A stored rejection is safe, because
+        the till's Retry mints a new command id and re-evaluates.
+      - Only a permanent condition that appears after those checks (for
+        example, a variant deleted concurrently), and `internal_error`, are
+        left on the savepoint path.
+      - Races that clear on retry stay transient.
+    - **On Vendure, events published inside the savepoint still fire after
+      the stored rejection commits.** Events are deferred to the outer
+      transaction's commit (`@vendure/core` 3.7.3,
+      `dist/event-bus/event-bus.js` lines 241–265), and a savepoint rollback
+      doesn't cancel them (`TransactionSubscriber.awaitTransactionEvent`).
+      This was verified in the vendurepos S1 and VP2a work.
+      - So a savepoint rejection is allowed only for an error raised
+        **before the first event is published**, which is before the order's
+        step-6 state transition (ADR-047).
+      - A permanent error after that point means part of the sale remains.
+        The plugin applies the sale with a warning, or marks the row as
+        needing an admin if it can't complete it.
+      - When it marks the row, it commits the sale's writes so far together
+        with the marked claim, and does not roll back the savepoint, so the
+        admin has an order to apply or reject.
+      - The plugin's own event subscribers ignore events for an order that no
+        longer exists.
     - This amends ADR-047's "a thrown error rolls back and returns 503" for
       classified permanent errors only.
   - **If part of the sale remains and can't be undone**, the plugin finishes
@@ -1014,19 +1047,50 @@ interface OrderCreatePayload {
   - **If compensation itself fails**, the plugin never returns
     `platform_error` and never releases the claim. The claim stays in
     progress, so the till's resends of the same id get `409 in_progress`,
-    and the till flags the order after 15 minutes of such answers (once
-    TallyUI #212 merges). The plugin logs the failure for an admin (Front
-    desk, 2026-09-29).
+    and the till flags the order after 15 minutes of such answers (TallyUI
+    #212). The plugin logs the failure for an admin (Front desk,
+    2026-09-29).
     - The ledger row is marked as needing an admin, with a distinct status
       or flag. A marked row still answers resends with `409 in_progress`,
-      never `duplicate` or `rejected`. A plugin's stale-in-progress reclaim path (medusapos
-      reclaims stale `in_progress` rows after a timeout) never re-runs the
-      recipe on a marked row.
+      never `duplicate` or `rejected`. A plugin's stale-in-progress reclaim
+      path (medusapos reclaims stale `in_progress` rows after a timeout)
+      never re-runs the recipe on a marked row.
     - An admin resolves it by explicitly applying or rejecting the command.
+    - **An admin "reject"** (Front desk, 2026-09-29), in this order:
+      - It cancels the half-written order.
+      - In the same transaction as the cancel, it releases that order's
+        unique client order id. On Vendure it moves `tallyClientOrderId` to
+        a non-unique `tallyRejectedClientOrderId`. It also flags the order
+        as rejected (`metadata.tally_rejected` or equivalent), so it counts
+        as never placed (see ADR-068 rule 6).
+      - Only after the cancel succeeds does a compare-and-set move the row
+        from marked to rejected. On Medusa, which has no single
+        transaction, the plugin cancels first and stores the rejection last.
+      - A crash between the two leaves the row marked, so a Retry stays
+        transient.
+      - Running the reject again treats an already-cancelled order as
+        cancelled, and completes its flag and its client-id release. On
+        Medusa a crash can fall between the cancel and the flag.
+      - If the cancel fails, the reject refuses. The row stays marked, and
+        the admin applies the command instead.
+    - **How the rejection is stored:** as `platform_error` with
+      `platformCode: 'TALLY_ADMIN_REJECTED'`, and `platformMessage`
+      carrying the admin's reason.
+      - The `TALLY_` prefix is reserved for TallyUI and is never a platform
+        code. Every plugin uses this code.
+      - It is the one `platform_error` stored while an order remains.
+      - For the no-durable-change rule above, a cancelled order flagged
+        `tally_rejected`, with its client id released, counts as no order.
+        Emails already sent can't be recalled, and that is accepted.
+      - Such an order arises in only two ways: this admin reject, or a
+        compensation that leaves a cancelled order. That compensation must
+        also set the flag and release the client id.
+      - The admin is told that the till's Retry records the sale again, as a
+        new sale.
   - **A backstop against a second sale:** Retry resends the same
     `clientOrderId` under a new command id. Where a plugin has a unique
     client order id (Vendure's `tallyClientOrderId`, ADR-047 step 2), it
-    never creates a second order for it. Medusa's
+    never creates a second **live** order for it. Medusa's
     `metadata.tally_client_id` (ADR-038) is not unique.
   - **A `clientOrderId` collision** (a new command id, the same
     `clientOrderId`, an order that already exists) is never
@@ -1037,19 +1101,42 @@ interface OrderCreatePayload {
       `serverRefs`, carrying the original result's warnings. It claims and
       stores the new command id as applied, so a replay of that id returns
       `duplicate`.
+      - "Applied command" means the row that last applied the order,
+        following "superseded by" links.
     - **The source row is in progress, but its lease is stale:** the
       original attempt crashed, and the till has moved on to the new command
       id, so it will never resend the old one. The plugin may resume the
       found order forward under the new command's claim (state-driven
       orphan recovery) and store the new id as applied. Without this, a
       crash during the first attempt would leave the sale stuck forever.
+      - It first takes over the old row's lease with a compare-and-set
+        update. The update matches "in progress, not marked for an admin,
+        with the lease as read", so a stale reclaim of the old id can't
+        resume the same order at the same time. If the compare-and-set
+        loses, the answer is transient.
+      - In the same transaction that stores the new id as applied, it marks
+        the old row as superseded by the new id, rather than leaving it in
+        progress for good.
+      - A late replay of the old id then answers `duplicate` with the
+        recovered order's `serverRefs`.
+      - The stale-reclaim path skips superseded rows, as it skips marked
+        ones.
+    - **The source row was rejected and its order cancelled** (for example
+      by an admin reject): a Retry under a new command id for the same
+      `clientOrderId` is processed as a **new** sale, not answered
+      transient (Front desk, 2026-09-29).
+      - The admin reject released the cancelled order's client id, so on
+        Vendure the new sale doesn't hit the unique constraint.
+      - On Medusa, the lookup skips cancelled orders flagged
+        `tally_rejected`, whether or not a ledger row remains.
+      - A rejected row with a live order is unreachable, by the reject's
+        ordering above.
     - **Stay transient in every other case:** the plugin can't find the
       order, the source row is in progress with a **fresh** lease, or the
       source row is marked as needing an admin. In that last case the new id
       gets no admin mark of its own. A new command id must never get round a
       live attempt or an admin mark. The till flags the order after 15
-      minutes of such answers (once TallyUI #212 merges). Until then, a 503
-      that keeps repeating holds up every later sale.
+      minutes of such answers (TallyUI #212).
   - Unlike `invalid_payload` and `store_configuration`, it **is** stored in
     the ledger, and a replay returns the recorded rejection.
   - An error the plugin can't classify stays transient (503, retried),
@@ -1061,9 +1148,9 @@ interface OrderCreatePayload {
   - The till shows the order under "Needs attention" with Retry, like any
     rejection other than `idempotency_mismatch`.
   - The Medusa plugin has no case for it today. Its unclassified errors
-    stay transient (apart from `internal_error`), because Medusa's `INVALID_DATA` also surfaces for
-    retryable races. A Medusa case needs its own ruling, with a concrete
-    error that is never retryable.
+    stay transient (apart from `internal_error`), because Medusa's
+    `INVALID_DATA` also surfaces for retryable races. A Medusa case needs
+    its own ruling, with a concrete error that is never retryable.
   - Every rejection code except `register_approval_required` (which arrives
     with c2c), as a type: `CommandRejectionCode` in `@tallyui/core/server`.
 - **Amendment (2026-09-29, `internal_error`):** a new rejection code
@@ -3331,6 +3418,15 @@ interface OrderCreatePayload {
              an order carrying `tally_payments` counts when its status is
              `completed`, `archived` or `canceled`; `pending` and `draft`
              don't.
+           - **Amendment (2026-09-29, Front desk):** these also count as
+             never placed:
+             - an order cancelled by an ADR-038 admin reject;
+             - an order left cancelled by a compensation that returned
+               `platform_error` or stayed transient.
+
+             Each is flagged (`metadata.tally_rejected` or equivalent) and
+             excluded from the register figures. Otherwise the till's Retry,
+             which records the sale again, would count the same cash twice.
          - Refunds (after c2) go into a refund figure. They are never taken
            out of `expected`.
          - The reason: the till's `tillExpected` and `counted` are the
