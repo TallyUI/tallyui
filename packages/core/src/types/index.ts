@@ -15,7 +15,7 @@ export type { ReplicationAdapter } from './replication';
 export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 
 export type { StoreSettings, StoreSettingsChoice } from './store-settings';
-export { CustomerServiceError, type Customer, type CustomerInput } from './customers';
+export { customerTraits, CustomerServiceError, type Customer, type CustomerInput } from './customers';
 
 export type { ProductTraits, TraitContext, VariantSummary } from './traits/product';
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
-import { createOrderBuilder, type Discount, type Order } from '../order';
+import { createOrderBuilder, type CustomerSummary, type Discount, type Order } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
 import { useTax } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
@@ -217,6 +217,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       return null;
     },
     removeDiscount(id: string) { if (!locked()) builder.removeDiscount(id); },
+    /** the picked customer reaches the server as order.create v3's customer.customerId */
+    setCustomer(customer: CustomerSummary | null) { if (!locked()) builder.setCustomer(customer); },
     /**
      * Pins `options.session` for this tender when given, else the rendered `session` option. Pass the
      * session `useRegisterSession`'s `requireSaleSession()` returned: the rendered one can lag a session

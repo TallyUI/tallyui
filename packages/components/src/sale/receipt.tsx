@@ -34,6 +34,7 @@ export function Receipt({ order, store, cashier, registerId, newSale, taxLabel =
     <Text className="text-foreground">Order {receipt.header.orderNumber.slice(-8)}</Text>
     <Text className="text-muted-foreground">{formatDate(receipt.header.date)}</Text>
     <Text className="text-muted-foreground">Cashier: {receipt.header.cashier}</Text>
+    {receipt.header.customer && <Text>Customer: {receipt.header.customer}</Text>}
     {receipt.lineItems.map((line, index) => <View key={index}>
       <Text className="text-foreground">{line.name}</Text>
       {/* Before any discount, then the line's own discounts as sub-rows (TallyUI ADR-063); they add up to the subtotal. */}

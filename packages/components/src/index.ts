@@ -63,6 +63,8 @@ export {
 export {
   CustomerCard,
   CustomerSelect,
+  CustomerPicker,
+  type CustomerPickerProps,
   type CustomerCardProps,
   type CustomerSelectProps,
   CustomerForm,
