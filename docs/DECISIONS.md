@@ -1048,8 +1048,10 @@ interface OrderCreatePayload {
           `cashierRef` come from the catalogue or the app's settings, which
           finalize and `useSale` check but an older till's stored order
           never went through. If one is over its bound, the order is
-          answered `invalid_payload` and shows under "Needs attention"; a
-          requeue sends the same id, so it needs fixing at the store.
+          answered `invalid_payload` and shows under "Needs attention". A
+          requeue gives it a new command id but resends the same
+          `variantId` (or `productId`, `registerId`, `cashierRef`), so it
+          is reconciled by hand at the store.
         - on the Vendure plugin, a future bound on `payload.createdAt`
           (Vendure's `tallySaleAt`). It may be at most 24 hours ahead of
           the server's clock. There is no lower bound, because an offline
