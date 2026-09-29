@@ -1012,18 +1012,25 @@ interface OrderCreatePayload {
       - Then the replay lookup and the collision lookup.
       - Then the claim.
       - Then the plugin's deterministic checks, before the first write of
-        the sale. They split into two classes (Front desk, 2026-09-29):
-        - **Stored on the claim, with no savepoint:** `unknown_variant` (a
-          variant that is missing, deleted or disabled, a product that isn't
-          published, a variant in the wrong channel), `underpaid`, and the
-          other state-dependent permanent rejections. Nothing of the sale
-          exists yet. A stored rejection is safe, because the till's Retry
-          mints a new command id and re-evaluates.
-        - **Not stored, claim released:** `store_configuration` (the
-          2026-09-28 amendment), and `unsupported_currency`, which this
-          ruling gives the same treatment because it too depends on the
-          store's configuration. Once the store is fixed, the **same**
-          command id applies.
+        the sale, on every platform. They split into two classes (Front
+        desk, 2026-09-29).
+        - **Not stored, claim released:** anything about the store-wide
+          setup the plugin needs for any sale. That is `store_configuration`
+          (the 2026-09-28 amendment), plus `unsupported_currency` and
+          `unsupported_tax_mode`, which this ruling gives the same
+          treatment. Once the store is fixed, the **same** command id
+          applies.
+        - **Stored on the claim, with no savepoint:** anything about the
+          sale's own catalogue or payload facts:
+          - `unknown_variant` (a variant that is missing, deleted or
+            disabled, a product that isn't published, a variant in the wrong
+            channel);
+          - `invalid_quantity`;
+          - `underpaid`.
+          Nothing of the sale exists yet. A stored rejection is safe,
+          because the till's Retry mints a new command id and re-evaluates.
+        - `unsupported_version` is checked before the claim, as before, and
+          recorded nowhere.
       - Only a permanent condition that appears after those checks (for
         example, a variant deleted concurrently), and `internal_error`, are
         left on the savepoint path.
@@ -1035,21 +1042,26 @@ interface OrderCreatePayload {
       doesn't cancel them (`TransactionSubscriber.awaitTransactionEvent`).
       This was verified in the vendurepos S1 and VP2a work.
       - So a savepoint rejection is allowed only for an error raised
-        **before the first event is published**, which is before the order's
-        step-6 state transition (ADR-047).
-      - **In practice no recipe error is stored on Vendure** (Front desk,
-        2026-09-29). The first event fires as early as creating the
-        customer or the draft order, so nothing in the recipe runs before an
-        event.
-        - Races and errors roll back as transient.
-        - A plugin bug after a write parks the row as needing an admin.
-        - `internal_error` is never raised on Vendure.
-      - A permanent error after that point means part of the sale remains.
-        The plugin applies the sale with a warning, or marks the row as
-        needing an admin if it can't complete it.
-      - When it marks the row, it commits the sale's writes so far together
-        with the marked claim, and does not roll back the savepoint, so the
-        admin has an order to apply or reject.
+        **before the first event is published**. On Vendure that is the
+        first write: the draft order is created (ADR-047 step 2), then the
+        customer (step 4), and each publishes an event.
+      - **On Vendure no error from a recipe step after the first write is
+        stored** (Front desk, 2026-09-29). The deterministic checks above
+        still run before that write, and are stored as ruled.
+        - A permanent platform error after the first write rolls back
+          **fully** and stays transient (503). A full rollback drops the
+          published events (below), and the till flags the order after 15
+          minutes of such answers (TallyUI #212).
+        - A plugin bug after a write marks the row as needing an admin.
+        - `internal_error` is allowed only for a plugin bug **before** the
+          first write, never after it.
+      - **Where a rollback can't undo what was published**, a permanent error
+        after the first event means part of the sale remains. The plugin
+        applies the sale with a warning, or marks the row as needing an
+        admin if it can't complete it.
+      - Whenever a plugin marks the row, it commits the sale's writes so far
+        together with the marked claim, and does not roll back the
+        savepoint, so the admin has an order to apply or reject.
       - The plugin's own event subscribers ignore events for an order that no
         longer exists.
     - The savepoint recipe above amends ADR-047's "a thrown error rolls back
@@ -1071,7 +1083,8 @@ interface OrderCreatePayload {
         keeps the transaction active, so the event is released at the
         outer `COMMIT`.
       - So ADR-047's transient path (a thrown error, a full rollback, 503)
-        stays safe even after events have been published (from step 6 on),
+        stays safe even after events have been published (from the first
+        write, ADR-047 step 2, on),
         for core, EmailPlugin and DefaultSearchPlugin subscribers.
       - **The tally plugin must pass the transactional `RequestContext`**
         (from `withTransaction` or `@Transaction()`) into every service
@@ -1190,8 +1203,9 @@ interface OrderCreatePayload {
       gets no admin mark of its own. A new command id must never get round a
       live attempt or an admin mark. The till flags the order after 15
       minutes of such answers (TallyUI #212).
-  - Unlike `invalid_payload` and `store_configuration`, it **is** stored in
-    the ledger, and a replay returns the recorded rejection.
+  - Unlike `invalid_payload`, `store_configuration`, `unsupported_currency`
+    and `unsupported_tax_mode`, it **is** stored in the ledger, and a replay
+    returns the recorded rejection.
   - An error the plugin can't classify stays transient (503, retried),
     never `platform_error`, except in the narrow `internal_error` case
     below. This carves one exception out of the previous
@@ -1241,6 +1255,10 @@ interface OrderCreatePayload {
   - It is for `order.create` only, like `platform_error`. The till shows it
     under "Needs attention" with Retry. That is safe because nothing
     remains, and Retry only helps once the plugin is fixed.
+  - **On Vendure** it is allowed only for a plugin bug **before** the first
+    write (the draft order, ADR-047 step 2). After that write, a plugin bug
+    marks the row as needing an admin instead (the `platform_error`
+    amendment's Vendure rules, Front desk, 2026-09-29).
 - **Amendment 2 (2026-09-24):** `OrderCreateLine` gains an optional
   `taxInclusive?: boolean` — this line's own tax mode, when it differs from
   the order's `pricesIncludeTax` (a price that carries its own flag, D2c).
