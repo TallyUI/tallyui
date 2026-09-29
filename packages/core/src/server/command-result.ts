@@ -62,7 +62,12 @@ export function parseCommandResult(value: unknown): CommandResult {
             throw new CommandResultError(`Invalid ${field}.${key}`)
           }
         }
-        return { code: item.code, expectedMinor: item.expectedMinor as number, serverMinor: item.serverMinor as number }
+        if (item.bridgeMinor != null && !Number.isSafeInteger(item.bridgeMinor)) {
+          throw new CommandResultError(`Invalid ${field}.bridgeMinor`)
+        }
+        return item.bridgeMinor != null
+          ? { code: item.code, expectedMinor: item.expectedMinor as number, serverMinor: item.serverMinor as number, bridgeMinor: item.bridgeMinor as number }
+          : { code: item.code, expectedMinor: item.expectedMinor as number, serverMinor: item.serverMinor as number }
       }
       if (item.code === 'insufficient_stock') {
         if (typeof item.variantId !== 'string' || item.variantId.length === 0) {
@@ -72,6 +77,17 @@ export function parseCommandResult(value: unknown): CommandResult {
           throw new CommandResultError(`Invalid ${field}.quantity`)
         }
         return { code: item.code, variantId: item.variantId, quantity: item.quantity as number }
+      }
+      if (item.code === 'tax_rate_mismatch') {
+        if (!Number.isSafeInteger(item.ratePpm) || (item.ratePpm as number) < 0) {
+          throw new CommandResultError(`Invalid ${field}.ratePpm`)
+        }
+        for (const key of ['expectedMinor', 'serverMinor']) {
+          if (!Number.isSafeInteger(item[key])) {
+            throw new CommandResultError(`Invalid ${field}.${key}`)
+          }
+        }
+        return { code: item.code, ratePpm: item.ratePpm as number, expectedMinor: item.expectedMinor as number, serverMinor: item.serverMinor as number }
       }
       throw new CommandResultError(`Invalid ${field}.code`)
     })

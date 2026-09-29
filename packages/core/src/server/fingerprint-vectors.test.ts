@@ -19,7 +19,6 @@ vectors.forEach(({ name, canonical, fingerprint }, index) => {
   it(`pins the canonical bytes and SHA-256 for ${name}`, () => {
     const envelope = envelopes[index]
     expect(canonicalJson(envelope)).toBe(canonical)
-    // Exercise the recorded register vector without widening the source's order-only signature.
-    expect(commandFingerprint(envelope as Parameters<typeof commandFingerprint>[0])).toBe(fingerprint)
+    expect(commandFingerprint(envelope)).toBe(fingerprint)
   })
 })

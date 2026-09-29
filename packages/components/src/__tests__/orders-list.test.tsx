@@ -188,11 +188,19 @@ describe('OrdersList', () => {
     expect(screen.getAllByText(expected)).toHaveLength(2);
   });
 
-  it('renders the rounding note for a total_mismatch with bridgeMinor', () => {
+  it('renders the rounding line for a total_mismatch with a positive bridgeMinor', () => {
     const warned = order('w', { syncStatus: 'applied',
       warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: 5 }] });
     render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
-    const expected = `Store total ${formatMoney({ amount: 1195, currency: 'EUR' })} vs POS ${formatMoney({ amount: 1200, currency: 'EUR' })} (rounding of ${formatMoney({ amount: 5, currency: 'EUR' })} added)`;
+    const expected = `Store calculated ${formatMoney({ amount: 1195, currency: 'EUR' })}; a rounding line of +${formatMoney({ amount: 5, currency: 'EUR' })} brought it to ${formatMoney({ amount: 1200, currency: 'EUR' })}`;
+    expect(screen.getAllByText(expected)).toHaveLength(2);
+  });
+
+  it('renders the rounding line for a total_mismatch with a negative bridgeMinor', () => {
+    const warned = order('w', { syncStatus: 'applied',
+      warnings: [{ code: 'total_mismatch', expectedMinor: 1195, serverMinor: 1200, bridgeMinor: -5 }] });
+    render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
+    const expected = `Store calculated ${formatMoney({ amount: 1200, currency: 'EUR' })}; a rounding line of ${formatMoney({ amount: -5, currency: 'EUR' })} brought it to ${formatMoney({ amount: 1195, currency: 'EUR' })}`;
     expect(screen.getAllByText(expected)).toHaveLength(2);
   });
 

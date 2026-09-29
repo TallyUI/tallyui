@@ -60,8 +60,10 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               {warning.code === 'insufficient_stock'
                 ? `Stock short by ${warning.quantity} for ${order.lines.find((line) => line.variantId === warning.variantId)?.name}`
                 : warning.code === 'tax_rate_mismatch'
-                ? `Tax at ${warning.ratePpm / 10000}%: store ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
-                : `Store total ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}${warning.bridgeMinor !== undefined ? ` (rounding of ${formatMoney({ amount: warning.bridgeMinor, currency: order.currency })} added)` : ''}`}
+                ? `Tax at ${(warning.ratePpm / 10000).toLocaleString(undefined, { maximumFractionDigits: 4 })}%: store ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
+                : warning.bridgeMinor !== undefined
+                ? `Store calculated ${formatMoney({ amount: warning.serverMinor, currency: order.currency })}; a rounding line of ${warning.bridgeMinor > 0 ? '+' : ''}${formatMoney({ amount: warning.bridgeMinor, currency: order.currency })} brought it to ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
+                : `Store total ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`}
             </Text></View>)}
           </View>
           );
