@@ -57,7 +57,7 @@
   },
   "devDependencies": {
     "@types/react": ">=18",
-    "rxdb": "17.4.0",
+    "rxdb": "17.5.0",
     "rxjs": ">=7",
     "react": "^19.2.4"
   }

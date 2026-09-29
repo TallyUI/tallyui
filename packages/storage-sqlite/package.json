@@ -45,19 +45,19 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "rxdb": "17.4.0",
+    "rxdb": "17.5.0",
     "rxjs": "7.8.2"
   },
   "devDependencies": {
     "@sqlite.org/sqlite-wasm": "3.53.4-build1",
     "esbuild": "0.27.3",
     "expo-sqlite": "16.0.10",
-    "rxdb-premium": "17.4.0"
+    "rxdb-premium": "17.5.0"
   },
   "peerDependencies": {
     "@sqlite.org/sqlite-wasm": "^3.53.4-build1",
     "expo-sqlite": ">=15.0.0",
-    "rxdb-premium": "17.4.0"
+    "rxdb-premium": "17.5.0"
   },
   "peerDependenciesMeta": {
     "@sqlite.org/sqlite-wasm": {
