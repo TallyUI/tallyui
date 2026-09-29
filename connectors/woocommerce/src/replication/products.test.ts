@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SyncContext } from '@tallyui/core';
 
+import { woocommerceConnector, WooMissingUuidError } from '../index';
 import { wooProductReplication } from './products';
 
 const context: SyncContext = {
   connectorId: 'woocommerce',
-  baseUrl: 'https://example.com/wp-json/wc/v3',
-  headers: { Authorization: 'Basic dGVzdDp0ZXN0' },
+  baseUrl: 'https://example.com/wp-json/wcpos/v2',
+  headers: woocommerceConnector.auth.getHeaders({ token: 't' }),
 };
 
 describe('wooProductReplication.pull.handler', () => {
@@ -30,6 +31,12 @@ describe('wooProductReplication.pull.handler', () => {
 
     const result = await wooProductReplication.pull.handler(undefined, 100, context);
 
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://example.com/wp-json/wcpos/v2/products?per_page=100&orderby=modified&order=asc',
+      expect.objectContaining({
+        headers: { ...context.headers, 'Content-Type': 'application/json' },
+      }),
+    );
     expect(result.documents).toHaveLength(2);
     expect(result.documents[0]._deleted).toBe(false);
     expect(result.checkpoint).toEqual({
@@ -86,17 +93,25 @@ describe('wooProductReplication.pull.handler', () => {
     expect(result.checkpoint).toEqual(checkpoint);
   });
 
-  it('falls back to id when uuid is missing', async () => {
+  it.each([undefined, null, '', 42])('rejects a page with a product that has no uuid', async (uuid) => {
     const mockProducts = [
-      { id: 42, name: 'No UUID', date_modified_gmt: '2026-03-01T00:00:00' },
+      { id: 1, uuid: 'abc', name: 'Widget', date_modified_gmt: '2026-01-01T00:00:00' },
+      { id: 42, uuid, name: 'No UUID', date_modified_gmt: '2026-03-01T00:00:00' },
+      { id: 43, name: 'Also no UUID', date_modified_gmt: '2026-03-02T00:00:00' },
+      { id: 2, uuid: 'def', name: 'Gadget', date_modified_gmt: '2026-03-03T00:00:00' },
     ];
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(JSON.stringify(mockProducts), { status: 200 }),
     );
 
-    const result = await wooProductReplication.pull.handler(undefined, 100, context);
+    const result = wooProductReplication.pull.handler(undefined, 100, context);
 
-    expect(result.checkpoint.id).toBe('42');
+    await expect(result).rejects.toBeInstanceOf(WooMissingUuidError);
+    await expect(result).rejects.toMatchObject({
+      name: 'WooMissingUuidError',
+      productId: 42,
+      message: 'WooCommerce product 42 has no uuid: the store must run the WCPOS Free plugin (1.10.0 or later) and be reached through its wcpos/v2 routes',
+    });
   });
 });

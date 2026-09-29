@@ -8,7 +8,8 @@ import { wooProductReplication } from './replication/products';
 /**
  * WooCommerce connector for Tally UI.
  *
- * Connects to WooCommerce sites via the REST API (v3) or WCPOS API.
+ * Requires the WCPOS Free plugin 1.10.0 or later. SyncContext.baseUrl must
+ * be the store's wcpos/v2 root: <site>/wp-json/wcpos/v2.
  * Products are stored in RxDB using a schema that mirrors the WC API shape.
  *
  * ```ts
@@ -27,7 +28,7 @@ export const woocommerceConnector: TallyConnector = {
   icon: undefined, // TODO: WooCommerce logo
 
   auth: {
-    type: 'WooCommerce REST API',
+    type: 'WCPOS token',
     fields: [
       {
         key: 'url',
@@ -37,24 +38,16 @@ export const woocommerceConnector: TallyConnector = {
         required: true,
       },
       {
-        key: 'consumer_key',
-        label: 'Consumer Key',
-        type: 'text',
-        placeholder: 'ck_...',
-        required: true,
-      },
-      {
-        key: 'consumer_secret',
-        label: 'Consumer Secret',
+        key: 'token',
+        label: 'Access token',
         type: 'password',
-        placeholder: 'cs_...',
         required: true,
       },
     ],
     getHeaders: (credentials) => {
-      const encoded = btoa(`${credentials.consumer_key}:${credentials.consumer_secret}`);
       return {
-        Authorization: `Basic ${encoded}`,
+        Authorization: `Bearer ${credentials.token}`,
+        'X-WCPOS': '1',
       };
     },
   },
@@ -80,4 +73,4 @@ export const woocommerceConnector: TallyConnector = {
 export { wooProductSchema } from './schemas/products';
 export { wooProductTraits } from './traits/product';
 export { wooProductSync } from './sync/products';
-export { wooProductReplication } from './replication/products';
+export { wooProductReplication, WooMissingUuidError } from './replication/products';

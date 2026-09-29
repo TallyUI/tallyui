@@ -5,6 +5,16 @@ export type WooProductCheckpoint = {
   modified: string;
 };
 
+export class WooMissingUuidError extends Error {
+  name = 'WooMissingUuidError';
+  productId: number;
+
+  constructor(id: number) {
+    super(`WooCommerce product ${id} has no uuid: the store must run the WCPOS Free plugin (1.10.0 or later) and be reached through its wcpos/v2 routes`);
+    this.productId = id;
+  }
+}
+
 /**
  * Replication adapter for WooCommerce products.
  *
@@ -38,11 +48,16 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       }
 
       const products: any[] = await response.json();
+      for (const product of products) {
+        if (typeof product.uuid !== 'string' || product.uuid.length === 0) {
+          throw new WooMissingUuidError(product.id);
+        }
+      }
       const documents = products.map((p) => ({ ...p, _deleted: false }));
 
       const checkpoint: WooProductCheckpoint = products.length > 0
         ? {
-            id: String(products[products.length - 1].uuid ?? products[products.length - 1].id),
+            id: products[products.length - 1].uuid,
             modified: products[products.length - 1].date_modified_gmt,
           }
         : lastCheckpoint ?? { id: '', modified: '' };
