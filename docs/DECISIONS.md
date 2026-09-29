@@ -1022,7 +1022,7 @@ interface OrderCreatePayload {
     - **On Vendure, events published inside the savepoint still fire after
       the stored rejection commits.** Events are deferred to the outer
       transaction's commit (`@vendure/core` 3.7.3,
-      `dist/event-bus/event-bus.js` lines 241–265), and a savepoint rollback
+      `dist/event-bus/event-bus.js` lines 241–270), and a savepoint rollback
       doesn't cancel them (`TransactionSubscriber.awaitTransactionEvent`).
       This was verified in the vendurepos S1 and VP2a work.
       - So a savepoint rejection is allowed only for an error raised
@@ -1036,8 +1036,45 @@ interface OrderCreatePayload {
         admin has an order to apply or reject.
       - The plugin's own event subscribers ignore events for an order that no
         longer exists.
-    - This amends ADR-047's "a thrown error rolls back and returns 503" for
-      classified permanent errors only.
+    - The savepoint recipe above amends ADR-047's "a thrown error rolls back
+      and returns 503" for classified permanent errors only.
+    - **A full transaction rollback, by contrast, drops the events published
+      inside it.** This was verified by reading the source (the vendurepos
+      worker, 2026-09-29, `@vendure/core` 3.7.3 and TypeORM 0.3.31 on
+      Postgres; confirmed by an independent review). It is not yet covered
+      by a runtime test. It applies to `EventBus.ofType()` and `filter()`
+      subscribers such as EmailPlugin and the search index.
+      - `event-bus.js` lines 241–270 (`awaitActiveTransactions`) wait on
+        `TransactionSubscriber.awaitCommit`. On a
+        `TransactionSubscriberError` they return `undefined`, which the
+        `filter(notNullOrUndefined)` at lines 95 and 107 drops.
+      - TypeORM's `PostgresQueryRunner.js` lines 155–167: a full `ROLLBACK`
+        clears `isTransactionActive` and broadcasts
+        `AfterTransactionRollback`, which makes `awaitCommit` throw
+        (`transaction-subscriber.js` lines 48–66). `ROLLBACK TO SAVEPOINT`
+        keeps the transaction active, so the event is released at the
+        outer `COMMIT`.
+      - So ADR-047's transient path (a thrown error, a full rollback, 503)
+        stays safe even after events have been published (from step 6 on),
+        for core, EmailPlugin and DefaultSearchPlugin subscribers.
+      - **The tally plugin must pass the transactional `RequestContext`**
+        (from `withTransaction` or `@Transaction()`) into every service
+        call. An event whose context carries no transaction manager with a
+        query runner is delivered at once (lines 243–249), whoever publishes
+        it, and would escape a rollback.
+      - **Merchant code that runs inside the transaction is outside this
+        guarantee.** Its external side effects survive a full rollback. For
+        example:
+        - blocking event handlers (`event-bus.js` lines 83 and 166), which
+          run inside `publish()`. Core registers none for order events, and
+          EmailPlugin none at all;
+        - `OrderProcess`, `PaymentProcess` and `FulfillmentProcess` hooks
+          (`onTransitionStart` and `onTransitionEnd`), which the step-6 and
+          step-7 transitions run;
+        - merchant strategies with side effects, and TypeORM entity
+          subscribers;
+        - jobs a merchant enqueues directly rather than from an event
+          subscriber.
   - **If part of the sale remains and can't be undone**, the plugin finishes
     and applies the sale (with a warning where one fits), and never rejects
     it. After a complete compensation, either `platform_error` (if the error
