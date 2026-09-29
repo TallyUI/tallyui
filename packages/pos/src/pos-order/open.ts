@@ -12,18 +12,19 @@ import type { PosOrder } from './types';
 export const posOrdersLogger = createLogger('pos-orders');
 
 /**
- * After this long waiting for a stuck migration, a close gives up rather than hang forever. RxDB
- * 17.5 cancels the migration as the collection closes, and it reads or writes nothing more in a store the close closes (see
- * `openPosOrders`). The next open finds the leftover status, resets it and the
- * checkpoint (as any DM4 does), and migrates again. An order that run already copied is found
- * equal and skipped, so the worst case is an `ERROR` status on the next open, never a lost order.
+ * After this long waiting for the open, a close gives up rather than hang forever. RxDB 17.5 cancels
+ * a running migration as the database closes, and the open then rejects with
+ * `PosOrderOpenClosedError`; the run reads or writes nothing more in a store the close closes (see
+ * `openPosOrders`). The next open finds the leftover `RUNNING` status, resets it and the checkpoint,
+ * and migrates again. An order that run already copied is found equal and skipped, so no order is lost.
  */
 export const POS_ORDER_MIGRATION_CLOSE_WAIT_MS = 10_000;
 
 /**
  * `addPosOrderCollection` stopped, before any further write, because its database is closing: it
- * was called once `close()` had begun, or the close stopped waiting for it (after
- * `POS_ORDER_MIGRATION_CLOSE_WAIT_MS`). No order is lost: reopen the database and call it again.
+ * was called once `close()` had begun, the close cancelled its migration (RxDB 17.5), or the close
+ * stopped waiting for it (after `POS_ORDER_MIGRATION_CLOSE_WAIT_MS`). No order is lost: reopen the
+ * database and call it again.
  */
 export class PosOrderOpenClosedError extends Error {
   readonly code = 'POS_ORDER_OPEN_CLOSED';
@@ -52,10 +53,12 @@ function waitWithTimeout(promise: Promise<unknown>, ms: number): Promise<boolean
  * through the same write RxDB's migration makes, and leaves orders without a copy (and any deleted
  * one) to the migration. `from` is whichever older version is stored, 0, 1 or 2.
  */
-async function writeOverStaleCopies(collection: RxCollection, from: RxStorageInstance<any, any, any>, to: RxStorageInstance<any, any, any>) {
+async function writeOverStaleCopies(collection: RxCollection, from: RxStorageInstance<any, any, any>, to: RxStorageInstance<any, any, any>,
+  stopIfClosing: () => void) {
   const handler = rxStorageInstanceToReplicationHandler(to, defaultConflictHandler, collection.database.token, true);
   for (let page = await getChangedDocumentsSince(from, 200); page.documents.length > 0;
     page = await getChangedDocumentsSince(from, 200, page.checkpoint)) {
+    stopIfClosing();
     const copies = new Map((await to.findDocumentsById(page.documents.map((doc) => doc.id), false)).map((copy) => [copy.id, copy]));
     const rows = await Promise.all(page.documents.filter((doc) => copies.has(doc.id) && !doc._deleted).map(async (doc) =>
       ({ assumedMasterState: copies.get(doc.id), newDocumentState: await migrateDocumentData(collection, from.schema.version, doc) })));
@@ -77,10 +80,11 @@ async function writeOverStaleCopies(collection: RxCollection, from: RxStorageIns
  * collection is added without `autoMigrate`, the status and a failed run's checkpoint are reset
  * (never an order or its storage), and the migration itself is awaited.
  *
- * A close waits for the whole open, up to `POS_ORDER_MIGRATION_CLOSE_WAIT_MS`. Called once the
- * database's close has begun, or when the close stops waiting, it rejects with
- * `PosOrderOpenClosedError` (`code: 'POS_ORDER_OPEN_CLOSED'`) before any further write: reopen and
- * call it again. Any other rejection (DM4, a storage error) is a real failure.
+ * A close waits for the open, up to `POS_ORDER_MIGRATION_CLOSE_WAIT_MS`, and cancels a running
+ * migration (RxDB 17.5). Called once the database's close has begun, when the close cancels its
+ * migration, or when the close stops waiting, it rejects with `PosOrderOpenClosedError`
+ * (`code: 'POS_ORDER_OPEN_CLOSED'`) before any further write: reopen and call it again. Any other
+ * rejection (DM4, a storage error) is a real failure.
  *
  * `closeWaitMs` is for tests only; the first open on a database sets it for that database's close.
  */
@@ -116,7 +120,18 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     stopIfClosing();
     const mustMigrate = await state.mustMigrate;
     stopIfClosing();
-    if (!mustMigrate) return collection;
+    if (!mustMigrate) {
+      // RxDB 17 refuses writes (COL25) to a collection above version 0 from its creation until its
+      // own `migrationNeeded()` read (migration-schema's `createRxCollection` hook), not this one,
+      // finds nothing to migrate. That promise is not exposed, and on the worker storage it answers
+      // later, so a sale saved straight after the open failed (e2e). So wait until RxDB clears the
+      // block, for at most 500 macrotasks (a close ends the wait sooner).
+      for (let tries = 0; collection.migrationInProgress && tries < 500; tries++) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        stopIfClosing();
+      }
+      return collection;
+    }
     // Never reset a still-settling earlier attempt's checkpoint out from under it: each new
     // migration on this database starts only once the one before it has fully settled.
     await previous;
@@ -192,7 +207,7 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     const migrateStorage = state.migrateStorage.bind(state);
     state.migrateStorage = async (from, current, batchSize) => {
       const to = gate(current, () => Promise.reject(new PosOrderOpenClosedError(db.name)));
-      if (from.collectionName === collection.name) await writeOverStaleCopies(collection, from, to);
+      if (from.collectionName === collection.name) await writeOverStaleCopies(collection, from, to, stopIfClosing);
       return migrateStorage(new Proxy(from, { get: (target, key) => {
         const value = key === 'changeStream' ? () => target.changeStream().pipe(takeUntil(settled)) : Reflect.get(target, key);
         return typeof value === 'function' ? value.bind(target) : value;
@@ -204,9 +219,13 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     // `cancelled` first makes the gates above refuse the run's later reads and writes, the open waits
     // for the calls they already let through (a batch in flight still lands after `cancel()`, bug 2,
     // and one landing on a store the close has closed would poison the handle, bug 6), then it
-    // rejects with `PosOrderOpenClosedError`, so the close, which waits for the open, closes
-    // storage only after that. A cancel after the run has settled (the catch below closes the
-    // collection) changes nothing.
+    // rejects with `PosOrderOpenClosedError`. That covers the `db.onClose` path: the close's own
+    // handler waits for the open (up to its limit, so a give-up never hangs) before it closes storage;
+    // `cancel()`'s return does not wait for the drain. A cancel after the run has settled (the catch
+    // below closes the collection) changes nothing.
+    // This assumes 17.5's `cancel()` comes only from the close hooks. RxDB 16.x also calls it at the
+    // end of a successful run, while `running` is still true: the gates would then drop its last
+    // writes and pos_orders would never open, so @tallyui/pos requires rxdb >=17.5.0 <18.
     let running = true;
     let onCancel!: () => void;
     const cancelledRun = new Promise<void>((resolve) => { onCancel = resolve; });

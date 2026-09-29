@@ -5,6 +5,9 @@ import { getRxStorageSQLite as getPremiumRxStorageSQLite } from 'rxdb-premium/pl
 import { sqliteBoolParams } from './params';
 import type { SQLiteDatabase } from './types';
 
+// Also at import, before anything else can make RxDB cache the flag's first check as false.
+setPremiumFlag();
+
 /**
  * Wraps a synchronous SQLite handle with RxDB Premium SQLite storage.
  * Apps install the RxDB Premium peer dependency under their own RxDB Premium licence.

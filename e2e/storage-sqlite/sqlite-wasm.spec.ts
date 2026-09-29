@@ -89,6 +89,15 @@ test.describe('storage-sqlite worker cold start (real Chromium, ADR-061)', () =>
     expect(await page.evaluate(() => (window as any).tally.count())).toBe(1);
   });
 
+  // RxDB 17 blocks writes to a collection above schema version 0 (COL25) until its own migration check
+  // has read the store; on the worker storage that read answers on a later message than the open's.
+  test('a sale saved straight after addPosOrderCollection resolves is stored, never refused with COL25', async ({ page }) => {
+    await page.goto('/');
+    const outcomes: string[] = [];
+    for (let i = 0; i < 5; i++) outcomes.push(await page.evaluate((name) => (window as any).tally.openOrdersAndSave(name), `e2e_orders_${i}`));
+    expect(outcomes).toEqual(['saved', 'saved', 'saved', 'saved', 'saved']);
+  });
+
   test('close, storage.terminate(), then a new storage reopens the database within 10s', async ({ page }) => {
     await page.goto('/');
     expect((await openDb(page, DB_NAME)).ok).toBe(true);

@@ -15,11 +15,6 @@ import { withStorageWatchdog, type StorageHealth } from './storage-watchdog';
 const DEV_MODE = process.env.NODE_ENV !== 'production';
 addRxPlugin(RxDBLocalDocumentsPlugin);
 
-// Enable dev mode in non-production
-if (DEV_MODE) {
-  addRxPlugin(RxDBDevModePlugin);
-}
-
 /**
  * The shape of a Tally database — keyed by collection name.
  */
@@ -53,6 +48,10 @@ export interface CreateDatabaseOptions {
  */
 export async function createTallyDatabase(options: CreateDatabaseOptions): Promise<TallyDatabase> {
   if ((options as { multiInstance?: unknown }).multiInstance === true) throw new Error('multiInstance: true is unsupported: TallyUI databases are single-instance (ADR-061).');
+  // Dev mode in non-production, added here rather than at import: in a browser its init reads RxDB's
+  // premium flag, which RxDB caches, so at import it could cache false before the app's storage
+  // (getRxStorageSQLiteWasm) sets it, and RxDB 17's 13-collection cap would apply.
+  if (DEV_MODE) addRxPlugin(RxDBDevModePlugin);
   const {
     connector,
     name = `tally_${connector.id}`,
