@@ -1,11 +1,17 @@
-import type { CommandEnvelope, CommandResult, OrderCreatePayload } from '../types'
+import type { AnyCommandEnvelope, CommandEnvelope, CommandResult, OrderCreatePayload, RegisterCommandEnvelope } from '../types'
 import { fiscalFiguresErrors, type OrderCreatePayloadV3 } from './fiscal-figures'
 import { payloadShapeErrors } from './order-payload-shape'
 import { SUPPORTED_ORDER_CREATE_VERSIONS, SUPPORTED_REGISTER_VERSIONS } from './versions'
 
+/** An envelope validateBatch accepted: every field's shape is checked, and its version is any positive
+ *  safe integer (precheckCommand decides which versions this server supports). */
+export type ValidatedCommandEnvelope =
+  | (Omit<CommandEnvelope<Record<string, unknown>>, 'version'> & { type: 'order.create'; version: number })
+  | RegisterCommandEnvelope<Record<string, unknown>>
+
 /** Validates every envelope before any command is claimed. */
 export function validateBatch(body: unknown):
-  | { ok: true; commands: CommandEnvelope<unknown>[] }
+  | { ok: true; commands: ValidatedCommandEnvelope[] }
   | { ok: false; status: 400 | 413; message: string } {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     return { ok: false, status: 400, message: 'Expected body object with commands array' }
@@ -39,7 +45,7 @@ export function validateBatch(body: unknown):
  * this returns and moves on, and otherwise runs its own executor. The payload shape check
  * (payloadShapeErrors) and the ledger stay in the plugin's executor.
  */
-export function precheckCommand(envelope: CommandEnvelope<unknown>): CommandResult | undefined {
+export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>): CommandResult | undefined {
   if (envelope.type !== 'order.create') {
     if (!SUPPORTED_REGISTER_VERSIONS.includes(envelope.version)) {
       return { id: envelope.id, status: 'rejected', error: { code: 'unsupported_version',
