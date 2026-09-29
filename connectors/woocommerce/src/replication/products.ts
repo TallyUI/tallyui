@@ -7,9 +7,14 @@ export type WooProductCheckpoint = {
   offset: number;
   /** Newest date_modified_gmt in the store when the pass started; the next pass's lower bound. */
   pass_mark?: string;
-  /** X-WP-Total of the window when the pass started. */
+  /** X-WP-Total of the window on the last page; undefined when the store sends none. */
   pass_count?: number;
+  /** Times the current pass has restarted at offset 0 after its window shrank. */
+  restarts?: number;
 };
+
+// A store losing products between every page must not keep one pass from ever finishing.
+const MAX_PASS_RESTARTS = 3;
 
 function checkResponse(response: Response) {
   if (response.ok) return;
@@ -76,8 +81,9 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       const products: any[] = await response.json();
       const total = response.headers.get('X-WP-Total');
       const count = total !== null && /^\d+$/.test(total) ? Number(total) : undefined;
-      if (offset > 0 && (products.length === 0 || (count !== undefined && count < (lastCheckpoint?.pass_count ?? count)))) {
-        return wooProductReplication.pull.handler({ modified, offset: 0, pass_mark: passMark }, batchSize, context);
+      const restarts = lastCheckpoint?.restarts ?? 0;
+      if (offset > 0 && count !== undefined && restarts < MAX_PASS_RESTARTS && (products.length === 0 || count < (lastCheckpoint?.pass_count ?? count))) {
+        return wooProductReplication.pull.handler({ modified, offset: 0, pass_mark: passMark, restarts: restarts + 1 }, batchSize, context);
       }
       for (const product of products) {
         if (typeof product.uuid !== 'string' || product.uuid.length === 0) {
@@ -89,8 +95,8 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       // RxDB merges checkpoints, so clear pass state explicitly at completion.
       const complete = count === undefined ? products.length < batchSize : offset + products.length >= count;
       const checkpoint: WooProductCheckpoint = complete
-        ? { modified: passMark, offset: 0, pass_mark: undefined, pass_count: undefined }
-        : { modified, offset: offset + products.length, pass_mark: passMark, pass_count: offset === 0 ? count : lastCheckpoint?.pass_count };
+        ? { modified: passMark, offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined }
+        : { modified, offset: offset + products.length, pass_mark: passMark, pass_count: count, restarts: lastCheckpoint?.restarts };
 
       return { documents, checkpoint };
     },

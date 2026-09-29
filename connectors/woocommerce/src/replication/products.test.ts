@@ -11,7 +11,7 @@ const context: SyncContext = {
   headers: woocommerceConnector.auth.getHeaders({ token: 't' }),
 };
 
-function mockProductsEndpoint(products: any[]) {
+function mockProductsEndpoint(products: any[], { total = true } = {}) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
     const params = new URL(String(input)).searchParams;
     const after = params.get('modified_after');
@@ -22,18 +22,18 @@ function mockProductsEndpoint(products: any[]) {
     });
     const offset = Number(params.get('offset') ?? 0);
     return new Response(JSON.stringify(window.slice(offset, offset + Number(params.get('per_page')))), {
-      headers: { 'X-WP-Total': String(window.length) },
+      headers: total ? { 'X-WP-Total': String(window.length) } : {},
     });
   });
 }
 
-async function pullRun(checkpoint: WooProductCheckpoint | undefined, batchSize: number, onPage = () => {}) {
+async function pullRun(checkpoint: WooProductCheckpoint | undefined, batchSize: number, onPage = (_checkpoint: WooProductCheckpoint) => {}) {
   const documents: any[] = [];
   for (let calls = 0; calls < 20; calls++) {
     const result = await wooProductReplication.pull.handler(checkpoint, batchSize, context);
     documents.push(...result.documents);
     checkpoint = { ...checkpoint, ...result.checkpoint };
-    onPage();
+    onPage(checkpoint);
     if (result.documents.length < batchSize) return { documents, checkpoint };
   }
   throw new Error('Pull loop did not stop');
@@ -275,9 +275,88 @@ describe('wooProductReplication.pull.handler', () => {
     const result = await wooProductReplication.pull.handler(checkpoint, 2, context);
 
     expect(result.documents.map((p) => p.uuid)).toEqual(['one', 'two']);
-    expect(result.checkpoint).toEqual({ ...checkpoint, pass_count: 4 });
+    expect(result.checkpoint).toEqual({ ...checkpoint, pass_count: 4, restarts: 1 });
     expect(fetchSpy.mock.calls.map(([url]) => new URL(String(url)).searchParams.get('offset'))).toEqual(['2', '0']);
     expect(fetchSpy.mock.calls.map(([url]) => new URL(String(url)).searchParams.get('modified_after'))).toEqual(['2026-01-01T07:59:59', '2026-01-01T07:59:59']);
+  });
+
+  it('ends the pass without X-WP-Total when the window is an exact multiple of batchSize', async () => {
+    const products = Array.from({ length: 4 }, (_, id) => ({
+      id: id + 1, uuid: `uuid-${id + 1}`, status: 'publish', date_modified_gmt: `2026-01-0${id + 1}T08:00:00`,
+    }));
+    mockProductsEndpoint(products, { total: false });
+
+    const result = await pullRun(undefined, 2);
+
+    expect(result.documents.map((p) => p.uuid)).toEqual(products.map((p) => p.uuid));
+    expect(result.checkpoint.modified).toBe('2026-01-04T08:00:00');
+  });
+
+  it('still restarts on an empty page at offset > 0 when X-WP-Total is present', async () => {
+    const checkpoint = { modified: '2026-01-01T08:00:00', offset: 4, pass_mark: '2026-01-02T08:00:00', pass_count: 4 };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('[]', { headers: { 'X-WP-Total': '4' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 1, uuid: 'one' }, { id: 2, uuid: 'two' }]), { headers: { 'X-WP-Total': '4' } }));
+
+    const result = await wooProductReplication.pull.handler(checkpoint, 2, context);
+
+    expect(result.documents.map((p) => p.uuid)).toEqual(['one', 'two']);
+    expect(result.checkpoint).toEqual({ ...checkpoint, offset: 2, restarts: 1 });
+    expect(fetchSpy.mock.calls.map(([url]) => new URL(String(url)).searchParams.get('offset'))).toEqual(['4', '0']);
+  });
+
+  it("stores each page's X-WP-Total as pass_count", async () => {
+    const checkpoint = { modified: '2026-01-01T08:00:00', offset: 2, pass_mark: '2026-01-02T08:00:00', pass_count: 5 };
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 3, uuid: 'three' }, { id: 4, uuid: 'four' }]), { headers: { 'X-WP-Total': '6' } }));
+
+    const result = await wooProductReplication.pull.handler(checkpoint, 2, context);
+
+    expect(result.checkpoint).toEqual({ ...checkpoint, offset: 4, pass_count: 6 });
+  });
+
+  it('restarts when X-WP-Total drops between two later pages', async () => {
+    const checkpoint = { modified: '2026-01-01T08:00:00', offset: 2, pass_mark: '2026-01-02T08:00:00', pass_count: 5 };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 3, uuid: 'three' }, { id: 4, uuid: 'four' }]), { headers: { 'X-WP-Total': '6' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 6, uuid: 'six' }]), { headers: { 'X-WP-Total': '5' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 1, uuid: 'one' }, { id: 2, uuid: 'two' }]), { headers: { 'X-WP-Total': '5' } }));
+
+    const first = await wooProductReplication.pull.handler(checkpoint, 2, context);
+    const result = await wooProductReplication.pull.handler({ ...checkpoint, ...first.checkpoint }, 2, context);
+
+    expect(first.checkpoint.pass_count).toBe(6);
+    expect(result.documents.map((p) => p.uuid)).toEqual(['one', 'two']);
+    expect(fetchSpy.mock.calls.map(([url]) => new URL(String(url)).searchParams.get('offset'))).toEqual(['2', '4', '0']);
+  });
+
+  it('stops restarting after MAX_PASS_RESTARTS restarts in one pass', async () => {
+    const checkpoint = { modified: '2026-01-01T08:00:00', offset: 2, pass_mark: '2026-01-02T08:00:00', pass_count: 6, restarts: 3 };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 3, uuid: 'three' }, { id: 4, uuid: 'four' }]), { headers: { 'X-WP-Total': '5' } }));
+
+    const result = await wooProductReplication.pull.handler(checkpoint, 2, context);
+
+    expect(result.documents.map((p) => p.uuid)).toEqual(['three', 'four']);
+    expect(result.checkpoint).toEqual({ ...checkpoint, offset: 4, pass_count: 5 });
+    expect(fetchSpy.mock.calls.map(([url]) => new URL(String(url)).searchParams.get('offset'))).toEqual(['2']);
+  });
+
+  it('counts restarts and clears them when the pass completes', async () => {
+    const products = Array.from({ length: 6 }, (_, id) => ({
+      id: id + 1, uuid: `uuid-${id + 1}`, status: 'publish', date_modified_gmt: '2026-01-01T08:00:00',
+    }));
+    mockProductsEndpoint(products);
+    const restarts: (number | undefined)[] = [];
+
+    const result = await pullRun(undefined, 2, (checkpoint) => {
+      restarts.push(checkpoint.restarts);
+      if (restarts.length <= 2) products.shift();
+    });
+
+    expect(restarts).toEqual([undefined, 1, 2, undefined, undefined]);
+    expect(result.documents.map((p) => p.uuid)).toEqual(['uuid-1', 'uuid-2', 'uuid-2', 'uuid-3', 'uuid-3', 'uuid-4', 'uuid-5', 'uuid-6']);
+    expect(result.checkpoint).toEqual({ modified: '2026-01-01T08:00:00', offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined });
   });
 
   it('returns no documents and no page request when the mark has not moved', async () => {
