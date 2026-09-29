@@ -1027,9 +1027,14 @@ interface OrderCreatePayload {
     `clientOrderId` under a new command id. Where a plugin has a unique
     client order id (Vendure's `tallyClientOrderId`, ADR-047 step 2), it
     refuses a second order for it. Medusa's `metadata.tally_client_id`
-    (ADR-038) is not unique. A `clientOrderId` collision is never
-    `platform_error`, which would hide an order that exists. It stays
-    transient, so the till eventually flags it.
+    (ADR-038) is not unique.
+  - **A `clientOrderId` collision** (a new command id, the same
+    `clientOrderId`, an order that already exists) is never
+    `platform_error`, which would hide an order that exists. Where the
+    plugin can find that order (in the same sales channel, as the medusapos
+    and vendurepos plugins do), it answers `applied` with that order's
+    `serverRefs`. Only where it can't find the order does the plugin stay
+    transient, so the till eventually flags it (Front desk, 2026-09-29).
   - Unlike `invalid_payload` and `store_configuration`, it **is** stored in
     the ledger, and a replay returns the recorded rejection.
   - An error the plugin can't classify stays transient (503, retried),
@@ -1045,6 +1050,25 @@ interface OrderCreatePayload {
     error that is never retryable.
   - Every rejection code except `register_approval_required` (which arrives
     with c2c), as a type: `CommandRejectionCode` in `@tallyui/core/server`.
+- **Amendment (2026-09-29):** a new rejection code `internal_error` (Front
+  desk ruling), the one narrow case in which an unclassifiable error is
+  stored.
+  - It is returned as `status: 'rejected'`, with `error: { code:
+    'internal_error', message: 'Internal error (ref <correlationId>)',
+    data: { correlationId } }`. `@tallyui/core/server`'s
+    `internalErrorResult()` builds it.
+  - It covers only an exception from the plugin's **own code** (a
+    programming error), raised after a complete rollback so that nothing of
+    the sale remains, in the database or outside it. Errors from the
+    database or the network, an unknown SQLSTATE, and anything else the
+    plugin can't classify stay transient (503, retried).
+  - It is stored in the ledger and replayed as recorded. It would fail the
+    same way on every retry, and a retry loop would hide the bug.
+  - The message is generic, so no internal detail reaches the till. The
+    correlation id links it to the plugin's log.
+  - It is for `order.create` only, like `platform_error`. The till shows it
+    under "Needs attention" with Retry. That is safe because nothing
+    remains, and Retry only helps once the plugin is fixed.
 - **Amendment 2 (2026-09-24):** `OrderCreateLine` gains an optional
   `taxInclusive?: boolean` — this line's own tax mode, when it differs from
   the order's `pricesIncludeTax` (a price that carries its own flag, D2c).
