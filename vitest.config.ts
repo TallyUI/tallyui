@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: ['./vitest.setup.ts'],
+    setupFiles: ['./packages/storage-sqlite/vitest.premium-flag.ts'],
     include: [
       'packages/**/*.test.{ts,tsx}',
       'connectors/**/*.test.{ts,tsx}',

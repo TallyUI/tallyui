@@ -1623,13 +1623,20 @@ interface OrderCreatePayload {
     `getRxStorageSQLiteWasm` and the web worker (its own JS context) each
     call `setPremiumFlag()` before any collection exists. RxDB caches the
     first check.
-  - The root `package.json` has `rxdb-premium` as a devDependency, so that
-    `vitest.setup.ts` can set the flag for every test. Every workspace
-    install already needs the token (ADR-044), so this changes no install.
-  - Stored data carries over. A 16.21.1 SQLite file opens under 17.4.0 with its
-    documents and indexes intact (probe, 2026-09-28). The 17.0 notes need a
-    storage migration only for OPFS, filesystem-node and IndexedDB with
-    attachments, none of which TallyUI uses.
+  - The root `vitest.config.ts` sets the flag for every test through
+    `packages/storage-sqlite/vitest.premium-flag.ts`, a setup file in the
+    package whose devDependency already resolves `rxdb-premium`. The root
+    `package.json` does not list `rxdb-premium`: a root devDependency pulls
+    premium's postinstall into every filtered install, and Vercel's
+    `pnpm install --frozen-lockfile --filter "@tallyui/web..."` then fails
+    without the token (reproduced 2026-09-29), which ADR-044 forbids.
+  - Stored data carries over. A file-backed SQLite database written by rxdb
+    and premium 16.21.1 opens under 17.5.0 with all 500 probe documents
+    deep-equal, including nested fields. Index and sort queries return the
+    right results, and a v0 → v1 schema migration keeps all 501 with no
+    duplicate (probe, 2026-09-29). The 17.0 notes need a storage migration
+    only for OPFS, filesystem-node and IndexedDB with attachments, none of
+    which TallyUI uses.
 
 ## ADR-046 Vendure baseline: 3.7, Admin API only, a seeded Postgres dev store
 
