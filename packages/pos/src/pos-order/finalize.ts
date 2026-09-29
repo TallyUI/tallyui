@@ -1,7 +1,7 @@
 import { minorUnitDigits, type ServerCapabilities } from '@tallyui/core';
-import type { Order } from '../order/types';
+import type { Order, SentOrder } from '../order/types';
 import { taxLinesByRate } from '../tax/exact';
-import { cutText, PAYLOAD_STRING_MAX } from './command';
+import { cutText, PAYLOAD_STRING_MAX, sendable } from './command';
 import type { PosOrder, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -18,7 +18,51 @@ export interface FinalizeOptions {
 }
 
 /** A line name in a refusal message: 60 UTF-16 units of it plus '…' at most, so a cashier-facing message stays short. */
-const MESSAGE_NAME_MAX = 61;
+export const MESSAGE_NAME_MAX = 61;
+
+/** The receipt shows the order as it was stored and sent (Front desk, 2026-09-29). */
+export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
+  const customer: SentOrder['customer'] = order.customer && { ...order.customer };
+  if (customer && posOrder.customer?.email === undefined) delete customer.email;
+  if (customer && posOrder.customer?.id === undefined) delete customer.id;
+  return { ...order, customer,
+    lineItems: order.lineItems.map((line, i) => ({ ...line, name: posOrder.lines[i].name })),
+    display: posOrder.display ? { ...order.display,
+      lines: order.display.lines.map((line, i) => ({ ...line,
+        discounts: line.discounts.map((discount, j) => ({ ...discount, label: posOrder.display!.lines[i].discounts[j].label })),
+      })),
+    } : order.display,
+  };
+}
+
+/** Bounds apply when the sent form is frozen; the outbox freezes older tills' stored orders before their first send. */
+export function freezeSentForm(order: PosOrder): PosOrder {
+  let changed = false;
+  const lines = order.lines.map((line) => {
+    const name = cutText(line.name, PAYLOAD_STRING_MAX);
+    changed ||= name !== line.name;
+    return { ...line, name };
+  });
+  const display = order.display && { ...order.display, lines: order.display.lines.map((line) => ({ ...line,
+    discounts: line.discounts.map((discount) => {
+      if (discount.label === undefined) return discount;
+      const label = cutText(discount.label, PAYLOAD_STRING_MAX);
+      changed ||= label !== discount.label;
+      return { ...discount, label };
+    }),
+  })) };
+  const payments = order.payments.map((payment) => {
+    if (payment.reference === undefined) return payment;
+    const reference = cutText(payment.reference, PAYLOAD_STRING_MAX);
+    changed ||= reference !== payment.reference;
+    return { ...payment, reference };
+  });
+  const customer = order.customer && { ...order.customer };
+  for (const [field, max] of [['email', 254], ['id', 64]] as const) {
+    if (customer && field in customer && !sendable(customer[field], max)) { delete customer[field]; changed = true; }
+  }
+  return changed ? { ...order, lines, payments, customer, ...(display ? { display } : {}) } : order;
+}
 
 /**
  * Why a reference the till passes through without minting would fail order.create's shape check
@@ -26,12 +70,23 @@ const MESSAGE_NAME_MAX = 61;
  * checks its options and an entered payment reference with it.
  */
 export function referenceError(label: string, value: string | undefined): string | null {
-  if (value === undefined) return null;
-  if (value.length > PAYLOAD_STRING_MAX) return `${label} is too long (max ${PAYLOAD_STRING_MAX} characters)`;
-  return value.includes('\u0000') ? `${label} contains a NUL character` : null;
+  const reason = referenceReason(value);
+  return reason === 'long' ? `${label} is too long (max ${PAYLOAD_STRING_MAX} characters)`
+    : reason === 'nul' ? `${label} contains a NUL character` : null;
 }
 
-/** Turns a fully paid builder Order into a pending PosOrder without mutating it. */
+/** referenceError's rule as a reason: 'long' (over PAYLOAD_STRING_MAX), 'nul', or null when finalize accepts the value. */
+export function referenceReason(value: string | undefined): 'long' | 'nul' | null {
+  if (value === undefined) return null;
+  if (value.length > PAYLOAD_STRING_MAX) return 'long';
+  return value.includes('\u0000') ? 'nul' : null;
+}
+
+/**
+ * Turns a fully paid builder Order into a pending PosOrder without mutating it. The PosOrder holds the sent form,
+ * frozen: line names and v3 discount labels are cut to PAYLOAD_STRING_MAX with NUL stripped (`cutText`), and a
+ * customer email or id the shape check would refuse is left out, so `toOrderCreateEnvelope` sends it unchanged.
+ */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
   if (!order.lineItems.length) throw new Error('finalize: no lines');
   // Defence in depth: the builder already clamps every discount to >= 0, so this should never fire.
@@ -125,7 +180,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     }
   }
   const now = (options.now ?? new Date()).toISOString();
-  return {
+  return freezeSentForm({
     id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
     currency: order.currency, pricesIncludeTax: order.pricesIncludeTax, lines, payments,
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
@@ -136,5 +191,5 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(order.note ? { note: order.note } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),
-  };
+  });
 }

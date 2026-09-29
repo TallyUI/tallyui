@@ -39,6 +39,13 @@ describe('Tender', () => {
       await act(async () => { click('Payment approved on terminal'); });
       expect(sale.stage.kind).toBe('receipt');
     });
+
+    it('caps the reference field at 255 characters, so a typed reference is never dropped', () => {
+      render(<SaleHarness>{(sale) => <Tender sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      act(() => sale.startTender('external'));
+      expect(screen.getByRole('textbox', { name: 'Terminal reference' }).getAttribute('maxlength')).toBe('255');
+    });
   });
 
   describe('Continue after a failed save (the Front desk, 2026-09-27)', () => {

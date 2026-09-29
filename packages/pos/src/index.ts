@@ -30,6 +30,7 @@ export type { OrderBuilder, OrderBuilderOptions } from './order';
 export type { OrderManager, OrderManagerOptions, ParkedOrderSummary } from './order';
 export type {
   Order,
+  SentOrder,
   LineItem,
   LineTaxLine,
   AddLineInput,

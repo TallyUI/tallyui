@@ -10,13 +10,13 @@ export class UnsupportedOrderVersionError extends Error {
 }
 
 /**
- * `@tallyui/core/server`'s `payloadShapeErrors` bound, in UTF-16 code units (`String.length`), on
+ * `@tallyui/core/server`'s `payloadBoundErrors` bound, in UTF-16 code units (`String.length`), on
  * every order.create string but `customer.email` (254), `customerId` (64) and `sessionId` (36).
  */
 export const PAYLOAD_STRING_MAX = 255;
 
 /** A non-empty string of at most `max` UTF-16 units with no NUL: what order.create's shape check accepts. */
-const sendable = (value: unknown, max: number): value is string =>
+export const sendable = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= max && !value.includes('\u0000');
 
 /**
@@ -39,13 +39,10 @@ export function cutText(text: string, max: number): string {
   return `${clean.slice(0, high >= 0xd800 && high <= 0xdbff ? max - 2 : max - 1)}…`;
 }
 
-/** Display text as sent: `cutText` at the shared bound, so a sent name is at most 255 units. */
-const sendText = (text: string): string => cutText(text, PAYLOAD_STRING_MAX);
-
 /**
- * Builds the ADR-038 order.create envelope for a PosOrder. The names it sends (line titles and v3 discount labels)
- * go through `sendText`; the stored order keeps them whole. The ids it sends are minted by `finalizeOrder` (UUIDv7),
- * which also refuses an over-long or NUL pass-through reference, so neither is clamped here.
+ * Builds the ADR-038 order.create envelope for a PosOrder. It sends the stored order unchanged, so every resend of
+ * an order is byte-identical, and an order stored by an older till goes out exactly as that till sent it:
+ * `finalizeOrder` freezes the sent form (names and labels cut, an unsendable customer email or id left out).
  * ADR-065's figures make version 3; otherwise a discounted order is version 2 (ADR-062), else version 1, byte-identical.
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
@@ -56,16 +53,17 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
   if (discountMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
   const version = Math.min(contentVersion, cap ?? contentVersion) as 1 | 2 | 3;
-  // The backstop for a customer `customerRefusal` never saw: an email or id the shape check would refuse is left out.
-  const email = sendable(order.customer?.email, 254) ? order.customer.email : undefined;
-  const customerId = sendable(order.customer?.id, 64) ? order.customer.id : undefined;
+  const email = order.customer?.email;
+  const id = order.customer?.id;
+  // These are the pre-#222 customerId and sessionId checks, kept byte-exact so stored orders resend older tills' bytes; don't replace with sendable.
+  const customerId = typeof id === 'string' && id.length > 0 && id.length <= 64 ? id : undefined;
   const sessionId = order.sessionId ?? order.lateSessionId;
   return {
     id: order.commandId, type: 'order.create', version, createdAt: order.createdAt, deviceId, attempt,
     payload: {
       clientOrderId: order.id, createdAt: order.createdAt, currency: order.currency, pricesIncludeTax: order.pricesIncludeTax,
       lines: order.lines.map((line) => ({
-        clientLineId: line.id, variantId: line.variantId ?? line.productId, title: sendText(line.name),
+        clientLineId: line.id, variantId: line.variantId ?? line.productId, title: line.name,
         quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
         ...(line.taxInclusive !== undefined ? { taxInclusive: line.taxInclusive } : {}),
         ...(line.discountMinor > 0 ? { discountMinor: line.discountMinor } : {}),
@@ -81,8 +79,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       taxMinor: order.taxMinor, totalMinor: order.totalMinor,
       ...(version === 3 ? {
         display: { ...order.display!, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
-          clientLineId: lineId, amountMinor,
-          discounts: discounts.map((discount) => discount.label === undefined ? discount : { ...discount, label: sendText(discount.label) }),
+          clientLineId: lineId, amountMinor, discounts,
         })) },
         taxByRate: order.taxByRate!.map(({ ratePpm, code, netMinor, amountMinor, grossMinor }) => ({
           ratePpm, ...(code !== undefined ? { code } : {}), netMinor, taxMinor: amountMinor, grossMinor,
@@ -93,7 +90,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         : (email ? { email } : null),
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
-      ...(version === 3 && sendable(sessionId, 36) ? { sessionId } : {}),
+      ...(version === 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
     },
   };
 }

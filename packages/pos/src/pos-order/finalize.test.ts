@@ -7,7 +7,7 @@ import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order/order-builder';
 import { taxLinesByRate } from '../tax/exact';
 import { toOrderCreateEnvelope } from './command';
-import { finalizeOrder } from './finalize';
+import { finalizeOrder, freezeSentForm, withSentForm } from './finalize';
 import { uuidv7 } from './uuidv7';
 
 function sale() {
@@ -222,6 +222,119 @@ describe('finalizeOrder refuses a pass-through reference outside the order.creat
 
   it('accepts every reference at 255 characters', () => {
     expect(() => finalizeOrder(paid('p'.repeat(255)), { cashierRef: 'c'.repeat(255), registerId: 'r'.repeat(255) })).not.toThrow();
+  });
+});
+
+describe('freezeSentForm', () => {
+  it('freezes an older stored order once, changing only display strings and unsendable customer fields', () => {
+    const stored = finalizeOrder(discountedSale().getSnapshot(), { capabilities: { orderCreate: 3 } });
+    const longId = 'id-'.repeat(100);
+    Object.assign(stored, { id: longId, commandId: longId, registerId: longId, cashierRef: longId,
+      sessionId: longId, lateSessionId: longId, customer: { id: 'c\u00001', name: 'Customer', email: 'e'.repeat(255) } });
+    Object.assign(stored.lines[0], { id: longId, productId: longId, variantId: longId, name: 'N'.repeat(300) });
+    stored.display!.lines[0].lineId = longId;
+    Object.assign(stored.display!.lines[0].discounts[0], { discountId: longId, label: 'D'.repeat(300) });
+    Object.assign(stored.payments[0], { id: longId, reference: 'R'.repeat(300) });
+    const before = structuredClone(stored);
+    const frozen = freezeSentForm(stored);
+    expect(frozen).not.toBe(stored);
+    expect(frozen.lines[0].name).toBe(`${'N'.repeat(254)}…`);
+    expect(frozen.display!.lines[0].discounts[0].label).toBe(`${'D'.repeat(254)}…`);
+    expect(frozen.payments[0].reference).toBe(`${'R'.repeat(254)}…`);
+    expect(frozen.customer).toStrictEqual({ name: 'Customer' });
+    // An exact comparison pins every id, figure, timestamp and other field to the original.
+    const expected = structuredClone(before);
+    expected.lines[0].name = `${'N'.repeat(254)}…`;
+    expected.display!.lines[0].discounts[0].label = `${'D'.repeat(254)}…`;
+    expected.payments[0].reference = `${'R'.repeat(254)}…`;
+    expected.customer = { name: 'Customer' };
+    expect(frozen).toStrictEqual(expected);
+    expect(stored).toStrictEqual(before);
+    expect(freezeSentForm(frozen)).toBe(frozen);
+  });
+
+  it('returns the same object for an already-frozen order', () => {
+    const stored = finalizeOrder(discountedSale().getSnapshot(), { capabilities: { orderCreate: 3 } });
+    expect(freezeSentForm(stored)).toBe(stored);
+  });
+});
+
+describe('finalizeOrder freezes the sent form (task #36)', () => {
+  const lone = /[\uD800-\uDFFF]/u; // with the u flag, only a lone surrogate matches, never half of a pair
+
+  it('withSentForm uses the frozen name, discount label and customer email without mutating either input', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    const id = builder.addLine({ productId: 'p1', name: 'N'.repeat(300), unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyLineDiscount(id, { type: 'fixed', value: 100, label: 'D'.repeat(300) });
+    builder.setCustomer({ id: 'c1', name: 'Customer', email: `${'a'.repeat(246)}@test.com` });
+    builder.addPayment({ method: 'cash', amountMinor: 1000 });
+    const order = builder.getSnapshot();
+    const posOrder = finalizeOrder(order, { capabilities: { orderCreate: 3 } });
+    const beforeOrder = structuredClone(order);
+    const beforePosOrder = structuredClone(posOrder);
+    const receipt = withSentForm(order, posOrder);
+    expect(receipt).not.toBe(order);
+    expect(receipt.lineItems[0].name).toBe(posOrder.lines[0].name);
+    expect(receipt.lineItems[0].name).toBe(`${'N'.repeat(254)}…`);
+    expect(receipt.display.lines[0].discounts[0].label).toBe(posOrder.display!.lines[0].discounts[0].label);
+    expect(receipt.display.lines[0].discounts[0].label).toBe(`${'D'.repeat(254)}…`);
+    expect(receipt.customer).toStrictEqual({ id: 'c1', name: 'Customer' });
+    expect({ ...receipt, lineItems: order.lineItems, display: order.display, customer: order.customer }).toStrictEqual(order);
+    expect({ ...receipt.lineItems[0], name: order.lineItems[0].name }).toStrictEqual(order.lineItems[0]);
+    expect({ ...receipt.display, lines: order.display.lines }).toStrictEqual(order.display);
+    expect({ ...receipt.display.lines[0], discounts: order.display.lines[0].discounts }).toStrictEqual(order.display.lines[0]);
+    expect({ ...receipt.display.lines[0].discounts[0], label: order.display.lines[0].discounts[0].label })
+      .toStrictEqual(order.display.lines[0].discounts[0]);
+    expect(order).toStrictEqual(beforeOrder);
+    expect(posOrder).toStrictEqual(beforePosOrder);
+  });
+
+  it('stores a line name cut to 255 units ending in …, NUL stripped, never splitting a surrogate pair; the builder Order keeps it whole', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    const plain = `N\u0000${'n'.repeat(298)}`;
+    const emoji = `N\u0000${'x'.repeat(252)}😀${'y'.repeat(44)}`;
+    expect([plain.length, emoji.length]).toEqual([300, 300]);
+    builder.addLine({ productId: 'p1', name: plain, unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addLine({ productId: 'p2', name: emoji, unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 1000 });
+    const stored = finalizeOrder(builder.getSnapshot());
+    expect(stored.lines[0].name).toBe(`N${'n'.repeat(253)}…`);
+    expect(stored.lines[0].name).toHaveLength(255);
+    expect(stored.lines[1].name).toBe(`N${'x'.repeat(252)}…`);
+    for (const { name } of stored.lines) expect(name).not.toMatch(lone);
+    expect(stored.lines.some(({ name }) => name.includes('\u0000'))).toBe(false);
+    expect(builder.getSnapshot().lineItems.map((line) => line.name)).toEqual([plain, emoji]);
+  });
+
+  it('stores a v3 discount label cut and stripped the same way; the builder Order keeps it whole', () => {
+    const builder = sale();
+    const label = `D\u0000${'d'.repeat(300)}`;
+    builder.applyLineDiscount(builder.getSnapshot().lineItems[0].id, { type: 'fixed', value: 100, label });
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const stored = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 3 } });
+    expect(stored.display!.lines[0].discounts[0].label).toBe(`D${'d'.repeat(253)}…`);
+    expect(builder.getSnapshot().display.lines[0].discounts[0].label).toBe(label);
+  });
+
+  it.each([
+    ['a 255-character email', { id: 'c1', name: 'Long', email: `${'a'.repeat(246)}@test.com` }, { id: 'c1', name: 'Long' }],
+    ['a customerId with a NUL', { id: 'c\u00001', name: 'Nul', email: 'nul@test.com' }, { name: 'Nul', email: 'nul@test.com' }],
+  ])('leaves %s out of the stored customer, keeping the name', (_name, customer, expected) => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    builder.setCustomer(customer);
+    expect(finalizeOrder(builder.getSnapshot()).customer).toStrictEqual(expected);
+    expect(builder.getSnapshot().customer).toStrictEqual(customer);
+  });
+
+  it('withSentForm leaves out a customer id the stored customer lacks', () => {
+    const builder = discountedSale();
+    builder.setCustomer({ id: 'c\u00001', name: 'Customer', email: 'buyer@example.com' });
+    const order = builder.getSnapshot();
+    const stored = finalizeOrder(order, { capabilities: { orderCreate: 3 } });
+    expect(stored.customer).not.toHaveProperty('id');
+    expect(withSentForm(order, stored).customer).toStrictEqual({ name: 'Customer', email: 'buyer@example.com' });
+    expect(order.customer?.id).toBe('c\u00001');
   });
 });
 

@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import { createOrderBuilder } from '../order/order-builder';
-import { toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
+import { commandFingerprint } from '@tallyui/core/server';
+import { cutText, toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
 import { finalizeOrder } from './finalize';
 import type { PosOrder } from './types';
 
@@ -51,9 +52,9 @@ function goldenV3(): PosOrder {
 describe('toOrderCreateEnvelope', () => {
   it('omits a malformed sessionId at version 3, and never refuses the sale for it', () => {
     for (const key of ['sessionId', 'lateSessionId'] as const) {
-      for (const sessionId of ['', 's'.repeat(37), 's'.repeat(36), 'session-1', 'session\u00001', 123] as const) {
+      for (const sessionId of ['', 's'.repeat(37), 's'.repeat(36), 'session-1', 123] as const) {
         const sale = { ...v3, [key]: sessionId } as PosOrder;
-        const valid = typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 && !sessionId.includes('\u0000');
+        const valid = typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36;
         const envelope = toOrderCreateEnvelope(sale, 'device1');
         const expected = toOrderCreateEnvelope(v3, 'device1');
         expect(envelope).toStrictEqual({ ...expected, payload: { ...expected.payload, ...(valid ? { sessionId } : {}) } });
@@ -312,54 +313,28 @@ describe('toOrderCreateEnvelope', () => {
 });
 
 describe('names and ids within the order.create bounds', () => {
-  const named = (name: string): PosOrder => ({ ...order, lines: [{ ...order.lines[0], name }, order.lines[1]] });
-  const title = (name: string) => toOrderCreateEnvelope(named(name), 'device1').payload.lines[0].title!;
-
-  it('sends a 300-character name as 255 characters ending in …, while the stored order keeps all 300', () => {
-    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
-    builder.addLine({ productId: 'p1', name: 'n'.repeat(300), unitPrice: { amount: 100, currency: 'EUR' } });
-    builder.addPayment({ method: 'cash', amountMinor: 100 });
-    const stored = finalizeOrder(builder.getSnapshot());
-    expect(toOrderCreateEnvelope(stored, 'device1').payload.lines[0].title).toBe(`${'n'.repeat(254)}…`);
-    expect(stored.lines[0].name).toHaveLength(300);
-    expect(title('n'.repeat(255))).toBe('n'.repeat(255));
+  it("sends a stored order unchanged, as an older till's stored order must go out: every resend is fingerprint-equal", () => {
+    const email = `${'a'.repeat(246)}@test.com`;
+    const stored: PosOrder = { ...v3, lines: [{ ...v3.lines[0], name: 'n'.repeat(300) }, v3.lines[1]],
+      customer: { id: 'c1', name: 'A', email }, sessionId: 'session-1' };
+    const first = toOrderCreateEnvelope(stored, 'device1');
+    expect(first.payload.lines[0].title).toBe('n'.repeat(300));
+    expect(first.payload.customer).toStrictEqual({ email, customerId: 'c1' });
+    expect(email).toHaveLength(255);
+    expect(first.payload.sessionId).toBe('session-1');
+    expect(commandFingerprint(toOrderCreateEnvelope(stored, 'device1', 2))).toBe(commandFingerprint(first));
   });
 
-  it('never splits a surrogate pair at the cut', () => {
-    expect(title(`${'x'.repeat(253)}😀${'y'.repeat(50)}`)).toBe(`${'x'.repeat(253)}…`);
-    expect(title(`${'x'.repeat(252)}😀${'y'.repeat(50)}`)).toBe(`${'x'.repeat(252)}😀…`);
+  it('cutText never splits a surrogate pair at the cut', () => {
+    expect(cutText(`${'x'.repeat(253)}😀${'y'.repeat(50)}`, 255)).toBe(`${'x'.repeat(253)}…`);
+    expect(cutText(`${'x'.repeat(252)}😀${'y'.repeat(50)}`, 255)).toBe(`${'x'.repeat(252)}😀…`);
     // With the u flag, a surrogate range matches only a lone surrogate, never half of a pair.
-    for (const at of [252, 253, 254]) expect(title(`${'x'.repeat(at)}😀${'y'.repeat(50)}`)).not.toMatch(/[\uD800-\uDFFF]/u);
+    for (const at of [252, 253, 254]) expect(cutText(`${'x'.repeat(at)}😀${'y'.repeat(50)}`, 255)).not.toMatch(/[\uD800-\uDFFF]/u);
   });
 
-  it('strips NUL from a name, before measuring it', () => {
-    expect(title('Co\u0000ff\u0000ee')).toBe('Coffee');
-    expect(title('a\u0000'.repeat(200))).toBe('a'.repeat(200));
-  });
-
-  it('clamps and strips a v3 discount label, leaving the stored order whole', () => {
-    const label = `D\u0000${'d'.repeat(300)}`;
-    const discounted: PosOrder = { ...v3, display: { ...v3.display!,
-      lines: [{ lineId: 'line1', amountMinor: 1700, discounts: [{ discountId: 'd1', label, amountMinor: 0 }] }, v3.display!.lines[1]] } };
-    const sent = toOrderCreateEnvelope(discounted, 'device1').payload.display!.lines[0].discounts[0];
-    expect(sent).toStrictEqual({ discountId: 'd1', label: `D${'d'.repeat(253)}…`, amountMinor: 0 });
-    expect(discounted.display!.lines[0].discounts[0].label).toBe(label);
-  });
-
-  it('leaves out an email or customerId the shape check would refuse (from a parked order), keeping the stored order', () => {
-    const long = `${'a'.repeat(246)}@test.com`;
-    for (const [customer, expected] of [
-      [{ id: 'cus_1', name: 'A', email: long }, { customerId: 'cus_1' }],
-      [{ id: 'cus\u00001', name: 'A', email: 'buyer@example.com' }, { email: 'buyer@example.com' }],
-      [{ id: 'cus\u00001', name: 'A', email: 'buyer\u0000@example.com' }, null],
-    ] as const) {
-      const sale: PosOrder = { ...v3, customer };
-      expect(toOrderCreateEnvelope(sale, 'device1').payload.customer).toStrictEqual(expected);
-      expect(sale.customer).toBe(customer);
-    }
-    expect(toOrderCreateEnvelope({ ...order, customer: { id: 'c1', email: long } }, 'device1').payload.customer).toBeNull();
-    expect(toOrderCreateEnvelope({ ...order, customer: { id: 'c1', email: long.slice(1) } }, 'device1').payload.customer)
-      .toStrictEqual({ email: long.slice(1) });
+  it('cutText strips NUL, before measuring', () => {
+    expect(cutText('Co\u0000ff\u0000ee', 255)).toBe('Coffee');
+    expect(cutText('a\u0000'.repeat(200), 255)).toBe('a'.repeat(200));
   });
 
   it("the till's minted ids are at most 255 characters, with no NUL", () => {

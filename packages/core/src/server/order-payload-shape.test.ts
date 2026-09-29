@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { OrderCreatePayload } from '../types'
-import { payloadShapeErrors } from './order-payload-shape'
+import { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
 
 const payload: OrderCreatePayload = {
   clientOrderId: 'order_1', createdAt: '2026-09-23T10:00:00Z', currency: 'EUR', pricesIncludeTax: true,
@@ -145,9 +145,23 @@ describe('string bounds and NUL', () => {
     ['clientOrderId', 255], ['createdAt', 255], ['currency', 255], ['registerId', 255], ['cashierRef', 255], ['locationId', 255],
     ['lines[0].clientLineId', 255], ['lines[0].variantId', 255], ['lines[0].title', 255],
     ['payments[0].clientPaymentId', 255], ['payments[0].method', 255], ['payments[0].reference', 255], ['customer.email', 254],
-  ] as const)('accepts %s at %i characters and refuses one more', (field, max) => {
-    expect(payloadShapeErrors(at(field, 'x'.repeat(max)))).toEqual([])
-    expect(payloadShapeErrors(at(field, 'x'.repeat(max + 1)))).toEqual([`${field}: expected at most ${max} characters`])
+  ] as const)('payloadBoundErrors accepts %s at %i characters and refuses one more, which payloadShapeErrors leaves to it', (field, max) => {
+    expect(payloadBoundErrors(at(field, 'x'.repeat(max)))).toEqual([])
+    expect(payloadBoundErrors(at(field, 'x'.repeat(max + 1)))).toEqual([`${field}: expected at most ${max} characters`])
+    expect(payloadShapeErrors(at(field, 'x'.repeat(max + 1)))).toEqual([])
+  })
+
+  it('payloadShapeErrors passes a 300-character title, so a replay lookup after it can still answer duplicate, but refuses a NUL in it', () => {
+    expect(payloadShapeErrors(at('lines[0].title', 'x'.repeat(300)))).toEqual([])
+    expect(payloadShapeErrors(at('lines[0].title', `${'x'.repeat(300)}\u0000`))).toEqual(['lines[0].title: expected no NUL character'])
+  })
+
+  it('payloadBoundErrors checks only strings, leaves customerId and sessionId to the shape check, and caps at ten', () => {
+    expect(payloadBoundErrors({ ...payload, clientOrderId: 1, currency: null, customer: { email: 1 } })).toEqual([])
+    expect(payloadBoundErrors({ ...payload, customer: { customerId: 'x'.repeat(300) }, sessionId: 'x'.repeat(300) })).toEqual([])
+    expect(payloadBoundErrors('payload')).toEqual([])
+    const long = { ...payload.lines[0], title: 'x'.repeat(256) }
+    expect(payloadBoundErrors({ ...payload, lines: Array.from({ length: 12 }, () => long) })).toHaveLength(10)
   })
 
   it('keeps the customerId and sessionId bounds and messages', () => {
@@ -161,10 +175,10 @@ describe('string bounds and NUL', () => {
     expect(payloadShapeErrors(at(field, 'a\u0000b'))).toEqual([`${field}: expected no NUL character`])
   })
 
-  it('adds the bound errors after every earlier error, within the cap of ten', () => {
-    expect(payloadShapeErrors({ ...payload, currency: 1, clientOrderId: 'x'.repeat(256) }))
-      .toEqual(['currency: expected a string', 'clientOrderId: expected at most 255 characters'])
-    const long = { ...payload.lines[0], title: 'x'.repeat(256) }
-    expect(payloadShapeErrors({ ...payload, lines: Array.from({ length: 12 }, () => long) })).toHaveLength(10)
+  it('adds the NUL errors after every earlier error, within the cap of ten', () => {
+    expect(payloadShapeErrors({ ...payload, currency: 1, clientOrderId: 'x\u0000' }))
+      .toEqual(['currency: expected a string', 'clientOrderId: expected no NUL character'])
+    const nul = { ...payload.lines[0], title: 'x\u0000' }
+    expect(payloadShapeErrors({ ...payload, lines: Array.from({ length: 12 }, () => nul) })).toHaveLength(10)
   })
 })

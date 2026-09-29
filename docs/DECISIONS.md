@@ -1012,14 +1012,11 @@ interface OrderCreatePayload {
       turned it into that rollback.
     - **The order of the steps** (Front desk, 2026-09-29), for
       `order.create`:
-      - **Shape** first (types, bounds, a NUL character), before any
-        database access. A NUL in `clientOrderId` would make the lookup
-        itself fail (Postgres 22021) before any claim exists. The shared
-        bounds are in `@tallyui/core/server`'s `payloadShapeErrors`:
-        `customer.email` at most 254 characters, `customerId` 64,
-        `sessionId` 36, and every other string field 255; U+0000 is
-        refused in any string. The v3 `display` and `taxByRate` strings
-        get the same 255 bound and NUL check in `fiscalFiguresErrors`.
+      - **Shape** first, before any database access, in
+        `@tallyui/core/server`'s `payloadShapeErrors`: types, the
+        existing `customerId` 64 and `sessionId` 36 checks, and U+0000 in
+        any string. A NUL in `clientOrderId` would make the lookup itself
+        fail (Postgres 22021) before any claim exists.
       - **Then the replay lookup and the collision lookup**, so a resent
         command that was already applied always replays as `duplicate`,
         whatever the later checks say.
@@ -1027,6 +1024,30 @@ interface OrderCreatePayload {
         - amount ranges and the v3 fiscal-figure checks. These are
           `@tallyui/core/server`'s `precheckCommand`, which a plugin calls
           after its replay lookup, never before it;
+        - the string lengths, in `payloadBoundErrors`, called by
+          `precheckCommand`: `customer.email` at most 254 characters and
+          every other string field 255. The v3 `display` and `taxByRate`
+          strings get the same 255 bound and NUL check in
+          `fiscalFiguresErrors`. A length rule tightened later must never
+          turn an applied command's resend into `invalid_payload`;
+        - the till freezes the sent form when it stores the order (Front
+          desk, 2026-09-29, reversing #222's rule): a line name or
+          discount label is cut to 255 characters with NUL stripped, and
+          a customer email or id the shape check would refuse is left
+          out. The envelope sends the stored values unchanged, so every
+          resend is byte-identical, and an order stored by an older till
+          is sent exactly as that till sent it. The receipt shows the frozen
+          form too (`withSentForm`).
+          An order stored by an older till and still unsent at the upgrade
+          is frozen the same way by the outbox before its first send from
+          the upgraded till (Front desk, 2026-09-29): its line names,
+          discount labels and payment references are cut to their bound,
+          never its ids, and an unsendable customer email or id is left out.
+          The frozen form is written back to the stored order, so the
+          receipt and the server see the same bytes. If such an order had
+          in fact been sent and applied before the upgrade, its resend
+          answers `idempotency_mismatch`, a reconciliation state, never a
+          lost sale.
         - on the Vendure plugin, a future bound on `payload.createdAt`
           (Vendure's `tallySaleAt`). It may be at most 24 hours ahead of
           the server's clock. There is no lower bound, because an offline
