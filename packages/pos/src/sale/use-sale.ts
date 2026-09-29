@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, type CustomerSummary, type Discount, type Order } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
-import { referenceError } from '../pos-order/finalize';
-import { CUSTOMER_REFUSALS, customerRefusal, PAYLOAD_STRING_MAX } from '../pos-order/command';
+import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
+import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
 import { useTax } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -140,15 +140,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     // A terminal reference finalize would refuse is dropped as it's entered, never the payment (the money is
     // taken): the tender applies without it, with a message that doesn't block complete(). A localWarnings
     // entry on the stored order follows with pos_orders v4 (task #32).
-    const reference = tender?.reference;
-    const dropped = referenceError('The payment reference', reference) === null ? null
-      : reference!.includes('\u0000') ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`;
+    const reason = referenceReason(tender?.reference);
+    const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
     const kept = tender && dropped ? { method: tender.method, amountMinor: tender.amountMinor } : tender;
-    if (dropped) saleLogger.warn("the terminal's payment reference was dropped", { reason: dropped, method: tender!.method });
     const previous = builder.getSnapshot().payments[0];
     if (previous) builder.removePayment(previous.id);
     if (kept) builder.addPayment(kept);
     setError(dropped && `The terminal's payment reference couldn't be kept (${dropped}); the payment is recorded without it.`);
+    try {
+      if (dropped) saleLogger.warn("the terminal's payment reference was dropped", { reason: dropped, method: tender!.method });
+    } catch { /* a failing sink must never lose the tender */ }
   }
 
   /** Asks `isStored`; Continue is offered only once it confirms, for this attempt, with the completion still pending. */
@@ -198,7 +199,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     confirm(null);
     setSaving(false);
     setError(null);
-    stageNow.current = { kind: 'receipt', order: completion.order, posOrder: completion.posOrder };
+    stageNow.current = { kind: 'receipt', order: withSentForm(completion.order, completion.posOrder), posOrder: completion.posOrder };
     setStage(stageNow.current);
   }
 
@@ -224,7 +225,17 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     add(entry: CatalogueEntry<any>, traits: ProductTraits<any>) {
       if (locked()) return;
       try {
-        addEntryToCart(builder, entry, traits, madeWith.current.currency);
+        const known = new Set(builder.getSnapshot().lineItems.map((line) => line.id));
+        const lineId = addEntryToCart(builder, entry, traits, madeWith.current.currency);
+        // A new line whose id or v3 tax code finalize would refuse is taken off at once, in finalize's
+        // message shape; finalize stays the backstop.
+        const line = builder.getSnapshot().lineItems.find((item) => item.id === lineId && !known.has(item.id));
+        const name = line && `"${cutText(line.name, MESSAGE_NAME_MAX)}"`;
+        const taxLines = line && (opts.capabilities?.orderCreate ?? 1) >= 3 ? line.taxLines : [];
+        const refused = line && [line.variantId !== undefined ? referenceError(`${name}: the variant id`, line.variantId)
+          : referenceError(`${name}: the product id`, line.productId),
+        ...taxLines.map((tax) => referenceError(`${name}: the tax code`, tax.code))].find((message) => message !== null);
+        if (refused) { builder.removeItem(lineId); return setError(refused); }
         setError(null);
       } catch (error) {
         if (!(error instanceof CartError)) throw error;

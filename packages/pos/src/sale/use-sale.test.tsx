@@ -149,6 +149,21 @@ describe('sale', () => {
     expect(result.current.order.payments).toEqual([]);
   });
 
+  it('shows the frozen sent line name on the receipt after complete', async () => {
+    const { result } = renderSale(pricing);
+    const longProduct = { ...product, title: 'N'.repeat(300), variants: [product.variants[0]] };
+    act(() => result.current.add(catalogueEntries([longProduct], traits)[0], traits));
+    expect(result.current.order.lineItems[0].name).toHaveLength(300);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    const stage = result.current.stage;
+    expect(stage.kind).toBe('receipt');
+    if (stage.kind !== 'receipt') throw new Error('Expected receipt');
+    expect(stage.order.lineItems[0].name).toBe(stage.posOrder.lines[0].name);
+    expect(stage.order.lineItems[0].name).toHaveLength(255);
+    expect(stage.order.lineItems[0].name.endsWith('…')).toBe(true);
+  });
+
   it('keeps an underpaid tender on finalize failure, replaces amounts and removes it on Back', async () => {
     const completed = vi.fn();
     const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed }));
@@ -1822,6 +1837,60 @@ describe('app configuration outside the order.create bounds', () => {
     expect(onSaleCompleted.mock.calls[1][0]).toBe(onSaleCompleted.mock.calls[0][0]);
     expect(onSaleCompleted.mock.calls[1][0].cashierRef).toBe(cashierRef);
     expect(result.current).toMatchObject({ stage: { kind: 'receipt' }, error: 'cashierRef is too long (max 255 characters)' });
+  });
+
+  it('setTender with a logger sink that throws still applies the tender without the reference and sets the message', () => {
+    saleLogger.addSink({ id: 'throwing', levels: ['warn'], write: () => { throw new Error('sink down'); } });
+    try {
+      const { result } = renderSale(pricing);
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      const total = result.current.order.totalMinor;
+      act(() => result.current.setTender({ method: 'external', amountMinor: total, reference: 'r'.repeat(256) }));
+      expect(result.current.order.payments).toEqual([expect.objectContaining({ method: 'external', amountMinor: total })]);
+      expect(result.current.order.payments[0]).not.toHaveProperty('reference');
+      expect(result.current.error)
+        .toBe("The terminal's payment reference couldn't be kept (it is over 255 characters); the payment is recorded without it.");
+    } finally {
+      saleLogger.removeSink('throwing');
+    }
+  });
+
+  it("complete() while the first attempt's stamp is pending, with cashierRef gone out of bounds meanwhile, shares that attempt: one order", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const read = sessions.storageInstance.findDocumentsById.bind(sessions.storageInstance);
+    const slow = { storageInstance: { findDocumentsById: async (...args: Parameters<typeof read>) => { await gate; return read(...args); } } };
+    const session = { id: sessionId, sessions: slow as unknown as RegisterSessionCollection };
+    const onSaleCompleted = vi.fn();
+    const { result, rerender } = renderWithOpts(saleOpts({ onSaleCompleted, session }));
+    try {
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let first!: Promise<void>;
+      act(() => { first = result.current.complete(); });
+      rerender(saleOpts({ onSaleCompleted, session, cashierRef: 'c'.repeat(300) }));
+      expect(result.current.error).toBe('cashierRef is too long (max 255 characters)');
+      const second = result.current.complete();
+      expect(second).toBe(first);
+      await act(async () => { release(); await first; });
+      expect(onSaleCompleted).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ cashierRef, sessionId }));
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it("add() refuses a product whose variant id finalize would refuse, naming it, and adds nothing", () => {
+    const long = catalogueEntries([{ id: 'long', title: 'Long', status: 'published',
+      variants: [{ id: 'v'.repeat(256), title: 'Only', sku: 'L', prices: [{ amount: 1, currency_code: 'eur' }] }] }], traits);
+    const { result } = renderSale(pricing);
+    act(() => result.current.add(long[0], traits));
+    expect(result.current.order.lineItems).toEqual([]);
+    expect(result.current.error).toBe('"Long": the variant id is too long (max 255 characters)');
+    act(() => result.current.add(entries[0], traits));
+    act(() => result.current.add(long[0], traits));
+    expect(result.current.order.lineItems.map((line) => line.variantId)).toEqual(['blue']);
   });
 
   it('a registerId with a NUL is refused the same way', () => {
