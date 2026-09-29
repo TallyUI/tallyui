@@ -1014,18 +1014,22 @@ interface OrderCreatePayload {
   - **If compensation itself fails**, the plugin never returns
     `platform_error` and never releases the claim. The claim stays in
     progress, so the till's resends of the same id get `409 in_progress`,
-    and the till flags the order after 15 minutes (TallyUI #212). The plugin
-    logs the failure for an admin (Front desk, 2026-09-29).
+    and the till flags the order after 15 minutes of such answers (once
+    TallyUI #212 merges). The plugin logs the failure for an admin (Front
+    desk, 2026-09-29).
     - The ledger row is marked as needing an admin, with a distinct status
-      or flag. A plugin's stale-in-progress reclaim path (medusapos
+      or flag. A marked row still answers resends with `409 in_progress`,
+      never `duplicate` or `rejected`. A plugin's stale-in-progress reclaim path (medusapos
       reclaims stale `in_progress` rows after a timeout) never re-runs the
       recipe on a marked row.
     - An admin resolves it by explicitly applying or rejecting the command.
   - **A backstop against a second sale:** Retry resends the same
-    `clientOrderId` under a new command id, and a plugin's unique client
-    order id (Vendure's `tallyClientOrderId`, ADR-047 step 2) refuses a
-    second order for it. A `clientOrderId` collision is therefore never
-    `platform_error`: that would hide an order that exists.
+    `clientOrderId` under a new command id. Where a plugin has a unique
+    client order id (Vendure's `tallyClientOrderId`, ADR-047 step 2), it
+    refuses a second order for it. Medusa's `metadata.tally_client_id`
+    (ADR-038) is not unique. A `clientOrderId` collision is never
+    `platform_error`, which would hide an order that exists. It stays
+    transient, so the till eventually flags it.
   - Unlike `invalid_payload` and `store_configuration`, it **is** stored in
     the ledger, and a replay returns the recorded rejection.
   - An error the plugin can't classify stays transient (503, retried),
