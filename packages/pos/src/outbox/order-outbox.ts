@@ -18,8 +18,8 @@ const NOT_REQUEUEABLE = new Set(['idempotency_mismatch']);
 // itself. With the default backoff the first probe goes after about 30 s: sales keep flowing within minutes.
 export const ISOLATE_AFTER_ATTEMPTS = 5;
 
-// An order the store has kept failing (server-answered, never offline) this long since its first such
-// failure is flagged in OutboxState.stuck. It stays pending and keeps retrying.
+// An order the store has kept failing (server-answered) for this much answered time, offline gaps left out,
+// is flagged in OutboxState.stuck. It stays pending and keeps retrying.
 export const STUCK_AFTER_MS = 15 * 60_000;
 
 export interface OrderOutboxOptions {
@@ -81,19 +81,26 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // Isolated orders are left out of batches and retried alone, each on its own backoff, while pending
   // under their commandId.
   const isolated = new Map<string, { backoff: number; nextAt: number; reason: string }>();
-  // Each order's stuck clock: from its first server-answered failure (in a batch, as a probe or alone)
-  // until its progress, until it leaves pending, or until any offline failure.
-  const clocks = new Map<string, { since: number; seq: number; reason: string }>();
+  // Each order's stuck clock counts only answered time. It starts at the order's first server-answered failure (in
+  // a batch, as a probe or alone); an offline failure pauses every running clock (`pausedAt`), and the order's next
+  // answered failure resumes it, moving `since` on by the offline gap. So `since` is when the clock would have
+  // started had there been no offline gaps: now minus its answered time (while paused, as of the pause). Progress,
+  // or the order leaving pending, clears it.
+  const clocks = new Map<string, { since: number; pausedAt?: number; seq: number; reason: string }>();
   let failureSeq = 0; // numbers failures, so `stuck` can name the latest reason
+  // Timer runs alternate between the batch turn (the batch, or the walk's probe) and the isolated turn (one due
+  // isolated order); a turn with nothing to send gives way to the other, so neither side can starve the other.
+  let turn: 'batch' | 'isolated' = 'batch';
   let isolatedWait = false;
   let runProgressed = false;
   let timerFiredDuringRun = false;
 
   function stuckState(): OutboxState['stuck'] {
-    const stuck = [...clocks].filter(([, clock]) => now() - clock.since >= stuckAfter);
+    const stuck = [...clocks].filter(([, clock]) => (clock.pausedAt ?? now()) - clock.since >= stuckAfter);
     if (!stuck.length) return undefined;
     return { commandIds: stuck.map(([id]) => id), since: Math.min(...stuck.map(([, clock]) => clock.since)),
-      reason: stuck.reduce((latest, entry) => (entry[1].seq > latest[1].seq ? entry : latest))[1].reason };
+      reason: stuck.reduce((latest, entry) => (entry[1].seq > latest[1].seq ? entry : latest))[1].reason,
+      orders: stuck.map(([commandId, { since, reason }]) => ({ commandId, since, reason })) };
   }
 
   // An isolated order is due once its backoff has passed, or when the clock was set back further than any backoff.
@@ -118,7 +125,11 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // A failure the store answered (not offline). Returns undefined when the run goes on at once, or the
   // floor for the retry: the store's Retry-After, or an isolated order's own backoff.
   function serverFailed(orders: PosOrder[], alone: 'probe' | 'isolated' | undefined, reason: string, retryAfterMs?: number) {
-    for (const { commandId } of orders) clocks.set(commandId, { since: clocks.get(commandId)?.since ?? now(), seq: ++failureSeq, reason });
+    const at = now();
+    for (const { commandId } of orders) {
+      const clock = clocks.get(commandId); // a paused clock resumes, leaving out the offline gap
+      clocks.set(commandId, { since: clock ? clock.since + at - (clock.pausedAt ?? at) : at, seq: ++failureSeq, reason });
+    }
     const id = orders[0].commandId;
     if (alone === 'isolated') {
       isolate(id, reason, retryAfterMs);
@@ -167,21 +178,25 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           commandId: { $nin: [...isolated.keys(), ...walk.failed.keys()] } }, sort: [{ createdAt: 'asc' }], limit: 1 });
         if (!probe) { walk = undefined; head = undefined; }
       }
-      // Else an isolated order whose backoff is due, alone (once per run), so a queue that keeps failing
-      // can't starve it; else a batch without the isolated orders.
-      const retrying = probe ? undefined : held.find((order) => isDue(order.commandId) && !sentAlone.has(order.commandId));
-      if (retrying) sentAlone.add(retrying.commandId);
-      const orders = probe ? [probe] : retrying ? [retrying] : await readFresh(collection, {
+      // The isolated turn: an isolated order whose backoff is due, alone (once per run), the one due longest, so
+      // isolated orders take turns too. The batch turn: the probe, else a batch without the isolated orders.
+      // Whichever turn is next goes, unless it has nothing.
+      const [due] = held.filter((order) => isDue(order.commandId) && !sentAlone.has(order.commandId))
+        .sort((a, b) => isolated.get(a.commandId)!.nextAt - isolated.get(b.commandId)!.nextAt);
+      let orders = turn === 'isolated' && due ? [due] : probe ? [probe] : await readFresh(collection, {
         selector: { syncStatus: 'pending', ...(isolated.size ? { commandId: { $nin: [...isolated.keys()] } } : {}) },
         sort: [{ createdAt: 'asc' }], limit: batchSize,
       });
-      const alone = probe ? 'probe' : retrying ? 'isolated' : undefined;
+      if (!orders.length && due) orders = [due];
       if (!orders.length || stopped) {
         if (stopped || !isolated.size) { stoppedDuringRun = stopped; return; }
         if (insertedDuringRun) continue;
         const next = [...isolated.values()].sort((a, b) => a.nextAt - b.nextAt)[0];
         return scheduleRetry(next.reason, 0, Math.min(maxBackoff, Math.max(initialBackoff, next.nextAt - now())));
       }
+      const alone = due && orders[0] === due ? 'isolated' : probe ? 'probe' : undefined;
+      if (alone === 'isolated') sentAlone.add(orders[0].commandId);
+      turn = alone === 'isolated' ? 'batch' : 'isolated';
       const batch = orders.map((order) => {
         const attempt = (attempts.get(order.commandId) ?? 0) + 1;
         attempts.set(order.commandId, attempt);
@@ -193,9 +208,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       if (outcome.kind === 'retry') {
         let floor = outcome.retryAfterMs;
         if (outcome.reason === 'network') {
-          // Offline never counts: it clears every stuck clock and ends a walk, isolating nothing. The
+          // Offline never counts: it pauses every stuck clock and ends a walk, isolating nothing. The
           // failure count stands, so the next failure the store answers walks again.
-          clocks.clear();
+          for (const clock of clocks.values()) clock.pausedAt ??= now();
           walk = undefined;
         } else if ((floor = serverFailed(orders, alone, outcome.reason, outcome.retryAfterMs)) === undefined) continue;
         return scheduleRetry(outcome.reason, floor);

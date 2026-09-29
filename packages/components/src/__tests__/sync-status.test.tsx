@@ -39,12 +39,14 @@ describe('SyncStatus', () => {
     expect(time).toMatch(/05/);
     expect(time).not.toMatch(/30/);
     const state: OutboxState = { pending: 4, sending: false, lastRetryReason: 'status_503', nextAttemptAt: now + 5000,
-      stuck: { commandIds: ['a', 'b'], since, reason: 'status_503' } };
+      stuck: { commandIds: ['a', 'b'], since, reason: 'status_503',
+        orders: ['a', 'b'].map((commandId) => ({ commandId, since, reason: 'status_503' })) } };
     render(<SyncStatus state={state} />);
     expect(screen.getByLabelText('Sync status').textContent)
       .toBe(`4 sales waiting to sync · retrying (status_503) in 5s · Not syncing 2 orders: the store keeps failing (status_503) since ${time}`);
     cleanup();
-    render(<SyncStatus state={{ pending: 3, sending: true, stuck: { commandIds: ['a'], since, reason: 'no_progress' } }} />);
+    render(<SyncStatus state={{ pending: 3, sending: true, stuck: { commandIds: ['a'], since, reason: 'no_progress',
+      orders: [{ commandId: 'a', since, reason: 'no_progress' }] } }} />);
     expect(screen.getByLabelText('Sync status').textContent)
       .toBe(`3 sales waiting to sync · sending · Not syncing 1 order: the store keeps failing (no_progress) since ${time}`);
   });

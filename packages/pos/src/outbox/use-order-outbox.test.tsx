@@ -149,6 +149,7 @@ describe('useOutbox with the TallyUI HTTP transport', () => {
       for (let i = 0; i < 20; i++) await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
       expect(outbox.stuckCommandIds).toEqual([order.commandId]);
       expect(outbox.state.stuck?.reason).toBe('status_503');
+      expect(outbox.state.stuck?.orders).toEqual([{ commandId: order.commandId, since: outbox.state.stuck!.since, reason: 'status_503' }]);
       // The same ids keep their identity across later state updates.
       const ids = outbox.stuckCommandIds;
       const stuckState = outbox.state.stuck;
