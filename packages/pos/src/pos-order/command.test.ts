@@ -346,6 +346,22 @@ describe('names and ids within the order.create bounds', () => {
     expect(discounted.display!.lines[0].discounts[0].label).toBe(label);
   });
 
+  it('leaves out an email or customerId the shape check would refuse (from a parked order), keeping the stored order', () => {
+    const long = `${'a'.repeat(246)}@test.com`;
+    for (const [customer, expected] of [
+      [{ id: 'cus_1', name: 'A', email: long }, { customerId: 'cus_1' }],
+      [{ id: 'cus\u00001', name: 'A', email: 'buyer@example.com' }, { email: 'buyer@example.com' }],
+      [{ id: 'cus\u00001', name: 'A', email: 'buyer\u0000@example.com' }, null],
+    ] as const) {
+      const sale: PosOrder = { ...v3, customer };
+      expect(toOrderCreateEnvelope(sale, 'device1').payload.customer).toStrictEqual(expected);
+      expect(sale.customer).toBe(customer);
+    }
+    expect(toOrderCreateEnvelope({ ...order, customer: { id: 'c1', email: long } }, 'device1').payload.customer).toBeNull();
+    expect(toOrderCreateEnvelope({ ...order, customer: { id: 'c1', email: long.slice(1) } }, 'device1').payload.customer)
+      .toStrictEqual({ email: long.slice(1) });
+  });
+
   it("the till's minted ids are at most 255 characters, with no NUL", () => {
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
     builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });

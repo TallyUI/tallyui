@@ -81,7 +81,7 @@ it.each<[string, Record<string, unknown>, string]>([
   ['register.session.transition', { ...transition, closedBy: '\u0000' }, 'closedBy'],
   ['register.closure.submit', { ...closure, softwareVersion: '1.0\u0000' }, 'softwareVersion'],
   ['register.closure.submit', { ...closure, orderIds: ['o\u0000'] }, 'orderIds[0]'],
-  ['register.closure.submit', { ...closure, counted: { 'ca\u0000sh': 150 } }, 'counted.ca\u0000sh'],
+  ['register.closure.submit', { ...closure, counted: { 'ca\u0000sh': 150 } }, 'counted."ca\\u0000sh"'], // quoted: no raw NUL
 ])('refuses a NUL in a %s payload', (type, payload, field) => {
   expect(registerPayloadErrors(type, payload)).toEqual([`${field}: expected no NUL character`])
 })

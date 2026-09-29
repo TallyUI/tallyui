@@ -27,7 +27,7 @@ export function registerPayloadErrors(type: string, payload: unknown): string[] 
     check(object(value), field, 'a record of integers')
     if (object(value)) for (const [key, amount] of Object.entries(value)) {
       check(key.length > 0 && Number.isSafeInteger(amount), `${field}.${key}`, 'a non-empty key with a safe integer')
-      noNul(key, `${field}.${key}`)
+      noNul(key, `${field}.${JSON.stringify(key)}`) // quoted, so the NUL is never echoed raw
     }
   }
   string('sessionId')

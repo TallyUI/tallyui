@@ -24,8 +24,8 @@ export interface CustomerPickerProps {
 
 /** `@tallyui/core/server`'s `payloadShapeErrors` bound on `customer.email`, in UTF-16 code units. */
 const EMAIL_MAX = 254;
-/** A simple shape, not RFC 5322: one `@`, a non-empty local part, a dot in the domain, no whitespace or NUL. */
-const EMAIL_SHAPE = /^[^\s@\u0000]+@[^\s@\u0000]*\.[^\s@\u0000]*$/u;
+/** A simple shape, not RFC 5322: one `@`, a non-empty local part, a domain with text either side of a dot, no whitespace or NUL. */
+const EMAIL_SHAPE = /^[^\s@\u0000]+@[^\s@\u0000]+\.[^\s@\u0000]+$/u;
 
 export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className }: CustomerPickerProps) {
   const [query, setQuery] = useState('');

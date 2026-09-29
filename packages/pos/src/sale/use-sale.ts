@@ -3,6 +3,7 @@ import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/
 import { createOrderBuilder, type CustomerSummary, type Discount, type Order } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
 import { referenceError } from '../pos-order/finalize';
+import { customerRefusal } from '../pos-order/command';
 import { useTax } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -57,11 +58,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   // App configuration is checked on every render (so on mount and on each change), by finalize's own rule, which
   // stays the backstop: while it's bad, `error` shows it and complete() refuses, before the first sale's money.
   const configError = referenceError('cashierRef', opts.cashierRef) ?? referenceError('registerId', opts.registerId);
-  const error = configError ?? saleError;
   // The pending completion: the order complete() built for this tender attempt. The ref is read
   // synchronously by complete() and the lock; `saving` mirrors it (true from complete()'s entry) for rendering.
   const pending = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
   const [saving, setSaving] = useState(false);
+  // While a completion is pending (a failed save), its own error comes first: Retry still delivers it.
+  const error = saving && saleError ? saleError : configError ?? saleError;
   // The session pinned by startTender for this tender (`undefined` inside: none); null until a tender starts.
   const tenderSession = useRef<{ session: typeof opts.session } | null>(null);
   // The pending completion isStored confirmed stored after its save failed; `canContinue` mirrors it for
@@ -135,6 +137,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
 
   function setTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string } | null) {
     if (locked()) return;
+    // A terminal reference finalize would refuse is refused as it's entered, before the card flow completes.
+    const refused = referenceError('The payment reference', tender?.reference);
+    if (refused) return setError(refused);
     const previous = builder.getSnapshot().payments[0];
     if (previous) builder.removePayment(previous.id);
     if (tender) builder.addPayment(tender);
@@ -242,7 +247,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     },
     removeDiscount(id: string) { if (!locked()) builder.removeDiscount(id); },
     /** the picked customer reaches the server as order.create v3's customer.customerId */
-    setCustomer(customer: CustomerSummary | null) { if (!locked()) builder.setCustomer(customer); },
+    setCustomer(customer: CustomerSummary | null) {
+      if (locked()) return;
+      // A searched customer's email or id the server would refuse never reaches the sale; the customer stays as it was.
+      const refused = customer && customerRefusal(customer);
+      if (refused) return setError(refused);
+      builder.setCustomer(customer);
+      setError(null);
+    },
     /**
      * Pins `options.session` for this tender when given, else the rendered `session` option. Pass the
      * session `useRegisterSession`'s `requireSaleSession()` returned: the rendered one can lag a session

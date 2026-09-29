@@ -1011,7 +1011,8 @@ interface OrderCreatePayload {
         bounds are in `@tallyui/core/server`'s `payloadShapeErrors`:
         `customer.email` at most 254 characters, `customerId` 64,
         `sessionId` 36, and every other string field 255; U+0000 is
-        refused in any string.
+        refused in any string. The v3 `display` and `taxByRate` strings
+        get the same 255 bound and NUL check in `fiscalFiguresErrors`.
       - **Then the replay lookup and the collision lookup**, so a resent
         command that was already applied always replays as `duplicate`,
         whatever the later checks say.
@@ -1151,9 +1152,8 @@ interface OrderCreatePayload {
     it. After a complete compensation, either `platform_error` (if the error
     is permanent) or transient (ADR-039) is allowed, or, for
     `unsupported_tax_mode`, the unstored answer described in the step
-    order. A transient result
-    releases the claim and the till resends the **same** id, so it too is
-    safe only once nothing remains.
+    order. A transient result releases the claim and the till resends the
+    **same** id, so it too is safe only once nothing remains.
   - **If compensation itself fails**, the plugin never returns
     `platform_error` and never releases the claim. The claim stays in
     progress, so the till's resends of the same id get `409 in_progress`,

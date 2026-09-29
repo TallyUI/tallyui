@@ -178,7 +178,7 @@ describe('finalizeOrder refuses a pass-through reference outside the order.creat
 
   it.each([
     ['an over-long cashierRef', paid(), { cashierRef: 'c'.repeat(256) }, 'cashierRef is too long (max 255 characters)'],
-    ['a payment reference with a NUL', paid('ref\u0000'), {}, 'payments[0].reference contains a NUL character'],
+    ['a payment reference with a NUL', paid('ref\u0000'), {}, "the external payment's reference contains a NUL character"],
     ['an over-long registerId', paid(), { registerId: 'r'.repeat(256) }, 'registerId is too long (max 255 characters)'],
   ] as const)('refuses %s, naming the field, before any id is minted', (_name, input, options, message) => {
     const newId = vi.fn(uuidv7);
@@ -186,13 +186,28 @@ describe('finalizeOrder refuses a pass-through reference outside the order.creat
     expect(newId).not.toHaveBeenCalled();
   });
 
-  it("checks the variantId the envelope sends, or the productId when there's none", () => {
+  it("checks the variantId the envelope sends, or the productId when there's none, naming the line", () => {
     const input = paid();
     const lines = (variantId?: string, productId = 'p') =>
       ({ ...input, lineItems: [{ ...input.lineItems[0], variantId, productId: 'x'.repeat(300) }, { ...input.lineItems[1], productId }] });
-    expect(() => finalizeOrder(lines('v'.repeat(256)))).toThrow('finalize: lines[0].variantId is too long (max 255 characters)');
-    expect(() => finalizeOrder(lines('v', 'p\u0000'))).toThrow('finalize: lines[1].productId contains a NUL character');
+    expect(() => finalizeOrder(lines('v'.repeat(256)))).toThrow(new Error('finalize: "Item 1": the variant id is too long (max 255 characters)'));
+    expect(() => finalizeOrder(lines('v', 'p\u0000'))).toThrow(new Error('finalize: "Item 2": the product id contains a NUL character'));
     expect(() => finalizeOrder(lines('v'.repeat(255)))).not.toThrow();
+  });
+
+  it('at capability 3, also refuses a line discount id or a tax code the envelope sends; below 3 neither is sent', () => {
+    const input = discountedSale().getSnapshot();
+    expect(input.display.lines[0].discounts).toHaveLength(1);
+    const longId = { ...input, display: { ...input.display, lines: input.display.lines.map((line, i) => i > 0 ? line
+      : { ...line, discounts: line.discounts.map((discount) => ({ ...discount, discountId: 'd'.repeat(256) })) }) } };
+    const nulCode = { ...input, lineItems: input.lineItems.map((line, i) => i === 0 ? line
+      : { ...line, taxLines: line.taxLines.map((tax) => ({ ...tax, code: 'VAT\u0000' })) }) };
+    expect(nulCode.lineItems[1].taxLines).toHaveLength(1);
+    expect(() => finalizeOrder(longId, { capabilities: { orderCreate: 3 } }))
+      .toThrow(new Error('finalize: "Item 1": the discount id is too long (max 255 characters)'));
+    expect(() => finalizeOrder(nulCode, { capabilities: { orderCreate: 3 } }))
+      .toThrow(new Error('finalize: "Item 2": the tax code contains a NUL character'));
+    for (const order of [longId, nulCode]) expect(() => finalizeOrder(order, { capabilities: { orderCreate: 2 } })).not.toThrow();
   });
 
   it('accepts every reference at 255 characters', () => {

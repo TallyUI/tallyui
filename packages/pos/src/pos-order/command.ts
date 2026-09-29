@@ -15,6 +15,20 @@ export class UnsupportedOrderVersionError extends Error {
  */
 export const PAYLOAD_STRING_MAX = 255;
 
+/** A non-empty string of at most `max` UTF-16 units with no NUL: what order.create's shape check accepts. */
+const sendable = (value: unknown, max: number): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= max && !value.includes('\u0000');
+
+/**
+ * Why a customer (picked from a search, or restored from a parked order) can't go on a sale, or null: its email
+ * (over 254 units, or a NUL) or its id (over 64, or a NUL) would be refused by order.create's shape check.
+ */
+export function customerRefusal(customer: { id?: string; email?: string }): string | null {
+  const bad = customer.email !== undefined && customer.email !== '' && !sendable(customer.email, 254) ? 'email'
+    : customer.id !== undefined && customer.id !== '' && !sendable(customer.id, 64) ? 'id' : null;
+  return bad && `This customer's ${bad} can't be sent to the store, so they weren't added to the sale.`;
+}
+
 /** Display text as sent: NUL stripped, and over the bound cut to 254 units plus '…', never inside a surrogate pair. */
 function sendText(text: string): string {
   const clean = text.replaceAll('\u0000', '');
@@ -37,9 +51,9 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
   if (discountMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
   const version = Math.min(contentVersion, cap ?? contentVersion) as 1 | 2 | 3;
-  const email = order.customer?.email;
-  const id = order.customer?.id;
-  const customerId = typeof id === 'string' && id.length > 0 && id.length <= 64 ? id : undefined;
+  // The backstop for a customer `customerRefusal` never saw: an email or id the shape check would refuse is left out.
+  const email = sendable(order.customer?.email, 254) ? order.customer.email : undefined;
+  const customerId = sendable(order.customer?.id, 64) ? order.customer.id : undefined;
   const sessionId = order.sessionId ?? order.lateSessionId;
   return {
     id: order.commandId, type: 'order.create', version, createdAt: order.createdAt, deviceId, attempt,

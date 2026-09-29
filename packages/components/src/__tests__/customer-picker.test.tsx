@@ -244,6 +244,7 @@ describe('CustomerPicker', () => {
     ['a 255-character email', `${'a'.repeat(246)}@test.com`],
     ['no @', 'alice.test.com'], ['two @', 'alice@bob@test.com'], ['an empty local part', '@test.com'],
     ['a domain without a dot', 'alice@test'], ['inner whitespace', 'ali ce@test.com'], ['a NUL', 'alice\u0000@test.com'],
+    ['nothing before the dot', 'a@.com'], ['nothing after the dot', 'a@b.'],
   ])('refuses %s with the alert, without calling create', async (_name, email) => {
     const create = vi.fn(async () => alice);
     render(<CustomerPicker search={vi.fn()} create={create} selected={null} onSelect={vi.fn()} online />);

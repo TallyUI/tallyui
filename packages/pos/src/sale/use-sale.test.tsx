@@ -1743,6 +1743,56 @@ describe('app configuration outside the order.create bounds', () => {
     expect(result.current.stage.kind).toBe('receipt');
   });
 
+  it.each([
+    ['a 255-character email', { id: 'cus_1', name: 'Long', email: `${'a'.repeat(246)}@test.com` }, 'email'],
+    ['a customerId with a NUL', { id: 'cus\u00001', name: 'Nul', email: 'nul@test.com' }, 'id'],
+  ])("setCustomer refuses a searched customer with %s, keeping the sale's customer", (_name, customer, field) => {
+    const jane = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+    const { result } = renderSale(pricing);
+    act(() => result.current.setCustomer(jane));
+    act(() => result.current.setCustomer(customer));
+    expect(result.current.error).toBe(`This customer's ${field} can't be sent to the store, so they weren't added to the sale.`);
+    expect(result.current.order.customer).toEqual(jane);
+    act(() => result.current.setCustomer(null));
+    expect(result.current).toMatchObject({ order: { customer: null }, error: null });
+  });
+
+  it('setTender refuses a terminal reference finalize would refuse, as it is entered', () => {
+    const { result } = renderSale(pricing);
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    const total = result.current.order.totalMinor;
+    for (const [reference, message] of [['r'.repeat(256), 'The payment reference is too long (max 255 characters)'],
+      ['A\u0000', 'The payment reference contains a NUL character']]) {
+      act(() => result.current.setTender({ method: 'external', amountMinor: total, reference }));
+      expect(result.current.error).toBe(message);
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject({ amountMinor: total });
+      expect(result.current.order.payments[0].reference).toBeUndefined();
+    }
+    act(() => result.current.setTender({ method: 'external', amountMinor: total, reference: 'A1B2' }));
+    expect(result.current.error).toBeNull();
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ reference: 'A1B2' })]);
+  });
+
+  it('a failed save, then an out-of-bounds cashierRef: the save error shows first, and Retry still delivers the pending order', async () => {
+    let fail = true;
+    const onSaleCompleted = vi.fn(async (_order: PosOrder) => { if (fail) throw new Error('Storage full'); });
+    const { result, rerender } = renderWithOpts(saleOpts({ onSaleCompleted }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.saving).toBe(true);
+    rerender(saleOpts({ onSaleCompleted, cashierRef: 'c'.repeat(300) }));
+    expect(result.current.error).toBe('The sale could not be saved: Storage full');
+    fail = false;
+    await act(async () => { await result.current.complete(); });
+    expect(onSaleCompleted).toHaveBeenCalledTimes(2);
+    expect(onSaleCompleted.mock.calls[1][0]).toBe(onSaleCompleted.mock.calls[0][0]);
+    expect(onSaleCompleted.mock.calls[1][0].cashierRef).toBe(cashierRef);
+    expect(result.current).toMatchObject({ stage: { kind: 'receipt' }, error: 'cashierRef is too long (max 255 characters)' });
+  });
+
   it('a registerId with a NUL is refused the same way', () => {
     const { result, rerender } = renderWithOpts(saleOpts({ registerId: 'register\u00001' }));
     expect(result.current.error).toBe('registerId contains a NUL character');
