@@ -30,8 +30,9 @@ export function platformErrorResult(id: string, platformCode: string, platformMe
 
 /**
  * The rejected result for an exception from the plugin's own code (a programming error, not the
- * database, the network, or an unknown SQLSTATE), raised after a complete rollback so that nothing
- * of the sale remains, in the database or outside it.
+ * database, the network, or an unknown SQLSTATE), raised after a complete rollback or a complete
+ * compensation, so that nothing of the sale remains, in the database or outside it. "The plugin's own
+ * code" excludes an error thrown from inside the platform SDK, the database client or the HTTP client.
  *
  * It is stored in the ledger and replayed as recorded, because it fails the same way on every retry
  * and a retry loop would hide the bug. The message is generic so no internal detail reaches the till;

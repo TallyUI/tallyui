@@ -17,7 +17,8 @@ export function SyncStatus({ state }: { state: OutboxState }) {
   return <Text accessibilityLabel="Sync status" className="px-4 py-2 text-xs text-muted-foreground">
     {label}{state.sending ? ' · sending' : state.lastRetryReason
       ? ` · retrying (${state.lastRetryReason}) in ${seconds}s` : ''}
-    {stuck ? ` · Not syncing ${stuck.commandIds.length} order${stuck.commandIds.length === 1 ? '' : 's'}: the store keeps failing`
+    {stuck ? ` · Not syncing ${stuck.commandIds.length} order${stuck.commandIds.length === 1 ? '' : 's'}: `
+      + (stuck.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing')
       + ` (${stuck.reason}) since ${new Date(stuck.since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : ''}
   </Text>;
 }

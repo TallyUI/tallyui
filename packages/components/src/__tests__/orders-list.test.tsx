@@ -50,6 +50,15 @@ describe('OrdersList', () => {
     expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
   });
 
+  it.each([['timeout', 'no answer from the store (timeout)'], ['status_503', 'the store keeps failing (status_503)']])(
+    'shows a stuck %s with the matching wording', (reason, wording) => {
+    const since = new Date(2026, 8, 29, 14, 2).getTime();
+    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    render(<OrdersList orders={[order('s')]} onRetry={async () => 0}
+      stuck={{ commandIds: ['command-s'], reason, since, orders: [{ commandId: 'command-s', since, reason }] }} />);
+    expect(screen.getAllByText(`Not syncing: ${wording} since ${time}`)).toHaveLength(2);
+  });
+
   it('lists a stuck pending order under Needs attention, with why it is not syncing and since when', () => {
     const since = new Date(2026, 8, 29, 14, 2).getTime();
     const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
