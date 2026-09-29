@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, type CustomerSummary, type Discount, type Order } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
+import { referenceError } from '../pos-order/finalize';
 import { useTax } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -52,7 +53,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   const [builder, setBuilder] = useState(() => createOrderBuilder({ currency: settings.currency, taxContext }));
   const [order, setOrder] = useState(() => builder.getSnapshot());
   const [stage, setStage] = useState<SaleStage>({ kind: 'cart' });
-  const [error, setError] = useState<string | null>(null);
+  const [saleError, setError] = useState<string | null>(null);
+  // App configuration is checked on every render (so on mount and on each change), by finalize's own rule, which
+  // stays the backstop: while it's bad, `error` shows it and complete() refuses, before the first sale's money.
+  const configError = referenceError('cashierRef', opts.cashierRef) ?? referenceError('registerId', opts.registerId);
+  const error = configError ?? saleError;
   // The pending completion: the order complete() built for this tender attempt. The ref is read
   // synchronously by complete() and the lock; `saving` mirrors it (true from complete()'s entry) for rendering.
   const pending = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
@@ -269,9 +274,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
      * and `createdAt`, no new stamp and no second late-sale fact) and hands it to `onSaleCompleted`
      * again, so that must accept an order it already stored (as `useOrderOutbox.record` does). The
      * pending completion is cleared once `onSaleCompleted` resolves, or by `newSale()`. A call while
-     * another is in flight returns that call's promise, and a call on the receipt does nothing.
+     * another is in flight returns that call's promise, and a call on the receipt does nothing. While
+     * `cashierRef` or `registerId` is out of bounds (shown as `error`), a call does nothing either,
+     * unless it's the Retry of a pending completion, which was built with the options as they were.
      */
-    complete: () => once(async () => {
+    complete: () => configError && !pending.current ? Promise.resolve() : once(async () => {
       attempts.current++;
       confirm(null);
       if (pending.current) return deliver(pending.current);

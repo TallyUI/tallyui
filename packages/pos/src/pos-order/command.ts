@@ -10,7 +10,23 @@ export class UnsupportedOrderVersionError extends Error {
 }
 
 /**
- * Builds the ADR-038 order.create envelope for a PosOrder.
+ * `@tallyui/core/server`'s `payloadShapeErrors` bound, in UTF-16 code units (`String.length`), on
+ * every order.create string but `customer.email` (254), `customerId` (64) and `sessionId` (36).
+ */
+export const PAYLOAD_STRING_MAX = 255;
+
+/** Display text as sent: NUL stripped, and over the bound cut to 254 units plus '…', never inside a surrogate pair. */
+function sendText(text: string): string {
+  const clean = text.replaceAll('\u0000', '');
+  if (clean.length <= PAYLOAD_STRING_MAX) return clean;
+  const high = clean.charCodeAt(PAYLOAD_STRING_MAX - 2);
+  return `${clean.slice(0, high >= 0xd800 && high <= 0xdbff ? PAYLOAD_STRING_MAX - 2 : PAYLOAD_STRING_MAX - 1)}…`;
+}
+
+/**
+ * Builds the ADR-038 order.create envelope for a PosOrder. The names it sends (line titles and v3 discount labels)
+ * go through `sendText`; the stored order keeps them whole. The ids it sends are minted by `finalizeOrder` (UUIDv7),
+ * which also refuses an over-long or NUL pass-through reference, so neither is clamped here.
  * ADR-065's figures make version 3; otherwise a discounted order is version 2 (ADR-062), else version 1, byte-identical.
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
@@ -30,7 +46,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
     payload: {
       clientOrderId: order.id, createdAt: order.createdAt, currency: order.currency, pricesIncludeTax: order.pricesIncludeTax,
       lines: order.lines.map((line) => ({
-        clientLineId: line.id, variantId: line.variantId ?? line.productId, title: line.name,
+        clientLineId: line.id, variantId: line.variantId ?? line.productId, title: sendText(line.name),
         quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
         ...(line.taxInclusive !== undefined ? { taxInclusive: line.taxInclusive } : {}),
         ...(line.discountMinor > 0 ? { discountMinor: line.discountMinor } : {}),
@@ -46,7 +62,8 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       taxMinor: order.taxMinor, totalMinor: order.totalMinor,
       ...(version === 3 ? {
         display: { ...order.display!, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
-          clientLineId: lineId, amountMinor, discounts,
+          clientLineId: lineId, amountMinor,
+          discounts: discounts.map((discount) => discount.label === undefined ? discount : { ...discount, label: sendText(discount.label) }),
         })) },
         taxByRate: order.taxByRate!.map(({ ratePpm, code, netMinor, amountMinor, grossMinor }) => ({
           ratePpm, ...(code !== undefined ? { code } : {}), netMinor, taxMinor: amountMinor, grossMinor,

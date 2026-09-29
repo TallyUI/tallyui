@@ -169,6 +169,37 @@ describe('finalizeOrder', () => {
   });
 });
 
+describe('finalizeOrder refuses a pass-through reference outside the order.create bounds', () => {
+  const paid = (reference?: string) => {
+    const builder = sale();
+    builder.addPayment({ method: 'external', amountMinor: 3451, ...(reference !== undefined ? { reference } : {}) });
+    return builder.getSnapshot();
+  };
+
+  it.each([
+    ['an over-long cashierRef', paid(), { cashierRef: 'c'.repeat(256) }, 'cashierRef is too long (max 255 characters)'],
+    ['a payment reference with a NUL', paid('ref\u0000'), {}, 'payments[0].reference contains a NUL character'],
+    ['an over-long registerId', paid(), { registerId: 'r'.repeat(256) }, 'registerId is too long (max 255 characters)'],
+  ] as const)('refuses %s, naming the field, before any id is minted', (_name, input, options, message) => {
+    const newId = vi.fn(uuidv7);
+    expect(() => finalizeOrder(input, { ...options, newId })).toThrow(new Error(`finalize: ${message}`));
+    expect(newId).not.toHaveBeenCalled();
+  });
+
+  it("checks the variantId the envelope sends, or the productId when there's none", () => {
+    const input = paid();
+    const lines = (variantId?: string, productId = 'p') =>
+      ({ ...input, lineItems: [{ ...input.lineItems[0], variantId, productId: 'x'.repeat(300) }, { ...input.lineItems[1], productId }] });
+    expect(() => finalizeOrder(lines('v'.repeat(256)))).toThrow('finalize: lines[0].variantId is too long (max 255 characters)');
+    expect(() => finalizeOrder(lines('v', 'p\u0000'))).toThrow('finalize: lines[1].productId contains a NUL character');
+    expect(() => finalizeOrder(lines('v'.repeat(255)))).not.toThrow();
+  });
+
+  it('accepts every reference at 255 characters', () => {
+    expect(() => finalizeOrder(paid('p'.repeat(255)), { cashierRef: 'c'.repeat(255), registerId: 'r'.repeat(255) })).not.toThrow();
+  });
+});
+
 describe('finalizeOrder capability gate (ADR-062)', () => {
   it('rejects a discount when the capability is explicitly 1, same as no capabilities', () => {
     const order = discountedSale().getSnapshot();

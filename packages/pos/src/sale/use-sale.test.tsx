@@ -1717,3 +1717,36 @@ describe('unmount logs a save that would otherwise be lost silently', () => {
     }
   });
 });
+
+describe('app configuration outside the order.create bounds', () => {
+  function renderWithOpts(initialProps: Parameters<typeof useSale>[1]) {
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
+    }
+    return renderHook((opts: Parameters<typeof useSale>[1]) => useSale(pricing, opts), { wrapper: Wrapper, initialProps });
+  }
+
+  it('a 300-character cashierRef shows the error before any sale, complete() refuses, and fixing it clears the error', async () => {
+    const onSaleCompleted = vi.fn();
+    const { result, rerender } = renderWithOpts(saleOpts({ cashierRef: 'c'.repeat(300), onSaleCompleted }));
+    expect(result.current.error).toBe('cashierRef is too long (max 255 characters)');
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    expect(result.current.error).toBe('cashierRef is too long (max 255 characters)');
+    await act(async () => { await result.current.complete(); });
+    expect(onSaleCompleted).not.toHaveBeenCalled();
+    expect(result.current).toMatchObject({ stage: { kind: 'tender' }, saving: false, error: 'cashierRef is too long (max 255 characters)' });
+    rerender(saleOpts({ onSaleCompleted }));
+    expect(result.current.error).toBeNull();
+    await act(async () => { await result.current.complete(); });
+    expect(onSaleCompleted).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ cashierRef }));
+    expect(result.current.stage.kind).toBe('receipt');
+  });
+
+  it('a registerId with a NUL is refused the same way', () => {
+    const { result, rerender } = renderWithOpts(saleOpts({ registerId: 'register\u00001' }));
+    expect(result.current.error).toBe('registerId contains a NUL character');
+    rerender(saleOpts());
+    expect(result.current.error).toBeNull();
+  });
+});

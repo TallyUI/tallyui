@@ -7,6 +7,9 @@ export function registerPayloadErrors(type: string, payload: unknown): string[] 
     if (!valid && errors.length < 10) errors.push(`${field}: expected ${expected}`)
   }
   if (!object(payload)) return ['payload: expected an object']
+  const noNul = (value: unknown, field: string) => {
+    if (typeof value === 'string') check(!value.includes('\u0000'), field, 'no NUL character')
+  }
   const string = (field: string, optional = false) => {
     const value = payload[field]
     if (optional && value === undefined) return
@@ -15,6 +18,7 @@ export function registerPayloadErrors(type: string, payload: unknown): string[] 
     if (typeof value === 'string' && ['openedAt', 'at', 'createdAt', 'closedAt'].includes(field)) {
       check(!Number.isNaN(Date.parse(value)), field, 'a valid date')
     }
+    noNul(value, field)
   }
   const integer = (field: string, min = -Infinity) =>
     check(Number.isSafeInteger(payload[field]) && (payload[field] as number) >= min, field, `a safe integer >= ${min}`)
@@ -23,6 +27,7 @@ export function registerPayloadErrors(type: string, payload: unknown): string[] 
     check(object(value), field, 'a record of integers')
     if (object(value)) for (const [key, amount] of Object.entries(value)) {
       check(key.length > 0 && Number.isSafeInteger(amount), `${field}.${key}`, 'a non-empty key with a safe integer')
+      noNul(key, `${field}.${key}`)
     }
   }
   string('sessionId')
@@ -50,6 +55,7 @@ export function registerPayloadErrors(type: string, payload: unknown): string[] 
       else {
         check(typeof payload.reason === 'string' && payload.reason.trim().length > 0 && payload.reason.length <= 500,
           'reason', 'a non-empty string after trim of at most 500 characters')
+        noNul(payload.reason, 'reason')
         check(['paid_in', 'paid_out', 'no_sale'].includes(payload.type as string), 'type', 'paid_in, paid_out or no_sale')
         integer('amountMinor', payload.type === 'no_sale' ? 0 : 1)
         if (payload.type === 'no_sale') check(payload.amountMinor === 0, 'amountMinor', '0 for no_sale')
@@ -67,8 +73,10 @@ export function registerPayloadErrors(type: string, payload: unknown): string[] 
       for (const field of ['orderIds', 'movementIds']) {
         const value = payload[field]
         check(Array.isArray(value), field, 'an array of ids')
-        if (Array.isArray(value)) value.forEach((id, index) =>
-          check(typeof id === 'string' && id.length > 0 && id.length <= 64, `${field}[${index}]`, 'a non-empty string of at most 64 characters'))
+        if (Array.isArray(value)) value.forEach((id, index) => {
+          check(typeof id === 'string' && id.length > 0 && id.length <= 64, `${field}[${index}]`, 'a non-empty string of at most 64 characters')
+          noNul(id, `${field}[${index}]`)
+        })
       }
       break
     default:

@@ -310,3 +310,55 @@ describe('toOrderCreateEnvelope', () => {
     expect(JSON.parse(JSON.stringify(envelope))).toStrictEqual(envelope);
   });
 });
+
+describe('names and ids within the order.create bounds', () => {
+  const named = (name: string): PosOrder => ({ ...order, lines: [{ ...order.lines[0], name }, order.lines[1]] });
+  const title = (name: string) => toOrderCreateEnvelope(named(name), 'device1').payload.lines[0].title!;
+
+  it('sends a 300-character name as 255 characters ending in …, while the stored order keeps all 300', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
+    builder.addLine({ productId: 'p1', name: 'n'.repeat(300), unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const stored = finalizeOrder(builder.getSnapshot());
+    expect(toOrderCreateEnvelope(stored, 'device1').payload.lines[0].title).toBe(`${'n'.repeat(254)}…`);
+    expect(stored.lines[0].name).toHaveLength(300);
+    expect(title('n'.repeat(255))).toBe('n'.repeat(255));
+  });
+
+  it('never splits a surrogate pair at the cut', () => {
+    expect(title(`${'x'.repeat(253)}😀${'y'.repeat(50)}`)).toBe(`${'x'.repeat(253)}…`);
+    expect(title(`${'x'.repeat(252)}😀${'y'.repeat(50)}`)).toBe(`${'x'.repeat(252)}😀…`);
+    // With the u flag, a surrogate range matches only a lone surrogate, never half of a pair.
+    for (const at of [252, 253, 254]) expect(title(`${'x'.repeat(at)}😀${'y'.repeat(50)}`)).not.toMatch(/[\uD800-\uDFFF]/u);
+  });
+
+  it('strips NUL from a name, before measuring it', () => {
+    expect(title('Co\u0000ff\u0000ee')).toBe('Coffee');
+    expect(title('a\u0000'.repeat(200))).toBe('a'.repeat(200));
+  });
+
+  it('clamps and strips a v3 discount label, leaving the stored order whole', () => {
+    const label = `D\u0000${'d'.repeat(300)}`;
+    const discounted: PosOrder = { ...v3, display: { ...v3.display!,
+      lines: [{ lineId: 'line1', amountMinor: 1700, discounts: [{ discountId: 'd1', label, amountMinor: 0 }] }, v3.display!.lines[1]] } };
+    const sent = toOrderCreateEnvelope(discounted, 'device1').payload.display!.lines[0].discounts[0];
+    expect(sent).toStrictEqual({ discountId: 'd1', label: `D${'d'.repeat(253)}…`, amountMinor: 0 });
+    expect(discounted.display!.lines[0].discounts[0].label).toBe(label);
+  });
+
+  it("the till's minted ids are at most 255 characters, with no NUL", () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addLine({ productId: 'p2', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'external', amountMinor: 50 });
+    builder.addPayment({ method: 'cash', amountMinor: 150 });
+    const { id, payload } = toOrderCreateEnvelope(finalizeOrder(builder.getSnapshot()), 'device1');
+    const ids = [id, payload.clientOrderId, ...payload.lines.map((line) => line.clientLineId),
+      ...payload.payments.map((payment) => payment.clientPaymentId)];
+    expect(ids).toHaveLength(6);
+    for (const minted of ids) {
+      expect(minted.length).toBeLessThanOrEqual(255);
+      expect(minted).not.toContain('\u0000');
+    }
+  });
+});

@@ -22,6 +22,11 @@ export interface CustomerPickerProps {
   className?: string;
 }
 
+/** `@tallyui/core/server`'s `payloadShapeErrors` bound on `customer.email`, in UTF-16 code units. */
+const EMAIL_MAX = 254;
+/** A simple shape, not RFC 5322: one `@`, a non-empty local part, a dot in the domain, no whitespace or NUL. */
+const EMAIL_SHAPE = /^[^\s@\u0000]+@[^\s@\u0000]*\.[^\s@\u0000]*$/u;
+
 export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className }: CustomerPickerProps) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -61,11 +66,14 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
   }, [query, online, debounceMs]);
 
   async function submit() {
-    if (!online || !create || creating || !values.email.trim()) return;
+    const email = values.email.trim();
+    if (!online || !create || creating || !email) return;
+    // The till sends this email in order.create, whose shape check refuses one over 254 characters: refuse it here instead.
+    if (email.length > EMAIL_MAX || !EMAIL_SHAPE.test(email)) return setError(`Enter a valid email address (up to ${EMAIL_MAX} characters)`);
     setCreating(true);
     setError(null);
     try {
-      const created = await create({ email: values.email.trim(),
+      const created = await create({ email,
         ...(values.firstName.trim() ? { firstName: values.firstName.trim() } : {}),
         ...(values.lastName.trim() ? { lastName: values.lastName.trim() } : {}),
         ...(values.phone.trim() ? { phone: values.phone.trim() } : {}),

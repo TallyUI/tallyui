@@ -1,6 +1,7 @@
 import { minorUnitDigits, type ServerCapabilities } from '@tallyui/core';
 import type { Order } from '../order/types';
 import { taxLinesByRate } from '../tax/exact';
+import { PAYLOAD_STRING_MAX } from './command';
 import type { PosOrder, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -13,6 +14,16 @@ export interface FinalizeOptions {
   newId?: () => string;
   /** The store's `order.create` capability (ADR-062); `undefined` is treated as 1. */
   capabilities?: ServerCapabilities;
+}
+
+/**
+ * Why a reference the till passes through without minting would fail order.create's shape check
+ * (over PAYLOAD_STRING_MAX, or a NUL), or null. `useSale` also checks its options with it.
+ */
+export function referenceError(field: string, value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (value.length > PAYLOAD_STRING_MAX) return `${field} is too long (max ${PAYLOAD_STRING_MAX} characters)`;
+  return value.includes('\u0000') ? `${field} contains a NUL character` : null;
 }
 
 /** Turns a fully paid builder Order into a pending PosOrder without mutating it. */
@@ -42,6 +53,15 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   let change = order.paidMinor - order.totalMinor;
   const cash = order.payments.reduce((sum, p) => sum + (p.method === 'cash' ? p.amountMinor : 0), 0);
   if (change > cash) throw new Error('finalize: change exceeds cash');
+  // Refused before any id is minted, so such a value never reaches the stored order or the outbox.
+  const references: Array<[string, string | undefined]> = [['registerId', options.registerId], ['cashierRef', options.cashierRef],
+    ...order.lineItems.map((line, i): [string, string] => line.variantId !== undefined
+      ? [`lines[${i}].variantId`, line.variantId] : [`lines[${i}].productId`, line.productId]),
+    ...order.payments.map((payment, i): [string, string | undefined] => [`payments[${i}].reference`, payment.reference])];
+  for (const [field, value] of references) {
+    const message = referenceError(field, value);
+    if (message) throw new Error(`finalize: ${message}`);
+  }
   const newId = options.newId ?? uuidv7;
   const id = newId();
   const lines = order.lineItems.map((line) => ({
