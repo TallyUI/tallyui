@@ -1,5 +1,4 @@
-/** Currency decimals depend on the runtime's ICU data via Intl.NumberFormat. */
-/** ISO 4217 minor-unit exponent as resolved by Intl (which rejects malformed codes). */
+/** ISO 4217 minor-unit exponent as resolved by Intl (which rejects malformed codes); depends on the runtime's ICU data. */
 export function currencyDecimals(currency: string): number {
   return new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits!
 }
@@ -14,7 +13,9 @@ export function minorToMajor(minor: number, decimals: number): string {
 
 /** Rounds a major-unit decimal to minor units, half away from zero, without float scaling. */
 export function majorToMinor(value: string | number, decimals: number): number {
-  const match = /^([+-]?)(\d+\.?\d*|\.\d+)(?:e([+-]?\d+))?$/i.exec(String(value))
+  // The dot group is optional as a whole, not per-side: `\d+\.?\d*` lets `\d+` and `\d*` split a
+  // digit run many ways, so a long non-matching digit string backtracks quadratically (CodeQL ReDoS).
+  const match = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:e([+-]?\d+))?$/i.exec(String(value))
   if (!match) throw new RangeError('value must be a finite decimal')
   const [, sign, mantissa, exponent = '0'] = match
   const [whole, fraction = ''] = mantissa.split('.')

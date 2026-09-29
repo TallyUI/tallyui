@@ -7,4 +7,7 @@ export default defineConfig({
   format: ['esm'],
   dts: true,
   external: ['react', 'rxdb', 'rxjs'],
+  // tsup strips the `node:` prefix by default; keeping it makes the server bundle portable
+  // (Deno, Workers) and lets check-core-dist's `node:` check fire.
+  removeNodeProtocol: false,
 });

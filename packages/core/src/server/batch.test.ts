@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import fixture from './__fixtures__/order-create-v3.json'
 import { precheckCommand, validateBatch } from './batch'
+import { fiscalFiguresErrors } from './fiscal-figures'
 import { payloadShapeErrors } from './order-payload-shape'
 
 const command = {
@@ -144,5 +145,31 @@ describe('precheckCommand', () => {
       'taxByRate: expected the sum of taxMinor to equal payload.taxMinor; taxByRate[0].grossMinor: expected netMinor + taxMinor',
     } })
     expect(result?.error?.message.split('; ').length).toBeLessThanOrEqual(10)
+  })
+
+  it('caps the message at the first 10 fiscal-figure errors when more than 10 fields are invalid', () => {
+    const envelope = structuredClone(fixture)
+    const { display, taxByRate } = envelope.payload
+    // Break 12 independent money fields (more than the 10 `fiscalFiguresErrors` itself keeps),
+    // so the batch message is provably the first 10 in traversal order, not just under 10 of them.
+    display.subtotalMinor = NaN
+    display.discountMinor = NaN
+    display.taxMinor = NaN
+    display.totalMinor = NaN
+    display.orderDiscountMinor = NaN
+    display.lines[0].amountMinor = NaN
+    display.lines[0].discounts[0].amountMinor = NaN
+    display.lines[1].amountMinor = NaN
+    taxByRate[0].netMinor = NaN
+    taxByRate[0].taxMinor = NaN
+    taxByRate[0].grossMinor = NaN
+    taxByRate[1].netMinor = NaN
+    expect(payloadShapeErrors(envelope.payload)).toStrictEqual([])
+    const fullErrors = fiscalFiguresErrors(envelope.payload as never)
+    const result = precheckCommand(envelope as never)
+    expect(result).toEqual({ id: fixture.id, status: 'rejected', error: { code: 'invalid_payload',
+      message: fullErrors.slice(0, 10).join('; '),
+    } })
+    expect(fullErrors).toHaveLength(10)
   })
 })

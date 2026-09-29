@@ -1,7 +1,13 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
 import { canonicalJson, commandFingerprint } from '@tallyui/core/server'
+import orderCreateV3Fixture from './__fixtures__/order-create-v3.json'
 import vectors from './__fixtures__/fingerprint-vectors.json'
+
+it("pins case 1's envelope to the order-create-v3 fixture, so a fixture change can't leave the vector behind", () => {
+  const { type, version, payload } = orderCreateV3Fixture
+  expect(vectors[0].envelope).toEqual({ type, version, payload })
+})
 
 const envelopes = [
   vectors[0].envelope,
