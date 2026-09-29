@@ -67,5 +67,7 @@ export {
   useCustomerTraits,
   useTraitContext,
   useProductStock,
+  useStockOverlaid,
+  useStockOverlayAsOf,
 } from './context/connector-context';
 export type { ConnectorProviderProps } from './context/connector-context';
