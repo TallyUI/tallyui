@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ConnectorProvider } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import { Catalogue, formatStockSyncTime } from '../sale/catalogue';
 import type { ProductGrid, ProductStockBadge } from '../product';
@@ -333,5 +334,36 @@ describe('Catalogue', () => {
     const withoutAccessory = within(screen.getByTestId('catalogue-status-row')).getByText('Synced');
     expect(getComputedStyle(withoutAccessory).textOverflow).not.toBe('ellipsis');
     expect(getComputedStyle(withoutAccessory).whiteSpace).toBe('pre-wrap');
+  });
+  // ADR-060: reconciled stock reaches Catalogue's own entries (not just ProductStockBadge's tiles)
+  // through useStockOverlaid, so the chooser agrees with a reconcile pass the raw product hasn't seen yet.
+  it('applies a ConnectorProvider stock overlay to the chooser, even though the raw product is in stock', () => {
+    const overlayDoc = { id: 'shirt', title: 'Red Shirt', status: 'published', variants: [
+      { id: 'small', title: 'Small', sku: 'SHIRT-S', barcode: '222', prices: [{ amount: 20, currency_code: 'eur' }], manage_inventory: false },
+      { id: 'large', title: 'Large', sku: 'SHIRT-L', barcode: 'LARGE-CODE', prices: [{ amount: 25, currency_code: 'eur' }],
+        manage_inventory: true, inventory_items: [{ inventory_item_id: 'inv-large', required_quantity: 1,
+          inventory: { location_levels: [{ stocked_quantity: 5, reserved_quantity: 0 }] } }] },
+    ] };
+    expect(traits.getVariants!(overlayDoc)[1].stock.status).toBe('in_stock');
+    const overlay = new Map([['inv-large', [{ stocked_quantity: 0, reserved_quantity: 0 }]]]);
+    render(
+      <ConnectorProvider connector={medusaConnector} stockOverlay={overlay}>
+        <Catalogue products={[overlayDoc]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} />
+      </ConnectorProvider>,
+    );
+    fireEvent.click(screen.getByTestId('product-tile-Red Shirt'));
+    const chooser = within(screen.getByLabelText('Choose variant'));
+    expect(chooser.getByText(/^Out of Stock/)).toBeTruthy();
+  });
+  it('falls back to the provider stockOverlayAsOf for the as-of label when lastStockCheckAt is not given', () => {
+    const asOf = new Date('2026-09-24T10:42:00Z');
+    render(
+      <ConnectorProvider connector={medusaConnector} stockOverlayAsOf={asOf.toISOString()}>
+        <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} />
+      </ConnectorProvider>,
+    );
+    fireEvent.click(screen.getByTestId('product-tile-Red Shirt'));
+    const chooser = within(screen.getByLabelText('Choose variant'));
+    expect(chooser.getByText(`In Stock · as of ${formatStockSyncTime(asOf)}`)).toBeTruthy();
   });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import type { ProductTraits } from '@tallyui/core';
+import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, type CatalogueEntry } from '@tallyui/pos';
 import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle } from '../product';
 import { SearchInput } from '../input';
@@ -41,7 +41,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** Rendered at the end of the status line, e.g. a register control at phone width; the row renders even without `statusText`. */
   statusAccessory?: ReactNode;
   lastSyncedAt: Date | null;
-  /** The last completed stock reconcile pass, persisted across restarts; the later of this and lastSyncedAt wins. */
+  /** The last completed stock reconcile pass, persisted across restarts; the later of this and lastSyncedAt wins.
+   * When omitted (not merely null), falls back to the nearest ConnectorProvider's stockOverlayAsOf. */
   lastStockCheckAt?: Date | null;
   /** Whether to show a 12- or 24-hour clock in the stock-as-of time; undefined keeps the locale default. A platform
    * reads this off its own device APIs (e.g. expo-localization's getCalendars()) and passes it in. */
@@ -51,7 +52,13 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
    * in its unfocused wedge listener — not this prop's job. */
   minCodeLength?: number;
 }) {
-  const stockAsOf = laterOf(lastStockCheckAt, lastSyncedAt);
+  // Idempotent (the adapter's overlay returns just the fields the stock map sets), so an app that already merges the overlay into `products` itself (e.g. vendurepos) keeps working, and can drop its own merge.
+  const shown = useStockOverlaid(products) as Doc[];
+  const overlayAsOf = useStockOverlayAsOf();
+  const parsedOverlayAsOf = overlayAsOf ? new Date(overlayAsOf) : undefined;
+  const stockCheckAt = lastStockCheckAt !== undefined ? lastStockCheckAt
+    : parsedOverlayAsOf && !isNaN(parsedOverlayAsOf.getTime()) ? parsedOverlayAsOf : undefined;
+  const stockAsOf = laterOf(stockCheckAt, lastSyncedAt);
   const [query, setQuery] = useState('');
   // The chooser is live (medusapos ADR 0007): it holds only the chosen product's id and derives its choices
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.
@@ -59,8 +66,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const [width, setWidth] = useState(0);
   // ProductGrid has 4 px padding on each side of the content and each cell.
   const columns = Math.max(2, Math.min(6, Math.floor((width - 8) / (MIN_TILE_WIDTH + 8))));
-  const entries = useMemo(() => catalogueEntries(products, traits), [products, traits]);
-  const results = useMemo(() => searchProducts(products, query, traits), [products, query, traits]);
+  const entries = useMemo(() => catalogueEntries(shown, traits), [shown, traits]);
+  const results = useMemo(() => searchProducts(shown, query, traits), [shown, query, traits]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
