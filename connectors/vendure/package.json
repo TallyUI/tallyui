@@ -36,6 +36,6 @@
   "devDependencies": {
     "@tallyui/database": "workspace:*",
     "@tallyui/pos": "workspace:*",
-    "rxdb": "16.21.1"
+    "rxdb": "17.4.0"
   }
 }
