@@ -1003,37 +1003,74 @@ interface OrderCreatePayload {
     - On Vendure, an `ErrorResult` is a returned value, not a thrown error,
       so it counts as this rollback's trigger only once the plugin has
       turned it into that rollback.
-    - **The order of the steps** (Front desk, 2026-09-29):
-      - Pure **shape** validation (types, bounds, a NUL character) comes
-        first, before any lookup. A NUL in `clientOrderId` would make the
-        lookup itself fail (Postgres 22021) before any claim exists. A shape
-        failure answers `invalid_payload` and is not stored; the till's
-        Retry mints a new id.
-      - Then the replay lookup and the collision lookup.
+    - **The order of the steps** (Front desk, 2026-09-29), for
+      `order.create`:
+      - **Shape** first (types, bounds, a NUL character), before any
+        database access. A NUL in `clientOrderId` would make the lookup
+        itself fail (Postgres 22021) before any claim exists.
+      - **Then the replay lookup and the collision lookup**, so a resent
+        command that was already applied always replays as `duplicate`,
+        whatever the later checks say.
+      - **Then the value refusals**, still before the claim:
+        - amount ranges and the v3 fiscal-figure checks. These are
+          `@tallyui/core/server`'s `precheckCommand`, which a plugin calls
+          after its replay lookup, never before it;
+        - on the Vendure plugin, a future bound on `createdAt` (the till's
+          sale time). It may be at most 24 hours ahead of the server's
+          clock. There is no lower bound, because an offline till
+          legitimately sends old sales. The Medusa plugin has no such
+          bound.
+      - **Shape and value refusals answer `invalid_payload`.** It keeps its
+        single meaning for `order.create`: decided before the claim, never
+        stored. This widens the 2026-09-24 amendment's "fails shape
+        validation" to value refusals. A resend gets the same answer while
+        the bytes, or for `createdAt` the clock, disagree; the till's Retry
+        mints a new id.
+        - A byte-only check of a per-sale fact that has its own code
+          (`invalid_quantity`, `underpaid`) may instead run after the claim
+          and be stored under that code (below). The two answers are
+          replay-equivalent. A new plugin should prefer the pre-claim
+          `invalid_payload`.
+        - `unsupported_version` keeps its own code, before the claim, and
+          is recorded nowhere.
+        - Register commands keep ADR-068's own rules. For example, the
+          closure `registerId` check answers `invalid_payload` after a
+          lookup.
       - Then the claim.
       - Then the plugin's deterministic checks, before the first write of
-        the sale, on every platform. They split into two classes (Front
-        desk, 2026-09-29).
+        the sale, on every platform. They split into two classes.
         - **Not stored, claim released:** anything about the store-wide
           setup the plugin needs for any sale. That is `store_configuration`
           (the 2026-09-28 amendment), plus `unsupported_currency` and
           `unsupported_tax_mode`, which this ruling gives the same
           treatment. Once the store is fixed, the **same** command id
           applies.
-        - **Stored on the claim, with no savepoint:** anything about the
-          sale's own catalogue or payload facts:
-          - `unknown_variant` (a variant that is missing, deleted or
-            disabled, a product that isn't published, a variant in the wrong
-            channel);
-          - `invalid_quantity`;
-          - `underpaid`.
-          Nothing of the sale exists yet. A stored rejection is safe,
+          - A platform's order limits (Vendure's `orderItemsLimit` and
+            `orderLineItemsLimit`, or their equivalents) are store-wide
+            setup too. The plugin checks against the configured limits
+            before the first write. Exceeding one answers
+            `store_configuration`, and raising the limit lets the same
+            command id through. If Vendure itself raises the limit error
+            after the draft is created, the Vendure rule below applies:
+            a full rollback, and a transient answer.
+          - `unsupported_tax_mode` may be detected mid-workflow (on Medusa,
+            when the Admin API rejects ADR-039's paths 1 and 2). If it is
+            found after the first write, the plugin compensates, then answers
+            `unsupported_tax_mode`, unstored, with the claim released.
+        - **Stored on the claim, with no savepoint:** the sale's own
+          per-sale facts: `unknown_variant` (a variant that is missing,
+          deleted or disabled, a product that isn't published, a variant in
+          the wrong channel), `invalid_quantity` and `underpaid`.
+
+          Nothing of the sale exists yet, so a stored rejection is safe,
           because the till's Retry mints a new command id and re-evaluates.
-        - `unsupported_version` is checked before the claim, as before, and
-          recorded nowhere.
+          A deterministic rejection stored under a stable per-sale code is
+          replay-equivalent and harmless: a replay gets the same answer
+          either way.
       - Only a permanent condition that appears after those checks (for
         example, a variant deleted concurrently), and `internal_error`, are
-        left on the savepoint path.
+        left on the savepoint path. On Vendure, `internal_error` arises only
+        before the first write, where nothing needs a savepoint (see below).
       - Races that clear on retry stay transient.
     - **On Vendure, events published inside the savepoint still fire after
       the stored rejection commits.** Events are deferred to the outer
