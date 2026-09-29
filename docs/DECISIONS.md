@@ -443,6 +443,13 @@ bodies and design docs, and the source is given for each.
     engine's retirement).
   - `rxdb` and `rxdb-premium` are pinned together at the version WCPOS pins
     (17.4.0 on 2026-09-23), so fixes and patches are shared.
+  - **Amendment (2026-09-29, Front desk):** TallyUI runs 17.5.0 ahead of
+    WCPOS. On 17.4.0, reopening `pos_orders` after an interrupted
+    migration loops forever (upstream bug 3); 17.5.0 fixes it. WCPOS moves
+    to 17.5.0 in its own PRs, and the pins meet again there. 17.5.0
+    cancels a running migration when the database closes, so
+    `openPosOrders` settles with its closed error once the calls already in
+    flight have finished.
   - Library packages may import premium. The lint ban from ADR-025 is
     withdrawn.
   - `@tallyui/storage-sqlite` is retired once premium SQLite lands.

@@ -51,7 +51,7 @@ anywhere public.
 ## Versions
 
 `rxdb` and `rxdb-premium` are pinned to the same exact version (currently
-16.21.1). Upgrade them together, in one PR.
+17.5.0; ADR-031). Upgrade them together, in one PR.
 
 ## Releasing
 
