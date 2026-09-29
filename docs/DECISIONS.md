@@ -1029,18 +1029,27 @@ interface OrderCreatePayload {
           a customer email or id the shape check would refuse is left
           out. The envelope sends the stored values unchanged, so every
           resend is byte-identical, and an order stored by an older till
-          is sent exactly as that till sent it. The receipt shows the frozen
-          form too (`withSentForm`).
+          is sent exactly as that till sent it. The receipt shows the
+          frozen form too (`withSentForm`).
           An order stored by an older till and still unsent at the upgrade
           is frozen the same way by the outbox before its first send from
           the upgraded till (Front desk, 2026-09-29): its line names,
           discount labels and payment references are cut to their bound,
           never its ids, and an unsendable customer email or id is left out.
-          The frozen form is written back to the stored order, so the
-          receipt and the server see the same bytes. If such an order had
-          in fact been sent and applied before the upgrade, its resend
-          answers `idempotency_mismatch`, a reconciliation state, never a
-          lost sale.
+          The frozen form is written back to the stored order, so anything
+          shown from the stored order (the orders list, a reprint) and the
+          server see the same bytes; a receipt the older till printed
+          before the upgrade keeps the full name. If such an order had in
+          fact been sent and applied before the upgrade, its resend answers
+          `idempotency_mismatch`, a reconciliation state, never a lost sale.
+          Only the till's own ids (`clientOrderId`, `clientLineId`,
+          `clientPaymentId`, the command id) are bounded by construction.
+          A line's `variantId` or `productId`, `registerId` and
+          `cashierRef` come from the catalogue or the app's settings, which
+          finalize and `useSale` check but an older till's stored order
+          never went through. If one is over its bound, the order is
+          answered `invalid_payload` and shows under "Needs attention"; a
+          requeue sends the same id, so it needs fixing at the store.
         - on the Vendure plugin, a future bound on `payload.createdAt`
           (Vendure's `tallySaleAt`). It may be at most 24 hours ahead of
           the server's clock. There is no lower bound, because an offline
