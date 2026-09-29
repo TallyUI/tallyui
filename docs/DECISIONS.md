@@ -1029,7 +1029,8 @@ interface OrderCreatePayload {
           a customer email or id the shape check would refuse is left
           out. The envelope sends the stored values unchanged, so every
           resend is byte-identical, and an order stored by an older till
-          is sent exactly as that till sent it;
+          is sent exactly as that till sent it. The receipt shows the frozen
+          form too (`withSentForm`).
         - on the Vendure plugin, a future bound on `payload.createdAt`
           (Vendure's `tallySaleAt`). It may be at most 24 hours ahead of
           the server's clock. There is no lower bound, because an offline

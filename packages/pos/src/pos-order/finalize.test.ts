@@ -7,7 +7,7 @@ import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order/order-builder';
 import { taxLinesByRate } from '../tax/exact';
 import { toOrderCreateEnvelope } from './command';
-import { finalizeOrder } from './finalize';
+import { finalizeOrder, withSentForm } from './finalize';
 import { uuidv7 } from './uuidv7';
 
 function sale() {
@@ -227,6 +227,33 @@ describe('finalizeOrder refuses a pass-through reference outside the order.creat
 
 describe('finalizeOrder freezes the sent form (task #36)', () => {
   const lone = /[\uD800-\uDFFF]/u; // with the u flag, only a lone surrogate matches, never half of a pair
+
+  it('withSentForm uses the frozen name, discount label and customer email without mutating either input', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    const id = builder.addLine({ productId: 'p1', name: 'N'.repeat(300), unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.applyLineDiscount(id, { type: 'fixed', value: 100, label: 'D'.repeat(300) });
+    builder.setCustomer({ id: 'c1', name: 'Customer', email: `${'a'.repeat(246)}@test.com` });
+    builder.addPayment({ method: 'cash', amountMinor: 1000 });
+    const order = builder.getSnapshot();
+    const posOrder = finalizeOrder(order, { capabilities: { orderCreate: 3 } });
+    const beforeOrder = structuredClone(order);
+    const beforePosOrder = structuredClone(posOrder);
+    const receipt = withSentForm(order, posOrder);
+    expect(receipt).not.toBe(order);
+    expect(receipt.lineItems[0].name).toBe(posOrder.lines[0].name);
+    expect(receipt.lineItems[0].name).toBe(`${'N'.repeat(254)}…`);
+    expect(receipt.display.lines[0].discounts[0].label).toBe(posOrder.display!.lines[0].discounts[0].label);
+    expect(receipt.display.lines[0].discounts[0].label).toBe(`${'D'.repeat(254)}…`);
+    expect(receipt.customer).toStrictEqual({ id: 'c1', name: 'Customer' });
+    expect({ ...receipt, lineItems: order.lineItems, display: order.display, customer: order.customer }).toStrictEqual(order);
+    expect({ ...receipt.lineItems[0], name: order.lineItems[0].name }).toStrictEqual(order.lineItems[0]);
+    expect({ ...receipt.display, lines: order.display.lines }).toStrictEqual(order.display);
+    expect({ ...receipt.display.lines[0], discounts: order.display.lines[0].discounts }).toStrictEqual(order.display.lines[0]);
+    expect({ ...receipt.display.lines[0].discounts[0], label: order.display.lines[0].discounts[0].label })
+      .toStrictEqual(order.display.lines[0].discounts[0]);
+    expect(order).toStrictEqual(beforeOrder);
+    expect(posOrder).toStrictEqual(beforePosOrder);
+  });
 
   it('stores a line name cut to 255 units ending in …, NUL stripped, never splitting a surrogate pair; the builder Order keeps it whole', () => {
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, type CustomerSummary, type Discount, type Order } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
-import { MESSAGE_NAME_MAX, referenceError, referenceReason } from '../pos-order/finalize';
+import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
 import { useTax } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
@@ -199,7 +199,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     confirm(null);
     setSaving(false);
     setError(null);
-    stageNow.current = { kind: 'receipt', order: completion.order, posOrder: completion.posOrder };
+    stageNow.current = { kind: 'receipt', order: withSentForm(completion.order, completion.posOrder), posOrder: completion.posOrder };
     setStage(stageNow.current);
   }
 

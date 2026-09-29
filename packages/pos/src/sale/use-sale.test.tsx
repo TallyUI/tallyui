@@ -149,6 +149,21 @@ describe('sale', () => {
     expect(result.current.order.payments).toEqual([]);
   });
 
+  it('shows the frozen sent line name on the receipt after complete', async () => {
+    const { result } = renderSale(pricing);
+    const longProduct = { ...product, title: 'N'.repeat(300), variants: [product.variants[0]] };
+    act(() => result.current.add(catalogueEntries([longProduct], traits)[0], traits));
+    expect(result.current.order.lineItems[0].name).toHaveLength(300);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    const stage = result.current.stage;
+    expect(stage.kind).toBe('receipt');
+    if (stage.kind !== 'receipt') throw new Error('Expected receipt');
+    expect(stage.order.lineItems[0].name).toBe(stage.posOrder.lines[0].name);
+    expect(stage.order.lineItems[0].name).toHaveLength(255);
+    expect(stage.order.lineItems[0].name.endsWith('…')).toBe(true);
+  });
+
   it('keeps an underpaid tender on finalize failure, replaces amounts and removes it on Back', async () => {
     const completed = vi.fn();
     const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed }));

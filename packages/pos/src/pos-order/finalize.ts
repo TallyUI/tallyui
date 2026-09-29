@@ -20,6 +20,23 @@ export interface FinalizeOptions {
 /** A line name in a refusal message: 60 UTF-16 units of it plus '…' at most, so a cashier-facing message stays short. */
 export const MESSAGE_NAME_MAX = 61;
 
+/** The receipt shows the order as it was stored and sent (Front desk, 2026-09-29). */
+export function withSentForm(order: Order, posOrder: PosOrder): Order {
+  let customer = order.customer;
+  if (customer && posOrder.customer?.email === undefined) {
+    customer = { ...customer };
+    delete customer.email;
+  }
+  return { ...order, customer,
+    lineItems: order.lineItems.map((line, i) => ({ ...line, name: posOrder.lines[i].name })),
+    display: posOrder.display ? { ...order.display,
+      lines: order.display.lines.map((line, i) => ({ ...line,
+        discounts: line.discounts.map((discount, j) => ({ ...discount, label: posOrder.display!.lines[i].discounts[j].label })),
+      })),
+    } : order.display,
+  };
+}
+
 /**
  * Why a reference the till passes through without minting would fail order.create's shape check
  * (over PAYLOAD_STRING_MAX, or a NUL), or null; `label` names it for the cashier. `useSale` also

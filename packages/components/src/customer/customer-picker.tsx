@@ -22,7 +22,7 @@ export interface CustomerPickerProps {
   className?: string;
 }
 
-/** `@tallyui/core/server`'s `payloadShapeErrors` bound on `customer.email`, in UTF-16 code units. */
+/** `@tallyui/core/server`'s `payloadBoundErrors` bound on `customer.email`, in UTF-16 code units. */
 const EMAIL_MAX = 254;
 /** A simple shape, not RFC 5322: one `@`, a non-empty local part, a domain with text either side of a dot, no whitespace or NUL. */
 const EMAIL_SHAPE = /^[^\s@\u0000]+@[^\s@\u0000]+\.[^\s@\u0000]+$/u;
