@@ -149,6 +149,12 @@ describe('useOutbox with the TallyUI HTTP transport', () => {
       for (let i = 0; i < 20; i++) await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
       expect(outbox.stuckCommandIds).toEqual([order.commandId]);
       expect(outbox.state.stuck?.reason).toBe('status_503');
+      // The same ids keep their identity across later state updates.
+      const ids = outbox.stuckCommandIds;
+      const stuckState = outbox.state.stuck;
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(outbox.state.stuck).not.toBe(stuckState);
+      expect(outbox.stuckCommandIds).toBe(ids);
       const stored = (await outbox.orders!.find().exec()).map((doc) => doc.toMutableJSON() as PosOrder);
       expect(needsAttention(stored, { stuckCommandIds: outbox.stuckCommandIds }).map(({ id }) => id)).toEqual([order.id]);
       fetchStub.mockImplementation(async () => applied(order));

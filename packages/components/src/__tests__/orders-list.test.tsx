@@ -56,7 +56,7 @@ describe('OrdersList', () => {
     const line = `Not syncing: the store keeps failing (status_503) since ${time}`;
     const stuck = order('s', { createdAt: '2026-09-25T09:00:00.000Z' });
     render(<OrdersList orders={[stuck, order('p'), order('x', { commandId: 'command-a', syncStatus: 'applied' })]} onRetry={async () => 0}
-      formatDate={formatDate} stuckCommandIds={['command-s', 'command-a']} stuckReason="status_503" stuckSince={since} />);
+      formatDate={formatDate} stuck={{ commandIds: ['command-s', 'command-a'], reason: 'status_503', since }} />);
     expect(headers()).toEqual(['Needs attention', 'Recent']);
     expect(screen.getAllByText(line)).toHaveLength(2);
     const attention = screen.getAllByText(/· Waiting to sync$/);

@@ -1,5 +1,5 @@
 import type { OrderCreateEnvelope } from '@tallyui/core';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
 import { outboxLogger } from './logger';
 import { OrderContentMismatchError, sameSale, type PosOrder } from '../pos-order';
@@ -117,6 +117,9 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
   }, [state.sending]);
 
   const ready = current.current?.storeKey === storeKey && !!storeKey;
+  // Each state update carries a new `stuck`; the ids keep their identity while they are unchanged.
+  const stuckKey = ready ? state.stuck?.commandIds.join(',') ?? '' : '';
+  const stuckCommandIds = useMemo(() => (stuckKey ? stuckKey.split(',') : noneStuck), [stuckKey]);
   return { orders: ready ? orders : null, state: ready ? state : idle, recent: ready ? recent : [],
     async flush() {
       const opened = current.current;
@@ -127,7 +130,7 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
       return opened && opened.storeKey === storeKey ? opened.outbox.requeue(orderIds) : 0;
     },
     savesInFlight: savesInFlightCount,
-    stuckCommandIds: (ready && state.stuck?.commandIds) || noneStuck,
+    stuckCommandIds,
     async record(posOrder) {
       savesInFlight.current++;
       setSavesInFlightCount(savesInFlight.current);
