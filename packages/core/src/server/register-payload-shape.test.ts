@@ -74,6 +74,18 @@ it.each(['paid_in', 'paid_out', 'no_sale'])('rejects blank and 501-character rea
   expect(registerPayloadErrors('register.movement.record', { ...payload, reason: 'r'.repeat(500) })).toEqual([])
 })
 
+it.each<[string, Record<string, unknown>, string]>([
+  ['register.movement.record', { ...movement, reason: 'fl\u0000oat' }, 'reason'],
+  ['register.movement.record', { ...movement, createdBy: 'a\u0000' }, 'createdBy'],
+  ['register.session.open', { ...open, sessionId: 's\u0000' }, 'sessionId'],
+  ['register.session.transition', { ...transition, closedBy: '\u0000' }, 'closedBy'],
+  ['register.closure.submit', { ...closure, softwareVersion: '1.0\u0000' }, 'softwareVersion'],
+  ['register.closure.submit', { ...closure, orderIds: ['o\u0000'] }, 'orderIds[0]'],
+  ['register.closure.submit', { ...closure, counted: { 'ca\u0000sh': 150 } }, 'counted."ca\\u0000sh"'], // quoted: no raw NUL
+])('refuses a NUL in a %s payload', (type, payload, field) => {
+  expect(registerPayloadErrors(type, payload)).toEqual([`${field}: expected no NUL character`])
+})
+
 it('accepts the maximum Postgres integer for closure number and unsyncedCount', () => {
   expect(registerPayloadErrors('register.closure.submit', { ...closure, number: 2147483647, unsyncedCount: 2147483647 })).toEqual([])
 })

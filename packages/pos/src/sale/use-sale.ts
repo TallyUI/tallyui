@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, type CustomerSummary, type Discount, type Order } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
+import { referenceError } from '../pos-order/finalize';
+import { CUSTOMER_REFUSALS, customerRefusal, PAYLOAD_STRING_MAX } from '../pos-order/command';
 import { useTax } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -52,11 +54,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   const [builder, setBuilder] = useState(() => createOrderBuilder({ currency: settings.currency, taxContext }));
   const [order, setOrder] = useState(() => builder.getSnapshot());
   const [stage, setStage] = useState<SaleStage>({ kind: 'cart' });
-  const [error, setError] = useState<string | null>(null);
+  const [saleError, setError] = useState<string | null>(null);
+  // App configuration is checked on every render (so on mount and on each change), by finalize's own rule, which
+  // stays the backstop: while it's bad, `error` shows it and complete() refuses, before the first sale's money.
+  const configError = referenceError('cashierRef', opts.cashierRef) ?? referenceError('registerId', opts.registerId);
   // The pending completion: the order complete() built for this tender attempt. The ref is read
   // synchronously by complete() and the lock; `saving` mirrors it (true from complete()'s entry) for rendering.
   const pending = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
   const [saving, setSaving] = useState(false);
+  // While a completion is pending (a failed save), its own error comes first: Retry still delivers it.
+  const error = saving && saleError ? saleError : configError ?? saleError;
   // The session pinned by startTender for this tender (`undefined` inside: none); null until a tender starts.
   const tenderSession = useRef<{ session: typeof opts.session } | null>(null);
   // The pending completion isStored confirmed stored after its save failed; `canContinue` mirrors it for
@@ -130,10 +137,18 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
 
   function setTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string } | null) {
     if (locked()) return;
+    // A terminal reference finalize would refuse is dropped as it's entered, never the payment (the money is
+    // taken): the tender applies without it, with a message that doesn't block complete(). A localWarnings
+    // entry on the stored order follows with pos_orders v4 (task #32).
+    const reference = tender?.reference;
+    const dropped = referenceError('The payment reference', reference) === null ? null
+      : reference!.includes('\u0000') ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`;
+    const kept = tender && dropped ? { method: tender.method, amountMinor: tender.amountMinor } : tender;
+    if (dropped) saleLogger.warn("the terminal's payment reference was dropped", { reason: dropped, method: tender!.method });
     const previous = builder.getSnapshot().payments[0];
     if (previous) builder.removePayment(previous.id);
-    if (tender) builder.addPayment(tender);
-    setError(null);
+    if (kept) builder.addPayment(kept);
+    setError(dropped && `The terminal's payment reference couldn't be kept (${dropped}); the payment is recorded without it.`);
   }
 
   /** Asks `isStored`; Continue is offered only once it confirms, for this attempt, with the completion still pending. */
@@ -237,7 +252,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     },
     removeDiscount(id: string) { if (!locked()) builder.removeDiscount(id); },
     /** the picked customer reaches the server as order.create v3's customer.customerId */
-    setCustomer(customer: CustomerSummary | null) { if (!locked()) builder.setCustomer(customer); },
+    setCustomer(customer: CustomerSummary | null) {
+      if (locked()) return;
+      // A searched customer's email or id the server would refuse never reaches the sale; the customer stays as it was.
+      const refused = customer && customerRefusal(customer);
+      if (refused) return setError(refused);
+      builder.setCustomer(customer);
+      setError((current) => current !== null && CUSTOMER_REFUSALS.includes(current) ? null : current); // any other error stays
+    },
     /**
      * Pins `options.session` for this tender when given, else the rendered `session` option. Pass the
      * session `useRegisterSession`'s `requireSaleSession()` returned: the rendered one can lag a session
@@ -269,9 +291,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
      * and `createdAt`, no new stamp and no second late-sale fact) and hands it to `onSaleCompleted`
      * again, so that must accept an order it already stored (as `useOrderOutbox.record` does). The
      * pending completion is cleared once `onSaleCompleted` resolves, or by `newSale()`. A call while
-     * another is in flight returns that call's promise, and a call on the receipt does nothing.
+     * another is in flight returns that call's promise, and a call on the receipt does nothing. While
+     * `cashierRef` or `registerId` is out of bounds (shown as `error`), a call does nothing either,
+     * unless it's the Retry of a pending completion, which was built with the options as they were.
      */
-    complete: () => once(async () => {
+    complete: () => configError && !pending.current && !inFlight.current ? Promise.resolve() : once(async () => {
       attempts.current++;
       confirm(null);
       if (pending.current) return deliver(pending.current);

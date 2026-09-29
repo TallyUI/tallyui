@@ -40,15 +40,15 @@ export function validateBatch(body: unknown):
 
 /**
  * The rejection a batch returns for this command before any executor runs, or undefined
- * when the command goes on to the plugin's executor. Per command, in order: the shape check
- * (payloadShapeErrors) first, before any database access, because a NUL in clientOrderId
- * would make the lookup itself fail; then the plugin's own replay and collision lookups;
- * then precheckCommand; then the claim, in the executor (order.create; register commands
- * follow ADR-068). It pushes any result one of those steps returns and moves on. The ledger
- * claim stays in the plugin's executor.
+ * when the command goes on to the plugin's executor. A plugin's batch handler calls
+ * validateBatch once, then, for each command in order: the shape check (payloadShapeErrors)
+ * first, before any database access, because a NUL in clientOrderId would make the lookup
+ * itself fail; then the plugin's own replay and collision lookups; then precheckCommand;
+ * then the claim, in the executor (order.create; register commands follow ADR-068). It
+ * pushes any result one of those steps returns and moves on.
  *
- * The replay lookup goes first so an already-applied command always replays as `duplicate`,
- * even once a later @tallyui/core tightens what precheckCommand accepts.
+ * The replay lookup goes before precheckCommand so an already-applied command always replays
+ * as `duplicate`, even once a later @tallyui/core tightens what precheckCommand accepts.
  */
 export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>): CommandResult | undefined {
   if (envelope.type !== 'order.create') {

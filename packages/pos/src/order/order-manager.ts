@@ -1,6 +1,7 @@
 import { BehaviorSubject, map, type Observable } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { TaxContext } from '../tax/types';
+import { customerRefusal } from '../pos-order/command';
 import { createOrderBuilder, type OrderBuilder } from './order-builder';
 import type { Order } from './types';
 
@@ -91,7 +92,8 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
       });
 
       // Restore state from saved order
-      if (savedOrder.customer) {
+      // A customer whose email or id order.create would refuse (see useSale's setCustomer) isn't restored.
+      if (savedOrder.customer && !customerRefusal(savedOrder.customer)) {
         builder.setCustomer(savedOrder.customer);
       }
       if (savedOrder.note) {
