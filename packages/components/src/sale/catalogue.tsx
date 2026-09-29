@@ -36,13 +36,14 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
+  /** Receives the chosen product and variant with the nearest ConnectorProvider's stock overlay applied (a copy). */
   onSelect: (entry: CatalogueEntry<Doc>) => void;
   statusText?: string;
   /** Rendered at the end of the status line, e.g. a register control at phone width; the row renders even without `statusText`. */
   statusAccessory?: ReactNode;
   lastSyncedAt: Date | null;
-  /** The last completed stock reconcile pass, persisted across restarts; the later of this and lastSyncedAt wins.
-   * When omitted (not merely null), falls back to the nearest ConnectorProvider's stockOverlayAsOf. */
+  /** The last completed stock reconcile pass, persisted across restarts. The "stock as of" time shown is the
+   * latest of this, the provider's stockOverlayAsOf (when valid) and lastSyncedAt; null and omitted alike. */
   lastStockCheckAt?: Date | null;
   /** Whether to show a 12- or 24-hour clock in the stock-as-of time; undefined keeps the locale default. A platform
    * reads this off its own device APIs (e.g. expo-localization's getCalendars()) and passes it in. */
@@ -52,13 +53,13 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
    * in its unfocused wedge listener — not this prop's job. */
   minCodeLength?: number;
 }) {
-  // Idempotent (the adapter's overlay returns just the fields the stock map sets), so an app that already merges the overlay into `products` itself (e.g. vendurepos) keeps working, and can drop its own merge.
+  // Idempotent (the adapter's overlay returns just the fields the stock map sets), so an app that already
+  // merges the overlay itself keeps working, and can drop its own merge.
   const shown = useStockOverlaid(products) as Doc[];
   const overlayAsOf = useStockOverlayAsOf();
   const parsedOverlayAsOf = overlayAsOf ? new Date(overlayAsOf) : undefined;
-  const stockCheckAt = lastStockCheckAt !== undefined ? lastStockCheckAt
-    : parsedOverlayAsOf && !isNaN(parsedOverlayAsOf.getTime()) ? parsedOverlayAsOf : undefined;
-  const stockAsOf = laterOf(stockCheckAt, lastSyncedAt);
+  const validOverlayAsOf = parsedOverlayAsOf && !isNaN(parsedOverlayAsOf.getTime()) ? parsedOverlayAsOf : undefined;
+  const stockAsOf = laterOf(laterOf(lastStockCheckAt, validOverlayAsOf), lastSyncedAt);
   const [query, setQuery] = useState('');
   // The chooser is live (medusapos ADR 0007): it holds only the chosen product's id and derives its choices
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.

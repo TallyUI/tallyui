@@ -355,6 +355,39 @@ describe('Catalogue', () => {
     const chooser = within(screen.getByLabelText('Choose variant'));
     expect(chooser.getByText(/^Out of Stock/)).toBeTruthy();
   });
+  it('selects the overlaid variant on an exact-code scan', () => {
+    const overlayDoc = { id: 'shirt', title: 'Red Shirt', status: 'published', variants: [
+      { id: 'large', title: 'Large', sku: 'SHIRT-L', barcode: 'LARGE-CODE', prices: [{ amount: 25, currency_code: 'eur' }],
+        manage_inventory: true, inventory_items: [{ inventory_item_id: 'inv-large', required_quantity: 1,
+          inventory: { location_levels: [{ stocked_quantity: 5, reserved_quantity: 0 }] } }] },
+    ] };
+    expect(traits.getVariants!(overlayDoc)[0].stock.status).toBe('in_stock');
+    const overlay = new Map([['inv-large', [{ stocked_quantity: 0, reserved_quantity: 0 }]]]);
+    const onSelect = vi.fn();
+    render(
+      <ConnectorProvider connector={medusaConnector} stockOverlay={overlay}>
+        <Catalogue products={[overlayDoc]} traits={traits} currency="EUR" onSelect={onSelect} lastSyncedAt={null} />
+      </ConnectorProvider>,
+    );
+    const input = screen.getByPlaceholderText('Search or scan barcode / SKU');
+    fireEvent.change(input, { target: { value: 'LARGE-CODE' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      variant: expect.objectContaining({ stock: expect.objectContaining({ status: 'out_of_stock' }) }),
+    }));
+  });
+  it('shows the provider time as the "as of" time when lastStockCheckAt is null but the provider time is newer', () => {
+    const synced = new Date('2026-09-24T09:15:00Z');
+    const providerAsOf = new Date('2026-09-24T10:42:00Z');
+    render(
+      <ConnectorProvider connector={medusaConnector} stockOverlayAsOf={providerAsOf.toISOString()}>
+        <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={synced} lastStockCheckAt={null} />
+      </ConnectorProvider>,
+    );
+    fireEvent.click(screen.getByTestId('product-tile-Red Shirt'));
+    const chooser = within(screen.getByLabelText('Choose variant'));
+    expect(chooser.getByText(`In Stock · as of ${formatStockSyncTime(providerAsOf)}`)).toBeTruthy();
+  });
   it('falls back to the provider stockOverlayAsOf for the as-of label when lastStockCheckAt is not given', () => {
     const asOf = new Date('2026-09-24T10:42:00Z');
     render(
@@ -365,5 +398,52 @@ describe('Catalogue', () => {
     fireEvent.click(screen.getByTestId('product-tile-Red Shirt'));
     const chooser = within(screen.getByLabelText('Choose variant'));
     expect(chooser.getByText(`In Stock · as of ${formatStockSyncTime(asOf)}`)).toBeTruthy();
+  });
+  it('prefers a newer provider time over an older lastStockCheckAt', () => {
+    const checked = new Date('2026-09-24T09:15:00Z');
+    const providerAsOf = new Date('2026-09-24T10:42:00Z');
+    render(
+      <ConnectorProvider connector={medusaConnector} stockOverlayAsOf={providerAsOf.toISOString()}>
+        <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} lastStockCheckAt={checked} />
+      </ConnectorProvider>,
+    );
+    fireEvent.click(screen.getByTestId('product-tile-Red Shirt'));
+    const chooser = within(screen.getByLabelText('Choose variant'));
+    expect(chooser.getByText(`In Stock · as of ${formatStockSyncTime(providerAsOf)}`)).toBeTruthy();
+  });
+  it('ignores an older provider time in favour of lastStockCheckAt', () => {
+    const checked = new Date('2026-09-24T10:42:00Z');
+    const providerAsOf = new Date('2026-09-24T09:15:00Z');
+    render(
+      <ConnectorProvider connector={medusaConnector} stockOverlayAsOf={providerAsOf.toISOString()}>
+        <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} lastStockCheckAt={checked} />
+      </ConnectorProvider>,
+    );
+    fireEvent.click(screen.getByTestId('product-tile-Red Shirt'));
+    const chooser = within(screen.getByLabelText('Choose variant'));
+    expect(chooser.getByText(`In Stock · as of ${formatStockSyncTime(checked)}`)).toBeTruthy();
+  });
+  it('ignores an invalid provider stockOverlayAsOf string', () => {
+    const checked = new Date('2026-09-24T10:42:00Z');
+    render(
+      <ConnectorProvider connector={medusaConnector} stockOverlayAsOf="not-a-date">
+        <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} lastStockCheckAt={checked} />
+      </ConnectorProvider>,
+    );
+    fireEvent.click(screen.getByTestId('product-tile-Red Shirt'));
+    const chooser = within(screen.getByLabelText('Choose variant'));
+    expect(chooser.getByText(`In Stock · as of ${formatStockSyncTime(checked)}`)).toBeTruthy();
+  });
+  it('ignores the provider time when the connector has no reconcile.stock', () => {
+    const providerAsOf = new Date('2026-09-24T10:42:00Z');
+    const connectorNoStock = { ...medusaConnector, reconcile: undefined } as typeof medusaConnector;
+    render(
+      <ConnectorProvider connector={connectorNoStock} stockOverlayAsOf={providerAsOf.toISOString()}>
+        <Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} />
+      </ConnectorProvider>,
+    );
+    fireEvent.click(screen.getByTestId('product-tile-Red Shirt'));
+    const chooser = within(screen.getByLabelText('Choose variant'));
+    expect(chooser.getByText('In Stock · not yet synced')).toBeTruthy();
   });
 });

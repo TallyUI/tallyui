@@ -28,7 +28,6 @@ describe('knownWarnings', () => {
 
   it.each([
     { code: 'total_mismatch', expectedMinor: 1200, serverMinor: '1' },
-    { code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1000, bridgeMinor: 1.5 },
     { code: 'insufficient_stock', variantId: 'blue', quantity: 0 },
     { code: 'insufficient_stock', variantId: '', quantity: 1 },
     { code: 'tax_rate_mismatch', ratePpm: 200000, expectedMinor: 120, serverMinor: '1' },
@@ -38,6 +37,30 @@ describe('knownWarnings', () => {
 
   it.each([null, [], 'x'])('drops a non-object %j', (item) => {
     expect(knownWarnings([item])).toEqual([]);
+  });
+
+  it.each([{}, 'x', null])('returns [] for a non-array value: %j', (value) => {
+    expect(knownWarnings(value)).toEqual([]);
+  });
+
+  it.each([
+    { bridgeMinor: null, label: 'null' },
+    { bridgeMinor: 1.5, label: 'not a safe integer' },
+    { bridgeMinor: 0, label: 'zero' },
+    { bridgeMinor: 3, label: "inconsistent with expectedMinor - serverMinor" },
+  ])('keeps a total_mismatch without bridgeMinor when it is $label', ({ bridgeMinor }) => {
+    const warning = { code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor };
+    expect(knownWarnings([warning])).toEqual([{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195 }]);
+  });
+
+  it('drops a tax_rate_mismatch with a negative ratePpm', () => {
+    const warning = { code: 'tax_rate_mismatch', ratePpm: -1, expectedMinor: 120, serverMinor: 100 };
+    expect(knownWarnings([warning])).toEqual([]);
+  });
+
+  it('keeps a tax_rate_mismatch with ratePpm: 0', () => {
+    const warning = { code: 'tax_rate_mismatch', ratePpm: 0, expectedMinor: 120, serverMinor: 100 };
+    expect(knownWarnings([warning])).toEqual([warning]);
   });
 
   it('strips extra fields', () => {
