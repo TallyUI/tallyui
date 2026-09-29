@@ -970,7 +970,7 @@ interface OrderCreatePayload {
   - So unlike `invalid_payload`, it isn't final. The outbox should keep the order `rejected` with its reason, and let Retry resend it after the store is fixed (backlog item 52).
   - The platform's own internal failures stay transient: 503, retried.
   - Introduced by medusapos/app#94.
-- **Amendment (2026-09-29):** a new rejection code `platform_error` (Front
+- **Amendment (2026-09-29, `platform_error`):** a new rejection code `platform_error` (Front
   desk ruling; TallyUI #211).
   - It is returned as `status: 'rejected'`, with `error: { code:
     'platform_error', message: '<platformCode>: <platformMessage>', data: {
@@ -1026,33 +1026,49 @@ interface OrderCreatePayload {
   - **A backstop against a second sale:** Retry resends the same
     `clientOrderId` under a new command id. Where a plugin has a unique
     client order id (Vendure's `tallyClientOrderId`, ADR-047 step 2), it
-    refuses a second order for it. Medusa's `metadata.tally_client_id`
-    (ADR-038) is not unique.
+    never creates a second order for it. Medusa's
+    `metadata.tally_client_id` (ADR-038) is not unique.
   - **A `clientOrderId` collision** (a new command id, the same
     `clientOrderId`, an order that already exists) is never
-    `platform_error`, which would hide an order that exists. Where the
-    plugin can find that order (in the same sales channel, as the medusapos
-    and vendurepos plugins do), it answers `applied` with that order's
-    `serverRefs`. Only where it can't find the order does the plugin stay
-    transient, so the till eventually flags it (Front desk, 2026-09-29).
+    `platform_error`, which would hide an order that exists (Front desk,
+    2026-09-29).
+    - **The found order came from an applied command:** the plugin finds it
+      in the same sales channel and answers `applied` with its
+      `serverRefs`, carrying the original result's warnings. It claims and
+      stores the new command id as applied, so a replay of that id returns
+      `duplicate`.
+    - **The source row is in progress, but its lease is stale:** the
+      original attempt crashed, and the till has moved on to the new command
+      id, so it will never resend the old one. The plugin may resume the
+      found order forward under the new command's claim (state-driven
+      orphan recovery) and store the new id as applied. Without this, a
+      crash during the first attempt would leave the sale stuck forever.
+    - **Stay transient in every other case:** the plugin can't find the
+      order, the source row is in progress with a **fresh** lease, or the
+      source row is marked as needing an admin. In that last case the new id
+      gets no admin mark of its own. A new command id must never get round a
+      live attempt or an admin mark. The till flags the order after 15
+      minutes of such answers (once TallyUI #212 merges). Until then, a 503
+      that keeps repeating holds up every later sale.
   - Unlike `invalid_payload` and `store_configuration`, it **is** stored in
     the ledger, and a replay returns the recorded rejection.
   - An error the plugin can't classify stays transient (503, retried),
-    never `platform_error`. This carves one exception out of the previous
+    never `platform_error`, except in the narrow `internal_error` case
+    below. This carves one exception out of the previous
     amendment's "the platform's own internal failures stay transient": the
     exception covers only errors judged permanent under the conditions
     above.
   - The till shows the order under "Needs attention" with Retry, like any
     rejection other than `idempotency_mismatch`.
   - The Medusa plugin has no case for it today. Its unclassified errors
-    stay transient, because Medusa's `INVALID_DATA` also surfaces for
+    stay transient (apart from `internal_error`), because Medusa's `INVALID_DATA` also surfaces for
     retryable races. A Medusa case needs its own ruling, with a concrete
     error that is never retryable.
   - Every rejection code except `register_approval_required` (which arrives
     with c2c), as a type: `CommandRejectionCode` in `@tallyui/core/server`.
-- **Amendment (2026-09-29):** a new rejection code `internal_error` (Front
-  desk ruling), the one narrow case in which an unclassifiable error is
-  stored.
+- **Amendment (2026-09-29, `internal_error`):** a new rejection code
+  `internal_error` (Front desk ruling; TallyUI #216), the one narrow case in
+  which an unclassifiable error is stored.
   - It is returned as `status: 'rejected'`, with `error: { code:
     'internal_error', message: 'Internal error (ref <correlationId>)',
     data: { correlationId } }`. `@tallyui/core/server`'s
@@ -1062,6 +1078,22 @@ interface OrderCreatePayload {
     the sale remains, in the database or outside it. Errors from the
     database or the network, an unknown SQLSTATE, and anything else the
     plugin can't classify stay transient (503, retried).
+  - **"Own code"** means the plugin's own logic: not an error thrown from
+    inside the platform SDK, the database client or the HTTP client.
+  - **How to record it** follows the `platform_error` recipe. Roll the
+    sale's writes back while keeping the ledger claim (a savepoint), or
+    compensate them completely, then store the rejection on the claim and
+    commit, never together with any of the sale's writes. This amends
+    ADR-047's "a thrown error rolls back and returns 503" for this case too.
+  - **If compensation fails**, the same rule as for `platform_error`
+    applies: never reject, keep the claim, and mark the row as needing an
+    admin.
+  - **An error before the ledger claim** (in validation) stays transient,
+    since there is no claim to store it on. **On a register command** it
+    stays transient until c2c lands.
+  - **The correlation id** is opaque, for example a UUID. **The
+    `store_configuration` amendment's "internal failures"** means the
+    platform's failures, not the plugin's own code.
   - It is stored in the ledger and replayed as recorded. It would fail the
     same way on every retry, and a retry loop would hide the bug.
   - The message is generic, so no internal detail reaches the till. The
