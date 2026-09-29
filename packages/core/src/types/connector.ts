@@ -5,6 +5,7 @@ import type { CustomerTraits } from './traits/customer';
 import type { ReplicationAdapter } from './replication';
 import type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 import type { StoreSettings, StoreSettingsChoice } from './store-settings';
+import type { Customer, CustomerInput } from './customers';
 
 /**
  * Authentication configuration for a connector.
@@ -194,4 +195,10 @@ export interface TallyConnector {
    * see `resolveCapabilities`.
    */
   capabilities?: (context: SyncContext) => Promise<ServerCapabilities | undefined>;
+  /** Customer search: online only; `undefined` when the connector has no customer support. */
+  searchCustomers?: (context: SyncContext, query: string, options?: { limit?: number }) => Promise<Customer[]>;
+  /** Customer creation: online only; `undefined` when the connector has no customer support. */
+  createCustomer?: (context: SyncContext, input: CustomerInput) => Promise<Customer>;
+  /** Customer lookup: online only; `undefined` when the connector has no customer support. */
+  getCustomer?: (context: SyncContext, id: string) => Promise<Customer | null>;
 }

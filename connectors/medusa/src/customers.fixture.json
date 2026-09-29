@@ -1,0 +1,38 @@
+{
+  "_recorded": "Medusa 2.21.0 admin API, local dev store, 2026-09-28. Seed data is synthetic. Each entry is the exact HTTP status and body.",
+  "search": {
+    "request": "GET /admin/customers?q=smith&limit=3",
+    "status": 200,
+    "body": {"customers":[{"id":"cus_01M35QXXPAW0N6S1EB0Z0XG6PY","company_name":null,"first_name":"Omar","last_name":"Smith","email":"customer0035@tally.test","phone":"+45 65579366","metadata":null,"has_account":false,"created_by":null,"created_at":"2026-09-22T23:41:30.739Z","updated_at":"2026-09-22T23:41:30.739Z","deleted_at":null},{"id":"cus_01M35QXXPFHS0659SCPR73A17H","company_name":null,"first_name":"Elijah","last_name":"Smith","email":"customer0088@tally.test","phone":null,"metadata":null,"has_account":false,"created_by":null,"created_at":"2026-09-22T23:41:30.739Z","updated_at":"2026-09-22T23:41:30.739Z","deleted_at":null},{"id":"cus_01M35QXXPFX044EZSR19JQX1TQ","company_name":null,"first_name":"Hana","last_name":"Smith","email":"customer0092@tally.test","phone":"+45 65050285","metadata":null,"has_account":false,"created_by":null,"created_at":"2026-09-22T23:41:30.739Z","updated_at":"2026-09-22T23:41:30.739Z","deleted_at":null}],"count":72,"offset":0,"limit":3}
+  },
+  "searchEmpty": {
+    "request": "GET /admin/customers?email=nobody-here%40tally.test&limit=3",
+    "status": 200,
+    "body": {"customers":[],"count":0,"offset":0,"limit":3}
+  },
+  "get": {
+    "request": "GET /admin/customers/cus_01M35QXXPAW0N6S1EB0Z0XG6PY",
+    "status": 200,
+    "body": {"customer":{"id":"cus_01M35QXXPAW0N6S1EB0Z0XG6PY","company_name":null,"first_name":"Omar","last_name":"Smith","email":"customer0035@tally.test","phone":"+45 65579366","metadata":null,"has_account":false,"created_by":null,"created_at":"2026-09-22T23:41:30.739Z","updated_at":"2026-09-22T23:41:30.739Z","deleted_at":null}}
+  },
+  "notFound": {
+    "request": "GET /admin/customers/cus_does_not_exist",
+    "status": 404,
+    "body": {"type":"not_found","message":"Customer with id: cus_does_not_exist not found"}
+  },
+  "create": {
+    "request": "POST /admin/customers {\"email\":\"tally-fixture-1790577165@tally.test\",\"first_name\":\"Fixture\",\"last_name\":\"Customer\"}",
+    "status": 200,
+    "body": {"customer":{"id":"cus_01M3KBEGSNVW84XF51BT46P4A8","company_name":null,"first_name":"Fixture","last_name":"Customer","email":"tally-fixture-1790577165@tally.test","phone":null,"metadata":null,"has_account":false,"created_by":"user_01M35QZP0JZGKG7ENH22NKJWHZ","created_at":"2026-09-28T06:32:45.110Z","updated_at":"2026-09-28T06:32:45.110Z","deleted_at":null}}
+  },
+  "createInvalid": {
+    "request": "POST /admin/customers {\"email\":\"not-an-email\"}",
+    "status": 400,
+    "body": {"type":"invalid_data","message":"Invalid request: Invalid email address"}
+  },
+  "unauthorized": {
+    "request": "GET /admin/customers?q=smith (no Authorization header)",
+    "status": 401,
+    "body": {"message":"Unauthorized"}
+  }
+}
