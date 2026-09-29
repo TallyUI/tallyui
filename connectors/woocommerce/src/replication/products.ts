@@ -1,4 +1,4 @@
-import type { ReplicationAdapter } from '@tallyui/core';
+import { ConnectorUnauthorizedError, type ReplicationAdapter } from '@tallyui/core';
 
 export type WooProductCheckpoint = {
   id: string;
@@ -45,6 +45,9 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       });
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status);
+        }
         throw new Error(`WooCommerce API error: ${response.status}`);
       }
 
