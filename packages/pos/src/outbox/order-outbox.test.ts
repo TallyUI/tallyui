@@ -1560,10 +1560,10 @@ describe('order outbox isolation', () => {
   });
 
   // inputs[0] is an order the store always 503s: drive until it is isolated and inputs 1 and 2 are applied.
-  async function isolatedHead() {
+  async function isolatedHead(overrides: Partial<OrderOutboxOptions> = {}) {
     const inputs = [order(0), order(1), order(2)];
     await collection.bulkInsert(inputs);
-    const harness = timed();
+    const harness = timed(overrides);
     harness.send.mockImplementation(failing(inputs[0]));
     harness.outbox.start();
     await vi.advanceTimersByTimeAsync(0);
@@ -1725,5 +1725,141 @@ describe('order outbox isolation', () => {
     send.mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
     await next();
     expect(states.at(-1)).toMatchObject({ pending: 0, stuck: undefined });
+  });
+
+  const timeout = { kind: 'retry', reason: 'timeout' } as const;
+  const offline = { kind: 'retry', reason: 'network' } as const;
+
+  it('isolates an order the store hangs on every time (timeout) like one it always 503s', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states, next } = timed();
+    send.mockImplementation(async (batch) => ids(batch).includes(inputs[1].commandId) ? timeout : { kind: 'results', results: applied(batch) });
+    await outbox.flush();
+    for (let i = 0; i < 2 * ISOLATE_AFTER_ATTEMPTS + 1; i++) await next();
+    const all = inputs.map((input) => input.commandId);
+    expect(send.mock.calls.map(([batch]) => ids(batch))).toEqual([...Array(ISOLATE_AFTER_ATTEMPTS).fill(all), [all[0]],
+      ...Array(ISOLATE_AFTER_ATTEMPTS).fill([all[1], all[2]]), [all[1]], [all[2]]]);
+    expect(await Promise.all(inputs.map(status))).toEqual(['applied', 'pending', 'applied']);
+    expect(states.at(-1)).toMatchObject({ pending: 1, lastRetryReason: 'timeout' });
+    await next();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual([all[1]]);
+  });
+
+  // Isolates `k` orders the store always 503s (a later one applies), leaving the outbox started.
+  async function isolateMany(k: number) {
+    const bad = Array.from({ length: k }, (_, i) => order(i));
+    const good = order(k);
+    await collection.bulkInsert([...bad, good]);
+    const harness = timed();
+    harness.send.mockImplementation(failing(...bad));
+    harness.outbox.start();
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 60 && await status(good) !== 'applied'; i++) await harness.next();
+    expect(await Promise.all([...bad, good].map(status))).toEqual([...bad.map(() => 'pending'), 'applied']);
+    return { ...harness, bad };
+  }
+  // Drives the outbox until `input` is flagged, for at most six hours, and returns when.
+  async function flaggedAt(input: PosOrder, states: OutboxState[], next: () => Promise<unknown>) {
+    const start = Date.now();
+    while (!states.at(-1)?.stuck?.commandIds.includes(input.commandId) && Date.now() < start + 6 * 60 * 60_000) await next();
+    return Date.now();
+  }
+
+  // Round-4 review: batch sends that timed out (then `network`) paused the isolated orders' clocks, so the more
+  // orders were isolated, the later the first one was flagged.
+  it.each([1, 3, 5])('PAUSE MAGNIFIED: %s isolated orders answered 503 while every batch send times out: the first is flagged at STUCK_AFTER_MS', async (k) => {
+    const { send, states, next, bad } = await isolateMany(k);
+    send.mockImplementation(async (batch) => (batch.length === 1 && bad.some((input) => input.commandId === batch[0].id) ? fail : timeout));
+    await collection.insert(order(100));
+    await vi.advanceTimersByTimeAsync(0);
+    const at = await flaggedAt(bad[0], states, next);
+    expect(at - epoch).toBeGreaterThanOrEqual(STUCK_AFTER_MS);
+    expect(at - epoch).toBeLessThanOrEqual(STUCK_AFTER_MS + 60_000);
+    expect(states.at(-1)?.stuck?.orders).toContainEqual({ commandId: bad[0].commandId, since: epoch, reason: 'status_503' });
+  });
+
+  it('batch sends time out while an isolated order gets 503s: turns alternate, and it is flagged at STUCK_AFTER_MS, not about twice that', async () => {
+    const { send, states, next, bad } = await isolatedHead();
+    const labels: string[] = [];
+    send.mockImplementation(async (batch) => {
+      const alone = ids(batch).join() === bad.commandId;
+      labels.push(alone ? 'isolated' : 'batch');
+      return alone ? fail : timeout;
+    });
+    await collection.insert(order(3));
+    await vi.advanceTimersByTimeAsync(0);
+    const at = await flaggedAt(bad, states, next);
+    expect(labels.length).toBeGreaterThan(10);
+    expect(labels).toEqual(labels.map((_, i) => (i % 2 ? 'isolated' : 'batch')));
+    expect(at - epoch).toBeGreaterThanOrEqual(STUCK_AFTER_MS);
+    expect(at - epoch).toBeLessThanOrEqual(STUCK_AFTER_MS + 60_000);
+    expect(states.at(-1)?.stuck?.orders).toContainEqual({ commandId: bad.commandId, since: epoch, reason: 'status_503' });
+  });
+
+  it.each<[string, TransportOutcome]>([['status_503', fail], ['status_409', { kind: 'retry', reason: 'status_409' }],
+    ['bad_body', { kind: 'retry', reason: 'bad_body' }], ['timeout', timeout], ['no_progress', { kind: 'results', results: [] }]])(
+    'an offline spell between answered failures pauses the clock, and the next answer (%s) resumes it', async (reason, answer) => {
+      const lone = order(0);
+      await collection.insert(lone);
+      const { outbox, send, states, next } = timed({ stuckAfterMs: 1 });
+      send.mockResolvedValue(fail);
+      await outbox.flush();
+      await next();
+      send.mockResolvedValue(offline);
+      await next();
+      const pausedAt = Date.now();
+      for (let i = 0; i < 3; i++) {
+        await next();
+        expect(states.at(-1)).toMatchObject({ stuck: stuckOf([lone.commandId], epoch), lastRetryReason: 'network' });
+      }
+      send.mockResolvedValue(answer);
+      await next();
+      expect(Date.now()).toBeGreaterThan(pausedAt);
+      expect(states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], epoch + Date.now() - pausedAt, reason));
+    });
+
+  it('an answered success of another order resumes a paused clock', async () => {
+    const { outbox, send, states, next, bad } = await isolatedHead({ stuckAfterMs: 1 });
+    let pausedAt: number | undefined;
+    send.mockImplementation(async (batch) => {
+      if (ids(batch).join() !== bad.commandId) return { kind: 'results', results: applied(batch) };
+      pausedAt ??= Date.now();
+      return offline;
+    });
+    for (let i = 0; i < 3; i++) await next();
+    expect(states.at(-1)?.stuck).toEqual(stuckOf([bad.commandId], epoch));
+    const sale = order(3);
+    await collection.insert(sale);
+    await outbox.flush();
+    expect(await status(sale)).toBe('applied');
+    expect(Date.now()).toBeGreaterThan(pausedAt!);
+    expect(states.at(-1)?.stuck).toEqual(stuckOf([bad.commandId], epoch + Date.now() - pausedAt!));
+  });
+
+  it('a device clock set back during a pause leaves the answered time unchanged: flagged at STUCK_AFTER_MS of it, no earlier or later', async () => {
+    const lone = order(0);
+    await collection.insert(lone);
+    const { outbox, send, states, next } = timed();
+    send.mockResolvedValue(fail);
+    await outbox.flush();
+    while (Date.now() < epoch + 10 * 60_000) await next();
+    send.mockResolvedValue(offline);
+    await next();
+    const pausedAt = Date.now();
+    await next();
+    vi.setSystemTime(pausedAt - 60 * 60_000);
+    send.mockResolvedValue(fail);
+    await outbox.flush();
+    // The answered time before the pause (pausedAt - epoch) carries over: the clock reads as if it had started here.
+    const since = epoch + Date.now() - pausedAt;
+    expect(since).toBeLessThan(epoch - 40 * 60_000);
+    while (Date.now() < since + STUCK_AFTER_MS) {
+      expect(states.at(-1)?.stuck).toBeUndefined();
+      await next();
+    }
+    // Flagged at the first run once 15 minutes are answered, with the same `since`.
+    expect(Date.now() - (since + STUCK_AFTER_MS)).toBeLessThanOrEqual(60_000);
+    expect(states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], since));
   });
 });

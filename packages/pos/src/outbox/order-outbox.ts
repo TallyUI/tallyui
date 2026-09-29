@@ -82,8 +82,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // under their commandId.
   const isolated = new Map<string, { backoff: number; nextAt: number; reason: string }>();
   // Each order's stuck clock counts only answered time. It starts at the order's first server-answered failure (in
-  // a batch, as a probe or alone); an offline failure pauses every running clock (`pausedAt`), and the order's next
-  // answered failure resumes it, moving `since` on by the offline gap. So `since` is when the clock would have
+  // a batch, as a probe or alone; `timeout` counts, like a 503); an offline (`network`) failure pauses every running
+  // clock (`pausedAt`), and the next response the store answers, of any kind and for any order, resumes them all,
+  // moving `since` on by the offline gap: a pause is about the connection. So `since` is when the clock would have
   // started had there been no offline gaps: now minus its answered time (while paused, as of the pause). Progress,
   // or the order leaving pending, clears it.
   const clocks = new Map<string, { since: number; pausedAt?: number; seq: number; reason: string }>();
@@ -126,10 +127,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // floor for the retry: the store's Retry-After, or an isolated order's own backoff.
   function serverFailed(orders: PosOrder[], alone: 'probe' | 'isolated' | undefined, reason: string, retryAfterMs?: number) {
     const at = now();
-    for (const { commandId } of orders) {
-      const clock = clocks.get(commandId); // a paused clock resumes, leaving out the offline gap
-      clocks.set(commandId, { since: clock ? clock.since + at - (clock.pausedAt ?? at) : at, seq: ++failureSeq, reason });
-    }
+    for (const { commandId } of orders) clocks.set(commandId, { since: clocks.get(commandId)?.since ?? at, seq: ++failureSeq, reason });
     const id = orders[0].commandId;
     if (alone === 'isolated') {
       isolate(id, reason, retryAfterMs);
@@ -203,13 +201,23 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         return toOrderCreateEnvelope(order, deviceId, attempt);
       });
       let outcome = await transport.send(batch);
+      if (outcome.kind !== 'retry' || outcome.reason !== 'network') {
+        // The store answered: every paused clock resumes, leaving out the offline gap. A device clock set back
+        // during it makes the gap negative, which keeps the answered time exact, since `now` moved back too.
+        const at = now();
+        for (const clock of clocks.values()) if (clock.pausedAt !== undefined) {
+          clock.since += at - clock.pausedAt;
+          clock.pausedAt = undefined;
+        }
+      }
       let batchMax: number | undefined;
       let capabilitiesRefreshed = false;
       if (outcome.kind === 'retry') {
         let floor = outcome.retryAfterMs;
         if (outcome.reason === 'network') {
           // Offline never counts: it pauses every stuck clock and ends a walk, isolating nothing. The
-          // failure count stands, so the next failure the store answers walks again.
+          // failure count stands, so the next failure the store answers walks again. A `timeout` (sent, but
+          // no answer in time) is not offline: it counts like a 503 and never pauses a clock.
           for (const clock of clocks.values()) clock.pausedAt ??= now();
           walk = undefined;
         } else if ((floor = serverFailed(orders, alone, outcome.reason, outcome.retryAfterMs)) === undefined) continue;
