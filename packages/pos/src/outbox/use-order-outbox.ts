@@ -1,5 +1,5 @@
 import type { OrderCreateEnvelope } from '@tallyui/core';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
 import { outboxLogger } from './logger';
 import { OrderContentMismatchError, sameSale, type PosOrder } from '../pos-order';
@@ -8,6 +8,7 @@ import { createOrderOutbox } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
 const idle: OutboxState = { pending: 0, sending: false };
+const noneStuck: readonly string[] = [];
 export { outboxLogger } from './logger';
 
 export interface UseOrderOutboxOptions {
@@ -59,6 +60,9 @@ export interface UseOrderOutboxResult {
    * storage can wait forever, and TallyUI deliberately doesn't bound that close (#155).
    */
   savesInFlight: number;
+  /** The command ids in `state.stuck`: pending orders the store keeps failing. Pass them to `needsAttention` and
+   * `OrdersList`. Empty when none, and before the current store is ready. */
+  stuckCommandIds: readonly string[];
 }
 
 /** Opens the order store for `storeKey`, runs its outbox and watches the recent orders (lifted from medusapos/app, ADR-052). */
@@ -113,6 +117,9 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
   }, [state.sending]);
 
   const ready = current.current?.storeKey === storeKey && !!storeKey;
+  // Each state update carries a new `stuck`; the ids keep their identity while they are unchanged.
+  const stuckKey = ready ? state.stuck?.commandIds.join(',') ?? '' : '';
+  const stuckCommandIds = useMemo(() => (stuckKey ? stuckKey.split(',') : noneStuck), [stuckKey]);
   return { orders: ready ? orders : null, state: ready ? state : idle, recent: ready ? recent : [],
     async flush() {
       const opened = current.current;
@@ -123,6 +130,7 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
       return opened && opened.storeKey === storeKey ? opened.outbox.requeue(orderIds) : 0;
     },
     savesInFlight: savesInFlightCount,
+    stuckCommandIds,
     async record(posOrder) {
       savesInFlight.current++;
       setSavesInFlightCount(savesInFlight.current);

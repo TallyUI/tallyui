@@ -43,4 +43,23 @@ describe('needsAttention', () => {
     expect(needsAttention(orders)).toEqual([applied, pending]);
     expect(orders).toEqual(before);
   });
+
+  it('selects a pending order only when its commandId is in stuckCommandIds', () => {
+    const base = sale();
+    const stuck: PosOrder = { ...base, id: 'stuck', commandId: 'command-stuck', createdAt: '2026-01-01T00:00:00Z' };
+    const waiting: PosOrder = { ...base, id: 'waiting', commandId: 'command-waiting', createdAt: '2026-01-02T00:00:00Z' };
+    const done: PosOrder = { ...base, id: 'done', commandId: 'command-done', syncStatus: 'applied', createdAt: '2026-01-03T00:00:00Z' };
+    const rejected: PosOrder = { ...base, id: 'rejected', syncStatus: 'rejected', createdAt: '2026-01-04T00:00:00Z' };
+    const orders = [stuck, waiting, done, rejected];
+    expect(needsAttention(orders, { stuckCommandIds: ['command-stuck', 'command-done'] })).toEqual([rejected, stuck]);
+    expect(needsAttention(orders, { stuckCommandIds: [] })).toEqual([rejected]);
+    expect(needsAttention(orders, {})).toEqual([rejected]);
+  });
+
+  it('without options selects as before: no pending order', () => {
+    const base = sale();
+    const rejected: PosOrder = { ...base, id: 'rejected', syncStatus: 'rejected' };
+    expect(base.syncStatus).toBe('pending');
+    expect(needsAttention([base, rejected])).toEqual([rejected]);
+  });
 });

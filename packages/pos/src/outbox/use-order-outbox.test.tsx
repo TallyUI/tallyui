@@ -136,6 +136,35 @@ describe('useOutbox with the TallyUI HTTP transport', () => {
     await waitFor(() => expect(outbox.state.pending).toBe(0));
   });
 
+  it('exposes the command ids of stuck orders, for needs attention, and none once the store takes them', async () => {
+    // Fake before the outbox is created, so that it reads the fake clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      renderHarness(session);
+      for (let i = 0; i < 100 && !outbox.orders; i++) await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      expect(outbox.stuckCommandIds).toEqual([]);
+      fetchStub.mockImplementation(async () => new Response('busy', { status: 503 }));
+      const order = sale(new Date());
+      await act(async () => { await outbox.record(order); });
+      for (let i = 0; i < 20; i++) await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(outbox.stuckCommandIds).toEqual([order.commandId]);
+      expect(outbox.state.stuck?.reason).toBe('status_503');
+      expect(outbox.state.stuck?.orders).toEqual([{ commandId: order.commandId, since: outbox.state.stuck!.since, reason: 'status_503' }]);
+      // The same ids keep their identity across later state updates.
+      const ids = outbox.stuckCommandIds;
+      const stuckState = outbox.state.stuck;
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(outbox.state.stuck).not.toBe(stuckState);
+      expect(outbox.stuckCommandIds).toBe(ids);
+      const stored = (await outbox.orders!.find().exec()).map((doc) => doc.toMutableJSON() as PosOrder);
+      expect(needsAttention(stored, { stuckCommandIds: outbox.stuckCommandIds }).map(({ id }) => id)).toEqual([order.id]);
+      fetchStub.mockImplementation(async () => applied(order));
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(outbox.state.pending).toBe(0);
+      expect(outbox.stuckCommandIds).toEqual([]);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('closes on sign-out and sends the preserved pending order after signing in again', async () => {
     fetchStub.mockRejectedValue(new TypeError('offline'));
     const view = renderHarness(null);

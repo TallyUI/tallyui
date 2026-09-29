@@ -69,7 +69,7 @@ describe('HTTP command transport', () => {
     expect(await transport.send(commands)).toEqual({ kind: 'refused', status: 400, reason });
   });
 
-  it('retries a thrown fetch', async () => {
+  it('retries a fetch that throws without an abort as network', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new TypeError('offline'));
     const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
     expect(await transport.send(commands)).toEqual({ kind: 'retry', reason: 'network' });
@@ -95,7 +95,7 @@ describe('HTTP command transport', () => {
     expect(await transport.send(commands)).toEqual({ kind: 'retry', reason: 'status_503' });
   });
 
-  it.each([undefined, 25])('aborts after the configured timeout (%s)', async (timeoutMs) => {
+  it.each([undefined, 25])('aborts after the configured timeout (%s) and retries it as timeout', async (timeoutMs) => {
     vi.useFakeTimers();
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (_url, init) => new Promise((_resolve, reject) => {
       init!.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
@@ -103,8 +103,19 @@ describe('HTTP command transport', () => {
     const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch, timeoutMs });
     const outcome = transport.send(commands);
     await vi.advanceTimersByTimeAsync(timeoutMs ?? 30000);
-    expect(await outcome).toEqual({ kind: 'retry', reason: 'network' });
+    expect(await outcome).toEqual({ kind: 'retry', reason: 'timeout' });
     expect(fetch.mock.calls[0][1]?.signal?.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('retries a 200 whose body the deadline cuts off as timeout', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (_url, init) => new Response(new ReadableStream({
+      start(controller) { init!.signal!.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError'))); },
+    })));
+    const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch, timeoutMs: 25 });
+    const outcome = transport.send(commands);
+    await vi.advanceTimersByTimeAsync(25);
+    expect(await outcome).toEqual({ kind: 'retry', reason: 'timeout' });
   });
 });

@@ -53,11 +53,12 @@ export function createHttpCommandTransport(options: HttpTransportOptions): Comma
         try {
           body = await response.json();
         } catch {
-          return retry(controller.signal.aborted ? 'network' : 'bad_body');
+          return retry(controller.signal.aborted ? 'timeout' : 'bad_body');
         }
         return isCommandBatchResponse(body) ? { kind: 'results', results: body.results } : retry('bad_body');
       } catch {
-        return { kind: 'retry', reason: 'network' };
+        // `timeout`: sent, but no answer within the deadline. `network`: the store could not be reached.
+        return { kind: 'retry', reason: controller.signal.aborted ? 'timeout' : 'network' };
       } finally {
         clearTimeout(timeout);
       }
