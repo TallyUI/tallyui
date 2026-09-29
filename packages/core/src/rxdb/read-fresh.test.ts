@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 describe('readFresh and countFresh', () => {
-  it('see a sale that the cached query and count miss (RxDB 16.21.1 bug 4)', async () => {
+  it('see a sale written while the cached query and count read, as RxDB 17 does since it fixed bug 4', async () => {
     const pending: MangoQuery<Sale> = { selector: { status: 'pending' }, sort: [{ createdAt: 'asc' }], limit: 10 };
     const first = sales.find(pending).exec();
     const firstCount = sales.count({ selector: { status: 'pending' } }).exec();
@@ -34,9 +34,9 @@ describe('readFresh and countFresh', () => {
     await Promise.resolve();
     await sales.insert({ id: 'sale-1', status: 'pending', createdAt: '1' });
     await Promise.all([first, firstCount]);
-    // The premise: the cached RxQuery and count stay stale. If these fail, RxDB fixed bug 4.
-    expect(await sales.find(pending).exec()).toHaveLength(0);
-    expect(await sales.count({ selector: { status: 'pending' } }).exec()).toBe(0);
+    // RxDB 17 fixed bug 4 (16.21.1 kept these cached results stale): the cached RxQuery and count see the sale.
+    expect(await sales.find(pending).exec()).toHaveLength(1);
+    expect(await sales.count({ selector: { status: 'pending' } }).exec()).toBe(1);
     expect(await readFresh(sales, pending)).toEqual([{ id: 'sale-1', status: 'pending', createdAt: '1' }]);
     expect(await countFresh(sales, { status: 'pending' })).toBe(1);
   });

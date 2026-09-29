@@ -1,9 +1,18 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { addRxPlugin, createRxDatabase, type RxDatabase } from 'rxdb';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { addRxPlugin, createRxDatabase, hasPremiumFlag, type RxDatabase } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { loadSQLiteStorage, openNodeSQLite } from './node-sqlite.test-helper';
+
+// A spy over the real `setPremiumFlag`: vitest.setup.ts has already set the flag, and RxDB caches
+// its first check, so only the call itself shows that `getRxStorageSQLite` sets it.
+const setPremiumFlag = vi.hoisted(() => vi.fn());
+vi.mock('rxdb-premium/plugins/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('rxdb-premium/plugins/shared')>();
+  setPremiumFlag.mockImplementation(actual.setPremiumFlag);
+  return { ...actual, setPremiumFlag };
+});
 
 const getRxStorageSQLite = await loadSQLiteStorage();
 if (!getRxStorageSQLite && process.env.CI) {
@@ -43,6 +52,13 @@ addRxPlugin(RxDBDevModePlugin);
   afterEach(async () => {
     if (db) await db.close();
     sqlite.raw.close();
+  });
+
+  it('sets the RxDB premium flag, so the 13-collection cap never applies', async () => {
+    setPremiumFlag.mockClear();
+    getRxStorageSQLite!(sqlite.database);
+    expect(setPremiumFlag).toHaveBeenCalledTimes(1);
+    expect(await hasPremiumFlag()).toBe(true);
   });
 
   it('rejects a second RxDB database name on the same SQLite handle', async () => {

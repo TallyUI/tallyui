@@ -797,9 +797,9 @@ describe('an interrupted close', () => {
   });
 });
 
-it('freezes a sale and a movement that RxDB\'s query cache missed (RxDB 16.21.1, bug 4)', async () => {
+it('freezes a sale and a movement written a microtask after their queries subscribed, which RxDB 17 sees since it fixed bug 4', async () => {
   const session = await seed();
-  // A document written a microtask after its query first subscribes never reaches that query.
+  // A document written a microtask after its query first subscribes: 16.21.1 never showed it to that query (bug 4).
   const orders = db.pos_orders.find({ selector: { sessionId: session.id } });
   const moves = db.cash_movements.find({ selector: { session_id: session.id } });
   const subscriptions = [orders.$.subscribe()];
@@ -811,9 +811,9 @@ it('freezes a sale and a movement that RxDB\'s query cache missed (RxDB 16.21.1,
     id: 'missed-move', session_id: session.id, type: 'paid_out', amountMinor: 30, reason: 'Milk', created_at_gmt: '2026-09-16T10:00:00.000Z',
   });
   await new Promise((resolve) => setTimeout(resolve, 50));
-  // The precondition: the cached queries are stale (if RxDB fixes this, these fail first).
-  expect(await orders.exec()).toHaveLength(0);
-  expect(await moves.exec()).toHaveLength(0);
+  // RxDB 17 fixed bug 4: the cached queries see both writes.
+  expect(await orders.exec()).toHaveLength(1);
+  expect(await moves.exec()).toHaveLength(1);
   const result = await settled();
   let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
   await act(async () => {
@@ -825,17 +825,17 @@ it('freezes a sale and a movement that RxDB\'s query cache missed (RxDB 16.21.1,
   subscriptions.forEach((subscription) => subscription.unsubscribe());
 });
 
-it('counts a sale the query cache missed, once its change event arrives, in live salesCount and expected (RxDB 16.21.1 bug 4)', async () => {
+it('counts a sale written while a cached query read, in live salesCount and expected, which RxDB 17 sees since it fixed bug 4', async () => {
   const session = await seed();
-  // A second, separately-created query for the same selector the hook's own orders query uses: a
-  // write landing while its storage read is in flight (the repro's timing) never reaches it, and
-  // RxDB's query cache never heals it (a `find().$`-driven `salesCount`/`expected` would stay 0).
+  // A second, separately-created query for the same selector the hook's own orders query uses, and a
+  // write landing while its storage read is in flight (the repro's timing). On 16.21.1 that write never
+  // reached the query and RxDB's query cache never healed it (bug 4); RxDB 17 fixed that.
   const stale = db.pos_orders.find({ selector: { sessionId: session.id } });
   const subscription = stale.$.subscribe();
   await Promise.resolve();
   await sale('missed', session.id, [{ method: 'cash', amountMinor: 4200 }]);
   await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(await stale.exec()).toHaveLength(0); // the premise: this cached query stays stale
+  expect(await stale.exec()).toHaveLength(1); // RxDB 17 fixed bug 4: the cached query sees the write
   const result = await settled();
   await waitFor(() => expect(result.current.salesCount).toBe(1));
   // The float (10000, from `seed()`) plus the missed sale's cash.

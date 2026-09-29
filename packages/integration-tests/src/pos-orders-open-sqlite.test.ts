@@ -43,7 +43,8 @@ if (!getRxStorageSQLite && process.env.CI) {
     expect(inserted.error).toEqual([]);
     const queries: Array<[string | { $in: string[] }, string[], string[]]> = [
       ['a', ['stamped-a'], ['_deleted', 'sessionId', 'id']],
-      [{ $in: ['a', 'b'] }, ['stamped-a', 'stamped-b'], ['_deleted', 'createdAt', 'id']],
+      // RxDB 17's planner uses a field's index for `$in` too (rxdb#8631).
+      [{ $in: ['a', 'b'] }, ['stamped-a', 'stamped-b'], ['_deleted', 'sessionId', 'id']],
     ];
     for (const [sessionId, ids, index] of queries) {
       const query = orders.find({ selector: { sessionId } });

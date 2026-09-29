@@ -342,20 +342,19 @@ describe('useOrderOutbox options', () => {
     await opened.close();
   });
 
-  it('shows an order the query cache missed, once its change event arrives (RxDB 16.21.1 bug 4)', async () => {
+  it('shows an order written while the query `recent` runs was reading, as RxDB 17 does since it fixed bug 4', async () => {
     const opened = await openStore(session.baseUrl);
-    // Poison the query `recent` runs, before the hook (which runs the identical query) ever
-    // subscribes to it: a write landing while its storage read is in flight (the repro's timing)
-    // never reaches it, and RxDB's query cache never heals it (a `find().$`-driven `recent`
-    // would stay empty forever). A transport that never accepts: nothing else writes to the
-    // collection to mask that.
+    // Write while the query `recent` runs reads, before the hook (which runs the identical query) ever
+    // subscribes to it (the repro's timing). On 16.21.1 the write never reached that query and RxDB's
+    // query cache never healed it (bug 4); RxDB 17 fixed that. A transport that never accepts:
+    // nothing else writes to the collection to mask a stale query.
     const stale = opened.orders.find({ sort: [{ createdAt: 'desc' }], limit: 50 });
     const subscription = stale.$.subscribe();
     await Promise.resolve();
     const order = sale();
     await opened.orders.insert(order);
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(await stale.exec()).toHaveLength(0); // the premise: this cached query stays stale
+    expect(await stale.exec()).toHaveLength(1); // RxDB 17 fixed bug 4: the cached query sees the write
     const retryLater: CommandTransport['send'] = async () => ({ kind: 'retry', reason: 'offline', retryAfterMs: 60_000 });
     renderOptions({ storeKey: session.baseUrl, deviceId: 'register-1', open: async () => opened, transport: fakeTransport(retryLater) });
     await waitFor(() => expect(outbox.recent).toHaveLength(1));

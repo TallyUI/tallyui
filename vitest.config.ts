@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    setupFiles: ['./vitest.setup.ts'],
     include: [
       'packages/**/*.test.{ts,tsx}',
       'connectors/**/*.test.{ts,tsx}',

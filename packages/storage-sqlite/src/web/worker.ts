@@ -1,9 +1,14 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import type { RxStorage } from 'rxdb';
+import { setPremiumFlag } from 'rxdb-premium/plugins/shared';
 import { getRxStorageSQLite } from 'rxdb-premium/plugins/storage-sqlite';
 import { exposeWorkerRxStorage } from 'rxdb-premium/plugins/storage-worker';
 import { getSQLiteBasicsOpfsSahPool, type Oo1Db } from './sqlite-basics-sahpool';
 import { StorageWorkerStartError } from './errors';
+
+// The worker is its own JS context with its own RxDB globals, so it sets
+// RxDB 17's premium flag itself (13-collection cap otherwise).
+setPremiumFlag();
 
 // This must run inside a dedicated worker (ADR-061): `createSyncAccessHandle`,
 // which opfs-sahpool needs, exists only there, not on the main thread or in
