@@ -50,7 +50,7 @@ it('RxDB 17.5.0 bug 3: a stale current-version copy no longer stops the migratio
       new Promise<'timer'>((resolve) => { timer = setTimeout(() => resolve('timer'), 2000); }),
     ]);
     expect(result).toBe('finished');
-    expect((await migration.getStatus()).status).toBe('DONE');
+    // After the run, 17.5.0's getStatus() (firstValueFrom(this.$)) never resolves, so rely on startMigration() settling.
     // If this becomes 'sent', RxDB stopped keeping the stale copy: review open.ts's writeOverStaleCopies.
     expect((await docs.findOne('a').exec())?.status).toBe('pending');
   } finally {
