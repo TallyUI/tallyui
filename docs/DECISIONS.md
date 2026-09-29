@@ -1015,7 +1015,12 @@ interface OrderCreatePayload {
     `platform_error` and never releases the claim. The claim stays in
     progress, so the till's resends of the same id get `409 in_progress`,
     and the till flags the order after 15 minutes (TallyUI #212). The plugin
-    logs the failure for an admin. *(Front desk to confirm this response.)*
+    logs the failure for an admin (Front desk, 2026-09-29).
+    - The ledger row is marked as needing an admin, with a distinct status
+      or flag. A plugin's stale-in-progress reclaim path (medusapos
+      reclaims stale `in_progress` rows after a timeout) never re-runs the
+      recipe on a marked row.
+    - An admin resolves it by explicitly applying or rejecting the command.
   - **A backstop against a second sale:** Retry resends the same
     `clientOrderId` under a new command id, and a plugin's unique client
     order id (Vendure's `tallyClientOrderId`, ADR-047 step 2) refuses a
