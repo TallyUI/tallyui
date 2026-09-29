@@ -40,7 +40,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             <Text className="text-foreground">{order.serverRefs?.displayId ? `Order #${order.serverRefs.displayId} · ` : ''}{count} {count === 1 ? 'item' : 'items'}</Text>
             <Text className="text-muted-foreground">{formatDate(order.createdAt)} · {formatMoney({ amount: order.totalMinor, currency: order.currency })} · {STATUS_LABEL[order.syncStatus]}</Text>
             {stuckEntry ? <Text className="text-destructive">
-              Not syncing: the store keeps failing ({stuckEntry.reason}) since {new Date(stuckEntry.since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+              {/* A hanging link reads as the store failing otherwise: `timeout` means it never answered. */}
+              Not syncing: {stuckEntry.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing'} ({stuckEntry.reason}) since {new Date(stuckEntry.since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
             </Text> : null}
             {order.syncStatus === 'rejected' && order.error ? <Text className="text-destructive">{order.error.code}: {order.error.message}</Text> : null}
             {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}

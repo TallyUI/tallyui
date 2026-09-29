@@ -50,6 +50,16 @@ describe('SyncStatus', () => {
     expect(screen.getByLabelText('Sync status').textContent)
       .toBe(`3 sales waiting to sync · sending · Not syncing 1 order: the store keeps failing (no_progress) since ${time}`);
   });
+  it.each([['timeout', 'no answer from the store (timeout)'], ['status_503', 'the store keeps failing (status_503)']])(
+    'shows a stuck %s with the matching wording', (reason, wording) => {
+    const since = Date.now();
+    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    render(<SyncStatus state={{ pending: 1, sending: false,
+      stuck: { commandIds: ['a'], since, reason, orders: [{ commandId: 'a', since, reason }] } }} />);
+    expect(screen.getByLabelText('Sync status').textContent)
+      .toBe(`1 sale waiting to sync · Not syncing 1 order: ${wording} since ${time}`);
+  });
+
   it('shows the unchanged text without stuck', () => {
     vi.useFakeTimers();
     const now = Date.now();

@@ -1837,6 +1837,27 @@ describe('order outbox isolation', () => {
     expect(states.at(-1)?.stuck).toEqual(stuckOf([bad.commandId], epoch + Date.now() - pausedAt!));
   });
 
+  it.each<[string, TransportOutcome, (state: OutboxState) => void]>([
+    ['a 401', { kind: 'unauthorized' }, (state) => expect(state.lastRetryReason).toBe('unauthorized')],
+    ['a refusal', { kind: 'refused', status: 400, reason: 'bad' }, (state) => expect(state.refused).toEqual({ status: 400, reason: 'bad' })],
+  ])('an answered %s for another order resumes a paused clock, like a success', async (_, answer, assertAnswer) => {
+      const { outbox, send, states, next, bad } = await isolatedHead({ stuckAfterMs: 1 });
+      let pausedAt: number | undefined;
+      send.mockImplementation(async (batch) => {
+        if (ids(batch).join() !== bad.commandId) return answer;
+        pausedAt ??= Date.now();
+        return offline;
+      });
+      for (let i = 0; i < 3; i++) await next();
+      expect(states.at(-1)?.stuck).toEqual(stuckOf([bad.commandId], epoch));
+      await collection.insert(order(3));
+      await outbox.flush();
+      expect(Date.now()).toBeGreaterThan(pausedAt!);
+      expect(states.at(-1)?.stuck).toEqual(stuckOf([bad.commandId], epoch + Date.now() - pausedAt!));
+      // Proves the clock moved on that answer, not on a network retry.
+      assertAnswer(states.at(-1)!);
+    });
+
   it('a device clock set back during a pause leaves the answered time unchanged: flagged at STUCK_AFTER_MS of it, no earlier or later', async () => {
     const lone = order(0);
     await collection.insert(lone);
