@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { formatMoney } from '@tallyui/core';
-import { buildReceiptData, type Order } from '@tallyui/pos';
+import { buildReceiptData, type SentOrder } from '@tallyui/pos';
 import { injectPrintStyle } from './print-style';
 import { discountLabel } from './discount-form';
 
@@ -11,7 +11,7 @@ const defaultFormatDate = (iso: string) => new Intl.DateTimeFormat(undefined, { 
  * TV6a's `Cart`), outbox strip and date util, so `Receipt` stays platform-neutral (ADR-052). */
 export function Receipt({ order, store, cashier, registerId, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
   topInset = 0, formatDate = defaultFormatDate }: {
-  order: Order; store: { name: string; address?: string }; cashier: string; registerId: string; newSale: () => void;
+  order: SentOrder; store: { name: string; address?: string }; cashier: string; registerId: string; newSale: () => void;
   taxLabel?: (ratePpm: number) => string; topInset?: number; formatDate?: (iso: string) => string;
 }) {
   useEffect(injectPrintStyle, []);

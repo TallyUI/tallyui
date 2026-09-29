@@ -23,6 +23,9 @@ export interface Order {
   updatedAt: string;
 }
 
+/** An Order as it was stored and sent, whose customer id may have been left out. */
+export type SentOrder = Omit<Order, 'customer'> & { customer: (Omit<CustomerSummary, 'id'> & { id?: string }) | null };
+
 /**
  * Figures for showing the cart or a receipt in the store's display mode (ADR-063); never sent to the server.
  * A parked order's saved draft may carry them; they are recomputed from the lines on resume, so never authoritative.

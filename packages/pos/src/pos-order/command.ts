@@ -55,6 +55,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   const version = Math.min(contentVersion, cap ?? contentVersion) as 1 | 2 | 3;
   const email = order.customer?.email;
   const id = order.customer?.id;
+  // These are the pre-#222 customerId and sessionId checks, kept byte-exact so stored orders resend older tills' bytes; don't replace with sendable.
   const customerId = typeof id === 'string' && id.length > 0 && id.length <= 64 ? id : undefined;
   const sessionId = order.sessionId ?? order.lateSessionId;
   return {

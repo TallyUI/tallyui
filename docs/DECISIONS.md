@@ -1031,6 +1031,16 @@ interface OrderCreatePayload {
           resend is byte-identical, and an order stored by an older till
           is sent exactly as that till sent it. The receipt shows the frozen
           form too (`withSentForm`).
+          An order stored by an older till and still unsent at the upgrade
+          is frozen the same way by the outbox before its first send from
+          the upgraded till (Front desk, 2026-09-29): its line names,
+          discount labels and payment references are cut to their bound,
+          never its ids, and an unsendable customer email or id is left out.
+          The frozen form is written back to the stored order, so the
+          receipt and the server see the same bytes. If such an order had
+          in fact been sent and applied before the upgrade, its resend
+          answers `idempotency_mismatch`, a reconciliation state, never a
+          lost sale.
         - on the Vendure plugin, a future bound on `payload.createdAt`
           (Vendure's `tallySaleAt`). It may be at most 24 hours ahead of
           the server's clock. There is no lower bound, because an offline

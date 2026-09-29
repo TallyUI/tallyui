@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
-import { createOrderBuilder, type CustomerSummary, type Discount, type Order } from '../order';
+import { createOrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
@@ -14,7 +14,7 @@ import { addEntryToCart, CartError } from './cart';
 export const saleLogger = createLogger('sale');
 
 export type SaleStage = { kind: 'cart' } | { kind: 'tender'; method: 'cash' | 'external' }
-  | { kind: 'receipt'; order: Order; posOrder: PosOrder };
+  | { kind: 'receipt'; order: SentOrder; posOrder: PosOrder };
 /** TallyUI finalizeOrder's refusal below order.create v2 (c19a203), shown when the discount is applied; finalize stays the backstop. */
 export const DISCOUNTS_UNSUPPORTED = 'finalize: discounts are not supported by the server yet (order.create v2)';
 /** Every sale change refuses with this while a completion is pending (see `complete()`). */

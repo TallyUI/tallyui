@@ -4,6 +4,7 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandEnvelope, CommandResult, OrderCreateEnvelope, OrderCreatePayload } from '@tallyui/core';
+import { commandFingerprint } from '@tallyui/core/server';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder, posOrderCollection, toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS, STUCK_AFTER_MS, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
@@ -76,6 +77,29 @@ afterEach(async () => {
 });
 
 describe('order outbox', () => {
+  it('freezes an older pending order before sending and retries the same bytes without a second write', async () => {
+    vi.useFakeTimers();
+    const input = order(0);
+    input.lines[0].name = 'N'.repeat(300);
+    await collection.insert(input);
+    const { outbox, send } = setup();
+    send.mockImplementation(async (batch) => {
+      expect(batch[0].payload.lines[0].title).toBe(`${'N'.repeat(254)}…`);
+      expect((await collection.findOne(input.id).exec())!.lines[0].name).toBe(`${'N'.repeat(254)}…`);
+      return { kind: 'retry', reason: 'network' };
+    });
+    await outbox.flush();
+    const stored = (await collection.findOne(input.id).exec())!.toJSON(true);
+    expect(stored.lines[0].name).toHaveLength(255);
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(2);
+    const first = send.mock.calls[0][0][0];
+    const retry = send.mock.calls[1][0][0];
+    expect([first.attempt, retry.attempt]).toEqual([1, 2]);
+    expect(commandFingerprint(retry)).toBe(commandFingerprint(first));
+    expect((await collection.findOne(input.id).exec())!.toJSON(true)).toStrictEqual(stored);
+  });
+
   it('a backlog larger than one batch on an old plugin downgrades batch by batch and never enters refused', async () => {
     const inputs = Array.from({ length: 25 }, (_, i) => v3Order(i));
     await collection.bulkInsert(inputs);

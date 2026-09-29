@@ -5,6 +5,7 @@ export { createOrderManager } from './order-manager';
 export type { OrderManager, OrderManagerOptions, ParkedOrderSummary } from './order-manager';
 export type {
   Order,
+  SentOrder,
   LineItem,
   LineTaxLine,
   AddLineInput,
