@@ -22,8 +22,8 @@ describe('wooProductReplication.pull.handler', () => {
 
   it('fetches products from initial checkpoint (undefined)', async () => {
     const mockProducts = [
-      { id: 1, uuid: 'abc', name: 'Widget', date_modified_gmt: '2026-01-01T00:00:00' },
-      { id: 2, uuid: 'def', name: 'Gadget', date_modified_gmt: '2026-01-02T00:00:00' },
+      { id: 1, uuid: 'abc', name: 'Widget', status: 'publish', date_modified_gmt: '2026-01-01T00:00:00' },
+      { id: 2, uuid: 'def', name: 'Gadget', status: 'publish', date_modified_gmt: '2026-01-02T00:00:00' },
     ];
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
@@ -44,6 +44,55 @@ describe('wooProductReplication.pull.handler', () => {
       id: 'def',
       modified: '2026-01-02T00:00:00',
     });
+  });
+
+  it('marks draft, pending and private products as deleted', async () => {
+    const products = ['draft', 'pending', 'private', undefined].map((status, id) => ({
+      id, uuid: `uuid-${id}`, status, date_modified_gmt: '2026-01-01T00:00:00',
+    }));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(products), { status: 200 }),
+    );
+
+    const result = await wooProductReplication.pull.handler(undefined, 100, context);
+
+    expect(result.documents).toEqual(products.map((p) => ({ ...p, _deleted: true })));
+  });
+
+  it('keeps published products', async () => {
+    const product = { id: 1, uuid: 'abc', status: 'publish', date_modified_gmt: '2026-01-01T00:00:00' };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify([product]), { status: 200 }),
+    );
+
+    const result = await wooProductReplication.pull.handler(undefined, 100, context);
+
+    expect(result.documents).toEqual([{ ...product, _deleted: false }]);
+  });
+
+  it('advances the checkpoint past an unpublished product', async () => {
+    const products = [
+      { id: 1, uuid: 'abc', status: 'publish', date_modified_gmt: '2026-01-02T00:00:00' },
+      { id: 2, uuid: 'def', status: 'draft', date_modified_gmt: '2026-01-03T00:00:00' },
+    ];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(products), { status: 200 }),
+    );
+
+    const result = await wooProductReplication.pull.handler({ id: 'old', modified: '2026-01-01T00:00:00' }, 100, context);
+
+    expect(result.documents).toEqual([{ ...products[0], _deleted: false }, { ...products[1], _deleted: true }]);
+    expect(result.checkpoint).toEqual({ id: 'def', modified: '2026-01-03T00:00:00' });
+  });
+
+  it.each([undefined, { id: 'abc', modified: '2026-01-01T00:00:00' }])('sends no status parameter', async (checkpoint) => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+
+    await wooProductReplication.pull.handler(checkpoint, 100, context);
+
+    expect(new URL(String(fetchSpy.mock.calls[0][0])).searchParams.has('status')).toBe(false);
   });
 
   it('fetches products after a checkpoint', async () => {
