@@ -50,8 +50,13 @@ export const wooProductSync: CollectionSync = {
   },
 
   async fetchModifiedAfter(date: string, context: SyncContext): Promise<any[]> {
+    const params = new URLSearchParams({
+      modified_after: date,
+      dates_are_gmt: 'true',
+      per_page: '100',
+    });
     const response = await fetch(
-      `${context.baseUrl}/products?modified_after=${date}&per_page=100`,
+      `${context.baseUrl}/products?${params}`,
       {
         headers: {
           ...context.headers,
