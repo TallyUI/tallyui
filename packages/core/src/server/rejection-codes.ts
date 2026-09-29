@@ -40,6 +40,9 @@ export function platformErrorResult(id: string, platformCode: string, platformMe
  *
  * Database, network, unknown-SQLSTATE and any other unclassifiable errors stay transient (503), never
  * `internal_error`. `order.create` only, as for `platform_error`.
+ *
+ * See ADR-038's `internal_error` amendment (needs-admin on a failed compensation; on Vendure only
+ * before the first write).
  */
 export function internalErrorResult(id: string, correlationId: string): CommandResult {
   return { id, status: 'rejected', error: { code: 'internal_error', message: `Internal error (ref ${correlationId})`, data: { correlationId } } }
