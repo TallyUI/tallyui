@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
 import fixture from './__fixtures__/order-create-v3.json'
+import { precheckCommand, validateBatch } from './batch'
 import { fiscalFiguresErrors, type OrderCreatePayloadV3 } from './fiscal-figures'
 import { payloadShapeErrors } from './order-payload-shape'
+import { SUPPORTED_ORDER_CREATE_VERSIONS } from './versions'
 
 // JSON imports widen string literals. Narrow only the payment method, leaving the
 // entire payload shape checked by this assignment to the core payload type.
@@ -32,6 +34,9 @@ const payload: OrderCreatePayloadV3 = {
 // Cash: amount = total = 3256; change = 744 = 4000 tendered - 3256 amount.
 
 it('the golden v3 envelope passes validation unchanged', () => {
+  expect(validateBatch({ commands: [fixture] })).toStrictEqual({ ok: true, commands: [fixture] })
+  expect(SUPPORTED_ORDER_CREATE_VERSIONS).toContain(fixture.version)
+  expect(precheckCommand(fixture as never)).toBeUndefined()
   expect(payload).toStrictEqual(fixture.payload)
   expect(payloadShapeErrors(payload)).toStrictEqual([])
   expect(fiscalFiguresErrors(payload)).toStrictEqual([])
