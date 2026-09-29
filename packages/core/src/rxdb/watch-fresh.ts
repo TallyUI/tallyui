@@ -3,8 +3,8 @@ import type { MangoQuery, RxCollection } from 'rxdb';
 import { readFresh } from './read-fresh';
 
 /**
- * A live list a cached `RxQuery` can't leave stale (bug 4 in the local RxDB 16.21.1 repro,
- * `readFresh`'s doc comment): a write during a query's storage read never reaches it, for good.
+ * RxDB 17 fixed RxDB 16.21.1's bug 4 (rxdb#7067); `readFresh`, `countFresh` and `watchFresh`
+ * remain correct public API. Retiring them is a separate decision.
  * `collection.eventBulks$` fires on every write and never touches that cache, so re-reading with
  * `readFresh` on subscribe and again on every event bulk can't miss one; `switchMap` drops a read
  * still in flight when a newer one starts. It is one event per storage change bulk, not per

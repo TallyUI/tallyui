@@ -110,8 +110,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     return !!entry && (entry.nextAt <= now() || entry.nextAt - now() > maxBackoff);
   }
 
-  // Every read goes past RxDB's query cache: in RxDB 16.21.1 a sale inserted while a cached
-  // query's read is in flight never reaches that query, and stayed unsent until a restart.
+  // Every read bypasses the query cache. RxDB 17 fixed RxDB 16.21.1's bug 4 (rxdb#7067);
+  // readFresh, countFresh and watchFresh remain correct public API.
+  // Retiring them is a separate decision.
   async function updateState(patch: Partial<OutboxState> = {}) {
     const pending = await countFresh(collection, { syncStatus: 'pending' });
     state$.next({ ...state$.value, ...patch, pending, stuck: stuckState() });

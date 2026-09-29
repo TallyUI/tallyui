@@ -133,6 +133,37 @@ it('never drops a version-0 order that fails validation at version 3: a validati
 
 describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory()));
 
+describe('addPosOrderCollection accepts a same-tick insert on memory storage', () => {
+  it('accepts a pending order immediately after opening a fresh database', async () => {
+    const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
+    const order = pendingOrder(2);
+    const db = await createRxDatabase({ name: `posinsert${uuidv7().replaceAll('-', '')}`, storage, multiInstance: false });
+    try {
+      const collection = await addPosOrderCollection(db);
+      const inserted = collection.insert(order);
+      await expect(inserted).resolves.toMatchObject({ id: order.id, syncStatus: 'pending' });
+      expect((await collection.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('accepts a pending order immediately after migrating a version-2 database', async () => {
+    const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
+    const name = await seed(storage, pendingOrder(2), 2);
+    const order = pendingOrder(2);
+    const db = await createRxDatabase({ name, storage, multiInstance: false });
+    try {
+      const collection = await addPosOrderCollection(db);
+      const inserted = collection.insert(order);
+      await expect(inserted).resolves.toMatchObject({ id: order.id, syncStatus: 'pending' });
+      expect((await collection.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+    } finally {
+      await db.close();
+    }
+  });
+});
+
 /** `storage`, but every write to `pos_orders` never settles: like a stuck migration batch. */
 function stuckWrites(storage: RxStorage<any, any>): RxStorage<any, any> {
   return { ...storage, createStorageInstance: async (params) => {
