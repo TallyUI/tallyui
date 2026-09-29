@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
-import { getProductStock } from '../stock-overlay';
+import { getProductStock, withStockOverlay } from '../stock-overlay';
 import type { StockLevel, TallyConnector, TraitContext } from '../types';
 
 /**
@@ -87,6 +87,27 @@ export function useProductStock(doc: any): StockLevel & { asOf?: string } {
   // The helpers never mutate the map; they take Map for the adapter contract.
   const stock = getProductStock(doc, connector.traits.product, adapter, overlay as Map<string, unknown>);
   return adapter && asOf ? { ...stock, asOf } : stock;
+}
+
+/**
+ * The products with the nearest ConnectorProvider's reconciled stock overlay merged in (copies only; the
+ * documents are never changed), for components that derive stock from documents themselves. Returns
+ * `products` itself, unchanged, when there is no provider, no overlay, or the connector has no stock
+ * reconcile adapter, and the same array while its inputs are unchanged.
+ */
+export function useStockOverlaid<Doc>(products: readonly Doc[]): readonly Doc[] {
+  const connector = useContext(ConnectorContext);
+  const { overlay } = useContext(StockOverlayContext);
+  const adapter = connector?.reconcile?.stock;
+  return useMemo(
+    () => (adapter && overlay ? products.map((doc) => withStockOverlay(doc, adapter, overlay as Map<string, unknown>)) : products),
+    [products, overlay, adapter],
+  );
+}
+
+/** The reconciled stock overlay's confirmed-as-of time from the nearest ConnectorProvider, or undefined without one. */
+export function useStockOverlayAsOf(): string | undefined {
+  return useContext(StockOverlayContext).asOf;
 }
 
 /**
