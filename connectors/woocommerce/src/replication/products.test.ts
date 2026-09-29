@@ -330,16 +330,34 @@ describe('wooProductReplication.pull.handler', () => {
     expect(fetchSpy.mock.calls.map(([url]) => new URL(String(url)).searchParams.get('offset'))).toEqual(['2', '4', '0']);
   });
 
-  it('stops restarting after MAX_PASS_RESTARTS restarts in one pass', async () => {
+  it('gives up the pass at the restart cap without advancing the lower bound', async () => {
     const checkpoint = { modified: '2026-01-01T08:00:00', offset: 2, pass_mark: '2026-01-02T08:00:00', pass_count: 6, restarts: 3 };
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 3, uuid: 'three' }, { id: 4, uuid: 'four' }]), { headers: { 'X-WP-Total': '5' } }));
 
     const result = await wooProductReplication.pull.handler(checkpoint, 2, context);
 
-    expect(result.documents.map((p) => p.uuid)).toEqual(['three', 'four']);
-    expect(result.checkpoint).toEqual({ ...checkpoint, offset: 4, pass_count: 5 });
-    expect(fetchSpy.mock.calls.map(([url]) => new URL(String(url)).searchParams.get('offset'))).toEqual(['2']);
+    expect(result.documents).toEqual([]);
+    expect(result.checkpoint).toStrictEqual({ modified: '2026-01-01T08:00:00', offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined });
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
+  it('a product shifted behind the offset at the restart cap arrives on the next poll', async () => {
+    const products = Array.from({ length: 10 }, (_, id) => ({
+      id: id + 1, uuid: `u${id + 1}`, status: 'publish', date_modified_gmt: `2026-01-01T08:00:${String(id + 1).padStart(2, '0')}`,
+    }));
+    mockProductsEndpoint(products);
+    let calls = 0;
+
+    // Each call has returned the lowest-id product still in the store, so shift() removes one already read.
+    const first = await pullRun(undefined, 2, () => {
+      if (++calls <= 4) products.shift();
+    });
+    const next = await pullRun(first.checkpoint, 2);
+
+    expect(next.documents.map((p) => p.uuid)).toContain('u6');
+    const returned = new Set([...first.documents, ...next.documents].map((p) => p.uuid));
+    for (const product of products) expect(returned).toContain(product.uuid);
   });
 
   it('counts restarts and clears them when the pass completes', async () => {
@@ -356,7 +374,7 @@ describe('wooProductReplication.pull.handler', () => {
 
     expect(restarts).toEqual([undefined, 1, 2, undefined, undefined]);
     expect(result.documents.map((p) => p.uuid)).toEqual(['uuid-1', 'uuid-2', 'uuid-2', 'uuid-3', 'uuid-3', 'uuid-4', 'uuid-5', 'uuid-6']);
-    expect(result.checkpoint).toEqual({ modified: '2026-01-01T08:00:00', offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined });
+    expect(result.checkpoint).toStrictEqual({ modified: '2026-01-01T08:00:00', offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined });
   });
 
   it('returns no documents and no page request when the mark has not moved', async () => {

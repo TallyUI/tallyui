@@ -13,7 +13,8 @@ export type WooProductCheckpoint = {
   restarts?: number;
 };
 
-// A store losing products between every page must not keep one pass from ever finishing.
+// A store losing products between every page must not keep one pass restarting forever:
+// at the cap the pass is abandoned, keeping its lower bound, and rerun on the next poll.
 const MAX_PASS_RESTARTS = 3;
 
 function checkResponse(response: Response) {
@@ -82,7 +83,11 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       const total = response.headers.get('X-WP-Total');
       const count = total !== null && /^\d+$/.test(total) ? Number(total) : undefined;
       const restarts = lastCheckpoint?.restarts ?? 0;
-      if (offset > 0 && count !== undefined && restarts < MAX_PASS_RESTARTS && (products.length === 0 || count < (lastCheckpoint?.pass_count ?? count))) {
+      if (offset > 0 && count !== undefined && (products.length === 0 || count < (lastCheckpoint?.pass_count ?? count))) {
+        if (restarts >= MAX_PASS_RESTARTS) {
+          // Give up this pass; the next poll takes a fresh mark and re-runs [modified, …) from offset 0.
+          return { documents: [], checkpoint: { modified, offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined } };
+        }
         return wooProductReplication.pull.handler({ modified, offset: 0, pass_mark: passMark, restarts: restarts + 1 }, batchSize, context);
       }
       for (const product of products) {
