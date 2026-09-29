@@ -970,6 +970,41 @@ interface OrderCreatePayload {
   - So unlike `invalid_payload`, it isn't final. The outbox should keep the order `rejected` with its reason, and let Retry resend it after the store is fixed (backlog item 52).
   - The platform's own internal failures stay transient: 503, retried.
   - Introduced by medusapos/app#94.
+- **Amendment (2026-09-29):** a new rejection code `platform_error` (Front
+  desk ruling; TallyUI #211).
+  - It is returned as `status: 'rejected'`, with `error: { code:
+    'platform_error', message: '<platformCode>: <platformMessage>', data: {
+    platformCode, platformMessage } }`, for a platform-native error that the
+    plugin has judged **permanent**, meaning a replay would fail the same
+    way (for example a Vendure `ErrorResult` code), and that no contract
+    code covers. `@tallyui/core/server`'s `platformErrorResult()` builds it.
+  - It is for `order.create` only, for now. A rejected register command
+    halts that register's queue until registers c2c, so register refusals
+    keep ADR-068's codes.
+  - **Only when the platform made no durable change for the command:** the
+    plugin threw so its transaction rolled back, or it compensated. The
+    till offers Retry for it, and requeue resends under a **new** command
+    id. So if something had been written, Retry would create a second sale.
+  - Otherwise, the plugin either applies the command (with a warning where
+    one fits), or compensates the partial write and then stays transient
+    (ADR-039). A transient result releases the ledger claim and the till
+    resends the **same** id, so staying transient without compensation
+    would also duplicate the sale.
+  - Unlike `invalid_payload` and `store_configuration`, it **is** stored in
+    the ledger, and a replay returns the recorded rejection.
+  - An error the plugin can't classify stays transient (503, retried),
+    never `platform_error`. This carves one exception out of the previous
+    amendment's "the platform's own internal failures stay transient": the
+    exception covers only errors judged permanent under the conditions
+    above.
+  - The till shows the order under "Needs attention" with Retry, like any
+    rejection other than `idempotency_mismatch`.
+  - The Medusa plugin has no case for it today. Its unclassified errors
+    stay transient, because Medusa's `INVALID_DATA` also surfaces for
+    retryable races. A Medusa case needs its own ruling, with a concrete
+    error that is never retryable.
+  - Every rejection code, as a type: `CommandRejectionCode` in
+    `@tallyui/core/server`.
 - **Amendment 2 (2026-09-24):** `OrderCreateLine` gains an optional
   `taxInclusive?: boolean` — this line's own tax mode, when it differs from
   the order's `pricesIncludeTax` (a price that carries its own flag, D2c).
@@ -1028,9 +1063,12 @@ interface OrderCreatePayload {
   Clients must ignore warning codes they don't know. From now on, adding a
   warning code is additive and needs only an ADR. Changing an existing
   shape still needs a `version` bump; adding an optional field is not a
-  change. ADR-048's amendment (2026-09-29) adds `total_mismatch.bridgeMinor`
-  and `tax_rate_mismatch`, and the till's `knownWarnings()` enforces this
-  rule.
+  change, provided it doesn't change what the existing fields mean.
+  ADR-048's amendment (2026-09-29) adds `total_mismatch.bridgeMinor` and
+  `tax_rate_mismatch`. On the till, `knownWarnings()` enforces this rule
+  (TallyUI #207). On the server, `@tallyui/core/server`'s
+  `parseCommandResult` accepts both new shapes when a plugin reads a
+  stored result back (TallyUI #213).
 - **Server semantics adopted from the A-track proposal:**
   - A `409 in_progress` stops the batch at that command. The response is
     HTTP 409 `{ code: 'in_progress', id }`. The client retries the whole
