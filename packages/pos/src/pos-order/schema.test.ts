@@ -34,8 +34,11 @@ it('inserts a finalised order into an AJV-validated RxDB memory collection', asy
     const unknown = await pos_orders.insert({ ...order, id: uuidv7(), syncStatus: 'applied', warnings });
     expect(unknown.toJSON().warnings).toEqual(warnings);
     const v4 = { ...order, id: uuidv7(), localWarnings: [{ code: 'customer_omitted' as const, field: 'email' as const },
-      { code: 'payment_reference_dropped' as const, paymentId: order.payments[0].id }], serverFailures: { count: 1, since: 0, reason: 'server_error' } };
+      { code: 'payment_reference_dropped' as const, paymentId: order.payments[0].id }], serverFailures: { since: 0, reason: 'server_error', isolated: true } };
     expect((await pos_orders.insert(v4)).toJSON()).toStrictEqual(v4);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), serverFailures: { since: 0, reason: 'server_error' } })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(),
+      serverFailures: { count: 1, since: 0, reason: 'server_error', isolated: false } })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), warnings: [{ code: 'x'.repeat(65) }] })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), syncStatus: 'invalid' })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), extra: true })).rejects.toThrow();

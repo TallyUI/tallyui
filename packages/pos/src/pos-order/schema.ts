@@ -9,7 +9,8 @@ import type { PosOrder } from './types';
  * till migrates once. Create the collection with `posOrderCollection()`, never with this schema
  * alone: RxDB refuses a version above 0 without its migration strategies.
  * Version 3 adds an index on `sessionId` (with its `maxLength`), and the optional `sentVersion` and `downgradedFrom` (the outbox's version fallback), and changes nothing else.
- * Version 4 adds the optional `localWarnings` and `serverFailures`, and changes nothing else.
+ * Version 4 adds the optional `localWarnings` and `serverFailures` (the outbox's stuck clock start, latest reason and
+ * isolation, restored when an outbox starts), and changes nothing else.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
   version: 4, primaryKey: 'id', type: 'object', additionalProperties: false,
@@ -55,8 +56,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       code: { type: 'string', maxLength: 64 }, field: { type: 'string', maxLength: 16 }, paymentId: { type: 'string', maxLength: 36 },
     }, required: ['code'] } },
     serverFailures: { type: 'object', additionalProperties: false, properties: {
-      count: { type: 'integer', minimum: 1 }, since: { type: 'integer', minimum: 0 }, reason: { type: 'string', maxLength: 64 },
-    }, required: ['count', 'since', 'reason'] },
+      since: { type: 'integer', minimum: 0 }, reason: { type: 'string', maxLength: 64 }, isolated: { type: 'boolean' },
+    }, required: ['since', 'reason', 'isolated'] },
     lateSessionId: { type: 'string' },
     sentVersion: { type: 'integer', minimum: 1, maximum: 3 },
     downgradedFrom: { type: 'integer', minimum: 1, maximum: 3 },

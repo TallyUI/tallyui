@@ -46,7 +46,7 @@ describe('finalizeOrder', () => {
     expect(stored.payments.map((payment) => payment.id)).not.toEqual(input.payments.map((payment) => payment.id));
     expect(localWarnings).toEqual(before);
     const { localWarnings: _warnings, ...withoutWarnings } = stored;
-    const withFailures = { ...stored, serverFailures: { count: 1, since: 0, reason: 'server_error' } };
+    const withFailures = { ...stored, serverFailures: { since: 0, reason: 'server_error', isolated: true } };
     expect(JSON.stringify(toOrderCreateEnvelope(withFailures, 'device1'))).toBe(JSON.stringify(toOrderCreateEnvelope(withoutWarnings, 'device1')));
     expect(() => finalizeOrder(input, { localWarnings: [{ code: 'payment_reference_dropped', paymentId: 'unknown' }] }))
       .toThrow('finalize: localWarnings names an unknown payment');

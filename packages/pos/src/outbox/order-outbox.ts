@@ -1,8 +1,8 @@
 import type { OrderCreateEnvelope } from '@tallyui/core';
-import type { RxCollection } from 'rxdb';
+import { deepEqual, type RxCollection, type RxDocumentData } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { outboxLogger } from './logger';
-import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, type PosOrder } from '../pos-order';
+import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, type PosOrder, type PosOrderServerFailures } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
 import type { CommandTransport, OutboxState } from './types';
@@ -72,7 +72,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   let stoppedDuringRun = false;
   const isolateAfter = options.isolateAfterAttempts ?? ISOLATE_AFTER_ATTEMPTS;
   const stuckAfter = options.stuckAfterMs ?? STUCK_AFTER_MS;
-  // In memory only: a restart starts the counts again. `head` counts server-answered failures of batches
+  // Each order's stuck clock and isolation are mirrored onto its stored `serverFailures` and restored when an outbox
+  // starts. In memory only, so a restart starts them again: `head`, its failure count, and an unfinished walk (whose
+  // failed probes are stored as isolated). `head` counts server-answered failures of batches
   // led by one order. At `isolateAfter` a walk starts: one probe (an order sent alone) per backoff interval,
   // through the whole pending queue, oldest first, each order once. When the store takes a probe it is up:
   // the orders whose probes failed are isolated and batching resumes. When no order is left to probe, the
@@ -96,6 +98,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   let isolatedWait = false;
   let runProgressed = false;
   let timerFiredDuringRun = false;
+  let restored = false;
 
   function stuckState(): OutboxState['stuck'] {
     const stuck = [...clocks].filter(([, clock]) => (clock.pausedAt ?? now()) - clock.since >= stuckAfter);
@@ -110,6 +113,44 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     const entry = isolated.get(id);
     return !!entry && (entry.nextAt <= now() || entry.nextAt - now() > maxBackoff);
   }
+
+  // An order's stored serverFailures: its clock, and whether it failed alone (isolated, or a failed probe).
+  function failuresOf(commandId: string): PosOrderServerFailures | undefined {
+    const clock = clocks.get(commandId);
+    return clock && { since: clock.since, reason: clock.reason.slice(0, 64),
+      isolated: isolated.has(commandId) || !!walk?.failed.has(commandId) };
+  }
+
+  // Writes each clocked pending order's serverFailures when the stored value would change. The writes that clear a
+  // clock (applied, rejected, downgraded, requeued) remove the field, so every stored field has a clock here.
+  async function mirror() {
+    if (!clocks.size) return;
+    for (const order of await readFresh(collection, { selector: { syncStatus: 'pending', commandId: { $in: [...clocks.keys()] } } })) {
+      const value = failuresOf(order.commandId);
+      if (!value || deepEqual(value, order.serverFailures)) continue;
+      await (await collection.findOne(order.id).exec())?.incrementalModify((data) => {
+        if (data.syncStatus === 'pending' && data.commandId === order.commandId) data.serverFailures = value;
+        return data;
+      });
+    }
+  }
+
+  // Before the first send: each pending order's stored clock, paused until the store next answers (so the time the
+  // till was off counts as answered: never a later flag than before), and its isolation, due at once.
+  async function restore() {
+    for (const { commandId, serverFailures } of await readFresh(collection, { selector: { syncStatus: 'pending',
+      serverFailures: { $exists: true } }, sort: [{ createdAt: 'asc' }] })) if (serverFailures) {
+      const { since, reason } = serverFailures;
+      clocks.set(commandId, { since, pausedAt: now(), seq: ++failureSeq, reason });
+      if (serverFailures.isolated) isolated.set(commandId, { backoff: initialBackoff, nextAt: now(), reason });
+    }
+    restored = true;
+  }
+
+  // An update that changed only serverFailures is the outbox's own mirror write: nothing new to send.
+  const bare = ({ serverFailures, _rev, _meta, ...data }: RxDocumentData<PosOrder>) => data;
+  const failuresOnly = (before: RxDocumentData<PosOrder>, after: RxDocumentData<PosOrder>) =>
+    !deepEqual(before.serverFailures, after.serverFailures) && deepEqual(bare(before), bare(after));
 
   // Every read bypasses the query cache. RxDB 17 fixed RxDB 16.21.1's bug 4 (rxdb#7067);
   // readFresh, countFresh and watchFresh remain correct public API.
@@ -163,6 +204,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     runProgressed = false;
     const sentAlone = new Set<string>();
     while (!stopped) try {
+      if (!restored) await restore();
       await updateState({ sending: true, nextAttemptAt: undefined });
       insertedDuringRun = false;
       // An order no longer pending under its commandId leaves the isolated set and loses its stuck clock.
@@ -290,7 +332,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
               let changed = false;
               await current.incrementalModify((data) => {
                 changed = data.syncStatus === 'pending' && data.commandId === order.commandId && max < (data.sentVersion ?? from);
-                if (changed) { data.sentVersion = to; data.downgradedFrom ??= from; }
+                if (changed) { data.sentVersion = to; data.downgradedFrom ??= from; delete data.serverFailures; }
                 return data;
               });
               if (changed) {
@@ -307,10 +349,14 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         }
         if (result.status === 'rejected' && error?.code === 'unsupported_version') outboxLogger.error(error.message, { orderId: order.id });
         const updatedAt = new Date(now()).toISOString();
-        await current.incrementalPatch(result.status === 'rejected'
-          ? { syncStatus: 'rejected', error, updatedAt }
-          : { syncStatus: 'applied', serverRefs: result.serverRefs,
-            ...(result.warnings ? { warnings: result.warnings } : {}), updatedAt });
+        // Progress removes the stored serverFailures in the write that marks the order applied or rejected.
+        await current.incrementalModify((data) => {
+          delete data.serverFailures;
+          return Object.assign(data, result.status === 'rejected'
+            ? { syncStatus: 'rejected' as const, error, updatedAt }
+            : { syncStatus: 'applied' as const, serverRefs: result.serverRefs,
+              ...(result.warnings ? { warnings: result.warnings } : {}), updatedAt });
+        });
         attempts.delete(order.commandId);
         isolated.delete(order.commandId);
         clocks.delete(order.commandId);
@@ -344,6 +390,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     clearTimeout(timer);
     timer = undefined;
     running = Promise.resolve().then(run).finally(async () => {
+      try { await mirror(); } catch (cause) { outboxLogger.warn('Failed to store server failures', { cause }); }
       try { await updateState({ sending: false }); } catch {}
       running = undefined;
       const missed = timerFiredDuringRun;
@@ -374,6 +421,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           if (!changed) return data;
           data.syncStatus = 'pending';
           delete data.error;
+          delete data.serverFailures;
           // The server ledger stored the rejection under the old id; replaying it returns that rejection.
           // For the codes requeue() accepts, the server created no order, so a fresh id cannot duplicate one.
           data.commandId = uuidv7();
@@ -389,8 +437,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     start() {
       stopped = false;
       if (!subscription) subscription = collection.$.subscribe((event) => {
-        if (event.documentData?.syncStatus === 'pending' &&
-          (event.operation === 'INSERT' || event.operation === 'UPDATE')) {
+        if (event.documentData?.syncStatus === 'pending' && (event.operation === 'INSERT' ||
+          event.operation === 'UPDATE' && !failuresOnly(event.previousDocumentData, event.documentData))) {
           insertedDuringRun = true;
           flush().catch(() => {});
         }

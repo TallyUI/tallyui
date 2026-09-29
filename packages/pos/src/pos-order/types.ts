@@ -5,9 +5,15 @@ export type PosOrderSyncStatus = 'pending' | 'applied' | 'rejected';
 
 export type PosOrderLocalWarning = { code: 'customer_omitted'; field: 'email' | 'id' }
   | { code: 'payment_reference_dropped'; paymentId: string };
-/** Server-answered failures of this order, persisted by job #32b. `since` is the outbox's stuck-clock
- * start in ms, excluding offline pauses; `reason` is the latest reason. */
-export interface PosOrderServerFailures { count: number; since: number; reason: string }
+/** The outbox's server-failure state for a pending order, kept so a restart restores it. */
+export interface PosOrderServerFailures {
+  /** The stuck clock's start in ms: the outbox's virtual start, which leaves out offline gaps. */
+  since: number;
+  /** The latest server-answered failure reason. */
+  reason: string;
+  /** The order failed when sent alone (as a probe or while isolated), so it is retried alone. */
+  isolated: boolean;
+}
 
 export interface PosOrderLine {
   id: string;
