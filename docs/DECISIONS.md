@@ -1614,6 +1614,22 @@ interface OrderCreatePayload {
     API and is left for when an app measures a need.
   - Web SQLite-wasm and the rxdb 16 → 17 upgrade (ADR-031's 17.4.0 pin)
     are still separate jobs.
+- **Amendment (2026-09-29, RxDB 17 upgrade; amends ADR-044 too):**
+  - `rxdb` and `rxdb-premium` are now pinned at 17.5.0 (ADR-031's
+    amendment), in the peer and the devDependencies. Apps install
+    `rxdb-premium@17.5.0`.
+  - RxDB 17 caps a process at 13 open collections unless the premium flag
+    is set, and premium's storages don't set it. So `getRxStorageSQLite`,
+    `getRxStorageSQLiteWasm` and the web worker (its own JS context) each
+    call `setPremiumFlag()` before any collection exists. RxDB caches the
+    first check.
+  - The root `package.json` has `rxdb-premium` as a devDependency, so that
+    `vitest.setup.ts` can set the flag for every test. Every workspace
+    install already needs the token (ADR-044), so this changes no install.
+  - Stored data carries over. A 16.21.1 SQLite file opens under 17.4.0 with its
+    documents and indexes intact (probe, 2026-09-28). The 17.0 notes need a
+    storage migration only for OPFS, filesystem-node and IndexedDB with
+    attachments, none of which TallyUI uses.
 
 ## ADR-046 Vendure baseline: 3.7, Admin API only, a seeded Postgres dev store
 
