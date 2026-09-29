@@ -1031,6 +1031,9 @@ interface OrderCreatePayload {
       - A permanent error after that point means part of the sale remains.
         The plugin applies the sale with a warning, or marks the row as
         needing an admin if it can't complete it.
+      - When it marks the row, it commits the sale's writes so far together
+        with the marked claim, and does not roll back the savepoint, so the
+        admin has an order to apply or reject.
       - The plugin's own event subscribers ignore events for an order that no
         longer exists.
     - This amends ADR-047's "a thrown error rolls back and returns 503" for
@@ -1066,7 +1069,8 @@ interface OrderCreatePayload {
       - A crash between the two leaves the row marked, so a Retry stays
         transient.
       - Running the reject again treats an already-cancelled order as
-        cancelled.
+        cancelled, and completes its flag and its client-id release. On
+        Medusa a crash can fall between the cancel and the flag.
       - If the cancel fails, the reject refuses. The row stays marked, and
         the admin applies the command instead.
     - **How the rejection is stored:** as `platform_error` with
@@ -1074,10 +1078,13 @@ interface OrderCreatePayload {
       carrying the admin's reason.
       - The `TALLY_` prefix is reserved for TallyUI and is never a platform
         code. Every plugin uses this code.
-      - It is the one `platform_error` stored while an order remains. For
-        the no-durable-change rule above, a cancelled order whose client id
-        has been released counts as no order. Emails already sent can't be
-        recalled, and that is accepted.
+      - It is the one `platform_error` stored while an order remains.
+      - For the no-durable-change rule above, a cancelled order flagged
+        `tally_rejected`, with its client id released, counts as no order.
+        Emails already sent can't be recalled, and that is accepted.
+      - Such an order arises in only two ways: this admin reject, or a
+        compensation that leaves a cancelled order. That compensation must
+        also set the flag and release the client id.
       - The admin is told that the till's Retry records the sale again, as a
         new sale.
   - **A backstop against a second sale:** Retry resends the same
@@ -1120,7 +1127,8 @@ interface OrderCreatePayload {
       transient (Front desk, 2026-09-29).
       - The admin reject released the cancelled order's client id, so on
         Vendure the new sale doesn't hit the unique constraint.
-      - On Medusa, the lookup skips cancelled orders whose row is rejected.
+      - On Medusa, the lookup skips cancelled orders flagged
+        `tally_rejected`, whether or not a ledger row remains.
       - A rejected row with a live order is unreachable, by the reject's
         ordering above.
     - **Stay transient in every other case:** the plugin can't find the
@@ -3415,6 +3423,7 @@ interface OrderCreatePayload {
              - an order cancelled by an ADR-038 admin reject;
              - an order left cancelled by a compensation that returned
                `platform_error` or stayed transient.
+
              Each is flagged (`metadata.tally_rejected` or equivalent) and
              excluded from the register figures. Otherwise the till's Retry,
              which records the sale again, would count the same cash twice.
