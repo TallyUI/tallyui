@@ -1003,41 +1003,144 @@ interface OrderCreatePayload {
     - On Vendure, an `ErrorResult` is a returned value, not a thrown error,
       so it counts as this rollback's trigger only once the plugin has
       turned it into that rollback.
-    - **The order of the steps** (Front desk, 2026-09-29):
-      - Pure **shape** validation (types, bounds, a NUL character) comes
-        first, before any lookup. A NUL in `clientOrderId` would make the
-        lookup itself fail (Postgres 22021) before any claim exists. A shape
-        failure answers `invalid_payload` and is not stored; the till's
-        Retry mints a new id.
-      - Then the replay lookup and the collision lookup.
+    - **The order of the steps** (Front desk, 2026-09-29), for
+      `order.create`:
+      - **Shape** first (types, bounds, a NUL character), before any
+        database access. A NUL in `clientOrderId` would make the lookup
+        itself fail (Postgres 22021) before any claim exists.
+      - **Then the replay lookup and the collision lookup**, so a resent
+        command that was already applied always replays as `duplicate`,
+        whatever the later checks say.
+      - **Then the value refusals**, still before the claim:
+        - amount ranges and the v3 fiscal-figure checks. These are
+          `@tallyui/core/server`'s `precheckCommand`, which a plugin calls
+          after its replay lookup, never before it;
+        - on the Vendure plugin, a future bound on `createdAt` (the till's
+          sale time). It may be at most 24 hours ahead of the server's
+          clock. There is no lower bound, because an offline till
+          legitimately sends old sales. The Medusa plugin has no such
+          bound.
+      - **Shape and value refusals answer `invalid_payload`.** It keeps its
+        single meaning for `order.create`: decided before the claim, never
+        stored. This widens the 2026-09-24 amendment's "fails shape
+        validation" to value refusals. A resend gets the same answer while
+        the bytes, or for `createdAt` the clock, disagree; the till's Retry
+        mints a new id.
+        - A byte-only check of a per-sale fact that has its own code
+          (`invalid_quantity`, `underpaid`) may instead run after the claim
+          and be stored under that code (below). The two answers are
+          replay-equivalent. A new plugin should prefer the pre-claim
+          `invalid_payload`.
+        - `unsupported_version` keeps its own code, before the claim, and
+          is recorded nowhere.
+        - Register commands keep ADR-068's own rules. For example, the
+          closure `registerId` check answers `invalid_payload` after a
+          lookup.
       - Then the claim.
       - Then the plugin's deterministic checks, before the first write of
-        the sale. A failure there is stored on the claim with no savepoint:
-        nothing of the sale exists yet. A stored rejection is safe, because
-        the till's Retry mints a new command id and re-evaluates.
+        the sale, on every platform. They split into two classes.
+        - **Not stored, claim released:** anything about the store-wide
+          setup the plugin needs for any sale. That is `store_configuration`
+          (the 2026-09-28 amendment), plus `unsupported_currency` and
+          `unsupported_tax_mode`, which this ruling gives the same
+          treatment. Once the store is fixed, the **same** command id
+          applies.
+          - A platform's order limits (Vendure's `orderItemsLimit` and
+            `orderLineItemsLimit`, or their equivalents) are store-wide
+            setup too. The plugin checks against the configured limits
+            before the first write. Exceeding one answers
+            `store_configuration`, and raising the limit lets the same
+            command id through. If Vendure itself raises the limit error
+            after the draft is created, the Vendure rule below applies:
+            a full rollback, and a transient answer.
+          - `unsupported_tax_mode` may be detected mid-workflow (on Medusa,
+            when the Admin API rejects ADR-039's paths 1 and 2). If it is
+            found after the first write, the plugin compensates, then answers
+            `unsupported_tax_mode`, unstored, with the claim released.
+        - **Stored on the claim, with no savepoint:** the sale's own
+          per-sale facts: `unknown_variant` (a variant that is missing,
+          deleted or disabled, a product that isn't published, a variant in
+          the wrong channel), `invalid_quantity` and `underpaid`.
+
+          Nothing of the sale exists yet, so a stored rejection is safe,
+          because the till's Retry mints a new command id and re-evaluates.
+          A deterministic rejection stored under a stable per-sale code is
+          replay-equivalent and harmless: a replay gets the same answer
+          either way.
       - Only a permanent condition that appears after those checks (for
         example, a variant deleted concurrently), and `internal_error`, are
-        left on the savepoint path.
+        left on the savepoint path. On Vendure, `internal_error` arises only
+        before the first write, where nothing needs a savepoint (see below).
       - Races that clear on retry stay transient.
     - **On Vendure, events published inside the savepoint still fire after
       the stored rejection commits.** Events are deferred to the outer
       transaction's commit (`@vendure/core` 3.7.3,
-      `dist/event-bus/event-bus.js` lines 241–265), and a savepoint rollback
+      `dist/event-bus/event-bus.js` lines 241–270), and a savepoint rollback
       doesn't cancel them (`TransactionSubscriber.awaitTransactionEvent`).
       This was verified in the vendurepos S1 and VP2a work.
       - So a savepoint rejection is allowed only for an error raised
-        **before the first event is published**, which is before the order's
-        step-6 state transition (ADR-047).
-      - A permanent error after that point means part of the sale remains.
-        The plugin applies the sale with a warning, or marks the row as
-        needing an admin if it can't complete it.
-      - When it marks the row, it commits the sale's writes so far together
-        with the marked claim, and does not roll back the savepoint, so the
-        admin has an order to apply or reject.
+        **before the first event is published**. On Vendure that is the
+        first write: the draft order is created (ADR-047 step 2), then the
+        customer (step 4), and each publishes an event.
+      - **On Vendure no error from a recipe step after the first write is
+        stored** (Front desk, 2026-09-29). The deterministic checks above
+        still run before that write, and are stored as ruled.
+        - A permanent platform error after the first write rolls back
+          **fully** and stays transient (503). A full rollback drops the
+          published events (below), and the till flags the order after 15
+          minutes of such answers (TallyUI #212).
+        - A plugin bug after a write marks the row as needing an admin.
+        - `internal_error` is allowed only for a plugin bug **before** the
+          first write, never after it.
+      - **Where a rollback can't undo what was published**, a permanent error
+        after the first event means part of the sale remains. The plugin
+        applies the sale with a warning, or marks the row as needing an
+        admin if it can't complete it.
+      - Whenever a plugin marks the row, it commits the sale's writes so far
+        together with the marked claim, and does not roll back the
+        savepoint, so the admin has an order to apply or reject.
       - The plugin's own event subscribers ignore events for an order that no
         longer exists.
-    - This amends ADR-047's "a thrown error rolls back and returns 503" for
-      classified permanent errors only.
+    - The savepoint recipe above amends ADR-047's "a thrown error rolls back
+      and returns 503" for classified permanent errors only.
+    - **A full transaction rollback, by contrast, drops the events published
+      inside it.** This was verified by reading the source (the vendurepos
+      worker, 2026-09-29, `@vendure/core` 3.7.3 and TypeORM 0.3.31 on
+      Postgres; confirmed by an independent review). It is not yet covered
+      by a runtime test. It applies to `EventBus.ofType()` and `filter()`
+      subscribers such as EmailPlugin and the search index.
+      - `event-bus.js` lines 241–270 (`awaitActiveTransactions`) wait on
+        `TransactionSubscriber.awaitCommit`. On a
+        `TransactionSubscriberError` they return `undefined`, which the
+        `filter(notNullOrUndefined)` at lines 95 and 107 drops.
+      - TypeORM's `PostgresQueryRunner.js` lines 155–167: a full `ROLLBACK`
+        clears `isTransactionActive` and broadcasts
+        `AfterTransactionRollback`, which makes `awaitCommit` throw
+        (`transaction-subscriber.js` lines 48–66). `ROLLBACK TO SAVEPOINT`
+        keeps the transaction active, so the event is released at the
+        outer `COMMIT`.
+      - So ADR-047's transient path (a thrown error, a full rollback, 503)
+        stays safe even after events have been published (from the first
+        write, ADR-047 step 2, on),
+        for core, EmailPlugin and DefaultSearchPlugin subscribers.
+      - **The tally plugin must pass the transactional `RequestContext`**
+        (from `withTransaction` or `@Transaction()`) into every service
+        call. An event whose context carries no transaction manager with a
+        query runner is delivered at once (lines 243–249), whoever publishes
+        it, and would escape a rollback.
+      - **Merchant code that runs inside the transaction is outside this
+        guarantee.** Its external side effects survive a full rollback. For
+        example:
+        - blocking event handlers (`event-bus.js` lines 83 and 166), which
+          run inside `publish()`. Core registers none for order events, and
+          EmailPlugin none at all;
+        - `OrderProcess`, `PaymentProcess` and `FulfillmentProcess` hooks
+          (`onTransitionStart` and `onTransitionEnd`), which the step-6 and
+          step-7 transitions run;
+        - merchant strategies with side effects, and TypeORM entity
+          subscribers;
+        - jobs a merchant enqueues directly rather than from an event
+          subscriber.
   - **If part of the sale remains and can't be undone**, the plugin finishes
     and applies the sale (with a warning where one fits), and never rejects
     it. After a complete compensation, either `platform_error` (if the error
@@ -1137,8 +1240,9 @@ interface OrderCreatePayload {
       gets no admin mark of its own. A new command id must never get round a
       live attempt or an admin mark. The till flags the order after 15
       minutes of such answers (TallyUI #212).
-  - Unlike `invalid_payload` and `store_configuration`, it **is** stored in
-    the ledger, and a replay returns the recorded rejection.
+  - Unlike `invalid_payload`, `store_configuration`, `unsupported_currency`
+    and `unsupported_tax_mode`, it **is** stored in the ledger, and a replay
+    returns the recorded rejection.
   - An error the plugin can't classify stays transient (503, retried),
     never `platform_error`, except in the narrow `internal_error` case
     below. This carves one exception out of the previous
@@ -1188,6 +1292,10 @@ interface OrderCreatePayload {
   - It is for `order.create` only, like `platform_error`. The till shows it
     under "Needs attention" with Retry. That is safe because nothing
     remains, and Retry only helps once the plugin is fixed.
+  - **On Vendure** it is allowed only for a plugin bug **before** the first
+    write (the draft order, ADR-047 step 2). After that write, a plugin bug
+    marks the row as needing an admin instead (the `platform_error`
+    amendment's Vendure rules, Front desk, 2026-09-29).
 - **Amendment 2 (2026-09-24):** `OrderCreateLine` gains an optional
   `taxInclusive?: boolean` — this line's own tax mode, when it differs from
   the order's `pricesIncludeTax` (a price that carries its own flag, D2c).
