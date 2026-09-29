@@ -14,8 +14,12 @@ export type WooProductCheckpoint = {
 };
 
 // A store losing products between every page must not keep one pass restarting forever:
-// at the cap the pass is abandoned, keeping its lower bound, and rerun on the next poll.
+// at the cap a fresh pass starts in the same call, keeping its lower bound and mark.
 const MAX_PASS_RESTARTS = 3;
+
+// RxDB drops the checkpoint of an empty result, so the handler moves on to the next useful request
+// in the same call instead; every fetch in one call, mark requests included, counts against this.
+const MAX_REQUESTS_PER_CALL = 4;
 
 function checkResponse(response: Response) {
   if (response.ok) return;
@@ -44,11 +48,14 @@ export class WooMissingUuidError extends Error {
  */
 export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint> = {
   pull: {
-    async handler(lastCheckpoint, batchSize, context) {
+    handler: async function pull(lastCheckpoint, batchSize, context, requests = 0): Promise<{ documents: any[]; checkpoint: WooProductCheckpoint }> {
       const modified = lastCheckpoint?.modified ?? '';
       const offset = lastCheckpoint?.offset ?? 0;
+      // Budget spent: a call never fetches after gathering documents, so return [] and let the stored checkpoint stand.
+      const spent = { documents: [], checkpoint: lastCheckpoint ?? { modified, offset } };
       let passMark = lastCheckpoint?.pass_mark ?? modified;
       if (offset === 0 && lastCheckpoint?.pass_mark === undefined) {
+        if (requests++ >= MAX_REQUESTS_PER_CALL) return spent;
         const markResponse = await fetch(
           `${context.baseUrl}/products?per_page=1&orderby=modified&order=desc`,
           { headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal },
@@ -69,6 +76,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
         params.set('dates_are_gmt', 'true');
       }
 
+      if (requests++ >= MAX_REQUESTS_PER_CALL) return spent;
       const response = await fetch(`${context.baseUrl}/products?${params}`, {
         headers: {
           ...context.headers,
@@ -84,11 +92,8 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       const count = total !== null && /^\d+$/.test(total) ? Number(total) : undefined;
       const restarts = lastCheckpoint?.restarts ?? 0;
       if (offset > 0 && count !== undefined && (products.length === 0 || count < (lastCheckpoint?.pass_count ?? count))) {
-        if (restarts >= MAX_PASS_RESTARTS) {
-          // Give up this pass; the next poll takes a fresh mark and re-runs [modified, …) from offset 0.
-          return { documents: [], checkpoint: { modified, offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined } };
-        }
-        return wooProductReplication.pull.handler({ modified, offset: 0, pass_mark: passMark, restarts: restarts + 1 }, batchSize, context);
+        // At the cap a fresh pass (restarts 0) starts in this call, so RxDB stores its first page's checkpoint.
+        return pull({ modified, offset: 0, pass_mark: passMark, restarts: restarts >= MAX_PASS_RESTARTS ? 0 : restarts + 1 }, batchSize, context, requests);
       }
       for (const product of products) {
         if (typeof product.uuid !== 'string' || product.uuid.length === 0) {
@@ -102,6 +107,13 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       const checkpoint: WooProductCheckpoint = complete
         ? { modified: passMark, offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined }
         : { modified, offset: offset + products.length, pass_mark: passMark, pass_count: count, restarts: lastCheckpoint?.restarts };
+      if (complete && products.length === 0) {
+        // Chain into the next pass: RxDB would drop this completion with the empty result. While the next pass
+        // has nothing either, each poll re-derives these requests from the stored checkpoint, at most
+        // MAX_REQUESTS_PER_CALL of them.
+        const next = await pull({ modified: passMark, offset: 0 }, batchSize, context, requests);
+        return next.documents.length > 0 ? next : { documents: [], checkpoint: lastCheckpoint ?? checkpoint };
+      }
 
       return { documents, checkpoint };
     },
