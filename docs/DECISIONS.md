@@ -2869,6 +2869,10 @@ interface OrderCreatePayload {
   - a **401** means the credentials are rejected or expired, never version
     1, and throws `SignInError`.
 
+  The same response carries the store's tax rounding (#287), a top-level
+  `taxRounding` beside `contracts`: see "How a server advertises it" in
+  `docs/contract/field-kinds.md`.
+
   In Medusa only `medusaAdminUserConnector` reads capabilities: the
   plugin's routes (`/tally/v1/commands` and `/tally/v1/info`) authenticate
   users only (bearer or session), so the secret-key `medusaConnector` can't

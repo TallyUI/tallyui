@@ -1,5 +1,7 @@
 import { SignInError, type ConnectorAuth } from '@tallyui/core';
 
+import { readVendureCapabilities } from './capabilities';
+
 const LOGIN = `mutation Login($email: String!, $password: String!) {
   login(username: $email, password: $password) {
     __typename
@@ -43,7 +45,10 @@ export const vendureSignIn: NonNullable<ConnectorAuth['signIn']> = async (baseUr
   if (!token) {
     throw new SignInError('unsupported', "Vendure signed in but sent no 'vendure-auth-token' header. Add 'bearer' to the server's authOptions.tokenMethod. This connector reads the default header name, so a server that renames authOptions.authTokenHeaderKey also gives this error.");
   }
-  return { token, expiresAt: undefined };
+  // A capabilities read that fails never fails the sign-in: the capabilities are then unknown.
+  const capabilities = await readVendureCapabilities(baseUrl, { Authorization: `Bearer ${token}` }, { fetch: doFetch, signal: init.signal })
+    .catch(() => undefined);
+  return { token, expiresAt: undefined, capabilities };
 };
 
 // Warns once per module lifetime when a caller still relies on the deprecated auth_token alias.

@@ -373,6 +373,26 @@ more points apply to them all:
   inclusive-column identity: an inclusive line always pays its amount,
   and the known gap above keeps it so.
 
+**How a server advertises it.** The response of
+`GET {baseUrl}/tally/v1/info` (ADR-062) carries a **top-level
+`taxRounding` key, a sibling of `contracts`**, whose value is exactly
+core's `TaxRounding`:
+
+```json
+{ "contracts": { "order.create": [1, 2, 3] },
+  "taxRounding": { "granularity": "per_rate_group_items", "mode": "half_up" } }
+```
+
+or `"taxRounding": { "granularity": "custom" }`. Core's
+`parseInfoCapabilities` reads it (`parseTaxRounding`), for the Medusa and
+Vendure connectors alike:
+- **Absent** means the default (`per_order`, half away from zero).
+- **Malformed** (an unknown granularity, a missing or unknown `mode` on a
+  granularity that needs one, or not an object) is ignored with one
+  warning, so the default applies.
+- **`custom` ignores `mode`**: a `mode` sent with it is dropped.
+- Extra keys are dropped.
+
 ##### The algorithms side by side, from the stores' code (#287)
 
 These are the algorithms as each store's code runs them on a till's

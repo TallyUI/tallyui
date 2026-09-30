@@ -5,8 +5,10 @@ import { vendureAuth, vendureConnector } from './index';
 const loginResponse = (login: unknown, headers: Record<string, string> = {}, status = 200) =>
   new Response(JSON.stringify({ data: { login } }), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 
+// The capabilities read after a sign-in gets a 500 (unknown), so these tests see only the login.
 const signIn = (response: Response) => {
-  const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => response);
+  const fetch = vi.fn(async (url: string | URL | Request, _init?: RequestInit) =>
+    String(url).endsWith('/tally/v1/info') ? new Response('', { status: 500 }) : response);
   const result = vendureAuth.signIn!('https://vendure.test', { email: 'superadmin', password: 'pw' }, { fetch });
   return { fetch, result };
 };

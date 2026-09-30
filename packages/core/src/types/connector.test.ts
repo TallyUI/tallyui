@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { resolveCapabilities } from './connector';
+import { describe, it, expect, vi } from 'vitest';
+import { parseInfoCapabilities, parseTaxRounding, resolveCapabilities } from './connector';
 
 describe('resolveCapabilities (ADR-062)', () => {
   it('gives the fresh value when there is no stored value', () => {
@@ -16,5 +16,66 @@ describe('resolveCapabilities (ADR-062)', () => {
 
   it('gives undefined when neither is known', () => {
     expect(resolveCapabilities(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe('parseTaxRounding (#287)', () => {
+  it.each(['per_order', 'per_line_items', 'per_rate_group_items'] as const)('keeps %s with each mode', (granularity) => {
+    for (const mode of ['half_away_from_zero', 'half_up'] as const) {
+      const warn = vi.fn();
+      expect(parseTaxRounding({ granularity, mode }, warn)).toStrictEqual({ granularity, mode });
+      expect(warn).not.toHaveBeenCalled();
+    }
+  });
+
+  it('keeps custom, and drops a mode on it', () => {
+    const warn = vi.fn();
+    expect(parseTaxRounding({ granularity: 'custom' }, warn)).toStrictEqual({ granularity: 'custom' });
+    expect(parseTaxRounding({ granularity: 'custom', mode: 'half_up' }, warn)).toStrictEqual({ granularity: 'custom' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('gives undefined, without a warning, when absent', () => {
+    const warn = vi.fn();
+    expect(parseTaxRounding(undefined, warn)).toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('strips extra keys', () => {
+    expect(parseTaxRounding({ granularity: 'per_line_items', mode: 'half_up', extra: 1 })).toStrictEqual({ granularity: 'per_line_items', mode: 'half_up' });
+    expect(parseTaxRounding({ granularity: 'custom', extra: 1 })).toStrictEqual({ granularity: 'custom' });
+  });
+
+  it.each([
+    ['an unknown granularity', { granularity: 'per_invoice', mode: 'half_up' }],
+    ['a missing mode', { granularity: 'per_order' }],
+    ['an unknown mode', { granularity: 'per_order', mode: 'banker' }],
+    ['a missing granularity', { mode: 'half_up' }],
+    ['a string', 'per_order'],
+    ['null', null],
+    ['an array', [{ granularity: 'custom' }]],
+  ])('gives undefined and warns once for %s', (_name, value) => {
+    const warn = vi.fn();
+    expect(parseTaxRounding(value, warn)).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain('malformed taxRounding');
+  });
+});
+
+describe('parseInfoCapabilities (ADR-062, #287)', () => {
+  it('reads contracts without taxRounding', () => {
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1, 2, 3], register: [1] } })).toStrictEqual({ orderCreate: 3, register: 1 });
+  });
+
+  it('reads the top-level taxRounding beside contracts', () => {
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1, 2, 3] }, taxRounding: { granularity: 'per_rate_group_items', mode: 'half_up' } }))
+      .toStrictEqual({ orderCreate: 3, taxRounding: { granularity: 'per_rate_group_items', mode: 'half_up' } });
+  });
+
+  it('gives orderCreate 1 for missing or malformed contracts, and ignores a malformed taxRounding with one warning', () => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ contracts: { 'order.create': ['2', -1] }, taxRounding: { granularity: 'x' } }, warn)).toStrictEqual({ orderCreate: 1 });
+    expect(parseInfoCapabilities(null, warn)).toStrictEqual({ orderCreate: 1 });
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

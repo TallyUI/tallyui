@@ -65,6 +65,45 @@ export function resolveCapabilities(
   return fresh ?? stored;
 }
 
+const GRANULARITIES = ['per_order', 'per_line_items', 'per_rate_group_items'];
+const MODES = ['half_away_from_zero', 'half_up'];
+
+/**
+ * Reads the `taxRounding` of `GET /tally/v1/info` (#287): a valid value comes back without
+ * extra keys, and `custom` drops any `mode`. Absent gives `undefined`, the default. Core has
+ * no logger, so a malformed value gives `undefined` and one reason to `warn` for the caller to log.
+ */
+export function parseTaxRounding(value: unknown, warn?: (reason: string) => void): TaxRounding | undefined {
+  if (value === undefined) return undefined;
+  const { granularity, mode } = (value ?? {}) as { granularity?: unknown; mode?: unknown };
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    if (granularity === 'custom') return { granularity };
+    if (GRANULARITIES.includes(granularity as string) && MODES.includes(mode as string)) {
+      return { granularity, mode } as TaxRounding;
+    }
+  }
+  warn?.(`ignoring a malformed taxRounding, so the default applies: ${JSON.stringify(value)}`);
+  return undefined;
+}
+
+const maxVersion = (list: unknown): number | undefined => {
+  const valid = Array.isArray(list) ? list.filter((v): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0) : [];
+  return valid.length > 0 ? Math.max(...valid) : undefined;
+};
+
+/**
+ * Reads a 2xx body of `GET /tally/v1/info` (ADR-062): `orderCreate` is the max of
+ * `contracts["order.create"]`, or 1 when it's missing or malformed; `register` is the max of
+ * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287).
+ */
+export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => void): ServerCapabilities {
+  const { contracts, taxRounding } = (body ?? {}) as { contracts?: Record<string, unknown> | null; taxRounding?: unknown };
+  const register = maxVersion(contracts?.register);
+  const rounding = parseTaxRounding(taxRounding, warn);
+  return { orderCreate: maxVersion(contracts?.['order.create']) ?? 1,
+    ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}) };
+}
+
 export interface AuthField {
   key: string;
   label: string;

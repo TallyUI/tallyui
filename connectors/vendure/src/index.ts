@@ -1,6 +1,7 @@
 import { combinePullAdapters, createReconcileFeed, type TallyConnector } from '@tallyui/core';
 
 import { vendureAuth } from './auth';
+import { readVendureCapabilities } from './capabilities';
 import { vendureProductSchema } from './schemas/products';
 import { createVendureProductTraits } from './traits/product';
 import { createVendureProductSync } from './sync/products';
@@ -84,6 +85,9 @@ export const createVendureConnector = (options: {
     },
 
     storeSettings: vendureStoreSettings,
+
+    // Re-reads a restored session's capabilities; with an API key and no sign-in, the only reader.
+    capabilities: (context) => readVendureCapabilities(context.baseUrl, context.headers, { signal: context.signal }),
   };
 };
 
