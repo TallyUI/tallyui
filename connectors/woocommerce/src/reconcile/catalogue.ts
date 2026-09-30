@@ -108,9 +108,11 @@ export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>)
       // An empty include= would list the whole store; a local without a numeric id has no proof and is kept.
       if (!ids.length) return [];
       const params = new URLSearchParams({ include: ids.join(','), per_page: String(PAGE_SIZE), status: 'any', _fields: 'id,uuid,status' });
-      const rows: Array<{ id: number; status: string }> = await get(`/products?${params}`, context);
-      const live = new Set(rows.filter((row) => row.status === 'publish').map((row) => row.id));
-      return locals.filter((doc) => Number.isInteger(doc.id) && !live.has(doc.id)).map((doc) => doc.uuid);
+      const rows: Array<{ id: number; uuid: string; status: string }> = await get(`/products?${params}`, context);
+      const live = new Map(rows.filter((row) => row.status === 'publish').map((row) => [row.id, typeof row.uuid === 'string' && row.uuid.length > 0 ? row.uuid : undefined]));
+      // A live id backs only the store's uuid; other local copies are gone (#369).
+      // A row without a uuid can't prove the local copy stale, so a live id keeps it (#375 review).
+      return locals.filter((doc) => Number.isInteger(doc.id) && (!live.has(doc.id) || (typeof live.get(doc.id) === 'string' && live.get(doc.id) !== doc.uuid))).map((doc) => doc.uuid);
     },
     // An entry with no numeric id, locally or in the listing, is dropped: the store cannot be asked about it, so
     // the feed would find nothing and tombstone it without proof. (The schema requires only uuid.)

@@ -68,6 +68,22 @@ describe('wooCatalogueReconcile confirmGone', () => {
     expect(Object.fromEntries(store.requests[0].searchParams)).toEqual({ include: '1,2,3,4', per_page: '100', status: 'any', _fields: 'id,uuid,status' });
   });
 
+  it('confirms only the uuid the store does not back when two locals share a live id', async () => {
+    const store = createFakeStore(12);
+    store.row(12).uuid = 'uuid-b';
+    const locals = [{ uuid: 'uuid-a', id: 12 }, { uuid: 'uuid-b', id: 12 }];
+    const adapter = wooCatalogueReconcile(createWooReconcileFeed());
+    expect(await adapter.confirmGone(locals, context)).toEqual(['uuid-a']);
+    expect(await adapter.confirmGone([locals[1]], context)).toEqual([]);
+  });
+
+  it('a live row without a uuid confirms nothing by uuid', async () => {
+    const store = createFakeStore(12);
+    delete store.row(12).uuid;
+    const adapter = wooCatalogueReconcile(createWooReconcileFeed());
+    expect(await adapter.confirmGone([{ uuid: 'uuid-a', id: 12 }], context)).toEqual([]);
+  });
+
   it('a request error rejects, so nothing is confirmed', async () => {
     const store = createFakeStore(1);
     store.respond = () => new Response('down', { status: 500 });
