@@ -5,7 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { connectorCollection, startReplication } from '@tallyui/database';
-import { medusaConnector } from '../index';
+import { createMedusaConnector } from '../index';
 import { medusaProductSchema } from '../schemas/products';
 
 addRxPlugin(RxDBDevModePlugin);
@@ -50,7 +50,7 @@ async function setup() {
   });
   cleanup.push(() => db.close());
   const { products } = await db.addCollections({ products: connectorCollection(medusaProductSchema) });
-  const state = startReplication({ collection: products, adapter: medusaConnector.replication!.products!, context });
+  const state = startReplication({ collection: products, adapter: createMedusaConnector().replication!.products!, context });
   cleanup.push(() => state.cancel());
   const errors: unknown[] = [];
   state.error$.subscribe(error => errors.push(error));

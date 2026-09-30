@@ -685,3 +685,59 @@ describe('the old runners are wrappers over the catalogue runner', () => {
     expect(await stateOf('fingerprint-reconcile')).toEqual(expect.any(Number));
   });
 });
+
+describe('the refetch budget counts the pull\'s requests: refetchBatchSize (#307)', () => {
+  // One slot a minute, so each slot a page's refetch takes delays the next page by a minute.
+  it.each([
+    [1000, 100, 10], // Medusa: 1,000 changed ids are 10 fetchByIds requests of 100
+    [100, 100, 1], // a WooCommerce page of 100
+    [1000, undefined, 1], // unset: one slot per page, as before
+  ])('a page that enqueued %i refetches with refetchBatchSize %s takes %i slots', async (n, refetchBatchSize, slots) => {
+    const { server, feed, collection } = await setup(n + 1);
+    for (let i = 1; i <= n; i++) server.edit(i, { stamp: 's2' });
+    const time = fakeTime();
+    const { adapter, requests } = fakeAdapter(server, feed, { pageSize: n, now: time.now });
+    const { runner, count } = start(collection, { ...adapter, refetchBatchSize }, time, { requestsPerMinute: 1 });
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(requests[1] - requests[0]).toBe((1 + slots) * 60_000);
+    await settle();
+    expect(await stampOf(n)).toBe('s2');
+  }, 60_000);
+
+  it.each([['id', 5, 2], ['fingerprint', 5, 2], ['id', undefined, 1]] as const)(
+    'the %s wrapper passes refetchBatchSize %s through: a page of 10 differing products takes %i slots',
+    async (kind, refetchBatchSize, slots) => {
+      const { server, collection } = await setup(11);
+      const time = fakeTime();
+      const requests: number[] = [];
+      async function* pages<T>(page: (p: Product) => T) {
+        const all = [...server.products.values()].sort((a, b) => a.uuid.localeCompare(b.uuid));
+        for (const slice of [all.slice(0, 10), all.slice(10)]) { requests.push(time.now()); yield slice.map(page); }
+      }
+      // The wrappers take no budget options of their own; these reach the runner through the options they pass on.
+      const budget = { requestsPerMinute: 1, now: time.now, setTimer: time.setTimer } as object;
+      const common = { collection, context, reSync: vi.fn(), startDelayMs: null, ...budget };
+      let done = false;
+      if (kind === 'id') {
+        const adapter: IdReconcileAdapter<Product> = {
+          fetchPages: () => pages((p) => ({ id: p.uuid, variantIds: ['v'] })), variantIds: () => [], enqueue: vi.fn(), refetchBatchSize,
+        };
+        const runner = startIdReconcile({ ...common, adapter });
+        stops.push(runner.stop);
+        void runner.reconcileIds().then(() => { done = true; });
+      } else {
+        const adapter: FingerprintReconcileAdapter<Product> = {
+          fetchPages: () => (async function* () { for await (const page of pages((p) => [p.uuid, 's2'] as const)) yield new Map(page); })(),
+          fingerprint: (doc) => doc.stamp, enqueue: vi.fn(), refetchBatchSize,
+        };
+        const runner = startFingerprintReconcile({ ...common, adapter });
+        stops.push(runner.stop);
+        void runner.reconcile().then(() => { done = true; });
+      }
+      await time.runUntil(() => done);
+      expect(requests[1] - requests[0]).toBe((1 + slots) * 60_000);
+    }, 30_000,
+  );
+});

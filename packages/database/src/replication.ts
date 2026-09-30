@@ -18,6 +18,34 @@ export const MAX_RETRY_AFTER_MS = 60 * 60 * 1000;
 // this close to its time is on time, not an early call to hold back.
 const TIMER_SLACK_MS = 10;
 
+declare const __DEV__: boolean | undefined;
+/**
+ * React Native's __DEV__, else NODE_ENV (a bundler replaces the literal `process.env.NODE_ENV`); false where neither
+ * exists. Read at each start so that a test can switch it.
+ */
+const isDev = () => {
+  if (typeof __DEV__ !== 'undefined') return Boolean(__DEV__);
+  try { return process.env.NODE_ENV !== 'production'; } catch { return false; }
+};
+
+// The collection each adapter object replicates into while live (#307). One connector instance
+// replicating into two databases at once is the static-export misuse: a shared reconcile feed.
+const liveInto = new WeakMap<object, RxCollection<any>>();
+const warned = new WeakSet<object>();
+
+/** Development only: warns once per adapter started on a second collection while the first is live. Never throws. */
+function watchShared(adapter: object, collection: RxCollection<any>): () => void {
+  if (!isDev()) return () => {};
+  const live = liveInto.get(adapter);
+  if (!live) liveInto.set(adapter, collection);
+  else if (live !== collection && !warned.has(adapter)) {
+    warned.add(adapter);
+    console.warn('TallyUI: one connector instance is replicating into two databases. Build a connector per store session '
+      + '(createXConnector()); a shared instance can leak queued reconcile work across stores.');
+  }
+  return () => { if (liveInto.get(adapter) === collection) liveInto.delete(adapter); };
+}
+
 export interface StartReplicationOptions<RxDocType, CheckpointType = any> {
   collection: RxCollection<RxDocType>;
   adapter: ReplicationAdapter<RxDocType, CheckpointType>;
@@ -157,6 +185,9 @@ export function startReplication<RxDocType, CheckpointType = any>({
     autoStart,
   });
   state = replication;
+  // Cancelled or, for a one-shot replication, completed: RxDB cancels it either way.
+  const release = watchShared(adapter, collection);
+  replication.canceled$.subscribe((canceled) => { if (canceled) release(); });
   const resume = async () => {
     notice$.next(undefined);
     tillStopped = false;

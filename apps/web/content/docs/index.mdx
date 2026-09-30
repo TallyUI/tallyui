@@ -42,12 +42,15 @@ pnpm add @tallyui/core @tallyui/database @tallyui/components @tallyui/theme @tal
 Wrap your app with the connector provider:
 
 ```tsx
+import { useMemo } from 'react';
 import { ConnectorProvider } from '@tallyui/core';
-import { woocommerceConnector } from '@tallyui/connector-woocommerce';
+import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
 
-function App() {
+function App({ session }: { session: object }) {
+  // One connector per store session: a new one on each sign-in or store change.
+  const connector = useMemo(() => createWooCommerceConnector(), [session]);
   return (
-    <ConnectorProvider connector={woocommerceConnector}>
+    <ConnectorProvider connector={connector}>
       <YourPOSApp />
     </ConnectorProvider>
   );

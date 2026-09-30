@@ -7,7 +7,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { connectorCollection, startIdReconcile } from '@tallyui/database';
 import { medusaProductSchema } from '../schemas/products';
-import { medusaConnector } from '../index';
+import { createMedusaConnector } from '../index';
 
 addRxPlugin(RxDBDevModePlugin);
 const context = { connectorId: 'medusa', baseUrl: 'https://medusa.test', headers: {} };
@@ -94,18 +94,19 @@ async function start(products: Product[], requests: URLSearchParams[] = []) {
   });
   await db.addCollections({ products: connectorCollection(medusaProductSchema) });
   serve(products, undefined, requests);
+  const connector = createMedusaConnector();
   replication = replicateRxCollection<any, any>({
     collection: db.products, replicationIdentifier: 'medusa-id-reconcile-proof',
     live: true, waitForLeadership: false, retryTime: 10,
     pull: {
       batchSize: BATCH_SIZE,
-      handler: (checkpoint, batchSize) => medusaConnector.replication!.products!.pull.handler(checkpoint, batchSize, context),
+      handler: (checkpoint, batchSize) => connector.replication!.products!.pull.handler(checkpoint, batchSize, context),
     },
   });
   await replication.awaitInSync();
   expect(await db.products.find().exec()).toHaveLength(TOTAL);
   const runner = startIdReconcile({
-    collection: db.products, adapter: medusaConnector.reconcile!.ids!, context,
+    collection: db.products, adapter: connector.reconcile!.ids!, context,
     reSync: () => replication!.reSync(), startDelayMs: null, intervalMs: 999_999_999,
   });
   return { runner, requests };
