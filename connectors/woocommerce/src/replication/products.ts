@@ -9,13 +9,7 @@ export type WooProductCheckpoint = {
   pass_mark?: string;
   /** X-WP-Total of the window on the last page; undefined when the store sends none. */
   pass_count?: number;
-  /** Times the current pass has restarted at offset 0 after its window shrank. */
-  restarts?: number;
 };
-
-// A store losing products between every page must not keep one pass restarting forever:
-// at the cap a fresh pass starts in the same call, keeping its lower bound and mark.
-const MAX_PASS_RESTARTS = 3;
 
 // RxDB drops the checkpoint of an empty result, so the handler moves on to the next useful request
 // in the same call instead; every fetch in one call, mark requests included, counts against this.
@@ -61,8 +55,12 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
           { headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal },
         );
         checkResponse(markResponse);
-        passMark = (await markResponse.json())[0]?.date_modified_gmt ?? modified;
-        if (lastCheckpoint?.modified && passMark === modified) return { documents: [], checkpoint: lastCheckpoint };
+        const [newest] = await markResponse.json();
+        // No product of any status the pull can see: every window is empty.
+        if (newest === undefined) return { documents: [], checkpoint: lastCheckpoint ?? { modified: '', offset: 0 } };
+        passMark = newest.date_modified_gmt ?? modified;
+        // The newest product is at or below the lower bound (e.g. the newest was trashed): the window adds nothing.
+        if (lastCheckpoint?.modified && passMark <= modified) return { documents: [], checkpoint: lastCheckpoint };
       }
       const params = new URLSearchParams({
         per_page: String(batchSize),
@@ -90,10 +88,9 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       const products: any[] = await response.json();
       const total = response.headers.get('X-WP-Total');
       const count = total !== null && /^\d+$/.test(total) ? Number(total) : undefined;
-      const restarts = lastCheckpoint?.restarts ?? 0;
       if (offset > 0 && count !== undefined && (products.length === 0 || count < (lastCheckpoint?.pass_count ?? count))) {
-        // At the cap a fresh pass (restarts 0) starts in this call, so RxDB stores its first page's checkpoint.
-        return pull({ modified, offset: 0, pass_mark: passMark, restarts: restarts >= MAX_PASS_RESTARTS ? 0 : restarts + 1 }, batchSize, context, requests);
+        // Restart the pass in this call, so RxDB stores its first page's checkpoint; the request budget bounds the call.
+        return pull({ modified, offset: 0, pass_mark: passMark }, batchSize, context, requests);
       }
       for (const product of products) {
         if (typeof product.uuid !== 'string' || product.uuid.length === 0) {
@@ -105,8 +102,8 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       // RxDB merges checkpoints, so clear pass state explicitly at completion.
       const complete = count === undefined ? products.length < batchSize : offset + products.length >= count;
       const checkpoint: WooProductCheckpoint = complete
-        ? { modified: passMark, offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined }
-        : { modified, offset: offset + products.length, pass_mark: passMark, pass_count: count, restarts: lastCheckpoint?.restarts };
+        ? { modified: passMark, offset: 0, pass_mark: undefined, pass_count: undefined }
+        : { modified, offset: offset + products.length, pass_mark: passMark, pass_count: count };
       if (complete && products.length === 0) {
         // Chain into the next pass: RxDB would drop this completion with the empty result. While the next pass
         // has nothing either, each poll re-derives these requests from the stored checkpoint, at most

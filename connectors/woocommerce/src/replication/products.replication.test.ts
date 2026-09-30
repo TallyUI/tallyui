@@ -23,7 +23,9 @@ async function setup(size: number, { total = true, afterCall = (_call: number, _
     id: i + 1, uuid: `u${i + 1}`, name: `Product ${i + 1}`, status: 'publish', date_modified_gmt: stamp(i + 1),
   }));
   let calls = 0;
+  let requests = 0;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    requests++;
     const params = new URL(String(input)).searchParams;
     const after = params.get('dates_are_gmt') === 'true' ? params.get('modified_after') ?? '' : '';
     const byId = params.get('orderby') === 'id';
@@ -64,7 +66,13 @@ async function setup(size: number, { total = true, afterCall = (_call: number, _
     await sync();
   };
   const local = async () => new Map((await products.find().exec()).map((p) => [p.uuid, p.toJSON()]));
-  return { rows, poll, sync, local };
+  // Requests one poll costs, from the stored checkpoint through the end of the run.
+  const pollCost = async () => {
+    const before = requests;
+    await poll();
+    return requests - before;
+  };
+  return { rows, poll, sync, local, pollCost };
 }
 
 describe('WooCommerce product pass cursor in the real RxDB replication loop', () => {
@@ -101,5 +109,31 @@ describe('WooCommerce product pass cursor in the real RxDB replication loop', ()
     Object.assign(rows[0], { name: 'Edited', date_modified_gmt: stamp(30) });
     await poll();
     expect((await local()).get('u1')?.name).toBe('Edited');
+  });
+
+  it('a quiet poll after a completed pass costs one request', async () => {
+    const { sync, pollCost } = await setup(4);
+    await sync();
+
+    expect(await pollCost()).toBe(1);
+    expect(await pollCost()).toBe(1);
+  });
+
+  it('a quiet poll after the most recently edited product is trashed costs one request', async () => {
+    const { rows, sync, pollCost } = await setup(4);
+    await sync();
+    rows.pop();
+
+    expect(await pollCost()).toBe(1);
+    expect(await pollCost()).toBe(1);
+  });
+
+  it('a quiet poll on a store with no products costs one request', async () => {
+    const { sync, local, pollCost } = await setup(0);
+    await sync();
+
+    expect(await pollCost()).toBe(1);
+    expect(await pollCost()).toBe(1);
+    expect((await local()).size).toBe(0);
   });
 });
