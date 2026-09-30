@@ -41,7 +41,14 @@ export interface ServerCapabilities {
   orderCreate: number;
   /** The highest `register` contract version; absent or 0 means no register sync. */
   register?: number;
+  /** How the store rounds tax (#287). Absent: an older server, per_order + half_away_from_zero. */
+  taxRounding?: TaxRounding;
 }
+
+/** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */
+export type TaxRounding =
+  | { granularity: 'per_order' | 'per_line' | 'per_rate_group'; mode: 'half_away_from_zero' | 'half_up' }
+  | { granularity: 'custom' };
 
 /**
  * Resolves the capabilities to act on: a definitive fresh read always wins,
