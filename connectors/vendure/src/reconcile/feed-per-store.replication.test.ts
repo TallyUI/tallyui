@@ -7,9 +7,10 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import type { TallyConnector } from '@tallyui/core';
 import { connectorCollection } from '@tallyui/database';
 import { vendureProductSchema } from '../schemas/products';
-import { createVendureConnector } from '../index';
+import { createVendureConnector, vendureConnector } from '../index';
 
 addRxPlugin(RxDBDevModePlugin);
 const iso = (n: number) => new Date(Date.UTC(2026, 0, 1) + n * 1000 + 0.5).toISOString();
@@ -45,8 +46,8 @@ function serve() {
   });
 }
 
-/** A store at `host` with four products, ids from `first`, and a till replicating it through a new connector instance. */
-async function tillAt(host: string, first: number) {
+/** A store at `host` with four products, ids from `first`, and a till replicating it through `connector` (default: a new instance). */
+async function tillAt(host: string, first: number, connector: TallyConnector = createVendureConnector()) {
   const products = Array.from({ length: 4 }, (_, i): Product => ({
     id: String(first + i), name: `Product ${first + i}`, updatedAt: iso(i + 1), variants: [{ id: String(10 * (first + i)) }],
   }));
@@ -58,7 +59,6 @@ async function tillAt(host: string, first: number) {
   });
   closes.push(() => db.close());
   await db.addCollections({ products: connectorCollection(vendureProductSchema) });
-  const connector = createVendureConnector();
   const context = { connectorId: 'vendure', baseUrl: `https://${host}`, headers: {} };
   const state = replicateRxCollection<any, any>({
     collection: db.products, replicationIdentifier: 'vendure-feed-per-store', live: true, waitForLeadership: false, retryTime: 10,
@@ -82,6 +82,23 @@ async function leaked(till: Till, docs: Array<{ id: string }>) {
   return { documents: found.map((d: any) => d.id), requests: till.store.idRequests.filter((asked) => asked.some((id) => ids.includes(id))).length };
 }
 
+/**
+ * The worst case (#307): two stores with the same product and variant ids. Product 1 goes from store A, and A's till
+ * queues every product for its id reconcile (drained against A, the entry for product 1 is a tombstone) and is
+ * cancelled with that work queued. Store B's till, on a new database, then syncs; B's product 1 is live. What became
+ * of B's product 1, and how many by-id re-reads B's store answered: B's own queue is empty, so every one came from A's.
+ */
+async function sharedIdSwitch(connector: () => TallyConnector) {
+  const a = await tillAt('a.test', 1, connector());
+  a.store.products.shift();
+  queueWork(a);
+  await a.state.cancel();
+  const b = await tillAt('b.test', 1, connector());
+  expect(b.store.products[0]).toMatchObject({ id: '1' });
+  const [product1] = await b.db.products.storageInstance.findDocumentsById(['1'], true);
+  return { product1: product1 && { id: product1.id, deleted: product1._deleted }, requests: b.store.idRequests.length };
+}
+
 describe('Vendure: one reconcile feed per store session (#307)', () => {
   it('a store switch with createVendureConnector(): nothing of A reaches B\'s database or B\'s store', async () => {
     const a = await tillAt('a.test', 1);
@@ -89,6 +106,16 @@ describe('Vendure: one reconcile feed per store session (#307)', () => {
     await a.state.cancel();
     const b = await tillAt('b.test', 101);
     expect(await leaked(b, a.docs)).toEqual({ documents: [], requests: 0 });
+  });
+
+  it('the deprecated static export, stores with the same ids: B\'s store is asked for A\'s queued ids', async () => {
+    // The id reconcile decides a tombstone when the queue drains, against the store it drains into: B's re-read finds
+    // B's own product 1, so it survives here (unlike WooCommerce's proven tombstones), but A's queue reached B's store.
+    expect(await sharedIdSwitch(() => vendureConnector)).toEqual({ product1: { id: '1', deleted: false }, requests: 1 });
+  });
+
+  it('a store switch with createVendureConnector(), stores with the same ids: B\'s product 1 stays live, B\'s store gets nothing of A\'s queue', async () => {
+    expect(await sharedIdSwitch(createVendureConnector)).toEqual({ product1: { id: '1', deleted: false }, requests: 0 });
   });
 
   it('two stores at once, one instance each: each queue reaches only its own store and database', async () => {
