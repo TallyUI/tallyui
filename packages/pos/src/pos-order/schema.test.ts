@@ -33,6 +33,12 @@ it('inserts a finalised order into an AJV-validated RxDB memory collection', asy
     const warnings = [{ code: 'new_code', foo: 1, nested: { extra: ['accepted'] } }];
     const unknown = await pos_orders.insert({ ...order, id: uuidv7(), syncStatus: 'applied', warnings });
     expect(unknown.toJSON().warnings).toEqual(warnings);
+    const v4 = { ...order, id: uuidv7(), localWarnings: [{ code: 'customer_omitted' as const, field: 'email' as const },
+      { code: 'payment_reference_dropped' as const, paymentId: order.payments[0].id }], serverFailures: { since: 0, reason: 'server_error', isolated: true } };
+    expect((await pos_orders.insert(v4)).toJSON()).toStrictEqual(v4);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), serverFailures: { since: 0, reason: 'server_error' } })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(),
+      serverFailures: { count: 1, since: 0, reason: 'server_error', isolated: false } })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), warnings: [{ code: 'x'.repeat(65) }] })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), syncStatus: 'invalid' })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), extra: true })).rejects.toThrow();
@@ -49,7 +55,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(3);
+  expect(posOrderSchema.version).toBe(4);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -101,7 +107,8 @@ it('finds orders by sessionId through its index, and never returns an unstamped 
     expect(inserted.error).toEqual([]);
     const queries: Array<[string | { $in: string[] }, string[], string[]]> = [
       ['a', ['stamped-a'], ['_deleted', 'sessionId', 'id']],
-      [{ $in: ['a', 'b'] }, ['stamped-a', 'stamped-b'], ['_deleted', 'createdAt', 'id']],
+      // RxDB 17's planner uses a field's index for `$in` too (rxdb#8631).
+      [{ $in: ['a', 'b'] }, ['stamped-a', 'stamped-b'], ['_deleted', 'sessionId', 'id']],
     ];
     for (const [sessionId, ids, index] of queries) {
       const query = orders.find({ selector: { sessionId } });

@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { SQLiteDatabase } from './types';
 
-export function openNodeSQLite(): { database: SQLiteDatabase; raw: DatabaseSync } {
-  const raw = new DatabaseSync(':memory:');
+export function openNodeSQLite(path = ':memory:'): { database: SQLiteDatabase; raw: DatabaseSync } {
+  const raw = new DatabaseSync(path);
   const database: SQLiteDatabase = {
     execSync: (sql) => raw.exec(sql),
     getAllSync: <T>(sql: string, params: any[] = []) => raw.prepare(sql).all(...params) as T[],

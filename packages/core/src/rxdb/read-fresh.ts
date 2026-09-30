@@ -3,13 +3,9 @@ import { clone, type MangoQuery, type MangoQuerySelector, type RxCollection } fr
 /**
  * Reads straight from the collection's storage, past RxDB's cached query result.
  *
- * Why: in RxDB 16.21.1, a document written while a query's storage read is in flight (about one
- * to three microtasks after it starts) is counted as seen but is missing from the result. RxDB
- * caches that `RxQuery` per query string, so every later `find(sameQuery).exec()` or
- * `count(sameQuery).exec()` returns the stale result, and a later matching write doesn't heal it.
- * No subscription is needed. This is "bug 4" in TallyUI's local RxDB repro (the query-cache-stale
- * script beside the migration checkpoint repro). For the order outbox it left a sale unsent until
- * the app restarted.
+ * Originally bypassed RxDB 16.21.1's bug 4, fixed in RxDB 17 (rxdb#7067) by snapshotting the
+ * change counter before a read and rerunning when it moves. `readFresh`, `countFresh` and
+ * `watchFresh` remain correct public API; retiring them is a separate decision.
  *
  * The prepared query is RxDB's own (`find(query).getPreparedQuery()`), so it already carries the
  * `_deleted: false` filter, the query's sort and its limit. The read goes through the same wrapped

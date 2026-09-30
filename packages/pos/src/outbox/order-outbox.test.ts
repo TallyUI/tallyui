@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
+import { createRxDatabase, type RxChangeEvent, type RxCollection, type RxDatabase } from 'rxdb';
+import { Subject, type Observable } from 'rxjs';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandEnvelope, CommandResult, OrderCreateEnvelope, OrderCreatePayload } from '@tallyui/core';
@@ -886,6 +887,34 @@ describe('order outbox', () => {
     await collection.insert(order(2));
     await vi.advanceTimersByTimeAsync(0);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('an UPDATE event without previousDocumentData counts as a change: it flushes, and the watch goes on', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const input = order(0);
+    await collection.insert(input);
+    // A hand-built event stream stands in for the collection's.
+    const events = new Subject<RxChangeEvent<PosOrder>>();
+    const watched = collection as { $: Observable<RxChangeEvent<PosOrder>> };
+    const real = watched.$;
+    watched.$ = events;
+    try {
+      const { outbox, send } = setup();
+      send.mockResolvedValue({ kind: 'retry', reason: 'network' });
+      outbox.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(1);
+      const update = { operation: 'UPDATE', documentId: input.id, isLocal: false, collectionName: 'pos_orders',
+        documentData: (await collection.findOne(input.id).exec())!.toJSON(true) } as unknown as RxChangeEvent<PosOrder>;
+      events.next(update);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(2);
+      events.next(update);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(3);
+    } finally {
+      watched.$ = real;
+    }
   });
 
   it('sends a pending order already in the collection on start(), with no flush() call', async () => {
@@ -1906,5 +1935,101 @@ describe('order outbox isolation', () => {
     // Flagged at the first run once 15 minutes are answered, with the same `since`.
     expect(Date.now() - (since + STUCK_AFTER_MS)).toBeLessThanOrEqual(60_000);
     expect(states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], since));
+  });
+
+  describe('serverFailures across a restart', () => {
+    const stored = async (input: PosOrder) => (await collection.findOne(input.id).exec())!.toJSON(true);
+    const nextOf = (states: OutboxState[]) => vi.advanceTimersByTimeAsync(states.at(-1)!.nextAttemptAt! - Date.now());
+
+    it('an isolated order survives a restart: the new outbox batches without it, then sends it alone; progress clears the field', async () => {
+      const { outbox, bad } = await isolatedHead();
+      expect((await stored(bad)).serverFailures).toEqual({ since: epoch, reason: 'status_503', isolated: true });
+      outbox.stop();
+      const later = [order(3), order(4)];
+      await collection.bulkInsert(later);
+      const restarted = setup();
+      restarted.send.mockImplementation(failing(bad));
+      restarted.outbox.start();
+      await vi.advanceTimersByTimeAsync(0);
+      // No five failures behind it: the first send leaves it out, and it goes alone after.
+      expect(restarted.send.mock.calls.map(([batch]) => ids(batch))).toEqual([later.map((input) => input.commandId), [bad.commandId]]);
+      expect(await Promise.all([...later, bad].map(status))).toEqual(['applied', 'applied', 'pending']);
+      const writes: PosOrder[] = [];
+      collection.$.subscribe((event) => { if (event.documentId === bad.id) writes.push(event.documentData); });
+      restarted.send.mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
+      await nextOf(restarted.states);
+      expect(await status(bad)).toBe('applied');
+      expect((await stored(bad)).serverFailures).toBeUndefined();
+      // Removed in the write that marks it applied.
+      expect(writes.map((data) => [data.syncStatus, data.serverFailures])).toEqual([['applied', undefined]]);
+    });
+
+    it('a stuck clock survives a restart with the same since', async () => {
+      const lone = order(0);
+      await collection.insert(lone);
+      const { outbox, send, states, next } = timed({ stuckAfterMs: 60_000 });
+      send.mockImplementation(failing(lone));
+      await outbox.flush();
+      while (!states.at(-1)?.stuck) await next();
+      expect(states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], epoch));
+      outbox.stop();
+      // Offline after the restart: the restored clock is paused, and still flagged.
+      const restoredAt = Date.now();
+      const restarted = setup({ stuckAfterMs: 60_000 });
+      restarted.send.mockResolvedValue(offline);
+      await restarted.outbox.flush();
+      expect(restarted.states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], epoch));
+      restarted.send.mockResolvedValue(fail);
+      await nextOf(restarted.states);
+      // The next answer resumes it, leaving out the pause since the restart.
+      expect(Date.now()).toBeGreaterThan(restoredAt);
+      expect(restarted.states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], epoch + Date.now() - restoredAt));
+    });
+
+    it('requeue() clears it', async () => {
+      const rejected: PosOrder = { ...order(0), syncStatus: 'rejected', error: { code: 'unknown_variant', message: 'gone' },
+        serverFailures: { since: epoch, reason: 'status_503', isolated: true } };
+      await collection.insert(rejected);
+      const { outbox, send } = timed();
+      send.mockResolvedValue(offline);
+      expect(await outbox.requeue()).toBe(1);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(await stored(rejected)).toMatchObject({ syncStatus: 'pending' });
+      expect((await stored(rejected)).serverFailures).toBeUndefined();
+    });
+
+    it('a retry with nothing new does no write, and the payload bytes are the same with the field stored', async () => {
+      const lone = order(0);
+      await collection.insert(lone);
+      const { outbox, send, next } = timed();
+      send.mockResolvedValue(fail);
+      await outbox.flush();
+      const first = await stored(lone);
+      expect(first.serverFailures).toEqual({ since: epoch, reason: 'status_503', isolated: false });
+      await next();
+      await next();
+      expect(send).toHaveBeenCalledTimes(3);
+      expect((await stored(lone))._rev).toBe(first._rev);
+      // The first send had no serverFailures stored, the later ones had.
+      const [without, withField] = send.mock.calls.map(([batch]) => batch[0]);
+      expect(commandFingerprint(withField)).toBe(commandFingerprint(without));
+    });
+
+    it("the outbox's own serverFailures write is not a new sale: a refusal that resumes a paused clock sends once", async () => {
+      const lone = order(0);
+      await collection.insert(lone);
+      const { outbox, send, next } = timed();
+      send.mockResolvedValueOnce(fail).mockResolvedValueOnce(offline).mockResolvedValue({ kind: 'refused', status: 400, reason: 'bad' });
+      outbox.start();
+      await vi.advanceTimersByTimeAsync(0);
+      await next();
+      const { since } = (await stored(lone)).serverFailures!;
+      await next();
+      // The refusal resumed the clock, so `since` moved on and was written; that write sends nothing more.
+      expect((await stored(lone)).serverFailures!.since).toBeGreaterThan(since);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(send).toHaveBeenCalledTimes(3);
+    });
   });
 });

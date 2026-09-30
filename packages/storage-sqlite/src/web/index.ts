@@ -1,8 +1,12 @@
 import type { RxStorage } from 'rxdb';
 import { MESSAGE_CHANNEL_CACHE_BY_IDENTIFIER, OPEN_REMOTE_MESSAGE_CHANNELS } from 'rxdb/plugins/storage-remote';
+import { setPremiumFlag } from 'rxdb-premium/plugins/shared';
 import { getRxStorageWorker } from 'rxdb-premium/plugins/storage-worker';
 
 export { StorageWorkerStartError, isStorageWorkerStartError } from './errors';
+
+// Also at import, before anything else can make RxDB cache the flag's first check as false.
+setPremiumFlag();
 
 /** Marks a storage as this package's web engine (ADR-061), for job 2b to recognise. */
 export const SQLITE_SAHPOOL_ENGINE = 'sqlite-sahpool';
@@ -26,6 +30,10 @@ export function getRxStorageSQLiteWasm(options: {
   workerInput: string | URL | (() => Worker);
   workerName?: string;
 }): RxStorageSQLiteWasm {
+  // RxDB 17 caps a process at 13 open collections unless the premium flag is
+  // set; premium storages do not set it themselves. RxDB caches the first
+  // flag check, so this must run before any collection is created.
+  setPremiumFlag();
   const { workerInput } = options;
   const workerOptions = { type: 'module' as const, name: options.workerName ?? 'tallyui-storage' };
   // Premium creates the worker inside its own closure, out of reach, so this

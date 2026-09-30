@@ -1795,10 +1795,35 @@ describe('app configuration outside the order.create bounds', () => {
       await act(async () => { await result.current.complete(); });
       expect(onSaleCompleted).toHaveBeenCalledTimes(1);
       expect(onSaleCompleted.mock.calls[0][0].payments).toEqual([{ id: expect.any(String), method: 'external', amountMinor: total }]);
+      const stored: PosOrder = onSaleCompleted.mock.calls[0][0];
+      expect(stored.localWarnings).toEqual([{ code: 'payment_reference_dropped', paymentId: stored.payments[0].id }]);
+      expect(stored.payments[0].id).not.toBe(result.current.order.payments[0].id);
       expect(result.current).toMatchObject({ stage: { kind: 'receipt' }, error: null });
     } finally {
       saleLogger.removeSink('dropped-reference');
     }
+  });
+
+  it.each(['valid tender', 'cancel tender', 'start tender', 'finished sale'])('%s clears a dropped-reference warning', async (clearedBy) => {
+    const onSaleCompleted = vi.fn();
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    act(() => result.current.setTender({ method: 'external', amountMinor: result.current.order.totalMinor, reference: 'r'.repeat(256) }));
+    if (clearedBy === 'finished sale') {
+      await act(async () => { await result.current.complete(); });
+      await act(async () => { await result.current.complete(); });
+      expect(onSaleCompleted).toHaveBeenCalledTimes(1);
+      act(() => result.current.newSale());
+      addSaleLines(result);
+    }
+    act(() => {
+      if (clearedBy === 'cancel tender') result.current.cancelTender();
+      if (clearedBy === 'start tender' || clearedBy === 'finished sale') result.current.startTender('external');
+      else result.current.setTender({ method: 'external', amountMinor: result.current.order.totalMinor, reference: 'VALID' });
+    });
+    await act(async () => { await result.current.complete(); });
+    expect(onSaleCompleted.mock.calls.at(-1)![0].localWarnings).toBeUndefined();
   });
 
   it('a successful setCustomer clears only a customer refusal: a finalize error and a dropped-reference message stay', async () => {

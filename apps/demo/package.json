@@ -32,7 +32,7 @@
     "react-native-safe-area-context": "~5.4.0",
     "react-native-screens": "~4.11.0",
     "react-native-web": "0.21.2",
-    "rxdb": "16.21.1",
+    "rxdb": "17.5.0",
     "rxjs": "7.8.2",
     "tailwindcss": "^4.1.18",
     "uniwind": "^1.2.2"

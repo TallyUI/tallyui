@@ -6,9 +6,12 @@ import { resolveCapabilities } from '@tallyui/core';
 import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order/order-builder';
 import { taxLinesByRate } from '../tax/exact';
+import type { LogEntry } from '../logging';
+import { outboxLogger } from '../outbox/logger';
 import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder, freezeSentForm, withSentForm } from './finalize';
 import { uuidv7 } from './uuidv7';
+import type { PosOrderLocalWarning } from './types';
 
 function sale() {
   const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
@@ -25,6 +28,57 @@ function discountedSale() {
 }
 
 describe('finalizeOrder', () => {
+  it('appends localWarnings, remaps builder payment ids by position, and leaves envelope bytes unchanged', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'external', amountMinor: 1000 });
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    builder.setCustomer({ id: 'c1', name: 'Customer', email: 'e'.repeat(255) });
+    const input = builder.getSnapshot();
+    const localWarnings: PosOrderLocalWarning[] = [
+      { code: 'payment_reference_dropped', paymentId: input.payments[1].id },
+      { code: 'payment_reference_dropped', paymentId: input.payments[0].id },
+    ];
+    const before = structuredClone(localWarnings);
+    const stored = finalizeOrder(input, { localWarnings });
+    expect(stored.localWarnings).toEqual([
+      { code: 'payment_reference_dropped', paymentId: stored.payments[1].id },
+      { code: 'payment_reference_dropped', paymentId: stored.payments[0].id },
+      { code: 'customer_omitted', field: 'email' },
+    ]);
+    expect(stored.payments.map((payment) => payment.id)).not.toEqual(input.payments.map((payment) => payment.id));
+    expect(localWarnings).toEqual(before);
+    const { localWarnings: _warnings, ...withoutWarnings } = stored;
+    const withFailures = { ...stored, serverFailures: { since: 0, reason: 'server_error', isolated: true } };
+    expect(JSON.stringify(toOrderCreateEnvelope(withFailures, 'device1'))).toBe(JSON.stringify(toOrderCreateEnvelope(withoutWarnings, 'device1')));
+  });
+
+  it('drops and logs a localWarnings entry naming an unknown payment rather than failing the sale, even with a throwing sink', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'external', amountMinor: 1000 });
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const input = builder.getSnapshot();
+    const logged: LogEntry[] = [];
+    outboxLogger.addSink({ id: 'finalize-unknown-payment', levels: ['warn'], write: (entry) => logged.push(entry) });
+    try {
+      const alone = finalizeOrder(input, { localWarnings: [{ code: 'payment_reference_dropped', paymentId: 'unknown' }] });
+      expect(alone).not.toHaveProperty('localWarnings');
+      expect(logged).toEqual([expect.objectContaining({ level: 'warn',
+        message: 'finalize: dropped a localWarnings entry naming an unknown payment', data: { orderId: alone.id, paymentId: 'unknown' } })]);
+      const kept = finalizeOrder(input, { localWarnings: [{ code: 'payment_reference_dropped', paymentId: 'unknown' },
+        { code: 'payment_reference_dropped', paymentId: input.payments[0].id }] });
+      expect(kept.localWarnings).toEqual([{ code: 'payment_reference_dropped', paymentId: kept.payments[0].id }]);
+    } finally {
+      outboxLogger.removeSink('finalize-unknown-payment');
+    }
+    outboxLogger.addSink({ id: 'finalize-throwing', levels: ['warn'], write: () => { throw new Error('sink down'); } });
+    try {
+      expect(finalizeOrder(input, { localWarnings: [{ code: 'payment_reference_dropped', paymentId: 'unknown' }] }))
+        .not.toHaveProperty('localWarnings');
+    } finally {
+      outboxLogger.removeSink('finalize-throwing');
+    }
+  });
+
   it('copies a cash sale into a pending document without mutating or sharing input objects', () => {
     const builder = sale();
     builder.addPayment({ method: 'cash', amountMinor: 5000, reference: 'drawer' });
@@ -248,6 +302,7 @@ describe('freezeSentForm', () => {
     expected.display!.lines[0].discounts[0].label = `${'D'.repeat(254)}…`;
     expected.payments[0].reference = `${'R'.repeat(254)}…`;
     expected.customer = { name: 'Customer' };
+    expected.localWarnings = [{ code: 'customer_omitted', field: 'email' }, { code: 'customer_omitted', field: 'id' }];
     expect(frozen).toStrictEqual(expected);
     expect(stored).toStrictEqual(before);
     expect(freezeSentForm(frozen)).toBe(frozen);
@@ -256,6 +311,17 @@ describe('freezeSentForm', () => {
   it('returns the same object for an already-frozen order', () => {
     const stored = finalizeOrder(discountedSale().getSnapshot(), { capabilities: { orderCreate: 3 } });
     expect(freezeSentForm(stored)).toBe(stored);
+    expect(stored.localWarnings).toBeUndefined();
+  });
+
+  it('does not duplicate a customer omission already recorded', () => {
+    const stored = finalizeOrder(discountedSale().getSnapshot(), { capabilities: { orderCreate: 3 } });
+    stored.customer = { email: 'e'.repeat(255), id: 'i'.repeat(65) };
+    stored.localWarnings = [{ code: 'customer_omitted', field: 'email' }, { code: 'customer_omitted', field: 'id' }];
+    const frozen = freezeSentForm(stored);
+    expect(frozen.customer).toEqual({});
+    expect(frozen.localWarnings).toEqual(stored.localWarnings);
+    expect(freezeSentForm(frozen)).toBe(frozen);
   });
 });
 

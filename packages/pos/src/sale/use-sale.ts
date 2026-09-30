@@ -66,6 +66,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   const error = saving && saleError ? saleError : configError ?? saleError;
   // The session pinned by startTender for this tender (`undefined` inside: none); null until a tender starts.
   const tenderSession = useRef<{ session: typeof opts.session } | null>(null);
+  // The id, at the tender, of the payment whose terminal reference setTender dropped; null when none was dropped.
+  const droppedReference = useRef<string | null>(null);
   // The pending completion isStored confirmed stored after its save failed; `canContinue` mirrors it for
   // rendering. `attempts` counts complete() attempts, so a confirmation that lands after a new one is dropped.
   const confirmed = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
@@ -107,6 +109,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     confirm(null); pending.current = null;
     inFlight.current = null;
     tenderSession.current = null;
+    droppedReference.current = null;
     setSaving(false);
     madeWith.current = { taxContext, currency: settings.currency };
     const next = createOrderBuilder({ currency: settings.currency, taxContext });
@@ -138,14 +141,15 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   function setTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string } | null) {
     if (locked()) return;
     // A terminal reference finalize would refuse is dropped as it's entered, never the payment (the money is
-    // taken): the tender applies without it, with a message that doesn't block complete(). A localWarnings
-    // entry on the stored order follows with pos_orders v4 (task #32).
+    // taken): the tender applies without it, with a message that doesn't block complete() and a
+    // localWarnings entry on the stored order naming the payment whose reference was dropped.
     const reason = referenceReason(tender?.reference);
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
     const kept = tender && dropped ? { method: tender.method, amountMinor: tender.amountMinor } : tender;
     const previous = builder.getSnapshot().payments[0];
     if (previous) builder.removePayment(previous.id);
-    if (kept) builder.addPayment(kept);
+    const paymentId = kept ? builder.addPayment(kept) : null;
+    droppedReference.current = dropped ? paymentId : null;
     setError(dropped && `The terminal's payment reference couldn't be kept (${dropped}); the payment is recorded without it.`);
     try {
       if (dropped) saleLogger.warn("the terminal's payment reference was dropped", { reason: dropped, method: tender!.method });
@@ -196,6 +200,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     if (hungSaveTimer.current === timer) clearHungSaveTimer();
     if (pending.current !== completion) return;
     pending.current = null;
+    droppedReference.current = null;
     confirm(null);
     setSaving(false);
     setError(null);
@@ -314,7 +319,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       const current = builder.getSnapshot();
       let posOrder: PosOrder;
       try {
-        posOrder = finalizeOrder(current, { registerId: opts.registerId, cashierRef: opts.cashierRef, capabilities: opts.capabilities });
+        posOrder = finalizeOrder(current, { registerId: opts.registerId, cashierRef: opts.cashierRef, capabilities: opts.capabilities,
+          ...(droppedReference.current ? { localWarnings: [{ code: 'payment_reference_dropped', paymentId: droppedReference.current }] } : {}) });
       } catch (error) {
         setSaving(false);
         setError((error as Error).message);

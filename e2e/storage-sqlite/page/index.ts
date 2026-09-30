@@ -11,6 +11,7 @@ import {
 } from '../../../packages/storage-sqlite/src/web/index';
 // Its own module, so the page bundles without createTallyDatabase's dev-mode setup.
 import { connectorCollection } from '../../../packages/database/src/connector-collection';
+import { addPosOrderCollection } from '../../../packages/pos/src/pos-order/open';
 
 interface ItemDocType {
   id: string;
@@ -94,6 +95,28 @@ async function close(): Promise<void> {
   db = undefined;
 }
 
+/**
+ * Opens `pos_orders` (schema version 3) in a new database on the worker storage and saves a sale
+ * straight after `addPosOrderCollection` resolves, as a till does. Returns each save's outcome.
+ */
+async function openOrdersAndSave(name: string): Promise<string> {
+  const ordersDb = await createRxDatabase({ name, storage: getRxStorageSQLiteWasm({ workerInput: '/tallyui-sqlite-worker.js' }), multiInstance: false });
+  try {
+    const orders = await addPosOrderCollection(ordersDb);
+    const at = new Date().toISOString();
+    await orders.insert({
+      id: 'order-0001', commandId: 'command-1', createdAt: at, updatedAt: at, currency: 'EUR', pricesIncludeTax: false,
+      subtotalMinor: 100, discountMinor: 0, taxMinor: 0, totalMinor: 100, syncStatus: 'pending', customer: null, lines: [],
+      payments: [{ id: 'payment-1', method: 'cash', amountMinor: 100 }],
+    });
+    return 'saved';
+  } catch (error) {
+    return (error as { code?: string }).code ?? String(error);
+  } finally {
+    await ordersDb.close();
+  }
+}
+
 /** The park order's second step, after close() (ADR-061, amendment 1). */
 function terminate(): void {
   storage?.terminate();
@@ -109,8 +132,9 @@ declare global {
       count: typeof count;
       close: typeof close;
       terminate: typeof terminate;
+      openOrdersAndSave: typeof openOrdersAndSave;
     };
   }
 }
 
-window.tally = { open, insertMany, insertPriced, queryByIndex, count, close, terminate };
+window.tally = { open, insertMany, insertPriced, queryByIndex, count, close, terminate, openOrdersAndSave };

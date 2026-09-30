@@ -1,0 +1,426 @@
+[
+  {
+    "id": "order-0001",
+    "commandId": "command-1",
+    "createdAt": "2026-09-25T00:00:01.000Z",
+    "updatedAt": "2026-09-25T00:00:01.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 100,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 100,
+    "syncStatus": "pending",
+    "customer": null,
+    "lines": [
+      {
+        "id": "line-1",
+        "productId": "p1",
+        "name": "Item 1",
+        "sku": "sku-1",
+        "quantity": 1,
+        "unitPriceMinor": 100,
+        "discountMinor": 0,
+        "netMinor": 100,
+        "taxLines": []
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-1",
+        "method": "cash",
+        "amountMinor": 100
+      }
+    ]
+  },
+  {
+    "id": "order-0002",
+    "commandId": "command-2",
+    "createdAt": "2026-09-25T00:00:02.000Z",
+    "updatedAt": "2026-09-25T00:00:02.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 200,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 200,
+    "syncStatus": "pending",
+    "customer": null,
+    "lines": [
+      {
+        "id": "line-2",
+        "productId": "p2",
+        "name": "Item 2",
+        "sku": "sku-2",
+        "quantity": 1,
+        "unitPriceMinor": 200,
+        "discountMinor": 0,
+        "netMinor": 200,
+        "taxLines": []
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-2",
+        "method": "cash",
+        "amountMinor": 200
+      }
+    ]
+  },
+  {
+    "id": "order-0003",
+    "commandId": "command-3",
+    "createdAt": "2026-09-25T00:00:03.000Z",
+    "updatedAt": "2026-09-25T00:00:03.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 300,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 300,
+    "syncStatus": "pending",
+    "customer": null,
+    "lines": [
+      {
+        "id": "line-3",
+        "productId": "p3",
+        "name": "Item 3",
+        "sku": "sku-3",
+        "quantity": 1,
+        "unitPriceMinor": 300,
+        "discountMinor": 0,
+        "netMinor": 300,
+        "taxLines": []
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-3",
+        "method": "cash",
+        "amountMinor": 300
+      }
+    ]
+  },
+  {
+    "id": "order-0004",
+    "commandId": "command-4",
+    "createdAt": "2026-09-25T00:00:04.000Z",
+    "updatedAt": "2026-09-25T00:00:04.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 400,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 400,
+    "syncStatus": "applied",
+    "customer": null,
+    "lines": [],
+    "payments": [
+      {
+        "id": "payment-4",
+        "method": "cash",
+        "amountMinor": 400
+      }
+    ],
+    "serverRefs": {
+      "orderId": "server-order-4",
+      "displayId": "#1004",
+      "totalMinor": 400
+    },
+    "warnings": [
+      {
+        "code": "total_mismatch",
+        "expectedMinor": 400,
+        "serverMinor": 401
+      }
+    ]
+  },
+  {
+    "id": "order-0005",
+    "commandId": "command-5",
+    "createdAt": "2026-09-25T00:00:05.000Z",
+    "updatedAt": "2026-09-25T00:00:05.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 500,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 500,
+    "syncStatus": "rejected",
+    "customer": null,
+    "lines": [],
+    "payments": [
+      {
+        "id": "payment-5",
+        "method": "cash",
+        "amountMinor": 500
+      }
+    ],
+    "error": {
+      "code": "FIXTURE_REJECTED",
+      "message": "Rejected fixture order"
+    }
+  },
+  {
+    "id": "order-0006",
+    "commandId": "command-6",
+    "createdAt": "2026-09-25T00:00:06.000Z",
+    "updatedAt": "2026-09-25T00:00:06.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 100,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 100,
+    "syncStatus": "pending",
+    "customer": null,
+    "lines": [
+      {
+        "id": "line-1",
+        "productId": "p1",
+        "name": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL",
+        "sku": "sku-1",
+        "quantity": 1,
+        "unitPriceMinor": 100,
+        "discountMinor": 0,
+        "netMinor": 100,
+        "taxLines": []
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-6",
+        "method": "cash",
+        "amountMinor": 100
+      }
+    ]
+  },
+  {
+    "id": "order-0007",
+    "commandId": "command-7",
+    "createdAt": "2026-09-25T00:00:07.000Z",
+    "updatedAt": "2026-09-25T00:00:07.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 900,
+    "discountMinor": 100,
+    "taxMinor": 171,
+    "totalMinor": 1071,
+    "syncStatus": "pending",
+    "customer": null,
+    "lines": [
+      {
+        "id": "line-7",
+        "productId": "p7",
+        "variantId": "v7",
+        "name": "Item 7",
+        "sku": "sku-7",
+        "quantity": 2,
+        "unitPriceMinor": 500,
+        "discountMinor": 100,
+        "netMinor": 900,
+        "taxLines": [
+          {
+            "code": "VAT",
+            "ratePpm": 190000,
+            "taxMicros": "171000000"
+          }
+        ]
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-7",
+        "method": "cash",
+        "amountMinor": 1071,
+        "tenderedMinor": 2000,
+        "changeMinor": 929
+      }
+    ],
+    "display": {
+      "currency": "EUR",
+      "exponent": 2,
+      "taxInclusive": false,
+      "subtotalMinor": 1000,
+      "discountMinor": 100,
+      "taxMinor": 171,
+      "totalMinor": 1071,
+      "lines": [
+        {
+          "lineId": "line-7",
+          "amountMinor": 1000,
+          "discounts": [
+            {
+              "discountId": "discount-7",
+              "label": "Loyalty",
+              "amountMinor": 100
+            }
+          ]
+        }
+      ],
+      "orderDiscountMinor": 0
+    },
+    "taxByRate": [
+      {
+        "ratePpm": 190000,
+        "code": "VAT",
+        "netMinor": 900,
+        "amountMinor": 171,
+        "grossMinor": 1071
+      }
+    ]
+  },
+  {
+    "id": "order-0008",
+    "commandId": "command-8",
+    "createdAt": "2026-09-25T00:00:08.000Z",
+    "updatedAt": "2026-09-25T00:00:08.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 100,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 100,
+    "syncStatus": "pending",
+    "customer": {
+      "id": "customer-8",
+      "name": "Ada Buyer",
+      "email": "ada@example.com"
+    },
+    "lines": [
+      {
+        "id": "line-8",
+        "productId": "p8",
+        "name": "Item 8",
+        "sku": "sku-8",
+        "quantity": 1,
+        "unitPriceMinor": 100,
+        "discountMinor": 0,
+        "netMinor": 100,
+        "taxLines": []
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-8",
+        "method": "external",
+        "amountMinor": 100,
+        "reference": "terminal-8"
+      }
+    ],
+    "sessionId": "01a0ef00-0000-7000-8000-000000000008"
+  },
+  {
+    "id": "order-0009",
+    "commandId": "command-9",
+    "createdAt": "2026-09-25T00:00:09.000Z",
+    "updatedAt": "2026-09-25T00:00:09.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 200,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 200,
+    "syncStatus": "pending",
+    "customer": null,
+    "lines": [
+      {
+        "id": "line-9",
+        "productId": "p9",
+        "name": "Item 9",
+        "sku": "sku-9",
+        "quantity": 1,
+        "unitPriceMinor": 200,
+        "discountMinor": 0,
+        "netMinor": 200,
+        "taxLines": []
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-9",
+        "method": "cash",
+        "amountMinor": 200
+      }
+    ],
+    "lateSessionId": "01a0ef00-0000-7000-8000-000000000009"
+  },
+  {
+    "id": "order-0010",
+    "commandId": "command-10",
+    "createdAt": "2026-09-25T00:00:10.000Z",
+    "updatedAt": "2026-09-25T00:00:10.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 900,
+    "discountMinor": 100,
+    "taxMinor": 171,
+    "totalMinor": 1071,
+    "syncStatus": "pending",
+    "customer": null,
+    "lines": [
+      {
+        "id": "line-10",
+        "productId": "p10",
+        "variantId": "v10",
+        "name": "Item 10",
+        "sku": "sku-10",
+        "quantity": 2,
+        "unitPriceMinor": 500,
+        "discountMinor": 100,
+        "netMinor": 900,
+        "taxLines": [
+          {
+            "code": "VAT",
+            "ratePpm": 190000,
+            "taxMicros": "171000000"
+          }
+        ]
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-10",
+        "method": "cash",
+        "amountMinor": 1071,
+        "tenderedMinor": 2000,
+        "changeMinor": 929
+      }
+    ],
+    "display": {
+      "currency": "EUR",
+      "exponent": 2,
+      "taxInclusive": false,
+      "subtotalMinor": 1000,
+      "discountMinor": 100,
+      "taxMinor": 171,
+      "totalMinor": 1071,
+      "lines": [
+        {
+          "lineId": "line-10",
+          "amountMinor": 1000,
+          "discounts": [
+            {
+              "discountId": "discount-10",
+              "label": "Loyalty",
+              "amountMinor": 100
+            }
+          ]
+        }
+      ],
+      "orderDiscountMinor": 0
+    },
+    "taxByRate": [
+      {
+        "ratePpm": 190000,
+        "code": "VAT",
+        "netMinor": 900,
+        "amountMinor": 171,
+        "grossMinor": 1071
+      }
+    ],
+    "note": "Gift wrap",
+    "registerId": "register-1",
+    "cashierRef": "staff-1"
+  }
+]

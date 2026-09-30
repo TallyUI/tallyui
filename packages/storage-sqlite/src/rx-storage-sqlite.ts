@@ -1,8 +1,12 @@
 import type { RxStorage } from 'rxdb';
 import type { SQLiteBasics } from 'rxdb/plugins/storage-sqlite';
+import { setPremiumFlag } from 'rxdb-premium/plugins/shared';
 import { getRxStorageSQLite as getPremiumRxStorageSQLite } from 'rxdb-premium/plugins/storage-sqlite';
 import { sqliteBoolParams } from './params';
 import type { SQLiteDatabase } from './types';
+
+// Also at import, before anything else can make RxDB cache the flag's first check as false.
+setPremiumFlag();
 
 /**
  * Wraps a synchronous SQLite handle with RxDB Premium SQLite storage.
@@ -10,6 +14,10 @@ import type { SQLiteDatabase } from './types';
  * One SQLite handle serves exactly one RxDB database.
  */
 export function getRxStorageSQLite(database: SQLiteDatabase): RxStorage<any, any> {
+  // RxDB 17 caps a process at 13 open collections unless the premium flag is
+  // set; premium storages do not set it themselves. RxDB caches the first
+  // flag check, so this must run before any collection is created.
+  setPremiumFlag();
   let databaseName: string | undefined;
   const sqliteBasics: SQLiteBasics<SQLiteDatabase> = {
     debugId: 'tallyui-sqlite-sync',

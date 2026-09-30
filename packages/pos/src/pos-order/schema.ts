@@ -9,9 +9,11 @@ import type { PosOrder } from './types';
  * till migrates once. Create the collection with `posOrderCollection()`, never with this schema
  * alone: RxDB refuses a version above 0 without its migration strategies.
  * Version 3 adds an index on `sessionId` (with its `maxLength`), and the optional `sentVersion` and `downgradedFrom` (the outbox's version fallback), and changes nothing else.
+ * Version 4 adds the optional `localWarnings` and `serverFailures` (the outbox's stuck clock start, latest reason and
+ * isolation, restored when an outbox starts), and changes nothing else.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 3, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 4, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     commandId: { type: 'string', maxLength: 36 },
@@ -50,6 +52,12 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       required: ['code'], additionalProperties: true,
     } },
     error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'] },
+    localWarnings: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      code: { type: 'string', maxLength: 64 }, field: { type: 'string', maxLength: 16 }, paymentId: { type: 'string', maxLength: 36 },
+    }, required: ['code'] } },
+    serverFailures: { type: 'object', additionalProperties: false, properties: {
+      since: { type: 'integer', minimum: 0 }, reason: { type: 'string', maxLength: 64 }, isolated: { type: 'boolean' },
+    }, required: ['since', 'reason', 'isolated'] },
     lateSessionId: { type: 'string' },
     sentVersion: { type: 'integer', minimum: 1, maximum: 3 },
     downgradedFrom: { type: 'integer', minimum: 1, maximum: 3 },
@@ -99,5 +107,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // addRxPlugin ignores a plugin it already has.
   addRxPlugin(RxDBMigrationSchemaPlugin);
   const identity = (doc: PosOrder) => doc;
-  return { schema: posOrderSchema, migrationStrategies: { 1: identity, 2: identity, 3: identity } };
+  return { schema: posOrderSchema, migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity } };
 }

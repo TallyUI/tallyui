@@ -13,6 +13,12 @@ function sale(): PosOrder {
 }
 
 describe('needsAttention', () => {
+  it.each(['pending', 'applied', 'rejected'] as const)('includes a %s order with local warnings', (syncStatus) => {
+    const base = sale();
+    const warned: PosOrder = { ...base, syncStatus, localWarnings: [{ code: 'customer_omitted', field: 'email' }] };
+    expect(needsAttention([base, { ...base, syncStatus: 'applied', localWarnings: [] }, warned])).toEqual([warned]);
+  });
+
   it('selects rejected and applied-with-warnings orders newest first without changing the input', () => {
     const base = sale();
     const rejected: PosOrder = { ...base, id: 'rejected', syncStatus: 'rejected', createdAt: '2026-01-01T00:00:00Z' };
