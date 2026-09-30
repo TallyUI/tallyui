@@ -433,6 +433,9 @@ describe('SyncStatus', () => {
     ['store_misconfigured without one', notice('store_misconfigured'), undefined,
       "Products aren't updating: a setting on the online store needs changing.",
       "You can keep selling. Ask the store owner to check the store's settings."],
+    ['till_update_required', notice('till_update_required', { fixedBy: 'till' }), undefined,
+      "Products aren't updating: this till needs updating.",
+      'You can keep selling. Products, prices and stock stay as they were until this till is updated.'],
     ['an unknown code', notice('some_new_code'), undefined, fallbackLine, fallbackDetail],
     ['an unknown till code', notice('some_till_code', { fixedBy: 'till' }), undefined, fallbackLine, fallbackDetail],
   ])('shows the pull notice for %s as a plain line and a detail, never the raw code', (_name, pullNotice, pluginName, noticeLine, noticeDetail) => {

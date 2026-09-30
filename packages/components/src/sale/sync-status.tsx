@@ -14,6 +14,10 @@ const PULL_NOTICE_TEXT: Record<string, PullNoticeText> = {
     line: () => "Products aren't updating: this till needs to sign in to the online store again.",
     detail: () => 'You can keep selling. Products, prices and stock stay as they were until someone signs in again.',
   },
+  till_update_required: {
+    line: () => "Products aren't updating: this till needs updating.",
+    detail: () => 'You can keep selling. Products, prices and stock stay as they were until this till is updated.',
+  },
   unsupported_store: {
     line: () => "Products aren't updating: the online store needs a software update.",
     detail: ({ software, minVersion }) => software && minVersion
