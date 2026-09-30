@@ -321,6 +321,10 @@ describe('startCatalogueReconcile', () => {
   });
 
   describe('the mass-delete brake', () => {
+    // For the store owner: plain words, no backend named, the pass's own count.
+    const BRAKE_13 = '13 products the online store no longer lists were kept on this till, because removing that many at once '
+      + 'needs a check. If they were hidden or removed on purpose, whoever manages this till can allow the removal.';
+
     it('keeps 13 of 60 confirmed-gone keys (over 20% and over 10) and logs kept: brake', async () => {
       const { server, feed, collection } = await setup(60);
       const time = fakeTime();
@@ -332,10 +336,10 @@ describe('startCatalogueReconcile', () => {
 
       runner.reconcile();
       await time.runUntil(() => count('pass-completed') === 1);
-      expect(events).toContainEqual({ type: 'kept', count: 13, keys: gone.map(uuid), reason: 'brake' });
+      expect(events).toContainEqual({ type: 'kept', count: 13, keys: gone.map(uuid), reason: 'brake', message: BRAKE_13 });
       expect(count('tombstoned')).toBe(0);
       expect(confirmed).toEqual([]); // braked on the candidates, before confirmGone
-      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/13 of 60.*allowMassDelete/));
+      expect(warn).toHaveBeenCalledWith(`Catalogue reconcile: ${BRAKE_13} (pass allowMassDelete: true to the reconcile runner to apply it)`);
       await settle();
       expect(await db!.products.count().exec()).toBe(60);
     }, 30_000);
@@ -354,7 +358,7 @@ describe('startCatalogueReconcile', () => {
       runner.reconcile();
       await time.runUntil(() => count('pass-completed') === 1);
       expect(confirmCalls).toEqual([]);
-      expect(events).toContainEqual({ type: 'kept', count: 13, keys: gone.map(uuid), reason: 'brake' });
+      expect(events).toContainEqual({ type: 'kept', count: 13, keys: gone.map(uuid), reason: 'brake', message: BRAKE_13 });
       expect(count('tombstoned')).toBe(0);
       await settle();
       expect(await db!.products.count().exec()).toBe(60);
@@ -373,6 +377,24 @@ describe('startCatalogueReconcile', () => {
       expect(events).toContainEqual({ type: 'tombstoned', count: 13, keys: gone.map(uuid) });
       await settle();
       expect(await db!.products.count().exec()).toBe(47);
+    }, 30_000);
+
+    it('a 1-product till whose only product is unlisted brakes, and the message is singular', async () => {
+      const { server, feed, collection } = await setup(1);
+      const time = fakeTime();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      server.remove(1);
+      const { adapter } = fakeAdapter(server, feed, { pageSize: 20, now: time.now });
+      const { runner, events, count } = start(collection, adapter, time);
+
+      runner.reconcile();
+      await time.runUntil(() => count('pass-completed') === 1);
+      const message = '1 product the online store no longer lists was kept on this till, because removing that many at once '
+        + 'needs a check. If it was hidden or removed on purpose, whoever manages this till can allow the removal.';
+      expect(events).toContainEqual({ type: 'kept', count: 1, keys: [uuid(1)], reason: 'brake', message });
+      expect(warn).toHaveBeenCalledWith(`Catalogue reconcile: ${message} (pass allowMassDelete: true to the reconcile runner to apply it)`);
+      await settle();
+      expect(await db!.products.count().exec()).toBe(1);
     }, 30_000);
   });
 
