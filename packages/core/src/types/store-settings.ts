@@ -8,6 +8,8 @@ export interface StoreSettings {
   pricesIncludeTax: boolean;
   /** Tax rates for the store's location as integer parts per million (25% = 250000), keyed by the backend's tax class; `default` applies to a product with no class. Always integers: a connector rounds a backend's decimal rate once, at its edge. Structurally the same as @tallyui/pos's TaxRateMap. */
   taxRatesPpm: { default: number; [taxClass: string]: number };
+  /** The backend's tax rate name per tax class (same keys as `taxRatesPpm`, including `default`), for `per_rate_group_items`' grouping (#324). Set by a connector whose rounding groups by rate name; absent otherwise. */
+  taxRateCodes?: Record<string, string>;
   /** Connector-specific and opaque to the app: what the connector needs to price documents. The app passes it back to the connector unchanged, and never logs it. */
   pricingContext?: Record<string, string>;
   /** Derived, never read by `storeSettings`: the store's `ServerCapabilities.taxRounding`, which `useStoreSettings` fills in (#324). */

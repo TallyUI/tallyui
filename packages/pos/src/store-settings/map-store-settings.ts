@@ -8,11 +8,11 @@ export function withPricingContext(context: SyncContext, settings: StoreSettings
 }
 
 /**
- * `<TaxProvider>`'s props from the same settings, so its tax inclusivity and rounding match the store's. `custom`
+ * `<TaxProvider>`'s props from the same settings, so its tax inclusivity, rounding and rate codes match the store's. `custom`
  * rounding passes none, the default (#287). An explicit `rounding` prop after the spread still wins, since JSX
  * applies props in order; so `<TaxProvider {...taxProviderProps(s)} rounding={undefined}>` wipes the store's rounding.
  */
 export function taxProviderProps(settings: StoreSettings): Omit<TaxProviderProps, 'children'> {
   const rounding = settings.taxRounding?.granularity === 'custom' ? undefined : settings.taxRounding;
-  return { ratesPpm: settings.taxRatesPpm, pricesIncludeTax: settings.pricesIncludeTax, ...(rounding && { rounding }) };
+  return { ratesPpm: settings.taxRatesPpm, pricesIncludeTax: settings.pricesIncludeTax, ...(rounding && { rounding }), ...(settings.taxRateCodes && { rateCodes: settings.taxRateCodes }) };
 }

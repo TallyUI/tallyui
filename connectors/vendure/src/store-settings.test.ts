@@ -49,6 +49,45 @@ describe('vendureStoreSettings', () => {
     expect(settings.taxRatesPpm.default).toBe(70000);
   });
 
+  it('uses the tax rate names by category id and the isDefault category for default', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(channelBody([{ id: '1', isDefault: false }, { id: '2', isDefault: true }]))
+      .mockResolvedValueOnce(ratesBody([{ ...rate(25, '1'), name: 'Standard' }, { ...rate(7, '2'), name: 'Reduced' }]));
+
+    const settings = await vendureStoreSettings(context);
+    expect(settings.taxRateCodes).toEqual({ default: 'Reduced', '1': 'Standard', '2': 'Reduced' });
+  });
+
+  it('omits filtered, rateless, and nameless categories from taxRateCodes', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(channelBody([
+        { id: '1', isDefault: true }, { id: '2', isDefault: false }, { id: '3', isDefault: false },
+        { id: '4', isDefault: false }, { id: '5', isDefault: false }, { id: '6', isDefault: false },
+      ]))
+      .mockResolvedValueOnce(ratesBody([
+        { ...rate(25, '2'), name: 'Standard' },
+        { ...rate(50, '3', { enabled: false }), name: 'Disabled' },
+        { ...rate(99, '4', { customerGroup: { id: 'vip' } }), name: 'VIP' },
+        { ...rate(6, '5'), name: 'Earlier' },
+        { ...rate(7, '5'), name: '' },
+        { ...rate(8, '6'), name: 42 },
+      ]));
+
+    const settings = await vendureStoreSettings(context);
+    expect(settings.taxRateCodes).toEqual({ '2': 'Standard' });
+  });
+
+  it('requests name but omits taxRateCodes when the response has none', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(channelBody([{ id: '1', isDefault: true }]))
+      .mockResolvedValueOnce(ratesBody([rate(25, '1')]));
+
+    const settings = await vendureStoreSettings(context);
+    expect(settings).not.toHaveProperty('taxRateCodes');
+    const secondCallBody = JSON.parse(fetch.mock.calls[1]![1]!.body as string);
+    expect(secondCallBody.query).toMatch(/items\s*\{\s*name\b/);
+  });
+
   it('rounds a decimal rate to integer ppm, and every value is an integer', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(channelBody([{ id: '1', isDefault: true }]))
