@@ -3746,3 +3746,186 @@ interface OrderCreatePayload {
     `pos_orders` version is stored.
   - Parked sales live in a collection each app supplies
     (`draftsCollection`); TallyUI's fixtures prove `pos_orders` only.
+
+## ADR-070 Strict command payloads, a batch limit, and declared fields
+
+- **Date:** 2026-09-30 · **Status:** Accepted (Front desk rulings for both
+  backends, 2026-09-30) · **Source:** the medusapos and vendurepos workers,
+  and a second opinion from Codex · **Amends:** ADR-038 (the transport and
+  the payload)
+- **Context:** the contract said nothing about fields a server does not
+  know, or about what a batch over the limit is answered, and the two
+  backends had drifted. medusapos pinned leniency
+  (`payload-shape.unit.spec.ts:128`, which now changes); vendurepos wrote
+  its own rule (its ADR 0002 §5). A till already treats versions as the
+  gate for new fields: `@tallyui/pos` 2.0.0 sends `order.create` version 2
+  exactly when a line has `discountMinor > 0`
+  (`packages/pos/src/pos-order/command.ts:12` at that tag).
+- **Decision (1), unknown fields are refused:**
+  - A server refuses a command that carries a field its declared protocol
+    version does not know (ruling 17). The answer is `invalid_payload`,
+    naming the full path (for example `lines[2].discountMinr`), and the
+    check covers every object in every command type: the top level,
+    `lines[]`, `payments[]`, `customer`, and each register payload.
+  - A field that belongs to a later version is refused in an earlier one,
+    naming the version it requires.
+  - Every new field needs a version bump. So a field that changes what the
+    customer pays, or what stock moves, reaches an older server only in a
+    version it refuses, never one it quietly ignores.
+  - Keys are free only where the contract declares a map. Today those are
+    `counted` and `tillExpected` in the register commands, with integer
+    values in minor units; a map's keys are data and are checked by that
+    map's own rule. Each key of `counted` and `tillExpected` is a payment
+    method the contract declares for the command's version, the same
+    vocabulary a sale's payments use; it is not store configuration. An
+    unknown key is refused as `invalid_payload` naming the full path; one
+    that a later version declares is refused naming the version it needs.
+    Every other object accepts only the fields its version names.
+  - Today (read on each main branch, 2026-09-30) nothing refuses an
+    unknown field or an unknown map key:
+    - TallyUI core's `payloadShapeErrors` and `registerPayloadErrors`
+      accept unknown fields (`register-payload-shape.ts:1`: "Unknown
+      top-level keys are allowed"); `precheckCommand` refuses only the
+      version-gated fields. Strict per-version fields will come in
+      TallyUI #255.
+    - The medusapos plugin is lenient on unknown fields, pinned by
+      `packages/medusa-plugin/src/workflows/tally-order-create/__tests__/`
+      `payload-shape.unit.spec.ts:128`, and refuses only the fields a
+      later version declares (`process.ts:101-105`). ADR-065's "medusapos
+      is strict (#62)" means exactly that version gate; it never refused a
+      field that no version declares. Strict fields will come in
+      medusapos/app#132.
+    - vendurepos will refuse unknown fields in vendurepos/app#36, under
+      review.
+    - For the map keys, core's `registerPayloadErrors` and the medusapos
+      plugin require an object with non-empty keys and safe-integer values
+      (core also refuses a NUL in a key); vendurepos has no register
+      commands yet (its M6). No backend checks a key against the declared
+      payment methods; that will be built in TallyUI #256 and
+      medusapos/app#132.
+  - Why: a misspelled optional money field from a buggy till must be refused
+    in plain sight, not ignored in silence. Refused, the sale stays on the
+    till and nothing is lost. Ignored, the till and the server would
+    disagree about the price.
+- **What the till does with that refusal:**
+  - The result is final for that command id: the outbox marks the order
+    `rejected` and never retries it by itself, so there is no loop
+    (`packages/pos/src/outbox/order-outbox.ts`, where a result is written).
+  - The order shows under "Needs attention" with the error's code and
+    message, and a Retry button (`OrdersList`). Retry is the cashier's
+    choice and sends the order again under a new command id (`requeue()`).
+    An `idempotency_mismatch` gets no Retry: it is reconciled by hand.
+- **Decision (2), the batch limit:**
+  - A batch holds at most 50 commands. A larger one is answered `413` with
+    `{ code: 'batch_too_large', maxCommands, message }`, never `400`; the
+    exact body is in ADR-038 and `@tallyui/core/server`'s `validateBatch`
+    (#249).
+  - The till's rules, the same as ADR-038's, describe what programme item
+    55 will make the till do, not what it does today: a till never sends
+    more than the server's limit. On a `413` it halves the batch and sends
+    again, using `maxCommands` from the body when it is present; a `413`
+    without the code (a proxy or a body-size limit) is handled the same
+    way. When a batch of one is still answered `413`, that order is shown
+    as refused because it is too large for the store to accept, and the
+    orders behind it are sent. A `413` never marks an order as poisoned and
+    never holds up the queue.
+  - A body over the server's size limit is answered `413` with
+    `{ code: 'body_too_large', maxBytes, message }`, never
+    `invalid_payload` (ruling 20). Under item 55 the till treats it as it
+    treats `batch_too_large`: it halves the batch and sends again, and a
+    single order that is still too large is shown as refused. The size
+    limit belongs to each backend's body parser; `validateBatch` receives
+    a parsed body and does not check it.
+  - Today, per code (read on each main branch, 2026-09-30):
+    - **vendurepos** sends `batch_too_large` with `maxCommands`
+      (`packages/vendure-plugin/src/api/commands.controller.ts:23`). A body
+      over its 1 MB limit gets `413` with `code: 'invalid_payload'`
+      (`plugin.ts:39-46`); it will answer `body_too_large` with
+      `maxBytes: 1048576` (vendurepos/app#37, PR vendurepos/app#39).
+    - **medusapos** answers more than 50 commands with a `413` that has no
+      code (`packages/medusa-plugin/src/api/tally/v1/commands/`
+      `process.ts:25`). A body over the plugin's own `sizeLimit: '1mb'`
+      (`src/api/middlewares.ts:24`) also gets no code. It will send both
+      codes with their bodies (medusapos/app#131, PR medusapos/app#134).
+  - Today the outbox sends at most 10 per batch, and a `413` is `refused`:
+    sending pauses and no order changes until the outbox is next flushed,
+    for example by the next sale (`OutboxState.refused`). So one oversized
+    order, or a proxy's body-size limit, holds up every later sale. Meeting
+    the rules above is programme item 55, sequenced after item 24 because
+    it shares its machinery (isolating one order and letting the rest
+    through). Its acceptance covers `body_too_large` as well as
+    `batch_too_large`.
+- **Decision (3), a declared field is honoured or refused, never ignored**
+  (ruling 19):
+  - A field the contract declares, in a version the command declares, is
+    either acted on by the server or refused by name.
+  - "A declared field is honoured or refused, never ignored" governs
+    instruction fields, those that ask the server to do something
+    different (where stock comes from, which customer, which price).
+    Informational fields are the till's own record (`title`,
+    `subtotalMinor`, `taxMinor`, `deviceId`, `attempt`). A server may
+    leave them unused, and never refuses a command because they differ
+    from its own computation. A command whose own figures contradict each
+    other is malformed and is refused as `invalid_payload` (version 3:
+    `taxMinor` against `display.taxMinor` and the `taxByRate` sum); that
+    is a check of the command, not of the server's view of it. The
+    contract will list each declared field with its kind (#262); a new
+    field states its kind when it is added.
+  - For money the server's computation is authoritative; what a backend
+    does when the till's amounts differ from its own is stated per
+    backend, from its code today, with an issue cited where a difference
+    is accepted silently:
+    - **medusapos** (`packages/medusa-plugin/src/workflows/`
+      `tally-order-create/plan.ts` on main) prices each line from the
+      till's own `unitPriceMinor`, tax mode and line discount, as a custom
+      price plus a "POS discount" adjustment (:156-162); tax and totals
+      are then Medusa's own. The till's `subtotalMinor`, `taxMinor` and
+      `discountMinor` are kept unchanged as the fiscal record in
+      `metadata.tally_pos_totals` (:136-146) and never compared, so a
+      difference there passes silently (medusapos/app#133). A
+      `totalMinor` that differs from Medusa's total is accepted with a
+      `total_mismatch` warning (:179-180), and the payment collection is
+      charged exactly the till's `totalMinor` (:110). Payments that sum
+      to less than `totalMinor` are a stored `underpaid` rejection
+      (:99-101), and a line discount above its line amount is
+      `invalid_quantity` (:76-77); overpayment is accepted.
+    - **vendurepos** (`packages/vendure-plugin/src/` on main) compares
+      `totalMinor` in every version: Vendure's total is bridged to it by
+      a `POS rounding` surcharge, and the result carries a
+      `total_mismatch` warning (`service/order-create.service.ts:668-675`).
+      In versions 1 and 2 it is the only amount compared: `subtotalMinor`
+      and `taxMinor` are only type- and range-checked, so a difference
+      from the server's subtotal or tax passes silently, with no warning
+      and nothing stored (vendurepos/app#38). In version 3, `taxMinor`
+      must also equal `display.taxMinor` and the sum of
+      `taxByRate[].taxMinor` (`vendored/fiscal-figures.ts:93-95`), and
+      each rate's tax is compared with Vendure's; a difference beyond
+      the rounding tolerance gives a `tax_rate_mismatch` warning
+      (`order-create.service.ts:677-693`). Version 3 `subtotalMinor` is
+      only range-checked, as before. vendurepos's ADR 0002 §5 will list
+      every declared `order.create` field with its kind
+      (vendurepos/app#36).
+    - One warning for these differences, with each field's two values,
+      is to be settled in core first (#257); both backends follow it.
+  - `payload.locationId` is the case that prompted it (checked with both
+    workers on 2026-09-30):
+    - **vendurepos** accepts it today and ignores it. It will refuse it
+      with `invalid_payload` ('not supported by this server yet') until a
+      ruling says how it is honoured (vendurepos/app#35); the change, with
+      decision (1), is vendurepos/app#36, under review.
+    - **medusapos** honours it today: the payload's location comes first,
+      then the plugin option, then the sales channel's first location. An
+      unknown location, or one not assigned to the sale's sales channel,
+      is answered with an unstored `store_configuration` naming
+      `payload.locationId` (`packages/medusa-plugin/src/workflows/`
+      `tally-order-create/run.ts:47-60`, medusapos/app#130). That code
+      fits because it is a fact about the store, and the merchant can put
+      it right.
+- **Consequences:**
+  - medusapos will change its lenient shape check, and both plugins will
+    refuse unknown fields with the path named (vendurepos/app#36,
+    medusapos/app#132). TallyUI core's shared checks will do the same
+    (#255), so a backend built on them is strict by default.
+  - A new optional field in `order.create` always comes with a version bump
+    and `precheckCommand`'s version checks, as `discountMinor` (version 2)
+    and `display`/`taxByRate` (version 3) already did.
