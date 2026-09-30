@@ -50,6 +50,16 @@ const BACKEND_MISSING_DETAIL = "This till couldn't find {pluginName} on the onli
   + "and switched on, and that the store address in this till's settings is right.";
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+// iOS has no live region (accessibilityLiveRegion is Android-only), so there `text` is announced once each time it changes:
+// never on the first mount, nor on a re-render with the same text.
+function useAnnounceOnIos(text: string | undefined) {
+  const announced = useRef(text);
+  useEffect(() => {
+    if (announced.current === text) return;
+    announced.current = text;
+    if (text && Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(text);
+  }, [text]);
+}
 /**
  * `pluginName` names the store's plugin in the detail, as its owners know it; `registerState` counts till updates.
  * `pullNotice` (a stopped product pull) shows as its own line and detail, above the outbox line.
@@ -79,29 +89,27 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   const upToDate = state.pending === 0 && updates === 0;
   const stuckText = !stuck || backendMissing ? ''
     : ` · Not syncing ${stuck.commandIds.length} order${stuck.commandIds.length === 1 ? '' : 's'}: `
-      + (stuck.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing') + ` (${stuck.reason}) since ${at(stuck.since)}`;
-  const line = upToDate ? 'Sales are up to date.' : label + (backendMissing ? ` · ${backendMissingText}` : outbox.sending ? ' · sending' : outbox.lastRetryReason
-    ? ` · retrying (${outbox.lastRetryReason}) in ${seconds}s` : '') + stuckText;
-  // iOS has no live region (accessibilityLiveRegion is Android-only), so there the line is announced once per change of its
-  // text, never on the first mount.
-  const announced = useRef(line);
-  useEffect(() => {
-    if (announced.current === line) return;
-    announced.current = line;
-    if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(line);
-  }, [line]);
+      + (stuck.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing') + ` since ${at(stuck.since)}`;
+  // No raw reason code is shown or spoken. The screen shows the countdown; the label and the announcement leave it out, so a
+  // retry is announced once, when it starts, and not at every tick.
+  const lineWith = (countdown: string) => upToDate ? 'Sales are up to date.' : label + (backendMissing ? ` · ${backendMissingText}`
+    : outbox.sending ? ' · sending' : outbox.lastRetryReason ? ` · retrying${countdown}` : '') + stuckText;
+  const line = lineWith(` in ${seconds}s`), spoken = lineWith('');
+  useAnnounceOnIos(spoken);
   const text = pullNotice
     && (Object.hasOwn(PULL_NOTICE_TEXT, pullNotice.code) ? PULL_NOTICE_TEXT[pullNotice.code] : PULL_NOTICE_FALLBACK);
   const notice = pullNotice && text
     && { line: text.line(pluginName), detail: text.detail(pullNotice, pluginName) };
+  useAnnounceOnIos(notice ? notice.line : undefined);
   // Both notices name the missing plugin: both lines show, and the pull notice's detail once, below them, in place of the outbox's.
   const oneDetail = pullNotice?.code === 'missing_plugin' && !!backendMissing;
-  // The notice lines carry no accessibility label, so a screen reader reads their text; the outbox line's label is its own text.
-  // The outbox line is a polite live region: react-native-web renders accessibilityLiveRegion as aria-live. Its detail has none.
+  // The notice lines carry no accessibility label, so a screen reader reads their text; the outbox line's label is its spoken text.
+  // The notice line and the outbox line are polite live regions (react-native-web renders accessibilityLiveRegion as aria-live);
+  // the details are not: each line says what changed, and its detail is there to read.
   return <View>{notice ? <>
-    <Text className="px-4 py-2 text-xs text-muted-foreground">{notice.line}</Text>
+    <Text accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{notice.line}</Text>
     {oneDetail ? null : <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>}
-  </> : null}<Text accessibilityLabel={line} accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{line}</Text>
+  </> : null}<Text accessibilityLabel={spoken} accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{line}</Text>
   {oneDetail && notice ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>
     : backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
     {BACKEND_MISSING_DETAIL.replace('{pluginName}', () => pluginName).replace('{lastTime}', () => upToDate ? ' the last time it checked' : '')}</Text> : null}</View>;
