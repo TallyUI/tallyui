@@ -5,6 +5,7 @@ import { outboxLogger } from './logger';
 import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, type PosOrder, type PosOrderServerFailures } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
+import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
 import type { CommandTransport, OutboxState } from './types';
 
 // Pause after three 401s since the server last accepted credentials.
@@ -38,6 +39,8 @@ export interface OrderOutboxOptions {
   isolateAfterAttempts?: number;
   /** Tests only: overrides STUCK_AFTER_MS. */
   stuckAfterMs?: number;
+  /** Counts 404s toward OutboxState.backendMissing; pass the register outbox's too, so either one's 404s show one notice. */
+  backendNotFound?: BackendNotFound;
 }
 
 export interface OrderOutbox {
@@ -61,6 +64,10 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const random = options.random ?? Math.random;
   const now = options.now ?? Date.now;
   const state$ = new BehaviorSubject<OutboxState>({ pending: 0, sending: false });
+  const backendNotFound = options.backendNotFound ?? createBackendNotFound();
+  backendNotFound.backendMissing$.subscribe((backendMissing) => {
+    if (backendMissing !== state$.value.backendMissing) state$.next({ ...state$.value, backendMissing });
+  });
   const attempts = new Map<string, number>();
   let backoff = initialBackoff;
   let unauthorizedSinceAccepted = 0;
@@ -248,6 +255,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         return toOrderCreateEnvelope(frozen, deviceId, attempt);
       }));
       let outcome = await transport.send(batch);
+      // A 404 answers the whole batch (the route is missing); any other answer resets the count. Offline changes nothing.
+      backendNotFound.record(outcome, now());
       if (outcome.kind !== 'retry' || outcome.reason !== 'network') {
         // The store answered: every paused clock resumes, leaving out the offline gap. A device clock set back
         // during it makes the gap negative, which keeps the answered time exact, since `now` moved back too.

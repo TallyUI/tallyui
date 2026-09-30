@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { AnyCommandEnvelope, CommandError, CommandResult, RegisterCommandEnvelope } from '@tallyui/core';
+import type { AnyCommandEnvelope, CommandError, CommandResult, OrderCreateEnvelope, RegisterCommandEnvelope } from '@tallyui/core';
 import { posOrderCollection, uuidv7, type PosOrder } from '../pos-order';
 import { registerCommandCollection, registerCommandsLogger, type RegisterCommand } from '../register/register-commands';
 import { readFresh } from '../rxdb';
-import { ISOLATE_AFTER_ATTEMPTS } from './order-outbox';
+import { createBackendNotFound } from './backend-not-found';
+import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS } from './order-outbox';
 import { createRegisterOutbox, type RegisterOutbox, type RegisterOutboxOptions } from './register-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -458,5 +459,55 @@ describe('register outbox', () => {
         after.result ? ['result'] : after.error ? ['error'] : [],
       );
     }
+  });
+});
+
+describe('register outbox backend missing (repeated 404s)', () => {
+  const notFound = { kind: 'retry', reason: 'status_404' } as const;
+
+  it('alone, with its own tracker, sets backendMissing on the third 404, since the first', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    await collection.insert(command(1));
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue(notFound);
+    await outbox.flush();
+    vi.setSystemTime(epoch + 1000);
+    await outbox.flush();
+    expect(states.some((state) => state.backendMissing)).toBe(false);
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(states.at(-1)).toMatchObject({ pending: 1, lastRetryReason: 'status_404', backendMissing: { since: epoch } });
+  });
+
+  it('a shared tracker: two 404s to the order outbox and one here show it on both; a 200 here clears both', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    const backendNotFound = createBackendNotFound();
+    const at = new Date(epoch).toISOString();
+    await db.pos_orders.insert({ id: uuidv7(), commandId: uuidv7(), createdAt: at, updatedAt: at, currency: 'EUR',
+      pricesIncludeTax: false, customer: null, lines: [{ id: uuidv7(), productId: 'product', name: 'Item', sku: 'SKU', quantity: 1,
+        unitPriceMinor: 100, discountMinor: 0, netMinor: 100, taxLines: [] }], payments: [{ id: uuidv7(), method: 'cash', amountMinor: 100 }],
+      subtotalMinor: 100, discountMinor: 0, taxMinor: 0, totalMinor: 100, syncStatus: 'pending' });
+    const orderSend = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>().mockResolvedValue(notFound);
+    const orders = createOrderOutbox({ collection: db.pos_orders, transport: { send: orderSend }, deviceId: 'device-1',
+      random: () => 0.5, backendNotFound });
+    outboxes.push(orders);
+    const orderStates: OutboxState[] = [];
+    orders.state$.subscribe((state) => orderStates.push(state));
+    await collection.insert(command(1));
+    const { outbox, send, states } = setup({ backendNotFound });
+    send.mockResolvedValue(notFound);
+    await orders.flush();
+    await orders.flush();
+    expect([...orderStates, ...states].some((state) => state.backendMissing)).toBe(false);
+    await outbox.flush();
+    expect(states.at(-1)?.backendMissing).toEqual({ since: epoch });
+    expect(orderStates.at(-1)?.backendMissing).toEqual({ since: epoch });
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
+    await outbox.flush();
+    expect(states.at(-1)).toMatchObject({ pending: 0, backendMissing: undefined });
+    expect(orderStates.at(-1)).toMatchObject({ pending: 1, backendMissing: undefined });
+    expect(orderSend).toHaveBeenCalledTimes(2);
   });
 });
