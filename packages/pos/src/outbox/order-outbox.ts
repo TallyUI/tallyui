@@ -10,6 +10,9 @@ import type { CommandTransport, OutboxState } from './types';
 // Pause after three 401s since the server last accepted credentials.
 const AUTH_FAILURES_BEFORE_PROMPT = 3;
 
+// Consecutive 404 answers before OutboxState.backendMissing tells the cashier; fewer may be a deploy blip.
+const NOT_FOUND_BEFORE_NOTICE = 3;
+
 // Rejections that may hide an order the server already created: resending under a new
 // command id could duplicate it, so requeue() leaves these for manual reconciliation.
 const NOT_REQUEUEABLE = new Set(['idempotency_mismatch']);
@@ -64,6 +67,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const attempts = new Map<string, number>();
   let backoff = initialBackoff;
   let unauthorizedSinceAccepted = 0;
+  let notFound: { count: number; since: number } | undefined; // consecutive 404 answers, and when the first arrived
   let running: Promise<void> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let subscription: Subscription | undefined;
@@ -212,6 +216,13 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         for (const clock of clocks.values()) if (clock.pausedAt !== undefined) {
           clock.since += at - clock.pausedAt;
           clock.pausedAt = undefined;
+        }
+        // A 404 answers the whole batch (the route is missing); any other answer resets the count. Offline changes nothing.
+        notFound = outcome.kind === 'retry' && outcome.reason === 'status_404'
+          ? { count: (notFound?.count ?? 0) + 1, since: notFound?.since ?? at } : undefined;
+        const missing = (notFound?.count ?? 0) >= NOT_FOUND_BEFORE_NOTICE;
+        if (missing !== !!state$.value.backendMissing) {
+          state$.next({ ...state$.value, backendMissing: missing ? { since: notFound!.since } : undefined });
         }
       }
       let batchMax: number | undefined;

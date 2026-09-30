@@ -1908,3 +1908,82 @@ describe('order outbox isolation', () => {
     expect(states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], since));
   });
 });
+
+describe('order outbox backend missing (repeated 404s)', () => {
+  const notFound = { kind: 'retry', reason: 'status_404' } as const;
+  const ids = (batch: OrderCreateEnvelope[]) => batch.map((command) => command.id);
+
+  // Each send answers the next outcome in turn (then 404s) and records when it was sent.
+  function timed(...outcomes: TransportOutcome[]) {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+    const harness = setup();
+    const times: number[] = [];
+    harness.send.mockImplementation(async () => { times.push(Date.now()); return outcomes.shift() ?? notFound; });
+    const next = () => vi.advanceTimersByTimeAsync(harness.states.at(-1)!.nextAttemptAt! - Date.now());
+    const missing = () => harness.states.at(-1)!.backendMissing;
+    return { ...harness, times, next, missing };
+  }
+
+  it('two 404s set nothing; the third sets backendMissing since the first, and the outbox keeps retrying', async () => {
+    await collection.insert(order(0));
+    const { outbox, send, states, times, next, missing } = timed();
+    await outbox.flush();
+    await next();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(states.some((state) => state.backendMissing)).toBe(false);
+    await next();
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(times[0]).toBe(epoch);
+    expect(times[2]).toBeGreaterThan(times[0]);
+    expect(states.at(-1)).toMatchObject({ pending: 1, lastRetryReason: 'status_404', backendMissing: { since: times[0] } });
+    expect(states.at(-1)!.nextAttemptAt).toBeGreaterThan(Date.now());
+    await next();
+    expect(send).toHaveBeenCalledTimes(4);
+    expect(missing()).toEqual({ since: times[0] });
+  });
+
+  it('orders stay pending through the 404s; the next accepted batch applies all of them and clears backendMissing', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states, next, missing } = timed();
+    await outbox.flush();
+    // Five batches, then a probe walk through all three: every probe gets a 404, so nothing is isolated.
+    while (send.mock.calls.length < 8) await next();
+    expect(missing()).toEqual({ since: epoch });
+    for (const input of inputs) expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('pending');
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: applied(batch) }));
+    await next();
+    expect(ids(send.mock.calls.at(-1)![0])).toEqual(inputs.map((input) => input.commandId));
+    for (const input of inputs) expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('applied');
+    expect(states.at(-1)).toMatchObject({ pending: 0, backendMissing: undefined });
+  });
+
+  it('a network retry between 404s neither advances the count nor clears backendMissing', async () => {
+    await collection.insert(order(0));
+    const network = { kind: 'retry', reason: 'network' } as const;
+    const { outbox, send, times, next, missing } = timed(notFound, notFound, network, notFound, network);
+    await outbox.flush();
+    while (send.mock.calls.length < 3) await next();
+    expect(missing()).toBeUndefined();
+    await next();
+    expect(missing()).toEqual({ since: times[0] });
+    await next();
+    expect(send).toHaveBeenCalledTimes(5);
+    expect(missing()).toEqual({ since: times[0] });
+  });
+
+  it('a status_503 between 404s resets the count, and clears backendMissing once set', async () => {
+    await collection.insert(order(0));
+    const unavailable = { kind: 'retry', reason: 'status_503' } as const;
+    const { outbox, send, times, next, missing } = timed(notFound, notFound, unavailable, notFound, notFound, notFound, unavailable);
+    await outbox.flush();
+    while (send.mock.calls.length < 5) await next();
+    expect(missing()).toBeUndefined();
+    await next();
+    expect(missing()).toEqual({ since: times[3] });
+    await next();
+    expect(send).toHaveBeenCalledTimes(7);
+    expect(missing()).toBeUndefined();
+  });
+});

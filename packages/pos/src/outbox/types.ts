@@ -26,4 +26,8 @@ export interface OutboxState {
    * would have started had there been no offline gaps (now minus its answered time; while offline, as of the
    * moment the clock paused), and its latest `reason`. `since` is the earliest of theirs; `reason` the latest. */
   stuck?: { commandIds: string[]; since: number; reason: string; orders: { commandId: string; since: number; reason: string }[] };
+  /** Set after 3 consecutive 404 answers: the store address may be wrong, or its TallyUI plugin isn't installed.
+   * The outbox keeps retrying; the next answer that isn't a 404 clears it (offline changes nothing). `since` is when
+   * the first of those 404s arrived. */
+  backendMissing?: { since: number };
 }

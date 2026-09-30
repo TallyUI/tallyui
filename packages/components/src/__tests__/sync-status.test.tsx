@@ -67,4 +67,18 @@ describe('SyncStatus', () => {
     render(<SyncStatus state={{ pending: 2, sending: false, lastRetryReason: 'status_503', nextAttemptAt: now + 3000, stuck: undefined }} />);
     expect(screen.getByLabelText('Sync status').textContent).toBe('2 sales waiting to sync · retrying (status_503) in 3s');
   });
+
+  it('tells the cashier in plain words when the store has no TallyUI (backendMissing), instead of the raw 404', () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    vi.setSystemTime(now);
+    const message = "Can't find TallyUI on the store. The store address may be wrong, or its TallyUI plugin isn't installed. "
+      + "Sales stay safe on this till and will send once it's fixed.";
+    const state: OutboxState = { pending: 2, sending: false, lastRetryReason: 'status_404', nextAttemptAt: now + 3000 };
+    render(<SyncStatus state={{ ...state, backendMissing: { since: now - 60_000 } }} />);
+    expect(screen.getByLabelText('Sync status').textContent).toBe(`2 sales waiting to sync · ${message}`);
+    cleanup();
+    render(<SyncStatus state={state} />);
+    expect(screen.getByLabelText('Sync status').textContent).toBe('2 sales waiting to sync · retrying (status_404) in 3s');
+  });
 });

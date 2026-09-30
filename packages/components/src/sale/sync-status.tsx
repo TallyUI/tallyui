@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import type { OutboxState } from '@tallyui/pos';
 
+// Shown instead of the raw retry reason while the store keeps answering 404 (OutboxState.backendMissing).
+const BACKEND_MISSING = "Can't find TallyUI on the store. The store address may be wrong, or its TallyUI plugin isn't installed. "
+  + "Sales stay safe on this till and will send once it's fixed.";
+
 export function SyncStatus({ state }: { state: OutboxState }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -15,7 +19,7 @@ export function SyncStatus({ state }: { state: OutboxState }) {
     : `${state.pending} sale${state.pending === 1 ? '' : 's'} waiting to sync`;
   const { stuck } = state;
   return <Text accessibilityLabel="Sync status" className="px-4 py-2 text-xs text-muted-foreground">
-    {label}{state.sending ? ' · sending' : state.lastRetryReason
+    {label}{state.backendMissing ? ` · ${BACKEND_MISSING}` : state.sending ? ' · sending' : state.lastRetryReason
       ? ` · retrying (${state.lastRetryReason}) in ${seconds}s` : ''}
     {stuck ? ` · Not syncing ${stuck.commandIds.length} order${stuck.commandIds.length === 1 ? '' : 's'}: `
       + (stuck.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing')
