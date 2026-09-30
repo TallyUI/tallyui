@@ -32,7 +32,7 @@ async function get(path: string, context: SyncContext): Promise<any> {
  * `capabilities` (a missing field is false). Never a version number, and never a failed attempt.
  * A failed status read is "no capability known"; only a 401 or 403 would make the paged listing fail the same way.
  * Only a till-class error (401 `unauthorized`, 426 `till_update_required`) or an abort stops the pass.
- * A 403 `forbidden` is store-class: the catalogue reconcile skips this check and tries again at the next hourly check.
+ * A 403 `forbidden` is store-class: the whole pass is logged `skipped` and runs again at the next check (hourly by default).
  */
 export async function wooHasIdFastPath(context: SyncContext): Promise<boolean> {
   let status: any;

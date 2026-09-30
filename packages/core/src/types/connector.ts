@@ -251,9 +251,11 @@ export interface TallyConnector {
    * block discounts until the cashier signed in again. `undefined` means
    * the read was inconclusive (offline or a server error), not version 1;
    * see `resolveCapabilities`.
-   * It throws when the store refuses the read. Medusa throws `SignInError` (`invalid_credentials`) for a 401. Vendure
-   * throws `ConnectorUnauthorizedError`: `status: 401` when the session is signed out, `status: 403` when a signed-in
-   * administrator lacks the CreateOrder permission.
+   * It may throw when the store refuses the read. Medusa throws `SignInError` (`invalid_credentials`) for a 401; its
+   * 403 gives `undefined`. Vendure throws `ConnectorUnauthorizedError` only once its sign-in probe settles the
+   * cause: `status: 401` when the session is signed out, `status: 403` when a signed-in administrator lacks the
+   * CreateOrder permission; a probe that fails gives `undefined`. Branch on the error's `code` (only
+   * `unauthorized` or `invalid_credentials` means sign in again), never on its class.
    */
   capabilities?: (context: SyncContext) => Promise<ServerCapabilities | undefined>;
   /** Customer search: online only; `undefined` when the connector has no customer support. */
