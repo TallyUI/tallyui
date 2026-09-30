@@ -154,6 +154,19 @@ describe('WooCommerce catalogue reconcile: guards', () => {
     expect(await nameOf(till, 'u11')).toBe('Imported');
   });
 
+  it('never tombstones a product the store cannot be asked about: no numeric id locally or in the listing', async () => {
+    const store = createFakeStore(10);
+    const row = store.row(5);
+    delete (row as Partial<FakeRow>).id; // the schema requires only uuid
+    const till = await tillOf(store);
+    expect((await till.local()).get('u5')?.id).toBeUndefined();
+    row.stock_quantity = 0; // the fingerprint now differs
+
+    await reconcile(till);
+    await till.poll();
+    expect((await till.local()).has('u5')).toBe(true);
+  });
+
   it('keeps a candidate confirmGone does not confirm: still published, just missing from a truncated listing', async () => {
     const store = createFakeStore(10);
     const till = await tillOf(store);

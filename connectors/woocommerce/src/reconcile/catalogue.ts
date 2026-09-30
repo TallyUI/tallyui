@@ -84,6 +84,8 @@ export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>)
       const live = new Set(rows.filter((row) => row.status === 'publish').map((row) => row.id));
       return locals.filter((doc) => Number.isInteger(doc.id) && !live.has(doc.id)).map((doc) => doc.uuid);
     },
-    enqueue: (entries) => feed.enqueue(entries),
+    // An entry with no numeric id, locally or in the listing, is dropped: the store cannot be asked about it, so
+    // the feed would find nothing and tombstone it without proof. (The schema requires only uuid.)
+    enqueue: (entries) => feed.enqueue(entries.filter((e) => e.tombstone || Number.isInteger(e.local?.id) || Number.isInteger(e.remote))),
   };
 }
