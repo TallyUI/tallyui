@@ -76,8 +76,28 @@ describe('validateBatch', () => {
 })
 
 describe('precheckCommand', () => {
+  // A server's own lists (#297); core's SUPPORTED_* constants are the till's capability.
+  const server = { orderCreate: [1, 2, 3, 4], register: [1] }
+
+  it('a server supporting [1, 2, 3] refuses a v4 order.create naming its own list, not core\'s', () => {
+    const v4 = { ...fixture, version: 4, payload: { ...fixture.payload, lines: fixture.payload.lines.map((line, i) =>
+      ({ ...line, discountMinor: [169, 37][i] })), discountMinor: 206 } }
+    expect(precheckCommand(v4 as never, { orderCreate: [1, 2, 3], register: [1] })).toEqual({ id: fixture.id, status: 'rejected',
+      error: { code: 'unsupported_version', message: 'order.create version 4 is not supported; this server supports 1, 2, 3',
+        data: { orderCreate: 3 } } })
+    expect(precheckCommand(v4 as never, { orderCreate: [1, 2, 3, 4], register: [1] })).toBeUndefined()
+  })
+
+  it('checks register versions against the server\'s own list', () => {
+    const open = { ...command, id: 'register-1', type: 'register.session.open', version: 2, payload: { sessionId: 'session' } }
+    expect(precheckCommand(open as never, { orderCreate: [1], register: [1, 2] })).toBeUndefined()
+    expect(precheckCommand({ ...open, version: 1 } as never, { orderCreate: [1], register: [2] })).toMatchObject({
+      error: { code: 'unsupported_version', message: 'register version 1 is not supported; this server supports 2', data: { register: 2 } },
+    })
+  })
+
   it('rejects an unsupported version before any payload rule or ledger claim', () => {
-    expect(precheckCommand({ ...command, version: 5, payload: { display: {} } } as never)).toEqual({
+    expect(precheckCommand({ ...command, version: 5, payload: { display: {} } } as never, server)).toEqual({
       id: command.id, status: 'rejected', error: {
         code: 'unsupported_version', message: 'order.create version 5 is not supported; this server supports 1, 2, 3, 4',
         data: { orderCreate: 4 },
@@ -89,7 +109,7 @@ describe('precheckCommand', () => {
     // The golden v3 at version 4: its inclusive line's 203 is 169 net (the till's figure, pos command.test.ts).
     const lines = fixture.payload.lines.map((line, i) => ({ ...line, discountMinor: [169, 37][i] }))
     const v4 = { ...fixture, version: 4, payload: { ...fixture.payload, lines, discountMinor: 206 } }
-    expect(precheckCommand(v4 as never)).toBeUndefined()
+    expect(precheckCommand(v4 as never, server)).toBeUndefined()
     expect(payloadShapeErrors(v4.payload)).toStrictEqual([])
     expect(fiscalFiguresErrors(v4.payload as never)).toStrictEqual([])
     expect(payloadShapeErrors({ ...v4.payload, discountMinor: 240 })).toStrictEqual(['discountMinor: expected the sum of lines[].discountMinor'])
@@ -101,14 +121,14 @@ describe('precheckCommand', () => {
     for (const version of [1, 2, 3]) {
       const fields = version === 2 ? { discountMinor: 1 } : version === 3 ? { display: {}, taxByRate: [] } : {}
       const envelope = { ...command, version, payload: { ...payload, ...fields } }
-      expect(precheckCommand(envelope as never)).toBeUndefined()
+      expect(precheckCommand(envelope as never, server)).toBeUndefined()
       expect(payloadShapeErrors(envelope.payload)).toStrictEqual(['lines: expected a non-empty array'])
     }
   })
 
   it('does not require discountMinor for version 3', () => {
     const envelope = { ...command, version: 3 }
-    expect(precheckCommand(envelope as never)).toBeUndefined()
+    expect(precheckCommand(envelope as never, server)).toBeUndefined()
     const errors = payloadShapeErrors(envelope.payload)
     expect(errors).toContainEqual(expect.stringContaining('clientOrderId: expected'))
     expect(errors.some(error => error.includes('requires discountMinor'))).toBe(false)
@@ -126,13 +146,13 @@ describe('precheckCommand', () => {
     [1, { customer: { customerId: 'customer' } }, 'customerId requires version 3'],
     [2, { customer: { customerId: 'customer' }, discountMinor: 1 }, 'customerId requires version 3'],
   ])('rejects version %s fields %j before touching the container', (version, payload, message) => {
-    expect(precheckCommand({ ...command, version, payload } as never)).toEqual({ id: command.id, status: 'rejected', error: {
+    expect(precheckCommand({ ...command, version, payload } as never, server)).toEqual({ id: command.id, status: 'rejected', error: {
       code: 'invalid_payload', message,
     } })
   })
 
   it('rejects a version 2 command without a discount before touching the container', () => {
-    expect(precheckCommand({ ...command, id: 'sale-2', version: 2 } as never)).toEqual({ id: 'sale-2', status: 'rejected', error: {
+    expect(precheckCommand({ ...command, id: 'sale-2', version: 2 } as never, server)).toEqual({ id: 'sale-2', status: 'rejected', error: {
       code: 'invalid_payload', message: 'version 2 requires discountMinor',
     } })
   })
@@ -141,7 +161,7 @@ describe('precheckCommand', () => {
     ['on a line', { lines: [{ clientLineId: 'line_1' }, { clientLineId: 'line_2', discountMinor: 100 }] }],
     ['on the payload', { lines: [{ clientLineId: 'line_1' }], discountMinor: 100 }],
   ])('rejects a version 1 command carrying discountMinor %s before touching the container', (_where, payload) => {
-    expect(precheckCommand({ ...command, id: 'sale-1', payload } as never)).toEqual({ id: 'sale-1', status: 'rejected', error: {
+    expect(precheckCommand({ ...command, id: 'sale-1', payload } as never, server)).toEqual({ id: 'sale-1', status: 'rejected', error: {
       code: 'invalid_payload', message: 'discountMinor requires version 2',
     } })
   })
@@ -149,21 +169,21 @@ describe('precheckCommand', () => {
   const register = { ...command, id: 'register-1', type: 'register.session.open', payload: { sessionId: 'session' } }
 
   it('rejects a register command with an unsupported version', () => {
-    expect(precheckCommand({ ...register, version: 2 } as never)).toEqual({ id: 'register-1', status: 'rejected', error: {
+    expect(precheckCommand({ ...register, version: 2 } as never, server)).toEqual({ id: 'register-1', status: 'rejected', error: {
       code: 'unsupported_version', message: 'register version 2 is not supported; this server supports 1',
       data: { register: 1 },
     } })
   })
 
   it('leaves a supported register command to the executor', () => {
-    expect(precheckCommand(register as never)).toBeUndefined()
+    expect(precheckCommand(register as never, server)).toBeUndefined()
   })
 
   it('rejects a well-shaped v3 whose fiscal figures are wrong, with at most 10 messages', () => {
     const envelope = structuredClone(fixture)
     envelope.payload.taxByRate[0].taxMinor += 1
     expect(payloadShapeErrors(envelope.payload)).toStrictEqual([])
-    const result = precheckCommand(envelope as never)
+    const result = precheckCommand(envelope as never, server)
     expect(result).toEqual({ id: fixture.id, status: 'rejected', error: { code: 'invalid_payload', message:
       'taxByRate: expected the sum of taxMinor to equal payload.taxMinor; taxByRate[0].grossMinor: expected netMinor + taxMinor',
     } })
@@ -176,8 +196,8 @@ describe('precheckCommand', () => {
   const titled = (title: string) => ({ ...command, payload: { ...valid, lines: [{ ...valid.lines[0], title }] } })
 
   it('rejects an otherwise valid v1 order.create with a 256-character title as invalid_payload naming lines[0].title', () => {
-    expect(precheckCommand(titled('x'.repeat(255)) as never)).toBeUndefined()
-    expect(precheckCommand(titled('x'.repeat(256)) as never)).toEqual({ id: command.id, status: 'rejected', error: {
+    expect(precheckCommand(titled('x'.repeat(255)) as never, server)).toBeUndefined()
+    expect(precheckCommand(titled('x'.repeat(256)) as never, server)).toEqual({ id: command.id, status: 'rejected', error: {
       code: 'invalid_payload', message: 'lines[0].title: expected at most 255 characters',
     } })
   })
@@ -185,7 +205,7 @@ describe('precheckCommand', () => {
   it('a handler in the documented order (shape, replay lookup, precheckCommand) replays an applied 300-character title as duplicate', () => {
     const applied = new Map([[command.id, { id: command.id, status: 'duplicate' as const }]])
     const handle = (envelope: ReturnType<typeof titled>) => payloadShapeErrors(envelope.payload).length ? 'invalid_shape'
-      : applied.get(envelope.id) ?? precheckCommand(envelope as never)
+      : applied.get(envelope.id) ?? precheckCommand(envelope as never, server)
     expect(handle(titled('x'.repeat(300)))).toEqual({ id: command.id, status: 'duplicate' })
     expect(handle({ ...titled('x'.repeat(300)), id: 'sale-new' })).toMatchObject({ status: 'rejected', error: { code: 'invalid_payload' } })
   })
@@ -209,7 +229,7 @@ describe('precheckCommand', () => {
     taxByRate[1].netMinor = NaN
     expect(payloadShapeErrors(envelope.payload)).toStrictEqual([])
     const fullErrors = fiscalFiguresErrors(envelope.payload as never)
-    const result = precheckCommand(envelope as never)
+    const result = precheckCommand(envelope as never, server)
     expect(result).toEqual({ id: fixture.id, status: 'rejected', error: { code: 'invalid_payload',
       message: fullErrors.slice(0, 10).join('; '),
     } })
