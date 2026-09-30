@@ -510,4 +510,22 @@ describe('register outbox backend missing (repeated 404s)', () => {
     expect(orderStates.at(-1)).toMatchObject({ pending: 1, backendMissing: undefined });
     expect(orderSend).toHaveBeenCalledTimes(2);
   });
+
+  it.each(['order', 'register'] as const)('a stopped %s outbox lets go of the shared tracker; start() takes it up again', async (which) => {
+    const backendNotFound = createBackendNotFound();
+    const orders = createOrderOutbox({ collection: db.pos_orders, transport: { send: vi.fn() }, deviceId: 'device-1', backendNotFound });
+    outboxes.push(orders);
+    const orderStates: OutboxState[] = [];
+    orders.state$.subscribe((state) => orderStates.push(state));
+    const { outbox, states } = setup({ backendNotFound });
+    await Promise.all([orders.flush(), outbox.flush()]);
+    const [stopped, stoppedStates, liveStates] = which === 'order' ? [orders, orderStates, states] : [outbox, states, orderStates];
+    stopped.stop();
+    const seen = stoppedStates.length;
+    for (let i = 0; i < 3; i++) backendNotFound.record({ kind: 'retry', reason: 'status_404' }, epoch + i);
+    expect(liveStates.at(-1)?.backendMissing).toEqual({ since: epoch });
+    expect(stoppedStates).toHaveLength(seen);
+    stopped.start();
+    expect(stoppedStates.at(-1)?.backendMissing).toEqual({ since: epoch });
+  });
 });

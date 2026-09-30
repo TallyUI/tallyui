@@ -1,0 +1,6 @@
+---
+'@tallyui/pos': patch
+'@tallyui/components': minor
+---
+
+`SyncStatus` takes an optional `registerState` (the register outbox's state): waiting till updates are counted ("1 till update waiting to sync", or named beside the sales), so it never says "All sales synced" while any wait, and with no sale waiting the backend-missing sentence says till updates aren't reaching the online store. The backend-missing detail now reads "This till couldn't find {pluginName} on the online store. …". The status line's accessibility label is the whole visible line instead of "Sync status". The order and register outboxes let go of a shared `backendNotFound` tracker on `stop()` and take it up again on `start()` or `flush()`.
