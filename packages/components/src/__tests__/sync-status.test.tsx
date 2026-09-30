@@ -292,8 +292,13 @@ describe('SyncStatus', () => {
     expect(announce.mock.calls).toEqual([[refusedOne], [refusedMany(2)]]);
   });
 
-  const batchRefused = (waiting: string, next = 'sale') => `${waiting} waiting to sync · The online store refused the last send. `
-    + `This till will try again with the next ${next}, or when the app is reopened.`;
+  const batchRefused = (waiting: string) => `${waiting} waiting to sync · The online store refused the last send. `
+    + 'This till will try again with the next sale, or when the app is reopened.';
+  // The till-updates line promises nothing about reopening: no app starts the register outbox at launch.
+  const tillUpdatesRefused = {
+    2: '2 till updates waiting to sync · The online store refused the last send. This till will try again with the next till update.',
+    1: '1 till update waiting to sync · The online store refused the last send. This till will try again with the next till update.',
+  };
   it('with a refused batch (sales, or till updates alone), says so after the waiting count, over the stuck and missing sentences, with no Sending or Retrying line', () => {
     const since = Date.now();
     const stuck = { commandIds: ['a'], since, reason: 'status_503', orders: [{ commandId: 'a', since, reason: 'status_503' }] };
@@ -304,9 +309,9 @@ describe('SyncStatus', () => {
       [{ pending: 1, sending: true, refused, lastRetryReason: 'refused', stuck, backendMissing: { since } },
         { pending: 2, sending: false }, batchRefused('1 sale and 2 till updates')],
       [{ pending: 0, sending: false }, { pending: 2, sending: false, refused, lastRetryReason: 'refused' },
-        batchRefused('2 till updates', 'till update')],
+        tillUpdatesRefused[2]],
       [{ pending: 0, sending: false }, { pending: 1, sending: false, refused, lastRetryReason: 'refused' },
-        batchRefused('1 till update', 'till update')],
+        tillUpdatesRefused[1]],
       // Both refused with a sale waiting: the sales line wins.
       [{ pending: 2, sending: false, refused, lastRetryReason: 'refused' }, { pending: 1, sending: false, refused,
         lastRetryReason: 'refused' }, batchRefused('2 sales and 1 till update')]];

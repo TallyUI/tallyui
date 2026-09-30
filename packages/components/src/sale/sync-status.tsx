@@ -56,9 +56,11 @@ const REFUSED = (n: number) => n === 1
 // The first detail below it, in the Front desk's ruling (#269).
 const REFUSED_DETAIL = 'Refused sales stay on this till under Needs attention. Once the cause is fixed, each can be sent again with Retry.';
 // The sentence after the waiting count once the store refused a whole batch (OutboxState.refused) from the outbox shown, when
-// no command carries a code. Neither outbox sets a timer then: a new pending command (a sale, or a till update) flushes its
-// outbox, as does its start() when the app opens, so {next} is 'sale' or 'till update' (#269).
-const BATCH_REFUSED = 'The online store refused the last send. This till will try again with the next {next}, or when the app is reopened.';
+// no command carries a code. Neither outbox sets a timer then: a new pending command flushes its outbox. For sales,
+// useOrderOutbox also calls start() when the store opens, which flushes; no app starts the register outbox at launch today,
+// so the till-updates sentence names only the next till update (#269).
+const SALES_REFUSED = 'The online store refused the last send. This till will try again with the next sale, or when the app is reopened.';
+const TILL_UPDATES_REFUSED = 'The online store refused the last send. This till will try again with the next till update.';
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 // iOS has no live region (accessibilityLiveRegion is Android-only), so there each text is announced when it changes: never on
@@ -102,7 +104,7 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   // its "since" variant: the same words for any reason, and no reason code.
   // A refused batch from the outbox shown (the sales', whenever a sale waits) replaces that sentence: it is the store's latest
   // answer, and sending waits for that outbox's next command or start.
-  const sentence = outbox.refused ? ` · ${BATCH_REFUSED.replace('{next}', outbox === state ? 'sale' : 'till update')}`
+  const sentence = outbox.refused ? ` · ${outbox === state ? SALES_REFUSED : TILL_UPDATES_REFUSED}`
     : backendMissing || (state.pending === 0 && updates > 0 ? registerState?.stuck : stuck) ? ` · ${backendMissingText}` : '';
   // The live region holds only the substance (counts and the sentence), so it is announced when that changes and never as sending
   // or retrying flips or the countdown ticks: those are a short line of their own below it, outside any live region.
