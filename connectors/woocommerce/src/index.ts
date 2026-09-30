@@ -6,7 +6,7 @@ import { wooProductSync } from './sync/products';
 import { wooProductReplication } from './replication/products';
 import { wooCatalogueReconcile } from './reconcile/catalogue';
 import { createWooReconcileFeed } from './reconcile/feed';
-import pkg from '../package.json';
+import { version } from '../package.json';
 
 // The catalogue reconcile's corrections reach `products` only through this pull adapter (#248).
 const catalogueFeed = createWooReconcileFeed();
@@ -72,7 +72,7 @@ export const woocommerceConnector: TallyConnector = {
         // WCPOS 2.0 refuses a POS request below protocol 2 (HTTP 426); the connector already speaks 2.
         'X-WCPOS-Protocol': '2',
         // For WCPOS's consent-gated telemetry only.
-        'X-WCPOS-Client': `tallyui/${wcposClientPart(pkg.version)}`,
+        'X-WCPOS-Client': `tallyui/${wcposClientPart(version)}`,
       };
     },
   },

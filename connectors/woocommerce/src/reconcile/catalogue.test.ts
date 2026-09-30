@@ -106,7 +106,7 @@ describe('the bulk-id fast path switch (wcpos/woocommerce-pos#2113)', () => {
     for (let i = 0; i < 3; i++) expect(await wooHasIdFastPath(context)).toBe(false);
     store.respond = () => new Response('no', { status: 401 });
     await expect(wooHasIdFastPath(context)).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
-    store.respond = () => new Response('{}', { status: 426 });
+    store.respond = () => new Response(JSON.stringify({ code: 'wcpos_update_required' }), { status: 426 });
     await expect(wooHasIdFastPath(context)).rejects.toMatchObject({ name: 'WooTillUpdateRequiredError', fixedBy: 'till' });
   });
 
