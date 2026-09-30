@@ -102,6 +102,21 @@ describe('order outbox', () => {
     expect((await collection.findOne(input.id).exec())!.toJSON(true)).toStrictEqual(stored);
   });
 
+  it('a migrated pending order freezes its sent form without resending a refused batch', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const input = order(0);
+    input.sentVersion = 1;
+    input.lines[0].name = 'N'.repeat(300);
+    await collection.insert(input);
+    const { outbox, send } = setup();
+    send.mockResolvedValue({ kind: 'refused', status: 400, reason: 'bad order' });
+    outbox.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((await collection.findOne(input.id).exec())!.lines[0].name).toBe(`${'N'.repeat(254)}…`);
+  });
+
   it('a backlog larger than one batch on an old plugin: the first batch is downgraded, the rest go at its max; never refused', async () => {
     const inputs = Array.from({ length: 25 }, (_, i) => v3Order(i));
     await collection.bulkInsert(inputs);
@@ -992,6 +1007,49 @@ describe('order outbox', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(send).toHaveBeenCalledTimes(1);
     expect((await collection.findOne(input.id).exec())?.syncStatus).toBe('applied');
+  });
+
+  it('a first send refused by the store sends only once', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send } = setup();
+    send.mockResolvedValue({ kind: 'refused', status: 400, reason: 'bad order' });
+    outbox.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((await collection.findOne(input.id).exec())?.sentVersion).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a successful first send sends only once', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send } = setup();
+    outbox.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('an app edit during the first send triggers another flush', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send } = setup();
+    const refused = { kind: 'refused', status: 400, reason: 'bad order' } as const;
+    send.mockResolvedValue(refused).mockImplementationOnce(async () => {
+      await (await collection.findOne(input.id).exec())!.incrementalPatch({ updatedAt: new Date(epoch + 1000).toISOString() });
+      return refused;
+    });
+    outbox.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it('finishes applying an in-flight send after stop', async () => {
