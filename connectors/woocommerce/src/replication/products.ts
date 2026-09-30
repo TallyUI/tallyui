@@ -33,6 +33,16 @@ export class WooMissingUuidError extends Error {
   }
 }
 
+/** The store returned a product outside a modified_after window, so it does not apply the filter. */
+export class WooDateFilterError extends Error {
+  name = 'WooDateFilterError';
+  readonly code = 'unsupported_store' as const;
+
+  constructor(readonly productId: number | undefined, readonly bound: string, readonly received: string | undefined) {
+    super('This store needs WooCommerce 5.8 or later to sync products.');
+  }
+}
+
 /**
  * Replication adapter for WooCommerce products.
  *
@@ -50,17 +60,22 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       let passMark = lastCheckpoint?.pass_mark ?? modified;
       if (offset === 0 && lastCheckpoint?.pass_mark === undefined) {
         if (requests++ >= MAX_REQUESTS_PER_CALL) return spent;
+        // orderby=modified sorts by local time, so the store is asked in GMT whether anything is newer than L.
+        // No Z or offset on modified_after: WP_Date_Query::build_mysql_datetime parses it in the site time zone and
+        // formats it back in that zone, so an offset would move the bound to local time before the post_modified_gmt comparison.
+        const newer: Record<string, string> = modified ? { modified_after: modified, dates_are_gmt: 'true' } : {};
+        const mark = new URLSearchParams({ per_page: '1', orderby: 'modified', order: 'desc', ...newer });
         const markResponse = await fetch(
-          `${context.baseUrl}/products?per_page=1&orderby=modified&order=desc`,
+          `${context.baseUrl}/products?${mark}`,
           { headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal },
         );
         checkResponse(markResponse);
         const [newest] = await markResponse.json();
-        // No product of any status the pull can see: every window is empty.
+        // Nothing modified after L (or no product at all): every window is empty.
         if (newest === undefined) return { documents: [], checkpoint: lastCheckpoint ?? { modified: '', offset: 0 } };
+        if (modified && !(newest.date_modified_gmt > modified)) throw new WooDateFilterError(newest.id, modified, newest.date_modified_gmt);
+        // The local sort may put an older GMT time first: as the next lower bound that costs a re-read, never a skip.
         passMark = newest.date_modified_gmt ?? modified;
-        // The newest product is at or below the lower bound (e.g. the newest was trashed): the window adds nothing.
-        if (lastCheckpoint?.modified && passMark <= modified) return { documents: [], checkpoint: lastCheckpoint };
       }
       const params = new URLSearchParams({
         per_page: String(batchSize),
@@ -70,6 +85,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       });
 
       if (modified) {
+        // GMT digits with no offset, for WP_Date_Query (see the mark request).
         params.set('modified_after', new Date(Date.parse(modified + 'Z') - 1000).toISOString().slice(0, 19));
         params.set('dates_are_gmt', 'true');
       }
@@ -95,6 +111,10 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       for (const product of products) {
         if (typeof product.uuid !== 'string' || product.uuid.length === 0) {
           throw new WooMissingUuidError(product.id);
+        }
+        // The window is modified_after = L − 1 s, so a product missing its time or below L was not filtered.
+        if (modified && !(product.date_modified_gmt >= modified)) {
+          throw new WooDateFilterError(product.id, params.get('modified_after')!, product.date_modified_gmt);
         }
       }
       const documents = products.map((p) => ({ ...p, _deleted: p.status !== 'publish' }));
