@@ -29,7 +29,7 @@ export interface StartIdReconcileOptions<Doc> {
 }
 
 /** `truncated` is always false now that no page cap applies. */
-export interface IdReconcileResult { pages: number; queued: number; truncated: boolean; braked: boolean }
+export interface IdReconcileResult { pages: number; queued: number; truncated: boolean; braked: boolean; complete: boolean }
 
 /**
  * Compares live product/variant ids against the local `products` collection
@@ -75,6 +75,6 @@ export function startIdReconcile<Doc>({
     },
   });
   // `.then` is attached at call time, so it reads this pass's counts before a follow-up starts.
-  const reconcileIds = () => request().then(({ pages }) => ({ pages, queued, truncated: false, braked }));
+  const reconcileIds = () => request().then(({ pages, complete }) => ({ pages, queued, truncated: false, braked, complete }));
   return { reconcileIds, stop };
 }

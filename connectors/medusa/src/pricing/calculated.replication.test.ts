@@ -174,7 +174,7 @@ describe('Medusa calculated prices, run against a real RxDB replication', () => 
 
     const calculated = runner(medusaConnector.reconcile!.calculatedPrices!);
     // The unreported count is exactly the draft and the outside-channel product.
-    expect(await calculated.reconcile()).toEqual({ pages: 5, compared: TOTAL - 2, queued: 0, truncated: false, unreported: 2 });
+    expect(await calculated.reconcile()).toEqual({ pages: 5, compared: TOTAL - 2, queued: 0, truncated: false, unreported: 2, complete: true });
     expect(w.counts.storeAuthorization).toBe(0);
     calculated.stop();
   }, 60000);
@@ -237,7 +237,7 @@ describe('Medusa calculated prices, run against a real RxDB replication', () => 
       for (const variant of doc.variants) expect(variant).not.toHaveProperty('calculated_price');
     }
     const calculated = runner(medusaConnector.reconcile!.calculatedPrices!);
-    expect(await calculated.reconcile()).toEqual({ pages: 0, compared: 0, queued: 0, truncated: false, unreported: 0 });
+    expect(await calculated.reconcile()).toEqual({ pages: 0, compared: 0, queued: 0, truncated: false, unreported: 0, complete: false });
     expect(w.counts.store).toBe(0);
     calculated.stop();
   }, 60000);

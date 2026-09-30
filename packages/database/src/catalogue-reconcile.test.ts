@@ -279,6 +279,77 @@ describe('startCatalogueReconcile', () => {
     expect([await present(11), await present(12)]).toEqual([false, false]);
   }, 30_000);
 
+  it('marks a pass interrupted after its first page incomplete, then a full pass complete', async () => {
+    const { server, feed, collection } = await setup(4);
+    const time = fakeTime();
+    server.remove(4);
+    const { adapter } = fakeAdapter(server, feed, { pageSize: 1, fail: { page: 1, error: transient() } });
+    const { runner, events, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('stopped') === 1);
+    await time.advance(5 * 60_000);
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(events.find((event) => event.type === 'pass-completed')).toMatchObject({ complete: false, unlisted: 0 });
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 2);
+    expect(events.filter((event) => event.type === 'pass-completed')[1]).toMatchObject({ complete: true, unlisted: 1 });
+  }, 30_000);
+
+  it('keeps the last complete time across a resumed pass and exposes it on a new runner before a pass', async () => {
+    const { server, feed, collection } = await setup(4);
+    const time = fakeTime();
+    const { adapter } = fakeAdapter(server, feed);
+    const listing = adapter.fetchPages.bind(adapter);
+    let fail = false;
+    adapter.fetchPages = async function* (ctx, from) {
+      for await (const page of listing(ctx, from)) {
+        yield page;
+        if (fail) { fail = false; throw transient(); }
+      }
+    };
+    const first = start(collection, adapter, time);
+    first.runner.reconcile();
+    await time.runUntil(() => first.count('pass-completed') === 1);
+    const completedAt = time.now();
+    const seen: any[] = [];
+    first.runner.state$.subscribe((state) => seen.push(state));
+    expect(seen.at(-1)).toMatchObject({ lastCompleteAt: completedAt, lastResult: { complete: true } });
+
+    fail = true;
+    first.runner.reconcile();
+    await time.runUntil(() => first.count('stopped') === 1);
+    await time.advance(5 * 60_000);
+    await time.runUntil(() => first.count('pass-completed') === 2);
+    expect(seen.at(-1)).toMatchObject({ lastCompleteAt: completedAt, lastResult: { complete: false } });
+    first.runner.stop();
+
+    const second = start(collection, adapter, time);
+    const restored: any[] = [];
+    second.runner.state$.subscribe((state) => restored.push(state));
+    await vi.waitFor(() => expect(restored.at(-1)).toMatchObject({ lastCompleteAt: completedAt }));
+    expect(second.count('pass-started')).toBe(0);
+  }, 30_000);
+
+  it('restarts a stored pass without a cursor from the first page', async () => {
+    const { server, feed, collection } = await setup(4);
+    const time = fakeTime();
+    server.remove(4);
+    const { adapter } = fakeAdapter(server, feed, { fail: { page: 0, error: transient() } });
+    const { runner, events, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('stopped') === 1);
+    expect((await collection.getLocal('catalogue-reconcile'))?.get('pass').cursor).toBeUndefined();
+    await time.advance(5 * 60_000);
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(events.filter((event) => event.type === 'pass-started')).toEqual([
+      { type: 'pass-started', resumed: false }, { type: 'pass-started', resumed: false },
+    ]);
+    expect(events.find((event) => event.type === 'pass-completed')).toMatchObject({ complete: true, unlisted: 1 });
+  }, 30_000);
+
   describe('deletion proof', () => {
     it('tombstones only the keys confirmGone confirms; the rest are kept and logged', async () => {
       const { server, feed, collection } = await setup(12);
@@ -296,7 +367,7 @@ describe('startCatalogueReconcile', () => {
       expect(events[2]).toEqual({ type: 'kept', count: 1, keys: [uuid(12)], reason: 'unconfirmed' });
       expect(events[3]).toEqual({ type: 'tombstoned', count: 2, keys: [uuid(10), uuid(11)] });
       expect(events[4]).toEqual({
-        type: 'pass-completed', pages: 5, compared: 9, refetched: 1, tombstoned: 2, kept: 1, unlisted: 3, durationMs: expect.any(Number),
+        type: 'pass-completed', pages: 5, compared: 9, refetched: 1, tombstoned: 2, kept: 1, unlisted: 3, complete: true, durationMs: expect.any(Number),
       });
       await settle();
       expect([await present(10), await present(11), await present(12)]).toEqual([false, false, true]);
@@ -718,7 +789,7 @@ describe('the old runners are wrappers over the catalogue runner', () => {
     const runner = startIdReconcile({ collection, adapter, context, reSync: vi.fn(), startDelayMs: null });
     stops.push(runner.stop);
 
-    expect(await runner.reconcileIds()).toEqual({ pages: 1, queued: 1, truncated: false, braked: false });
+    expect(await runner.reconcileIds()).toEqual({ pages: 1, queued: 1, truncated: false, braked: false, complete: true });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: uuid(4), local: product(4) }]);
     expect(await stateOf('id-reconcile')).toEqual(expect.any(Number));
   });
@@ -740,7 +811,7 @@ describe('the old runners are wrappers over the catalogue runner', () => {
     const runner = startIdReconcile({ collection, adapter, context, reSync: vi.fn(), startDelayMs: null });
     stops.push(runner.stop);
 
-    expect(await runner.reconcileIds()).toEqual({ pages: 1, queued: 2, truncated: false, braked: false });
+    expect(await runner.reconcileIds()).toEqual({ pages: 1, queued: 2, truncated: false, braked: false, complete: true });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: uuid(3), local: product(3) }, { id: uuid(4), local: product(4) }]);
     const { documents } = await feed.adapter.pull.handler(undefined, 100, context);
     expect(documents).toEqual([{ ...product(3), _deleted: false }, { ...product(4), _deleted: true }]);
@@ -760,7 +831,7 @@ describe('the old runners are wrappers over the catalogue runner', () => {
     stops.push(runner.stop);
 
     // The wrapper's internal confirmGone throws if called, which would reject this pass.
-    expect(await runner.reconcile()).toEqual({ pages: 1, compared: 8, queued: 0, truncated: false, unreported: 12 });
+    expect(await runner.reconcile()).toEqual({ pages: 1, compared: 8, queued: 0, truncated: false, unreported: 12, complete: true });
     expect(warn).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
   });
@@ -777,7 +848,7 @@ describe('the old runners are wrappers over the catalogue runner', () => {
     const runner = startFingerprintReconcile({ collection, adapter, context, reSync: vi.fn() });
     stops.push(runner.stop);
 
-    expect(await runner.reconcile()).toEqual({ pages: 1, compared: 3, queued: 1, truncated: false, unreported: 1 });
+    expect(await runner.reconcile()).toEqual({ pages: 1, compared: 3, queued: 1, truncated: false, unreported: 1, complete: true });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: uuid(2), local: product(2), refreshOnly: true }]);
     expect(await stateOf('fingerprint-reconcile')).toEqual(expect.any(Number));
   });
