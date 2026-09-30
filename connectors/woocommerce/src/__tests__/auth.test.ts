@@ -1,14 +1,39 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ConnectorUnauthorizedError } from '@tallyui/core';
 
-import { woocommerceConnector, WooMissingTokenError } from '../index';
+import pkg from '../../package.json';
+import { woocommerceConnector, WooMissingTokenError, wcposClientPart } from '../index';
 
 describe('woocommerceConnector.auth', () => {
-  it('getHeaders sends the WCPOS bearer token and the POS marker', () => {
-    expect(woocommerceConnector.auth.getHeaders({ token: 't' })).toEqual({
+  it('getHeaders sends the WCPOS bearer token, the POS marker and the protocol signal', () => {
+    const headers = woocommerceConnector.auth.getHeaders({ token: 't' });
+    expect(headers).toEqual({
       Authorization: 'Bearer t',
       'X-WCPOS': '1',
+      'X-WCPOS-Protocol': '2',
+      'X-WCPOS-Client': `tallyui/${wcposClientPart(pkg.version)}`,
     });
+    expect(headers['X-WCPOS-Client']).toMatch(/^tallyui\/[a-z0-9._-]{1,32}$/);
+  });
+
+  it.each([
+    ['2.1.0-next.3', '2.1.0-next.3'],
+    ['2.1.0+Build.7', '2.1.0build.7'],
+    ['1234567890.1234567890.1234567890.1234567', '1234567890.1234567890.1234567890'],
+  ])('wcposClientPart keeps [a-z0-9._-], lowercased, at most 32 characters: %s', (version, sent) => {
+    expect(wcposClientPart(version)).toBe(sent);
+  });
+
+  it('getHeaders sends the package.json version sanitised', async () => {
+    vi.resetModules();
+    vi.doMock('../../package.json', () => ({ default: { version: '2.1.0+Build.7' } }));
+    try {
+      const { woocommerceConnector: fresh } = await import('../index');
+      expect(fresh.auth.getHeaders({ token: 't' })['X-WCPOS-Client']).toBe('tallyui/2.1.0build.7');
+    } finally {
+      vi.doUnmock('../../package.json');
+      vi.resetModules();
+    }
   });
 
   it('auth fields are url and token', () => {
@@ -44,9 +69,7 @@ describe('woocommerceConnector.auth', () => {
 
   it('getHeaders never sends consumer-key credentials', () => {
     expect(() => woocommerceConnector.auth.getHeaders({ consumer_key: 'ck', consumer_secret: 'cs' })).toThrow(WooMissingTokenError);
-    expect(woocommerceConnector.auth.getHeaders({ token: 't', consumer_key: 'ck', consumer_secret: 'cs' })).toEqual({
-      Authorization: 'Bearer t',
-      'X-WCPOS': '1',
-    });
+    expect(woocommerceConnector.auth.getHeaders({ token: 't', consumer_key: 'ck', consumer_secret: 'cs' }))
+      .toEqual(woocommerceConnector.auth.getHeaders({ token: 't' }));
   });
 });
