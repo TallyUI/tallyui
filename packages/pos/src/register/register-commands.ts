@@ -52,12 +52,22 @@ export function sessionOpenCommand(s: RegisterSession): BuiltCommand {
 }
 
 export function sessionTransitionCommand(s: RegisterSession & { status_at: string }): BuiltCommand {
-  return { key: `session.transition:${s.id}:${s.status_at}`, type: 'register.session.transition', version: 1, payload: {
+  return { key: `session.transition:${s.id}:${s.status}:${s.status_at}`, type: 'register.session.transition', version: 1, payload: {
     sessionId: s.id, status: s.status, at: s.status_at,
     ...(s.status !== 'closed' || s.counted == null ? {} : { counted: s.counted }),
     ...(s.status !== 'closed' || s.closed_by == null ? {} : { closedBy: s.closed_by }),
     ...(s.status !== 'closed' || s.approved_by == null ? {} : { approvedBy: s.approved_by }),
   } satisfies RegisterSessionTransitionPayload };
+}
+
+/**
+ * The key a transition had before #258, `session.transition:<sessionId>:<at>`, had no status, so the second of two
+ * transitions in one millisecond was never queued. A ledger written before 3.0.0 (the first release with this fix) may
+ * hold such rows: one with this transition's status IS this transition and must not be queued again; one with another
+ * status is the first of that millisecond's pair. Remove once no ledger from before 3.0.0 remains.
+ */
+function legacyTransitionKeys({ type, payload }: BuiltCommand): string[] {
+  return type === 'register.session.transition' ? [`session.transition:${payload.sessionId}:${payload.at}`] : [];
 }
 
 export function movementCommand(m: CashMovement): BuiltCommand {
@@ -123,12 +133,14 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
     facts.sort((a, b) => Number(a.session.status !== 'closed') - Number(b.session.status !== 'closed')
       || (a.number ?? Infinity) - (b.number ?? Infinity)
       || a.session.id.localeCompare(b.session.id));
-    const existing = new Set((await commands.storageInstance.findDocumentsById(facts.flatMap(({ built }) => built.map(({ key }) => key)), false))
-      .map(({ key }) => key));
+    const stored = new Map((await commands.storageInstance.findDocumentsById(facts.flatMap(({ built }) =>
+      built.flatMap((command) => [command.key, ...legacyTransitionKeys(command)])), false)).map((row) => [row.key, row]));
+    const existing = new Set(stored.keys());
     const appended: string[] = [];
     for (const { built } of facts) {
       for (const command of built) {
-        if (existing.has(command.key)) continue;
+        if (existing.has(command.key)
+          || legacyTransitionKeys(command).some((key) => stored.get(key)?.payload.status === command.payload.status)) continue;
         seq++;
         const at = now ?? new Date().toISOString();
         try {
