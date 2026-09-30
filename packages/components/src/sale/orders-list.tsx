@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { formatMoney, knownWarnings } from '@tallyui/core';
 import { needsAttention, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { sinceText } from './since-text';
 
 const STATUS_LABEL = { pending: 'Waiting to sync', applied: 'Synced', rejected: 'Not accepted' };
 /** `figures_mismatch`'s labels; a field a newer store sends that isn't here is shown by its raw name. */
@@ -61,7 +62,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             <Text className="text-muted-foreground">{formatDate(order.createdAt)} · {formatMoney({ amount: order.totalMinor, currency: order.currency })} · {STATUS_LABEL[order.syncStatus]}</Text>
             {stuckEntry ? <Text className="text-destructive">
               {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}
-              {`Hasn't reached the online store since ${stuckEntry.firstFailedAt === undefined ? 'about ' : ''}${new Date(stuckEntry.firstFailedAt ?? stuckEntry.since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.`}
+              {`Hasn't reached the online store since ${sinceText(stuckEntry)}.`}
             </Text> : null}
             {/* The code's sentence alone: the cashier sees no error code and never the store's message. */}
             {order.syncStatus === 'rejected' ? <Text className="text-destructive">{refusalSentence(order.error?.code)}</Text> : null}

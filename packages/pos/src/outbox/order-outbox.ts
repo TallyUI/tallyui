@@ -104,7 +104,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // clock (`pausedAt`), and the next response the store answers, of any kind and for any order, resumes them all,
   // moving `since` on by the offline gap: a pause is about the connection. So `since` is when the clock would have
   // started had there been no offline gaps: now minus its answered time (while paused, as of the pause). Progress,
-  // or the order leaving pending, clears it.
+  // or the order leaving pending, clears it. `firstFailedAt` is the wall-clock time of the clock's first answered
+  // failure; a pause never moves it, and a clock restored from stored `serverFailures` has none (it is memory only).
   const clocks = new Map<string, { since: number; firstFailedAt?: number; pausedAt?: number; seq: number; reason: string }>();
   let failureSeq = 0; // numbers failures, so `stuck` can name the latest reason
   // Timer runs alternate between the batch turn (the batch, or the walk's probe) and the isolated turn (one due
