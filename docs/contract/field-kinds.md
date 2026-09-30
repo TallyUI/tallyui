@@ -247,5 +247,6 @@ declared maps (ADR-070 decision 1). Each key is a payment-method kind,
 `order.create`'s `payments[].method`; each value is an integer in minor
 units. An unknown key is refused as `invalid_payload` naming the full
 path, and a key that a later version declares is refused naming the
-version it needs. That is the rule; today no backend checks the keys
-against the declared kinds (#256, medusapos/app#132).
+version it needs. Today medusapos refuses any key other than `cash` or
+`external` (medusapos/app#137); core's shared check will do the same
+(#256), and vendurepos has no register commands yet.
