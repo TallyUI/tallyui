@@ -119,5 +119,5 @@ export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { wooProductSchema } from './schemas/products';
 export { wooProductTraits } from './traits/product';
 export { wooProductSync } from './sync/products';
-export { wooProductReplication, WooDateFilterError, WooPluginUpdateRequiredError, WooMissingUuidError, WooTillUpdateRequiredError } from './replication/products';
+export { wooProductReplication, WooDateFilterError, WooTokenRefusedError, WooMissingUuidError, WooTillUpdateRequiredError } from './replication/products';
 export { wooCatalogueReconcile, wooReconcileFingerprint } from './reconcile/catalogue';
