@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OutboxState } from '@tallyui/pos';
 import { SyncStatus } from '../sale/sync-status';
@@ -210,6 +210,43 @@ describe('SyncStatus', () => {
     const shown = `2 sales waiting to sync · ${cashierLine}`;
     expect(screen.getByLabelText(shown).textContent).toBe(shown);
     expect(screen.queryByLabelText('Sync status')).toBeNull();
+  });
+
+  it('inserts a plugin name holding $&, $$ and $1 literally', () => {
+    render(<SyncStatus state={{ pending: 1, sending: false, backendMissing: { since: Date.now() } }} pluginName="Shop $& $$ $1" />);
+    const text = "This till couldn't find Shop $& $$ $1 on the online store. Ask the store owner to check that it is installed "
+      + "and switched on, and that the store address in this till's settings is right.";
+    expect(screen.getByText(text).textContent).toBe(text);
+  });
+
+  it('makes the status line, and not the detail line, a polite live region', () => {
+    render(<SyncStatus state={{ pending: 1, sending: false, backendMissing: { since: Date.now() } }} />);
+    expect(document.querySelector('[aria-label]')?.getAttribute('aria-live')).toBe('polite');
+    expect(document.querySelectorAll('[aria-live]')).toHaveLength(1);
+    expect(screen.getByText(detail('the POS plugin')).getAttribute('aria-live')).toBeNull();
+  });
+
+  it('with only till updates waiting, takes the sending text from the register outbox, not the order outbox', () => {
+    render(<SyncStatus state={{ pending: 0, sending: false }} registerState={{ pending: 1, sending: true }} />);
+    expect(line()).toBe('1 till update waiting to sync · sending');
+    cleanup();
+    render(<SyncStatus state={{ pending: 0, sending: true }} registerState={{ pending: 1, sending: false }} />);
+    expect(line()).toBe('1 till update waiting to sync');
+    cleanup();
+    // A sale waits: the order outbox's text, as before.
+    render(<SyncStatus state={{ pending: 1, sending: false }} registerState={{ pending: 1, sending: true }} />);
+    expect(line()).toBe('1 sale and 1 till update waiting to sync');
+  });
+
+  it('with only till updates waiting, shows the register outbox retrying and counts down to its next attempt', () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    vi.setSystemTime(now);
+    render(<SyncStatus state={{ pending: 0, sending: false }}
+      registerState={{ pending: 1, sending: false, lastRetryReason: 'status_503', nextAttemptAt: now + 5000 }} />);
+    expect(line()).toBe('1 till update waiting to sync · retrying (status_503) in 5s');
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(line()).toBe('1 till update waiting to sync · retrying (status_503) in 3s');
   });
 
   it('formats the time with no forced leading zero on a 12-hour clock', () => {
