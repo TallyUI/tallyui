@@ -155,7 +155,7 @@ async function gql(
   if (res.status === 401 || res.status === 403) throw new ConnectorUnauthorizedError(`Vendure API error: ${res.status}`, res.status);
   if (!res.ok) throw new Error(`Vendure API error: ${res.status}`);
   const body: { data?: any; errors?: Array<{ message?: string; path?: Array<string | number>; extensions?: { code?: string } }> } = await res.json();
-  const forbidden = body.errors?.find((error) => error.extensions?.code === 'FORBIDDEN');
-  if (forbidden) throw await forbiddenError(context, forbidden);
+  const forbidden = body.errors?.filter((error) => error.extensions?.code === 'FORBIDDEN') ?? [];
+  if (forbidden.length) throw await forbiddenError(context, forbidden);
   return body;
 }

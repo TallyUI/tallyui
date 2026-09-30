@@ -92,6 +92,26 @@ describe.each([
     expect(await messageFor({ data: { activeAdministrator: null } })).toBe(`Vendure GraphQL error: ${message}`);
   });
 
+  it('names every refused path in the answer\'s order, after exactly one probe per response', async () => {
+    const answer = { data: null, errors: [
+      { message, path: ['products'], extensions: { code: 'FORBIDDEN' } },
+      { message: 'Other error', path: ['channel'], extensions: { code: 'OTHER' } },
+      { message, path: ['product', 'variants'], extensions: { code: 'FORBIDDEN' } },
+    ] };
+    const what = `products: ${message}; product.variants: ${message}`;
+    for (const [probe, expected] of [
+      [{ data: { activeAdministrator: { id: '1' } } }, `Vendure GraphQL error: FORBIDDEN: the store refused this request although the session is signed in (a permission is missing): ${what}`],
+      [{ errors: [{ message: 'boom' }] }, `Vendure GraphQL error: FORBIDDEN: ${what} (the session check failed, so this may be transient)`],
+    ] as const) {
+      const { probes } = stubFetch(() => json(probe), answer);
+      const error = await request(context).catch((e: unknown) => e);
+      expect(error).not.toBeInstanceOf(ConnectorUnauthorizedError);
+      expect((error as Error).message).toBe(expected);
+      expect(probes).toHaveLength(1);
+      vi.restoreAllMocks();
+    }
+  });
+
   it('the probe sends the failed request\'s headers and signal to the same admin-api', async () => {
     const controller = new AbortController();
     const { spy, probes } = stubFetch(() => json({ data: { activeAdministrator: null } }));

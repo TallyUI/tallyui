@@ -84,8 +84,8 @@ export async function gql(
     throw new Error(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`);
   }
   const body = await res.json() as GqlBody;
-  const forbidden = body.errors?.find((error) => error.extensions?.code === 'FORBIDDEN');
-  if (forbidden) throw await forbiddenError(context, forbidden);
+  const forbidden = body.errors?.filter((error) => error.extensions?.code === 'FORBIDDEN') ?? [];
+  if (forbidden.length) throw await forbiddenError(context, forbidden);
   if (body.errors?.length) throw new Error(`Vendure GraphQL error: ${body.errors[0].message}`);
   return body;
 }
