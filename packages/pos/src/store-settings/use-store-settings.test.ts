@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { StoreSettingsError } from '@tallyui/core';
-import type { StoreSettings, StoreSettingsChoice, SyncContext, TallyConnector } from '@tallyui/core';
+import type { StoreSettings, StoreSettingsChoice, SyncContext, TallyConnector, TaxRounding } from '@tallyui/core';
 import { useStoreSettings } from './use-store-settings';
 
 const context: SyncContext = { connectorId: 'fake', baseUrl: 'https://store.test', headers: {} };
@@ -146,6 +146,40 @@ describe('useStoreSettings', () => {
 
     await waitFor(() => expect(result.current.state).toBe('ready'));
     expect(storeSettings).toHaveBeenNthCalledWith(3, context, { country: 'de' });
+  });
+
+  describe('taxRounding (#324)', () => {
+    const vendure: TaxRounding = { granularity: 'per_rate_group_items', mode: 'half_up' };
+    const withCapabilities = (capabilities: TallyConnector['capabilities']) =>
+      ({ storeSettings: async () => settings, capabilities }) as unknown as TallyConnector;
+    const resolved = async (connector: TallyConnector, ctx: SyncContext = context) => {
+      const { result } = renderHook(() => useStoreSettings({ connector, context: ctx, loadChoice: () => undefined, saveChoice: vi.fn() }));
+      await waitFor(() => expect(result.current.state).toBe('ready'));
+      await act(async () => {}); // lets the connector's read land
+      return result.current.state === 'ready' ? result.current.settings : undefined;
+    };
+
+    it("takes the context's capabilities, without reading the connector's", async () => {
+      const capabilities = vi.fn();
+      const ctx = { ...context, capabilities: { orderCreate: 3, taxRounding: vendure } };
+      expect(await resolved(withCapabilities(capabilities), ctx)).toEqual({ ...settings, taxRounding: vendure });
+      expect(capabilities).not.toHaveBeenCalled();
+    });
+
+    it("reads the connector's capabilities once when the context has none", async () => {
+      const capabilities = vi.fn(async () => ({ orderCreate: 3, taxRounding: vendure }));
+      expect(await resolved(withCapabilities(capabilities))).toEqual({ ...settings, taxRounding: vendure });
+      expect(capabilities).toHaveBeenCalledExactlyOnceWith(context);
+    });
+
+    it('leaves the field out when no capabilities carry it, or the read fails', async () => {
+      for (const capabilities of [undefined, async () => undefined, async () => ({ orderCreate: 3 }),
+        async () => { throw new Error('offline'); }, () => { throw new Error('sync'); }]) {
+        const got = await resolved(withCapabilities(capabilities as TallyConnector['capabilities']));
+        expect(got).toEqual(settings);
+        expect(got).not.toHaveProperty('taxRounding');
+      }
+    });
   });
 
   it('ignores a choose captured before a store switch, leaving the new store untouched', async () => {

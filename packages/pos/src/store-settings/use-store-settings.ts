@@ -17,6 +17,7 @@ const LOADING: StoreSettingsState = { state: 'loading' };
  * Resolves the store settings on mount, and again when `connector` or `context` changes by
  * identity (a store switch), so memoise both; the last request wins. `loadChoice` and
  * `saveChoice` are read when a request starts, so inline functions don't trigger a re-resolve.
+ * The ready settings carry the store's `taxRounding` from the capabilities, so `taxProviderProps` passes it on (#324).
  *
  * ```tsx
  * const store = useStoreSettings({ connector, context, loadChoice, saveChoice });
@@ -42,11 +43,22 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
     const request = ++requestRef.current;
     const current = () => request === requestRef.current;
     setState(LOADING);
+    const { connector, context } = optionsRef.current;
+    // The store's taxRounding (#324): the context's capabilities, else one read of the connector's, started beside
+    // the settings read and applied when it lands. A failure or no value leaves the field out: the default rounding.
+    const known = context.capabilities?.taxRounding;
+    const late = context.capabilities || !connector.storeSettings ? undefined
+      : Promise.resolve().then(() => connector.capabilities?.(context)).then((read) => read?.taxRounding, () => undefined);
     resolveStoreSettings(optionsRef.current, choice).then(
       (result) => {
         if (!current()) return;
-        if (result.status === 'ready') setState({ state: 'ready', settings: result.settings, choice: result.choice });
-        else if (result.status === 'choose')
+        if (result.status === 'ready') {
+          setState({ state: 'ready', settings: known ? { ...result.settings, taxRounding: known } : result.settings, choice: result.choice });
+          // Late, it restarts only an idle sale (useSale); no value keeps the settings' identity.
+          void late?.then((taxRounding) => {
+            if (taxRounding && current()) setState((s) => (s.state === 'ready' ? { ...s, settings: { ...s.settings, taxRounding } } : s));
+          });
+        } else if (result.status === 'choose')
           setState({ state: 'choose', choices: result.choices, initial: result.initial, choose: (pick) => resolve(pick, request) });
         else setState({ state: 'unsupported' });
       },
