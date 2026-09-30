@@ -96,6 +96,13 @@ describe('precheckCommand', () => {
     })
   })
 
+  it('throws on an empty supported list rather than sending Math.max() of nothing', () => {
+    expect(() => precheckCommand(command as never, { orderCreate: [], register: [1] }))
+      .toThrow(new TypeError('precheckCommand: supported.orderCreate must list at least one version'))
+    expect(() => precheckCommand(command as never, { orderCreate: [1], register: [] }))
+      .toThrow(new TypeError('precheckCommand: supported.register must list at least one version'))
+  })
+
   it('rejects an unsupported version before any payload rule or ledger claim', () => {
     expect(precheckCommand({ ...command, version: 5, payload: { display: {} } } as never, server)).toEqual({
       id: command.id, status: 'rejected', error: {

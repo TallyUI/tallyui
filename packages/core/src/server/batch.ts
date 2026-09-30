@@ -61,6 +61,10 @@ export function validateBatch(body: unknown):
  */
 export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>,
   supported: { orderCreate: readonly number[]; register: readonly number[] }): CommandResult | undefined {
+  // An empty list would send Math.max() of nothing (-Infinity, null in JSON) as the server's version.
+  for (const key of ['orderCreate', 'register'] as const) {
+    if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
+  }
   if (envelope.type !== 'order.create') {
     if (!supported.register.includes(envelope.version)) {
       return { id: envelope.id, status: 'rejected', error: { code: 'unsupported_version',
