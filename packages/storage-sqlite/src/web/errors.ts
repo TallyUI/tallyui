@@ -21,17 +21,28 @@ export class StorageWorkerStartError extends Error {
   }
 }
 
-// How RM1 appears inside the remote storage's wrapping message (the RxError as JSON).
-const RM1_IN_MESSAGE = '"code":"RM1"';
-
-function namesStartError(message: string): boolean {
-  return message.includes('StorageWorkerStartError') || message.includes(RM1_IN_MESSAGE);
+// RxDB's RM1 (rxdb 17.5.0 src/rx-error.ts): an RxError has own `code`, `message`, `url`, `parameters`
+// and `rxdb: true` (`name` is a getter). RxDB's remote storage re-throws it from the worker as
+// `could not create instance ` + that JSON. Keep identical to isRxdbRm1 in
+// packages/database/src/storage-watchdog.ts; change both together.
+const REMOTE_CREATE_PREFIX = 'could not create instance ';
+function isRxdbRm1(error: unknown): boolean {
+  const { code, rxdb, message } = (typeof error === 'object' && error !== null ? error : {}) as Record<string, unknown>;
+  if (code === 'RM1' && (rxdb ?? true) === true) return true;
+  const text = typeof error === 'string' ? error : message;
+  if (typeof text !== 'string' || !text.startsWith(REMOTE_CREATE_PREFIX)) return false;
+  try {
+    const wrapped = JSON.parse(text.slice(REMOTE_CREATE_PREFIX.length)) as Record<string, unknown> | null;
+    return wrapped?.rxdb === true && wrapped.code === 'RM1';
+  } catch {
+    return false;
+  }
 }
 
 export function isStorageWorkerStartError(error: unknown): boolean {
-  if (typeof error === 'string') return namesStartError(error);
+  if (isRxdbRm1(error)) return true;
+  if (typeof error === 'string') return error.includes('StorageWorkerStartError');
   if (!error || typeof error !== 'object') return false;
-  const { name, message, code } = error as { name?: unknown; message?: unknown; code?: unknown };
-  if (name === 'StorageWorkerStartError' || code === 'RM1') return true;
-  return typeof message === 'string' && namesStartError(message);
+  const { name, message } = error as { name?: unknown; message?: unknown };
+  return name === 'StorageWorkerStartError' || (typeof message === 'string' && message.includes('StorageWorkerStartError'));
 }

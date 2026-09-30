@@ -34,12 +34,33 @@ export interface StorageWatchdogOptions {
  * so a substring match (`includes`, not `startsWith`) is needed to still
  * recognise it.
  *
+ * RxDB's RM1 (a stale worker built on another RxDB version, e.g. cached from
+ * before an upgrade) is one too: reloading loads the matching worker.
+ *
  * A worker that crashes mid-call never replies (RxDB `storage-remote`,
  * 16.21.1), so that case surfaces through `health$` (`dead`), not an error.
  */
 export function isStorageWorkerFailure(error: unknown): boolean {
   return error instanceof Error
-    && (error.name === 'StorageWorkerStartError' || error.message.includes('StorageWorkerStartError'));
+    && (error.name === 'StorageWorkerStartError' || error.message.includes('StorageWorkerStartError') || isRxdbRm1(error));
+}
+
+// RxDB's RM1 (rxdb 17.5.0 src/rx-error.ts): an RxError has own `code`, `message`, `url`, `parameters`
+// and `rxdb: true` (`name` is a getter). RxDB's remote storage re-throws it from the worker as
+// `could not create instance ` + that JSON. Keep identical to isRxdbRm1 in
+// packages/storage-sqlite/src/web/errors.ts; change both together.
+const REMOTE_CREATE_PREFIX = 'could not create instance ';
+function isRxdbRm1(error: unknown): boolean {
+  const { code, rxdb, message } = (typeof error === 'object' && error !== null ? error : {}) as Record<string, unknown>;
+  if (code === 'RM1' && (rxdb ?? true) === true) return true;
+  const text = typeof error === 'string' ? error : message;
+  if (typeof text !== 'string' || !text.startsWith(REMOTE_CREATE_PREFIX)) return false;
+  try {
+    const wrapped = JSON.parse(text.slice(REMOTE_CREATE_PREFIX.length)) as Record<string, unknown> | null;
+    return wrapped?.rxdb === true && wrapped.code === 'RM1';
+  } catch {
+    return false;
+  }
 }
 
 const READ_METHODS = ['query', 'count', 'findDocumentsById', 'getChangedDocumentsSince'] as const;

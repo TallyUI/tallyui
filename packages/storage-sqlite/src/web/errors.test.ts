@@ -62,6 +62,25 @@ describe('isStorageWorkerStartError and a stale worker (RxDB RM1)', () => {
 
   it('recognises an RxError with its own RM1 code', () => {
     expect(isStorageWorkerStartError(Object.assign(new Error('x'), { code: 'RM1' }))).toBe(true);
+    expect(isStorageWorkerStartError(Object.assign(new Error('x'), { code: 'RM1', rxdb: true }))).toBe(true);
+    expect(isStorageWorkerStartError(Object.assign(new Error('x'), { code: 'RM1', rxdb: false }))).toBe(false);
+  });
+
+  it('rejects RM1 text that is not the remote storage wrapping an RxError', () => {
+    const otherPrefix = RM1_MESSAGE.replace('could not create instance ', 'could not update instance ');
+    expect(otherPrefix).not.toBe(RM1_MESSAGE);
+    const notRm1 = [
+      'Invalid SKU RM1 in row 3',
+      'Invalid value {"code":"RM1"}',
+      'could not create instance ' + JSON.stringify({ name: 'RxError (RM1)', code: 'RM1' }),
+      'could not create instance {"rxdb":true,"code":"RM1"',
+      otherPrefix,
+    ];
+    for (const message of notRm1) {
+      expect(isStorageWorkerStartError(new Error(message)), message.slice(0, 40)).toBe(false);
+      expect(isStorageWorkerStartError({ name: 'Error', message }), message.slice(0, 40)).toBe(false);
+      expect(isStorageWorkerStartError(message), message.slice(0, 40)).toBe(false);
+    }
   });
 
   it('rejects the same message naming another RxDB code', () => {
