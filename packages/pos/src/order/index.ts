@@ -1,4 +1,6 @@
 export { createOrderBuilder } from './order-builder';
+export { taxFiguresForBasket } from './tax-figures';
+export type { BasketLine } from './tax-figures';
 export { allocateOrderDiscount } from './allocate-order-discount';
 export type { OrderBuilder, OrderBuilderOptions } from './order-builder';
 export { createOrderManager } from './order-manager';

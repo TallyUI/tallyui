@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
+import type { TaxRounding } from '@tallyui/core';
 import type { TaxContext } from './types';
 import { createLogger } from '../logging';
 
@@ -10,10 +11,14 @@ const TaxCtx = createContext<TaxContext | null>(null);
 export interface TaxProviderProps {
   ratesPpm: Record<string, number>;
   pricesIncludeTax: boolean;
+  /** `ServerCapabilities.taxRounding` (#287); a change restarts an idle sale under it. */
+  rounding?: TaxRounding;
+  /** Tax class → the backend's rate name, for `per_rate_group_items`'s grouping (#287). */
+  rateCodes?: Record<string, string>;
   children: ReactNode;
 }
 
-export function TaxProvider({ ratesPpm, pricesIncludeTax, children }: TaxProviderProps) {
+export function TaxProvider({ ratesPpm, pricesIncludeTax, rounding, rateCodes, children }: TaxProviderProps) {
   const value = useMemo<TaxContext>(
     () => {
       if (Object.values(ratesPpm).some((rate) => !Number.isSafeInteger(rate) || rate < 0)) {
@@ -30,10 +35,16 @@ export function TaxProvider({ ratesPpm, pricesIncludeTax, children }: TaxProvide
           }
           return ratesPpm.default ?? 0;
         },
+        // The name of the rate getTaxRatePpm picks: the class's own, else the default's.
+        getTaxRateCode: (taxClass) => {
+          const key = taxClass !== undefined && Object.hasOwn(ratesPpm, taxClass) ? taxClass : 'default';
+          return rateCodes && Object.hasOwn(rateCodes, key) ? rateCodes[key] : undefined;
+        },
         pricesIncludeTax,
+        ...(rounding ? { rounding } : {}),
       };
     },
-    [ratesPpm, pricesIncludeTax],
+    [ratesPpm, pricesIncludeTax, rounding, rateCodes],
   );
 
   return <TaxCtx.Provider value={value}>{children}</TaxCtx.Provider>;

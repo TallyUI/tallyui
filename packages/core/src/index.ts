@@ -24,7 +24,7 @@ export type {
   StoreSettings,
   StoreSettingsChoice,
 } from './types';
-export type { SignInResult, ServerCapabilities } from './types/connector';
+export type { SignInResult, ServerCapabilities, TaxRounding } from './types/connector';
 export type { CatalogueReconcileAdapter, CatalogueReconcileEntry } from './types/reconcile';
 export { resolveCapabilities } from './types/connector';
 export { SignInError } from './sign-in';
