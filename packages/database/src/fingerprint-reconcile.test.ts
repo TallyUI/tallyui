@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createRxDatabase, addRxPlugin, type RxCollection } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
+import { RxDBLocalDocumentsPlugin } from 'rxdb/plugins/local-documents';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 
@@ -9,6 +10,7 @@ import { BACKGROUND_CHUNK_SIZE as C } from './chunks';
 import type { FingerprintReconcileAdapter, SyncContext } from '@tallyui/core';
 
 addRxPlugin(RxDBDevModePlugin);
+addRxPlugin(RxDBLocalDocumentsPlugin);
 
 const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
 const context: SyncContext = { connectorId: 'test', baseUrl: 'https://example.com', headers: {} };
@@ -405,6 +407,28 @@ describe('startFingerprintReconcile', () => {
       expect(await reconcile()).toMatchObject({ pages: 0, complete: false });
       expect(seen.at(-1)).toMatchObject({ lastCompleteAt: 1000, lastResult: { complete: false } });
     } finally { stop(); }
+  });
+
+  it('a new wrapper shows the last complete time persisted by an earlier one, before any pass', async () => {
+    await db.addCollections({ products_local: { schema: productSchema, localDocuments: true } });
+    await db.products_local.insert({ id: 'p1', price: '10' });
+    const { adapter } = fakeAdapter([{ p1: '10' }]);
+    const first = startFingerprintReconcile({
+      collection: db.products_local, adapter, context, reSync: vi.fn(), startDelayMs: null, now: () => 1000,
+    });
+    try {
+      expect(await first.reconcile()).toMatchObject({ complete: true });
+    } finally { first.stop(); }
+
+    const second = startFingerprintReconcile({
+      collection: db.products_local, adapter, context, reSync: vi.fn(), startDelayMs: null,
+    });
+    const seen: FingerprintReconcileState[] = [];
+    second.state$.subscribe((state) => seen.push(state));
+    try {
+      await vi.waitFor(() => expect(seen.at(-1)).toMatchObject({ lastCompleteAt: 1000 }));
+      expect(seen.at(-1)?.lastResult).toBeUndefined();
+    } finally { second.stop(); }
   });
 
   it('has no last complete time when its first pass reads no pages', async () => {
