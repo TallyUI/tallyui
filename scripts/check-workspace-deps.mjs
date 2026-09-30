@@ -33,6 +33,9 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // the approval gate (approved-by): the one "over threshold" definition RegisterCount and
   // useRegisterSession's closeSession share.
   'closeNeedsApproval',
+  // the Z report's approved mixed-rounding line (#287): one pure string constant ClosureSheet
+  // shares with buildClosureDocument, never a hook or the store.
+  'TAX_ROUNDING_MIXED_NOTE',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
