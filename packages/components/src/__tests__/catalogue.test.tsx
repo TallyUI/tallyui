@@ -78,6 +78,12 @@ describe('Catalogue', () => {
     const time = new Date(2026, 8, 24, 10, 42);
     expect(formatStockSyncTime(time, 'en-US', true, time)).toMatch(/^10:42[  ]?AM$/);
   });
+  it('does not pad the hour on a 12-hour device clock', () => {
+    const time = new Date(2026, 8, 24, 2, 49);
+    const label = formatStockSyncTime(time, 'en-US', true, time);
+    expect(label).toBe('2:49 AM');
+    expect(label).not.toContain('02:49');
+  });
   it('keeps the locale default when the device reports no clock preference', () => {
     const time = new Date(2026, 8, 24, 10, 42);
     expect(formatStockSyncTime(time, 'en-US', undefined, time)).toMatch(/^10:42[  ]?AM$/);

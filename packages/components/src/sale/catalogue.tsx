@@ -16,7 +16,7 @@ const STOCK_LABEL = {
 // function) so the formatting is testable without the device; callers default them to the
 // device's own settings and the current moment.
 export function formatStockSyncTime(time: Date, locale?: string, hour12?: boolean, now: Date = new Date()): string {
-  const timeLabel = time.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12 });
+  const timeLabel = time.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit', hour12 });
   // "Today" is decided in the device's own timezone: toDateString() reads the Date in local time,
   // the same timezone the device clock and toLocaleTimeString above already use.
   if (time.toDateString() === now.toDateString()) return timeLabel;

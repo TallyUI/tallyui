@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ConnectorProvider } from '@tallyui/core';
 import { ProductStockBadge } from '../product/product-stock-badge';
@@ -91,11 +91,27 @@ describe('ProductStockBadge', () => {
 
     it('shows the overlay quantity and when it was confirmed', () => {
       const today = new Date().toISOString();
-      const time = new Date(today).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const time = new Date(today).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
       expect(renderBadge({}, overlay, today)).toBe(`In Stock (12) · as of ${time}`);
       const old = '2020-01-02T12:00:00.000Z';
       const date = new Date(old).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
       expect(renderBadge({}, overlay, old)).toBe(`In Stock (12) · as of ${date}`);
+    });
+
+    it('does not pad the hour in a 12-hour clock', () => {
+      const asOf = new Date();
+      asOf.setHours(2, 49, 0, 0);
+      const original = Date.prototype.toLocaleTimeString;
+      const formatter = vi.spyOn(Date.prototype, 'toLocaleTimeString').mockImplementation(function (this: Date, _locale, options) {
+        return original.call(this, 'en-US', options);
+      });
+      try {
+        const label = renderBadge({}, overlay, asOf.toISOString());
+        expect(label).toContain('2:49 AM');
+        expect(label).not.toContain('02:49');
+      } finally {
+        formatter.mockRestore();
+      }
     });
 
     it('hides the time with showAsOf={false}', () => {
