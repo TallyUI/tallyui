@@ -13,6 +13,7 @@ import { readFresh } from '@tallyui/core/rxdb';
 import { commandFingerprint } from '@tallyui/core/server';
 import { addPosOrderCollection } from '@tallyui/pos/pos-order/open';
 import type { PosOrder } from '@tallyui/pos/pos-order/types';
+import { DEFAULT_TAX_ROUNDING } from '@tallyui/pos/tax/exact';
 import { createOrderOutbox, type OrderOutbox } from '@tallyui/pos/outbox/order-outbox';
 import type { CommandTransport } from '@tallyui/pos/outbox/types';
 import { loadSQLiteStorage, openNodeSQLite } from '@tallyui/storage-sqlite/node-sqlite.test-helper';
@@ -83,9 +84,10 @@ describe.each(['v2', 'v3'])('RxDB 16.21.1 %s carry-over to 17.5.0', (version) =>
             const initial = await readFresh(collection, { selector: {}, sort: [{ id: 'asc' }] });
             if (!restart) {
               // Every migrated order, every field, exactly as RxDB 16.21.1 stored it, plus version 5's sentVersion:
-              // the version it went out at (order-0004 and order-0005, with no lines, 1).
-              expect(initial).toStrictEqual(expected.map((order) =>
-                ({ ...order, sentVersion: (sentVersions as Record<string, number>)[order.commandId] ?? 1 })));
+              // the version it went out at (order-0004 and order-0005, with no lines, 1); and version 6's taxRounding, the
+              // default every older sale was computed with.
+              expect(initial).toStrictEqual(expected.map((order) => ({ ...order,
+                sentVersion: (sentVersions as Record<string, number>)[order.commandId] ?? 1, taxRounding: DEFAULT_TAX_ROUNDING })));
               for (const order of initial) {
                 expect(order).not.toHaveProperty('localWarnings');
                 expect(order).not.toHaveProperty('serverFailures');

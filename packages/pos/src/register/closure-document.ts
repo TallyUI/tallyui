@@ -17,6 +17,12 @@ import { minorToDecimal } from './money';
 import type { Closure, RegisterSession } from './schemas';
 
 type Values = Record<string, unknown>;
+
+/**
+ * The Z report's line when a session's sales used more than one tax rounding (#287; wording approved by the Front
+ * desk, 2026-09-30). The closure template lives in the apps, so the document carries it ready to print.
+ */
+export const TAX_ROUNDING_MIXED_NOTE = "This register's sales used more than one tax rounding method. Each sale's tax is as its receipt showed.";
 /** `writeClosure`'s own `breakdowns.movements` shape (session-store.ts): every entry carries at
  * least a string `id` and `reason`, so callers can read them without a cast. */
 type BreakdownMovement = Values & { id: string; reason: string };
@@ -171,6 +177,7 @@ function envelope<R extends Values>(row: R, context: ClosureContext, xreport = f
       ...Object.fromEntries(
         ['payment_methods', 'tax_rates', 'movements'].map((key) => [`has_${key}`, Object.keys((breakdowns[key] as Values) ?? {}).length > 0]),
       ),
+      ...(breakdowns.tax_rounding_mixed === true ? { tax_rounding_note: TAX_ROUNDING_MIXED_NOTE } : {}),
       ...money(row, ['period_sales_total', 'period_refunds_total', 'perpetual_sales_total', 'perpetual_refunds_total', 'unsynced_total']),
       opened_at_gmt: row.opened_at,
       opened_by: breakdowns.opened_by ?? null,

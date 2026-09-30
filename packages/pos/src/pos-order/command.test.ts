@@ -20,6 +20,7 @@ const order: PosOrder = {
     { id: 'payment2', method: 'cash', amountMinor: 2451, tenderedMinor: 3000, changeMinor: 549 },
   ],
   customer: { id: 'c1', name: 'Customer', email: 'buyer@example.com' }, note: 'Local note', registerId: 'r1', cashierRef: 'staff1',
+  taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
 };
 
 const v3: PosOrder = { ...order,
@@ -306,6 +307,17 @@ describe('toOrderCreateEnvelope', () => {
       expect(envelope.version).toBe(version);
       expect(envelope).toStrictEqual(toOrderCreateEnvelope(sale, 'device1'));
       expect(JSON.stringify(envelope)).not.toContain('session-1');
+    }
+  });
+
+  // #287: the recorded tax rounding is the till's own record, like lateSessionId.
+  it('never sends taxRounding, at any version', () => {
+    for (const maxVersion of [1, 2, 3, 4]) {
+      const envelope = toOrderCreateEnvelope({ ...v3, taxRounding: { granularity: 'per_line_items', mode: 'half_up' } }, 'device1', 1, { maxVersion });
+      expect(envelope.version).toBe(maxVersion);
+      expect(envelope.payload).not.toHaveProperty('taxRounding');
+      expect(envelope).toStrictEqual(toOrderCreateEnvelope(v3, 'device1', 1, { maxVersion }));
+      expect(JSON.stringify(envelope)).not.toMatch(/taxRounding|per_line_items|half_up/);
     }
   });
 

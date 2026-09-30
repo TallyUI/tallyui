@@ -18,7 +18,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AccessibilityInfo } from 'react-native';
 import { ClosureSheet } from '../register/closure-sheet';
 import { createRegisterDb, RegisterHarness, seedSession, type RegisterDb } from './register-harness';
-import { closeSession, writeClosure } from '@tallyui/pos';
+import { closeSession, writeClosure, type PosOrder } from '@tallyui/pos';
+import type { TaxRounding } from '@tallyui/core';
 
 let db: RegisterDb;
 beforeEach(async () => {
@@ -135,6 +136,30 @@ it('shows no approved-by line without an approver', async () => {
   await closeWithCount(10000);
   await renderClosure();
   expect(screen.queryByTestId('closure-approved-by')).toBeNull();
+});
+
+// A custom sale used the default figures, so beside a default sale it is not mixed.
+it.each([
+  [{ granularity: 'per_line_items', mode: 'half_up' }, true],
+  [{ granularity: 'per_order', mode: 'half_away_from_zero' }, false],
+  [{ granularity: 'custom' }, false],
+] as Array<[TaxRounding, boolean]>)("says when the session's sales used more than one tax rounding method (beside the default, %o: mixed %s, #287)", async (other, mixed) => {
+  const session = await seedSession(db, 10000);
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 10000 } });
+  // Only what a closure reads from a sale; no payments, so the count is unchanged.
+  const sale = (id: string, taxRounding: TaxRounding) => ({ id, sessionId: session.id, syncStatus: 'applied', pricesIncludeTax: false,
+    lines: [], payments: [], taxMinor: 0, taxRounding }) as unknown as PosOrder;
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000,
+    otherTenders: {}, movements: [], softwareVersion: '1.0.0',
+    orders: [sale('a', { granularity: 'per_order', mode: 'half_away_from_zero' }),
+      sale('b', other)],
+  });
+  expect(closure.breakdowns.tax_rounding_mixed).toBe(mixed ? true : undefined);
+  await renderClosure();
+  const line = screen.queryByTestId('closure-tax-rounding-mixed');
+  expect(line?.textContent ?? null).toBe(mixed
+    ? "This register's sales used more than one tax rounding method. Each sale's tax is as its receipt showed." : null);
 });
 
 it('renders nothing before any session has closed', async () => {

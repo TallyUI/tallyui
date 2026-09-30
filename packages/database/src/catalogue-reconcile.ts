@@ -31,7 +31,9 @@ export type CatalogueReconcileEvent =
   | { type: 'pass-started'; resumed: boolean }
   | { type: 'refetched'; count: number; keys: string[] }
   | { type: 'tombstoned'; count: number; keys: string[] }
-  | { type: 'kept'; count: number; keys: string[]; reason: 'unconfirmed' | 'brake' | 'resumed-pass' }
+  | { type: 'kept'; count: number; keys: string[]; reason: 'unconfirmed' | 'resumed-pass' }
+  /** `message` tells the store owner, in plain words and without naming a backend, what was kept and why. */
+  | { type: 'kept'; count: number; keys: string[]; reason: 'brake'; message: string }
   | ({ type: 'pass-completed' } & CatalogueReconcileSummary)
   | { type: 'stopped'; reason: 'till' | 'store' | 'transient' | 'stopped'; code?: string }
   | { type: 'skipped'; reason: 'gate' | 'store' };
@@ -255,9 +257,9 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     let tombstoned = 0;
     let kept = 0;
     let unlisted = 0;
-    const keep = (docs: Doc[], reason: 'unconfirmed' | 'brake') => {
+    const keep = (docs: Doc[], why: { reason: 'unconfirmed' } | { reason: 'brake'; message: string }) => {
       kept += docs.length;
-      if (docs.length) log({ type: 'kept', ...listed(docs.map(keyOf)), reason });
+      if (docs.length) log({ type: 'kept', ...listed(docs.map(keyOf)), ...why });
     };
     if (!current.uninterrupted) log({ type: 'kept', count: 0, keys: [], reason: 'resumed-pass' });
     else {
@@ -276,11 +278,14 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
       if (!candidates.length || keepCandidates) {
         // Nothing to prove, or nothing will ever be deleted: the candidates are only counted.
       } else if (braked(candidates.length, localCount)) {
-        console.warn(
-          `Catalogue reconcile braked: ${candidates.length} of ${localCount} local documents `
-          + `(${((candidates.length / localCount) * 100).toFixed(1)}%) were kept. Pass allowMassDelete: true to override.`,
-        );
-        keep(candidates, 'brake');
+        // One candidate brakes only when it is the till's whole catalogue (see braked).
+        const one = candidates.length === 1;
+        const message = (one
+          ? 'The only product on this till is no longer listed by the online store, so it was kept: removing everything at once needs a check. '
+          : `${candidates.length} products the online store no longer lists were kept on this till: removing that many at once needs a check. `)
+          + `If ${one ? 'it was' : 'they were'} hidden or removed on purpose, the person who manages this till can allow the removal.`;
+        console.warn(`Catalogue reconcile: ${message} (pass allowMassDelete: true to the reconcile runner to apply it)`);
+        keep(candidates, { reason: 'brake', message });
       } else {
         // In chunks of confirmChunk, each taking one budget slot, so a connector never bursts.
         const confirmed = new Set<string>();
@@ -292,7 +297,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
         }
         gone = candidates.filter((doc) => confirmed.has(keyOf(doc)));
         const goneSet = new Set(gone);
-        keep(candidates.filter((doc) => !goneSet.has(doc)), 'unconfirmed');
+        keep(candidates.filter((doc) => !goneSet.has(doc)), { reason: 'unconfirmed' });
       }
       if (gone.length) {
         adapter.enqueue(gone.map((local) => ({ key: keyOf(local), local, tombstone: true })));

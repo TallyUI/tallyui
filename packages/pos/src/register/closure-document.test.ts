@@ -141,6 +141,13 @@ it("types unsynced_count and each movement's id/reason without a cast", () => {
   expectTypeOf(doc.closure.breakdowns.movements[0].id).toEqualTypeOf<string>();
   expectTypeOf(doc.closure.breakdowns.movements[0].reason).toEqualTypeOf<string>();
 });
+// #287: the closure template lives in the apps, so the document carries the approved line ready to print, only when mixed.
+it("carries the mixed tax rounding line ready to print, only when the session's sales mixed strategies", () => {
+  const mixed = buildClosureDocument({ ...row, breakdowns: { ...row.breakdowns, tax_rounding_mixed: true } }, context);
+  expect(mixed.closure).toMatchObject({ tax_rounding_note:
+    "This register's sales used more than one tax rounding method. Each sale's tax is as its receipt showed." });
+  expect(buildClosureDocument(row, context).closure).not.toHaveProperty('tax_rounding_note');
+});
 // Revert: omit local copy marking or number the X-report.
 it('marks local copies but never numbers or persists an X-report', () => {
   expect(buildClosureDocument({ ...row, print_count: 2 }, context).fiscal).toMatchObject({
