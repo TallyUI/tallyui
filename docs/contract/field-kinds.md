@@ -207,11 +207,19 @@ never recomputes (`pos-order/command.ts:42`).
 - `lines[].discountMinor`: the line's own discounts plus its share of
   the order discount, in the line's own mode; absent when 0
   (`order/order-builder.ts:106`, `pos-order/command.ts:69`).
-- `payload.discountMinor`: the sum of `lines[].discountMinor`, so line
-  and order discounts together; absent when 0
-  (`pos-order/command.ts:51`). It is net of tax in an exclusive order,
-  tax-inclusive in an inclusive one, and **mixes modes** in a mixed
-  order. It is never the order discount alone.
+- `payload.discountMinor`: the order's line and order discounts
+  together, on one basis, **tax-exclusive**, like `subtotalMinor`:
+  since `totalMinor = subtotalMinor + taxMinor`, the discount that
+  produced that subtotal is net of tax too. Absent when 0. It is never
+  the order discount alone.
+  - **Today the till does not follow this rule (TallyUI #286).** It
+    sends the plain sum of `lines[].discountMinor`
+    (`pos-order/command.ts:51`), each in its line's own mode, so it is
+    tax-inclusive in an inclusive order and mixes modes in a mixed one
+    (the mixed example below: 750 = 596 tax-inclusive + 154 tax-free).
+    Core's shape check also requires that sum today
+    (`@tallyui/core/server`'s `order-payload-shape.ts:58`).
+  - Backends should not compare `discountMinor` until #286 lands.
 - `payload.taxMinor`: the sum of every line's exact tax, rounded once
   for the order (`order/order-builder.ts:28`, `:30`); line tax is on
   the line's amount after all discounts.
@@ -250,11 +258,18 @@ never recomputes (`pos-order/command.ts:42`).
   - `netMinor`: the tax-free base of each line carrying that rate,
     summed. An exclusive line's base is its amount after discounts; an
     inclusive line's is that amount minus its own tax, **rounded per
-    line** (`tax/exact.ts:132`). A line with stacked rates (ADR-040)
-    counts its base once under each rate.
+    line** (`tax/exact.ts:132`). Under stacked rates (ADR-040) a line's
+    net is the taxable base for each rate, so `taxByRate[].netMinor` is
+    per rate and not additive across rates, and it is rounded per line
+    where `subtotalMinor` is one figure, so nobody sums the nets
+    against `subtotalMinor`.
   - `taxMinor`: the rate's exact tax floored, then the order's leftover
     units by largest remainder, ties to the higher rate, so the rates
-    sum to `payload.taxMinor` (`tax/exact.ts:143`, `:150`).
+    sum to `payload.taxMinor` (`tax/exact.ts:143`, `:150`). That sum
+    always holds: finalize throws otherwise
+    (`pos-order/finalize.ts:196`), and core's v3 check refuses a
+    command where it differs (`@tallyui/core/server`'s
+    `fiscal-figures.ts:59`).
   - `grossMinor`: `netMinor + taxMinor` (`pos-order/finalize.ts:190`).
 
 #### Rounding
@@ -288,20 +303,24 @@ never recomputes (`pos-order/command.ts:42`).
 | Identity | Exclusive | Inclusive | Mixed |
 |---|---|---|---|
 | `totalMinor = subtotalMinor + taxMinor` (`totalMinor` is clamped at 0, `order/order-builder.ts:34`) | holds | holds | holds |
-| `discountMinor = Σ lines[].discountMinor` (else `invalid_payload`) | holds | holds | holds |
-| `subtotalMinor = Σ unitPriceMinor × quantity − discountMinor` | holds | no | no |
-| `totalMinor = Σ unitPriceMinor × quantity − discountMinor` | no | holds | no |
-| `totalMinor = subtotalMinor − discountMinor + taxMinor` | only with no discount | only with no discount | only with no discount |
+| `Σ taxByRate[].taxMinor = taxMinor` (`pos-order/finalize.ts:196`; core refuses otherwise) | holds | holds | holds |
+| `subtotalMinor = Σ unitPriceMinor × quantity − Σ lines[].discountMinor` | holds | no | no |
+| `totalMinor = Σ unitPriceMinor × quantity − Σ lines[].discountMinor` | no | holds | no |
 | `display.totalMinor = display.subtotalMinor − display.discountMinor (+ taxMinor when exclusive)` | holds | holds | holds |
 | `display.subtotalMinor = Σ display.lines[].amountMinor` | holds | holds | holds |
 | `display.discountMinor = display.orderDiscountMinor + Σ discount rows` | holds | holds | holds |
-| `display.discountMinor = discountMinor`, `display.subtotalMinor = Σ unitPriceMinor × quantity` | holds | holds | no |
-| `Σ taxByRate[].taxMinor = taxMinor` (`pos-order/finalize.ts:196`) | holds | holds | holds |
-| `Σ taxByRate[].netMinor = subtotalMinor`, `Σ grossMinor = totalMinor` | one rate per line only | may differ by rounding | may differ |
+| `display.subtotalMinor = Σ unitPriceMinor × quantity` | holds | holds | no |
 
-With no discount, `subtotalMinor − discountMinor + taxMinor` is just
-`subtotalMinor + taxMinor`. Once there is one, `subtotalMinor` has
-already had it taken off, so subtracting `discountMinor` again is wrong.
+The rows with `Σ lines[].discountMinor` sum each line's discount in its
+own mode, so they are identities of the lines, not of
+`payload.discountMinor`'s rule. Today `payload.discountMinor` equals
+that sum (core refuses otherwise); that is the #286 bug, so no identity
+here uses `payload.discountMinor`.
+
+`totalMinor = subtotalMinor − discountMinor + taxMinor` is never an
+identity: `subtotalMinor` has already had every discount taken off, so
+subtracting `discountMinor` again is wrong. With no discount it is just
+`subtotalMinor + taxMinor`.
 
 #### Worked examples
 
@@ -317,7 +336,7 @@ is inclusive.
 | `lines[0]` unit × qty, `discountMinor` | 1250 × 2, 596 | 1250 × 2, 596 | 1250 × 2, 596 | 1250 × 2, 596 |
 | `lines[1]` unit × qty, `discountMinor` | 999 × 1, 154 | 999 × 1, 154 | 999 × 1, 154 (excl.) | 999 × 1, 154 (incl.) |
 | `subtotalMinor` | 2749 | 2499 | 2576 | 2672 |
-| `discountMinor` | 750 | 750 | 750 | 750 |
+| `discountMinor` as sent today (#286: not yet the rule) | 750 | 750 | 750 | 750 |
 | `taxMinor` | 275 | 250 | 258 | 267 |
 | `totalMinor` | 3024 | 2749 | 2834 | 2939 |
 | `display.subtotalMinor` | 3499 | 3499 | 3599 | 3408 |
@@ -332,9 +351,11 @@ is inclusive.
   customer pays 3499 − 750 = 2749.
 - Mixed, inclusive order: the total is 1904 + 845 + 85 (line b's 84.5
   tax, rounded half away from zero) = 2834; the tax is 257.590909, so
-  258. `discountMinor` 750 adds line a's tax-inclusive 596 to line b's
-  tax-free 154; the display shows line b's share as 169 and the order
-  discount as 515.
+  258. Today's `discountMinor` 750 adds line a's tax-inclusive 596 to
+  line b's tax-free 154, which is the #286 bug; the display shows line
+  b's share as 169 and the order discount as 515.
+- In the exclusive order 750 is already tax-exclusive, so it is what
+  the rule asks for; in the inclusive and mixed orders it is not.
 
 Where rounding shows (three lines of 1 × 3.33 at 10%):
 
@@ -346,7 +367,10 @@ Where rounding shows (three lines of 1 × 3.33 at 10%):
 | `taxByRate[0]` net, tax, gross | 999, 100, 1099 | 909, 91, 1000 |
 
 In the inclusive order `taxByRate`'s net is 3 × (333 − 30) = 909 and its
-gross 1000, one more than `subtotalMinor` and `totalMinor`. A single
+gross 1000, one more than `subtotalMinor` and `totalMinor`: the nets are
+rounded per line, which is why they are not summed against the
+subtotal. `taxByRate[0].taxMinor` is 100 and 91, equal to `taxMinor`,
+as in every example here. A single
 line of 0.25 at 10% exclusive has 2.5 cents of tax and sends
 `taxMinor` 3 (half away from zero; half to even would give 2).
 
