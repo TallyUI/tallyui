@@ -3,7 +3,8 @@ import { MESSAGE_CHANNEL_CACHE_BY_IDENTIFIER, OPEN_REMOTE_MESSAGE_CHANNELS } fro
 import { setPremiumFlag } from 'rxdb-premium/plugins/shared';
 import { getRxStorageWorker } from 'rxdb-premium/plugins/storage-worker';
 
-export { StorageWorkerStartError, isStorageWorkerStartError } from './errors';
+export { StorageWorkerStartError } from './errors';
+export { isStorageWorkerStartError } from './is-storage-worker-start-error';
 
 // Also at import, before anything else can make RxDB cache the flag's first check as false.
 setPremiumFlag();

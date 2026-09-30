@@ -50,12 +50,14 @@
   },
   "devDependencies": {
     "@sqlite.org/sqlite-wasm": "3.53.4-build1",
+    "@tallyui/core": "workspace:^",
     "esbuild": "0.27.3",
     "expo-sqlite": "16.0.10",
     "rxdb-premium": "17.5.0"
   },
   "peerDependencies": {
     "@sqlite.org/sqlite-wasm": "^3.53.4-build1",
+    "@tallyui/core": "workspace:^",
     "expo-sqlite": ">=15.0.0",
     "rxdb-premium": "17.5.0"
   },

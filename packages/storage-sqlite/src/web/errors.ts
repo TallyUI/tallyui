@@ -16,10 +16,3 @@ export class StorageWorkerStartError extends Error {
     this.name = 'StorageWorkerStartError';
   }
 }
-
-export function isStorageWorkerStartError(error: unknown): boolean {
-  if (typeof error === 'string') return error.includes('StorageWorkerStartError');
-  if (!error || typeof error !== 'object') return false;
-  const { name, message } = error as { name?: unknown; message?: unknown };
-  return name === 'StorageWorkerStartError' || (typeof message === 'string' && message.includes('StorageWorkerStartError'));
-}

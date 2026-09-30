@@ -66,6 +66,11 @@ function track(promise: Promise<unknown>) {
   return state;
 }
 
+// The stale-worker error the #242 proof captured in Chromium (a cached 16.21.1 worker under a 17.5.0
+// main thread), verbatim; the same fixture as packages/core/src/rxdb-remote-version-mismatch.test.ts.
+const RM1_MESSAGE =
+  "could not create instance {\"name\":\"RxError (RM1)\",\"message\":\"\\n\\n        RxDB Error-Code: RM1.\\n        Hint: Error messages are not included in RxDB core to reduce build size.\\n        To show the full error messages and to ensure that you do not make any mistakes when using RxDB,\\n        use the dev-mode plugin when you are in development mode: https://rxdb.info/dev-mode.html?console=error\\n        \\nFind out more about this error here: https://rxdb.info/errors.html?console=errors#RM1 \\n\\n--------------------\\nParameters:\\nargs: {\\n  \\\"mainVersion\\\": \\\"17.5.0\\\",\\n  \\\"remoteVersion\\\": \\\"16.21.1\\\"\\n}\\n\",\"rxdb\":true,\"parameters\":{\"args\":{\"mainVersion\":\"17.5.0\",\"remoteVersion\":\"16.21.1\"}},\"code\":\"RM1\",\"url\":\"https://rxdb.info/errors.html?console=errors#RM1\",\"stack\":\"RxError (RM1):  \\n  \\n         RxDB Error-Code: RM1. \\n         Hint: Error messages are not included in RxDB core to reduce build size. \\n         To show the full error messages and to ensure that you do not make any mistakes when using RxDB, \\n         use the dev-mode plugin when you are in development mode: https://rxdb.info/dev-mode.html?console=error \\n          \\n Find out more about this error here: https://rxdb.info/errors.html?console=errors#RM1  \\n  \\n -------------------- \\n Parameters: \\n args: { \\n   \\\"mainVersion\\\": \\\"17.5.0\\\", \\n   \\\"remoteVersion\\\": \\\"16.21.1\\\" \\n } \\n  \\n     at newRxError (http://localhost:31338/v16/tallyui-sqlite-worker.js:12907:10) \\n     at Object.next (http://localhost:31338/v16/tallyui-sqlite-worker.js:19122:44) \\n     at ConsumerObserver2.next (http://localhost:31338/v16/tallyui-sqlite-worker.js:13775:25) \\n     at Subscriber2._next (http://localhost:31338/v16/tallyui-sqlite-worker.js:13745:22) \\n     at Subscriber2.next (http://localhost:31338/v16/tallyui-sqlite-worker.js:13718:12) \\n     at http://localhost:31338/v16/tallyui-sqlite-worker.js:14687:68 \\n     at OperatorSubscriber2._this._next (http://localhost:31338/v16/tallyui-sqlite-worker.js:14201:9) \\n     at Subscriber2.next (http://localhost:31338/v16/tallyui-sqlite-worker.js:13718:12) \\n     at http://localhost:31338/v16/tallyui-sqlite-worker.js:14562:22 \\n     at errorContext (http://localhost:31338/v16/tallyui-sqlite-worker.js:13685:5)\"}";
+
 describe('storage-watchdog', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -255,6 +260,12 @@ describe('storage-watchdog', () => {
     const messageOnly = new Error('storage-remote: {"errorName":"StorageWorkerStartError","message":"no OPFS in this browser"}');
     expect(isStorageWorkerFailure(messageOnly)).toBe(true);
     expect(isStorageWorkerFailure(new Error('CONFLICT'))).toBe(false);
+  });
+
+  // The RM1 check itself is @tallyui/core's isRxdbRemoteVersionMismatch, tested there; this pins the wiring.
+  it('isStorageWorkerFailure recognises a stale worker (RxDB RM1) and rejects a data error mentioning RM1', () => {
+    expect(isStorageWorkerFailure(new Error(RM1_MESSAGE))).toBe(true);
+    expect(isStorageWorkerFailure(new Error('Invalid SKU RM1 in row 3'))).toBe(false);
   });
 
   it('STORAGE_WRITE_STALL_MS and STORAGE_READ_WATCHDOG_MS are the WCPOS/ADR-061 values of 10s and 30s', () => {
