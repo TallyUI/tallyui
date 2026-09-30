@@ -277,20 +277,20 @@ describe('startIdReconcile', () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([[]]);
     const { stop } = startIdReconcile({
-      collection: db.products, adapter, context, reSync: vi.fn(), startDelayMs: 1000, intervalMs: 5000,
+      collection: db.products, adapter, context, reSync: vi.fn(), startDelayMs: 1000, intervalMs: 300_000,
     });
 
     await vi.advanceTimersByTimeAsync(999);
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
-    // #248: the gate is checked every min(1 hour, intervalMs / 2): at 3.5 s (not due), then at 6 s.
-    await vi.advanceTimersByTimeAsync(4999);
+    // #248: the gate is checked every min(1 hour, intervalMs / 2): at 151 s (not due), then at 301 s.
+    await vi.advanceTimersByTimeAsync(299_999);
     expect(fetchPages).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(2);
     stop();
-    await vi.advanceTimersByTimeAsync(20000);
+    await vi.advanceTimersByTimeAsync(1_200_000);
     expect(fetchPages).toHaveBeenCalledTimes(2);
   });
 
@@ -298,10 +298,10 @@ describe('startIdReconcile', () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([[]]);
     const { stop } = startIdReconcile({
-      collection: db.products, adapter, context, reSync: vi.fn(), startDelayMs: null, intervalMs: 5000,
+      collection: db.products, adapter, context, reSync: vi.fn(), startDelayMs: null, intervalMs: 300_000,
     });
 
-    await vi.advanceTimersByTimeAsync(2499);
+    await vi.advanceTimersByTimeAsync(149_999);
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);

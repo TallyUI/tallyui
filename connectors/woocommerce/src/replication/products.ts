@@ -15,7 +15,7 @@ export type WooProductCheckpoint = {
 // in the same call instead; every fetch in one call, mark requests included, counts against this.
 const MAX_REQUESTS_PER_CALL = 4;
 
-async function checkResponse(response: Response) {
+export async function checkResponse(response: Response) {
   if (response.ok) return;
   if (response.status === 401 || response.status === 403) {
     throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status);
@@ -51,6 +51,15 @@ export class WooMissingUuidError extends Error {
     super(`WooCommerce product ${id} has no uuid: the store must run the WCPOS Free plugin (1.10.0 or later) and be reached through its wcpos/v2 routes`);
     this.productId = id;
   }
+}
+
+/**
+ * One product row as the till stores it, the rule the pull and the reconcile feed share: a uuid is
+ * required (WooMissingUuidError), and a product that is not published arrives deleted (#229).
+ */
+export function toProductDocument(product: any): any {
+  if (typeof product.uuid !== 'string' || product.uuid.length === 0) throw new WooMissingUuidError(product.id);
+  return { ...product, _deleted: product.status !== 'publish' };
 }
 
 /** The store returned a product outside a modified_after window, so it does not apply the filter. */
@@ -134,16 +143,14 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
         // Restart the pass in this call, so RxDB stores its first page's checkpoint; the request budget bounds the call.
         return pull({ modified, offset: 0, pass_mark: passMark }, batchSize, context, requests);
       }
-      for (const product of products) {
-        if (typeof product.uuid !== 'string' || product.uuid.length === 0) {
-          throw new WooMissingUuidError(product.id);
-        }
+      const documents = products.map((product) => {
+        const document = toProductDocument(product);
         // The window is modified_after = L − 1 s, so a product missing its time or below L was not filtered.
         if (modified && !(product.date_modified_gmt >= modified)) {
           throw new WooDateFilterError(product.id, params.get('modified_after')!, product.date_modified_gmt);
         }
-      }
-      const documents = products.map((p) => ({ ...p, _deleted: p.status !== 'publish' }));
+        return document;
+      });
 
       // RxDB merges checkpoints, so clear pass state explicitly at completion.
       const complete = count === undefined ? products.length < batchSize : offset + products.length >= count;
