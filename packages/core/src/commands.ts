@@ -6,7 +6,7 @@ export const COMMANDS_PATH = '/tally/v1/commands';
 export const PROTOCOL_HEADER = 'X-Tally-Protocol';
 /** Current protocol version. */
 export const PROTOCOL_VERSION = 1;
-/** The ADR-038 batch limit; a server answers more with 413 and a BatchTooLargeBody. */
+/** Maximum commands per batch request. */
 export const MAX_COMMANDS_PER_BATCH = 50;
 
 /**

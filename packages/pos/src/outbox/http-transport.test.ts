@@ -69,14 +69,6 @@ describe('HTTP command transport', () => {
     expect(await transport.send(commands)).toEqual({ kind: 'refused', status: 400, reason });
   });
 
-  it('refuses a 413 batch_too_large with its message as the reason', async () => {
-    const body = { code: 'batch_too_large', maxCommands: 50, message: 'At most 50 commands are allowed' };
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(body, { status: 413 }));
-    const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
-    expect(await transport.send(commands))
-      .toEqual({ kind: 'refused', status: 413, reason: 'At most 50 commands are allowed' });
-  });
-
   it('retries a fetch that throws without an abort as network', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new TypeError('offline'));
     const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });

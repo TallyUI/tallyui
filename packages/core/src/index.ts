@@ -28,6 +28,7 @@ export type { SignInResult, ServerCapabilities } from './types/connector';
 export { resolveCapabilities } from './types/connector';
 export { SignInError } from './sign-in';
 export { ConnectorUnauthorizedError } from './unauthorized';
+export { isPermanentError, type SyncNotice } from './sync-notice';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
 export { customerTraits, CustomerServiceError, type Customer, type CustomerInput } from './types/customers';
@@ -39,7 +40,7 @@ export type {
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
-  CommandBatchRequest, CommandBatchResponse, BatchTooLargeBody,
+  CommandBatchRequest, CommandBatchResponse,
   RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionTransitionPayload,
   RegisterMovementRecordPayload, RegisterMovementVoidPayload, RegisterClosureSubmitPayload,
 } from './types';

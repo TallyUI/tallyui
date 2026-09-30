@@ -211,6 +211,3 @@ export interface CommandBatchRequest<E extends AnyCommandEnvelope = CommandEnvel
 export interface CommandBatchResponse {
   results: CommandResult[];
 }
-
-/** The `413` body for a batch over the limit (ADR-038; Front desk ruling 18). */
-export type BatchTooLargeBody = { code: 'batch_too_large'; maxCommands: number; message: string };

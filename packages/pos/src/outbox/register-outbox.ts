@@ -3,7 +3,6 @@ import type { RxCollection } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { registerCommandsLogger, type RegisterCommand } from '../register/register-commands';
 import { countFresh, readFresh } from '../rxdb';
-import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
 import type { CommandTransport, OutboxState } from './types';
 
 export interface RegisterOutboxOptions {
@@ -19,8 +18,6 @@ export interface RegisterOutboxOptions {
   maxBackoffMs?: number;
   random?: () => number;
   now?: () => number;
-  /** Counts 404s toward OutboxState.backendMissing; pass the order outbox's too, so either one's 404s show one notice. */
-  backendNotFound?: BackendNotFound;
 }
 export interface RegisterOutbox {
   flush(): Promise<void>;
@@ -44,10 +41,6 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   const random = options.random ?? Math.random;
   const now = options.now ?? Date.now;
   const state$ = new BehaviorSubject<OutboxState>({ pending: 0, sending: false });
-  const backendNotFound = options.backendNotFound ?? createBackendNotFound();
-  backendNotFound.backendMissing$.subscribe((backendMissing) => {
-    if (backendMissing !== state$.value.backendMissing) state$.next({ ...state$.value, backendMissing });
-  });
   const attempts = new Map<string, number>();
   let backoff = initialBackoff;
   let unauthorizedSinceAccepted = 0;
@@ -101,7 +94,6 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
             createdAt: doc.createdAt, deviceId, attempt };
         });
         const outcome = await transport.send(batch);
-        backendNotFound.record(outcome, now());
         if (outcome.kind === 'retry') return scheduleRetry(outcome.reason, outcome.retryAfterMs);
         if (outcome.kind === 'unauthorized') {
           unauthorizedSinceAccepted++;
