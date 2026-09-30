@@ -16,6 +16,10 @@
     "lint": {
       "outputs": []
     },
+    "@tallyui/mock-api#typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
     "typecheck": {
       "dependsOn": ["^typecheck"],
       "outputs": []

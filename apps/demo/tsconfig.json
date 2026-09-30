@@ -9,12 +9,16 @@
       "@tallyui/database/*": ["../../packages/database/src/*"],
       "@tallyui/components": ["../../packages/components/src/index.ts"],
       "@tallyui/components/*": ["../../packages/components/src/*"],
+      "@tallyui/theme": ["../../packages/theme/src/index.ts"],
+      "@tallyui/theme/*": ["../../packages/theme/src/*"],
       "@tallyui/connector-woocommerce": ["../../connectors/woocommerce/src/index.ts"],
       "@tallyui/connector-woocommerce/*": ["../../connectors/woocommerce/src/*"],
       "@tallyui/connector-medusa": ["../../connectors/medusa/src/index.ts"],
       "@tallyui/connector-medusa/*": ["../../connectors/medusa/src/*"],
       "@tallyui/primitives": ["../../packages/primitives/src/index.ts"],
-      "@tallyui/primitives/*": ["../../packages/primitives/src/*"]
+      "@tallyui/primitives/*": ["../../packages/primitives/src/*"],
+      "@tallyui/pos": ["../../packages/pos/src/index.ts"],
+      "@tallyui/pos/*": ["../../packages/pos/src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "uniwind-env.d.ts"]

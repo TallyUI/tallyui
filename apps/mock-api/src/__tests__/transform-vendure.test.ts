@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createVendureConnector } from '../../../../connectors/vendure/src';
+// mock-api consumes the connectors as published.
+import { createVendureConnector } from '@tallyui/connector-vendure';
 import { toVendureProduct } from '../transforms/vendure';
 import { products } from '../data/catalog';
 
