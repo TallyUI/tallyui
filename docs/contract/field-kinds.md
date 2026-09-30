@@ -20,6 +20,13 @@ every field of a command's envelope and payload there has a row here.
   it unused.
 - "**instruction (honoured by recording)**" is also used, for example
   `payments[].method`, which a server records on the payment.
+- **client time** marks a timestamp taken from the till's clock:
+  - every `createdAt`, the envelope's and each payload's;
+  - `openedAt`, `closedAt`, and `at` on the session and closure commands.
+  
+  It adds to the field's kind; it doesn't replace it. Every client-time
+  field has the same bounds and the same refusal, set out once under
+  "Malformed commands".
 
 ## Malformed commands
 
@@ -29,21 +36,23 @@ of the command, not of the server's view of it, and it applies to a field
 of either kind. An informational field is never refused because it
 differs from the server's own computation (ADR-070 decision 3).
 
-**Every `createdAt` has one set of bounds, in every command, on every
-backend** (Front desk, 2026-09-30). That's every envelope's `createdAt`
-and every payload's `createdAt`: `order.create`, the `register.*`
-commands and `register.movement.*`. It's a rule on the field, not on one
-command type, and a malformed value is refused whichever kind the field
-is (ruling 19).
+**Every client-time field has one set of bounds, in every command, on
+every backend** (Front desk, 2026-09-30). These are the fields marked
+"client time" in the tables below: every `createdAt`, the envelope's and
+each payload's (`order.create`, `register.*`, `register.movement.*`), and
+`openedAt`, `closedAt` and `at` on the session and closure commands. It's
+a rule on the field kind, not on one command type, and a malformed value
+is refused whether the field is an instruction or informational
+(ruling 19).
 - **Upper bound:** at most 24 hours ahead of the server's clock, per ADR-038's value checks.
 - **Lower bound:** not earlier than `2020-01-01T00:00:00Z`.
 - **Outside either bound, it's malformed.** The server refuses the
   command as `invalid_payload`, naming the field's path (for example
-  `createdAt` or `payload.createdAt`), with the same message shape for
-  every command. It's never clamped to the bound.
+  `createdAt`, `payload.createdAt` or `payload.closedAt`), with the same
+  message shape for every command. It's never clamped to the bound.
 
-An offline till's old sales stay well inside the lower bound; a time
-before it can only come from a broken clock.
+An offline till's old sales and sessions stay well inside the lower
+bound; a time before it can only come from a broken clock.
 
 ## Instructions the server can't carry out
 
@@ -91,7 +100,7 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
 | `type` | instruction | 1 |
 | `version` | instruction | 1 |
 | `payload` | none (its fields below) | 1 |
-| `createdAt` | informational | 1 |
+| `createdAt` | informational, client time | 1 |
 | `deviceId` | informational | 1 |
 | `attempt` | informational | 1 |
 
@@ -100,7 +109,7 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
 | Field | Kind | Since |
 |---|---|---|
 | `payload.clientOrderId` | instruction | 1 |
-| `payload.createdAt` | instruction (honoured by recording) | 1 |
+| `payload.createdAt` | instruction (honoured by recording), client time | 1 |
 | `payload.currency` | instruction | 1 |
 | `payload.pricesIncludeTax` | instruction | 1 |
 | `payload.lines` | instruction | 1 |
@@ -669,7 +678,7 @@ line of 0.25 at 10% exclusive has 2.5 cents of tax and sends
 | `payload.registerId` | instruction | 1 |
 | `payload.storeKey` | informational | 1 |
 | `payload.businessDay` | instruction (honoured by recording) | 1 |
-| `payload.openedAt` | instruction (honoured by recording) | 1 |
+| `payload.openedAt` | instruction (honoured by recording), client time | 1 |
 | `payload.openedBy` | instruction (honoured by recording) | 1 |
 | `payload.expectedFloatMinor` | informational | 1 |
 | `payload.countedFloatMinor` | instruction | 1 |
@@ -686,7 +695,7 @@ line of 0.25 at 10% exclusive has 2.5 cents of tax and sends
 |---|---|---|
 | `payload.sessionId` | instruction | 1 |
 | `payload.status` | instruction | 1 |
-| `payload.at` | instruction (honoured by recording) | 1 |
+| `payload.at` | instruction (honoured by recording), client time | 1 |
 | `payload.counted` (map: payment-method kind to minor units) | instruction (honoured by recording) | 1 |
 | `payload.closedBy` | instruction (honoured by recording) | 1 |
 | `payload.approvedBy` | instruction (honoured by recording) | 1 |
@@ -703,7 +712,7 @@ only.
 | `payload.type` | instruction | 1 |
 | `payload.amountMinor` | instruction | 1 |
 | `payload.reason` | instruction (honoured by recording) | 1 |
-| `payload.createdAt` | instruction (honoured by recording) | 1 |
+| `payload.createdAt` | instruction (honoured by recording), client time | 1 |
 | `payload.createdBy` | instruction (honoured by recording) | 1 |
 
 ## `register.movement.void`
@@ -713,7 +722,7 @@ only.
 | `payload.movementId` | instruction | 1 |
 | `payload.sessionId` | instruction | 1 |
 | `payload.voids` | instruction | 1 |
-| `payload.createdAt` | instruction (honoured by recording) | 1 |
+| `payload.createdAt` | instruction (honoured by recording), client time | 1 |
 | `payload.createdBy` | instruction (honoured by recording) | 1 |
 
 ## `register.closure.submit`
@@ -725,8 +734,8 @@ only.
 | `payload.registerId` | instruction | 1 |
 | `payload.number` | instruction | 1 |
 | `payload.businessDay` | instruction (honoured by recording) | 1 |
-| `payload.openedAt` | instruction (honoured by recording) | 1 |
-| `payload.closedAt` | instruction (honoured by recording) | 1 |
+| `payload.openedAt` | instruction (honoured by recording), client time | 1 |
+| `payload.closedAt` | instruction (honoured by recording), client time | 1 |
 | `payload.closedBy` | instruction (honoured by recording) | 1 |
 | `payload.approvedBy` | instruction (honoured by recording) | 1 |
 | `payload.tillExpected` (map: payment-method kind to minor units) | instruction (honoured by recording) | 1 |
