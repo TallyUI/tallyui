@@ -66,7 +66,10 @@ export interface StartCatalogueReconcileOptions<Doc, Cursor = unknown> {
   context: SyncContext;
   /** The app's `() => replication.reSync()`; called once per page that enqueued anything, and once for the tombstones. */
   reSync: () => void;
-  /** Adapter calls allowed in any 60 s window (default 30): pages, and each `confirmGone` call as one. */
+  /**
+   * Requests allowed in any 60 s window (default 30): each page, each `confirmGone` chunk, and one for the refetch
+   * each page that enqueued anything causes (the pull's `fetchByIds`; a connector fetching a page's ids in one request).
+   */
   requestsPerMinute?: number;
   /** Most candidates per `confirmGone` call (default 100); each call takes one budget slot. */
   confirmChunk?: number;
@@ -173,7 +176,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     signal.addEventListener('abort', onAbort);
   });
   // The request budget: a sliding window of adapter calls, so no 60 s window holds more than
-  // requestsPerMinute. Each page and each confirmGone call counts as one. It bounds the pass, not a page cap.
+  // requestsPerMinute. Each page, each confirmGone call and each page's refetch counts as one. It bounds the pass, not a page cap.
   const sent: number[] = [];
   const budget = async () => {
     for (;;) {
@@ -232,6 +235,8 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
         }
         checkAborted();
         if (queue.length) {
+          // The refetch this page causes runs in the pull, outside the runner: its slot is taken before it is enqueued.
+          await budget();
           adapter.enqueue(queue);
           reSync();
           refetched += queue.length;

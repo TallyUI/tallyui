@@ -440,6 +440,19 @@ describe('startCatalogueReconcile', () => {
     }, 30_000);
   });
 
+  it.each([[false, 0], [true, 60_000]])('a page that enqueued refetches (%s) takes a second budget slot: the next page waits %i ms', async (differs, wait) => {
+    const { server, feed, collection } = await setup(4);
+    if (differs) server.edit(1, { stamp: 's2' }); // page 0
+    const time = fakeTime();
+    const { adapter, requests } = fakeAdapter(server, feed, { pageSize: 2, now: time.now });
+    // Two slots a minute: page 0 and its refetch fill the first minute, or page 0 and page 1 do.
+    const { runner, count } = start(collection, adapter, time, { requestsPerMinute: 2 });
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(requests[1] - requests[0]).toBe(wait);
+  }, 30_000);
+
   it('250 candidates: confirmGone is called in chunks of 100, each after its own budget slot', async () => {
     const { server, feed, collection } = await setup(260);
     const time = fakeTime();

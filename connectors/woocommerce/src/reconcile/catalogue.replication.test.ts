@@ -154,6 +154,44 @@ describe('WooCommerce catalogue reconcile: guards', () => {
     expect(await nameOf(till, 'u11')).toBe('Imported');
   });
 
+  it('the refetches share the request budget: with every page differing, no 60 s window holds more than requestsPerMinute', async () => {
+    const store = createFakeStore(300);
+    const till = await tillOf(store, { batchSize: 100 });
+    for (const row of store.rows) row.stock_quantity = 0; // every page differs; the pull sees none of it
+    // Virtual time: a budget wait (at most 60 s) moves the clock only once the till is in sync, so each refetch is
+    // stamped at the time it was really sent. Longer timers (the gate checks) never fire.
+    let t = Date.UTC(2026, 8, 30);
+    const setTimer = (fn: () => void, ms: number) => {
+      let live = ms <= 60_000;
+      void (async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await till.state.awaitInSync();
+        if (live) { t += ms; fn(); }
+      })();
+      return () => { live = false; };
+    };
+    // The pass's own requests: the status read, the listing pages and the include= refetches (not the pull's mark).
+    const sent: number[] = [];
+    store.respond = (url) => {
+      if (url.pathname.endsWith('/status') || url.searchParams.has('_fields') || url.searchParams.has('include')) sent.push(t);
+      return undefined;
+    };
+    const events: CatalogueReconcileEvent[] = [];
+    const runner = startCatalogueReconcile({
+      collection: till.collection, adapter: woocommerceConnector.reconcile!.catalogue!, context, reSync: () => till.state.reSync(),
+      requestsPerMinute: 4, now: () => t, setTimer, log: (event) => events.push(event),
+    });
+    runner.reconcile();
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'pass-completed')).toBe(true), { timeout: 10_000, interval: 10 });
+    runner.stop();
+    await till.poll();
+
+    expect(events.reduce((n, e) => n + (e.type === 'refetched' ? e.count : 0), 0)).toBe(300);
+    expect(sent).toHaveLength(8); // the status read, 4 pages (the last one empty) and 3 refetches
+    for (const at of sent) expect(sent.filter((s) => s >= at && s < at + 60_000).length).toBeLessThanOrEqual(4);
+    expect([...(await till.local()).values()].every((p) => p.stock_quantity === 0)).toBe(true);
+  }, 20_000);
+
   it('never tombstones a product the store cannot be asked about: no numeric id locally or in the listing', async () => {
     const store = createFakeStore(10);
     const row = store.row(5);
