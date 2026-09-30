@@ -39,6 +39,15 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${ports.sqlite}` },
       dependencies: ['server-identity'],
     },
+    // The same storage suite in WebKit (Safari, iPad web tills; #293). Reproduction only: Playwright's default
+    // WebKit context is ephemeral, where navigator.storage.getDirectory() rejects with UnknownError, so every
+    // open fails until the suite runs in a persistent context. CI installs only Chromium today.
+    {
+      name: 'storage-sqlite-webkit',
+      testDir: './e2e/storage-sqlite',
+      use: { ...devices['Desktop Safari'], baseURL: `http://localhost:${ports.sqlite}` },
+      dependencies: ['server-identity'],
+    },
   ],
 
   webServer: [
