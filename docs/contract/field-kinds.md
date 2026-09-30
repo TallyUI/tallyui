@@ -186,9 +186,11 @@ never recomputes (`pos-order/command.ts:42`).
 - A line discount is on `unitPriceMinor × quantity`: a percentage of
   it, or a fixed amount capped at what the earlier ones leave
   (`order/order-builder.ts:97`).
-- An order discount is pre-tax. Its base is the sum of every line's
-  amount after its line discounts, each in its own mode, so a mixed
-  order's base mixes modes. A percentage is taken of that base (several
+- An order discount is applied before tax is computed: each line is
+  taxed on its amount after its share of it. It is not tax-exclusive,
+  because its base is the sum of every line's amount after its line
+  discounts, each in its own mode (tax-inclusive for an inclusive line),
+  so a mixed order's base mixes modes. A percentage is taken of that base (several
   percentages add up rather than compound); a fixed amount of what is
   left (`order/order-builder.ts:150`).
 - The order discount is then spread over the lines in proportion to
@@ -302,7 +304,7 @@ never recomputes (`pos-order/command.ts:42`).
 
 | Identity | Exclusive | Inclusive | Mixed |
 |---|---|---|---|
-| `totalMinor = subtotalMinor + taxMinor` (`totalMinor` is clamped at 0, `order/order-builder.ts:34`) | holds | holds | holds |
+| `totalMinor = subtotalMinor + taxMinor`, except when the lines sum below 0 (a net return): then `totalMinor` is clamped at 0 while `subtotalMinor + taxMinor` stays negative (`order/order-builder.ts:34`) | holds | holds | holds |
 | `Σ taxByRate[].taxMinor = taxMinor` (`pos-order/finalize.ts:196`; core refuses otherwise) | holds | holds | holds |
 | `subtotalMinor = Σ unitPriceMinor × quantity − Σ lines[].discountMinor` | holds | no | no |
 | `totalMinor = Σ unitPriceMinor × quantity − Σ lines[].discountMinor` | no | holds | no |
