@@ -4,8 +4,9 @@ Every field the command contract declares, with its kind and the version
 that declared it. The contract is ADR-038 (`order.create` and the
 transport), amended by ADR-062 (version 2), ADR-065 (version 3) and
 ADR-068 (the `register.*` commands). ADR-070 decision (3) (ruling 19)
-says a declared field is honoured or refused, never ignored, and that the
-contract lists each field with its kind: this page is that list (#262).
+says an instruction field is honoured or refused, never ignored, and that
+the contract lists each field with its kind: this page is that list
+(#262).
 The TypeScript shapes are in `packages/core/src/types/commands.ts`, and
 every field of a command's envelope and payload there has a row here.
 
@@ -39,7 +40,7 @@ naming the id, because a sale stuck in an outbox for days is worse.
 
 `customer_ignored` is not yet one of `CommandWarning`'s codes in
 `@tallyui/core`: until it is, a till reading warnings through
-`knownWarnings` drops it. A warning never rejects a sale.
+`knownWarnings` drops it (#266). A warning never rejects a sale.
 
 ## Reading the tables
 
@@ -130,10 +131,12 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
 
 - `payload.discountMinor` must equal the sum of `lines[].discountMinor`,
   which is what asks for the discount; a difference is a contradiction in
-  the command, so `invalid_payload`.
+  the command, so `invalid_payload` (`@tallyui/core/server`'s
+  `order-payload-shape.ts:58`).
 - `payload.customer` absent or `null` is the walk-in customer (ADR-038).
   An unknown `customerId` is one sale's own reference, so the sale is kept
-  as a guest sale with `customer_ignored`, never refused.
+  as a guest sale with `customer_ignored`, never refused (the warning in
+  core is #266).
 - `payload.sessionId` is the session the server's register figures count
   the sale in (ADR-068 decision 13), and `payload.registerId` is the
   till's device id, never the drawer (ADR-068 decision 7a).
@@ -230,4 +233,6 @@ declared maps (ADR-070 decision 1). Each key is a payment-method kind,
 `cash` or `external` (`PaymentMethodKind`), the same vocabulary as
 `order.create`'s `payments[].method`; each value is an integer in minor
 units. An unknown key is refused as `invalid_payload` naming the full
-path.
+path, and a key that a later version declares is refused naming the
+version it needs. That is the rule; today no backend checks the keys
+against the declared kinds (#256, medusapos/app#132).
