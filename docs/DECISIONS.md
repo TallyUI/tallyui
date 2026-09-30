@@ -3846,11 +3846,12 @@ interface OrderCreatePayload {
       `body_too_large` with `maxBytes: 1048576` for a body over its 1 MB
       limit, with or without `Content-Length` (`plugin.ts:27`, `:49`;
       vendurepos/app#39).
-    - **medusapos** answers more than 50 commands with a `413` that has no
-      code (`packages/medusa-plugin/src/api/tally/v1/commands/`
-      `process.ts:25`). A body over the plugin's own `sizeLimit: '1mb'`
-      (`src/api/middlewares.ts:24`) also gets no code. It will send both
-      codes with their bodies (medusapos/app#131, PR medusapos/app#134).
+    - **medusapos** sends `batch_too_large` with `maxCommands` for more
+      than 50 commands (`packages/medusa-plugin/src/api/tally/v1/`
+      `commands/process.ts:31`), and `body_too_large` with
+      `maxBytes: 1048576` for a body over its 1 MB limit
+      (`src/api/middlewares.ts:15`); both limits are constants in
+      `process.ts:17-19` (medusapos/app#134).
   - Today the outbox sends at most 10 per batch, and a `413` is `refused`:
     sending pauses and no order changes until the outbox is next flushed,
     for example by the next sale (`OutboxState.refused`). So one oversized
