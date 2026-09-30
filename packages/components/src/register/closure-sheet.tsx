@@ -136,6 +136,12 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
         )}
         {/* Not a figure: shows who approved the close even while blind. */}
         {!!approvedBy && <Text testID="closure-approved-by">Approved by {approvedBy}</Text>}
+        {/* Not a figure either (#287). The wording is proposed to the Front desk, not yet ruled. */}
+        {closure.breakdowns.tax_rounding_mixed === true && (
+          <Text testID="closure-tax-rounding-mixed" className="text-muted-foreground">
+            {"This register's sales used more than one tax rounding method. Each sale's tax is as its receipt showed."}
+          </Text>
+        )}
         {!!error && (
           <Text testID="closure-print-error" className="text-destructive">
             {error}

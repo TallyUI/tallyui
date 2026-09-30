@@ -11,6 +11,7 @@ import type { CommandTransport } from '@tallyui/pos/outbox/types';
 import { addPosOrderCollectionTests, olderCollection } from '@tallyui/pos/pos-order/open.test-helper';
 import { createOrderBuilder } from '@tallyui/pos/order/order-builder';
 import { mintUuid } from '@tallyui/pos/register/register-document';
+import { DEFAULT_TAX_ROUNDING } from '@tallyui/pos/tax/exact';
 import { finalizeOrder } from '@tallyui/pos/pos-order/finalize';
 import { addPosOrderCollection } from '@tallyui/pos/pos-order/open';
 import type { PosOrder } from '@tallyui/pos/pos-order/types';
@@ -46,7 +47,9 @@ function versionThreeOrder(): PosOrder {
   builder.addPayment({ method: 'cash', amountMinor: 3000 });
   builder.setCustomer({ id: 'c1', name: 'Customer', email: 'buyer@example.com' });
   builder.setNote('Sale note');
-  const order = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1', capabilities: { orderCreate: 3 } });
+  // A version-3 till recorded no tax rounding (#287).
+  const { taxRounding: _rounding, ...order } = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
+    capabilities: { orderCreate: 3 } });
   return { ...order, lines: [{ ...order.lines[0], taxInclusive: true }, order.lines[1]],
     sessionId: mintUuid(), lateSessionId: mintUuid(), sentVersion: 2, downgradedFrom: 3,
     serverRefs: { orderId: 'server-1', displayId: '#1001', totalMinor: order.totalMinor },
@@ -75,10 +78,11 @@ function versionThreeOrder(): PosOrder {
     try {
       const orders = await addPosOrderCollection(db);
       const migrated = await orders.findOne(original.id).exec();
-      expect(migrated?.toJSON()).toStrictEqual(original);
+      // Plus version 6's taxRounding: the default its figures were computed with.
+      expect(migrated?.toJSON()).toStrictEqual({ ...original, taxRounding: DEFAULT_TAX_ROUNDING });
       expect(migrated?.toJSON(true)._meta).toStrictEqual(metadata);
       const pending = await orders.find({ selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }] }).exec();
-      expect(pending.map((doc) => doc.toJSON())).toStrictEqual([original]);
+      expect(pending.map((doc) => doc.toJSON())).toStrictEqual([{ ...original, taxRounding: DEFAULT_TAX_ROUNDING }]);
     } finally {
       await db.close();
     }
@@ -102,7 +106,7 @@ function versionThreeOrder(): PosOrder {
   builder.applyLineDiscount(builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 500, currency: 'EUR' } }),
     { type: 'fixed', value: 100 });
   builder.addPayment({ method: 'cash', amountMinor: 400 });
-  const discounted = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 2 } });
+  const { taxRounding: _rounding, ...discounted } = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 2 } });
   const downgraded = versionThreeOrder();
   expect(figures.display && figures.taxByRate && !discounted.display && discounted.lines[0].discountMinor > 0).toBeTruthy();
   const older = await createRxDatabase({ name, storage, multiInstance: false });
@@ -111,12 +115,36 @@ function versionThreeOrder(): PosOrder {
   const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(5);
+    expect(orders.schema.version).toBe(6);
     const byId = async (id: string) => (await orders.findOne(id).exec())?.toJSON();
-    expect(await byId(figures.id)).toStrictEqual({ ...figures, sentVersion: 3 });
-    expect(await byId(discounted.id)).toStrictEqual({ ...discounted, sentVersion: 2 });
-    expect(await byId(downgraded.id)).toStrictEqual(downgraded);
+    // Version 6 then records each one's default tax rounding.
+    const taxRounding = DEFAULT_TAX_ROUNDING;
+    expect(await byId(figures.id)).toStrictEqual({ ...figures, sentVersion: 3, taxRounding });
+    expect(await byId(discounted.id)).toStrictEqual({ ...discounted, sentVersion: 2, taxRounding });
+    expect(await byId(downgraded.id)).toStrictEqual({ ...downgraded, taxRounding });
     expect(downgraded).toMatchObject({ sentVersion: 2, downgradedFrom: 3 });
+  } finally {
+    await db.close();
+    handle.raw.close();
+  }
+});
+
+(getRxStorageSQLite ? it : it.skip)('version 5 to 6 records the default tax rounding on every older sale, and changes nothing else', async () => {
+  const handle = openNodeSQLite();
+  const storage = getRxStorageSQLite!(handle.database);
+  const name = `posorder${uuidv7().replaceAll('-', '')}`;
+  const pending = { ...versionThreeOrder(), serverFailures: { since: 1000, reason: 'network', isolated: true } };
+  const applied = { ...versionThreeOrder(), syncStatus: 'applied' as const, localWarnings: [{ code: 'customer_omitted' as const, field: 'email' as const }] };
+  const older = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
+  await (await older.addCollections({ pos_orders: olderCollection(5) })).pos_orders.bulkInsert(structuredClone([pending, applied]));
+  await older.close();
+  const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
+  try {
+    const orders = await addPosOrderCollection(db);
+    expect(orders.schema.version).toBe(6);
+    for (const order of [pending, applied]) {
+      expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual({ ...order, taxRounding: DEFAULT_TAX_ROUNDING });
+    }
   } finally {
     await db.close();
     handle.raw.close();

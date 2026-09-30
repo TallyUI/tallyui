@@ -292,6 +292,7 @@ function sale(id: string, sessionId: string | undefined, payments: Omit<PosOrder
     id, commandId: `command-${id}`, createdAt: '2026-09-16T10:00:00.000Z', updatedAt: '2026-09-16T10:00:00.000Z',
     currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: total, discountMinor: 0, taxMinor: 0,
     totalMinor: total, customer: null, syncStatus: 'pending', ...(sessionId ? { sessionId } : {}), cashierRef: '7',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
     payments: payments.map((payment, i) => ({ ...payment, id: `${id}-payment-${i}` })), ...extra,
   });
 }

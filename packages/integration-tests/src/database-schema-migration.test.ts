@@ -92,6 +92,7 @@ const order: PosOrder = {
   subtotalMinor: 1000, discountMinor: 0, taxMinor: 0, totalMinor: 1000, syncStatus: 'pending', customer: null,
   lines: [{ id: 'line-1', productId: id(1), name: 'Product 1', sku: '', quantity: 1, unitPriceMinor: 1000, discountMinor: 0, netMinor: 1000, taxLines: [] }],
   payments: [{ id: 'payment-1', method: 'cash', amountMinor: 1000 }],
+  taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
 };
 
 let db: TallyDatabase | undefined;

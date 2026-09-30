@@ -3759,6 +3759,13 @@ interface OrderCreatePayload {
     migrates in one open. A main build rolled back to 2.0.0 holds v2
     and v4 stores: the first open rejects DM4, and the reopen recovers
     every order (`rxdb-rollback-sqlite.test.ts`).
+  - **Version 6** (`taxRounding`, the strategy each sale's figures were
+    computed with, #287) is one-way like version 5: a version-5 build
+    shows no orders. Its migration records `per_order` +
+    `half_away_from_zero` on every older sale, the only rounding any
+    earlier build used. 3.0.0 isn't released yet, so version 6 ships in
+    it, and #242's OPFS upgrade proof is rerun against version 6 before
+    3.0.0 ships.
   - Parked sales live in a collection each app supplies
     (`draftsCollection`); TallyUI's fixtures prove `pos_orders` only.
 
@@ -4039,8 +4046,10 @@ interface OrderCreatePayload {
     under it (`useSale`'s existing check). A sale in progress keeps the
     strategy it started with, and the order snapshot records it as
     `taxRounding`.
-- **Later:** recording the strategy on the sale's own record
-  (`pos_orders` v6, never sent to the server) is #287's job b.
+- **The sale's own record** (#287 job b): `finalizeOrder` records the
+  strategy as `taxRounding` (`pos_orders` v6, never sent to the
+  server), the default included, frozen with the figures. The Z report
+  splits each sale by it and says when a session mixes strategies.
 - **Known gap (Front desk ruling, 2026-09-30):** under Vendure's
   `per_rate_group_items`, inclusive lines can pay more or less than
   their shelf prices, and ADR-063's display has no row for that

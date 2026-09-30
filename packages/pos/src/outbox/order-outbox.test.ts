@@ -25,6 +25,7 @@ function order(i: number): PosOrder {
       unitPriceMinor: 100 + i, discountMinor: 0, netMinor: 100 + i, taxLines: [] }],
     payments: [{ id: uuidv7(), method: 'cash', amountMinor: 100 + i }], customer: null,
     subtotalMinor: 100 + i, discountMinor: 0, taxMinor: 0, totalMinor: 100 + i, syncStatus: 'pending',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
   };
 }
 

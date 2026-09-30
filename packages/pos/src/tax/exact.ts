@@ -3,6 +3,9 @@ import type { TaxRounding } from '@tallyui/core';
 /** Micro-minor-units per minor unit. */
 export const MICROS_PER_MINOR = 1_000_000n;
 
+/** What an absent `TaxRounding` means (#287): the till's only rounding before #287a. */
+export const DEFAULT_TAX_ROUNDING = { granularity: 'per_order', mode: 'half_away_from_zero' } as const satisfies TaxRounding;
+
 /** Converts a plain decimal percentage with at most four fractional digits to safe integer ppm. */
 export function ratePpmFromPercent(percent: number | string): number {
   const value = String(percent);

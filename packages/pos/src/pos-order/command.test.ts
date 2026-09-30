@@ -309,6 +309,17 @@ describe('toOrderCreateEnvelope', () => {
     }
   });
 
+  // #287: the recorded tax rounding is the till's own record, like lateSessionId.
+  it('never sends taxRounding, at any version', () => {
+    for (const maxVersion of [1, 2, 3, 4]) {
+      const envelope = toOrderCreateEnvelope({ ...v3, taxRounding: { granularity: 'per_line_items', mode: 'half_up' } }, 'device1', 1, { maxVersion });
+      expect(envelope.version).toBe(maxVersion);
+      expect(envelope.payload).not.toHaveProperty('taxRounding');
+      expect(envelope).toStrictEqual(toOrderCreateEnvelope(v3, 'device1', 1, { maxVersion }));
+      expect(JSON.stringify(envelope)).not.toMatch(/taxRounding|per_line_items|half_up/);
+    }
+  });
+
   it('a converted line carries its own taxInclusive, the rest are unchanged', () => {
     const converted: PosOrder = { ...order, lines: [{ ...order.lines[0], taxInclusive: true }, order.lines[1]] };
     const envelope = toOrderCreateEnvelope(converted, 'device1');

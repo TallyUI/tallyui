@@ -16,8 +16,9 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { REPLICATION_STATE_BY_COLLECTION } from 'rxdb/plugins/replication';
 import { startReplication } from '@tallyui/database';
-import type { ReplicationAdapter } from '@tallyui/core';
+import type { ReplicationAdapter, TaxRounding } from '@tallyui/core';
 import { createOrderBuilder } from '../order/order-builder';
+import { taxLinesByRate } from '../tax/exact';
 import { finalizeOrder } from '../pos-order/finalize';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
 import { bindRegister, ensureRegister, nextSaleCounter, readRegister } from './register-document';
@@ -272,6 +273,8 @@ it('freezes a per-rate tax breakdown, summed across orders, that matches each or
   );
   expect(rate).toMatchObject({ net_minor: 1500, tax_minor: 300, gross_minor: 1800 });
   expect(rate.tax_minor).toBe(orders.reduce((sum, o) => sum + o.taxMinor, 0));
+  // Every sale used the default tax rounding (#287): nothing to say.
+  expect(closure.breakdowns).not.toHaveProperty('tax_rounding_mixed');
 });
 
 // TallyUI-only (#134 second review): a tax-inclusive line's netMinor already contains its tax, so
@@ -327,6 +330,45 @@ it('sums an inclusive and an exclusive line at the same rate to one correct rate
   expect(rate).toMatchObject({ net_minor: 1800, tax_minor: 360, gross_minor: 2160 });
   expect(rate.net_minor + rate.tax_minor).toBe(rate.gross_minor);
   expect(rate.gross_minor).toBe(order.totalMinor);
+});
+
+// #287: each sale is split by the tax rounding it recorded, so the Z report's rows are the sum of its receipts' rows,
+// and a session whose sales mix strategies says so.
+it("splits each sale by its recorded tax rounding, sums its receipts' rows, and flags mixed strategies", async () => {
+  const session = await openSession(db.register_sessions, {
+    registerId: 'register', expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: '7',
+    businessDay: { year: 2026, month: 9, day: 16 },
+  });
+  const sale = (prices: Array<[number, number]>, rounding?: TaxRounding) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false, rounding } });
+    prices.forEach(([amount, ratePpm], i) => builder.addLine({ productId: `p${i}`, name: 'Item', unitPrice: { amount, currency: 'EUR' },
+      taxRates: [{ ratePpm }] }));
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const snapshot = builder.getSnapshot();
+    const order = { ...finalizeOrder(snapshot, { registerId: 'register', cashierRef: '7' }), sessionId: session.id };
+    return { order, receipt: taxLinesByRate(snapshot.lineItems, snapshot.taxMinor, undefined, snapshot.taxRounding) };
+  };
+  // 19.95 twice and 7.49 twice: per_line_items rows 40 and 14, where the per_order split of the same 54 gives 39 and 15.
+  const perLine = sale([[105, 190000], [105, 190000], [107, 70000], [107, 70000]], { granularity: 'per_line_items', mode: 'half_up' });
+  const plain = sale([[1000, 190000], [500, 70000]]);
+  expect(perLine.receipt.map((row) => row.amountMinor)).toEqual([40, 14]);
+  expect(taxLinesByRate(perLine.order.lines.map((line) => ({ ...line, taxInclusive: false })), perLine.order.taxMinor)
+    .map((row) => row.amountMinor)).toEqual([39, 15]);
+  const totalMinor = perLine.order.totalMinor + plain.order.totalMinor;
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: totalMinor }, closedBy: '7' });
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: totalMinor,
+    otherTenders: {}, movements: [], orders: [perLine.order, plain.order], softwareVersion: '1.0.0', timezone: 'UTC',
+  });
+  const rows = closure.breakdowns.tax_rates as Record<string, { net_minor: number; tax_minor: number; gross_minor: number }>;
+  for (const ratePpm of [190000, 70000]) {
+    const receipts = [perLine, plain].map(({ receipt }) => receipt.find((row) => row.ratePpm === ratePpm)!);
+    const net = receipts.reduce((sum, row) => sum + row.netMinor, 0);
+    const tax = receipts.reduce((sum, row) => sum + row.amountMinor, 0);
+    expect(rows[ratePpm]).toMatchObject({ net_minor: net, tax_minor: tax, gross_minor: net + tax });
+  }
+  expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(perLine.order.taxMinor + plain.order.taxMinor);
+  expect(closure.breakdowns.tax_rounding_mixed).toBe(true);
 });
 
 // TallyUI: the three collections are local only (the #53 rule). Every RxDB replication, including

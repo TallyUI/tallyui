@@ -9,6 +9,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import { mintUuid } from '../register/register-document';
+import { DEFAULT_TAX_ROUNDING } from '../tax/exact';
 import { finalizeOrder } from './finalize';
 import { addPosOrderCollection, POS_ORDER_MIGRATION_CLOSE_WAIT_MS, PosOrderOpenClosedError } from './open';
 import { addPosOrderCollectionTests, olderCollection, type Origin } from './open.test-helper';
@@ -29,7 +30,8 @@ function pendingOrder(from: Origin = 0): PosOrder {
   builder.addPayment({ method: 'cash', amountMinor: 3000 });
   builder.setCustomer({ id: 'c1', name: 'Customer', email: 'buyer@example.com' });
   builder.setNote('Sale note');
-  const order = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
+  // No older till recorded its tax rounding.
+  const { taxRounding: _rounding, ...order } = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
     ...(from >= 2 ? { capabilities: { orderCreate: 3 } } : {}) });
   return { ...order, lines: [{ ...order.lines[0], taxInclusive: true }, order.lines[1]],
     warnings: [{ code: 'total_mismatch', expectedMinor: 3451, serverMinor: 3452 }],
@@ -64,8 +66,8 @@ async function olderDocument(storage: RxStorage<any, any>, databaseName: string,
 async function keepsPendingOrder(from: Origin) {
   const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
   const order = pendingOrder(from);
-  // Version 5 records the version it was sent at: with no figures and no discount, 1.
-  const original = { ...structuredClone(order), sentVersion: 1 as const };
+  // Version 5 records the version it was sent at: with no figures and no discount, 1. Version 6 the default rounding.
+  const original = { ...structuredClone(order), sentVersion: 1 as const, taxRounding: DEFAULT_TAX_ROUNDING };
   const name = await seed(storage, order, from);
   const stored = await olderDocument(storage, name, order.id, from);
 
@@ -123,7 +125,8 @@ async function neverDropsInvalidOrder(from: Origin) {
   const unvalidated = await open(await seed(memory, invalid, from), memory, posOrderCollection());
   const { pos_orders: v1 } = await unvalidated.added;
   try {
-    expect((await v1.findOne(invalid.id).exec())?.toJSON()).toStrictEqual({ ...invalid, sentVersion: from === 3 ? 2 : from === 2 ? 3 : 1 });
+    expect((await v1.findOne(invalid.id).exec())?.toJSON()).toStrictEqual({ ...invalid, sentVersion: from === 3 ? 2 : from === 2 ? 3 : 1,
+      taxRounding: DEFAULT_TAX_ROUNDING });
   } finally {
     await unvalidated.db.remove();
   }
@@ -141,7 +144,7 @@ describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionT
 describe('addPosOrderCollection accepts a same-tick insert on memory storage', () => {
   it('accepts a pending order immediately after opening a fresh database', async () => {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
-    const order = pendingOrder(2);
+    const order = { ...pendingOrder(2), taxRounding: DEFAULT_TAX_ROUNDING };
     const db = await createRxDatabase({ name: `posinsert${uuidv7().replaceAll('-', '')}`, storage, multiInstance: false });
     try {
       const collection = await addPosOrderCollection(db);
@@ -156,7 +159,7 @@ describe('addPosOrderCollection accepts a same-tick insert on memory storage', (
   it('accepts a pending order immediately after migrating a version-2 database', async () => {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
     const name = await seed(storage, pendingOrder(2), 2);
-    const order = pendingOrder(2);
+    const order = { ...pendingOrder(2), taxRounding: DEFAULT_TAX_ROUNDING };
     const db = await createRxDatabase({ name, storage, multiInstance: false });
     try {
       const collection = await addPosOrderCollection(db);
@@ -312,7 +315,7 @@ async function stopsOnceCloseGivesUp(from: Origin) {
 
   const next = await createRxDatabase({ name, storage: memory, multiInstance: false });
   expect((await (await addPosOrderCollection(next)).findOne(order.id).exec())?.toJSON())
-    .toStrictEqual({ ...order, sentVersion: order.sentVersion ?? (from === 2 ? 3 : 1) });
+    .toStrictEqual({ ...order, sentVersion: order.sentVersion ?? (from === 2 ? 3 : 1), taxRounding: DEFAULT_TAX_ROUNDING });
   await next.close();
 }
 
@@ -338,7 +341,7 @@ describe('from version 2', () => {
   it('keeps a pending, unsynced version-2 order with sessionId, lateSessionId, display and taxByRate byte for byte through the migration to the current version', async () => {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
     const order = pendingOrder(2);
-    const original = { ...structuredClone(order), sentVersion: 3 };
+    const original = { ...structuredClone(order), sentVersion: 3, taxRounding: DEFAULT_TAX_ROUNDING };
     expect(order.sessionId).toHaveLength(36);
     expect(order.lateSessionId).toHaveLength(36);
     expect(order.display).toBeDefined();
@@ -388,7 +391,7 @@ describe('from version 3', () => {
   it('keeps a pending, unsynced version-3 order with every optional field set byte for byte through the migration to the current version', async () => {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
     const order: PosOrder = { ...pendingOrder(3), serverRefs: { orderId: 'server-1', displayId: '#1001', totalMinor: 3451 } };
-    const original = structuredClone(order);
+    const original = { ...structuredClone(order), taxRounding: DEFAULT_TAX_ROUNDING };
     const optional = ['note', 'registerId', 'sessionId', 'cashierRef', 'serverRefs', 'warnings', 'error', 'lateSessionId', 'sentVersion',
       'downgradedFrom', 'display', 'taxByRate'];
     for (const key of optional) expect(order, key).toHaveProperty(key);

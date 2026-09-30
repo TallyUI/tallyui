@@ -15,6 +15,7 @@ import type { OrderCreateEnvelope } from '@tallyui/core';
 import { readFresh } from '@tallyui/core/rxdb';
 import { addPosOrderCollection } from '@tallyui/pos/pos-order/open';
 import type { PosOrder } from '@tallyui/pos/pos-order/types';
+import { DEFAULT_TAX_ROUNDING } from '@tallyui/pos/tax/exact';
 import { createOrderOutbox } from '@tallyui/pos/outbox/order-outbox';
 import { loadSQLiteStorage, openNodeSQLite } from '@tallyui/storage-sqlite/node-sqlite.test-helper';
 
@@ -46,12 +47,13 @@ it('the fixture and its snapshots are present', () => {
 });
 
 (getRxStorageSQLite ? it : it.skip)(
-  'after a rollback to 2.0.0, the upgrade recovers every order at v5 on the reopen, field for field, removes the older records, and sends each pending order once',
+  'after a rollback to 2.0.0, the upgrade recovers every order at v6 on the reopen, field for field, removes the older records, and sends each pending order once',
   async () => {
     const [v3, rollback] = await Promise.all(snapshots.map(async (path) => JSON.parse(await readFile(path, 'utf8')) as PosOrder[]));
-    // Plus version 5's sentVersion: order-0007's recorded downgrade, order-0010's figures 3, every other order 1.
+    // Plus version 5's sentVersion: order-0007's recorded downgrade, order-0010's figures 3, every other order 1; and
+    // version 6's taxRounding, the default every one was computed with.
     const expected = [...v3, ...rollback].map((order) =>
-      ({ ...order, sentVersion: order.sentVersion ?? (order.id === 'order-0010' ? 3 : 1) }));
+      ({ ...order, sentVersion: order.sentVersion ?? (order.id === 'order-0010' ? 3 : 1), taxRounding: DEFAULT_TAX_ROUNDING }));
     expect(rollback.map((order) => order.id)).toEqual(['order-0101', 'order-0102']);
     // The rollback left order-0102 in a v2 store beside the v4 one, and the v4 store's orders hidden from 2.0.0.
     expect(storedCollections(fixture)).toEqual({ records: ['collection|pos_orders-2', 'collection|pos_orders-4'],
@@ -70,9 +72,9 @@ it('the fixture and its snapshots are present', () => {
           // Two older stores (v2 and v4, a main build rolled back): an open migrates one, so the first rejects DM4
           // with the v4 store left, and the reopen recovers the rest (ADR-069). A 2.0.0 till's v2 store takes one open.
           await expect(addPosOrderCollection(db)).rejects.toMatchObject({ code: 'DM4' });
-          expect(storedCollections(copyPath).tables).toEqual(['pos_orders-4', 'pos_orders-5']);
+          expect(storedCollections(copyPath).tables).toEqual(['pos_orders-4', 'pos_orders-6']);
           const collection = await addPosOrderCollection(db);
-          expect(collection.schema.version).toBe(5);
+          expect(collection.schema.version).toBe(6);
           expect(await readFresh(collection, { selector: {}, sort: [{ id: 'asc' }] })).toStrictEqual(expected);
 
           const pending = expected.filter((order) => order.syncStatus === 'pending').map((order) => order.commandId).sort();
@@ -96,8 +98,8 @@ it('the fixture and its snapshots are present', () => {
       } finally {
         handle.raw.close();
       }
-      // Only the v5 collection record and store are left.
-      expect(storedCollections(copyPath)).toEqual({ records: ['collection|pos_orders-5'], tables: ['pos_orders-5'] });
+      // Only the v6 collection record and store are left.
+      expect(storedCollections(copyPath)).toEqual({ records: ['collection|pos_orders-6'], tables: ['pos_orders-6'] });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -1,4 +1,4 @@
-import type { CommandError, CommandServerRefs, CommandWarning, PaymentMethodKind } from '@tallyui/core';
+import type { CommandError, CommandServerRefs, CommandWarning, PaymentMethodKind, TaxRounding } from '@tallyui/core';
 import type { DisplayTotals } from '../order/types';
 
 export type PosOrderSyncStatus = 'pending' | 'applied' | 'rejected';
@@ -76,6 +76,11 @@ export interface PosOrder {
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */
   taxByRate?: Array<{ ratePpm: number; code?: string; label?: string; netMinor: number; amountMinor: number; grossMinor: number }>;
+  /**
+   * The tax rounding the figures were computed with (#287), frozen at finalize; the till's own record, never sent.
+   * Version 6's migration sets the default on every older row.
+   */
+  taxRounding?: TaxRounding;
   cashierRef?: string;
   syncStatus: PosOrderSyncStatus;
   commandId: string;
