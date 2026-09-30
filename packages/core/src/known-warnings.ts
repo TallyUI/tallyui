@@ -4,12 +4,30 @@ function isSafeInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value);
 }
 
+type FiguresMismatchField = Extract<CommandWarning, { code: 'figures_mismatch' }>['fields'][number];
+
+function figuresMismatchFields(fields: unknown): FiguresMismatchField[] | null {
+  if (!Array.isArray(fields) || fields.length === 0) return null;
+  const rebuilt: FiguresMismatchField[] = [];
+  for (const entry of fields) {
+    if (typeof entry !== 'object' || entry === null) return null;
+    const { field, tillMinor, serverMinor } = entry as Record<string, unknown>;
+    if (typeof field !== 'string' || field === '' || rebuilt.some((kept) => kept.field === field)) return null;
+    if (!isSafeInt(tillMinor) || !isSafeInt(serverMinor) || tillMinor === serverMinor) return null;
+    rebuilt.push({ field, tillMinor, serverMinor });
+  }
+  return rebuilt;
+}
+
 /**
  * The till's single reader of stored warnings. `[]` for anything that isn't a warnings array.
  * A `total_mismatch`'s `bridgeMinor` is dropped (the rest of the warning is kept) when it's
  * absent, `null`, not a safe integer, zero, or not equal to `expectedMinor - serverMinor`.
  * A `tax_rate_mismatch` with a negative `ratePpm` is dropped entirely; zero stays valid.
  * A `customer_ignored` is dropped unless its `customerId` is a string of 1 to 64 characters.
+ * A `figures_mismatch` is dropped entirely unless `fields` is non-empty and each entry names a
+ * different figure with two differing safe integers; each entry is rebuilt from its known keys.
+ * A figure name it doesn't know (any non-empty string) is kept, since a newer store may send one.
  */
 export function knownWarnings(warnings: unknown): CommandWarning[] {
   if (!Array.isArray(warnings)) return [];
@@ -44,6 +62,11 @@ export function knownWarnings(warnings: unknown): CommandWarning[] {
         const { customerId } = warning;
         if (typeof customerId !== 'string' || customerId === '' || customerId.length > 64) continue;
         kept.push({ code: 'customer_ignored', customerId });
+        break;
+      }
+      case 'figures_mismatch': {
+        const fields = figuresMismatchFields(warning.fields);
+        if (fields !== null) kept.push({ code: 'figures_mismatch', fields });
         break;
       }
       default:

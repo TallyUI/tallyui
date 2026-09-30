@@ -82,6 +82,40 @@ describe('knownWarnings', () => {
     expect(knownWarnings([warning])).toEqual([warning]);
   });
 
+  const subtotal = { field: 'subtotalMinor', tillMinor: 1050, serverMinor: 1000 };
+  const tax = { field: 'taxMinor', tillMinor: 210, serverMinor: 200 };
+  const discount = { field: 'discountMinor', tillMinor: 0, serverMinor: 50 };
+
+  it('keeps a figures_mismatch with one entry, and with three', () => {
+    const one = { code: 'figures_mismatch', fields: [subtotal] };
+    const three = { code: 'figures_mismatch', fields: [subtotal, tax, discount] };
+    expect(knownWarnings([one, three])).toEqual([one, three]);
+  });
+
+  it.each([
+    ['an empty fields', []],
+    ['a non-array fields', { 0: subtotal }],
+    ['an empty field name', [{ ...subtotal, field: '' }]],
+    ['a non-string field name', [{ ...subtotal, field: 1 }]],
+    ['a repeated field name', [subtotal, { ...subtotal, tillMinor: 1100 }]],
+    ['a non-integer tillMinor', [subtotal, { ...tax, tillMinor: 210.5 }]],
+    ['a non-integer serverMinor', [{ ...tax, serverMinor: '200' }]],
+    ['equal values', [subtotal, { ...tax, serverMinor: 210 }]],
+    ['a non-object entry', [subtotal, null]],
+  ])('drops a whole figures_mismatch with %s', (_label, fields) => {
+    expect(knownWarnings([{ code: 'figures_mismatch', fields }])).toEqual([]);
+  });
+
+  it('keeps a figures_mismatch entry whose field name it does not know, from a newer store', () => {
+    const warning = { code: 'figures_mismatch', fields: [subtotal, { field: 'grandTotalMinor', tillMinor: 100, serverMinor: 200 }] };
+    expect(knownWarnings([warning])).toEqual([warning]);
+  });
+
+  it('drops extra keys in a figures_mismatch entry', () => {
+    const warning = { code: 'figures_mismatch', fields: [{ ...tax, currency: 'EUR' }], extra: 1 };
+    expect(knownWarnings([warning])).toEqual([{ code: 'figures_mismatch', fields: [tax] }]);
+  });
+
   it('strips extra fields', () => {
     const warning = { code: 'insufficient_stock', variantId: 'blue', quantity: 1, extra: 'nope' };
     expect(knownWarnings([warning])).toEqual([{ code: 'insufficient_stock', variantId: 'blue', quantity: 1 }]);

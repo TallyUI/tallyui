@@ -63,7 +63,17 @@ export type CommandWarning =
    * The sale's `customerId` (1 to 64 characters) was unknown, deleted or in another channel, so
    * the sale was kept as a guest sale rather than held (ADR-070).
    */
-  | { code: 'customer_ignored'; customerId: string };
+  | { code: 'customer_ignored'; customerId: string }
+  /**
+   * One warning per sale, never a refusal: each of the till's figures that differs from the
+   * server's own computation, once, with both values (#257). `total_mismatch` stays separate.
+   * `parseCommandResult` refuses a `field` it doesn't know; `knownWarnings` keeps it (a newer
+   * store's figure), so the type admits any non-empty string besides the three names.
+   */
+  | {
+      code: 'figures_mismatch';
+      fields: Array<{ field: 'subtotalMinor' | 'taxMinor' | 'discountMinor' | (string & {}); tillMinor: number; serverMinor: number }>;
+    };
 
 /** Error reported when a command is rejected. */
 export interface CommandError {

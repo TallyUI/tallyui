@@ -226,6 +226,20 @@ describe('OrdersList', () => {
     expect(screen.getAllByText(expected)).toHaveLength(2);
   });
 
+  const eur = (amount: number) => formatMoney({ amount, currency: 'EUR' });
+  it.each([
+    [`The online store worked out different figures for this sale. Subtotal: till ${eur(1050)}, store ${eur(1000)}.`,
+      [{ field: 'subtotalMinor', tillMinor: 1050, serverMinor: 1000 }] as const],
+    [`The online store worked out different figures for this sale. Subtotal: till ${eur(1050)}, store ${eur(1000)}. Tax: till ${eur(210)}, store ${eur(200)}.`,
+      [{ field: 'subtotalMinor', tillMinor: 1050, serverMinor: 1000 }, { field: 'taxMinor', tillMinor: 210, serverMinor: 200 }] as const],
+    [`The online store worked out different figures for this sale. grandTotalMinor: till ${eur(100)}, store ${eur(200)}.`,
+      [{ field: 'grandTotalMinor', tillMinor: 100, serverMinor: 200 }] as const],
+  ])('renders a figures_mismatch as one line: %s', (expected, fields) => {
+    const warned = order('w', { syncStatus: 'applied', warnings: [{ code: 'figures_mismatch', fields: [...fields] }] });
+    render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
+    expect(screen.getAllByText(expected)).toHaveLength(2);
+  });
+
   it('renders the rounding line for a total_mismatch with a positive bridgeMinor', () => {
     const warned = order('w', { syncStatus: 'applied',
       warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: 5 }] });
