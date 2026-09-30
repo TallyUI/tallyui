@@ -15,6 +15,9 @@ export type WooProductCheckpoint = {
 // in the same call instead; every fetch in one call, mark requests included, counts against this.
 const MAX_REQUESTS_PER_CALL = 4;
 
+/** The most of a foreign 426's message kept in the error, so a store's long page never floods the log; longer is cut with "…". */
+const MAX_STORE_MESSAGE = 200;
+
 export async function checkResponse(response: Response) {
   if (response.ok) return;
   if (response.status === 401 || response.status === 403) {
@@ -24,8 +27,11 @@ export async function checkResponse(response: Response) {
     // Only the plugin's own gate means the till needs updating; any other 426 is retried as transient, with the store's message.
     const body = await response.json().catch(() => undefined);
     if (body?.code === 'wcpos_update_required') throw new WooTillUpdateRequiredError(body.code);
-    const message = typeof body?.message === 'string' && body.message ? `: ${body.message}` : '';
-    throw new Error(`WooCommerce API error: 426${message}`);
+    // `426 (code): message`, each part only when the body has it.
+    const code = typeof body?.code === 'string' && body.code ? ` (${body.code})` : '';
+    const text = typeof body?.message === 'string' ? body.message : '';
+    const message = text ? `: ${text.length > MAX_STORE_MESSAGE ? `${text.slice(0, MAX_STORE_MESSAGE)}…` : text}` : '';
+    throw new Error(`WooCommerce API error: 426${code}${message}`);
   }
   throw new Error(`WooCommerce API error: ${response.status}`);
 }

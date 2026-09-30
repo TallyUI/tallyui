@@ -100,9 +100,13 @@ it('a 426 on a page request is WooTillUpdateRequiredError, with the server code 
 });
 
 // Only the plugin's own gate means the till needs updating; any other 426 (a proxy, another plugin) is retried,
-// with the store's message kept for the log.
+// with the store's code and message kept for the log, the message cut at 200 characters.
 it.each([
-  ['another code', JSON.stringify({ code: 'some_other_code', message: 'Use TLS 1.3' }), 'WooCommerce API error: 426: Use TLS 1.3'],
+  ['another code', JSON.stringify({ code: 'some_other_code', message: 'Use TLS 1.3' }), 'WooCommerce API error: 426 (some_other_code): Use TLS 1.3'],
+  ['a code and no message', JSON.stringify({ code: 'some_other_code' }), 'WooCommerce API error: 426 (some_other_code)'],
+  ['a message and no code', JSON.stringify({ message: 'Use TLS 1.3' }), 'WooCommerce API error: 426: Use TLS 1.3'],
+  ['a 500-character message', JSON.stringify({ code: 'c', message: 'abcde'.repeat(100) }), `WooCommerce API error: 426 (c): ${'abcde'.repeat(40)}…`],
+  ['a 200-character message', JSON.stringify({ code: 'c', message: 'abcde'.repeat(40) }), `WooCommerce API error: 426 (c): ${'abcde'.repeat(40)}`],
   ['no JSON', 'Upgrade Required', 'WooCommerce API error: 426'],
   ['nothing', null, 'WooCommerce API error: 426'],
 ])('a 426 with %s in the body is a transient error, never a till update', async (_name, body, message) => {

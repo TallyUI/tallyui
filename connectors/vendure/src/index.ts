@@ -87,6 +87,10 @@ export const createVendureConnector = (options: {
   };
 };
 
+/**
+ * @deprecated One instance for the whole app: a store switch can leak queued reconcile work across stores.
+ * Use createVendureConnector() per store session. Removed in 4.0.
+ */
 export const vendureConnector = createVendureConnector();
 
 // Re-export pieces for advanced usage
