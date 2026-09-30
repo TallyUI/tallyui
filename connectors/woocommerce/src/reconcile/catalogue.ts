@@ -30,9 +30,9 @@ async function get(path: string, context: SyncContext): Promise<any> {
 /**
  * The switch for the bulk-id fast path: true only when wcpos/v2/status lists `products_id_fast_path` in
  * `capabilities` (a missing field is false). Never a version number, and never a failed attempt.
- * A failed status read is "no capability known"; only for a 401 or 403 would the paged listing fail the same way.
- * only a till-class error (401 `unauthorized`, 426 `till_update_required`) or an abort stops the pass.
- * A 403 `forbidden` is store-class and retries on the store schedule.
+ * A failed status read is "no capability known"; only a 401 or 403 would make the paged listing fail the same way.
+ * Only a till-class error (401 `unauthorized`, 426 `till_update_required`) or an abort stops the pass.
+ * A 403 `forbidden` is store-class: the catalogue reconcile skips this check and tries again at the next hourly check.
  */
 export async function wooHasIdFastPath(context: SyncContext): Promise<boolean> {
   let status: any;
@@ -70,7 +70,8 @@ export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>)
       yield { entries: [], cursor: from };
       if (fast) {
         // The whole catalogue in one request, so `from` is moot. A store that refuses it (a store scope answers 400)
-        // falls back to the paged listing, which fails the same way and retries on the store schedule for 403 `forbidden`; only a till-class error or abort stops the pass.
+        // falls back to the paged listing, which fails the same way. A 403 `forbidden` is skipped until the next hourly
+        // check; only a till-class error or an abort stops the pass.
         let rows: any;
         let failed = false;
         try {

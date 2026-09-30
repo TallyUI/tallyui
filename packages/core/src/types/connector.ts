@@ -251,6 +251,9 @@ export interface TallyConnector {
    * block discounts until the cashier signed in again. `undefined` means
    * the read was inconclusive (offline or a server error), not version 1;
    * see `resolveCapabilities`.
+   * It throws `ConnectorUnauthorizedError` when the store refuses the read: `status: 401` when the session is not
+   * signed in, `status: 403` when the signed-in user may not sell (Vendure: an administrator without the
+   * CreateOrder permission).
    */
   capabilities?: (context: SyncContext) => Promise<ServerCapabilities | undefined>;
   /** Customer search: online only; `undefined` when the connector has no customer support. */
