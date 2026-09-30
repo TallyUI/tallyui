@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, Platform, Text, View } from 'react-native';
 import type { OutboxState } from '@tallyui/pos';
 
 // The line the cashier reads while the store keeps answering 404 (OutboxState.backendMissing) and no order is stuck.
@@ -43,6 +43,14 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
       + (stuck.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing') + ` (${stuck.reason}) since ${at(stuck.since)}`;
   const line = upToDate ? 'Sales are up to date.' : label + (backendMissing ? ` · ${backendMissingText}` : outbox.sending ? ' · sending' : outbox.lastRetryReason
     ? ` · retrying (${outbox.lastRetryReason}) in ${seconds}s` : '') + stuckText;
+  // iOS has no live region (accessibilityLiveRegion is Android-only), so there the line is announced once per change of its
+  // text, never on the first mount.
+  const announced = useRef(line);
+  useEffect(() => {
+    if (announced.current === line) return;
+    announced.current = line;
+    if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(line);
+  }, [line]);
   // A polite live region: react-native-web renders accessibilityLiveRegion as aria-live. The detail line has none.
   return <View><Text accessibilityLabel={line} accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{line}</Text>
   {backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">

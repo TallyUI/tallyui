@@ -1,9 +1,11 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
+import { AccessibilityInfo, Platform } from 'react-native';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OutboxState } from '@tallyui/pos';
 import { SyncStatus } from '../sale/sync-status';
 
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+const os = Platform.OS;
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); Object.assign(Platform, { OS: os }); });
 
 // The status line's text, checking on the way that its accessibility label (the only one rendered) is that same text.
 function line() {
@@ -247,6 +249,28 @@ describe('SyncStatus', () => {
     expect(line()).toBe('1 till update waiting to sync · retrying (status_503) in 5s');
     act(() => { vi.advanceTimersByTime(2000); });
     expect(line()).toBe('1 till update waiting to sync · retrying (status_503) in 3s');
+  });
+
+  it('on iOS, announces the status line once per change of its text, with the new line, and not on the first mount', () => {
+    Object.assign(Platform, { OS: 'ios' });
+    const announce = vi.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    const { rerender } = render(<SyncStatus state={{ pending: 0, sending: false }} />);
+    expect(announce).not.toHaveBeenCalled();
+    rerender(<SyncStatus state={{ pending: 1, sending: true }} />);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith('1 sale waiting to sync · sending');
+    // A re-render with the same text announces nothing.
+    rerender(<SyncStatus state={{ pending: 1, sending: true }} />);
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['web', 'android'])('on %s, announces nothing: the live region is enough', (platform) => {
+    Object.assign(Platform, { OS: platform });
+    const announce = vi.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    const { rerender } = render(<SyncStatus state={{ pending: 0, sending: false }} />);
+    rerender(<SyncStatus state={{ pending: 1, sending: true }} />);
+    expect(line()).toBe('1 sale waiting to sync · sending');
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it('formats the time with no forced leading zero on a 12-hour clock', () => {
