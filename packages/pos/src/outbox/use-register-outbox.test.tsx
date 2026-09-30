@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createRxDatabase } from 'rxdb';
+import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { RegisterCommandEnvelope } from '@tallyui/core';
@@ -9,7 +9,7 @@ import { registerCommandCollection, type RegisterCommand, type RegisterCommandCo
 import type { CommandTransport } from './types';
 import { useRegisterOutbox, type UseRegisterOutboxOptions } from './use-register-outbox';
 
-const databases: Awaited<ReturnType<typeof createRxDatabase>>[] = [];
+const databases: RxDatabase[] = [];
 async function collection(): Promise<RegisterCommandCollection> {
   const db = await createRxDatabase({ name: `registeroutbox${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -68,11 +68,15 @@ describe('useRegisterOutbox', () => {
     view.rerender(options(second));
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(send.mock.calls[0][0][0].id).toBe(pending.commandId);
+    await act(async () => { await second.insert(command(4)); });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
     await act(async () => { await first.insert(command(1)); });
-    expect(send).toHaveBeenCalledTimes(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(send).toHaveBeenCalledTimes(2);
     view.unmount();
     await second.insert(command(3));
-    expect(send).toHaveBeenCalledTimes(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it('flushes without a collection as a no-op', async () => {
