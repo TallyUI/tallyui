@@ -55,6 +55,13 @@ test('a listener running elsewhere, even in a sibling with the same prefix, is r
   }
 });
 
+test('a root that does not exist is refused with an e2e message', () => {
+  assert.deepEqual(ownsPort(20000, `${base}/missing`, fakeLsof({ 4242: root })), {
+    ok: false,
+    message: `e2e: this worktree's root ${base}/missing does not exist`,
+  });
+});
+
 test('an unknown holder is refused: lsof failing, finding no listener, or giving no cwd', () => {
   const failing = () => {
     throw new Error('spawnSync lsof ETIMEDOUT');

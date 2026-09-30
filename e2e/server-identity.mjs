@@ -16,6 +16,7 @@ const LSOF_TIMEOUT_MS = 5000;
  * @returns {{ ok: true } | { ok: false, message: string }}
  */
 export function ownsPort(port, root, run = /** @type {Run} */ (execFileSync)) {
+  if (!existsSync(root)) return { ok: false, message: `e2e: this worktree's root ${root} does not exist` };
   // stdio 'pipe' keeps lsof's stderr out of the test output; the failure message carries the reason instead.
   const lsof = (/** @type {string[]} */ args) =>
     run('lsof', args, { encoding: 'utf8', timeout: LSOF_TIMEOUT_MS, stdio: 'pipe' }).split('\n');

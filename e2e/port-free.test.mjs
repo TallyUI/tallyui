@@ -14,7 +14,8 @@ const preflight = (port, env) =>
   spawnSync(process.execPath, [script, String(port)], { encoding: 'utf8', env, timeout: 20000 });
 
 // Holds a free port on `host` (undefined: Node's default, both families), runs the preflight, then releases it.
-async function checkHeld(host, busyAddress, env) {
+// The refusal must name `busyAddress(port)` among the busy addresses (Linux lists the wildcards too) and `holder`.
+async function checkHeld(host, busyAddress, env, holder = '.+') {
   const server = net.createServer();
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -28,7 +29,7 @@ async function checkHeld(host, busyAddress, env) {
     await new Promise((resolve) => server.close(resolve)); // an open server would keep the run alive after a failure
   }
   assert.equal(held.status, 1);
-  assert.match(held.stderr, new RegExp(`port ${port} is already in use \\(.+\\) by .+; stop it, or set E2E_REUSE=1`));
+  assert.match(held.stderr, new RegExp(`port ${port} is already in use \\(.+\\) by ${holder}; stop it, or set E2E_REUSE=1`));
   assert.ok(held.stderr.includes(busyAddress(port)), held.stderr);
   assert.equal(preflight(port).status, 0);
 }
@@ -56,5 +57,5 @@ test('a hung lsof cannot stall the preflight: the holder lookup times out and na
   const bin = mkdtempSync(path.join(os.tmpdir(), 'tallyui-lsof-')); // left for the OS to clean
   writeFileSync(path.join(bin, 'lsof'), '#!/bin/sh\nexec sleep 60\n', { mode: 0o755 });
   const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
-  return checkHeld('127.0.0.1', (port) => `(127.0.0.1:${port}) by unknown;`, env);
+  return checkHeld('127.0.0.1', (port) => `127.0.0.1:${port}`, env, 'unknown');
 });
