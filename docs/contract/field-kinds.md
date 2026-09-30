@@ -50,6 +50,7 @@ is refused whether the field is an instruction or informational
   command as `invalid_payload`, naming the field's path (for example
   `createdAt`, `payload.createdAt` or `payload.closedAt`), with the same
   message shape for every command. It's never clamped to the bound.
+- **The message, verbatim on every backend** (Front desk, 2026-09-30): `{path} must be a time from {floor} to {upperBound}`. `{path}` is `createdAt` for the envelope and `payload.<field>` for every payload field; `{floor}` is `2020-01-01T00:00:00Z`; `{upperBound}` is the server's clock plus 24 hours. Both times are ISO 8601 in UTC, to the second, with `Z`.
 
 An offline till's old sales and sessions stay well inside the lower
 bound; a time before it can only come from a broken clock.
