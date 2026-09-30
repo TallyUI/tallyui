@@ -91,7 +91,7 @@ describe('startFingerprintReconcile', () => {
       return result;
     });
     const { reconcile, stop } = start(adapter, vi.fn());
-    expect(await reconcile()).toEqual({ pages: 1, compared: N + 2, queued: 1, truncated: false, unreported: 1 });
+    expect(await reconcile()).toEqual({ pages: 1, compared: N + 2, queued: 1, truncated: false, unreported: 1, complete: true });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: 'k0300', local: extra[300], refreshOnly: true }]);
     // The page's keys are read first (#248: compared page by page), then every local product for `unreported`.
     expect(sizes).toEqual([C, C, 9, C, C, 10]);
@@ -106,7 +106,7 @@ describe('startFingerprintReconcile', () => {
     const { reconcile, stop } = start(adapter, reSync);
 
     const result = await reconcile();
-    expect(result).toEqual({ pages: 1, compared: 2, queued: 1, truncated: false, unreported: 1 });
+    expect(result).toEqual({ pages: 1, compared: 2, queued: 1, truncated: false, unreported: 1, complete: true });
     expect(enqueue).toHaveBeenCalledTimes(1);
     const [entries] = enqueue.mock.calls[0];
     expect(entries).toEqual([{ id: 'p2', local: { id: 'p2', price: '20' }, refreshOnly: true }]);
@@ -120,7 +120,7 @@ describe('startFingerprintReconcile', () => {
     const reSync = vi.fn();
     const { reconcile, stop } = start(adapter, reSync);
 
-    expect(await reconcile()).toEqual({ pages: 1, compared: 2, queued: 0, truncated: false, unreported: 1 });
+    expect(await reconcile()).toEqual({ pages: 1, compared: 2, queued: 0, truncated: false, unreported: 1, complete: true });
     expect(enqueue).not.toHaveBeenCalled();
     expect(reSync).not.toHaveBeenCalled();
     stop();
@@ -151,10 +151,10 @@ describe('startFingerprintReconcile', () => {
 
     // The pull inserts p4 while the first pass reads the local products, so that read misses it.
     writeDuringNextRead(db.products, () => db.products.insert({ id: 'p4', price: '40' }));
-    expect(await reconcile()).toEqual({ pages: 1, compared: 2, queued: 0, truncated: false, unreported: 1 });
+    expect(await reconcile()).toEqual({ pages: 1, compared: 2, queued: 0, truncated: false, unreported: 1, complete: true });
 
     remote = { ...remote, p4: '45' }; // the price changed on the backend, and the pull missed it
-    expect(await reconcile()).toEqual({ pages: 1, compared: 3, queued: 1, truncated: false, unreported: 1 });
+    expect(await reconcile()).toEqual({ pages: 1, compared: 3, queued: 1, truncated: false, unreported: 1, complete: true });
     expect(enqueue).toHaveBeenCalledWith([{ id: 'p4', local: { id: 'p4', price: '40' }, refreshOnly: true }]);
     stop();
   });
@@ -165,7 +165,7 @@ describe('startFingerprintReconcile', () => {
     const { adapter } = fakeAdapter([Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`q${i}`, '1']))]);
     const { reconcile, stop } = start(adapter, vi.fn());
 
-    expect(await reconcile()).toEqual({ pages: 1, compared: 7, queued: 0, truncated: false, unreported: 3 });
+    expect(await reconcile()).toEqual({ pages: 1, compared: 7, queued: 0, truncated: false, unreported: 3, complete: true });
     stop();
   });
 
@@ -173,7 +173,7 @@ describe('startFingerprintReconcile', () => {
     const { adapter } = fakeAdapter([]);
     const { reconcile, stop } = start(adapter, vi.fn());
 
-    expect(await reconcile()).toEqual({ pages: 0, compared: 0, queued: 0, truncated: false, unreported: 0 });
+    expect(await reconcile()).toEqual({ pages: 0, compared: 0, queued: 0, truncated: false, unreported: 0, complete: false });
     stop();
   });
 
@@ -183,7 +183,7 @@ describe('startFingerprintReconcile', () => {
     const { adapter } = fakeAdapter([{}]);
     const { reconcile, stop } = start(adapter, vi.fn());
 
-    expect(await reconcile()).toEqual({ pages: 1, compared: 0, queued: 0, truncated: false, unreported: 10 });
+    expect(await reconcile()).toEqual({ pages: 1, compared: 0, queued: 0, truncated: false, unreported: 10, complete: true });
     stop();
   });
 
@@ -193,7 +193,7 @@ describe('startFingerprintReconcile', () => {
     const reSync = vi.fn();
     const { reconcile, stop } = start(adapter, reSync, { maxPages: 1 });
 
-    expect(await reconcile()).toEqual({ pages: 2, compared: 2, queued: 1, truncated: false, unreported: 1 });
+    expect(await reconcile()).toEqual({ pages: 2, compared: 2, queued: 1, truncated: false, unreported: 1, complete: true });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: 'p2', local: { id: 'p2', price: '20' }, refreshOnly: true }]);
     expect(reSync).toHaveBeenCalledTimes(1);
     expect(await revisions()).toEqual(before); // never writes the collection
@@ -342,13 +342,13 @@ describe('startFingerprintReconcile', () => {
     expect(seen).toEqual([
       { running: false },
       { running: true },
-      { running: false, lastResult: ok, lastResultAt: expect.any(Number) },
+      { running: false, lastResult: ok, lastResultAt: expect.any(Number), lastCompleteAt: expect.any(Number) },
     ]);
 
     fail = new Error('boom');
     await expect(reconcile()).rejects.toThrow('boom');
     expect(seen.at(-1)).toEqual({
-      running: false, lastResult: ok, lastResultAt: expect.any(Number), lastError: fail, lastErrorAt: expect.any(Number),
+      running: false, lastResult: ok, lastResultAt: expect.any(Number), lastCompleteAt: expect.any(Number), lastError: fail, lastErrorAt: expect.any(Number),
     });
     stop();
   });
@@ -371,19 +371,50 @@ describe('startFingerprintReconcile', () => {
     state$.subscribe((s) => seen.push(s));
 
     const ok = await reconcile();
-    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok, lastResultAt: 1000 });
+    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok, lastResultAt: 1000, lastCompleteAt: 1000 });
     expect(isFingerprintResultCurrent(seen.at(-1)!)).toBe(true);
 
     clock = 2000;
     fail = boom;
     await expect(reconcile()).rejects.toThrow('boom');
-    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok, lastResultAt: 1000, lastError: boom, lastErrorAt: 2000 });
+    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok, lastResultAt: 1000, lastCompleteAt: 1000, lastError: boom, lastErrorAt: 2000 });
     expect(isFingerprintResultCurrent(seen.at(-1)!)).toBe(false);
 
     clock = 3000;
     fail = undefined;
     const ok2 = await reconcile();
-    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok2, lastResultAt: 3000, lastError: boom, lastErrorAt: 2000 });
+    // The second pass failed after reading a page, so the third resumed and is not complete.
+    expect(ok2.complete).toBe(false);
+    expect(seen.at(-1)).toEqual({ running: false, lastResult: ok2, lastResultAt: 3000, lastCompleteAt: 1000, lastError: boom, lastErrorAt: 2000 });
+    expect(isFingerprintResultCurrent(seen.at(-1)!)).toBe(true);
+    stop();
+  });
+
+  it('a failed later pass keeps the count and marks it stale, then a good pass clears it', async () => {
+    let fail = false;
+    const adapter: FingerprintReconcileAdapter<Doc> = {
+      async *fetchPages() {
+        if (fail) { fail = false; throw new Error('network down'); }
+        yield new Map([['p1', '10'], ['p2', '20']]);
+      },
+      fingerprint: (doc) => doc.price,
+      enqueue: vi.fn(),
+    };
+    let clock = 1000;
+    const { reconcile, stop, state$ } = start(adapter, vi.fn(), { now: () => clock });
+    const seen: FingerprintReconcileState[] = [];
+    state$.subscribe((state) => seen.push(state));
+
+    expect(await reconcile()).toMatchObject({ complete: true, unreported: 1 });
+    expect(seen.at(-1)).toMatchObject({ lastCompleteAt: 1000 });
+    clock = 2000;
+    fail = true;
+    await expect(reconcile()).rejects.toThrow('network down');
+    expect(seen.at(-1)).toMatchObject({ lastResult: { complete: true, unreported: 1 }, lastCompleteAt: 1000 });
+    expect(isFingerprintResultCurrent(seen.at(-1)!)).toBe(false);
+    clock = 3000;
+    expect(await reconcile()).toMatchObject({ complete: true, unreported: 1 });
+    expect(seen.at(-1)).toMatchObject({ lastCompleteAt: 3000 });
     expect(isFingerprintResultCurrent(seen.at(-1)!)).toBe(true);
     stop();
   });

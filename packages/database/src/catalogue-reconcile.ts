@@ -47,8 +47,10 @@ export interface CatalogueReconcileSummary {
   tombstoned: number;
   /** Deletion candidates kept: unconfirmed, or held by the brake. */
   kept: number;
-  /** Local documents the listing did not name, counted in an uninterrupted pass (0 in a resumed one). */
+  /** Local documents the listing did not name; only a result with `complete` has a real count. */
   unlisted: number;
+  /** True when the pass ran from its first page to its last in one go, so `unlisted` is a real count; false for a resumed pass, whose `unlisted` is 0 and must not be shown as current (medusapos/app#160). */
+  complete: boolean;
   durationMs: number;
 }
 
@@ -57,6 +59,8 @@ export interface CatalogueReconcileState {
   running: boolean;
   lastResult?: CatalogueReconcileSummary;
   lastResultAt?: number;
+  /** When the last complete pass finished (persisted). A result without `complete` is not current. */
+  lastCompleteAt?: number;
   lastError?: unknown;
   lastErrorAt?: number;
 }
@@ -96,7 +100,7 @@ export function shouldReconcileAfterGap(lastPullAt: number | undefined, now = Da
 }
 
 interface PassState { startedAt: number; cursor?: unknown; uninterrupted: boolean }
-interface Persisted { lastCompletedAt?: number; pass?: PassState }
+interface Persisted { lastCompletedAt?: number; lastCompleteAt?: number; pass?: PassState }
 
 // The state ids in use per collection: two runners sharing one would share a cursor.
 const claimed = new WeakMap<object, Set<string>>();
@@ -158,7 +162,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     if (memory) return memory;
     try {
       const doc = await collection.getLocal<Persisted>(stateId);
-      return doc ? { lastCompletedAt: doc.get('lastCompletedAt'), pass: doc.get('pass') } : {};
+      return doc ? { lastCompletedAt: doc.get('lastCompletedAt'), lastCompleteAt: doc.get('lastCompleteAt'), pass: doc.get('pass') } : {};
     } catch (error) {
       // LD8: local documents are off; no getLocal at all: the plugin was never added.
       if (typeof collection.getLocal === 'function' && (error as { code?: unknown } | null)?.code !== 'LD8') throw error;
@@ -171,6 +175,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     if (memory) memory = value;
     else await collection.upsertLocal(stateId, JSON.parse(JSON.stringify(value)));
   };
+  load().then(({ lastCompleteAt }) => { if (lastCompleteAt !== undefined) update({ lastCompleteAt }); }).catch(() => {});
 
   const sleep = (ms: number) => new Promise<void>((resolve) => {
     const onAbort = () => { cancel(); resolve(); };
@@ -207,11 +212,11 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     checkAborted();
     const startedAt = now();
     const saved = await load();
-    // A pass stopped within the interval resumes from its cursor. A resumed pass never
-    // deletes: the keys it saw before it stopped are not kept.
-    const resumed = Boolean(saved.pass && startedAt - saved.pass.startedAt < intervalMs);
+    // A stored pass that finished no page has no cursor. Restarting it re-reads from the first page,
+    // so it runs uninterrupted. A resumed pass never deletes: earlier keys are not kept.
+    const resumed = Boolean(saved.pass && saved.pass.cursor !== undefined && startedAt - saved.pass.startedAt < intervalMs);
     let current: PassState = resumed ? { ...saved.pass!, uninterrupted: false } : { startedAt, uninterrupted: true };
-    await save({ lastCompletedAt: saved.lastCompletedAt, pass: current });
+    await save({ lastCompletedAt: saved.lastCompletedAt, lastCompleteAt: saved.lastCompleteAt, pass: current });
     log({ type: 'pass-started', resumed });
 
     // The listing's keys; with adapter.matchKey these are match keys, not primary keys (#313).
@@ -266,7 +271,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
           log({ type: 'refetched', ...listed(queue.map((e) => e.key)) });
         }
         current = { ...current, cursor };
-        await save({ lastCompletedAt: saved.lastCompletedAt, pass: current });
+        await save({ lastCompletedAt: saved.lastCompletedAt, lastCompleteAt: saved.lastCompleteAt, pass: current });
       }
     } finally {
       iterator.return?.()?.catch(() => {});
@@ -330,8 +335,8 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
 
     checkAborted();
     const lastCompletedAt = now();
-    await save({ lastCompletedAt });
-    const summary = { pages, compared, refetched, tombstoned, kept, unlisted, durationMs: lastCompletedAt - startedAt };
+    await save({ lastCompletedAt, lastCompleteAt: current.uninterrupted ? lastCompletedAt : saved.lastCompleteAt });
+    const summary = { pages, compared, refetched, tombstoned, kept, unlisted, complete: current.uninterrupted, durationMs: lastCompletedAt - startedAt };
     log({ type: 'pass-completed', ...summary });
     return summary;
   };
@@ -358,7 +363,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     try {
       const result = await pass();
       failures = 0;
-      update({ running: false, lastResult: result, lastResultAt: now() });
+      update({ running: false, lastResult: result, lastResultAt: now(), ...(result.complete && { lastCompleteAt: now() }) });
       return result;
     } catch (error) {
       update({ running: false, lastError: error, lastErrorAt: now() });

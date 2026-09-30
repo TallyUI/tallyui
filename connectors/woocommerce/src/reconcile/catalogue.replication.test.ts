@@ -354,7 +354,7 @@ describe('WooCommerce catalogue reconcile: fast path (#313)', () => {
     const { type: _, durationMs: __, ...summary } = events.find((e) => e.type === 'pass-completed') as Extract<CatalogueReconcileEvent, { type: 'pass-completed' }>;
     return summary;
   };
-  const UNCHANGED = { pages: 2, compared: 10, refetched: 0, tombstoned: 0, kept: 0, unlisted: 0 };
+  const UNCHANGED = { pages: 2, compared: 10, refetched: 0, tombstoned: 0, kept: 0, unlisted: 0, complete: true };
   /** One pass that went through the fast path. */
   const fastPass = async (till: Till, store: FakeStore) => {
     const events = await reconcile(till);

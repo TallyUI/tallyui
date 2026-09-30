@@ -33,8 +33,10 @@ export interface FingerprintReconcileResult {
   queued: number;
   /** Always false now that no page cap applies. */
   truncated: boolean;
+  /** True when `unreported` is a real count: a complete pass that read at least one page. */
+  complete: boolean;
   /**
-   * Local products the remote side did not report in a complete pass (they are skipped); 0 on a failed or resumed
+   * Local products the remote side did not report (`complete` marks a real count); 0 on a resumed
    * pass, and 0 when the adapter yielded no pages at all (e.g. base-only mode, no pricing context) -- that is not
    * the same as everything being unsellable. A channel that lists nothing still reads one empty page, so it
    * correctly reports everything as unreported.
@@ -45,7 +47,7 @@ export interface FingerprintReconcileResult {
 }
 
 /**
- * The runner's state; entirely in memory. The result is current only when
+ * The runner's state; `lastCompleteAt` is persisted. The result is current only when
  * `lastResultAt > (lastErrorAt ?? 0)`; show `unreported` from a stale result
  * as stale. See `isFingerprintResultCurrent`.
  */
@@ -53,6 +55,7 @@ export interface FingerprintReconcileState {
   running: boolean;
   lastResult?: FingerprintReconcileResult;
   lastResultAt?: number;
+  lastCompleteAt?: number;
   lastError?: unknown;
   lastErrorAt?: number;
 }
@@ -129,8 +132,8 @@ export function startFingerprintReconcile<Doc>({
       },
     },
   });
-  const toResult = ({ pages, compared, unlisted }: CatalogueReconcileSummary): FingerprintReconcileResult =>
-    ({ pages, compared, queued, truncated: false, unreported: pages > 0 ? unlisted : 0 });
+  const toResult = ({ pages, compared, unlisted, complete }: CatalogueReconcileSummary): FingerprintReconcileResult =>
+    ({ pages, compared, queued, truncated: false, unreported: pages > 0 ? unlisted : 0, complete: complete && pages > 0 });
 
   // Mapped as each pass ends, while `queued` is still that pass's count.
   const state = new BehaviorSubject<FingerprintReconcileState>({ running: false });

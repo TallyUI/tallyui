@@ -101,7 +101,7 @@ describe('startIdReconcile', () => {
       return result;
     });
     const { reconcileIds, stop } = start(adapter, vi.fn());
-    expect(await reconcileIds()).toEqual({ pages: 1, queued: 1, braked: false, truncated: false });
+    expect(await reconcileIds()).toEqual({ pages: 1, queued: 1, braked: false, truncated: false, complete: true });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: extra[N - 1].id, local: extra[N - 1] }]);
     // The page's keys are read first (#248: compared page by page), then every local product for the deletion candidates.
     expect(sizes).toEqual([C, C, 9, C, C, 10]);
@@ -119,7 +119,8 @@ describe('startIdReconcile', () => {
     const { reconcileIds, stop } = start(adapter, reSync);
 
     const result = await reconcileIds();
-    expect(result).toEqual({ pages: 1, queued: 2, truncated: false, braked: false });
+    expect(result.complete).toBe(true);
+    expect(result).toEqual({ pages: 1, queued: 2, truncated: false, braked: false, complete: true });
     // #248: a difference is queued with its page; a deletion only once the whole pass has run.
     expect(enqueue.mock.calls).toEqual([
       [[{ id: 'p3', local: { id: 'p3', variants: [{ id: 'v4' }, { id: 'v5' }] } }]],
@@ -151,7 +152,7 @@ describe('startIdReconcile', () => {
     const reSync = vi.fn();
     const { reconcileIds, stop } = start(adapter, reSync, { maxPages: 1 });
 
-    expect(await reconcileIds()).toEqual({ pages: 2, queued: 1, truncated: false, braked: false });
+    expect(await reconcileIds()).toEqual({ pages: 2, queued: 1, truncated: false, braked: false, complete: true });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: 'p2', local: { id: 'p2', variants: [{ id: 'v3' }] } }]);
     expect(reSync).toHaveBeenCalledTimes(1);
     stop();
@@ -265,10 +266,10 @@ describe('startIdReconcile', () => {
 
     // The pull inserts p6 while the first pass reads the local products, so that read misses it.
     writeDuringNextRead(db.products, () => db.products.insert({ id: 'p6', variants: [{ id: 'v6' }] }));
-    expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: false });
+    expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: false, complete: true });
 
     remote = remote.filter((p) => p.id !== 'p6'); // deleted on the backend, and the pull missed it
-    expect(await reconcileIds()).toEqual({ pages: 1, queued: 1, truncated: false, braked: false });
+    expect(await reconcileIds()).toEqual({ pages: 1, queued: 1, truncated: false, braked: false, complete: true });
     expect(enqueue).toHaveBeenCalledWith([{ id: 'p6', local: { id: 'p6', variants: [{ id: 'v6' }] } }]);
     stop();
   });
@@ -333,7 +334,7 @@ describe('startIdReconcile', () => {
       const reSync = vi.fn();
       const { reconcileIds, stop } = start(adapter, reSync);
 
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true, complete: true });
       expect(enqueue).not.toHaveBeenCalled();
       expect(reSync).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/25 products .*allowMassDelete/));
@@ -346,7 +347,7 @@ describe('startIdReconcile', () => {
       const reSync = vi.fn();
       const { reconcileIds, stop } = start(adapter, reSync, { allowMassDelete: true });
 
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 25, truncated: false, braked: false });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 25, truncated: false, braked: false, complete: true });
       expect(enqueue).toHaveBeenCalledTimes(1);
       expect(reSync).toHaveBeenCalledTimes(1);
       stop();
@@ -358,7 +359,7 @@ describe('startIdReconcile', () => {
       const reSync = vi.fn();
       const { reconcileIds, stop } = start(adapter, reSync);
 
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 15, truncated: false, braked: false });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 15, truncated: false, braked: false, complete: true });
       expect(reSync).toHaveBeenCalledTimes(1);
       stop();
     });
@@ -369,7 +370,7 @@ describe('startIdReconcile', () => {
       const reSync = vi.fn();
       const { reconcileIds, stop } = start(adapter, reSync);
 
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 3, truncated: false, braked: false });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 3, truncated: false, braked: false, complete: true });
       expect(reSync).toHaveBeenCalledTimes(1);
       stop();
     });
@@ -380,7 +381,7 @@ describe('startIdReconcile', () => {
       const reSync = vi.fn();
       const { reconcileIds, stop } = start(adapter, reSync, { maxDeleteShare: 0.5 });
 
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 25, truncated: false, braked: false });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 25, truncated: false, braked: false, complete: true });
       expect(reSync).toHaveBeenCalledTimes(1);
       stop();
     });
@@ -392,7 +393,7 @@ describe('startIdReconcile', () => {
       const reSync = vi.fn();
       const { reconcileIds, stop } = start(adapter, reSync);
 
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true, complete: true });
       expect(enqueue).not.toHaveBeenCalled();
       expect(reSync).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/5 products .*allowMassDelete/));
@@ -405,7 +406,7 @@ describe('startIdReconcile', () => {
       const reSync = vi.fn();
       const { reconcileIds, stop } = start(adapter, reSync);
 
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true, complete: true });
       expect(enqueue).not.toHaveBeenCalled();
       expect(reSync).not.toHaveBeenCalled();
       stop();
@@ -422,9 +423,9 @@ describe('startIdReconcile', () => {
       // Skip the page read (#248): the removal lands during the full scan of local products.
       writeDuringNextRead(db.products, () => db.products.bulkRemove(Array.from({ length: 25 }, (_, i) => `p${76 + i}`)), 1);
       // The first pass read all 100 before the removal landed: 25 would-be tombstones, so it brakes.
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true, complete: true });
       // The next pass reads the 75 left: no tombstones, no brake, nothing to queue.
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: false });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: false, complete: true });
       expect(enqueue).not.toHaveBeenCalled();
       expect(reSync).not.toHaveBeenCalled();
       stop();
@@ -436,7 +437,7 @@ describe('startIdReconcile', () => {
       const reSync = vi.fn();
       const { reconcileIds, stop } = start(adapter, reSync, { allowMassDelete: true });
 
-      expect(await reconcileIds()).toEqual({ pages: 1, queued: 5, truncated: false, braked: false });
+      expect(await reconcileIds()).toEqual({ pages: 1, queued: 5, truncated: false, braked: false, complete: true });
       expect(enqueue).toHaveBeenCalledTimes(1);
       expect(reSync).toHaveBeenCalledTimes(1);
       stop();
