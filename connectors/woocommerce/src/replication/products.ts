@@ -21,9 +21,11 @@ async function checkResponse(response: Response) {
     throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status);
   }
   if (response.status === 426) {
-    // Only the plugin's own gate means the till needs updating; any other 426 is retried as transient.
+    // Only the plugin's own gate means the till needs updating; any other 426 is retried as transient, with the store's message.
     const body = await response.json().catch(() => undefined);
     if (body?.code === 'wcpos_update_required') throw new WooTillUpdateRequiredError(body.code);
+    const message = typeof body?.message === 'string' && body.message ? `: ${body.message}` : '';
+    throw new Error(`WooCommerce API error: 426${message}`);
   }
   throw new Error(`WooCommerce API error: ${response.status}`);
 }

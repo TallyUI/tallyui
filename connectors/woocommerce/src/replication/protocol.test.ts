@@ -99,17 +99,18 @@ it('a 426 on a page request is WooTillUpdateRequiredError, with the server code 
   expect(errorKind(error)).toBe('till');
 });
 
-// Only the plugin's own gate means the till needs updating; any other 426 (a proxy, another plugin) is retried.
+// Only the plugin's own gate means the till needs updating; any other 426 (a proxy, another plugin) is retried,
+// with the store's message kept for the log.
 it.each([
-  ['another code', JSON.stringify({ code: 'some_other_code' })],
-  ['no JSON', 'Upgrade Required'],
-  ['nothing', null],
-])('a 426 with %s in the body is a transient error, never a till update', async (_name, body) => {
+  ['another code', JSON.stringify({ code: 'some_other_code', message: 'Use TLS 1.3' }), 'WooCommerce API error: 426: Use TLS 1.3'],
+  ['no JSON', 'Upgrade Required', 'WooCommerce API error: 426'],
+  ['nothing', null, 'WooCommerce API error: 426'],
+])('a 426 with %s in the body is a transient error, never a till update', async (_name, body, message) => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(body, { status: 426 }));
   const error = await wooProductReplication.pull.handler(undefined, 2, context).catch((e) => e);
   expect(error).not.toBeInstanceOf(WooTillUpdateRequiredError);
   expect(error).toBeInstanceOf(Error);
-  expect(error.message).toBe('WooCommerce API error: 426');
+  expect(error.message).toBe(message);
   expect(error.fixedBy).toBeUndefined();
   expect(errorKind(error)).toBe('transient');
 });
