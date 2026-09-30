@@ -2,7 +2,6 @@ import { MAX_COMMANDS_PER_BATCH } from '../commands'
 import type { AnyCommandEnvelope, BatchTooLargeBody, CommandEnvelope, CommandResult, OrderCreatePayload, RegisterCommandEnvelope } from '../types'
 import { fiscalFiguresErrors, type OrderCreatePayloadV3 } from './fiscal-figures'
 import { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
-import { SUPPORTED_ORDER_CREATE_VERSIONS, SUPPORTED_REGISTER_VERSIONS } from './versions'
 
 /** An envelope validateBatch accepted: every field's shape is checked, and its version is any positive
  *  safe integer (precheckCommand decides which versions this server supports). */
@@ -55,22 +54,31 @@ export function validateBatch(body: unknown):
  *
  * The replay lookup goes before precheckCommand so an already-applied command always replays
  * as `duplicate`, even once a later @tallyui/core tightens what precheckCommand accepts.
+ *
+ * `supported` is the SERVER's own list (what its /info advertises), never core's constants, which are the
+ * till's capability (#297). The version check, the `unsupported_version` message and its `data` all use it:
+ * `precheckCommand(envelope, { orderCreate: [1, 2, 3], register: [1] })`.
  */
-export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>): CommandResult | undefined {
+export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>,
+  supported: { orderCreate: readonly number[]; register: readonly number[] }): CommandResult | undefined {
+  // An empty list would send Math.max() of nothing (-Infinity, null in JSON) as the server's version.
+  for (const key of ['orderCreate', 'register'] as const) {
+    if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
+  }
   if (envelope.type !== 'order.create') {
-    if (!SUPPORTED_REGISTER_VERSIONS.includes(envelope.version)) {
+    if (!supported.register.includes(envelope.version)) {
       return { id: envelope.id, status: 'rejected', error: { code: 'unsupported_version',
-        message: `register version ${envelope.version} is not supported; this server supports ${SUPPORTED_REGISTER_VERSIONS.join(', ')}`,
-        data: { register: Math.max(...SUPPORTED_REGISTER_VERSIONS) },
+        message: `register version ${envelope.version} is not supported; this server supports ${supported.register.join(', ')}`,
+        data: { register: Math.max(...supported.register) },
       } }
     }
     return undefined
   }
   const command = envelope as CommandEnvelope<OrderCreatePayload>
-  if (!SUPPORTED_ORDER_CREATE_VERSIONS.includes(command.version)) {
+  if (!supported.orderCreate.includes(command.version)) {
     return { id: command.id, status: 'rejected', error: { code: 'unsupported_version',
-      message: `order.create version ${command.version} is not supported; this server supports ${SUPPORTED_ORDER_CREATE_VERSIONS.join(', ')}`,
-      data: { orderCreate: Math.max(...SUPPORTED_ORDER_CREATE_VERSIONS) },
+      message: `order.create version ${command.version} is not supported; this server supports ${supported.orderCreate.join(', ')}`,
+      data: { orderCreate: Math.max(...supported.orderCreate) },
     } }
   }
   // ADR-062 sends version 2 exactly when there is a discount, so version 1 can never create adjustments.
@@ -79,7 +87,8 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     || (Array.isArray(lines) && lines.some(line => (line as { discountMinor?: unknown } | null)?.discountMinor !== undefined))
   const payload = command.payload as OrderCreatePayloadV3
   const { display, taxByRate, sessionId } = payload
-  const v3 = (command.version as number) === 3
+  // Version 4 carries version 3's fields (#286); only what discountMinor means changes.
+  const v3 = command.version >= 3
   const versionError = command.version === 2 && discountMinor === undefined ? 'version 2 requires discountMinor'
     : command.version === 1 && discounted ? 'discountMinor requires version 2'
     : !v3 && (display !== undefined || taxByRate !== undefined) ? 'display and taxByRate require version 3'

@@ -531,6 +531,19 @@ describe('order outbox', () => {
     expect(send.mock.calls[1][0][0]).toMatchObject({ id: requeued.commandId, attempt: 1 });
   });
 
+  it('counts a rejected order in state.rejected once a batch result rejects it, and 0 after requeue()', async () => {
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: input.commandId,
+      status: 'rejected', error: { code: 'unknown_variant', message: 'x' } }] });
+    await outbox.flush();
+    expect(states.at(-1)).toMatchObject({ pending: 0, rejected: 1 });
+    outbox.stop();
+    await expect(outbox.requeue()).resolves.toBe(1);
+    expect(states.at(-1)).toMatchObject({ pending: 1, rejected: 0 });
+  });
+
   it('requeues once when two calls find the same rejected order', async () => {
     const input = { ...order(0), syncStatus: 'rejected' as const, error: { code: 'unknown_variant', message: 'x' } };
     const doc = await collection.insert(input);
@@ -798,7 +811,7 @@ describe('order outbox', () => {
     const { outbox, send, states } = setup();
     send.mockResolvedValueOnce({ kind: 'retry', reason: 'network' }).mockResolvedValueOnce({ kind: 'retry', reason: 'status_500' });
     await outbox.flush();
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, lastRetryReason: 'network', nextAttemptAt: epoch + 1000 });
+    expect(states.at(-1)).toEqual({ pending: 1, rejected: 0, sending: false, lastRetryReason: 'network', nextAttemptAt: epoch + 1000 });
     await vi.advanceTimersByTimeAsync(999);
     expect(send).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -820,12 +833,12 @@ describe('order outbox', () => {
     send.mockResolvedValue({ kind: 'results', results: [] });
     await outbox.flush();
     expect(send).toHaveBeenCalledTimes(1);
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
+    expect(states.at(-1)).toEqual({ pending: 1, rejected: 0, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
     await vi.advanceTimersByTimeAsync(999);
     expect(send).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(send).toHaveBeenCalledTimes(2);
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 3000 });
+    expect(states.at(-1)).toEqual({ pending: 1, rejected: 0, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 3000 });
     await vi.advanceTimersByTimeAsync(1999);
     expect(send).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
@@ -848,7 +861,7 @@ describe('order outbox', () => {
     expect(Date.now()).toBe(epoch);
     expect((await collection.findOne(orders[0].id).exec())?.syncStatus).toBe('applied');
     expect((await collection.findOne(orders[1].id).exec())?.syncStatus).toBe('pending');
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
+    expect(states.at(-1)).toEqual({ pending: 1, rejected: 0, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
   });
 
   it('shares the same promise between concurrent flush calls', async () => {

@@ -117,5 +117,6 @@ export interface AddLineInput {
   imageUrl?: string;
   unitPrice: Money & { taxInclusive?: boolean }; // currency must equal the order currency; taxInclusive wins over the order's pricesIncludeTax
   quantity?: number;          // default 1
-  taxRates?: Array<{ code?: string; ratePpm: number }>; // default: [{ ratePpm: from taxContext }]
+  taxRates?: Array<{ code?: string; ratePpm: number }>; // default: [{ ratePpm: taxContext's rate for taxClass }]
+  taxClass?: string;          // the product's tax class (ProductTraits.getTaxClass); ignored when taxRates is given
 }

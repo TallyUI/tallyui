@@ -254,7 +254,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (unitPrice.currency !== currency) throw new RangeError('Line currency must match ' + currency);
     if (!Number.isInteger(unitPrice.amount)) throw new RangeError('Price must be integer minor units');
     if (!Number.isInteger(quantity) || quantity < 1) throw new RangeError('Quantity must be an integer >= 1');
-    const taxRates = input.taxRates ?? [{ ratePpm: taxContext.getTaxRatePpm() }];
+    const taxRates = input.taxRates ?? [{ ratePpm: taxContext.getTaxRatePpm(input.taxClass) }];
     const taxInclusive = unitPrice.taxInclusive ?? taxContext.pricesIncludeTax;
 
     const existing = lineItems.find(
@@ -324,6 +324,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         imageUrl: traits.getImageUrl(doc),
         unitPrice,
         quantity: opts?.quantity,
+        taxClass: traits.getTaxClass?.(doc, opts?.variantId),
       });
     },
 

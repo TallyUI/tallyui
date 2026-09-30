@@ -9,6 +9,8 @@
 
 `auth.getHeaders({ token })` sends the WCPOS access token as `Authorization: Bearer <token>`, together with the POS marker `X-WCPOS: 1`. Without a token it throws `WooMissingTokenError`. WooCommerce consumer keys are not supported.
 
+It also sends `X-WCPOS-Protocol: 2`, which WCPOS 2.0 requires of POS requests, and `X-WCPOS-Client: tallyui/<connector version>` (lowercase `[a-z0-9._-]`, at most 32 characters), which WCPOS uses only for consent-gated telemetry.
+
 ## Product pull
 
 The pull works in passes:
@@ -33,4 +35,5 @@ The incremental pull can miss an edit: a `modified_after` that over-excludes (in
 
 - `ConnectorUnauthorizedError` (`code: 'unauthorized'`), from `@tallyui/core` and re-exported here: the store rejected the token (401 or 403), or `WooMissingTokenError` (a subclass) was thrown for a missing token. The app should sign in again.
 - `WooDateFilterError` (`code: 'unsupported_store'`): the store returned a product outside the requested date window, so it does not honour `modified_after` (WooCommerce before 5.8, or a proxy that drops the parameter). An app should show its own words for the `code`; the message, `This store needs WooCommerce 5.8 or later to sync products.`, is a plain fallback. The diagnostics are in `productId`, `bound` (the `modified_after` sent) and `received`. Today the pull retries a failed request every 5 s (RxDB's `retryTime`), one mark request each time. Stopping on errors that cannot recover is shared replication work.
+- `WooTillUpdateRequiredError` (`code: 'till_update_required'`, `fixedBy: 'till'`): the store answered 426, normally WCPOS's protocol gate (`serverCode: 'wcpos_update_required'`), so this till must be updated; the pull pauses until `resume()`.
 - `WooMissingUuidError`: a product came back without a `uuid`, so the store is not running the WCPOS Free plugin 1.10.0 or later, or the connector is not reaching it through `wcpos/v2`.

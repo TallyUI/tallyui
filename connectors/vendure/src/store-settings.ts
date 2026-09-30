@@ -69,6 +69,9 @@ export const vendureStoreSettings = async (context: SyncContext, _choice?: Store
     default: defaultCategory ? byCategory.get(defaultCategory.id) ?? 0 : 0,
   };
   for (const [categoryId, ppm] of byCategory) taxRatesPpm[categoryId] = ppm;
+  // A category with no enabled rate in the zone is charged 0 by Vendure, as for `default` above: an explicit 0, so the
+  // till never taxes it at the default rate (#288).
+  for (const category of categories) taxRatesPpm[category.id] ??= 0;
 
   return {
     currency: channel.defaultCurrencyCode,
