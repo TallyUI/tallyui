@@ -7,6 +7,8 @@ import { createRxDatabase, type RxDatabase, type RxCollection } from 'rxdb';
 import {
   getRxStorageSQLiteWasm,
   isStorageWorkerStartError,
+  isStorageUnavailableError,
+  isStorageHeldError,
   type RxStorageSQLiteWasm,
 } from '../../../packages/storage-sqlite/src/web/index';
 // Its own module, so the page bundles without createTallyDatabase's dev-mode setup.
@@ -46,7 +48,15 @@ const schemaV1 = {
 let db: ItemDatabase | undefined;
 let storage: RxStorageSQLiteWasm | undefined;
 
-type OpenResult = { ok: true } | { ok: false; isStorageWorkerStartError: boolean; message: string };
+type OpenResult =
+  | { ok: true }
+  | {
+      ok: false;
+      isStorageWorkerStartError: boolean;
+      isStorageUnavailableError: boolean;
+      isStorageHeldError: boolean;
+      message: string;
+    };
 
 async function open(name: string, version: 0 | 1 = 0): Promise<OpenResult> {
   try {
@@ -59,7 +69,13 @@ async function open(name: string, version: 0 | 1 = 0): Promise<OpenResult> {
     await db.addCollections({ items: version === 1 ? connectorCollection<ItemDocType>(schemaV1 as any) : { schema } });
     return { ok: true };
   } catch (error) {
-    return { ok: false, isStorageWorkerStartError: isStorageWorkerStartError(error), message: String(error) };
+    return {
+      ok: false,
+      isStorageWorkerStartError: isStorageWorkerStartError(error),
+      isStorageUnavailableError: isStorageUnavailableError(error),
+      isStorageHeldError: isStorageHeldError(error),
+      message: String(error),
+    };
   }
 }
 
