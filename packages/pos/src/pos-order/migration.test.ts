@@ -64,7 +64,8 @@ async function olderDocument(storage: RxStorage<any, any>, databaseName: string,
 async function keepsPendingOrder(from: Origin) {
   const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
   const order = pendingOrder(from);
-  const original = structuredClone(order);
+  // Version 5 records the version it was sent at: with no figures and no discount, 1.
+  const original = { ...structuredClone(order), sentVersion: 1 as const };
   const name = await seed(storage, order, from);
   const stored = await olderDocument(storage, name, order.id, from);
 
@@ -122,7 +123,7 @@ async function neverDropsInvalidOrder(from: Origin) {
   const unvalidated = await open(await seed(memory, invalid, from), memory, posOrderCollection());
   const { pos_orders: v1 } = await unvalidated.added;
   try {
-    expect((await v1.findOne(invalid.id).exec())?.toJSON()).toStrictEqual(invalid);
+    expect((await v1.findOne(invalid.id).exec())?.toJSON()).toStrictEqual({ ...invalid, sentVersion: from === 3 ? 2 : from === 2 ? 3 : 1 });
   } finally {
     await unvalidated.db.remove();
   }
@@ -310,7 +311,8 @@ async function stopsOnceCloseGivesUp(from: Origin) {
   expect(await olderDocument(memory, name, order.id, from)).toMatchObject(order);
 
   const next = await createRxDatabase({ name, storage: memory, multiInstance: false });
-  expect((await (await addPosOrderCollection(next)).findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+  expect((await (await addPosOrderCollection(next)).findOne(order.id).exec())?.toJSON())
+    .toStrictEqual({ ...order, sentVersion: order.sentVersion ?? (from === 2 ? 3 : 1) });
   await next.close();
 }
 
@@ -336,7 +338,7 @@ describe('from version 2', () => {
   it('keeps a pending, unsynced version-2 order with sessionId, lateSessionId, display and taxByRate byte for byte through the migration to the current version', async () => {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
     const order = pendingOrder(2);
-    const original = structuredClone(order);
+    const original = { ...structuredClone(order), sentVersion: 3 };
     expect(order.sessionId).toHaveLength(36);
     expect(order.lateSessionId).toHaveLength(36);
     expect(order.display).toBeDefined();

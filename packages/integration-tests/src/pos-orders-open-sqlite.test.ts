@@ -93,6 +93,36 @@ function versionThreeOrder(): PosOrder {
     }
   });
 
+(getRxStorageSQLite ? it : it.skip)('version 4 to 5 records each unrecorded order at its content version, and keeps a downgraded one', async () => {
+  const handle = openNodeSQLite();
+  const storage = getRxStorageSQLite!(handle.database);
+  const name = `posorder${uuidv7().replaceAll('-', '')}`;
+  const { sentVersion: _sent, downgradedFrom: _from, ...figures } = { ...versionThreeOrder(), id: uuidv7(), commandId: uuidv7() };
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+  builder.applyLineDiscount(builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 500, currency: 'EUR' } }),
+    { type: 'fixed', value: 100 });
+  builder.addPayment({ method: 'cash', amountMinor: 400 });
+  const discounted = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 2 } });
+  const downgraded = versionThreeOrder();
+  expect(figures.display && figures.taxByRate && !discounted.display && discounted.lines[0].discountMinor > 0).toBeTruthy();
+  const older = await createRxDatabase({ name, storage, multiInstance: false });
+  await (await older.addCollections({ pos_orders: olderCollection(4) })).pos_orders.bulkInsert(structuredClone([figures, discounted, downgraded]));
+  await older.close();
+  const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
+  try {
+    const orders = await addPosOrderCollection(db);
+    expect(orders.schema.version).toBe(5);
+    const byId = async (id: string) => (await orders.findOne(id).exec())?.toJSON();
+    expect(await byId(figures.id)).toStrictEqual({ ...figures, sentVersion: 3 });
+    expect(await byId(discounted.id)).toStrictEqual({ ...discounted, sentVersion: 2 });
+    expect(await byId(downgraded.id)).toStrictEqual(downgraded);
+    expect(downgraded).toMatchObject({ sentVersion: 2, downgradedFrom: 3 });
+  } finally {
+    await db.close();
+    handle.raw.close();
+  }
+});
+
 (getRxStorageSQLite ? it : it.skip)('finds orders by sessionId through its index, and never returns an unstamped order', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageSQLite!(openNodeSQLite().database) }), multiInstance: false });

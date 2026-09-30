@@ -17,9 +17,17 @@ import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
+/** The version-4 schema: `sentVersion` and `downgradedFrom` at most 3. */
+export function versionFour(): RxJsonSchema<PosOrder> {
+  const schema = structuredClone(posOrderSchema);
+  schema.properties.sentVersion.maximum = 3;
+  schema.properties.downgradedFrom.maximum = 3;
+  return { ...schema, version: 4 };
+}
+
 /** The shipped version-3 schema: before localWarnings and serverFailures. */
 export function versionThree(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
+  const schema = versionFour();
   for (const key of ['localWarnings', 'serverFailures']) delete (schema.properties as Record<string, unknown>)[key];
   return { ...schema, version: 3 };
 }
@@ -48,11 +56,13 @@ export function versionZero(): RxJsonSchema<PosOrder> {
 }
 
 /** A stored older `pos_orders` version, which `addPosOrderCollection` migrates to the current one. */
-export type Origin = 0 | 1 | 2 | 3;
+export type Origin = 0 | 1 | 2 | 3 | 4;
 
 /** `pos_orders` as the shipped app at `from` added it: version 1 came with its identity strategy. */
 export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
   addRxPlugin(RxDBMigrationSchemaPlugin);
+  const identity = (doc: PosOrder) => doc;
+  if (from === 4) return { schema: versionFour(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity } };
   if (from === 3) return { schema: versionThree(), migrationStrategies: { 1: (doc: PosOrder) => doc, 2: (doc: PosOrder) => doc, 3: (doc: PosOrder) => doc } };
   if (from === 2) return { schema: versionTwo(), migrationStrategies: { 1: (doc: PosOrder) => doc, 2: (doc: PosOrder) => doc } };
   return from === 0 ? { schema: versionZero() } : { schema: versionOne(), migrationStrategies: { 1: (doc: PosOrder) => doc } };
@@ -122,6 +132,8 @@ function slow(storage: RxStorage<any, any>): RxStorage<any, any> {
 export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any>, { sqlite = false, from = 0 as Origin } = {}) {
   // A version-1 order carries its session, which the migration keeps.
   const order = (n: number, syncStatus?: string): PosOrder => ({ ...sale(n, syncStatus), ...(from >= 1 ? { sessionId: `session-${n}` } : {}) });
+  // Version 5's migration records each order's content version as sent: a sale() has no discount, so 1.
+  const moved = (...orders: PosOrder[]) => orders.map((o) => ({ ...o, sentVersion: o.sentVersion ?? 1 }));
 
   if (from === 2) {
     it.each([true, false])('keeps a pending version-2 order with sessionId, lateSessionId, display and taxByRate byte for byte (validated: %s)', async (validated) => {
@@ -144,10 +156,10 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
       try {
         const pos = await addPosOrderCollection(db);
         const migrated = await pos.findOne(original.id).exec();
-        expect(migrated?.toJSON()).toStrictEqual(original);
+        expect(migrated?.toJSON()).toStrictEqual({ ...original, sentVersion: 3 });
         expect(migrated?.toJSON(true)._meta).toStrictEqual(metadata);
         const pending = await pos.find({ selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }] }).exec();
-        expect(pending.map((doc) => doc.toJSON())).toStrictEqual([original]);
+        expect(pending.map((doc) => doc.toJSON())).toStrictEqual([{ ...original, sentVersion: 3 }]);
       } finally {
         await db.close();
       }
@@ -167,14 +179,14 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
           expect(JSON.stringify(error)).toContain('/sessionId');
         } else {
           const pos = await addPosOrderCollection(db);
-          expect((await pos.findOne(original.id).exec())?.toJSON()).toStrictEqual(original);
+          expect((await pos.findOne(original.id).exec())?.toJSON()).toStrictEqual(moved(original)[0]);
           const pending = await pos.find({ selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }] }).exec();
-          expect(pending.map((doc) => doc.toJSON())).toStrictEqual([original]);
+          expect(pending.map((doc) => doc.toJSON())).toStrictEqual(moved(original));
         }
       } finally {
         await db.close();
       }
-      expect(await stored()).toStrictEqual(validated ? before : { v0: [], v1: [original], ids: { v0: [], v1: [original.id] } });
+      expect(await stored()).toStrictEqual(validated ? before : { v0: [], v1: moved(original), ids: { v0: [], v1: [original.id] } });
     });
   }
 
@@ -194,7 +206,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
     await olderApp(async (orders) => (await orders.findOne(bad.id).exec()).incrementalPatch({ syncStatus: 'pending' }));
     const next = await open();
     const pos = await addPosOrderCollection(next);
-    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([good, fixed]);
+    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual(moved(good, fixed));
     await next.close();
     expect(await stored()).toMatchObject({ v0: [], v1: [good, fixed] });
   });
@@ -222,7 +234,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
       expect(await stored()).toMatchObject({ v0: [good, fixed], v1: [good] });
       const next = await open();
       const pos = await addPosOrderCollection(next);
-      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([good, fixed]);
+      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual(moved(good, fixed));
       await next.close();
       expect(await stored()).toMatchObject({ v0: [], v1: [good, fixed] });
       // Long enough for a stray replication write to reject.
@@ -306,7 +318,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
     await addPosOrderCollection(last);
     await last.close();
     expect((await stored()).v0).toEqual([]);
-    expect((await stored()).v1).toStrictEqual([...orders.slice(0, 450), { ...orders[450], syncStatus: 'pending' }]);
+    expect((await stored()).v1).toStrictEqual(moved(...orders.slice(0, 450), { ...orders[450], syncStatus: 'pending' }));
   }, 60000);
 
   /**
@@ -335,7 +347,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
     const next = await open();
     const pos = await addPosOrderCollection(next);
     await pos.insert(order(4));
-    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...orders, order(4)]);
+    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...moved(...orders), order(4)]);
     await next.close();
     expect(await stored()).toMatchObject({ v0: [], v1: [...orders, order(4)] });
   };
@@ -417,7 +429,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
       expect((await status(next))?.status).toBe('RUNNING');
       const pos = await addPosOrderCollection(next);
       await pos.insert(order(4));
-      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...orders, order(4)]);
+      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...moved(...orders), order(4)]);
       await next.close();
       expect(await stored()).toMatchObject({ v0: [], v1: [...orders, order(4)] });
       expect(unhandled).toEqual([]);
@@ -489,7 +501,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
       const next = await open();
       const pos = await addPosOrderCollection(next);
       await pos.insert(order(4));
-      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...orders, order(4)]);
+      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...moved(...orders), order(4)]);
       await next.close();
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(unhandled).toEqual([]);
@@ -513,7 +525,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
 
     const reupgraded = await open();
     const pos = await addPosOrderCollection(reupgraded);
-    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([first, ...rolledBack]);
+    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual(moved(first, ...rolledBack));
     // The status describes this run, not the one before the rollback.
     expect(await status(reupgraded)).toMatchObject({ status: 'DONE', count: { total: 2, handled: 2 } });
     await reupgraded.close();
@@ -542,7 +554,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
 
     const reupgraded = await open();
     const pos = await addPosOrderCollection(reupgraded);
-    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([applied, rejected, unsent, fixed]);
+    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual(moved(applied, rejected, unsent, fixed));
     expect(await pos.count({ selector: { syncStatus: 'pending' } }).exec()).toBe(2);
     await reupgraded.close();
     expect(await stored()).toMatchObject({ v0: [], v1: [applied, rejected, unsent, fixed] });
@@ -563,7 +575,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
       await db.close();
       const { v0, v1 } = await stored();
       expect(v0).toStrictEqual([good, bad]);
-      expect(v1).toStrictEqual([good]);
+      expect(v1).toStrictEqual(moved(good));
     }
   });
 

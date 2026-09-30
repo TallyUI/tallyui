@@ -3075,8 +3075,11 @@ interface OrderCreatePayload {
   version 3 with every `discountMinor` tax-exclusive, the order's and
   each line's, so their sum still holds. A changed meaning needs a
   version (ADR-038). Core accepts 4, and the till's envelope builder
-  produces it when capped at 4 or more; the till doesn't send it yet
-  (a follow-up; see #286's PR).
+  produces it when capped at 4 or more. The till sends it to a server
+  that advertises 4: the outbox records each order's version
+  (`sentVersion`, `pos_orders` v5) before its first send, and every
+  retry resends that version; with the max unknown, 3. `requeue()`
+  clears it, since a new `commandId` is a new idempotency key.
 
 ## ADR-066 Standalone app: TallyUI with no backend
 
@@ -3751,6 +3754,11 @@ interface OrderCreatePayload {
     [#243](https://github.com/TallyUI/tallyui/issues/243) has
     `addPosOrderCollection` refuse with a coded error when a newer
     `pos_orders` version is stored.
+  - **Version 5** (`sentVersion` at the first send, #286) is one-way
+    too: a version-4 build shows no orders. A 2.0.0 till (a v2 store)
+    migrates in one open. A main build rolled back to 2.0.0 holds v2
+    and v4 stores: the first open rejects DM4, and the reopen recovers
+    every order (`rxdb-rollback-sqlite.test.ts`).
   - Parked sales live in a collection each app supplies
     (`draftsCollection`); TallyUI's fixtures prove `pos_orders` only.
 

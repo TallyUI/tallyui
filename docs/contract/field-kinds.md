@@ -229,11 +229,13 @@ never recomputes (`pos-order/command.ts:56`).
     own mode, so it is tax-inclusive in an inclusive order and mixes
     modes in a mixed one (the mixed example below: 750 = 596
     tax-inclusive + 154 tax-free).
-  - **Today the till still sends version 3 or lower,** because the
-    outbox does not yet pass the server's max to the envelope builder
-    (a follow-up; see #286's PR). So what a backend receives today is
-    the version-3 sum, and `discountMinor` is net only in a version-4
-    command.
+  - **The till sends version 4 to a server that advertises 4.** An
+    order goes out at the version of its first send, and every retry
+    resends it (`sentVersion`), even after the server upgrades. When
+    the server's max is unknown, the till sends 3 or lower. So
+    `discountMinor` is net only in a version-4 command; a backend
+    that advertises 4 still receives version 3 for orders first sent
+    before it did.
 - `payload.taxMinor`: the sum of every line's exact tax, rounded once
   for the order (`order/order-builder.ts:28`, `:30`); line tax is on
   the line's amount after all discounts.
