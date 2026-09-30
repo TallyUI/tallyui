@@ -49,7 +49,7 @@ const STATUS_STYLES: Record<StockStatus, { badge: string; dot: string; text: str
 function formatAsOf(iso: string): string {
   const date = new Date(iso);
   return date.toDateString() === new Date().toDateString()
-    ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    ? date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
     : date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
