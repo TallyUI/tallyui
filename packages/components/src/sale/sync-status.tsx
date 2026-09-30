@@ -1,6 +1,41 @@
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
+import type { SyncNotice } from '@tallyui/core';
 import type { OutboxState } from '@tallyui/pos';
+
+/**
+ * What the cashier reads when the product pull stops, keyed by the notice's code; the code itself is never shown.
+ * Every detail starts "You can keep selling." `software`, `minVersion` and `fix` come from the notice, so the
+ * component never names a backend or a version itself.
+ */
+type PullNoticeText = { line: (pluginName: string) => string; detail: (notice: SyncNotice, pluginName: string) => string };
+const PULL_NOTICE_TEXT: Record<string, PullNoticeText> = {
+  unauthorized: {
+    line: () => "Products aren't updating: this till needs to sign in to the online store again.",
+    detail: () => 'You can keep selling. Products, prices and stock stay as they were until someone signs in again.',
+  },
+  unsupported_store: {
+    line: () => "Products aren't updating: the online store needs a software update.",
+    detail: ({ software, minVersion }) => software && minVersion
+      ? `You can keep selling. Ask the store owner to update ${software} to version ${minVersion} or later.`
+      : "You can keep selling. Ask the store owner to update the store's software.",
+  },
+  missing_plugin: {
+    line: (pluginName) => `Products aren't updating: the online store is missing ${pluginName}.`,
+    detail: (_notice, pluginName) => `You can keep selling. This till couldn't find ${pluginName} on the online store. `
+      + "Ask the store owner to check that it is installed and switched on, and that the store address in this till's settings is right.",
+  },
+  store_misconfigured: {
+    line: () => "Products aren't updating: a setting on the online store needs changing.",
+    detail: ({ fix }) => fix ? `You can keep selling. Ask the store owner to ${fix}.`
+      : "You can keep selling. Ask the store owner to check the store's settings.",
+  },
+};
+const PULL_NOTICE_FALLBACK: PullNoticeText = {
+  line: () => "Products aren't updating.",
+  detail: () => 'You can keep selling. Products, prices and stock stay as they were. '
+    + 'Restart the app; if it keeps happening, tell the store owner.',
+};
 
 // The line the cashier reads while the store keeps answering 404 (OutboxState.backendMissing) and no order is stuck.
 const BACKEND_MISSING = "Sales aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
@@ -15,8 +50,12 @@ const BACKEND_MISSING_DETAIL = "This till couldn't find {pluginName} on the onli
   + "and switched on, and that the store address in this till's settings is right.";
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
-/** `pluginName` names the store's plugin in the detail, as its owners know it; `registerState` counts till updates. */
-export function SyncStatus({ state, registerState, pluginName = 'the POS plugin' }: { state: OutboxState; registerState?: OutboxState; pluginName?: string }) {
+/**
+ * `pluginName` names the store's plugin in the detail, as its owners know it; `registerState` counts till updates.
+ * `pullNotice` (a stopped product pull) shows as its own line and detail, above the outbox line.
+ */
+export function SyncStatus({ state, registerState, pluginName = 'the POS plugin', pullNotice }:
+  { state: OutboxState; registerState?: OutboxState; pluginName?: string; pullNotice?: SyncNotice }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     setNow(Date.now());
@@ -41,7 +80,18 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
       + (stuck.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing') + ` (${stuck.reason}) since ${at(stuck.since)}`;
   const line = upToDate ? 'Sales are up to date.' : label + (backendMissing ? ` · ${backendMissingText}` : state.sending ? ' · sending' : state.lastRetryReason
     ? ` · retrying (${state.lastRetryReason}) in ${seconds}s` : '') + stuckText;
-  return <View><Text accessibilityLabel={line} className="px-4 py-2 text-xs text-muted-foreground">{line}</Text>
-  {backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
+  const text = pullNotice
+    && (Object.hasOwn(PULL_NOTICE_TEXT, pullNotice.code) ? PULL_NOTICE_TEXT[pullNotice.code] : PULL_NOTICE_FALLBACK);
+  const notice = pullNotice && text
+    && { line: text.line(pluginName), detail: text.detail(pullNotice, pluginName) };
+  // Both notices name the missing plugin: both lines show, and the pull notice's detail once, below them, in place of the outbox's.
+  const oneDetail = pullNotice?.code === 'missing_plugin' && !!backendMissing;
+  // The notice lines carry no accessibility label, so a screen reader reads their text; the outbox line's label is its own text.
+  return <View>{notice ? <>
+    <Text className="px-4 py-2 text-xs text-muted-foreground">{notice.line}</Text>
+    {oneDetail ? null : <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>}
+  </> : null}<Text accessibilityLabel={line} className="px-4 py-2 text-xs text-muted-foreground">{line}</Text>
+  {oneDetail && notice ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>
+    : backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
     {BACKEND_MISSING_DETAIL.replace('{pluginName}', pluginName).replace('{lastTime}', upToDate ? ' the last time it checked' : '')}</Text> : null}</View>;
 }

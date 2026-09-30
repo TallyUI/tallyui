@@ -25,6 +25,9 @@ function checkResponse(response: Response) {
 
 export class WooMissingUuidError extends Error {
   name = 'WooMissingUuidError';
+  readonly code = 'missing_plugin' as const;
+  /** Only the store owner can fix it, by installing or enabling the plugin, so the pull waits the store delay (`errorKind`). */
+  readonly fixedBy = 'store' as const;
   productId: number;
 
   constructor(id: number) {
@@ -37,6 +40,12 @@ export class WooMissingUuidError extends Error {
 export class WooDateFilterError extends Error {
   name = 'WooDateFilterError';
   readonly code = 'unsupported_store' as const;
+  /** Only the store owner can fix it, by updating WooCommerce, so the pull waits the store delay (`errorKind`). */
+  readonly fixedBy = 'store' as const;
+  /** The software to update, for `SyncStatus`'s detail; the component never names it itself. */
+  readonly software = 'WooCommerce';
+  /** The first WooCommerce version that applies `modified_after` (5.8). */
+  readonly minVersion = '5.8';
 
   constructor(readonly productId: number | undefined, readonly bound: string, readonly received: string | undefined) {
     super('This store needs WooCommerce 5.8 or later to sync products.');
