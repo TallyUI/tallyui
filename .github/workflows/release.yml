@@ -19,9 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Not a plain file count: in pre mode, consumed changesets stay on disk, listed in pre.json.
       - name: Count pending changesets
         id: count
-        run: echo "changesets=$(find .changeset -maxdepth 1 -name '*.md' ! -name README.md | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+        run: |
+          count=$(node scripts/pending-changesets.mjs)
+          echo "changesets=$count" >> "$GITHUB_OUTPUT"
 
   release:
     needs: pending
