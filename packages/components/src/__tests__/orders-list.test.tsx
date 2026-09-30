@@ -78,7 +78,20 @@ describe('OrdersList', () => {
 
   // A stuck order's line: the same words for any reason, the hour numeric as the status line has it (#245).
   const stuckTime = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  const stuckLine = (at: number) => `Hasn't reached the online store since ${stuckTime(at)}.`;
+  const stuckLine = (at: number) => `Hasn't reached the online store since about ${stuckTime(at)}.`;
+
+  it('shows the wall-clock first failure, else says about the virtual since', () => {
+    const firstFailedAt = new Date(2026, 8, 29, 9, 15).getTime();
+    const since = new Date(2026, 8, 29, 13, 40).getTime();
+    const entry = { commandId: 'command-s', since, firstFailedAt, reason: 'status_503' };
+    const stuck = { commandIds: ['command-s'], since, firstFailedAt, reason: 'status_503', orders: [entry] };
+    render(<OrdersList orders={[order('s')]} onRetry={async () => 0} stuck={stuck} />);
+    expect(screen.getAllByText(`Hasn't reached the online store since ${stuckTime(firstFailedAt)}.`)).toHaveLength(2);
+    cleanup();
+    render(<OrdersList orders={[order('s')]} onRetry={async () => 0}
+      stuck={{ ...stuck, firstFailedAt: undefined, orders: [{ ...entry, firstFailedAt: undefined }] }} />);
+    expect(screen.getAllByText(`Hasn't reached the online store since about ${stuckTime(since)}.`)).toHaveLength(2);
+  });
 
   it.each(['timeout', 'status_503'])('shows a stuck %s order with the same words', (reason) => {
     const since = new Date(2026, 8, 29, 14, 2).getTime();

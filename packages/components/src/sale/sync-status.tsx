@@ -47,7 +47,7 @@ const PULL_NOTICE_FALLBACK: PullNoticeText = {
 
 // The line the cashier reads while the store keeps answering 404 (OutboxState.backendMissing) and no order is stuck.
 const BACKEND_MISSING = "Sales aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
-// The same line once an order is stuck, with the store missing or not; {time} becomes stuck.since.
+// The same line once an order is stuck, with the store missing or not; {time} is the real first failure or about the virtual since.
 const BACKEND_MISSING_SINCE = "Sales haven't reached the online store since {time}. Keep selling: they're saved on this till and will send by themselves.";
 // The line instead when no sale waits but till updates do, and its "since" variant once registerState.stuck is set.
 const TILL_UPDATES_MISSING = "Till updates aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
@@ -106,8 +106,8 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   // The device's own 12/24-hour format, with no forced leading zero on the hour.
   const at = (time: number) => new Date(time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const backendMissingText = state.pending === 0 && updates > 0 ? (registerState?.stuck
-    ? TILL_UPDATES_MISSING_SINCE.replace('{time}', () => at(registerState.stuck!.since)) : TILL_UPDATES_MISSING)
-    : stuck ? BACKEND_MISSING_SINCE.replace('{time}', () => at(stuck.since)) : BACKEND_MISSING;
+    ? TILL_UPDATES_MISSING_SINCE.replace('{time}', () => `${registerState.stuck!.firstFailedAt === undefined ? 'about ' : ''}${at(registerState.stuck!.firstFailedAt ?? registerState.stuck!.since)}`) : TILL_UPDATES_MISSING)
+    : stuck ? BACKEND_MISSING_SINCE.replace('{time}', () => `${stuck.firstFailedAt === undefined ? 'about ' : ''}${at(stuck.firstFailedAt ?? stuck.since)}`) : BACKEND_MISSING;
   const upToDate = state.pending === 0 && updates === 0;
   // The sentence shows with the store missing, or once the waiting sales (with none waiting, the till updates) are stuck, then as
   // its "since" variant: the same words for any reason, and no reason code.

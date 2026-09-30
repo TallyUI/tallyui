@@ -27,8 +27,11 @@ export interface OutboxState {
   /** Set while the store (not offline) has kept failing some orders for 15 minutes, each on its own clock. Those
    * orders stay pending and keep retrying. `orders` has each order's own entry: its `since` is when its clock
    * would have started had there been no offline gaps (now minus its answered time; while offline, as of the
-   * moment the clock paused), and its latest `reason`. `since` is the earliest of theirs; `reason` the latest. */
-  stuck?: { commandIds: string[]; since: number; reason: string; orders: { commandId: string; since: number; reason: string }[] };
+   * moment the clock paused), and its latest `reason`. `since` is the earliest of theirs, virtual for the threshold;
+   * `reason` the latest. `firstFailedAt` is the earliest real wall-clock first failure, only when every stuck clock
+   * has one. Each order entry has its own real wall-clock `firstFailedAt`. Both are in memory only, absent after restart. */
+  stuck?: { commandIds: string[]; since: number; firstFailedAt?: number; reason: string;
+    orders: { commandId: string; since: number; firstFailedAt?: number; reason: string }[] };
   /** Set after 3 consecutive 404 answers (counted across the outboxes sharing one BackendNotFound): the store address
    * may be wrong, or the store's plugin isn't installed or is switched off. The outbox keeps retrying; the next answer
    * that isn't a 404 clears it (offline changes nothing). `since` is when the first of those 404s arrived. */

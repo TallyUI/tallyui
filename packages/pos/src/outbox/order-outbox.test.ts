@@ -1232,8 +1232,9 @@ describe('order outbox isolation', () => {
   const failing = (...bad: PosOrder[]): CommandTransport<OrderCreateEnvelope>['send'] => async (batch) =>
     batch.some((command) => bad.some((input) => input.commandId === command.id)) ? fail : { kind: 'results', results: applied(batch) };
   // OutboxState.stuck for orders whose clocks share one `since` and reason.
-  const stuckOf = (commandIds: string[], since: number, reason = 'status_503') =>
-    ({ commandIds, since, reason, orders: commandIds.map((commandId) => ({ commandId, since, reason })) });
+  const stuckOf = (commandIds: string[], since: number, reason = 'status_503', restored = false) =>
+    ({ commandIds, since, reason, ...(restored ? {} : { firstFailedAt: epoch }),
+      orders: commandIds.map((commandId) => ({ commandId, since, reason, ...(restored ? {} : { firstFailedAt: epoch }) })) });
 
   function timed(overrides: Partial<OrderOutboxOptions> = {}) {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
@@ -1511,7 +1512,7 @@ describe('order outbox isolation', () => {
       expect(new Set(states.at(-1)?.stuck?.commandIds ?? [])).toEqual(new Set(due.map(([id]) => id)));
       if (due.length) expect(states.at(-1)?.stuck?.since).toBe(Math.min(...due.map(([, at]) => at)));
       // Each order's own entry starts at its own first failure.
-      expect(new Set(states.at(-1)?.stuck?.orders ?? [])).toEqual(new Set(due.map(([commandId, since]) => ({ commandId, since, reason: 'status_503' }))));
+      expect(new Set(states.at(-1)?.stuck?.orders ?? [])).toEqual(new Set(due.map(([commandId, since]) => ({ commandId, since, firstFailedAt: since, reason: 'status_503' }))));
     };
     outbox.start();
     await vi.advanceTimersByTimeAsync(0);
@@ -1907,6 +1908,24 @@ describe('order outbox isolation', () => {
   const timeout = { kind: 'retry', reason: 'timeout' } as const;
   const offline = { kind: 'retry', reason: 'network' } as const;
 
+  it('keeps the wall-clock first failure through an offline gap', async () => {
+    const lone = order(0);
+    await collection.insert(lone);
+    const { outbox, send, states, next } = timed({ stuckAfterMs: 1 });
+    send.mockResolvedValue(fail);
+    await outbox.flush();
+    await next();
+    send.mockResolvedValue(offline);
+    await next();
+    const pausedAt = Date.now();
+    vi.setSystemTime(pausedAt + 10 * 60_000);
+    send.mockResolvedValue(fail);
+    await outbox.flush();
+    expect(states.at(-1)?.stuck?.since).toBe(epoch + 10 * 60_000);
+    expect(states.at(-1)?.stuck?.firstFailedAt).toBe(epoch);
+    expect(states.at(-1)?.stuck?.orders[0].firstFailedAt).toBe(epoch);
+  });
+
   it('isolates an order the store hangs on every time (timeout) like one it always 503s', async () => {
     const inputs = [order(0), order(1), order(2)];
     await collection.bulkInsert(inputs);
@@ -1953,7 +1972,7 @@ describe('order outbox isolation', () => {
     const at = await flaggedAt(bad[0], states, next);
     expect(at - epoch).toBeGreaterThanOrEqual(STUCK_AFTER_MS);
     expect(at - epoch).toBeLessThanOrEqual(STUCK_AFTER_MS + 60_000);
-    expect(states.at(-1)?.stuck?.orders).toContainEqual({ commandId: bad[0].commandId, since: epoch, reason: 'status_503' });
+    expect(states.at(-1)?.stuck?.orders).toContainEqual({ commandId: bad[0].commandId, since: epoch, firstFailedAt: epoch, reason: 'status_503' });
   });
 
   it('batch sends time out while an isolated order gets 503s: turns alternate, and it is flagged at STUCK_AFTER_MS, not about twice that', async () => {
@@ -1971,7 +1990,7 @@ describe('order outbox isolation', () => {
     expect(labels).toEqual(labels.map((_, i) => (i % 2 ? 'isolated' : 'batch')));
     expect(at - epoch).toBeGreaterThanOrEqual(STUCK_AFTER_MS);
     expect(at - epoch).toBeLessThanOrEqual(STUCK_AFTER_MS + 60_000);
-    expect(states.at(-1)?.stuck?.orders).toContainEqual({ commandId: bad.commandId, since: epoch, reason: 'status_503' });
+    expect(states.at(-1)?.stuck?.orders).toContainEqual({ commandId: bad.commandId, since: epoch, firstFailedAt: epoch, reason: 'status_503' });
   });
 
   it.each<[string, TransportOutcome]>([['status_503', fail], ['status_409', { kind: 'retry', reason: 'status_409' }],
@@ -2095,6 +2114,7 @@ describe('order outbox isolation', () => {
       send.mockImplementation(failing(lone));
       await outbox.flush();
       while (!states.at(-1)?.stuck) await next();
+      expect(states.at(-1)?.stuck?.firstFailedAt).toBe(epoch);
       expect(states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], epoch));
       outbox.stop();
       // Offline after the restart: the restored clock is paused, and still flagged.
@@ -2102,12 +2122,14 @@ describe('order outbox isolation', () => {
       const restarted = setup({ stuckAfterMs: 60_000 });
       restarted.send.mockResolvedValue(offline);
       await restarted.outbox.flush();
-      expect(restarted.states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], epoch));
+      expect(restarted.states.at(-1)?.stuck).not.toHaveProperty('firstFailedAt');
+      expect(restarted.states.at(-1)?.stuck?.orders[0]).not.toHaveProperty('firstFailedAt');
+      expect(restarted.states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], epoch, 'status_503', true));
       restarted.send.mockResolvedValue(fail);
       await nextOf(restarted.states);
       // The next answer resumes it, leaving out the pause since the restart.
       expect(Date.now()).toBeGreaterThan(restoredAt);
-      expect(restarted.states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], epoch + Date.now() - restoredAt));
+      expect(restarted.states.at(-1)?.stuck).toEqual(stuckOf([lone.commandId], epoch + Date.now() - restoredAt, 'status_503', true));
     });
 
     it('requeue() clears it', async () => {
