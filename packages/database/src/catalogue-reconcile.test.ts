@@ -833,19 +833,19 @@ describe('matchKey: a listing keyed by the backend id, not the primary key (#313
   }, 30_000);
 
   it('duplicates count toward the brake', async () => {
-    const { server, collection } = await setup(11);
-    for (let n = 2; n <= 11; n++) {
+    const { server, collection } = await setup(13);
+    for (let n = 2; n <= 13; n++) {
       await (await collection.findOne(uuid(n)).exec())!.incrementalPatch({ id: 1 });
       server.remove(n);
     }
     const time = fakeTime();
     const { adapter, enqueued, confirmCalls } = byIdAdapter(server);
     const { runner, events, count } = start(collection, adapter, time);
-    const keys = Array.from({ length: 10 }, (_, i) => uuid(i + 2));
+    const keys = Array.from({ length: 12 }, (_, i) => uuid(i + 2));
     runner.reconcile();
     await time.runUntil(() => count('pass-completed') === 1);
-    expect(events).toContainEqual({ type: 'duplicate', count: 10, keys, code: 'duplicate_match_key' });
-    expect(events).toContainEqual(expect.objectContaining({ type: 'kept', count: 10, keys, reason: 'brake' }));
+    expect(events).toContainEqual({ type: 'duplicate', count: 12, keys, code: 'duplicate_match_key' });
+    expect(events).toContainEqual(expect.objectContaining({ type: 'kept', count: 12, keys, reason: 'brake' }));
     expect(confirmCalls).toEqual([]);
     expect(enqueued).toEqual([]);
   }, 30_000);
