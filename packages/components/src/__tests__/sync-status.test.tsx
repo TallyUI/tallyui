@@ -292,4 +292,37 @@ describe('SyncStatus', () => {
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
+
+  it('with missing_plugin and the store missing, shows both lines and the missing-plugin detail once, below both', () => {
+    const productsLine = "Products aren't updating: the online store is missing WCPOS.";
+    const pluginDetail = "You can keep selling. This till couldn't find WCPOS on the online store. Ask the store owner to check that it is "
+      + "installed and switched on, and that the store address in this till's settings is right.";
+    const outboxDetail = (lastTime: string) => `This till couldn't find WCPOS on the online store${lastTime}. Ask the store owner to check that it is `
+      + "installed and switched on, and that the store address in this till's settings is right.";
+    const backendMissing = { since: Date.now() };
+    const cases: [OutboxState, OutboxState | undefined, string, string][] = [
+      [{ pending: 2, sending: false, backendMissing }, undefined, `2 sales waiting to sync · ${cashierLine}`, ''],
+      [{ pending: 0, sending: false, backendMissing }, undefined, 'Sales are up to date.', ' the last time it checked'],
+      // The register outbox alone (its own tracker) sets it: the same one detail.
+      [{ pending: 0, sending: false }, { pending: 1, sending: false, backendMissing }, `1 till update waiting to sync · ${tillLine}`, ''],
+    ];
+    for (const [state, registerState, salesLine, lastTime] of cases) {
+      const { container } = render(<SyncStatus state={state} registerState={registerState} pluginName="WCPOS"
+        pullNotice={notice('missing_plugin')} />);
+      const text = container.textContent ?? '';
+      expect(line()).toBe(salesLine);
+      expect(screen.getByText(productsLine)).toBeTruthy();
+      expect(screen.getByText(pluginDetail)).toBeTruthy();
+      expect(text.match(/couldn't find WCPOS/g)).toHaveLength(1);
+      expect(screen.queryByText(outboxDetail(lastTime))).toBeNull();
+      const order = [productsLine, salesLine, pluginDetail].map((part) => text.indexOf(part));
+      expect(order.every((at) => at >= 0)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      cleanup();
+    }
+    // Without backendMissing the missing-plugin notice keeps its detail under its own line, as before.
+    render(<SyncStatus state={{ pending: 0, sending: false }} pluginName="WCPOS" pullNotice={notice('missing_plugin')} />);
+    expect(screen.getByText(pluginDetail)).toBeTruthy();
+    expect(screen.queryByText(outboxDetail(''))).toBeNull();
+  });
 });

@@ -84,11 +84,14 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
     && (Object.hasOwn(PULL_NOTICE_TEXT, pullNotice.code) ? PULL_NOTICE_TEXT[pullNotice.code] : PULL_NOTICE_FALLBACK);
   const notice = pullNotice && text
     && { line: text.line(pluginName), detail: text.detail(pullNotice, pluginName) };
+  // Both notices name the missing plugin: both lines show, and the pull notice's detail once, below them, in place of the outbox's.
+  const oneDetail = pullNotice?.code === 'missing_plugin' && !!backendMissing;
   // The notice lines carry no accessibility label, so a screen reader reads their text; the outbox line's label is its own text.
   return <View>{notice ? <>
     <Text className="px-4 py-2 text-xs text-muted-foreground">{notice.line}</Text>
-    <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>
+    {oneDetail ? null : <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>}
   </> : null}<Text accessibilityLabel={line} className="px-4 py-2 text-xs text-muted-foreground">{line}</Text>
-  {backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
+  {oneDetail && notice ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>
+    : backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
     {BACKEND_MISSING_DETAIL.replace('{pluginName}', pluginName).replace('{lastTime}', upToDate ? ' the last time it checked' : '')}</Text> : null}</View>;
 }
