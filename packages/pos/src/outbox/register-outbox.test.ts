@@ -8,9 +8,9 @@ import { posOrderCollection, uuidv7, type PosOrder } from '../pos-order';
 import { registerCommandCollection, registerCommandsLogger, type RegisterCommand } from '../register/register-commands';
 import { readFresh } from '../rxdb';
 import { createBackendNotFound } from './backend-not-found';
-import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS } from './order-outbox';
+import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS, STUCK_AFTER_MS } from './order-outbox';
 import { createRegisterOutbox, type RegisterOutbox, type RegisterOutboxOptions } from './register-outbox';
-import type { CommandTransport, OutboxState } from './types';
+import type { CommandTransport, OutboxState, TransportOutcome } from './types';
 
 let db: RxDatabase<{ register_commands: RxCollection<RegisterCommand>; pos_orders: RxCollection<PosOrder> }>;
 let collection: RxCollection<RegisterCommand>;
@@ -459,6 +459,84 @@ describe('register outbox', () => {
         after.result ? ['result'] : after.error ? ['error'] : [],
       );
     }
+  });
+});
+
+describe('register outbox stuck clock (answered time only, in memory)', () => {
+  const fail = (reason: string) => ({ kind: 'retry', reason } as const);
+  const at = async (outbox: RegisterOutbox, ms: number) => { vi.setSystemTime(epoch + ms); await outbox.flush(); };
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(epoch);
+  });
+
+  it('a sent command failing 503 is stuck at STUCK_AFTER_MS, not 1 ms before: since its first failure, the latest reason', async () => {
+    const inputs = [command(1), command(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states } = setup({ batchSize: 1 });
+    send.mockResolvedValueOnce(fail('status_503')).mockResolvedValueOnce(fail('status_503')).mockResolvedValueOnce(fail('status_502'));
+    await at(outbox, 0);
+    await at(outbox, STUCK_AFTER_MS - 1);
+    expect(states.some((state) => state.stuck)).toBe(false);
+    await at(outbox, STUCK_AFTER_MS);
+    const { commandId } = inputs[0];
+    expect(states.at(-1)?.stuck).toEqual({ commandIds: [commandId], since: epoch, reason: 'status_502',
+      orders: [{ commandId, since: epoch, reason: 'status_502' }] });
+  });
+
+  it.each<[string, TransportOutcome]>([['timeout', fail('timeout')], ['no_progress', { kind: 'results', results: [] }]])(
+    'a %s starts the clock, like a 503', async (reason, outcome) => {
+      await collection.insert(command(1));
+      const { outbox, send, states } = setup();
+      send.mockResolvedValue(outcome);
+      await at(outbox, 0);
+      await at(outbox, STUCK_AFTER_MS);
+      expect(states.at(-1)?.stuck).toMatchObject({ since: epoch, reason });
+    });
+
+  it('ten minutes offline in the middle pause the clock: stuck ten minutes later, since moved on by the gap', async () => {
+    await collection.insert(command(1));
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue(fail('status_503'));
+    await at(outbox, 0);
+    send.mockResolvedValue(fail('network'));
+    for (let minute = 5; minute < 15; minute++) await at(outbox, minute * 60_000);
+    send.mockResolvedValue(fail('status_503'));
+    await at(outbox, 15 * 60_000);
+    await at(outbox, 25 * 60_000 - 1);
+    expect(states.some((state) => state.stuck)).toBe(false);
+    await at(outbox, 25 * 60_000);
+    expect(states.at(-1)?.stuck).toMatchObject({ since: epoch + 10 * 60_000, reason: 'status_503' });
+  });
+
+  it.each(['applied', 'rejected'] as const)('a batch that marks the stuck command %s clears it', async (status) => {
+    const input = command(1);
+    await collection.insert(input);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValueOnce(fail('status_503')).mockResolvedValueOnce(fail('status_503'))
+      .mockResolvedValueOnce({ kind: 'results', results: [status === 'applied' ? { id: input.commandId, status } : { id: input.commandId, status, error }] });
+    await at(outbox, 0);
+    await at(outbox, STUCK_AFTER_MS);
+    expect(states.at(-1)?.stuck?.commandIds).toEqual([input.commandId]);
+    await at(outbox, STUCK_AFTER_MS + 1000);
+    expect((await stored(input.key)).syncStatus).toBe(status);
+    expect(states.at(-1)).toMatchObject({ pending: 0, stuck: undefined });
+  });
+
+  it('a restart forgets the clock: a new outbox has no stuck, and its first answered failure starts it afresh', async () => {
+    await collection.insert(command(1));
+    const first = setup();
+    first.send.mockResolvedValue(fail('status_503'));
+    await at(first.outbox, 0);
+    await at(first.outbox, STUCK_AFTER_MS);
+    expect(first.states.at(-1)?.stuck).toMatchObject({ since: epoch });
+    first.outbox.stop();
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue(fail('status_503'));
+    await at(outbox, STUCK_AFTER_MS + 1000);
+    expect(states.some((state) => state.stuck)).toBe(false);
+    await at(outbox, 2 * STUCK_AFTER_MS + 1000);
+    expect(states.at(-1)?.stuck).toMatchObject({ since: epoch + STUCK_AFTER_MS + 1000 });
   });
 });
 
