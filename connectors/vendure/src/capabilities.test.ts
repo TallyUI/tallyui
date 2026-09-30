@@ -35,20 +35,34 @@ describe('readVendureCapabilities', () => {
     await expect(read()).resolves.toStrictEqual({ orderCreate: 3 });
   });
 
-  it('gives { orderCreate: 1 } on a 404, a non-JSON body or missing contracts (no plugin)', async () => {
+  it('gives { orderCreate: 1 } on a 404 (an old plugin)', async () => {
     stubFetch(() => json({}, 404));
     await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+  });
+
+  it('gives undefined on a 2xx non-JSON body', async () => {
     stubFetch(() => new Response('<html>', { status: 200 }));
-    await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+    await expect(read()).resolves.toBeUndefined();
+  });
+
+  it('gives undefined on a malformed taxRounding', async () => {
+    stubFetch(() => json({ contracts: { 'order.create': [1, 2] }, taxRounding: { granularity: 'bogus' } }));
+    await expect(read()).resolves.toBeUndefined();
+  });
+
+  it('gives { orderCreate: 1 } on a 2xx with missing contracts', async () => {
     stubFetch(() => json({ ok: true }));
     await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
   });
 
-  it('gives undefined on a 5xx, another non-2xx or a network failure (unknown)', async () => {
+  it('gives undefined on a 5xx (unknown)', async () => {
     for (const status of [500, 502, 429]) {
       stubFetch(() => json({}, status));
       await expect(read()).resolves.toBeUndefined();
     }
+  });
+
+  it('gives undefined on a network failure (unknown)', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
     await expect(read()).resolves.toBeUndefined();
   });

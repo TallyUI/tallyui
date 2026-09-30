@@ -57,9 +57,14 @@ describe('readCapabilities', () => {
     await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toEqual({ orderCreate: 1 });
   });
 
-  it('gives 1 when the body is not JSON', async () => {
+  it('gives undefined (unknown) on a 2xx non-JSON body', async () => {
     const fetch = vi.fn(async () => new Response('not json', { status: 200 }));
-    await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toEqual({ orderCreate: 1 });
+    await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toBeUndefined();
+  });
+
+  it('gives undefined (unknown) on a malformed taxRounding', async () => {
+    const fetch = fetchReturning({ contracts: { 'order.create': [1, 2] }, taxRounding: { granularity: 'bogus' } });
+    await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toBeUndefined();
   });
 
   it('gives 1 when the list has no valid positive safe integers', async () => {

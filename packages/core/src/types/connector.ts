@@ -95,11 +95,16 @@ const maxVersion = (list: unknown): number | undefined => {
  * Reads a 2xx body of `GET /tally/v1/info` (ADR-062): `orderCreate` is the max of
  * `contracts["order.create"]`, or 1 when it's missing or malformed; `register` is the max of
  * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287).
+ * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
  */
-export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => void): ServerCapabilities {
+export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => void): ServerCapabilities | undefined {
   const { contracts, taxRounding } = (body ?? {}) as { contracts?: Record<string, unknown> | null; taxRounding?: unknown };
   const register = maxVersion(contracts?.register);
-  const rounding = parseTaxRounding(taxRounding, warn);
+  const rounding = parseTaxRounding(taxRounding);
+  if (taxRounding !== undefined && rounding === undefined) {
+    warn?.(`malformed taxRounding: rounding is unknown, so settings wait: ${JSON.stringify(taxRounding)}`);
+    return undefined;
+  }
   return { orderCreate: maxVersion(contracts?.['order.create']) ?? 1,
     ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}) };
 }

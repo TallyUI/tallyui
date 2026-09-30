@@ -5,10 +5,9 @@ export const CAPABILITIES_PATH = '/tally/v1/info';
 
 /**
  * Reads the store's contract capabilities (ADR-062) and `taxRounding` (#287), with the
- * connector's usual injectable `fetch`. A 2xx gives `parseInfoCapabilities`; a 2xx with the field missing/malformed, a non-JSON body, or a 404
- * both mean an old plugin and give `{ orderCreate: 1 }`. A network failure,
- * a 5xx or any other non-2xx that isn't 404/401 is unknown and gives
- * `undefined`, never 1. A 401 means rejected/expired credentials and throws.
+ * connector's usual injectable `fetch`. A 404 means an old plugin and gives the default;
+ * a network failure, non-2xx other than 404/401, non-JSON 2xx or malformed `taxRounding`
+ * is unknown and gives `undefined`. A 401 means rejected/expired credentials and throws.
  */
 export async function readCapabilities(
   baseUrl: string,
@@ -29,7 +28,7 @@ export async function readCapabilities(
   try {
     body = await res.json();
   } catch {
-    return { orderCreate: 1 };
+    return undefined;
   }
   return parseInfoCapabilities(body, (reason) => console.warn(`@tallyui/connector-medusa: ${reason}`));
 }
