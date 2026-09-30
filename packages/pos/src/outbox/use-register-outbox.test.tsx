@@ -79,6 +79,46 @@ describe('useRegisterOutbox', () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
 
+  it('a new device id restarts the outbox and sends with it', async () => {
+    const commands = await collection();
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: batch.map(({ id }) => ({ id, status: 'applied' })) }));
+    const view = renderHook((props: UseRegisterOutboxOptions) => useRegisterOutbox(props), { initialProps: options(commands) });
+    const first = command(1);
+    await act(async () => { await commands.insert(first); });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0][0][0]).toMatchObject({ id: first.commandId, deviceId: 'device-1' });
+    await waitFor(() => expect(view.result.current.state.pending).toBe(0));
+
+    view.rerender({ ...options(commands), deviceId: 'device-2' });
+    const second = command(2);
+    await act(async () => { await commands.insert(second); });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls[1][0][0]).toMatchObject({ id: second.commandId, deviceId: 'device-2' });
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+
+  it('the latest isEnabled and onResult are used without a restart', async () => {
+    const commands = await collection();
+    const pending = command(1);
+    await commands.insert(pending);
+    const first = vi.fn();
+    const second = vi.fn();
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: batch.map(({ id }) => ({ id, status: 'applied' })) }));
+    const view = renderHook((props: UseRegisterOutboxOptions) => useRegisterOutbox(props), {
+      initialProps: { ...options(commands), isEnabled: () => false, onResult: first },
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(send).not.toHaveBeenCalled();
+
+    view.rerender({ ...options(commands), isEnabled: () => true, onResult: second });
+    await act(() => view.result.current.flush());
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(second).toHaveBeenCalledWith(expect.objectContaining({ commandId: pending.commandId }),
+      { id: pending.commandId, status: 'applied' });
+    expect(first).not.toHaveBeenCalled();
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
   it('flushes without a collection as a no-op', async () => {
     const view = renderHook(() => useRegisterOutbox(options(null)));
     await act(async () => { await view.result.current.flush(); });

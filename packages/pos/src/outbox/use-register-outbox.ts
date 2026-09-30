@@ -9,12 +9,13 @@ const idle: OutboxState = { pending: 0, sending: false };
 export interface UseRegisterOutboxOptions {
   /** `register_commands` (see `registerCommandCollection()`); `null` while it opens or when there's no store. A new collection (a store switch) restarts the outbox. */
   commands: RegisterCommandCollection | null;
-  /** Builds the transport; read once per collection. */
+  /** Builds the transport; called when the outbox is created: on each new collection or device id (twice under React StrictMode's double effect, which stops the first outbox). */
   transport(): CommandTransport<RegisterCommandEnvelope>;
   /** The device id sent on every command. A change restarts the outbox. */
   deviceId: string;
-  /** Passed through to createRegisterOutbox (same meaning). Read when the outbox is created. */
+  /** Passed through to createRegisterOutbox (same meaning). The latest function is called each time, so a new one does not restart the outbox. */
   isEnabled?: () => boolean;
+  /** Called with each result. The latest function is called each time; a new one does not restart the outbox. */
   onResult?: RegisterOutboxOptions['onResult'];
   backendNotFound?: RegisterOutboxOptions['backendNotFound'];
 }

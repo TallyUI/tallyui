@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, Text, View } from 'react-native';
 import type { SyncNotice } from '@tallyui/core';
 import type { OutboxState } from '@tallyui/pos';
+import { sinceText } from './since-text';
 
 /**
  * What the cashier reads when the product pull stops, keyed by the notice's code; the code itself is never shown.
@@ -103,11 +104,9 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
     updates && count(updates, 'till update')].filter(Boolean).join(' and ') + ' waiting to sync';
   const { stuck } = state;
   const backendMissing = state.backendMissing ?? registerState?.backendMissing;
-  // The device's own 12/24-hour format, with no forced leading zero on the hour.
-  const at = (time: number) => new Date(time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const backendMissingText = state.pending === 0 && updates > 0 ? (registerState?.stuck
-    ? TILL_UPDATES_MISSING_SINCE.replace('{time}', () => `${registerState.stuck!.firstFailedAt === undefined ? 'about ' : ''}${at(registerState.stuck!.firstFailedAt ?? registerState.stuck!.since)}`) : TILL_UPDATES_MISSING)
-    : stuck ? BACKEND_MISSING_SINCE.replace('{time}', () => `${stuck.firstFailedAt === undefined ? 'about ' : ''}${at(stuck.firstFailedAt ?? stuck.since)}`) : BACKEND_MISSING;
+    ? TILL_UPDATES_MISSING_SINCE.replace('{time}', () => sinceText(registerState.stuck!)) : TILL_UPDATES_MISSING)
+    : stuck ? BACKEND_MISSING_SINCE.replace('{time}', () => sinceText(stuck)) : BACKEND_MISSING;
   const upToDate = state.pending === 0 && updates === 0;
   // The sentence shows with the store missing, or once the waiting sales (with none waiting, the till updates) are stuck, then as
   // its "since" variant: the same words for any reason, and no reason code.
