@@ -141,7 +141,12 @@ describe('useOutbox with the TallyUI HTTP transport', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     try {
       renderHarness(session);
-      for (let i = 0; i < 100 && !outbox.orders; i++) await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      // Opening the store is real work (RxDB, and the last test's close), not a timer: wait for it in real time, advancing
+      // the fake clock as vi.waitFor polls, so a slow runner can't run out of turns before the store opens (#340).
+      await vi.waitFor(async () => {
+        await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+        expect(outbox.orders).not.toBeNull();
+      }, { timeout: 5000, interval: 10 });
       expect(outbox.stuckCommandIds).toEqual([]);
       fetchStub.mockImplementation(async () => new Response('busy', { status: 503 }));
       const order = sale(new Date());
