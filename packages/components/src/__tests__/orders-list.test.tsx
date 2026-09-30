@@ -60,19 +60,20 @@ describe('OrdersList', () => {
     expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
   });
 
-  it.each([['timeout', 'no answer from the store'], ['status_503', 'the online store keeps refusing this']])(
-    'shows a stuck %s with the matching wording', (reason, wording) => {
+  // A stuck order's line: the same words for any reason, the hour numeric as the status line has it (#245).
+  const stuckTime = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const stuckLine = (at: number) => `Hasn't reached the online store since ${stuckTime(at)}.`;
+
+  it.each(['timeout', 'status_503'])('shows a stuck %s order with the same words', (reason) => {
     const since = new Date(2026, 8, 29, 14, 2).getTime();
-    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     render(<OrdersList orders={[order('s')]} onRetry={async () => 0}
       stuck={{ commandIds: ['command-s'], reason, since, orders: [{ commandId: 'command-s', since, reason }] }} />);
-    expect(screen.getAllByText(`Not syncing: ${wording} since ${time}`)).toHaveLength(2);
+    expect(screen.getAllByText(stuckLine(since))).toHaveLength(2);
   });
 
-  it('lists a stuck pending order under Needs attention, with why it is not syncing and since when', () => {
+  it('lists a stuck pending order under Needs attention, with since when it has not reached the store', () => {
     const since = new Date(2026, 8, 29, 14, 2).getTime();
-    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    const line = `Not syncing: the online store keeps refusing this since ${time}`;
+    const line = stuckLine(since);
     const stuck = order('s', { createdAt: '2026-09-25T09:00:00.000Z' });
     render(<OrdersList orders={[stuck, order('p'), order('x', { commandId: 'command-a', syncStatus: 'applied' })]} onRetry={async () => 0}
       formatDate={formatDate} stuck={{ commandIds: ['command-s', 'command-a'], reason: 'status_503', since,
@@ -86,26 +87,30 @@ describe('OrdersList', () => {
     cleanup();
     render(<OrdersList orders={[stuck]} onRetry={async () => 0} formatDate={formatDate} />);
     expect(headers()).toEqual(['Recent']);
-    expect(screen.queryByText(/Not syncing/)).toBeNull();
+    expect(screen.queryByText(/reached the online store/)).toBeNull();
   });
 
-  it('shows each stuck order with its own since and reason, not the earliest across them', () => {
+  it('shows each stuck order with its own since, not the earliest across them, with the hour numeric', () => {
     const [early, late] = [new Date(2026, 8, 29, 9, 15).getTime(), new Date(2026, 8, 29, 13, 40).getTime()];
-    const time = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    expect(time(early)).not.toBe(time(late));
-    render(<OrdersList orders={[order('a'), order('b', { createdAt: '2026-09-25T09:00:00.000Z' })]} onRetry={async () => 0}
-      formatDate={formatDate} stuck={{ commandIds: ['command-a', 'command-b'], since: early, reason: 'no_progress', orders: [
-        { commandId: 'command-a', since: early, reason: 'status_503' }, { commandId: 'command-b', since: late, reason: 'timeout' }] }} />);
-    expect(screen.getAllByText(`Not syncing: the online store keeps refusing this since ${time(early)}`)).toHaveLength(2);
-    expect(screen.getAllByText(`Not syncing: no answer from the store since ${time(late)}`)).toHaveLength(2);
+    expect(stuckTime(early)).not.toBe(stuckTime(late));
+    const { container } = render(<OrdersList orders={[order('a'), order('b', { createdAt: '2026-09-25T09:00:00.000Z' })]}
+      onRetry={async () => 0} formatDate={formatDate} stuck={{ commandIds: ['command-a', 'command-b'], since: early, reason: 'no_progress',
+        orders: [{ commandId: 'command-a', since: early, reason: 'status_503' }, { commandId: 'command-b', since: late, reason: 'timeout' }] }} />);
+    expect(screen.getAllByText(stuckLine(early))).toHaveLength(2);
+    expect(screen.getAllByText(stuckLine(late))).toHaveLength(2);
+    // 9:15, never 09:15.
+    const twoDigit = new Date(early).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    expect(twoDigit).toMatch(/^09/);
+    expect(stuckTime(early)).toMatch(/^9\D/);
+    expect(container.textContent).not.toContain(twoDigit);
   });
 
   it.each(['timeout', 'status_503', 'status_404', 'no_progress'])('shows no reason code for a stuck %s order', (reason) => {
     const since = Date.now();
     const { container } = render(<OrdersList orders={[order('s')]} onRetry={async () => 0} formatDate={formatDate}
       stuck={{ commandIds: ['command-s'], reason, since, orders: [{ commandId: 'command-s', since, reason }] }} />);
-    expect(screen.getAllByText(/^Not syncing: /)).toHaveLength(2);
-    expect(container.textContent).not.toMatch(/status_|\([^)]*\)/);
+    expect(screen.getAllByText(stuckLine(since))).toHaveLength(2);
+    expect(container.textContent).not.toMatch(/status_|\([^)]*\)|Not syncing|keeps failing|refusing|no answer/);
     expect(container.textContent).not.toContain(reason);
   });
 

@@ -39,7 +39,7 @@ const PULL_NOTICE_FALLBACK: PullNoticeText = {
 
 // The line the cashier reads while the store keeps answering 404 (OutboxState.backendMissing) and no order is stuck.
 const BACKEND_MISSING = "Sales aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
-// The same line once an order is stuck, in place of the stuck text; {time} becomes stuck.since.
+// The same line once an order is stuck, with the store missing or not; {time} becomes stuck.since.
 const BACKEND_MISSING_SINCE = "Sales haven't reached the online store since {time}. Keep selling: they're saved on this till and will send by themselves.";
 // The line instead when no sale waits but till updates do, and its "since" variant once registerState.stuck is set.
 const TILL_UPDATES_MISSING = "Till updates aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
@@ -50,15 +50,15 @@ const BACKEND_MISSING_DETAIL = "This till couldn't find {pluginName} on the onli
   + "and switched on, and that the store address in this till's settings is right.";
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
-// iOS has no live region (accessibilityLiveRegion is Android-only), so there `text` is announced once each time it changes:
-// never on the first mount, nor on a re-render with the same text.
-function useAnnounceOnIos(text: string | undefined) {
-  const announced = useRef(text);
+// iOS has no live region (accessibilityLiveRegion is Android-only), so there each text is announced when it changes: never on
+// the first mount, nor on a re-render with the same text. Texts that change in the same render go in ONE call, joined by a space.
+function useAnnounceOnIos(...texts: (string | undefined)[]) {
+  const announced = useRef(texts);
   useEffect(() => {
-    if (announced.current === text) return;
-    announced.current = text;
-    if (text && Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(text);
-  }, [text]);
+    const changed = texts.filter((text, index) => text && text !== announced.current[index]);
+    announced.current = texts;
+    if (changed.length > 0 && Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(changed.join(' '));
+  }, texts);
 }
 /**
  * `pluginName` names the store's plugin in the detail, as its owners know it; `registerState` counts till updates.
@@ -87,20 +87,19 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
     ? TILL_UPDATES_MISSING_SINCE.replace('{time}', () => at(registerState.stuck!.since)) : TILL_UPDATES_MISSING)
     : stuck ? BACKEND_MISSING_SINCE.replace('{time}', () => at(stuck.since)) : BACKEND_MISSING;
   const upToDate = state.pending === 0 && updates === 0;
-  const stuckText = !stuck || backendMissing ? ''
-    : ` · Not syncing ${stuck.commandIds.length} order${stuck.commandIds.length === 1 ? '' : 's'}: `
-      + (stuck.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing') + ` since ${at(stuck.since)}`;
-  // No raw reason code is shown or spoken. The live region holds only the spoken line; the countdown is a Text of its own after
-  // it (so sending or retrying comes last), outside the live region, so a retry is announced once, when it starts, not at each tick.
-  const doing = backendMissing ? '' : outbox.sending ? ' · sending' : outbox.lastRetryReason ? ' · retrying' : '';
-  const spoken = upToDate ? 'Sales are up to date.' : label + (backendMissing ? ` · ${backendMissingText}` : stuckText + doing);
-  const countdown = !upToDate && doing === ' · retrying' ? ` in ${seconds}s` : '';
-  useAnnounceOnIos(spoken);
+  // The sentence shows with the store missing, or once the waiting sales (with none waiting, the till updates) are stuck, then as
+  // its "since" variant: the same words for any reason, and no reason code.
+  const sentence = backendMissing || (state.pending === 0 && updates > 0 ? registerState?.stuck : stuck) ? ` · ${backendMissingText}` : '';
+  // The live region holds only the substance (counts and the sentence), so it is announced when that changes and never as sending
+  // or retrying flips or the countdown ticks: those follow it in a Text of their own, outside it.
+  const spoken = upToDate ? 'Sales are up to date.' : label + sentence;
+  const doing = upToDate || backendMissing ? '' : outbox.sending ? ' · sending'
+    : outbox.lastRetryReason ? ` · retrying in ${seconds}s` : '';
   const text = pullNotice
     && (Object.hasOwn(PULL_NOTICE_TEXT, pullNotice.code) ? PULL_NOTICE_TEXT[pullNotice.code] : PULL_NOTICE_FALLBACK);
   const notice = pullNotice && text
     && { line: text.line(pluginName), detail: text.detail(pullNotice, pluginName) };
-  useAnnounceOnIos(notice ? notice.line : undefined);
+  useAnnounceOnIos(notice?.line, spoken);
   // Both notices name the missing plugin: both lines show, and the pull notice's detail once, below them, in place of the outbox's.
   const oneDetail = pullNotice?.code === 'missing_plugin' && !!backendMissing;
   // The notice lines carry no accessibility label, so a screen reader reads their text; the outbox line's label is its spoken text.
@@ -110,7 +109,7 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
     <Text accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{notice.line}</Text>
     {oneDetail ? null : <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>}
   </> : null}<Text className="px-4 py-2 text-xs text-muted-foreground"><Text accessibilityLabel={spoken} accessibilityLiveRegion="polite">{spoken}</Text>
-    {countdown ? <Text>{countdown}</Text> : null}</Text>
+    {doing ? <Text>{doing}</Text> : null}</Text>
   {oneDetail && notice ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>
     : backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
     {BACKEND_MISSING_DETAIL.replace('{pluginName}', () => pluginName).replace('{lastTime}', () => upToDate ? ' the last time it checked' : '')}</Text> : null}</View>;
