@@ -50,9 +50,12 @@ is refused whether the field is an instruction or informational
   - **The accepted form**, exactly:
     `YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|-HH:MM)`.
     - An uppercase `T` and `Z`, never a space or a lowercase letter.
-    - Seconds are required. Fractional seconds are allowed, one or more
-      digits after the `.`; the till sends `toISOString()`, so `.000Z`
-      is normal.
+    - Seconds are required. Fractional seconds are allowed: one or more
+      digits after the `.`, with no upper limit. Every digit in the value
+      is an ASCII `0`–`9`. The reference servers keep the time as a
+      JavaScript `Date`, so digits past the third (milliseconds) are
+      accepted and dropped when the time is stored. The till sends
+      `toISOString()`, so `.000Z` is normal.
     - An offset is `+HH:MM` or `-HH:MM`, with hours `00`–`23` and
       minutes `00`–`59`, and `-00:00` is accepted as UTC.
     - The date and time must be real calendar values: no `24:00`, no
@@ -73,9 +76,11 @@ is refused whether the field is an instruction or informational
     `expected a valid date`. This rule covers the strings that reach the
     client-time stage.
   - **Never check the format with `Date.parse` alone.** V8's
-    `Date.parse` accepts `2026-02-30`, `24:00`, a lowercase `t` or `z`
-    and a space separator. Check the form against the pattern above,
-    then check that the date and time are real.
+    `Date.parse` accepts `2026-02-30`, `24:00`, a lowercase `t` or `z`,
+    a space separator, a time with no zone (read as local time) and a
+    `+HHMM` offset. Check the form against the pattern above, then the
+    offset's hour and minute ranges, then that the date and time are
+    real.
 - **Upper bound:** at most 24 hours ahead of the server's clock, per ADR-038's value checks.
 - **Lower bound:** not earlier than `2020-01-01T00:00:00Z`.
 - **Outside either bound, it's malformed.** The server refuses the
@@ -472,8 +477,9 @@ Vendure connectors alike:
 - **Malformed** (an unknown granularity, a missing or unknown `mode` on a
   granularity that needs one, `null`, or not an object) makes the whole
   read unknown, with one warning: the till's store settings wait and
-  retry, and never sell on the default (#341). So does a 2xx whose body
-  is not JSON. A 404 is an older plugin and means the default.
+  retry, and never sell on the default (#341). A 2xx whose body is not
+  JSON is unknown too, without a warning. A 404 is an older plugin and
+  means the default.
 - **`custom` ignores `mode`**: a `mode` sent with it is dropped.
 - Extra keys are dropped.
 
