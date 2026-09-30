@@ -523,6 +523,22 @@ describe('register outbox stuck clock (answered time only, in memory)', () => {
     expect(states.at(-1)).toMatchObject({ pending: 0, stuck: undefined });
   });
 
+  it('a command behind a rejected one in its ledger loses its clock and is never stuck, even past the threshold', async () => {
+    const inputs = [command(1), command(2), command(1, 'b')];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue(fail('status_503'));
+    await at(outbox, 0);
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: batch[0].id === inputs[0].commandId
+      ? [{ id: inputs[0].commandId, status: 'rejected', error }] : [] }));
+    await at(outbox, 60_000);
+    expect((await stored(inputs[0].key)).syncStatus).toBe('rejected');
+    expect((await stored(inputs[1].key)).syncStatus).toBe('pending');
+    await at(outbox, 2 * STUCK_AFTER_MS);
+    expect(states.at(-1)?.stuck?.commandIds).toEqual([inputs[2].commandId]);
+    expect(states.some((state) => state.stuck?.commandIds.includes(inputs[1].commandId))).toBe(false);
+  });
+
   it('a restart forgets the clock: a new outbox has no stuck, and its first answered failure starts it afresh', async () => {
     await collection.insert(command(1));
     const first = setup();

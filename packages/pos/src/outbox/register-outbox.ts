@@ -68,7 +68,8 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   // like a 503, or `no_progress`); a running clock keeps its `since` and takes the latest reason. A `network` failure
   // pauses every clock (`pausedAt`), and the next answer of any kind resumes them, moving `since` on by the offline
   // gap, so `since` is now minus the answered time. A clock clears when its command is no longer pending under its
-  // commandId (applied or rejected); commands never sent have none. Nothing is isolated: a stuck command at the head
+  // commandId (applied or rejected), or when a rejected command comes ahead of it in its ledger (it is not being
+  // sent: Front desk, 2026-09-30); commands never sent have none. Nothing is isolated: a stuck command at the head
   // of a register's ledger holds up the commands behind it, by design, since register facts apply in `seq` order.
   // In memory only: a restart starts with no clocks, and the first answered failure after it starts them afresh
   // (accepted: register commands are few, and a restart re-sends at once).
@@ -89,8 +90,15 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
 
   async function updateState(patch: Partial<OutboxState> = {}) {
     const pending = await countFresh(collection, { syncStatus: 'pending' });
-    const held = clocks.size ? await readFresh(collection, { selector: { syncStatus: 'pending', commandId: { $in: [...clocks.keys()] } } }) : [];
-    for (const id of clocks.keys()) if (!held.some((command) => command.commandId === id)) clocks.delete(id);
+    // Only commands in a register's sendable prefix (pending, before its first rejected command) keep a clock.
+    const sendable = new Set<string>();
+    const blocked = new Set<string>();
+    if (clocks.size) for (const command of await readFresh(collection, { selector: { syncStatus: { $in: ['pending', 'rejected'] } },
+      sort: [{ seq: 'asc' }, { key: 'asc' }] })) {
+      if (command.syncStatus === 'rejected') blocked.add(command.registerId);
+      else if (!blocked.has(command.registerId)) sendable.add(command.commandId);
+    }
+    for (const id of clocks.keys()) if (!sendable.has(id)) clocks.delete(id);
     state$.next({ ...state$.value, ...patch, pending, stuck: stuckState() });
   }
   function scheduleRetry(reason: string, retryAfterMs = 0) {
