@@ -1,9 +1,14 @@
-import { ConnectorUnauthorizedError, type TallyConnector } from '@tallyui/core';
+import { combinePullAdapters, ConnectorUnauthorizedError, type TallyConnector } from '@tallyui/core';
 
 import { wooProductSchema } from './schemas/products';
 import { wooProductTraits } from './traits/product';
 import { wooProductSync } from './sync/products';
 import { wooProductReplication } from './replication/products';
+import { wooCatalogueReconcile } from './reconcile/catalogue';
+import { createWooReconcileFeed } from './reconcile/feed';
+
+// The catalogue reconcile's corrections reach `products` only through this pull adapter (#248).
+const catalogueFeed = createWooReconcileFeed();
 
 export class WooMissingTokenError extends ConnectorUnauthorizedError {
   constructor() {
@@ -75,7 +80,13 @@ export const woocommerceConnector: TallyConnector = {
   },
 
   replication: {
-    products: wooProductReplication,
+    // One replication per collection; the reconcile feed is last, so its fetch wins duplicates. legacyKey
+    // reads an existing install's plain pull checkpoint as the product feed's, so it does not resync.
+    products: combinePullAdapters({ products: wooProductReplication, reconcile: catalogueFeed.adapter }, { legacyKey: 'products' }),
+  },
+
+  reconcile: {
+    catalogue: wooCatalogueReconcile(catalogueFeed),
   },
 };
 
@@ -85,3 +96,4 @@ export { wooProductSchema } from './schemas/products';
 export { wooProductTraits } from './traits/product';
 export { wooProductSync } from './sync/products';
 export { wooProductReplication, WooDateFilterError, WooMissingUuidError } from './replication/products';
+export { wooCatalogueReconcile, wooReconcileFingerprint } from './reconcile/catalogue';

@@ -527,6 +527,21 @@ describe('startCatalogueReconcile', () => {
     expect(froms).toHaveLength(3);
   }, 30_000);
 
+  it.each([0, Number.NaN])('an intervalMs of %s still checks the gate at most once a minute', async (intervalMs) => {
+    const { server, feed, collection } = await setup(2);
+    const time = fakeTime();
+    const delays: number[] = [];
+    const setTimer = (fn: () => void, ms: number) => { delays.push(ms); return time.setTimer(fn, ms); };
+    const { adapter } = fakeAdapter(server, feed, { now: time.now });
+    const { count } = start(collection, adapter, time, { startDelayMs: 1000, intervalMs, setTimer });
+
+    await time.advance(1000);
+    await time.runUntil(() => count('pass-completed') >= 1);
+    // After the start delay, every re-arm of the gate check is at least a minute away.
+    expect(delays.slice(1).length).toBeGreaterThan(0);
+    expect(Math.min(...delays.slice(1))).toBeGreaterThanOrEqual(60_000);
+  }, 30_000);
+
   it('the keep-all path (the fingerprint wrapper) never calls confirmGone and takes no budget slot, even under the brake threshold', async () => {
     const { server, feed, collection } = await setup(12);
     const time = fakeTime();
