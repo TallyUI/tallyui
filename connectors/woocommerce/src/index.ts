@@ -1,10 +1,15 @@
-import { ConnectorUnauthorizedError, type TallyConnector } from '@tallyui/core';
+import { combinePullAdapters, ConnectorUnauthorizedError, type TallyConnector } from '@tallyui/core';
 
 import { wooProductSchema } from './schemas/products';
 import { wooProductTraits } from './traits/product';
 import { wooProductSync } from './sync/products';
 import { wooProductReplication } from './replication/products';
-import pkg from '../package.json';
+import { wooCatalogueReconcile } from './reconcile/catalogue';
+import { createWooReconcileFeed } from './reconcile/feed';
+import { version } from '../package.json';
+
+// The catalogue reconcile's corrections reach `products` only through this pull adapter (#248).
+const catalogueFeed = createWooReconcileFeed();
 
 /** One part of X-WCPOS-Client as WCPOS keeps it: lowercase [a-z0-9._-], at most 32 characters. */
 export function wcposClientPart(part: string): string {
@@ -67,7 +72,7 @@ export const woocommerceConnector: TallyConnector = {
         // WCPOS 2.0 refuses a POS request below protocol 2 (HTTP 426); the connector already speaks 2.
         'X-WCPOS-Protocol': '2',
         // For WCPOS's consent-gated telemetry only.
-        'X-WCPOS-Client': `tallyui/${wcposClientPart(pkg.version)}`,
+        'X-WCPOS-Client': `tallyui/${wcposClientPart(version)}`,
       };
     },
   },
@@ -85,7 +90,13 @@ export const woocommerceConnector: TallyConnector = {
   },
 
   replication: {
-    products: wooProductReplication,
+    // One replication per collection; the reconcile feed is last, so its fetch wins duplicates. legacyKey
+    // reads an existing install's plain pull checkpoint as the product feed's, so it does not resync.
+    products: combinePullAdapters({ products: wooProductReplication, reconcile: catalogueFeed.adapter }, { legacyKey: 'products' }),
+  },
+
+  reconcile: {
+    catalogue: wooCatalogueReconcile(catalogueFeed),
   },
 };
 
@@ -95,3 +106,4 @@ export { wooProductSchema } from './schemas/products';
 export { wooProductTraits } from './traits/product';
 export { wooProductSync } from './sync/products';
 export { wooProductReplication, WooDateFilterError, WooMissingUuidError, WooTillUpdateRequiredError } from './replication/products';
+export { wooCatalogueReconcile, wooReconcileFingerprint } from './reconcile/catalogue';

@@ -15,6 +15,8 @@ import { MAX_RETRY_AFTER_MS, retryAfter } from './replication';
 const MASS_DELETE_MINIMUM = 10;
 /** The longest time between gate checks; a shorter interval checks at half of it (see `checkEveryMs`). */
 const MAX_CHECK_EVERY_MS = 3_600_000;
+/** The shortest time between gate checks, whatever `intervalMs` says. */
+const MIN_CHECK_EVERY_MS = 60_000;
 /** A transient error's first retry; it doubles, up to MAX_RETRY_AFTER_MS (1 hour). */
 const FIRST_RETRY_MS = 5 * 60_000;
 /** The request budget's window. */
@@ -64,13 +66,16 @@ export interface StartCatalogueReconcileOptions<Doc, Cursor = unknown> {
   context: SyncContext;
   /** The app's `() => replication.reSync()`; called once per page that enqueued anything, and once for the tombstones. */
   reSync: () => void;
-  /** Adapter calls allowed in any 60 s window (default 30): pages, and each `confirmGone` call as one. */
+  /**
+   * Requests allowed in any 60 s window (default 30): each page, each `confirmGone` chunk, and one for the refetch
+   * each page that enqueued anything causes (the pull's `fetchByIds`; a connector fetching a page's ids in one request).
+   */
   requestsPerMinute?: number;
   /** Most candidates per `confirmGone` call (default 100); each call takes one budget slot. */
   confirmChunk?: number;
   /** Time from the last completed pass to the next (default 86400000, 24 hours). */
   intervalMs?: number;
-  /** The first gate check after start (default 120000); then one every `min(1 hour, intervalMs / 2)`. */
+  /** The first gate check after start (default 120000); then one every `min(1 hour, intervalMs / 2)`, and at least a minute. */
   startDelayMs?: number;
   /** The brake holds deletion candidates above this share of local documents (and above 10), unless `allowMassDelete`. */
   maxDeleteShare?: number;
@@ -171,7 +176,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     signal.addEventListener('abort', onAbort);
   });
   // The request budget: a sliding window of adapter calls, so no 60 s window holds more than
-  // requestsPerMinute. Each page and each confirmGone call counts as one. It bounds the pass, not a page cap.
+  // requestsPerMinute. Each page, each confirmGone call and each page's refetch counts as one. It bounds the pass, not a page cap.
   const sent: number[] = [];
   const budget = async () => {
     for (;;) {
@@ -230,6 +235,8 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
         }
         checkAborted();
         if (queue.length) {
+          // The refetch this page causes runs in the pull, outside the runner: its slot is taken before it is enqueued.
+          await budget();
           adapter.enqueue(queue);
           reSync();
           refetched += queue.length;
@@ -339,7 +346,8 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     else log({ type: 'skipped', reason: 'gate' });
   };
   // Hourly, or at half the interval when that is shorter, so a 30-minute runner runs every 30 minutes.
-  const checkEveryMs = Math.min(MAX_CHECK_EVERY_MS, intervalMs / 2);
+  // Never under a minute: a 0 or NaN interval would otherwise re-arm the check on every tick (NaN || 0 floors too).
+  const checkEveryMs = Math.max(MIN_CHECK_EVERY_MS, Math.min(MAX_CHECK_EVERY_MS, intervalMs / 2) || 0);
   let cancelTimer = () => {};
   const schedule = (ms: number) => {
     cancelTimer = setTimer(() => {

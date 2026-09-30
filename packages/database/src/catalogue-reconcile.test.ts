@@ -440,6 +440,19 @@ describe('startCatalogueReconcile', () => {
     }, 30_000);
   });
 
+  it.each([[false, 0], [true, 60_000]])('a page that enqueued refetches (%s) takes a second budget slot: the next page waits %i ms', async (differs, wait) => {
+    const { server, feed, collection } = await setup(4);
+    if (differs) server.edit(1, { stamp: 's2' }); // page 0
+    const time = fakeTime();
+    const { adapter, requests } = fakeAdapter(server, feed, { pageSize: 2, now: time.now });
+    // Two slots a minute: page 0 and its refetch fill the first minute, or page 0 and page 1 do.
+    const { runner, count } = start(collection, adapter, time, { requestsPerMinute: 2 });
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(requests[1] - requests[0]).toBe(wait);
+  }, 30_000);
+
   it('250 candidates: confirmGone is called in chunks of 100, each after its own budget slot', async () => {
     const { server, feed, collection } = await setup(260);
     const time = fakeTime();
@@ -525,6 +538,21 @@ describe('startCatalogueReconcile', () => {
     await time.advance(30 * 60_000);
     await time.runUntil(() => count('pass-completed') === 3);
     expect(froms).toHaveLength(3);
+  }, 30_000);
+
+  it.each([0, Number.NaN])('an intervalMs of %s still checks the gate at most once a minute', async (intervalMs) => {
+    const { server, feed, collection } = await setup(2);
+    const time = fakeTime();
+    const delays: number[] = [];
+    const setTimer = (fn: () => void, ms: number) => { delays.push(ms); return time.setTimer(fn, ms); };
+    const { adapter } = fakeAdapter(server, feed, { now: time.now });
+    const { count } = start(collection, adapter, time, { startDelayMs: 1000, intervalMs, setTimer });
+
+    await time.advance(1000);
+    await time.runUntil(() => count('pass-completed') >= 1);
+    // After the start delay, every re-arm of the gate check is at least a minute away.
+    expect(delays.slice(1).length).toBeGreaterThan(0);
+    expect(Math.min(...delays.slice(1))).toBeGreaterThanOrEqual(60_000);
   }, 30_000);
 
   it('the keep-all path (the fingerprint wrapper) never calls confirmGone and takes no budget slot, even under the brake threshold', async () => {

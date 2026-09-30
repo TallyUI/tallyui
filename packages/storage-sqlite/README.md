@@ -114,23 +114,48 @@ the function instead.
 
 ### Recognising a failed start
 
-If the worker's start-up fails — most commonly another tab still holding the
-opfs-sahpool database, or a browser with no OPFS or no sync access handles —
-every storage call rejects with a `StorageWorkerStartError` instead of
-hanging. A stale worker counts too: after an upgrade the browser may still
-have the old worker cached, and RxDB refuses it (RM1). Recognise either with
-`isStorageWorkerStartError` and tell the user to close other tabs or reload:
+If the worker's start-up fails, every storage call rejects instead of
+hanging. Each error carries its cause's name and message in its own message,
+since the cause itself doesn't cross the worker channel. Three failures have
+their own predicate, and their own sentence for the cashier:
+
+- **Storage unavailable: `isStorageUnavailableError`** (a
+  `StorageUnavailableError`). The browser gives the page no usable OPFS:
+  `navigator.storage.getDirectory()` fails, or sync access handles are
+  missing. This is what happens in a **private window**: Safari Private
+  Browsing (WebKit's ephemeral storage, #293) refuses OPFS. No other tab is
+  involved, and neither closing tabs nor reloading helps.
+- **Held by another tab: `isStorageHeldError`** (a `StorageWorkerStartError`
+  whose message says another tab holds the database). OPFS is reachable, but
+  another tab holds the opfs-sahpool database (WebKit's `InvalidStateError`,
+  Chromium's `NoModificationAllowedError`).
+- **Stale worker: `isRxdbRemoteVersionMismatch`** from `@tallyui/core`
+  (RxDB's RM1, #280). After an upgrade the browser may still have the old
+  worker cached, and RxDB refuses it; a reload loads the matching worker.
+
+Any other start failure is a generic `StorageWorkerStartError` ("SQLite
+worker start failed", with its cause). `isStorageWorkerStartError` is true
+for any failed start except storage unavailable; use the three predicates
+above to choose the wording, in this order:
 
 ```ts
-import { isStorageWorkerStartError } from '@tallyui/storage-sqlite/web';
+import { isRxdbRemoteVersionMismatch } from '@tallyui/core';
+import { isStorageHeldError, isStorageUnavailableError } from '@tallyui/storage-sqlite/web';
 
 try {
   await db.addCollections({ /* ... */ });
 } catch (error) {
-  if (isStorageWorkerStartError(error)) {
-    showMessage('Close other tabs or reload.');
+  if (isStorageUnavailableError(error)) {
+    showMessage(
+      "This till can't save sales in a private window.",
+      'Open it in a normal Safari window (or another browser) and sign in again. Nothing has been lost: no sale was taken here.'
+    );
+  } else if (isStorageHeldError(error)) {
+    showMessage('This till is already open in another tab. Close the other tab, then reload this one.');
+  } else if (isRxdbRemoteVersionMismatch(error)) {
+    showMessage('This till needs a quick reload to finish updating. Reload the page.');
   } else {
-    throw error;
+    throw error; // or the app's own generic failure message
   }
 }
 ```
