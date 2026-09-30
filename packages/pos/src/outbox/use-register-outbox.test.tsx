@@ -105,7 +105,7 @@ describe('useRegisterOutbox', () => {
     const second = vi.fn();
     send.mockImplementation(async (batch) => ({ kind: 'results', results: batch.map(({ id }) => ({ id, status: 'applied' })) }));
     const view = renderHook((props: UseRegisterOutboxOptions) => useRegisterOutbox(props), {
-      initialProps: { ...options(commands), isEnabled: () => false, onResult: first },
+      initialProps: { ...options(commands), isEnabled: (): boolean => false, onResult: first },
     });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
     expect(send).not.toHaveBeenCalled();
