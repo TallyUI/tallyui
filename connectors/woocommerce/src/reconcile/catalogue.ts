@@ -30,7 +30,7 @@ async function get(path: string, context: SyncContext): Promise<any> {
 /**
  * The switch for the bulk-id fast path: true only when wcpos/v2/status lists `products_id_fast_path` in
  * `capabilities` (a missing field is false). Never a version number, and never a failed attempt.
- * A failed status read is "no capability known", so the paged listing runs and fails the same way;
+ * A failed status read is "no capability known"; only for a 401 or 403 would the paged listing fail the same way.
  * only a till-class error (401 `unauthorized`, 426 `till_update_required`) or an abort stops the pass.
  * A 403 `forbidden` is store-class and retries on the store schedule.
  */

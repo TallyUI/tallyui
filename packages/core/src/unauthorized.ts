@@ -8,7 +8,7 @@ export class ConnectorUnauthorizedError extends Error {
   constructor(message: string, status: 401 | 403) {
     super(message);
     this.name = 'ConnectorUnauthorizedError';
-    this.status = status;
+    this.status = status === 403 ? 403 : 401;
     this.code = status === 403 ? 'forbidden' : 'unauthorized';
     this.fixedBy = status === 403 ? 'store' : 'till';
   }

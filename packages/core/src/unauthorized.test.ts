@@ -20,6 +20,7 @@ it('exposes forbidden as status 403', () => {
 
 it('defaults to unauthorized when a JavaScript caller omits status', () => {
   const error = new ConnectorUnauthorizedError('x', undefined as unknown as 401);
+  expect(error.status).toBe(401);
   expect(error.code).toBe('unauthorized');
   expect(error.fixedBy).toBe('till');
 });
