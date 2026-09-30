@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { SyncContext } from '@tallyui/core';
+import { errorKind, type SyncContext } from '@tallyui/core';
 
 import { woocommerceConnector, WooDateFilterError, WooMissingUuidError } from '../index';
 import { wooProductSync } from '../sync/products';
@@ -578,5 +578,18 @@ describe('wooProductReplication.pull.handler', () => {
 
     expect(new URL(String(fetchSpy.mock.calls[1][0])).searchParams.get('offset')).toBe('0');
     expect(result.checkpoint).toEqual({ modified: checkpoint.modified, offset: 2, pass_mark: '2026-01-02T08:00:00', pass_count: 3 });
+  });
+
+  it('WooDateFilterError is fixed by the store, and names the software and version it needs', () => {
+    const error = new WooDateFilterError(1, 'b', 'r');
+    expect(errorKind(error)).toBe('store');
+    expect(error).toMatchObject({ code: 'unsupported_store', fixedBy: 'store', software: 'WooCommerce', minVersion: '5.8' });
+    expect(error.message).toBe('This store needs WooCommerce 5.8 or later to sync products.');
+  });
+
+  it('WooMissingUuidError is fixed by the store, with the missing_plugin code', () => {
+    const error = new WooMissingUuidError(1);
+    expect(errorKind(error)).toBe('store');
+    expect(error).toMatchObject({ code: 'missing_plugin', fixedBy: 'store' });
   });
 });

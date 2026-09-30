@@ -4,6 +4,7 @@ import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { registerCommandsLogger, type RegisterCommand } from '../register/register-commands';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
+import { STUCK_AFTER_MS } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
 export interface RegisterOutboxOptions {
@@ -19,6 +20,8 @@ export interface RegisterOutboxOptions {
   maxBackoffMs?: number;
   random?: () => number;
   now?: () => number;
+  /** Tests only: overrides STUCK_AFTER_MS. */
+  stuckAfterMs?: number;
   /** Counts 404s toward OutboxState.backendMissing; pass the order outbox's too, so either one's 404s show one notice. */
   backendNotFound?: BackendNotFound;
 }
@@ -59,13 +62,47 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   let stopped = false;
   let insertedDuringRun = false;
   let stoppedDuringRun = false;
+  const stuckAfter = options.stuckAfterMs ?? STUCK_AFTER_MS;
+  // Each command's stuck clock counts only answered time, by the order outbox's rules. It starts when a batch that
+  // sent the command fails with a failure the store answered (a `retry` other than `network`, where `timeout` counts
+  // like a 503, or `no_progress`); a running clock keeps its `since` and takes the latest reason. A `network` failure
+  // pauses every clock (`pausedAt`), and the next answer of any kind resumes them, moving `since` on by the offline
+  // gap, so `since` is now minus the answered time. A clock clears when its command is no longer pending under its
+  // commandId (applied or rejected), or when a rejected command comes ahead of it in its ledger (it is not being
+  // sent: Front desk, 2026-09-30); commands never sent have none. Nothing is isolated: a stuck command at the head
+  // of a register's ledger holds up the commands behind it, by design, since register facts apply in `seq` order.
+  // In memory only: a restart starts with no clocks, and the first answered failure after it starts them afresh
+  // (accepted: register commands are few, and a restart re-sends at once).
+  const clocks = new Map<string, { since: number; pausedAt?: number; seq: number; reason: string }>();
+  let failureSeq = 0; // numbers failures, so `stuck` can name the latest reason
+
+  function stuckState(): OutboxState['stuck'] {
+    const stuck = [...clocks].filter(([, clock]) => (clock.pausedAt ?? now()) - clock.since >= stuckAfter);
+    if (!stuck.length) return undefined;
+    return { commandIds: stuck.map(([id]) => id), since: Math.min(...stuck.map(([, clock]) => clock.since)),
+      reason: stuck.reduce((latest, entry) => (entry[1].seq > latest[1].seq ? entry : latest))[1].reason,
+      orders: stuck.map(([commandId, { since, reason }]) => ({ commandId, since, reason })) };
+  }
+  function serverFailed(commands: RegisterCommand[], reason: string) {
+    const at = now();
+    for (const { commandId } of commands) clocks.set(commandId, { since: clocks.get(commandId)?.since ?? at, seq: ++failureSeq, reason });
+  }
 
   async function updateState(patch: Partial<OutboxState> = {}) {
     const pending = await countFresh(collection, { syncStatus: 'pending' });
-    state$.next({ ...state$.value, ...patch, pending });
+    // Only commands in a register's sendable prefix (pending, before its first rejected command) keep a clock.
+    const sendable = new Set<string>();
+    const blocked = new Set<string>();
+    if (clocks.size) for (const command of await readFresh(collection, { selector: { syncStatus: { $in: ['pending', 'rejected'] } },
+      sort: [{ seq: 'asc' }, { key: 'asc' }] })) {
+      if (command.syncStatus === 'rejected') blocked.add(command.registerId);
+      else if (!blocked.has(command.registerId)) sendable.add(command.commandId);
+    }
+    for (const id of clocks.keys()) if (!sendable.has(id)) clocks.delete(id);
+    state$.next({ ...state$.value, ...patch, pending, stuck: stuckState() });
   }
   function scheduleRetry(reason: string, retryAfterMs = 0) {
-    state$.next({ ...state$.value, lastRetryReason: reason });
+    state$.next({ ...state$.value, lastRetryReason: reason, stuck: stuckState() });
     if (stopped) { stoppedDuringRun = true; return; }
     const delay = Math.min(Math.max(retryAfterMs, backoff * (0.9 + 0.2 * random())), maxBackoff);
     backoff = Math.min(backoff * 2, maxBackoff);
@@ -104,7 +141,16 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
         });
         const outcome = await transport.send(batch);
         backendNotFound.record(outcome, now());
-        if (outcome.kind === 'retry') return scheduleRetry(outcome.reason, outcome.retryAfterMs);
+        const at = now();
+        if (outcome.kind === 'retry' && outcome.reason === 'network') for (const clock of clocks.values()) clock.pausedAt ??= at;
+        else for (const clock of clocks.values()) if (clock.pausedAt !== undefined) {
+          clock.since += at - clock.pausedAt;
+          clock.pausedAt = undefined;
+        }
+        if (outcome.kind === 'retry') {
+          if (outcome.reason !== 'network') serverFailed(commands, outcome.reason);
+          return scheduleRetry(outcome.reason, outcome.retryAfterMs);
+        }
         if (outcome.kind === 'unauthorized') {
           unauthorizedSinceAccepted++;
           if (unauthorizedSinceAccepted < 3) return scheduleRetry('unauthorized');
@@ -147,7 +193,10 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
           progressed = true;
           await updateState();
         }
-        if (!progressed) return scheduleRetry('no_progress');
+        if (!progressed) {
+          serverFailed(commands, 'no_progress');
+          return scheduleRetry('no_progress');
+        }
         backoff = initialBackoff;
         state$.next({ ...state$.value, lastRetryReason: undefined });
       }

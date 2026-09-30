@@ -5,8 +5,9 @@ export type CommandType = 'order.create';
 export interface CommandEnvelope<P = unknown> {
   id: string; // UUIDv7, the idempotency key; never reused
   type: CommandType;
-  /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1. */
-  version: 1 | 2 | 3;
+  /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1;
+   *  4 is 3 with every `discountMinor` tax-exclusive, built only when capped at 4 or more (#286). */
+  version: 1 | 2 | 3 | 4;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -22,8 +23,8 @@ export type RegisterCommandEnvelope<P = Record<string, unknown>> =
 /** Any command a transport can carry. */
 export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown>;
 
-/** An order.create envelope: its version stays 1 | 2 | 3 (ADR-062, ADR-065). */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 };
+/** An order.create envelope: its version is 1 | 2 | 3 | 4 (ADR-062, ADR-065, #286). */
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -58,6 +59,21 @@ export type CommandWarning =
        * rate and `serverMinor` the platform's tax for it.
        */
       code: 'tax_rate_mismatch'; ratePpm: number; expectedMinor: number; serverMinor: number;
+    }
+  /**
+   * The sale's `customerId` (1 to 64 characters) was unknown, deleted or in another channel, so
+   * the sale was kept as a guest sale rather than held (ADR-070).
+   */
+  | { code: 'customer_ignored'; customerId: string }
+  /**
+   * One warning per sale, never a refusal: each of the till's figures that differs from the
+   * server's own computation, once, with both values (#257). `total_mismatch` stays separate.
+   * `parseCommandResult` refuses a `field` it doesn't know; `knownWarnings` keeps it (a newer
+   * store's figure), so the type admits any non-empty string besides the three names.
+   */
+  | {
+      code: 'figures_mismatch';
+      fields: Array<{ field: 'subtotalMinor' | 'taxMinor' | 'discountMinor' | (string & {}); tillMinor: number; serverMinor: number }>;
     };
 
 /** Error reported when a command is rejected. */
@@ -130,6 +146,7 @@ export interface OrderCreateLine {
    * Version 2 (ADR-062): this line's total discount, its own line discounts plus its allocated share of
    * the order discount, in the line's own tax mode and integer minor units. The line is taxed on
    * `unitPriceMinor × quantity − discountMinor`. Present only when above 0.
+   * Version 4 (#286): tax-exclusive (net) in every mode; an inclusive line's is `net(A) − net(A − D)`.
    */
   discountMinor?: number;
 }
@@ -181,7 +198,10 @@ export interface OrderCreatePayload {
   pricesIncludeTax: boolean;
   lines: OrderCreateLine[];
   subtotalMinor: number;
-  /** Version 2 (ADR-062): the order's total discount, equal to Σ `lines[].discountMinor`. Present only when above 0. */
+  /**
+   * Version 2 (ADR-062): the order's total discount, equal to Σ `lines[].discountMinor`. Present only when above 0.
+   * Version 4 (#286) means every `discountMinor`, this and each line's, is tax-exclusive, so the sum still holds.
+   */
   discountMinor?: number;
   taxMinor: number;
   totalMinor: number;

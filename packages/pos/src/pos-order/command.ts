@@ -1,5 +1,6 @@
 import type { OrderCreateEnvelope } from '@tallyui/core';
-import type { PosOrder } from './types';
+import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
+import type { PosOrder, PosOrderLine } from './types';
 
 export class UnsupportedOrderVersionError extends Error {
   readonly code = 'UNSUPPORTED_ORDER_VERSION';
@@ -40,19 +41,45 @@ export function cutText(text: string, max: number): string {
 }
 
 /**
+ * Version 4 (#286): a line's discount made tax-exclusive. An exclusive line's is unchanged; an inclusive line's
+ * gross discount D on its amount A becomes `net(A) − net(A − D)`, exact in millionths (net(A − D) from its stored
+ * taxLines, the tax on A − D; net(A) from `taxMicros`, as the builder taxes), rounded half away from zero.
+ */
+function netDiscountMinor(line: PosOrderLine, pricesIncludeTax: boolean): number {
+  if (!(line.taxInclusive ?? pricesIncludeTax) || line.discountMinor === 0) return line.discountMinor;
+  const ratePpm = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
+  const taxAfter = line.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n);
+  const taxBefore = taxMicros(line.unitPriceMinor * line.quantity, ratePpm, true);
+  return roundMicrosToMinor(BigInt(line.discountMinor) * MICROS_PER_MINOR - taxBefore + taxAfter);
+}
+
+/**
+ * The order.create version an order's stored content makes: 3 with ADR-065's figures, else 2 when its lines are
+ * discounted (ADR-062), else 1. The builder's, and pos_orders v5's migration's for a row with no `sentVersion`.
+ */
+export function contentVersion(order: Pick<PosOrder, 'display' | 'taxByRate' | 'lines'>): 1 | 2 | 3 {
+  return order.display && order.taxByRate ? 3 : order.lines.reduce((sum, line) => sum + line.discountMinor, 0) > 0 ? 2 : 1;
+}
+
+/**
  * Builds the ADR-038 order.create envelope for a PosOrder. It sends the stored order unchanged, so every resend of
  * an order is byte-identical, and an order stored by an older till goes out exactly as that till sent it:
  * `finalizeOrder` freezes the sent form (names and labels cut, an unsendable customer email or id left out).
  * ADR-065's figures make version 3; otherwise a discounted order is version 2 (ADR-062), else version 1, byte-identical.
+ * A version-3 order goes as version 4 (#286) only when `maxVersion` is at least 4 and its `sentVersion` doesn't cap it.
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
   options?: { maxVersion?: number }): OrderCreateEnvelope {
-  // The order's discount is the sum of its lines', so the payload's two always agree.
-  const discountMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
-  const contentVersion = order.display && order.taxByRate ? 3 : discountMinor > 0 ? 2 : 1;
+  const grossMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
+  const content = contentVersion(order);
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
-  if (discountMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
-  const version = Math.min(contentVersion, cap ?? contentVersion) as 1 | 2 | 3;
+  if (grossMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
+  // Version 4 only when the cap allows it (the server advertises 4, and no sentVersion holds the order lower).
+  const version = (content === 3 && cap !== undefined && cap >= 4 ? 4
+    : Math.min(content, cap ?? content)) as OrderCreateEnvelope['version'];
+  const lineDiscounts = order.lines.map((line) => version === 4 ? netDiscountMinor(line, order.pricesIncludeTax) : line.discountMinor);
+  // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
+  const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
   const email = order.customer?.email;
   const id = order.customer?.id;
   // These are the pre-#222 customerId and sessionId checks, kept byte-exact so stored orders resend older tills' bytes; don't replace with sendable.
@@ -62,11 +89,11 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
     id: order.commandId, type: 'order.create', version, createdAt: order.createdAt, deviceId, attempt,
     payload: {
       clientOrderId: order.id, createdAt: order.createdAt, currency: order.currency, pricesIncludeTax: order.pricesIncludeTax,
-      lines: order.lines.map((line) => ({
+      lines: order.lines.map((line, i) => ({
         clientLineId: line.id, variantId: line.variantId ?? line.productId, title: line.name,
         quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
         ...(line.taxInclusive !== undefined ? { taxInclusive: line.taxInclusive } : {}),
-        ...(line.discountMinor > 0 ? { discountMinor: line.discountMinor } : {}),
+        ...(lineDiscounts[i] > 0 ? { discountMinor: lineDiscounts[i] } : {}),
       })),
       payments: order.payments.map((payment) => ({
         clientPaymentId: payment.id, method: payment.method, amountMinor: payment.amountMinor,
@@ -77,7 +104,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       subtotalMinor: order.subtotalMinor,
       ...(discountMinor > 0 ? { discountMinor } : {}),
       taxMinor: order.taxMinor, totalMinor: order.totalMinor,
-      ...(version === 3 ? {
+      ...(version >= 3 ? {
         display: { ...order.display!, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
           clientLineId: lineId, amountMinor, discounts,
         })) },
@@ -85,12 +112,12 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
           ratePpm, ...(code !== undefined ? { code } : {}), netMinor, taxMinor: amountMinor, grossMinor,
         })),
       } : {}),
-      customer: version === 3
+      customer: version >= 3
         ? (email || customerId ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}) } : null)
         : (email ? { email } : null),
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
-      ...(version === 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
+      ...(version >= 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
     },
   };
 }

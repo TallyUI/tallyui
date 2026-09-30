@@ -1,10 +1,13 @@
 import { addRxPlugin, type MigrationStrategies, type RxJsonSchema } from 'rxdb';
+import { RxDBLocalDocumentsPlugin } from 'rxdb/plugins/local-documents';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 
 /**
  * The collection config for a connector schema: the schema plus a `v => null`
  * strategy for every version from 1 to N (`{}` at version 0), so a version
  * bump drops the documents and replication resyncs them (see ConnectorSchemas).
+ * Local documents are on: the catalogue reconcile keeps its gate and resume
+ * cursor there (#248), since they are never replicated.
  *
  * Use this for any connector collection created outside `createTallyDatabase`
  * (tests, an app's own database). A connector schema above version 0 needs
@@ -12,9 +15,12 @@ import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
  * "plugin missing". Never for local-only collections (`stock_levels`,
  * `pos_orders`): a drop would lose local data.
  */
-export function connectorCollection<T>(schema: RxJsonSchema<T>): { schema: RxJsonSchema<T>; migrationStrategies: MigrationStrategies } {
+export function connectorCollection<T>(schema: RxJsonSchema<T>): {
+  schema: RxJsonSchema<T>; migrationStrategies: MigrationStrategies; localDocuments: true;
+} {
   // addRxPlugin ignores a plugin it already has.
   addRxPlugin(RxDBMigrationSchemaPlugin);
+  addRxPlugin(RxDBLocalDocumentsPlugin);
   const migrationStrategies = Object.fromEntries(Array.from({ length: schema.version }, (_, i) => [i + 1, () => null]));
-  return { schema, migrationStrategies };
+  return { schema, migrationStrategies, localDocuments: true };
 }

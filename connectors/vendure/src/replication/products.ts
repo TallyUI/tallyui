@@ -1,6 +1,7 @@
 import { compareIds, ConnectorUnauthorizedError } from '@tallyui/core';
 import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
 import { vendureProductSchema } from '../schemas/products';
+import { forbiddenError } from '../session-probe';
 
 export type VendureProductCheckpoint = {
   skip: number;
@@ -39,6 +40,7 @@ export const PRODUCT_LIST_QUERY = (barcodeField?: string) => `
           enabled
           featuredAsset { id preview }
           options { id name code }
+          taxCategory { id }
           ${barcodeField ? `customFields { ${barcodeField} }` : ''}
         }
       }
@@ -65,7 +67,7 @@ export async function gql(
   query: string,
   variables?: Record<string, any>,
 ): Promise<any> {
-  type GqlBody = { data?: any; errors?: Array<{ message?: string; extensions?: { code?: string } }> };
+  type GqlBody = { data?: any; errors?: Array<{ message?: string; path?: Array<string | number>; extensions?: { code?: string } }> };
   const res = await fetch(`${context.baseUrl}/admin-api`, {
     method: 'POST',
     headers: {
@@ -83,10 +85,29 @@ export async function gql(
     throw new Error(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`);
   }
   const body = await res.json() as GqlBody;
-  const forbidden = body.errors?.find((error) => error.extensions?.code === 'FORBIDDEN');
-  if (forbidden) throw new ConnectorUnauthorizedError(`Vendure GraphQL error: ${forbidden.message}`);
+  const forbidden = body.errors?.filter((error) => error.extensions?.code === 'FORBIDDEN') ?? [];
+  if (forbidden.length) throw await forbiddenError(context, forbidden);
   if (body.errors?.length) throw new Error(`Vendure GraphQL error: ${body.errors[0].message}`);
   return body;
+}
+
+const TIMEZONE_MESSAGE = 'Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.';
+
+/** The server's updatedAt filters miss changes because it does not run in UTC (probeUpdatedAtSkew). */
+export class VendureTimezoneConfigError extends Error {
+  name = 'VendureTimezoneConfigError';
+  readonly code = 'store_misconfigured' as const;
+  /** Only the store owner can fix it on the server, so the pull waits the store delay (`errorKind`). */
+  readonly fixedBy = 'store' as const;
+  /**
+   * The store-side remedy, for `SyncStatus`'s detail. The message's other remedy,
+   * `updatedAtSkewMs`, is a connector option on the till, so it stays in the message only.
+   */
+  readonly fix = 'run the Vendure server with its time zone set to UTC';
+
+  constructor() {
+    super(TIMEZONE_MESSAGE);
+  }
 }
 
 /**
@@ -117,7 +138,9 @@ export async function probeUpdatedAtSkew(
       }
     }
     if (overlap === 1 && total === 0) {
-      throw new Error('Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.');
+      // Only a re-read rules out a mark deleted mid-probe; without one (the variant feed) the race stays a transient error.
+      if (remark) throw new VendureTimezoneConfigError();
+      throw new Error(TIMEZONE_MESSAGE);
     }
     if (overlap === 0 && total > 0) {
       console.warn('Vendure updatedAt filters over-fetch because the server is not in UTC.');

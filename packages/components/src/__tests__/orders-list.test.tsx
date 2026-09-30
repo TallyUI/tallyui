@@ -55,24 +55,25 @@ describe('OrdersList', () => {
     render(<OrdersList orders={[rejected, warned, order('p')]} onRetry={async () => 0} formatDate={formatDate} />);
     expect(headers()).toEqual(['Needs attention', 'Recent']);
     expect(screen.getAllByText(/· Not accepted$/)).toHaveLength(2);
-    expect(screen.getAllByText('unknown_variant: Variant was removed')).toHaveLength(2);
+    expect(screen.getAllByText('Variant was removed')).toHaveLength(2);
     expect(screen.getAllByText('Stock short by 1 for Blue shirt')).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
   });
 
-  it.each([['timeout', 'no answer from the store (timeout)'], ['status_503', 'the store keeps failing (status_503)']])(
-    'shows a stuck %s with the matching wording', (reason, wording) => {
+  // A stuck order's line: the same words for any reason, the hour numeric as the status line has it (#245).
+  const stuckTime = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const stuckLine = (at: number) => `Hasn't reached the online store since ${stuckTime(at)}.`;
+
+  it.each(['timeout', 'status_503'])('shows a stuck %s order with the same words', (reason) => {
     const since = new Date(2026, 8, 29, 14, 2).getTime();
-    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     render(<OrdersList orders={[order('s')]} onRetry={async () => 0}
       stuck={{ commandIds: ['command-s'], reason, since, orders: [{ commandId: 'command-s', since, reason }] }} />);
-    expect(screen.getAllByText(`Not syncing: ${wording} since ${time}`)).toHaveLength(2);
+    expect(screen.getAllByText(stuckLine(since))).toHaveLength(2);
   });
 
-  it('lists a stuck pending order under Needs attention, with why it is not syncing and since when', () => {
+  it('lists a stuck pending order under Needs attention, with since when it has not reached the store', () => {
     const since = new Date(2026, 8, 29, 14, 2).getTime();
-    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    const line = `Not syncing: the store keeps failing (status_503) since ${time}`;
+    const line = stuckLine(since);
     const stuck = order('s', { createdAt: '2026-09-25T09:00:00.000Z' });
     render(<OrdersList orders={[stuck, order('p'), order('x', { commandId: 'command-a', syncStatus: 'applied' })]} onRetry={async () => 0}
       formatDate={formatDate} stuck={{ commandIds: ['command-s', 'command-a'], reason: 'status_503', since,
@@ -86,18 +87,39 @@ describe('OrdersList', () => {
     cleanup();
     render(<OrdersList orders={[stuck]} onRetry={async () => 0} formatDate={formatDate} />);
     expect(headers()).toEqual(['Recent']);
-    expect(screen.queryByText(/Not syncing/)).toBeNull();
+    expect(screen.queryByText(/reached the online store/)).toBeNull();
   });
 
-  it('shows each stuck order with its own since and reason, not the earliest across them', () => {
+  it('shows each stuck order with its own since, not the earliest across them, with the hour numeric', () => {
     const [early, late] = [new Date(2026, 8, 29, 9, 15).getTime(), new Date(2026, 8, 29, 13, 40).getTime()];
-    const time = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    expect(time(early)).not.toBe(time(late));
-    render(<OrdersList orders={[order('a'), order('b', { createdAt: '2026-09-25T09:00:00.000Z' })]} onRetry={async () => 0}
-      formatDate={formatDate} stuck={{ commandIds: ['command-a', 'command-b'], since: early, reason: 'no_progress', orders: [
-        { commandId: 'command-a', since: early, reason: 'status_503' }, { commandId: 'command-b', since: late, reason: 'no_progress' }] }} />);
-    expect(screen.getAllByText(`Not syncing: the store keeps failing (status_503) since ${time(early)}`)).toHaveLength(2);
-    expect(screen.getAllByText(`Not syncing: the store keeps failing (no_progress) since ${time(late)}`)).toHaveLength(2);
+    expect(stuckTime(early)).not.toBe(stuckTime(late));
+    const { container } = render(<OrdersList orders={[order('a'), order('b', { createdAt: '2026-09-25T09:00:00.000Z' })]}
+      onRetry={async () => 0} formatDate={formatDate} stuck={{ commandIds: ['command-a', 'command-b'], since: early, reason: 'no_progress',
+        orders: [{ commandId: 'command-a', since: early, reason: 'status_503' }, { commandId: 'command-b', since: late, reason: 'timeout' }] }} />);
+    expect(screen.getAllByText(stuckLine(early))).toHaveLength(2);
+    expect(screen.getAllByText(stuckLine(late))).toHaveLength(2);
+    // 9:15, never 09:15.
+    const twoDigit = new Date(early).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    expect(twoDigit).toMatch(/^09/);
+    expect(stuckTime(early)).toMatch(/^9\D/);
+    expect(container.textContent).not.toContain(twoDigit);
+  });
+
+  it.each(['timeout', 'status_503', 'status_404', 'no_progress'])('shows no reason code for a stuck %s order', (reason) => {
+    const since = Date.now();
+    const { container } = render(<OrdersList orders={[order('s')]} onRetry={async () => 0} formatDate={formatDate}
+      stuck={{ commandIds: ['command-s'], reason, since, orders: [{ commandId: 'command-s', since, reason }] }} />);
+    expect(screen.getAllByText(stuckLine(since))).toHaveLength(2);
+    expect(container.textContent).not.toMatch(/status_|\([^)]*\)|Not syncing|keeps failing|refusing|no answer/);
+    expect(container.textContent).not.toContain(reason);
+  });
+
+  it.each(['Variant was removed', ''])('shows a rejected order\'s message "%s" alone, with no error code and no empty ": "', (message) => {
+    const { container } = render(<OrdersList orders={[order('r', { syncStatus: 'rejected', error: { code: 'unknown_variant', message } })]}
+      onRetry={async () => 0} formatDate={formatDate} />);
+    expect(container.textContent).not.toContain('unknown_variant');
+    for (const element of Array.from(container.querySelectorAll('*'))) expect(element.textContent).not.toMatch(/^\s*:|:\s*$|\w+_\w+:/);
+    if (message) expect(screen.getAllByText(message)).toHaveLength(2);
   });
 
   it('asks for a manual check instead of Retry on an idempotency mismatch', () => {
@@ -175,7 +197,7 @@ describe('OrdersList', () => {
     render(<OrdersList orders={[rejected, warned, base]} onRetry={async () => 0} formatDate={formatDate} />);
     expect(headers()).toEqual(['Needs attention', 'Recent']);
     const money = formatMoney({ amount: base.totalMinor, currency: base.currency });
-    for (const label of ['invalid: Unknown variant', 'Stock short by 2 for Blue shirt',
+    for (const label of ['Unknown variant', 'Stock short by 2 for Blue shirt',
       `Store total ${formatMoney({ amount: 1000, currency: base.currency })} vs POS ${formatMoney({ amount: 1200, currency: base.currency })}`,
       'Order #42 · 3 items']) {
       expect(screen.getAllByText(label)).toHaveLength(2);
@@ -216,6 +238,27 @@ describe('OrdersList', () => {
       warnings: [{ code: 'tax_rate_mismatch', ratePpm: 55000, expectedMinor: 120, serverMinor: 100 }] });
     render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
     const expected = `Tax at 5.5%: store ${formatMoney({ amount: 100, currency: 'EUR' })} vs POS ${formatMoney({ amount: 120, currency: 'EUR' })}`;
+    expect(screen.getAllByText(expected)).toHaveLength(2);
+  });
+
+  it('renders a customer_ignored as a guest sale naming the id', () => {
+    const warned = order('w', { syncStatus: 'applied', warnings: [{ code: 'customer_ignored', customerId: 'cus_1' }] });
+    render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
+    const expected = "The online store didn't recognise the customer on this sale, so it was saved as a guest sale. Customer id: cus_1.";
+    expect(screen.getAllByText(expected)).toHaveLength(2);
+  });
+
+  const eur = (amount: number) => formatMoney({ amount, currency: 'EUR' });
+  it.each([
+    [`The online store worked out different figures for this sale. Subtotal: till ${eur(1050)}, store ${eur(1000)}.`,
+      [{ field: 'subtotalMinor', tillMinor: 1050, serverMinor: 1000 }] as const],
+    [`The online store worked out different figures for this sale. Subtotal: till ${eur(1050)}, store ${eur(1000)}. Tax: till ${eur(210)}, store ${eur(200)}.`,
+      [{ field: 'subtotalMinor', tillMinor: 1050, serverMinor: 1000 }, { field: 'taxMinor', tillMinor: 210, serverMinor: 200 }] as const],
+    [`The online store worked out different figures for this sale. grandTotalMinor: till ${eur(100)}, store ${eur(200)}.`,
+      [{ field: 'grandTotalMinor', tillMinor: 100, serverMinor: 200 }] as const],
+  ])('renders a figures_mismatch as one line: %s', (expected, fields) => {
+    const warned = order('w', { syncStatus: 'applied', warnings: [{ code: 'figures_mismatch', fields: [...fields] }] });
+    render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
     expect(screen.getAllByText(expected)).toHaveLength(2);
   });
 

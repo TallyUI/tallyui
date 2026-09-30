@@ -48,7 +48,7 @@ describe('sessionTransitionCommand', () => {
   it("builds each command's payload from its row, omitting null fields", () => {
     expect(sessionTransitionCommand({ ...session, status: 'counting', status_at: openedAt,
       counted: null, closed_by: null, approved_by: null })).toStrictEqual({
-      key: `session.transition:session:${openedAt}`, type: 'register.session.transition', version: 1,
+      key: `session.transition:session:counting:${openedAt}`, type: 'register.session.transition', version: 1,
       payload: { sessionId: 'session', status: 'counting', at: openedAt },
     });
     expect(sessionTransitionCommand({ ...session, status: 'closed', status_at: openedAt,
@@ -145,9 +145,9 @@ describe('register command ledger', () => {
     await reconcile();
     const rows = await ledger();
     expect(rows.map((row) => row.key)).toStrictEqual([
-      `session.open:${s.id}`, `movement.record:${first.id}`, `session.transition:${s.id}:${counting.status_at}`,
-      `session.transition:${s.id}:${selling.status_at}`, `movement.record:${second.id}`, `movement.void:${reversal.id}`,
-      `session.transition:${s.id}:${closed.status_at}`, `closure.submit:${z.id}`,
+      `session.open:${s.id}`, `movement.record:${first.id}`, `session.transition:${s.id}:counting:${counting.status_at}`,
+      `session.transition:${s.id}:open:${selling.status_at}`, `movement.record:${second.id}`, `movement.void:${reversal.id}`,
+      `session.transition:${s.id}:closed:${closed.status_at}`, `closure.submit:${z.id}`,
     ]);
     expect(rows.map((row) => row.seq)).toStrictEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(rows.every((row) => row.version === 1 && row.syncStatus === 'pending' && row.createdAt === openedAt && row.updatedAt === openedAt)).toBe(true);
@@ -176,7 +176,7 @@ describe('register command ledger', () => {
     expect(await reconcile([
       { ...session, status: 'counting', status_at: '2026-09-28T08:10:00.000Z' },
       { ...session, status: 'closed', status_at: '2026-09-28T08:05:00.000Z' },
-    ])).toStrictEqual(['session.open:session', 'movement.record:movement', `session.transition:session:${openedAt}`]);
+    ])).toStrictEqual(['session.open:session', 'movement.record:movement', `session.transition:session:counting:${openedAt}`]);
     expect((await ledger()).map((row) => row.payload.status)).toStrictEqual([undefined, undefined, 'counting']);
   });
 
@@ -187,6 +187,42 @@ describe('register command ledger', () => {
     const before = await ledger();
     expect(await reconcile()).toStrictEqual([]);
     expect(await ledger()).toStrictEqual(before);
+  });
+
+  describe('transition keys (#258)', () => {
+    const transitions = async () => (await ledger()).filter((row) => row.type === 'register.session.transition')
+      .map(({ key, payload }) => ({ key, payload }));
+
+    it('counting then closed in the same millisecond queues both, in order, the closed one with its count', async () => {
+      const s = await open();
+      await reconcile();
+      const counting = await startCounting(db.register_sessions, s.id);
+      await reconcile();
+      const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 9300 }, closedBy: '7', approvedBy: 'manager' });
+      expect(closed.status_at).toBe(counting.status_at);
+      expect(await reconcile()).toStrictEqual([`session.transition:${s.id}:closed:${closed.status_at}`]);
+      expect(await transitions()).toStrictEqual([
+        { key: `session.transition:${s.id}:counting:${counting.status_at}`,
+          payload: { sessionId: s.id, status: 'counting', at: counting.status_at } },
+        { key: `session.transition:${s.id}:closed:${closed.status_at}`, payload: { sessionId: s.id, status: 'closed',
+          at: closed.status_at, counted: { cash: 9300 }, closedBy: '7', approvedBy: 'manager' } },
+      ]);
+    });
+
+    it('open, counting, closed at different times queues each transition once; a rerun adds nothing', async () => {
+      const s = await open();
+      await reconcile();
+      advance();
+      const counting = await startCounting(db.register_sessions, s.id);
+      expect(await reconcile()).toStrictEqual([`session.transition:${s.id}:counting:${counting.status_at}`]);
+      advance();
+      const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 9300 } });
+      expect(await reconcile()).toStrictEqual([`session.transition:${s.id}:closed:${closed.status_at}`]);
+      const before = await ledger();
+      expect(await reconcile()).toStrictEqual([]);
+      expect(await ledger()).toStrictEqual(before);
+      expect((await transitions()).map(({ payload }) => payload.status)).toStrictEqual(['counting', 'closed']);
+    });
   });
 
   it('two concurrent reconciles append each key once', async () => {
@@ -208,7 +244,7 @@ describe('register command ledger', () => {
     const z = await write(closed);
     expect(await ledger()).toStrictEqual([]);
     expect(await reconcile()).toStrictEqual([
-      `session.open:${s.id}`, `session.transition:${s.id}:${closed.status_at}`, `closure.submit:${z.id}`,
+      `session.open:${s.id}`, `session.transition:${s.id}:closed:${closed.status_at}`, `closure.submit:${z.id}`,
     ]);
   });
 
@@ -239,8 +275,8 @@ describe('register command ledger', () => {
     vi.setSystemTime(new Date('2026-09-28T08:05:00.000Z'));
     const selling = await backToSelling(db.register_sessions, s.id);
     expect(await reconcile([counting.toJSON()])).toStrictEqual([
-      `session.open:${s.id}`, `session.transition:${s.id}:${counting.status_at}`,
-      `movement.record:${m.id}`, `session.transition:${s.id}:${selling.status_at}`,
+      `session.open:${s.id}`, `session.transition:${s.id}:counting:${counting.status_at}`,
+      `movement.record:${m.id}`, `session.transition:${s.id}:open:${selling.status_at}`,
     ]);
     expect((await ledger()).map((row) => row.payload.status)).toStrictEqual([undefined, 'counting', undefined, 'open']);
   });
@@ -251,10 +287,10 @@ describe('register command ledger', () => {
     const counting = await startCounting(db.register_sessions, s.id);
     vi.setSystemTime(new Date('2026-09-28T08:05:00.000Z'));
     const selling = await backToSelling(db.register_sessions, s.id);
-    expect(await reconcile()).toStrictEqual([`session.open:${s.id}`, `session.transition:${s.id}:${selling.status_at}`]);
+    expect(await reconcile()).toStrictEqual([`session.open:${s.id}`, `session.transition:${s.id}:open:${selling.status_at}`]);
     expect(await reconcile([counting.toJSON()])).toStrictEqual([]);
     expect((await ledger()).map((row) => row.key)).toStrictEqual([
-      `session.open:${s.id}`, `session.transition:${s.id}:${selling.status_at}`,
+      `session.open:${s.id}`, `session.transition:${s.id}:open:${selling.status_at}`,
     ]);
   });
 
@@ -267,7 +303,7 @@ describe('register command ledger', () => {
     vi.setSystemTime(new Date('2026-09-28T08:05:00.000Z'));
     const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 8600 }, closedBy: '7', approvedBy: 'manager' });
     const z = await write(closed);
-    expect(await reconcile()).toStrictEqual([`session.transition:${s.id}:${closed.status_at}`, `closure.submit:${z.id}`]);
+    expect(await reconcile()).toStrictEqual([`session.transition:${s.id}:closed:${closed.status_at}`, `closure.submit:${z.id}`]);
     const rows = await ledger();
     expect(rows.at(-2)?.payload).toStrictEqual({ sessionId: s.id, status: 'closed', at: closed.status_at,
       counted: { cash: 8600 }, closedBy: '7', approvedBy: 'manager' });
@@ -327,7 +363,7 @@ describe('register command ledger', () => {
     const z = await write(closed);
     advance();
     expect(await reconcile(undefined, new Date().toISOString())).toStrictEqual([
-      `session.transition:${s.id}:${closed.status_at}`, `closure.submit:${z.id}`,
+      `session.transition:${s.id}:closed:${closed.status_at}`, `closure.submit:${z.id}`,
     ]);
   });
 
@@ -364,9 +400,9 @@ describe('register command ledger', () => {
     const m = await record(s.id);
     advance();
     const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 9300 } });
-    expect(await reconcile()).toStrictEqual([`movement.record:${m.id}`, `session.transition:${s.id}:${closed.status_at}`]);
+    expect(await reconcile()).toStrictEqual([`movement.record:${m.id}`, `session.transition:${s.id}:closed:${closed.status_at}`]);
     expect((await ledger()).map((row) => row.key)).toStrictEqual([
-      `session.open:${s.id}`, `movement.record:${m.id}`, `session.transition:${s.id}:${closed.status_at}`,
+      `session.open:${s.id}`, `movement.record:${m.id}`, `session.transition:${s.id}:closed:${closed.status_at}`,
     ]);
   });
 
@@ -378,8 +414,8 @@ describe('register command ledger', () => {
     await db.register_sessions.insert({ ...session, id: 'other-register', register_id: 'other' });
     await db.cash_movements.insert({ ...movement, session_id: 'earlier', created_at_gmt: '2026-09-28T11:00:00.000Z' });
     expect(await reconcile()).toStrictEqual([
-      'session.open:before', `session.transition:before:${openedAt}`,
-      'session.open:earlier', 'movement.record:movement', `session.transition:earlier:${openedAt}`, 'session.open:later',
+      'session.open:before', `session.transition:before:closed:${openedAt}`,
+      'session.open:earlier', 'movement.record:movement', `session.transition:earlier:closed:${openedAt}`, 'session.open:later',
     ]);
   });
 
@@ -396,7 +432,7 @@ describe('register command ledger', () => {
     const z = await write(closed);
     expect(await reconcile()).toStrictEqual([
       `movement.record:${movement.id}`, 'movement.void:reversal',
-      `session.transition:${s.id}:${closed.status_at}`, `closure.submit:${z.id}`,
+      `session.transition:${s.id}:closed:${closed.status_at}`, `closure.submit:${z.id}`,
     ]);
   });
 

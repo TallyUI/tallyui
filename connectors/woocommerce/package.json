@@ -33,6 +33,7 @@
     "@tallyui/core": "workspace:^"
   },
   "devDependencies": {
+    "@tallyui/database": "workspace:*",
     "rxdb": "17.5.0"
   }
 }

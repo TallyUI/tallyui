@@ -1,5 +1,6 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
 import type { RxStorage } from 'rxdb';
+import { isRxdbRemoteVersionMismatch } from '@tallyui/core';
 
 /** WCPOS's value (ADR-061): a write pending longer than this is flagged as stalled, never failed. */
 export const STORAGE_WRITE_STALL_MS = 10_000;
@@ -34,12 +35,17 @@ export interface StorageWatchdogOptions {
  * so a substring match (`includes`, not `startsWith`) is needed to still
  * recognise it.
  *
+ * RxDB's RM1 (a stale worker built on another RxDB version, e.g. cached from
+ * before an upgrade) is one too: reloading loads the matching worker. The
+ * check is `isRxdbRemoteVersionMismatch` from `@tallyui/core`.
+ *
  * A worker that crashes mid-call never replies (RxDB `storage-remote`,
  * 16.21.1), so that case surfaces through `health$` (`dead`), not an error.
  */
 export function isStorageWorkerFailure(error: unknown): boolean {
   return error instanceof Error
-    && (error.name === 'StorageWorkerStartError' || error.message.includes('StorageWorkerStartError'));
+    && (error.name === 'StorageWorkerStartError' || error.message.includes('StorageWorkerStartError')
+      || isRxdbRemoteVersionMismatch(error));
 }
 
 const READ_METHODS = ['query', 'count', 'findDocumentsById', 'getChangedDocumentsSince'] as const;

@@ -89,6 +89,28 @@ export function parseCommandResult(value: unknown): CommandResult {
         }
         return { code: item.code, ratePpm: item.ratePpm as number, expectedMinor: item.expectedMinor as number, serverMinor: item.serverMinor as number }
       }
+      if (item.code === 'customer_ignored') {
+        if (typeof item.customerId !== 'string' || item.customerId.length === 0 || item.customerId.length > 64) {
+          throw new CommandResultError(`Invalid ${field}.customerId`)
+        }
+        return { code: item.code, customerId: item.customerId }
+      }
+      if (item.code === 'figures_mismatch') {
+        if (!Array.isArray(item.fields) || item.fields.length === 0) throw new CommandResultError(`Invalid ${field}.fields`)
+        const seen: string[] = []
+        return { code: item.code, fields: item.fields.map((value: unknown, i) => {
+          const path = `${field}.fields[${i}]`
+          if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new CommandResultError(`Invalid ${path}`)
+          const entry = value as Record<string, unknown>
+          if (!['subtotalMinor', 'taxMinor', 'discountMinor'].includes(entry.field as string) || seen.includes(entry.field as string)) {
+            throw new CommandResultError(`Invalid ${path}.field`)
+          }
+          seen.push(entry.field as string)
+          if (!Number.isSafeInteger(entry.tillMinor)) throw new CommandResultError(`Invalid ${path}.tillMinor`)
+          if (!Number.isSafeInteger(entry.serverMinor) || entry.serverMinor === entry.tillMinor) throw new CommandResultError(`Invalid ${path}.serverMinor`)
+          return { field: entry.field as 'subtotalMinor' | 'taxMinor' | 'discountMinor', tillMinor: entry.tillMinor as number, serverMinor: entry.serverMinor as number }
+        }) }
+      }
       throw new CommandResultError(`Invalid ${field}.code`)
     })
   }

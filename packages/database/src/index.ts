@@ -9,13 +9,17 @@ export { STORAGE_WRITE_STALL_MS, STORAGE_READ_WATCHDOG_MS, isStorageWorkerFailur
 export type { StorageHealth, StorageWatchdogOptions } from './storage-watchdog';
 
 export { startReplication } from './replication';
-export type { StartReplicationOptions } from './replication';
+export type { StartReplicationOptions, TallyReplicationState } from './replication';
 
 export { startLiveTab } from './live-tab';
 export type { LiveTabState, LiveTabOptions, LiveTabHandle } from './live-tab';
 
 export { startStockReconcile } from './reconcile';
 export type { StartStockReconcileOptions, StockReconcileResult, StockReconcileState } from './reconcile';
+export { startCatalogueReconcile, shouldReconcileAfterGap, CATALOGUE_OFFLINE_GAP_MS } from './catalogue-reconcile';
+export type {
+  StartCatalogueReconcileOptions, CatalogueReconcileEvent, CatalogueReconcileState, CatalogueReconcileSummary,
+} from './catalogue-reconcile';
 export { startIdReconcile } from './id-reconcile';
 export type { StartIdReconcileOptions, IdReconcileResult } from './id-reconcile';
 export { startFingerprintReconcile, isFingerprintResultCurrent } from './fingerprint-reconcile';

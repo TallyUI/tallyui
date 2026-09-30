@@ -283,6 +283,9 @@ importers:
         specifier: workspace:^
         version: link:../../packages/core
     devDependencies:
+      '@tallyui/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       rxdb:
         specifier: 17.5.0
         version: 17.5.0(mongodb@6.21.0)(nats@2.29.3)(react@19.2.4)(rxjs@7.8.2)(supports-color@10.2.2)
@@ -464,6 +467,9 @@ importers:
       '@sqlite.org/sqlite-wasm':
         specifier: 3.53.4-build1
         version: 3.53.4-build1
+      '@tallyui/core':
+        specifier: workspace:^
+        version: link:../core
       esbuild:
         specifier: 0.27.3
         version: 0.27.3

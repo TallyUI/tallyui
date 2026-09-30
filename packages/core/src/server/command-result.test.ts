@@ -60,6 +60,9 @@ it.each([
   ['warnings[0].bridgeMinor', { ...applied, warnings: [{ ...warnings[0], bridgeMinor: '5' }] }],
   ['warnings[0].ratePpm', { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: -1, expectedMinor: 120, serverMinor: 100 }] }],
   ['warnings[0].expectedMinor', { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: 200000, expectedMinor: 1.5, serverMinor: 100 }] }],
+  ['warnings[0].customerId', { ...applied, warnings: [{ code: 'customer_ignored', customerId: '' }] }],
+  ['warnings[0].customerId', { ...applied, warnings: [{ code: 'customer_ignored', customerId: 'c'.repeat(65) }] }],
+  ['warnings[0].customerId', { ...applied, warnings: [{ code: 'customer_ignored', customerId: 1 }] }],
   ['error', { ...rejected, error: undefined }],
   ['error', { ...rejected, error: null }],
   ['error', { ...rejected, error: [] }],
@@ -116,6 +119,36 @@ it('round-trips a tax_rate_mismatch, including through JSON', () => {
 it('accepts a tax_rate_mismatch with ratePpm: 0', () => {
   const value = { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: 0, expectedMinor: 120, serverMinor: 100 }] }
   expect(parseCommandResult(value)).toEqual(value)
+})
+
+it('accepts a customer_ignored (64 characters at most) and drops an extra reason', () => {
+  const value = { ...applied, warnings: [{ code: 'customer_ignored', customerId: 'c'.repeat(64), reason: 'unknown' }] }
+  expect(parseCommandResult(value).warnings).toEqual([{ code: 'customer_ignored', customerId: 'c'.repeat(64) }])
+})
+
+const subtotal = { field: 'subtotalMinor', tillMinor: 1050, serverMinor: 1000 }
+const tax = { field: 'taxMinor', tillMinor: 210, serverMinor: 200 }
+const figures = (fields: unknown) => ({ ...applied, warnings: [warnings[0], { code: 'figures_mismatch', fields }] })
+
+it('accepts a figures_mismatch and drops extra keys', () => {
+  const discount = { field: 'discountMinor', tillMinor: 0, serverMinor: 50 }
+  const value = { ...applied, warnings: [{ code: 'figures_mismatch', fields: [{ ...subtotal, extra: 1 }, tax, discount], extra: 1 }] }
+  expect(parseCommandResult(value).warnings).toEqual([{ code: 'figures_mismatch', fields: [subtotal, tax, discount] }])
+})
+
+it.each([
+  ['warnings[1].fields', []],
+  ['warnings[1].fields', { 0: subtotal }],
+  ['warnings[1].fields[0].field', [{ ...subtotal, field: 'grandTotalMinor' }]],
+  ['warnings[1].fields[1].field', [subtotal, { ...subtotal, tillMinor: 1100 }]],
+  ['warnings[1].fields[1].tillMinor', [subtotal, { ...tax, tillMinor: 210.5 }]],
+  ['warnings[1].fields[0].serverMinor', [{ ...tax, serverMinor: '200' }]],
+  ['warnings[1].fields[1].serverMinor', [subtotal, { ...tax, serverMinor: 210 }]],
+  ['warnings[1].fields[1]', [subtotal, null]],
+])('rejects a figures_mismatch with Invalid %s', (path, fields) => {
+  const error = thrown(figures(fields))
+  expect(error).toBeInstanceOf(CommandResultError)
+  expect((error as Error).message).toBe(`Invalid ${path}`)
 })
 
 it('accepts a null bridgeMinor and omits it from the output', () => {

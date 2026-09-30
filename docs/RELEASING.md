@@ -6,7 +6,9 @@ the four `connector-*` packages (ADR-041). A release takes two steps:
 
 1. **A worker opens the version PR.** It runs `pnpm changeset version` on a
    branch, then commits the result and opens it as an ordinary PR. The PR is
-   reviewed and merged like any other.
+   reviewed like any other, but merged only by Paul, or by this machine on
+   his explicit word, which re-enables the Release workflow first. Until
+   then it stays open.
 2. **The Release workflow publishes.** On every push to `main`,
    `.github/workflows/release.yml` counts the pending changesets. If there
    are none, it runs `pnpm changeset publish`. That publishes every package
@@ -18,8 +20,15 @@ enterprise policy forbids Actions from creating pull requests (ADR-043).
 
 ## Prerequisites
 
-- Paul has given the go-ahead for this release. The Release workflow stays
-  disabled until he does.
+- Paul has given the go-ahead for this release. The Release workflow
+  (`release.yml`, id 238319860) stays disabled until he does. It has been
+  disabled since 2026-09-30 (the Front desk, 05:10): while it is active,
+  merging the version PR publishes to npm at once, and publishing is
+  Paul's call alone.
+- The version PR (#200 or its successor) is merged only by Paul, or by
+  this machine on his explicit word. On that word the workflow is
+  re-enabled first (`gh workflow enable 238319860`), then the version PR
+  is merged and #242's release checklist runs. Until then it stays open.
 - Each package has an npm trusted publisher: org `TallyUI`, repo
   `tallyui`, workflow `release.yml`, environment blank (ADR-042). No npm
   token exists anywhere.
@@ -106,7 +115,9 @@ waits for the next version PR.
 
 ## After the merge
 
-The Release workflow run on the merge commit publishes. Verify it:
+The Release workflow run on the merge commit publishes, provided Paul has
+re-enabled it (see Prerequisites); if it is still disabled, nothing
+publishes and nothing is tagged. Verify it:
 
 ```sh
 npm view @tallyui/core version                 # the new version

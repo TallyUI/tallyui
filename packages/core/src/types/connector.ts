@@ -3,7 +3,7 @@ import type { RxJsonSchema } from 'rxdb';
 import type { ProductTraits } from './traits/product';
 import type { CustomerTraits } from './traits/customer';
 import type { ReplicationAdapter } from './replication';
-import type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
+import type { CatalogueReconcileAdapter, FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 import type { StoreSettings, StoreSettingsChoice } from './store-settings';
 import type { Customer, CustomerInput } from './customers';
 
@@ -177,6 +177,8 @@ export interface TallyConnector {
     prices?: FingerprintReconcileAdapter;
     /** Prices the backend calculates for the sales context (price lists, sale dates), which change without a timestamp bump. */
     calculatedPrices?: FingerprintReconcileAdapter;
+    /** The daily catalogue check (#248): refetches what differs, deletes only with proof. */
+    catalogue?: CatalogueReconcileAdapter;
   };
 
   /**

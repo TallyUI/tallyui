@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { SyncContext } from '@tallyui/core';
+import { errorKind, type SyncContext } from '@tallyui/core';
 
 import { createVendureProductReplication, vendureProductReplication, toProductDocument, probeUpdatedAtSkew, type VendureProductCheckpoint } from './products';
-import { createVendureConnector } from '../index';
+import { createVendureConnector, VendureTimezoneConfigError } from '../index';
 import { vendureProductTraits } from '../traits/product';
+import { vendureStoreSettings } from '../store-settings';
+import storeSettingsFixture from '../store-settings.fixture.json';
 
 const context: SyncContext = {
   connectorId: 'vendure',
@@ -149,6 +151,23 @@ describe('vendureProductReplication.pull.handler', () => {
     const result = await vendureProductReplication.pull.handler(undefined, 100, context);
 
     expect((result.documents[0].variants as any[]).map((v) => v.id)).toEqual(['2', '9', '10']);
+  });
+
+  it("replicates each variant's taxCategory, and getTaxClass returns a key of the store's taxRatesPpm (#288)", async () => {
+    const fetch = serveProducts([{ id: '1', updatedAt: '2026-01-01T00:00:00Z', variants: [
+      { id: '12', taxCategory: { id: '2' } }, { id: '11', taxCategory: { id: '1' } }] }] as any);
+    const [doc] = (await vendureProductReplication.pull.handler(undefined, 100, context)).documents;
+    const { query } = JSON.parse(fetch.mock.calls.at(-1)![1]!.body as string);
+    expect(query).toContain('taxCategory { id }');
+    expect((doc.variants as any[]).map((v) => v.taxCategory)).toEqual([{ id: '1' }, { id: '2' }]);
+    expect([vendureProductTraits.getTaxClass!(doc, '12'), vendureProductTraits.getTaxClass!(doc)]).toEqual(['2', '1']);
+    // The recorded vendure-dev settings key rates by the same category ids: '2' is 7%, not the default 25%.
+    vi.restoreAllMocks();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(storeSettingsFixture.channelAndCategories)))
+      .mockResolvedValueOnce(new Response(JSON.stringify(storeSettingsFixture.taxRates)));
+    const { taxRatesPpm } = await vendureStoreSettings(context);
+    expect(taxRatesPpm[vendureProductTraits.getTaxClass!(doc, '12')!]).toBe(70000);
   });
 });
 
@@ -325,6 +344,29 @@ describe('probeUpdatedAtSkew (backlog 31)', () => {
     let calls = 0;
     await expect(probeUpdatedAtSkew('2026-01-01T00:00:00.000Z', 0, async () => (calls++ === 0 ? 1 : 0)))
       .resolves.toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('the configuration throw, after a re-read of the mark, is a VendureTimezoneConfigError that the store fixes, with the same message', async () => {
+    const remark = vi.fn(async () => '2026-01-01T00:00:00.000Z');
+    const error = await probeUpdatedAtSkew('2026-01-01T00:00:00.000Z', 0, async () => 0, remark).catch((e: unknown) => e);
+    expect(remark).toHaveBeenCalledOnce();
+    expect(error).toBeInstanceOf(VendureTimezoneConfigError);
+    expect(errorKind(error)).toBe('store');
+    expect(error).toMatchObject({
+      name: 'VendureTimezoneConfigError',
+      code: 'store_misconfigured',
+      fixedBy: 'store',
+      fix: 'run the Vendure server with its time zone set to UTC',
+      message: 'Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.',
+    });
+  });
+
+  it('without a re-read (the variant feed) the same condition throws a plain Error, which stays transient', async () => {
+    const error = await probeUpdatedAtSkew('2026-01-01T00:00:00.000Z', 0, async () => 0).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(VendureTimezoneConfigError);
+    expect(errorKind(error)).toBe('transient');
+    expect((error as Error).message).toBe('Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.');
   });
 });
 

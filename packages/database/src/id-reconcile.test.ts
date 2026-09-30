@@ -44,14 +44,16 @@ function fakeAdapter(pages: Array<Array<{ id: string; variantIds: string[] }>>, 
 }
 
 /**
- * Runs `write` once, when `collection`'s next storage query has been answered but before the
- * reader's continuation runs: the window of RxDB 16.21.1 bug 4 (`readFresh`'s doc comment), where a
- * cached `find()` counts the write's change event as seen without having its document.
+ * Runs `write` once, when `collection`'s next storage query (after `skip` others) has been answered but
+ * before the reader's continuation runs: the window of RxDB 16.21.1 bug 4 (`readFresh`'s doc comment),
+ * where a cached `find()` counts the write's change event as seen without having its document.
  */
-function writeDuringNextRead(collection: RxCollection, write: () => Promise<unknown>) {
+function writeDuringNextRead(collection: RxCollection, write: () => Promise<unknown>, skip = 0) {
   const instance = collection.storageInstance;
   const query = instance.query.bind(instance);
-  vi.spyOn(instance, 'query').mockImplementationOnce(async (prepared) => {
+  const spy = vi.spyOn(instance, 'query');
+  for (let i = 0; i < skip; i++) spy.mockImplementationOnce(query);
+  spy.mockImplementationOnce(async (prepared) => {
     const answered = await query(prepared);
     await write();
     return answered;
@@ -101,12 +103,13 @@ describe('startIdReconcile', () => {
     const { reconcileIds, stop } = start(adapter, vi.fn());
     expect(await reconcileIds()).toEqual({ pages: 1, queued: 1, braked: false, truncated: false });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: extra[N - 1].id, local: extra[N - 1] }]);
-    expect(sizes).toEqual([C, C, 10]);
+    // The page's keys are read first (#248: compared page by page), then every local product for the deletion candidates.
+    expect(sizes).toEqual([C, C, 9, C, C, 10]);
     expect(sizes.every((size) => size <= C)).toBe(true);
     stop();
   });
 
-  it('queues products missing remotely or listing a vanished variant, and calls reSync once', async () => {
+  it('queues a product listing a vanished variant on its page and a product missing remotely after the pass, with a reSync for each', async () => {
     const before = await revisions();
     const { adapter, enqueue } = fakeAdapter([[
       { id: 'p1', variantIds: ['v1', 'v2'] },
@@ -117,11 +120,12 @@ describe('startIdReconcile', () => {
 
     const result = await reconcileIds();
     expect(result).toEqual({ pages: 1, queued: 2, truncated: false, braked: false });
-    expect(enqueue).toHaveBeenCalledTimes(1);
-    const [entries] = enqueue.mock.calls[0];
-    expect(new Set(entries.map((e: any) => e.id))).toEqual(new Set(['p2', 'p3']));
-    expect(entries.find((e: any) => e.id === 'p2').local).toEqual({ id: 'p2', variants: [{ id: 'v3' }] });
-    expect(reSync).toHaveBeenCalledTimes(1);
+    // #248: a difference is queued with its page; a deletion only once the whole pass has run.
+    expect(enqueue.mock.calls).toEqual([
+      [[{ id: 'p3', local: { id: 'p3', variants: [{ id: 'v4' }, { id: 'v5' }] } }]],
+      [[{ id: 'p2', local: { id: 'p2', variants: [{ id: 'v3' }] } }]],
+    ]);
+    expect(reSync).toHaveBeenCalledTimes(2);
     expect(await revisions()).toEqual(before); // never writes the collection
     stop();
   });
@@ -139,8 +143,7 @@ describe('startIdReconcile', () => {
     stop();
   });
 
-  it('truncates, warns and queues nothing beyond maxPages', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('ignores maxPages (deprecated, #248): every page is read and the pass never truncates', async () => {
     const { adapter, enqueue } = fakeAdapter([
       [{ id: 'p1', variantIds: ['v1', 'v2'] }],
       [{ id: 'p3', variantIds: ['v4', 'v5'] }],
@@ -148,10 +151,9 @@ describe('startIdReconcile', () => {
     const reSync = vi.fn();
     const { reconcileIds, stop } = start(adapter, reSync, { maxPages: 1 });
 
-    expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: true, braked: false });
-    expect(enqueue).not.toHaveBeenCalled();
-    expect(reSync).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/1-page limit.*nothing was queued/));
+    expect(await reconcileIds()).toEqual({ pages: 2, queued: 1, truncated: false, braked: false });
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: 'p2', local: { id: 'p2', variants: [{ id: 'v3' }] } }]);
+    expect(reSync).toHaveBeenCalledTimes(1);
     stop();
   });
 
@@ -271,7 +273,7 @@ describe('startIdReconcile', () => {
     stop();
   });
 
-  it('runs a pass at startDelayMs, the next at startDelayMs + intervalMs, and none after stop()', async () => {
+  it('runs a pass at startDelayMs, the next at startDelayMs + intervalMs (checked every intervalMs / 2), and none after stop()', async () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([[]]);
     const { stop } = startIdReconcile({
@@ -282,6 +284,7 @@ describe('startIdReconcile', () => {
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
+    // #248: the gate is checked every min(1 hour, intervalMs / 2): at 3.5 s (not due), then at 6 s.
     await vi.advanceTimersByTimeAsync(4999);
     expect(fetchPages).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -291,14 +294,14 @@ describe('startIdReconcile', () => {
     expect(fetchPages).toHaveBeenCalledTimes(2);
   });
 
-  it('startDelayMs: null skips the start pass but keeps the nightly cadence', async () => {
+  it('startDelayMs: null skips the start check; the first check (intervalMs / 2) runs the pass none has completed', async () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([[]]);
     const { stop } = startIdReconcile({
       collection: db.products, adapter, context, reSync: vi.fn(), startDelayMs: null, intervalMs: 5000,
     });
 
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(2499);
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
@@ -416,7 +419,8 @@ describe('startIdReconcile', () => {
       const reSync = vi.fn();
       const { reconcileIds, stop } = start(adapter, reSync);
 
-      writeDuringNextRead(db.products, () => db.products.bulkRemove(Array.from({ length: 25 }, (_, i) => `p${76 + i}`)));
+      // Skip the page read (#248): the removal lands during the full scan of local products.
+      writeDuringNextRead(db.products, () => db.products.bulkRemove(Array.from({ length: 25 }, (_, i) => `p${76 + i}`)), 1);
       // The first pass read all 100 before the removal landed: 25 would-be tombstones, so it brakes.
       expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
       // The next pass reads the 75 left: no tombstones, no brake, nothing to queue.

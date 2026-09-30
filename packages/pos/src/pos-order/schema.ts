@@ -1,5 +1,6 @@
 import { addRxPlugin, type MigrationStrategies, type RxJsonSchema } from 'rxdb';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
+import { contentVersion } from './command';
 import type { PosOrder } from './types';
 
 /**
@@ -11,9 +12,12 @@ import type { PosOrder } from './types';
  * Version 3 adds an index on `sessionId` (with its `maxLength`), and the optional `sentVersion` and `downgradedFrom` (the outbox's version fallback), and changes nothing else.
  * Version 4 adds the optional `localWarnings` and `serverFailures` (the outbox's stuck clock start, latest reason and
  * isolation, restored when an outbox starts), and changes nothing else.
+ * Version 5 lets `sentVersion` and `downgradedFrom` be 4 (order.create version 4, #286), and changes nothing else. Its
+ * migration sets a row's missing `sentVersion` to its content version, the version any earlier attempt went out at.
+ * Like version 4 (ADR-069), it is one-way: an older build shows no orders.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 4, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 5, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     commandId: { type: 'string', maxLength: 36 },
@@ -59,8 +63,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       since: { type: 'integer', minimum: 0 }, reason: { type: 'string', maxLength: 64 }, isolated: { type: 'boolean' },
     }, required: ['since', 'reason', 'isolated'] },
     lateSessionId: { type: 'string' },
-    sentVersion: { type: 'integer', minimum: 1, maximum: 3 },
-    downgradedFrom: { type: 'integer', minimum: 1, maximum: 3 },
+    sentVersion: { type: 'integer', minimum: 1, maximum: 4 },
+    downgradedFrom: { type: 'integer', minimum: 1, maximum: 4 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
     display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
@@ -107,5 +111,8 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // addRxPlugin ignores a plugin it already has.
   addRxPlugin(RxDBMigrationSchemaPlugin);
   const identity = (doc: PosOrder) => doc;
-  return { schema: posOrderSchema, migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity } };
+  // Every row before version 5 was built without version 4, so its content version is what any earlier attempt
+  // went out at (a downgraded row has its sentVersion already): each retry then resends those bytes (#286).
+  const recordSent = (doc: PosOrder) => { doc.sentVersion ??= contentVersion(doc); return doc; };
+  return { schema: posOrderSchema, migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent } };
 }

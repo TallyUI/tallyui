@@ -117,8 +117,9 @@ the function instead.
 If the worker's start-up fails — most commonly another tab still holding the
 opfs-sahpool database, or a browser with no OPFS or no sync access handles —
 every storage call rejects with a `StorageWorkerStartError` instead of
-hanging. Recognise it with `isStorageWorkerStartError` and tell the user to
-close other tabs or reload:
+hanging. A stale worker counts too: after an upgrade the browser may still
+have the old worker cached, and RxDB refuses it (RM1). Recognise either with
+`isStorageWorkerStartError` and tell the user to close other tabs or reload:
 
 ```ts
 import { isStorageWorkerStartError } from '@tallyui/storage-sqlite/web';

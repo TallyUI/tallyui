@@ -229,9 +229,10 @@ describe('useOrderOutbox options', () => {
     builder.addPayment({ method: 'cash', amountMinor: 1200 });
     const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 3 } });
     const oldGetter = vi.fn(() => 3);
-    const newGetter = vi.fn(() => 2);
+    let newMax = 3;
+    const newGetter = vi.fn(() => newMax);
     const oldRefresh = vi.fn(async () => {});
-    const newRefresh = vi.fn(async () => {});
+    const newRefresh = vi.fn(async () => { newMax = 2; });
     const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>().mockImplementation(appliedResults)
       .mockResolvedValueOnce({ kind: 'results', results: [{ id: order.commandId, status: 'rejected',
         error: { code: 'unsupported_version', message: 'not supported' } }] });
@@ -245,7 +246,8 @@ describe('useOrderOutbox options', () => {
     expect(outbox.orders).toBe(collection);
     expect(oldGetter).not.toHaveBeenCalled();
     expect(oldRefresh).not.toHaveBeenCalled();
-    expect(newGetter).toHaveBeenCalledTimes(1);
+    // The first send's read, then the downgrade's.
+    expect(newGetter).toHaveBeenCalledTimes(2);
     expect(newRefresh).toHaveBeenCalledTimes(1);
     expect(send.mock.calls.map(([batch]) => [batch[0].id, batch[0].version])).toEqual([[order.commandId, 3], [order.commandId, 2]]);
   });
@@ -267,7 +269,7 @@ describe('useOrderOutbox options', () => {
     await act(async () => { await outbox.record(order); });
     await waitFor(() => expect(outbox.recent[0]?.syncStatus).toBe('applied'));
     expect(refreshCapabilities).toHaveBeenCalledTimes(1);
-    expect(getMaxOrderCreateVersion).toHaveBeenCalledTimes(1);
+    expect(getMaxOrderCreateVersion).toHaveBeenCalledTimes(2);
     expect(send.mock.calls.map(([batch]) => [batch[0].id, batch[0].version])).toEqual([[order.commandId, 3], [order.commandId, 2]]);
     expect(outbox.recent[0]).toMatchObject({ sentVersion: 2, downgradedFrom: 3 });
   });
