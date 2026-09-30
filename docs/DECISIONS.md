@@ -3714,3 +3714,63 @@ interface OrderCreatePayload {
     `pos_orders` version is stored.
   - Parked sales live in a collection each app supplies
     (`draftsCollection`); TallyUI's fixtures prove `pos_orders` only.
+
+## ADR-070 Command payloads are strict per version; a batch holds at most 50
+
+- **Date:** 2026-09-30 · **Status:** Accepted (Front desk rulings for both
+  backends, 2026-09-30) · **Source:** the medusapos and vendurepos workers,
+  and a second opinion from Codex · **Amends:** ADR-038 (the transport and
+  the payload)
+- **Context:** the contract said nothing about fields a server does not
+  know, or about what a batch over the limit is answered, and the two
+  backends had drifted. medusapos pinned leniency
+  (`payload-shape.unit.spec.ts:128`, which now changes); vendurepos wrote
+  its own rule (its ADR 0002 §5). A till already treats versions as the
+  gate for new fields: `@tallyui/pos` 2.0.0 sends `order.create` version 2
+  exactly when a line has `discountMinor > 0`
+  (`packages/pos/src/pos-order/command.ts:12` at that tag).
+- **Decision (1), unknown fields are refused:**
+  - A server refuses a command that carries a field its declared protocol
+    version does not know. The answer is `invalid_payload`, naming the full
+    path (for example `lines[2].discountMinr`), checked recursively in
+    `lines[]`, `payments[]` and `customer`.
+  - A field that belongs to a later version is refused in an earlier one,
+    naming the version it requires.
+  - Every new field needs a version bump. So a field that changes what the
+    customer pays, or what stock moves, reaches an older server only in a
+    version it refuses, never one it quietly ignores.
+  - Arbitrary keys are allowed only inside a map the contract declares for
+    that purpose, and nothing in it may affect price, payment or stock.
+    Today the contract declares no such map for commands. The only open map
+    on the wire is `CommandError.data`, which the server sends back to the
+    till in a result.
+  - Why: a misspelled optional money field from a buggy till must be refused
+    in plain sight, not ignored in silence. Refused, the sale stays on the
+    till and nothing is lost. Ignored, the till and the server would
+    disagree about the price.
+- **What the till does with that refusal:**
+  - The result is final for that command id: the outbox marks the order
+    `rejected` and never retries it by itself, so there is no loop
+    (`packages/pos/src/outbox/order-outbox.ts`, where a result is written).
+  - The order shows under "Needs attention" with the error's code and
+    message, and a Retry button (`OrdersList`). Retry is the cashier's
+    choice and sends the order again under a new command id (`requeue()`).
+    An `idempotency_mismatch` gets no Retry: it is reconciled by hand.
+- **Decision (2), the batch limit:**
+  - A batch holds at most 50 commands. A larger one is answered `413` with
+    `{ code: 'batch_too_large', maxCommands, message }`, never `400`; the
+    exact body is in ADR-038 and `@tallyui/core/server`'s `validateBatch`
+    (#249).
+  - The outbox never sends more than the limit. On a `413` it should halve
+    the batch and carry on, and never read a `413` as one poisoned order.
+  - Today the outbox sends at most 10 per batch, so a `413` needs a server
+    limit below 10. A `413` today is `refused`: sending pauses and no order
+    changes until the outbox is next flushed, for example by the next
+    sale (`OutboxState.refused`). Halving the batch is its own small code
+    change, after programme item 24.
+- **Consequences:**
+  - medusapos changes its lenient shape check, and both plugins refuse
+    unknown fields with the path named.
+  - A new optional field in `order.create` always comes with a version bump
+    and `precheckCommand`'s version checks, as `discountMinor` (version 2)
+    and `display`/`taxByRate` (version 3) already did.
