@@ -1,5 +1,5 @@
 // @vitest-environment node
-// The seven planted missed-edit cases (#248): each plants a miss in the fake store (a model, see its header),
+// The eight planted missed-edit cases (#248): each plants a miss in the fake store (a model, see its header),
 // shows the incremental pull alone missing it, then runs one catalogue reconcile pass beside the real
 // replication and a poll, and shows the till corrected. Every change reaches the till through the pull.
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -136,6 +136,54 @@ describe('WooCommerce catalogue reconcile: planted missed-edit cases', () => {
     expect(keysOf(await reconcile(till), 'refetched')).toEqual(['u8']);
     await till.poll();
     expect((await till.local()).get('u8')).toMatchObject({ stock_quantity: 0, stock_status: 'outofstock' });
+  });
+
+  it('8. a product hidden from the POS after sync (online only, POS-only products on) is proven gone and removed', async () => {
+    const store = createFakeStore(10);
+    store.posOnlyProducts = true;
+    const till = await tillOf(store);
+    store.onlineOnly.add(7);
+    store.edit(7, { name: 'Hidden' }, stamp(30)); // the save moves the modified time, yet the pull never returns it
+    await till.poll();
+    expect(await nameOf(till, 'u7')).toBe('Product 7');
+
+    const events = await reconcile(till);
+    expect([keysOf(events, 'refetched'), keysOf(events, 'tombstoned')]).toEqual([[], ['u7']]);
+    expect(store.requests.some((url) => url.searchParams.get('include') === '7')).toBe(true);
+    await till.poll();
+    expect((await till.local()).has('u7')).toBe(false);
+  });
+
+  it('8b. hiding many at once is held by the brake, with a message for the store owner', async () => {
+    const store = createFakeStore(50);
+    store.posOnlyProducts = true;
+    const till = await tillOf(store);
+    for (let id = 1; id <= 12; id++) store.onlineOnly.add(id);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const events = await reconcile(till);
+    const message = '12 products the online store no longer lists were kept on this till: removing that many at once needs a check. '
+      + 'If they were hidden or removed on purpose, the person who manages this till can allow the removal.';
+    const hidden = Array.from({ length: 12 }, (_, i) => `u${i + 1}`).sort(); // the keys come in primary-key order
+    expect(events).toContainEqual({ type: 'kept', count: 12, keys: hidden, reason: 'brake', message });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(message));
+    expect(store.requests.some((url) => url.searchParams.has('include'))).toBe(false);
+    await till.poll();
+    expect((await till.local()).size).toBe(50);
+  });
+
+  it('8c. with POS-only products off, an online-only product is still listed and nothing is removed', async () => {
+    const store = createFakeStore(10);
+    const till = await tillOf(store);
+    store.onlineOnly.add(7);
+    store.edit(7, { name: 'Online only' }, stamp(30));
+    await till.poll();
+    expect(await nameOf(till, 'u7')).toBe('Online only');
+
+    const events = await reconcile(till);
+    expect([keysOf(events, 'tombstoned'), events.filter((e) => e.type === 'kept')]).toEqual([[], []]);
+    await till.poll();
+    expect(await nameOf(till, 'u7')).toBe('Online only');
   });
 });
 

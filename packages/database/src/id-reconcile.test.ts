@@ -336,7 +336,7 @@ describe('startIdReconcile', () => {
       expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
       expect(enqueue).not.toHaveBeenCalled();
       expect(reSync).not.toHaveBeenCalled();
-      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/25 of 100.*allowMassDelete/));
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/25 products .*allowMassDelete/));
       stop();
     });
 
@@ -395,7 +395,7 @@ describe('startIdReconcile', () => {
       expect(await reconcileIds()).toEqual({ pages: 1, queued: 0, truncated: false, braked: true });
       expect(enqueue).not.toHaveBeenCalled();
       expect(reSync).not.toHaveBeenCalled();
-      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/5 of 5.*allowMassDelete/));
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/5 products .*allowMassDelete/));
       stop();
     });
 

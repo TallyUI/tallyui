@@ -11,19 +11,21 @@
 // - wcpos/v2/status answers healthy, missing_tables, schema_version and, when set, capabilities (#2113);
 // - a direct stock write (update_product_stock) changes stock_quantity without touching date_modified_gmt.
 //
+// Modelled (from the plugin code): POS visibility (woocommerce-pos: Pos_Visibility.php:181-189 on main, reached
+// through Collection_Rules_Plan.php:550). With pos_only_products on, online_only ids are appended to post__not_in
+// for the listing and subtracted from post__in for include= reads, and an all-hidden include= is pinned to [0]:
+// empty, never unfiltered. With the switch off nothing is hidden.
+//
 // Not modelled (check these against a real store):
-// 1. POS visibility: the fake returns products hidden from the POS; real WCPOS excludes online_only products from the
-//    listing (post__not_in) and from include= re-reads (subtracted from post__in, an all-hidden request pinned to empty)
-//    when pos_only_products is on (woocommerce-pos: Pos_Visibility.php, Collection_Rules_Plan.php:550).
-// 2. Pro store scopes: only the default visibility scope applies on v2 reads.
-// 3. Third-party filters on woocommerce_rest_product_object_query.
-// 4. The bulk-ID fast path (#2113): not modelled beyond the request shape.
-// 5. status=any excludes only trash here; WordPress also drops auto-draft and statuses the token cannot read.
-// 6. per_page is not capped at 100 or validated (WordPress answers 400), and X-WP-TotalPages is not sent.
-// 7. Requests without orderby (include= re-reads) come back in id order, not WordPress's default date order.
-// 8. The spring-forward gap is found at whole-hour offsets only; half-hour zones are not modelled.
-// 9. A fall-back (repeated) hour's local time is only what a test sets in date_modified.
-// 10. Variations, latency, rate limits and server errors are absent unless a test sets `respond`.
+// 1. Pro store scopes: only the default visibility scope applies on v2 reads.
+// 2. Third-party filters on woocommerce_rest_product_object_query.
+// 3. The bulk-ID fast path (#2113): not modelled beyond the request shape.
+// 4. status=any excludes only trash here; WordPress also drops auto-draft and statuses the token cannot read.
+// 5. per_page is not capped at 100 or validated (WordPress answers 400), and X-WP-TotalPages is not sent.
+// 6. Requests without orderby (include= re-reads) come back in id order, not WordPress's default date order.
+// 7. The spring-forward gap is found at whole-hour offsets only; half-hour zones are not modelled.
+// 8. A fall-back (repeated) hour's local time is only what a test sets in date_modified.
+// 9. Variations, latency, rate limits and server errors are absent unless a test sets `respond`.
 import { vi, expect } from 'vitest';
 import { addRxPlugin, createRxDatabase, type RxDatabase } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
@@ -92,6 +94,10 @@ export function createFakeStore(size: number, { total = true, filter = true, zon
     respond: (_url: URL): Response | undefined => undefined,
     /** wcpos/v2/status `capabilities`; undefined leaves the field out, as today's plugin does (#2113 adds it). */
     capabilities: undefined as string[] | undefined,
+    /** WCPOS's pos_only_products setting: when on, `onlineOnly` products are hidden from every v2 read. */
+    posOnlyProducts: false,
+    /** Ids marked online_only (Pos_Visibility::CATALOG). */
+    onlineOnly: new Set<number>(),
     row: (id: number) => store.rows.find((r) => r.id === id)!,
     /** An edit through WooCommerce: the modified time moves. */
     edit: (id: number, changes: Partial<FakeRow>, gmt: string) => Object.assign(store.row(id), changes, at(gmt, zone)),
@@ -108,6 +114,12 @@ export function createFakeStore(size: number, { total = true, filter = true, zon
       const params = url.searchParams;
       const status = params.get('status') ?? 'any';
       const include = params.get('include')?.split(',').map(Number);
+      // Pos_Visibility (see the header): hidden ids leave post__in, an all-hidden post__in is pinned to [0], and a
+      // listing gets them in post__not_in.
+      const hidden = store.posOnlyProducts ? store.onlineOnly : new Set<number>();
+      const visible = include?.filter((id) => !hidden.has(id));
+      const postIn = visible && (visible.length ? visible : [0]);
+      const postNotIn = include ? [] : [...hidden];
       const sent = filter && params.get('dates_are_gmt') === 'true' ? params.get('modified_after') ?? '' : '';
       const after = !sent ? '' : /(Z|[+-]\d{2}:\d{2})$/.test(sent) ? localDigits(digits(Date.parse(sent)), zone)
         : inGap(sent, zone) ? digits(Date.parse(`${sent}Z`) + HOUR) : sent;
@@ -115,7 +127,7 @@ export function createFakeStore(size: number, { total = true, filter = true, zon
       const byId = params.get('orderby') !== 'modified';
       const window = store.rows
         .filter((r) => (status === 'any' ? r.status !== 'trash' : r.status === status))
-        .filter((r) => !include || include.includes(r.id))
+        .filter((r) => (!postIn || postIn.includes(r.id)) && !postNotIn.includes(r.id))
         .filter((r) => !sent || (r.date_modified_gmt > after && !store.overExclude(r)))
         .filter((r) => !fields || Boolean(include) || !store.listingDrops(r))
         .sort((a, b) => (byId ? a.id - b.id : b.date_modified.localeCompare(a.date_modified)));
