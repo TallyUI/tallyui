@@ -65,9 +65,11 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const now = options.now ?? Date.now;
   const state$ = new BehaviorSubject<OutboxState>({ pending: 0, sending: false });
   const backendNotFound = options.backendNotFound ?? createBackendNotFound();
-  backendNotFound.backendMissing$.subscribe((backendMissing) => {
+  let missingSubscription: Subscription | undefined; // stop() lets go of the (maybe shared) tracker; start() and flush() take it up again
+  const watchBackendMissing = () => missingSubscription ??= backendNotFound.backendMissing$.subscribe((backendMissing) => {
     if (backendMissing !== state$.value.backendMissing) state$.next({ ...state$.value, backendMissing });
   });
+  watchBackendMissing();
   const attempts = new Map<string, number>();
   let backoff = initialBackoff;
   let unauthorizedSinceAccepted = 0;
@@ -396,6 +398,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   function flush(): Promise<void> {
     if (running) return running;
     stopped = false;
+    watchBackendMissing();
     clearTimeout(timer);
     timer = undefined;
     running = Promise.resolve().then(run).finally(async () => {
@@ -445,6 +448,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     },
     start() {
       stopped = false;
+      watchBackendMissing();
       if (!subscription) subscription = collection.$.subscribe((event) => {
         // An UPDATE without previousDocumentData counts as a change: a needless send costs a request, a skipped one a sale.
         if (event.documentData?.syncStatus === 'pending' && (event.operation === 'INSERT' || event.operation === 'UPDATE' &&
@@ -461,6 +465,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       timer = undefined;
       subscription?.unsubscribe();
       subscription = undefined;
+      missingSubscription?.unsubscribe(); missingSubscription = undefined;
       state$.next({ ...state$.value, nextAttemptAt: undefined });
     },
   };

@@ -45,9 +45,11 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   const now = options.now ?? Date.now;
   const state$ = new BehaviorSubject<OutboxState>({ pending: 0, sending: false });
   const backendNotFound = options.backendNotFound ?? createBackendNotFound();
-  backendNotFound.backendMissing$.subscribe((backendMissing) => {
+  let missingSubscription: Subscription | undefined; // stop() lets go of the (maybe shared) tracker; start() and flush() take it up again
+  const watchBackendMissing = () => missingSubscription ??= backendNotFound.backendMissing$.subscribe((backendMissing) => {
     if (backendMissing !== state$.value.backendMissing) state$.next({ ...state$.value, backendMissing });
   });
+  watchBackendMissing();
   const attempts = new Map<string, number>();
   let backoff = initialBackoff;
   let unauthorizedSinceAccepted = 0;
@@ -160,6 +162,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   function flush(): Promise<void> {
     if (running) return running;
     stopped = false;
+    watchBackendMissing();
     clearTimeout(timer);
     timer = undefined;
     running = Promise.resolve().then(run).finally(async () => {
@@ -175,6 +178,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
     flush,
     start() {
       stopped = false;
+      watchBackendMissing();
       if (!subscription) subscription = collection.$.subscribe((event) => {
         if (event.documentData?.syncStatus === 'pending' &&
           (event.operation === 'INSERT' || event.operation === 'UPDATE')) {
@@ -190,6 +194,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
       timer = undefined;
       subscription?.unsubscribe();
       subscription = undefined;
+      missingSubscription?.unsubscribe(); missingSubscription = undefined;
       state$.next({ ...state$.value, nextAttemptAt: undefined });
     },
   };
