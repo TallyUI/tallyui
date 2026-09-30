@@ -136,9 +136,48 @@ describe('order outbox', () => {
       await outbox.flush();
       expect(write).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn', scope: 'outbox',
         message: 'Sent an order at a lower order.create version', data: { orderId: inputs[0].id, from: 3, to: 1 } }));
-      expect(write).toHaveBeenCalledWith(expect.objectContaining({ level: 'error', scope: 'outbox',
-        message: 'This sale needs order.create version 2; the server supports up to 1.', data: { orderId: inputs[1].id } }));
+      expect(write).toHaveBeenCalledWith(expect.objectContaining({ level: 'error', scope: 'outbox', message: 'Order refused by the store',
+        data: { orderId: inputs[1].id, code: 'unsupported_version', message: 'This sale needs order.create version 2; the server supports up to 1.' } }));
+      expect(write.mock.calls.filter(([entry]) => entry.message === 'Order refused by the store')).toHaveLength(1);
     } finally { outboxLogger.removeSink('fallback-capture'); }
+  });
+
+  it("logs every other refusal's code and the store's message once, as a warning (#269)", async () => {
+    const inputs = [order(0), order(1)];
+    await collection.bulkInsert(inputs);
+    const warn = vi.spyOn(outboxLogger, 'warn');
+    const error = vi.spyOn(outboxLogger, 'error');
+    try {
+      const { outbox, send } = setup();
+      send.mockResolvedValueOnce({ kind: 'results', results: [
+        { id: inputs[0].commandId, status: 'rejected', error: { code: 'insufficient_stock', message: 'Only 0 of SKU0 left' } },
+        { id: inputs[1].commandId, status: 'applied', serverRefs: { orderId: 'server-1', totalMinor: 101 } },
+      ] });
+      await outbox.flush();
+      expect((await collection.findOne(inputs[0].id).exec())!.syncStatus).toBe('rejected');
+      expect(warn.mock.calls.filter(([message]) => message === 'Order refused by the store'))
+        .toEqual([['Order refused by the store', { orderId: inputs[0].id, code: 'insufficient_stock', message: 'Only 0 of SKU0 left' }]]);
+      expect(error).not.toHaveBeenCalled();
+    } finally { warn.mockRestore(); error.mockRestore(); }
+  });
+
+  it("caps the store's message in the refusal log at 200 characters, and logs a short one unchanged (#269 review)", async () => {
+    const inputs = [order(0), order(1)];
+    await collection.bulkInsert(inputs);
+    const [long, short] = ['x'.repeat(300), 'Only 0 of SKU1 left'];
+    const warn = vi.spyOn(outboxLogger, 'warn');
+    try {
+      const { outbox, send } = setup();
+      send.mockResolvedValueOnce({ kind: 'results', results: [
+        { id: inputs[0].commandId, status: 'rejected', error: { code: 'insufficient_stock', message: long } },
+        { id: inputs[1].commandId, status: 'rejected', error: { code: 'insufficient_stock', message: short } },
+      ] });
+      await outbox.flush();
+      expect(warn.mock.calls.filter(([message]) => message === 'Order refused by the store')).toEqual([
+        ['Order refused by the store', { orderId: inputs[0].id, code: 'insufficient_stock', message: 'x'.repeat(200) }],
+        ['Order refused by the store', { orderId: inputs[1].id, code: 'insufficient_stock', message: short }],
+      ]);
+    } finally { warn.mockRestore(); }
   });
 
   it.each([0, 2.5, -1])('an invalid app max (0, 2.5, -1) never downgrades or stalls: %s', async (max) => {

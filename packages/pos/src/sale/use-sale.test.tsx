@@ -1172,7 +1172,9 @@ describe('complete() is idempotent for one tender', () => {
       expect(await stored()).toEqual([requeued]);
       const commands = transport.mock.calls.flatMap(([batch]) => batch.map((command) => command.id));
       expect(commands.filter((id) => id === requeued.commandId)).toHaveLength(1);
-      expect(logged).toEqual([expect.objectContaining({ level: 'warn',
+      // The first send's refusal goes to the sync log too (#269).
+      expect(logged).toEqual([expect.objectContaining({ level: 'warn', message: 'Order refused by the store',
+        data: { orderId: first.id, code: 'unknown_variant', message: 'gone' } }), expect.objectContaining({ level: 'warn',
         data: { orderId: first.id, storedCommandId: requeued.commandId, recordedCommandId: first.commandId } })]);
     } finally {
       outboxLogger.removeSink('requeue-retry-capture');
