@@ -92,15 +92,23 @@ export function createReconcileFeed<Doc = any>(
             const fetched = toFetch.length ? await fetch(toFetch, context) : [];
             const byKey = new Map(fetched.map((doc) => [docKey(doc), doc]));
             const byRemote = keyed?.remote && new Map(fetched.map((doc) => [keyed.remote!(doc), doc]));
+            const pushed = new Set<Doc>();
             for (const entry of chunk) {
               const doc = entry.tombstone ? undefined : byKey.get(keyOf(entry))
                 ?? (entry.local === undefined && entry.remote !== undefined && byRemote ? byRemote.get(entry.remote) : undefined);
+              // The backend primary key changed (a WCPOS uuid reassigned, #331): the old copy goes and the current one arrives.
+              const moved = !entry.tombstone && !doc && entry.local !== undefined && entry.remote !== undefined && byRemote
+                ? byRemote.get(entry.remote) : undefined;
+              const fetchedDoc = doc ?? moved;
               // A fetched document keeps a `_deleted` the connector set (an unpublished product, #248).
-              if (doc) documents.push({ ...doc, _deleted: (doc as { _deleted?: boolean })._deleted ?? false });
+              if (fetchedDoc && !pushed.has(fetchedDoc)) {
+                documents.push({ ...fetchedDoc, _deleted: (fetchedDoc as { _deleted?: boolean })._deleted ?? false });
+                pushed.add(fetchedDoc);
+              }
               // A refreshOnly entry (the fingerprint path) is skipped, not tombstoned, when the
               // product is missing: only the id reconcile's braked entries may delete (ADR-060).
               // An entry with no local copy has nothing to delete.
-              else if (!entry.refreshOnly && entry.local) documents.push({ ...entry.local, _deleted: true });
+              if (!doc && !entry.refreshOnly && entry.local) documents.push({ ...entry.local, _deleted: true });
             }
           }
           return { documents, checkpoint: { n: (lastCheckpoint?.n ?? 0) + 1 } };

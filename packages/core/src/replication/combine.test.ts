@@ -3,7 +3,7 @@ import { of } from 'rxjs';
 import type { ReplicationAdapter } from '../types';
 import { combinePullAdapters } from './combine';
 
-type Doc = { id: string; from?: string; _deleted: boolean };
+type Doc = { id: string; uuid?: string; from?: string; _deleted: boolean };
 const context = { connectorId: 'test', baseUrl: 'https://test', headers: {} };
 const docs = (from: number, count: number, tag = '') =>
   Array.from({ length: count }, (_, i) => ({ id: String(from + i), from: tag, _deleted: false }));
@@ -151,6 +151,18 @@ describe('combinePullAdapters', () => {
     const b = fake({ documents: docs(2, 3, 'b') });
     const { documents } = await combinePullAdapters({ a: a.adapter, b: b.adapter }).pull.handler(undefined, 100, context);
     expect(Object.fromEntries(documents.map((d) => [d.id, d.from]))).toEqual({ 1: 'a', 2: 'b', 3: 'b', 4: 'b' });
+  });
+
+  it('keeps different uuids sharing an id and resolves duplicate uuids last-wins with key', async () => {
+    const newProduct = { id: '12', uuid: 'u12-new', _deleted: false };
+    const oldTombstone = { id: '12', uuid: 'u12', _deleted: true };
+    const earlier = { id: '13', uuid: 'u13', from: 'a', _deleted: false };
+    const later = { id: '13', uuid: 'u13', from: 'b', _deleted: false };
+    const a = fake({ documents: [newProduct, earlier] });
+    const b = fake({ documents: [oldTombstone, later] });
+    const { documents } = await combinePullAdapters({ a: a.adapter, b: b.adapter }, { key: (doc) => doc.uuid })
+      .pull.handler(undefined, 100, context);
+    expect(documents).toEqual([newProduct, later, oldTombstone]);
   });
 
   it('runs sub-handlers strictly in sequence', async () => {
