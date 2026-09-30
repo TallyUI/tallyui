@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ConnectorUnauthorizedError } from '@tallyui/core';
+import { ConnectorUnauthorizedError, errorKind } from '@tallyui/core';
 
 it('exports ConnectorUnauthorizedError with the unauthorized code', () => {
   const error = new ConnectorUnauthorizedError('Expired token', 401);
@@ -8,5 +8,12 @@ it('exports ConnectorUnauthorizedError with the unauthorized code', () => {
   expect(error.message).toBe('Expired token');
   expect(error.code).toBe('unauthorized');
   expect(error.status).toBe(401);
-  expect(new ConnectorUnauthorizedError('Forbidden').status).toBeUndefined();
+  expect(errorKind(error)).toBe('till');
+});
+
+it('exposes forbidden as status 403', () => {
+  const error = new ConnectorUnauthorizedError('Forbidden', 403);
+  expect(error.status).toBe(403);
+  expect(error.code).toBe('forbidden');
+  expect(errorKind(error)).toBe('store');
 });

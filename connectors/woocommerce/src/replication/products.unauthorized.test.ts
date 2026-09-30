@@ -16,7 +16,7 @@ it.each([401, 403])('rejects the product pull with ConnectorUnauthorizedError (H
   vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('Unauthorized', { status }));
   const result = wooProductReplication.pull.handler(undefined, 100, context);
   await expect(result).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
-  await expect(result).rejects.toMatchObject({ code: 'unauthorized', status });
+  await expect(result).rejects.toMatchObject({ code: status === 403 ? 'forbidden' : 'unauthorized', status });
   await expect(result).rejects.toThrow(`WooCommerce API error: ${status}`);
 });
 

@@ -14,6 +14,10 @@ const PULL_NOTICE_TEXT: Record<string, PullNoticeText> = {
     line: () => "Products aren't updating: this till needs to sign in to the online store again.",
     detail: () => 'You can keep selling. Products, prices and stock stay as they were until someone signs in again.',
   },
+  forbidden: {
+    line: () => "Products aren't updating: your account isn't allowed to do this on this store.",
+    detail: () => 'You can keep selling. Ask the store owner.',
+  },
   till_update_required: {
     line: () => "Products aren't updating: this till needs updating.",
     detail: () => 'You can keep selling. Products, prices and stock stay as they were until this till is updated.',

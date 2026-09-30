@@ -70,7 +70,7 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
         );
         if (!markResponse.ok) {
           const error = await markResponse.json().catch(() => ({}));
-          if (markResponse.status === 401 || markResponse.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${markResponse.status}${error?.message ? `: ${error.message}` : ''}`, markResponse.status);
+          if (markResponse.status === 401 || markResponse.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${markResponse.status}${error?.message ? `: ${error.message}` : ''}`, markResponse.status as 401 | 403);
           throw new Error(`Medusa API error: ${markResponse.status}${error?.message ? `: ${error.message}` : ''}`);
         }
         const markData = await markResponse.json();
@@ -107,7 +107,7 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status);
+        if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status as 401 | 403);
         throw new Error(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`);
       }
 

@@ -55,7 +55,9 @@ describe('readVendureCapabilities', () => {
 
   it('throws ConnectorUnauthorizedError on a 403 when the session is signed out (#279)', async () => {
     const spy = stubFetch(() => json({}, 403));
-    await expect(read()).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+    const result = read();
+    await expect(result).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+    await expect(result).rejects.toMatchObject({ status: 401 });
     expect(spy).toHaveBeenCalledTimes(2);
     expect(spy.mock.calls[1]![1]!.headers).toMatchObject({ Authorization: 'Bearer tok' });
   });

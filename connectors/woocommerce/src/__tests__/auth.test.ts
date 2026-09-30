@@ -64,7 +64,7 @@ describe('woocommerceConnector.auth', () => {
       name: 'WooMissingTokenError',
       message: 'WooCommerce credentials have no WCPOS access token: sign in again',
       code: 'unauthorized',
-      status: undefined,
+      status: 401,
     }));
   });
 

@@ -21,7 +21,7 @@ const MAX_STORE_MESSAGE = 200;
 export async function checkResponse(response: Response) {
   if (response.ok) return;
   if (response.status === 401 || response.status === 403) {
-    throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status);
+    throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status as 401 | 403);
   }
   if (response.status === 426) {
     // Only the plugin's own gate means the till needs updating; any other 426 is retried as transient, with the store's message.

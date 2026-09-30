@@ -81,7 +81,7 @@ export async function gql(
   if (!res.ok) {
     const body = await res.json().catch(() => undefined) as GqlBody | undefined;
     const message = body?.errors?.[0]?.message;
-    if (res.status === 401 || res.status === 403) throw new ConnectorUnauthorizedError(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`, res.status);
+    if (res.status === 401 || res.status === 403) throw new ConnectorUnauthorizedError(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`, res.status as 401 | 403);
     throw new Error(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`);
   }
   const body = await res.json() as GqlBody;

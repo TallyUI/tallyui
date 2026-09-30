@@ -28,7 +28,8 @@ export async function readVendureCapabilities(
   }
   if (res.status === 401 || res.status === 403) {
     const out = await signedOut({ connectorId: 'vendure', baseUrl, headers, signal: init.signal });
-    if (out === true) throw new ConnectorUnauthorizedError(`Vendure refused ${CAPABILITIES_PATH}: the session is signed out`, res.status);
+    // The probe confirms sign-out; the route's 403 also covers missing permissions.
+    if (out === true) throw new ConnectorUnauthorizedError(`Vendure refused ${CAPABILITIES_PATH}: the session is signed out`, 401);
     if (out === false) throw new Error(`Vendure refused ${CAPABILITIES_PATH} although the session is signed in: the CreateOrder permission is missing (HTTP ${res.status})`);
     return undefined;
   }

@@ -124,7 +124,8 @@ describe('CustomerPicker', () => {
     { name: 'a network error shows the network message', error: new CustomerServiceError('network', 'offline'), message: "Couldn't reach the store. Try again.", report: false },
     { name: "a server error shows a generic message, never the backend's text", error: new CustomerServiceError('server', 'HTTP 500'), message: "The store couldn't do that. Try again.", report: false },
     { name: "an invalid error shows the backend's reason", error: new CustomerServiceError('invalid', 'Email already in use'), message: 'Email already in use', report: false },
-    { name: 'an unauthorized error asks to sign in again and reaches onError', error: new ConnectorUnauthorizedError('expired credentials'), message: 'Sign in again to continue.', report: true },
+    { name: 'an unauthorized error asks to sign in again and reaches onError', error: new ConnectorUnauthorizedError('expired credentials', 401), message: 'Sign in again to continue.', report: true },
+    { name: 'a forbidden error asks the cashier to contact the store owner and reaches onError', error: new ConnectorUnauthorizedError('not allowed', 403), message: "Your account isn't allowed to do this on this store. Ask the store owner.", report: true },
     { name: 'an unknown error shows a generic message and reaches onError', error: new Error('boom'), message: 'Something went wrong. Try again.', report: true },
   ])('$name', async ({ error, message, report }) => {
     for (const source of ['search', 'create']) {
