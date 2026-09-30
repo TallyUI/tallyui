@@ -3862,11 +3862,15 @@ interface OrderCreatePayload {
   - "A declared field is honoured or refused, never ignored" governs
     instruction fields, those that ask the server to do something
     different (where stock comes from, which customer, which price).
-    Informational fields, the till's own record (`title`,
-    `subtotalMinor`, `taxMinor`, `deviceId`, `attempt`), may be
-    disregarded by a server and are never a reason to refuse a till. The
-    contract lists each declared field with its kind; a new field states
-    its kind when it is added.
+    Informational fields are the till's own record (`title`,
+    `subtotalMinor`, `taxMinor`, `deviceId`, `attempt`). A server may
+    leave them unused, and never refuses a command because they differ
+    from its own computation. A command whose own figures contradict each
+    other is malformed and is refused as `invalid_payload` (version 3:
+    `taxMinor` against `display.taxMinor` and the `taxByRate` sum); that
+    is a check of the command, not of the server's view of it. The
+    contract will list each declared field with its kind (#262); a new
+    field states its kind when it is added.
   - For money the server's computation is authoritative; what a backend
     does when the till's amounts differ from its own is stated per
     backend, from its code today, with an issue cited where a difference
