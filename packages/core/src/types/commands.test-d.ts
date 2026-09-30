@@ -37,7 +37,7 @@ describe('command types', () => {
   });
 
   it('defines the warning codes', () => {
-    expectTypeOf<CommandWarning['code']>().toEqualTypeOf<'total_mismatch' | 'insufficient_stock' | 'tax_rate_mismatch'>();
+    expectTypeOf<CommandWarning['code']>().toEqualTypeOf<'total_mismatch' | 'insufficient_stock' | 'tax_rate_mismatch' | 'customer_ignored'>();
   });
 
   it('pins bridgeMinor as optional on total_mismatch', () => {

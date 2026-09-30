@@ -219,6 +219,13 @@ describe('OrdersList', () => {
     expect(screen.getAllByText(expected)).toHaveLength(2);
   });
 
+  it('renders a customer_ignored as a guest sale naming the id', () => {
+    const warned = order('w', { syncStatus: 'applied', warnings: [{ code: 'customer_ignored', customerId: 'cus_1' }] });
+    render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
+    const expected = "Customer cus_1 wasn't found in the store; the sale was kept as a guest sale.";
+    expect(screen.getAllByText(expected)).toHaveLength(2);
+  });
+
   it('renders the rounding line for a total_mismatch with a positive bridgeMinor', () => {
     const warned = order('w', { syncStatus: 'applied',
       warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: 5 }] });

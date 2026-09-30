@@ -63,6 +63,25 @@ describe('knownWarnings', () => {
     expect(knownWarnings([warning])).toEqual([warning]);
   });
 
+  it('keeps a customer_ignored warning', () => {
+    const warning = { code: 'customer_ignored', customerId: 'cus_1' };
+    expect(knownWarnings([warning])).toEqual([warning]);
+  });
+
+  it('keeps a customer_ignored without its extra reason', () => {
+    const warning = { code: 'customer_ignored', customerId: 'cus_1', reason: 'unknown' };
+    expect(knownWarnings([warning])).toEqual([{ code: 'customer_ignored', customerId: 'cus_1' }]);
+  });
+
+  it.each(['', 'c'.repeat(65), 1, null, undefined])('drops a customer_ignored with customerId %j', (customerId) => {
+    expect(knownWarnings([{ code: 'customer_ignored', customerId }])).toEqual([]);
+  });
+
+  it('keeps a customer_ignored with a 64-character customerId', () => {
+    const warning = { code: 'customer_ignored', customerId: 'c'.repeat(64) };
+    expect(knownWarnings([warning])).toEqual([warning]);
+  });
+
   it('strips extra fields', () => {
     const warning = { code: 'insufficient_stock', variantId: 'blue', quantity: 1, extra: 'nope' };
     expect(knownWarnings([warning])).toEqual([{ code: 'insufficient_stock', variantId: 'blue', quantity: 1 }]);

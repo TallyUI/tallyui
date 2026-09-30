@@ -38,9 +38,9 @@ references (a customer unknown, or in another channel) never holds the
 sale: the sale is kept as a guest sale with a `customer_ignored` warning
 naming the id, because a sale stuck in an outbox for days is worse.
 
-`customer_ignored` is not yet one of `CommandWarning`'s codes in
-`@tallyui/core`: until it is, a till reading warnings through
-`knownWarnings` drops it (#266). A warning never rejects a sale.
+`customer_ignored` is one of `CommandWarning`'s codes in `@tallyui/core`
+(#266): `{ code: 'customer_ignored'; customerId: string }`, the id the
+till sent (1 to 64 characters). A warning never rejects a sale.
 
 ## Reading the tables
 
@@ -138,8 +138,7 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
   computation.
 - `payload.customer` absent or `null` is the walk-in customer (ADR-038).
   An unknown `customerId` is one sale's own reference, so the sale is kept
-  as a guest sale with `customer_ignored`, never refused (the warning in
-  core is #266).
+  as a guest sale with `customer_ignored`, never refused.
 - `payload.sessionId` is the session the server's register figures count
   the sale in (ADR-068 decision 13), and `payload.registerId` is the
   till's device id, never the drawer (ADR-068 decision 7a). A server

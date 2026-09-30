@@ -58,7 +58,12 @@ export type CommandWarning =
        * rate and `serverMinor` the platform's tax for it.
        */
       code: 'tax_rate_mismatch'; ratePpm: number; expectedMinor: number; serverMinor: number;
-    };
+    }
+  /**
+   * The sale's `customerId` (1 to 64 characters) didn't resolve, so the sale was kept as a guest
+   * sale rather than held (ADR-070).
+   */
+  | { code: 'customer_ignored'; customerId: string };
 
 /** Error reported when a command is rejected. */
 export interface CommandError {
