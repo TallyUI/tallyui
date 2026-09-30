@@ -171,6 +171,7 @@ startReplication({
   live: true,         // Keep syncing after initial pull (default: true)
   retryTime: 5000,    // Retry interval on error in ms (default: 5000)
   autoStart: true,    // Start immediately (default: true)
+  maxRetryTimeMs: 300000, // Backoff ceiling and store-error wait (default: 5 minutes)
 });
 ```
 
@@ -185,26 +186,52 @@ Returns a `TallyReplicationState`: RxDB's `RxReplicationState` with `notice$` an
 | `cancel()` | Stop replication |
 | `awaitInSync()` | Promise that resolves when fully synced |
 | `reSync()` | Trigger an immediate sync cycle |
-| `notice$` | Observable: a `SyncNotice` (`{ code, since }`) after a permanent pull error, otherwise `undefined` |
-| `resume()` | Clear the notice and the backoff, and pull again from the stored checkpoint |
+| `notice$` | Observable: a `SyncNotice` while a till or store error stops the pull (see Errors), otherwise `undefined` |
+| `resume()` | Clear the notice, the backoff and the error gates, and pull again from the stored checkpoint |
 
 ### Errors
 
-A pull error is either permanent or transient.
+A pull error falls in one of three classes, by who can fix it.
+`errorKind(error)` from `@tallyui/core` returns `'till'` or `'store'` when
+the error's class sets `fixedBy` to that value and a string `code`, and
+`'transient'` for anything else.
 
-- **Permanent:** the error has `permanent === true` and a string `code`
-  (`isPermanentError` from `@tallyui/core`). `ConnectorUnauthorizedError`
-  (`code: 'unauthorized'`) is one. The pull makes that one request, sets
-  `notice$` to `{ code, since }` once, and pauses. It is not retried,
-  `reSync()` does nothing, and the error does not appear on `error$`. Call
-  `resume()` once the cause is fixed (after sign-in, say); an app restart
-  starts afresh anyway. Show the notice with `SyncStatus`'s `pullNotice`
-  prop, which turns the code into words for the cashier.
-- **Transient:** anything else, such as network errors, timeouts, 5xx and
-  429. RxDB emits it on `error$` and retries. The wait starts at
-  `retryTime`, doubles after each consecutive failure up to 5 minutes, and
-  goes back to `retryTime` after a successful pull. If the error has a
-  numeric `retryAfterMs`, the wait is at least that long.
+| Class | Who fixes it | Errors | What the pull does |
+|-------|--------------|--------|--------------------|
+| Till | the till: someone signs in | `ConnectorUnauthorizedError` (`unauthorized`) | Stops until `resume()` |
+| Store | the store owner, elsewhere | `WooDateFilterError` (`unsupported_store`), `WooMissingUuidError` (`missing_plugin`), `VendureTimezoneConfigError` (`store_misconfigured`) | Retries every 5 minutes and recovers by itself |
+| Transient | nobody: it passes | anything without the marker: network errors, timeouts, 5xx, 429 | Retries with a doubling delay |
+
+- **Till:** the pull makes that one request, sets `notice$` once to
+  `{ code, since, fixedBy: 'till' }`, and pauses. The error does not
+  appear on `error$`. Until `resume()`, every pull returns an empty page
+  without a request, whatever restarts the loop: `reSync()`, `stream$`, or
+  RxDB's own `start()` when the page becomes visible again. Call
+  `resume()` after sign-in; an app restart starts afresh anyway.
+- **Store:** the pull sets `notice$` once to `{ code, since, fixedBy:
+  'store' }` (a repeat keeps the first `since`), emits the error on
+  `error$`, and waits 5 minutes (`maxRetryTimeMs`) before the next
+  request. It does not pause and does not wait longer each time. A pull
+  that runs sooner, for whatever reason, makes no request: it fails again
+  with the same error, and RxDB retries when the 5 minutes are up. The
+  first successful pull clears the notice and the backoff, so the till
+  recovers by itself within 5 minutes of the owner's fix. A transient
+  error in between leaves the notice in place.
+- **Transient:** RxDB emits it on `error$` and retries. The wait starts at
+  `retryTime`, doubles after each consecutive failure up to 5 minutes
+  (`maxRetryTimeMs`), and goes back to `retryTime` after a successful pull.
+
+An error may carry `retryAfterMs`, the server's own wait. It counts only
+as a finite number of at least 0; the wait is then at least that long, up
+to one hour (`MAX_RETRY_AFTER_MS`). A store error waits the longer of 5
+minutes and `retryAfterMs`, also up to one hour.
+
+The error's own `software`, `minVersion` and `fix` strings, when it has
+them, are copied onto the notice: `WooDateFilterError` names WooCommerce
+and 5.8, and `VendureTimezoneConfigError` gives the fix, running the
+server in UTC. Show the notice with `SyncStatus`'s `pullNotice` prop,
+which turns the code into words for the cashier and never shows the code
+itself.
 
 Push errors are retried by RxDB at a fixed `retryTime`, as before.
 

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { SyncContext } from '@tallyui/core';
+import { errorKind, type SyncContext } from '@tallyui/core';
 
 import { createVendureProductReplication, vendureProductReplication, toProductDocument, probeUpdatedAtSkew, type VendureProductCheckpoint } from './products';
-import { createVendureConnector } from '../index';
+import { createVendureConnector, VendureTimezoneConfigError } from '../index';
 import { vendureProductTraits } from '../traits/product';
 
 const context: SyncContext = {
@@ -325,6 +325,29 @@ describe('probeUpdatedAtSkew (backlog 31)', () => {
     let calls = 0;
     await expect(probeUpdatedAtSkew('2026-01-01T00:00:00.000Z', 0, async () => (calls++ === 0 ? 1 : 0)))
       .resolves.toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('the configuration throw, after a re-read of the mark, is a VendureTimezoneConfigError that the store fixes, with the same message', async () => {
+    const remark = vi.fn(async () => '2026-01-01T00:00:00.000Z');
+    const error = await probeUpdatedAtSkew('2026-01-01T00:00:00.000Z', 0, async () => 0, remark).catch((e: unknown) => e);
+    expect(remark).toHaveBeenCalledOnce();
+    expect(error).toBeInstanceOf(VendureTimezoneConfigError);
+    expect(errorKind(error)).toBe('store');
+    expect(error).toMatchObject({
+      name: 'VendureTimezoneConfigError',
+      code: 'store_misconfigured',
+      fixedBy: 'store',
+      fix: 'run the Vendure server with its time zone set to UTC',
+      message: 'Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.',
+    });
+  });
+
+  it('without a re-read (the variant feed) the same condition throws a plain Error, which stays transient', async () => {
+    const error = await probeUpdatedAtSkew('2026-01-01T00:00:00.000Z', 0, async () => 0).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(VendureTimezoneConfigError);
+    expect(errorKind(error)).toBe('transient');
+    expect((error as Error).message).toBe('Vendure updatedAt filters miss changes: run Vendure with TZ=UTC or set updatedAtSkewMs to at least the magnitude of the server UTC offset in milliseconds.');
   });
 });
 

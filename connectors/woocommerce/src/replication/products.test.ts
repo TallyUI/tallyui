@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isPermanentError, type SyncContext } from '@tallyui/core';
+import { errorKind, type SyncContext } from '@tallyui/core';
 
 import { woocommerceConnector, WooDateFilterError, WooMissingUuidError } from '../index';
 import { wooProductSync } from '../sync/products';
@@ -580,14 +580,16 @@ describe('wooProductReplication.pull.handler', () => {
     expect(result.checkpoint).toEqual({ modified: checkpoint.modified, offset: 2, pass_mark: '2026-01-02T08:00:00', pass_count: 3 });
   });
 
-  it('WooDateFilterError is a permanent error', () => {
+  it('WooDateFilterError is fixed by the store, and names the software and version it needs', () => {
     const error = new WooDateFilterError(1, 'b', 'r');
-    expect(isPermanentError(error)).toBe(true);
-    expect(error.code).toBe('unsupported_store');
+    expect(errorKind(error)).toBe('store');
+    expect(error).toMatchObject({ code: 'unsupported_store', fixedBy: 'store', software: 'WooCommerce', minVersion: '5.8' });
+    expect(error.message).toBe('This store needs WooCommerce 5.8 or later to sync products.');
   });
 
-  // Today's choice, pinned: the front desk may make it permanent later.
-  it('WooMissingUuidError is not a permanent error', () => {
-    expect(isPermanentError(new WooMissingUuidError(1))).toBe(false);
+  it('WooMissingUuidError is fixed by the store, with the missing_plugin code', () => {
+    const error = new WooMissingUuidError(1);
+    expect(errorKind(error)).toBe('store');
+    expect(error).toMatchObject({ code: 'missing_plugin', fixedBy: 'store' });
   });
 });

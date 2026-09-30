@@ -96,3 +96,4 @@ export { vendureStoreSettings } from './store-settings';
 export { vendureGlobalStockSettings } from './global-settings';
 
 export { ConnectorUnauthorizedError } from '@tallyui/core';
+export { VendureTimezoneConfigError } from './replication/products';
