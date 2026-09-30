@@ -1,5 +1,107 @@
 # @tallyui/connector-woocommerce
 
+## 3.0.0-next.0
+
+### Minor Changes
+
+- [#315](https://github.com/TallyUI/tallyui/pull/315) [`457162d`](https://github.com/TallyUI/tallyui/commit/457162d04dcd3c6f588cdb6ab90efea36081f4df) Thanks [@kilbot](https://github.com/kilbot)! - **One reconcile feed per store session** (#307, a release gate). The WooCommerce and Medusa reconcile feeds were module-level singletons, so after a store switch in one runtime, store A's queued tombstones and refetches could reach store B's database.
+
+  - **New factories.** `createWooCommerceConnector()`, `createMedusaConnector()` and `createMedusaAdminUserConnector()` each build their own feed; `createVendureConnector(options)` already did. **Build a connector per store session**, anew on each sign-in or store change.
+  - **Deprecated exports.** `woocommerceConnector`, `medusaConnector`, `medusaAdminUserConnector` and `vendureConnector` are deprecated: one instance for the whole app can leak queued reconcile work across stores. **They are removed in 4.0.**
+  - **A development warning.** `startReplication` warns once when the same adapter object replicates into two collections at once.
+  - **Refetch budget by requests.** `refetchBatchSize` on the reconcile adapters makes a page that enqueues `n` refetches take `ceil(n / refetchBatchSize)` request-budget slots (WooCommerce 100, Medusa 100, Vendure 1,000).
+  - **WooCommerce 426 errors.** A foreign (non-WCPOS) 426 keeps the store's `code` beside its message, and the message is capped at 200 characters.
+
+- [#259](https://github.com/TallyUI/tallyui/pull/259) [`ce4f796`](https://github.com/TallyUI/tallyui/commit/ce4f796aff7c739cb555b61f9a167cc803d8b5c2) Thanks [@kilbot](https://github.com/kilbot)! - Replication pull errors are handled according to who can fix them, instead of every error being retried every 5 s forever. A till repeating a rejected token is the traffic a store's security plugin blocks.
+
+  - `@tallyui/core`:
+    - An error class declares `fixedBy: 'till' | 'store'` with a string `code`; `errorKind(error)` returns `'till'`, `'store'` or `'transient'`.
+    - `SyncNotice` (`{ code, since, fixedBy, software?, minVersion?, fix? }`) describes a stopped pull.
+    - `ConnectorUnauthorizedError` is fixed by the till.
+  - `@tallyui/database` `startReplication` handles the three kinds and returns RxDB's state plus `notice$` and `resume()`:
+    - **till:** one request, one notice, then the pull stays stopped until the app calls `resume()`, after sign-in. The pull stays stopped even when RxDB restarts the loop on page visibility.
+    - **store:** one notice, then one attempt every 5 minutes (or the error's `retryAfterMs`, up to 1 hour). The notice clears itself on the first success, so a till recovers within 5 minutes of the owner's fix.
+    - **transient:** a doubling delay from `retryTime` to 5 minutes. It waits at least a valid `retryAfterMs` (a finite number of zero or more), capped at 1 hour.
+  - `@tallyui/components`: `SyncStatus` takes an optional `pullNotice` and tells the cashier in plain words that they can keep selling and who needs to act. It never shows a code, a backend name or a version the notice doesn't carry.
+  - `@tallyui/connector-woocommerce`:
+    - `WooDateFilterError` is fixed by the store, and carries `software` and `minVersion`.
+    - `WooMissingUuidError` gains `code: 'missing_plugin'` and is fixed by the store.
+  - `@tallyui/connector-vendure`: a new `VendureTimezoneConfigError` (`store_misconfigured`, with a plain `fix`) replaces the plain error when the `updatedAt` probe shows a server that isn't in UTC.
+
+- [#228](https://github.com/TallyUI/tallyui/pull/228) [`ad18929`](https://github.com/TallyUI/tallyui/commit/ad1892916f57a79de120371d9d3450ae1fe8c907) Thanks [@kilbot](https://github.com/kilbot)! - The WooCommerce connector names its auth failures, so the app can tell "sign in again" apart from "store broken": a 401 or 403 from the product pull rejects with `ConnectorUnauthorizedError` (re-exported from the connector, as Medusa does), and `auth.getHeaders` without a WCPOS token throws `WooMissingTokenError`, a subclass of `ConnectorUnauthorizedError`, instead of sending `Bearer undefined`. Other HTTP errors keep their message and class.
+
+- [#305](https://github.com/TallyUI/tallyui/pull/305) [`136343c`](https://github.com/TallyUI/tallyui/commit/136343c74aaa647e4155c37b88f120cd406c68f1) Thanks [@kilbot](https://github.com/kilbot)! - The WooCommerce connector gets a daily reconciliation pass (#248, part B), a safety net for edits the incremental pull can miss: the spring-forward hour, an over-excluding filter, a same-second edit, a shift without `X-WP-Total`, trashed or unpublished products, and stock written without a modified-time bump.
+
+  - `reconcile.catalogue` lists the published catalogue with no date filter, comparing date, stock quantity and stock status. It re-reads deletion candidates by id and removes only those that are gone, trashed or unpublished. Everything else it re-pulls through the collection's own pull.
+  - `replication.products` now combines the product pull with the reconcile feed, with `legacyKey: 'products'`, so existing installs keep their checkpoint.
+  - A product the store cannot be asked about (no numeric id) is never deleted.
+  - The WCPOS bulk-ID fast path is read from `wcpos/v2/status` `capabilities` (`products_id_fast_path`). It stays dormant until wcpos/woocommerce-pos#2113 ships.
+  - `@tallyui/database`: the catalogue runner's gate check has a 60-second floor, so a bad interval can no longer re-arm it on every tick.
+
+- [#244](https://github.com/TallyUI/tallyui/pull/244) [`508876e`](https://github.com/TallyUI/tallyui/commit/508876eb9f9d5203628f00aa048dd8ef6aea2547) Thanks [@kilbot](https://github.com/kilbot)! - The WooCommerce connector now requires **WooCommerce 5.8 or later** (for `modified_after` on the products route; `dates_are_gmt` arrived in 5.4).
+
+  - **The GMT question goes to the store.** The product pull asks the store whether anything changed since the last pass, in GMT: the mark request sends `modified_after=<last mark>&dates_are_gmt=true`, and an empty answer ends the poll. Before, the pull compared the first row of a local-time sort, so in a daylight-saving fall-back hour an edit could wait until the next one.
+  - **Stores that ignore the filter are refused.** If a store returns a product outside the requested window (WooCommerce before 5.8, or a proxy that drops the parameter), the pull throws the new `WooDateFilterError` (`code: 'unsupported_store'`) instead of trusting it.
+  - **Dates carry no offset.** Dates are sent as GMT digits without an offset, because WordPress parses an offset-bearing date in the site's timezone before it compares it with the GMT column.
+  - The connector has a README.
+
+- [#226](https://github.com/TallyUI/tallyui/pull/226) [`3b206d6`](https://github.com/TallyUI/tallyui/commit/3b206d60649bf1cf998f3f0ecfd1378243bd4d79) Thanks [@kilbot](https://github.com/kilbot)! - The connector now authenticates with a WCPOS bearer token and the `X-WCPOS: 1` header against `<site>/wp-json/wcpos/v2` (WCPOS Free 1.10.0 or later); the consumer key and secret fields are removed; a pulled product without a uuid throws `WooMissingUuidError`.
+
+- [#299](https://github.com/TallyUI/tallyui/pull/299) [`cbf26fd`](https://github.com/TallyUI/tallyui/commit/cbf26fd25ae98e4289548d1ef556fefe272a4124) Thanks [@kilbot](https://github.com/kilbot)! - The WooCommerce connector sends WCPOS's protocol signal, so a WCPOS 2.0 store does not refuse it (#296). Every request carries `X-WCPOS-Protocol: 2` and `X-WCPOS-Client: tallyui/<connector version>`. WCPOS's 2.0 gate refuses POS-marked `wcpos/v2` requests without protocol 2, and protocol 2 is a pure declaration the connector already conforms to. The headers are harmless on WCPOS 1.x.
+
+  If a store still answers 426 (`wcpos_update_required`), the new `WooTillUpdateRequiredError` (`till_update_required`, fixed by the till) stops the product pull after one request. `SyncStatus` then tells the cashier: "Products aren't updating: this till needs updating."
+
+### Patch Changes
+
+- [#186](https://github.com/TallyUI/tallyui/pull/186) [`d225c58`](https://github.com/TallyUI/tallyui/commit/d225c5819954f7c3e91e0c9180cb634530304061) Thanks [@kilbot](https://github.com/kilbot)! - Internal `@tallyui/*` peer dependencies are published as a caret range (for example `^2.1.0`) instead of an exact version. The packages still release together at one version.
+
+- [#223](https://github.com/TallyUI/tallyui/pull/223) [`6673faf`](https://github.com/TallyUI/tallyui/commit/6673fafcc682e825c94cfc66932da07cabd24e35) Thanks [@kilbot](https://github.com/kilbot)! - RxDB 17.5.0.
+
+  - **`@tallyui/storage-sqlite`:**
+    - Its `rxdb-premium` peer is now `17.5.0`. Apps install `rxdb-premium@17.5.0` together with `rxdb@17.5.0`.
+    - Its storages set RxDB 17's premium flag at import and when called, so the 13-collection cap never applies.
+  - **`@tallyui/pos`:**
+    - Its `rxdb` peer is now `~17.5.0`.
+    - Opening `pos_orders` rejects with `PosOrderOpenClosedError` when the database closes during a migration: RxDB 17.5.0 cancels the migration on close. The open first waits for any write already in flight, so none reaches a closed store.
+    - An open that needs no migration resolves only once RxDB allows writes, so a sale saved straight after it is never refused with COL25.
+  - **`@tallyui/database`:**
+    - `createTallyDatabase` returns an RxDB 17 database.
+    - In development it adds RxDB's dev-mode plugin when a database is created, not at import.
+  - **Stored data:** a till's SQLite data written by RxDB 16.21.1 opens unchanged under 17.5.0, and migrates its schema versions.
+
+  **Upgrade notes**
+
+  - **Storage is one-way.** Once a till has opened this version, `pos_orders` is at schema version 4, and an older build
+    (such as `@tallyui/pos` 2.0.0 on RxDB 16.21.1) opens it without an error but shows no orders, so it sends none of the
+    pending ones until the till is upgraded again. Nothing is deleted: the next upgrade recovers every order, including a
+    sale rung during the rollback. Never roll an app back across this version, and never re-ring sales it hides: a
+    re-rung sale is a second sale, and the upgrade sends both. See ADR-069 in `docs/DECISIONS.md`.
+  - Web apps ship the 17.5.0 storage worker with the 17.5.0 main thread. A cached 16.x worker with a 17.5.0 main
+    thread is untested and unsupported.
+  - Apps pin `rxdb` and `rxdb-premium` to exactly `17.5.0`.
+  - RxDB 17 defaults a replication's `toggleOnDocumentVisible` to true (16.21.1: false). It then resyncs when the tab
+    becomes visible, and no longer simulates activity to keep a hidden tab awake, so a browser may throttle a hidden
+    tab's pull. RxDB pauses a hidden tab's replication only when that tab isn't the leader; a single-instance database
+    is always the leader (read in 17.5.0's `plugins/replication` source, not tested).
+
+- [#308](https://github.com/TallyUI/tallyui/pull/308) [`d9ecbb8`](https://github.com/TallyUI/tallyui/commit/d9ecbb83be8f73962192ef19d27edbdb191e5c38) Thanks [@kilbot](https://github.com/kilbot)! - Only WCPOS's own protocol gate counts as "this till needs updating" (#302):
+
+  - **The plugin's gate:** a 426 whose body carries `code: "wcpos_update_required"` still raises `WooTillUpdateRequiredError`.
+  - **Any other 426** (from a proxy or another plugin, or with no or another body) is now a transient error, retried with backoff, so it never tells a cashier to update the till.
+
+  The built connector now bundles only its version from `package.json`, not the whole file.
+
+- [#227](https://github.com/TallyUI/tallyui/pull/227) [`154e552`](https://github.com/TallyUI/tallyui/commit/154e5521faa6bce5b6cf7515eccabf2f423c2acc) Thanks [@kilbot](https://github.com/kilbot)! - The product pull sends `dates_are_gmt=true` with every `modified_after`, so WooCommerce compares the GMT checkpoint against `post_modified_gmt` instead of the store's local time; on a store west of UTC the next pull no longer skips edits made in between.
+
+- [#244](https://github.com/TallyUI/tallyui/pull/244) [`e0f0afb`](https://github.com/TallyUI/tallyui/commit/e0f0afbe00e23e00cd7d0cc8d6bf4338aff2611b) Thanks [@kilbot](https://github.com/kilbot)! - The WooCommerce product pull makes one request per quiet poll in two more cases: after the most recently edited product is trashed (the store's newest product is then older than the pull's lower bound; it was 3 requests), and on a store with no products (it was 4). The stored `restarts` counter is gone: every shrink of the window restarts the pass, bounded by the per-call request budget. A stored checkpoint that still carries `restarts` keeps working.
+
+- [#233](https://github.com/TallyUI/tallyui/pull/233) [`a0256e1`](https://github.com/TallyUI/tallyui/commit/a0256e100bec0a5139a84d15fef61ef51a3033f2) Thanks [@kilbot](https://github.com/kilbot)! - The product pull no longer skips products that share a `date_modified_gmt` second across a page boundary. It pulls in passes, like the Medusa connector: each pass fixes an inclusive lower bound (`modified_after` one second earlier), pages that window by product id with an offset, restarts if `X-WP-Total` drops between pages (after three restarts, a fresh pass starts in the same call), ends on a short or empty page when a proxy strips `X-WP-Total`, and moves the lower bound to the newest `date_modified_gmt` in the store when the pass began. Because RxDB does not store the checkpoint of a pull that returns no documents, the handler never carries state in an empty result: a pass that ends on an empty page chains into the next pass in the same call, and each call makes at most four requests. When nothing has changed since the last pass, the pull makes one small request and returns nothing. `WooProductCheckpoint` is now `{ modified, offset, pass_mark?, pass_count?, restarts? }`; a stored `{ id, modified }` checkpoint is read as the start of a pass.
+
+- [#229](https://github.com/TallyUI/tallyui/pull/229) [`b8aba84`](https://github.com/TallyUI/tallyui/commit/b8aba849b08dbdc90ed31f7dfe3e916e40f58616) Thanks [@kilbot](https://github.com/kilbot)! - The product pull marks every product whose `status` is not `publish` (draft, pending, private, or none) as `_deleted`, so RxDB removes it from the POS catalogue, and a product that is published again comes back. The pull still reads every status through the modified-date cursor and sends no `status` parameter, so a product that goes from published to draft is seen and removed rather than left on the till.
+
+- Updated dependencies [[`4de75c2`](https://github.com/TallyUI/tallyui/commit/4de75c2e844d53fdbccd40c4ad4d4004a0641f57), [`894b6ae`](https://github.com/TallyUI/tallyui/commit/894b6aec27fcc157e65e68fee1f8134ef201712f), [`04905ef`](https://github.com/TallyUI/tallyui/commit/04905efd0c23a77159ce0682ed34df4567896bf0), [`faa7cda`](https://github.com/TallyUI/tallyui/commit/faa7cda925c6ca52e47357bd09d920813051c62b), [`9f34416`](https://github.com/TallyUI/tallyui/commit/9f34416619db35733ef85d98b225be5c046d12d5), [`fb57e1d`](https://github.com/TallyUI/tallyui/commit/fb57e1d8d97c3e03603a3bcc49470ce73bdb3b6d), [`898e98b`](https://github.com/TallyUI/tallyui/commit/898e98ba31387bbece8b79c5c0cc50d27f8cd3af), [`75c5dce`](https://github.com/TallyUI/tallyui/commit/75c5dced41a1c99da03614304fc87adad4bc684c), [`ba63f04`](https://github.com/TallyUI/tallyui/commit/ba63f04ef725774ec762a34a619534abb3bf2339), [`0d04d13`](https://github.com/TallyUI/tallyui/commit/0d04d13eff8a3bf7aed7cf747464e145a74dea35), [`78d324e`](https://github.com/TallyUI/tallyui/commit/78d324edabe07b30953c7c0c4c1947455c544bb4), [`24b74fd`](https://github.com/TallyUI/tallyui/commit/24b74fdfe39198c124cac707c31106affd7cc93b), [`54ee98a`](https://github.com/TallyUI/tallyui/commit/54ee98a583d5543538fb0641aa322a87e5f8cfaf), [`27d736e`](https://github.com/TallyUI/tallyui/commit/27d736e4ad8cbba835de31fa8492af28d59deea1), [`e59ebec`](https://github.com/TallyUI/tallyui/commit/e59ebecfc580bc5bca706c8e37fc825281a88cef), [`2ecaa36`](https://github.com/TallyUI/tallyui/commit/2ecaa3661eae0ad8ec5d0ce3a344dc24262f387b), [`901fa66`](https://github.com/TallyUI/tallyui/commit/901fa666f4ab345bf07b2d6b38c6e5dc58596f39), [`bf2d805`](https://github.com/TallyUI/tallyui/commit/bf2d805334c83d4f20f408e185add336331de38e), [`ca0beac`](https://github.com/TallyUI/tallyui/commit/ca0beacdafb14f3b5cae7c7593de23ed82b0d2d5), [`af623c9`](https://github.com/TallyUI/tallyui/commit/af623c91f4c4469e9da9740fcea470ec33f6bc5f), [`ef2f64e`](https://github.com/TallyUI/tallyui/commit/ef2f64ec52c1f3048c603de92acab7685bed8fe8), [`5c90aed`](https://github.com/TallyUI/tallyui/commit/5c90aed083d8245e12a645aafa9c9e6a3e7bbc61), [`668f71f`](https://github.com/TallyUI/tallyui/commit/668f71f6cf06af4a41fe686e98546f25e2e191ee), [`457162d`](https://github.com/TallyUI/tallyui/commit/457162d04dcd3c6f588cdb6ab90efea36081f4df), [`222543b`](https://github.com/TallyUI/tallyui/commit/222543b8c9130d2c79a294603195940143bd611c), [`8141c1c`](https://github.com/TallyUI/tallyui/commit/8141c1cb1591a8b8299ffc00fe4f9a77a7cd8289), [`ce4f796`](https://github.com/TallyUI/tallyui/commit/ce4f796aff7c739cb555b61f9a167cc803d8b5c2), [`6673faf`](https://github.com/TallyUI/tallyui/commit/6673fafcc682e825c94cfc66932da07cabd24e35), [`1f4d0ab`](https://github.com/TallyUI/tallyui/commit/1f4d0ab8006f41586740195831aaa0c9adc17f15), [`5ed6281`](https://github.com/TallyUI/tallyui/commit/5ed62816fe28a3ef3b001600b9d6a08de22d4a7e), [`5a204a9`](https://github.com/TallyUI/tallyui/commit/5a204a949e33f53d6087845d59e4bab1fe4a1474), [`7d1bc98`](https://github.com/TallyUI/tallyui/commit/7d1bc98b842258d67f6d5d380bc925e16e649ca2)]:
+  - @tallyui/core@3.0.0-next.0
+
 ## 2.0.0
 
 ### Major Changes
