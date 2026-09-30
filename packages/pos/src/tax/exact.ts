@@ -127,6 +127,9 @@ type TaxedLine = { netMinor: number; taxInclusive: boolean; taxLines: readonly {
  */
 export function roundedTaxByRate(lines: readonly TaxedLine[], rounding?: TaxRounding) {
   if (rounding?.granularity !== 'per_line' && rounding?.granularity !== 'per_rate_group') return undefined;
+  // Known gap (#287): Vendure's inclusive per_rate_group total can fall below the shelf prices, which the display
+  // can't show until it has a rounding row (#310), so an order with any inclusive line keeps per_order's figures and rows.
+  if (rounding.granularity === 'per_rate_group' && lines.some((line) => line.taxInclusive)) return undefined;
   const { granularity, mode } = rounding;
   const rates = new Map<string, { code?: string; ratePpm: number; netMinor: bigint; amountMinor: bigint }>();
   let baseMinor = 0n;

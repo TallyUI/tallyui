@@ -4030,6 +4030,13 @@ interface OrderCreatePayload {
     `taxRounding`.
 - **Later:** recording the strategy on the sale's own record
   (`pos_orders` v6, never sent to the server) is #287's job b.
-- **Open:** under `per_rate_group`, inclusive lines can pay less than
-  their shelf prices, and ADR-063's display has no row for that
-  difference. See field-kinds.md.
+- **Known gap (Front desk ruling, 2026-09-30):** under Vendure's
+  `per_rate_group`, inclusive lines can pay less than their shelf
+  prices, and ADR-063's display has no row for that difference. So
+  under `per_rate_group` an order with any inclusive line, mixed orders
+  included, keeps the default `per_order` figures and `taxByRate` rows
+  for the whole order; the till logs one warning per tax context and
+  never refuses the sale. All-exclusive orders follow Vendure's
+  algorithm. Until the contract carries a display rounding row (#310),
+  those stores see `figures_mismatch` on such baskets, as a warning,
+  never a refusal.

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { ProductTraits, TaxRounding } from '@tallyui/core';
-import { TaxProvider, useTax } from '../tax/tax-provider';
+import { TaxProvider, useTax, taxLogger } from '../tax/tax-provider';
+import type { LogEntry } from '../logging';
 import type { TaxContext } from '../tax/types';
 import { roundedTaxByRate, taxLinesByRate } from '../tax/exact';
 import { createOrderBuilder } from './order-builder';
@@ -57,21 +58,54 @@ describe('per_rate_group (#287)', () => {
     expect(figures(sale(perLine, false, basket))).toEqual([28, 2, 30]);
   });
 
-  it('inclusive: each line\'s net is rounded first, and the total is Σ net + Σ group tax, not Σ gross', () => {
-    // VAT 19: 0.10 → net round(8.4034) = 8, twice: 16, tax round(16 × 19% = 3.04) = 3.
-    // VAT 7: 0.10 → net round(9.3458) = 9, twice: 18, tax round(18 × 7% = 1.26) = 1.
-    // Subtotal 34, tax 4, total 38 (order-level-tax-calculation-strategy.js:44-49), against a shelf Σ of 40.
-    // per_line: 2 + 2 + 1 + 1 = 6, total 40.
+  it('inclusive: a known gap, so the order keeps today\'s per_order figures and rows, and never throws', () => {
+    // Vendure would pay 38 (nets 8 + 8 + 9 + 9 = 34, tax round(3.04) + round(1.26) = 4), below the shelf Σ of 40,
+    // which the display can't show yet (Front desk ruling, #287). Today's per_order: exact tax 2 × 1.5966 + 2 × 0.6542
+    // = 4.5017 → 5, subtotal 35, total 40; rows floor 3 and 1, the leftover unit to VAT 7's larger remainder: 3, 2.
     const lines: [number, number, string][] = basket.map(([, ratePpm, code]) => [10, ratePpm, code]);
-    const rounded = roundedTaxByRate(lines.map(([netMinor, ratePpm, code]) =>
-      ({ netMinor, taxInclusive: true, taxLines: [{ code, ratePpm, taxMicros: '0' }] })), perGroup)!;
-    expect([rounded.baseMinor, rounded.taxMinor, rounded.baseMinor + rounded.taxMinor]).toEqual([34, 4, 38]);
-    expect(rounded.rates.map(({ code, ratePpm, netMinor, amountMinor }) => [code, ratePpm, netMinor, amountMinor]))
-      .toEqual([['VAT 19', 190000, 16, 3], ['VAT 7', 70000, 18, 1]]);
+    const order = sale(perGroup, true, lines);
+    expect(figures(order)).toEqual([35, 5, 40]);
+    expect(figures(order)).toEqual(figures(sale(undefined, true, lines)));
+    expect(rows(order)).toEqual([['VAT 19', 190000, 16, 3], ['VAT 7', 70000, 18, 2]]);
+    expect(roundedTaxByRate(order.lineItems, perGroup)).toBeUndefined();
     expect(figures(sale(perLine, true, lines))).toEqual([34, 6, 40]);
-    // OPEN (#287a report): ADR-063's display shows each inclusive line at its shelf price, so a total below Σ shelf
-    // leaves a residue with no converted line to take it, and the builder refuses the sale. Pinned until it's decided.
-    expect(() => sale(perGroup, true, lines)).toThrow('Display residue -1 exceeds its bound of 0 (ADR-063)');
+  });
+
+  it('a mixed order with any inclusive line keeps per_order\'s figures for the whole order', () => {
+    // Exclusive store: 0.07 and 0.07 exclusive at 19% (VAT 19), and one 0.10 inclusive at 19% (VAT 19, converted).
+    // per_order: 1.33 + 1.33 + 1.5966 = 4.2566 → 4; total = 14 + 10 + round(2.66) = 27; subtotal 23. One row: 4.
+    // (Vendure's per_rate_group would round 7 + 7 + round(8.4034) = 22 at 19% = 4.18 → 4, total 26.)
+    const mixed = (rounding?: TaxRounding) => {
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext: context(false, rounding) });
+      [false, false, true].forEach((taxInclusive, index) => builder.addLine({ productId: `m${index}`, name: 'Item',
+        unitPrice: { amount: taxInclusive ? 10 : 7, currency: 'EUR', taxInclusive }, taxRates: [{ code: 'VAT 19', ratePpm: 190000 }] }));
+      return builder.getSnapshot();
+    };
+    const order = mixed(perGroup);
+    expect(figures(order)).toEqual([23, 4, 27]);
+    expect(figures(order)).toEqual(figures(mixed()));
+    expect(rows(order)).toEqual([['VAT 19', 190000, 22, 4]]);
+  });
+
+  it('warns once per tax context, not per recalculation', () => {
+    const logged: LogEntry[] = [];
+    taxLogger.addSink({ id: 'tax-rounding-287', levels: ['warn'], write: (entry) => logged.push(entry) });
+    try {
+      const taxContext = context(true, perGroup);
+      for (let i = 0; i < 2; i++) {
+        const builder = createOrderBuilder({ currency: 'EUR', taxContext });
+        builder.addLine({ productId: 'a', name: 'A', unitPrice: { amount: 10, currency: 'EUR' }, taxRates: [{ ratePpm: 190000 }] });
+        builder.addLine({ productId: 'b', name: 'B', unitPrice: { amount: 10, currency: 'EUR' }, taxRates: [{ ratePpm: 70000 }] });
+      }
+      expect(logged).toHaveLength(1);
+      createOrderBuilder({ currency: 'EUR', taxContext: context(true, perGroup) })
+        .addLine({ productId: 'a', name: 'A', unitPrice: { amount: 10, currency: 'EUR' }, taxRates: [{ ratePpm: 190000 }] });
+      expect(logged).toHaveLength(2);
+      sale(perGroup, false, [[7, 190000]]);
+      expect(logged).toHaveLength(2);
+    } finally {
+      taxLogger.removeSink('tax-rounding-287');
+    }
   });
 
   it('the same rate under two names is two groups', () => {

@@ -2,6 +2,7 @@ import { BehaviorSubject, type Observable } from 'rxjs';
 import { resolvePrice, type ProductTraits, type TaxRounding } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
+import { taxLogger } from '../tax/tax-provider';
 import { allocateOrderDiscount } from './allocate-order-discount';
 import type {
   Order,
@@ -12,6 +13,9 @@ import type {
   CustomerSummary,
   AddLineInput,
 } from './types';
+
+/** Tax contexts already warned that per_rate_group fell back to per_order for inclusive lines (#287). */
+const perRateGroupWarned = new WeakSet<TaxContext>();
 
 let nextId = 0;
 function uid(): string {
@@ -163,6 +167,10 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const lines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
 
     const { subtotalMinor, taxMinor, totalMinor } = sumLines(lines, taxContext.rounding);
+    if (taxContext.rounding?.granularity === 'per_rate_group' && lines.some((li) => li.taxInclusive) && !perRateGroupWarned.has(taxContext)) {
+      perRateGroupWarned.add(taxContext);
+      taxLogger.warn('per_rate_group with inclusive lines: using per_order figures until the display has a rounding row (#287, #310)');
+    }
     const discountMinor = lines.reduce((sum, li) => sum + li.discountMinor, 0);
     // Display figures (ADR-063): every discount the cashier entered, and each line's order share, converted on its own
     // into the display mode. A line in the display mode shows quantity × unit price; a converted line shows its
