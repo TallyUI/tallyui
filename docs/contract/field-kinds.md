@@ -50,10 +50,11 @@ is refused whether the field is an instruction or informational
   - **The accepted form**, exactly:
     `YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|-HH:MM)`.
     - An uppercase `T` and `Z`, never a space or a lowercase letter.
-    - Seconds are required. Fractional seconds are allowed, any number
-      of digits; the till sends `toISOString()`, so `.000Z` is normal.
-    - An offset is `+HH:MM` or `-HH:MM`, and `-00:00` is accepted as
-      UTC.
+    - Seconds are required. Fractional seconds are allowed, one or more
+      digits after the `.`; the till sends `toISOString()`, so `.000Z`
+      is normal.
+    - An offset is `+HH:MM` or `-HH:MM`, with hours `00`–`23` and
+      minutes `00`–`59`, and `-00:00` is accepted as UTC.
     - The date and time must be real calendar values: no `24:00`, no
       `2026-02-30`, and no leap second `:60`. Each of those is
       malformed.
@@ -68,9 +69,13 @@ is refused whether the field is an instruction or informational
   - **What core refuses earlier keeps core's message.** A value that
     isn't a string never reaches this stage: an envelope `createdAt`
     fails the batch's shape check, and a register command's time field
-    that doesn't parse is refused by its payload check as
+    that `Date.parse` can't read is refused by its payload check as
     `expected a valid date`. This rule covers the strings that reach the
     client-time stage.
+  - **Never check the format with `Date.parse` alone.** V8's
+    `Date.parse` accepts `2026-02-30`, `24:00`, a lowercase `t` or `z`
+    and a space separator. Check the form against the pattern above,
+    then check that the date and time are real.
 - **Upper bound:** at most 24 hours ahead of the server's clock, per ADR-038's value checks.
 - **Lower bound:** not earlier than `2020-01-01T00:00:00Z`.
 - **Outside either bound, it's malformed.** The server refuses the
