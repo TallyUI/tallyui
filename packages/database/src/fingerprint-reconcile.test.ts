@@ -93,7 +93,8 @@ describe('startFingerprintReconcile', () => {
     const { reconcile, stop } = start(adapter, vi.fn());
     expect(await reconcile()).toEqual({ pages: 1, compared: N + 2, queued: 1, truncated: false, unreported: 1 });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: 'k0300', local: extra[300], refreshOnly: true }]);
-    expect(sizes).toEqual([C, C, 10]);
+    // The page's keys are read first (#248: compared page by page), then every local product for `unreported`.
+    expect(sizes).toEqual([C, C, 9, C, C, 10]);
     expect(sizes.every((size) => size <= C)).toBe(true);
     stop();
   });
@@ -186,18 +187,16 @@ describe('startFingerprintReconcile', () => {
     stop();
   });
 
-  it('truncates, warns and queues nothing beyond maxPages', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('ignores maxPages (deprecated, #248): every page is compared and the pass never truncates', async () => {
     const before = await revisions();
     const { adapter, enqueue } = fakeAdapter([{ p1: '10' }, { p2: '99' }]);
     const reSync = vi.fn();
     const { reconcile, stop } = start(adapter, reSync, { maxPages: 1 });
 
-    expect(await reconcile()).toEqual({ pages: 1, compared: 0, queued: 0, truncated: true, unreported: 0 });
-    expect(enqueue).not.toHaveBeenCalled();
-    expect(reSync).not.toHaveBeenCalled();
-    expect(await revisions()).toEqual(before);
-    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/1-page limit.*nothing was queued/));
+    expect(await reconcile()).toEqual({ pages: 2, compared: 2, queued: 1, truncated: false, unreported: 1 });
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: 'p2', local: { id: 'p2', price: '20' }, refreshOnly: true }]);
+    expect(reSync).toHaveBeenCalledTimes(1);
+    expect(await revisions()).toEqual(before); // never writes the collection
     stop();
   });
 
@@ -287,25 +286,26 @@ describe('startFingerprintReconcile', () => {
     stop();
   });
 
-  it('runs no start pass by default, one at intervalMs, and none after stop()', async () => {
+  it('runs no start check by default; the first hourly check runs a pass, the next check past intervalMs another, none after stop()', async () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([{ p1: '10' }]);
     const { stop } = startFingerprintReconcile({ collection: db.products, adapter, context, reSync: vi.fn(), intervalMs: 5000 });
 
-    await vi.advanceTimersByTimeAsync(4999);
+    // #248: the persisted gate is checked hourly; none has completed, so the first check runs a pass.
+    await vi.advanceTimersByTimeAsync(3_600_000 - 1);
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(3_600_000 - 1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(2);
     stop();
-    await vi.advanceTimersByTimeAsync(20000);
+    await vi.advanceTimersByTimeAsync(3 * 3_600_000);
     expect(fetchPages).toHaveBeenCalledTimes(2);
   });
 
-  it('an explicit startDelayMs runs the first pass at that delay, the next at delay + intervalMs', async () => {
+  it('an explicit startDelayMs runs the first pass at that check, the next at the first hourly check past intervalMs', async () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([{ p1: '10' }]);
     const { stop } = startFingerprintReconcile({
@@ -316,7 +316,7 @@ describe('startFingerprintReconcile', () => {
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(3_600_000 - 1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(2);

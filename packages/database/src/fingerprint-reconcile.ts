@@ -1,10 +1,9 @@
 import type { RxCollection } from 'rxdb';
 import { BehaviorSubject, type Observable } from 'rxjs';
 
-import type { FingerprintReconcileAdapter, SyncContext } from '@tallyui/core';
+import type { CatalogueReconcileEntry, FingerprintReconcileAdapter, SyncContext } from '@tallyui/core';
 
-import { readFreshInChunks } from './chunks';
-import { createPassQueue } from './pass-queue';
+import { startCatalogueRunner, type CatalogueReconcileSummary } from './catalogue-reconcile';
 
 export interface StartFingerprintReconcileOptions<Doc> {
   /** The replicated collection. Read only. */
@@ -13,23 +12,29 @@ export interface StartFingerprintReconcileOptions<Doc> {
   context: SyncContext;
   /** The app's `() => replication.reSync()`. */
   reSync: () => void;
-  /** Delay before the first pass; `null` (default) skips it, since this runner is meant as a nightly backstop. */
+  /** Delay before the first gate check; `null` (default) skips it and checks hourly. */
   startDelayMs?: number | null;
-  /** Time between passes in ms (default 86400000, 24 hours). */
+  /** Time from the last completed pass to the next (default 86400000, 24 hours). */
   intervalMs?: number;
-  /** Pages read before a pass is truncated (default 100). */
+  /** @deprecated Ignored: the request budget bounds a pass, so a large catalogue never truncates (#248). */
   maxPages?: number;
   /** Injection for tests; default Date.now. Stamps `lastResultAt`/`lastErrorAt`. */
   now?: () => number;
+  /**
+   * The local document holding this runner's gate (default 'fingerprint-reconcile').
+   * Two fingerprint runners on one collection (prices and calculated prices) each need their own.
+   */
+  stateId?: string;
 }
 
 export interface FingerprintReconcileResult {
   pages: number;
   compared: number;
   queued: number;
+  /** Always false now that no page cap applies. */
   truncated: boolean;
   /**
-   * Local products the remote side did not report in a complete pass (they are skipped); 0 on a truncated or failed
+   * Local products the remote side did not report in a complete pass (they are skipped); 0 on a failed or resumed
    * pass, and 0 when the adapter yielded no pages at all (e.g. base-only mode, no pricing context) -- that is not
    * the same as everything being unsellable. A channel that lists nothing still reads one empty page, so it
    * correctly reports everything as unreported.
@@ -58,104 +63,72 @@ export function isFingerprintResultCurrent(state: FingerprintReconcileState): bo
 }
 
 /**
+ * An old adapter's pages as catalogue pages. The cursor is the count of pages read. Old adapters
+ * cannot start mid-way, so a resumed pass re-reads the pages before its cursor; each comes back
+ * empty, so the runner takes a budget slot for its request but compares nothing, and counts it as a page.
+ */
+export async function* skipPages<Page>(
+  pages: AsyncIterable<Page>, entries: (page: Page) => CatalogueReconcileEntry[], from = 0,
+): AsyncIterable<{ entries: CatalogueReconcileEntry[]; cursor: number }> {
+  let read = 0;
+  for await (const page of pages) {
+    read++;
+    yield { entries: read <= from ? [] : entries(page), cursor: Math.max(read, from) };
+  }
+}
+
+/**
  * Compares a remote fingerprint per product against the local `collection`
- * and queues disagreeing products for the collection's pull (ADR-060). Only
- * reads `collection`. A throw, abort or truncation queues nothing and skips
- * `reSync`; only a complete pass acts. Products the remote side doesn't
- * report are left alone -- deletions are the id reconcile's job. No pass
- * runs at start by default (`startDelayMs: null`); the app may still call
- * `reconcile()` on demand. A call during a pass queues one follow-up pass
- * (later calls share it), so a change made after the pass read is picked up
- * straight after, not at the next interval.
+ * and queues disagreeing products for the collection's pull (ADR-060), as a
+ * wrapper over the catalogue runner (#248). Never deletes: every entry is
+ * `refreshOnly`, and a product the remote side doesn't report is only counted
+ * as `unreported`. Passes follow the persisted daily gate within a request
+ * budget; the app may still call `reconcile()` on demand. A call during a pass
+ * queues one follow-up pass (later calls share it).
  */
 export function startFingerprintReconcile<Doc>({
-  collection, adapter, context, reSync, startDelayMs = null, intervalMs = 86_400_000, maxPages = 100, now = Date.now,
+  adapter, reSync, startDelayMs = null, maxPages: _ignored, stateId = 'fingerprint-reconcile', ...options
 }: StartFingerprintReconcileOptions<Doc>): {
   reconcile(): Promise<FingerprintReconcileResult>;
   stop(): void;
   state$: Observable<FingerprintReconcileState>;
 } {
-  const controller = new AbortController();
-  const { signal } = controller;
-  // React Native's AbortController polyfill has no throwIfAborted() and may have no reason.
-  const checkAborted = () => { if (signal.aborted) throw signal.reason ?? new Error('Fingerprint reconcile stopped'); };
+  let queued = 0;
+  let pending = false;
+  const { request, stop, state$: catalogue$ } = startCatalogueRunner<Doc, number>({
+    ...options, startDelayMs, stateId, keepCandidates: true,
+    // Only touch reSync when something reached the pull.
+    reSync: () => { if (pending) { pending = false; reSync(); } },
+    log: (event) => { if (event.type === 'pass-started') queued = 0; },
+    adapter: {
+      fetchPages: (context, from) => skipPages(adapter.fetchPages(context),
+        (page) => [...page].map(([key, fingerprint]) => ({ key, fingerprint })), from),
+      fingerprint: (doc) => adapter.fingerprint(doc),
+      // refreshOnly: a missing re-fetch is skipped, never tombstoned (ADR-060). A product the till lacks is left to the pull.
+      enqueue: (entries) => {
+        const known = entries.flatMap(({ key, local }) => (local ? [{ id: key, local, refreshOnly: true as const }] : []));
+        if (!known.length) return;
+        queued += known.length;
+        pending = true;
+        adapter.enqueue(known);
+      },
+    },
+  });
+  const toResult = ({ pages, compared, kept }: CatalogueReconcileSummary): FingerprintReconcileResult =>
+    ({ pages, compared, queued, truncated: false, unreported: pages > 0 ? kept : 0 });
+
+  // Mapped as each pass ends, while `queued` is still that pass's count.
   const state = new BehaviorSubject<FingerprintReconcileState>({ running: false });
-  const update = (patch: Partial<FingerprintReconcileState>) => state.next({ ...state.value, ...patch });
-
-  const pass = async (): Promise<FingerprintReconcileResult> => {
-    checkAborted();
-    // Phase 1: read every page first. A throw, abort or truncation here queues
-    // nothing and skips reSync, so only a complete pass ever acts (ADR-060).
-    const remote = new Map<string, string>();
-    let pages = 0;
-    for await (const page of adapter.fetchPages({ ...context, signal })) {
-      checkAborted();
-      if (pages === maxPages) {
-        console.warn(`Fingerprint reconcile stopped at the ${maxPages}-page limit; nothing was queued.`);
-        return { pages, compared: 0, queued: 0, truncated: true, unreported: 0 };
-      }
-      pages++;
-      for (const [id, fingerprint] of page) remote.set(id, fingerprint);
-    }
-
-    checkAborted();
-    // Phase 2: compare local documents the remote side reported against their
-    // remote fingerprint. A product the remote side didn't report is skipped.
-    const entries: Array<{ id: string; local: Doc; refreshOnly: true }> = [];
-    let compared = 0;
-    let unreported = 0;
-    // Chunks use readFresh, not a cached `find()`: a pull write during that query's storage read would
-    // leave it stale for every later pass (RxDB 16.21.1 bug 4, `readFresh`'s doc comment).
-    for await (const chunk of readFreshInChunks(collection)) {
-      checkAborted();
-      for (const local of chunk) {
-        const id = (local as Record<string, unknown>)[collection.schema.primaryPath] as string;
-        const remoteFingerprint = remote.get(id);
-        if (remoteFingerprint === undefined) { if (pages > 0) unreported++; continue; }
-        compared++;
-        // refreshOnly: a missing re-fetch is skipped, never tombstoned -- deletions are the id reconcile's job (ADR-060).
-        if (adapter.fingerprint(local) !== remoteFingerprint) entries.push({ id, local, refreshOnly: true });
-      }
-    }
-
-    checkAborted();
-    // Only touch reSync when there is something for the pull to correct.
-    if (entries.length) { adapter.enqueue(entries); reSync(); }
-    return { pages, compared, queued: entries.length, truncated: false, unreported };
-  };
-
-  const tracked = async (): Promise<FingerprintReconcileResult> => {
-    update({ running: true });
-    try {
-      const result = await pass();
-      update({ running: false, lastResult: result, lastResultAt: now() });
-      return result;
-    } catch (error) {
-      // lastResult (and lastResultAt) are left as they were: the app can tell it's stale via isFingerprintResultCurrent.
-      update({ running: false, lastError: error, lastErrorAt: now() });
-      throw error;
-    }
-  };
-
-  const reconcile = createPassQueue(tracked);
-  const onTimer = () => reconcile().catch((error) => console.warn('Fingerprint reconcile failed:', error));
-  let startTimer: ReturnType<typeof setTimeout> | undefined;
-  let intervalTimer: ReturnType<typeof setInterval>;
-  const scheduleInterval = () => { intervalTimer = setInterval(onTimer, intervalMs); };
-  // startDelayMs: null (the default) skips the start pass and goes straight to the nightly cadence.
-  if (startDelayMs === null) scheduleInterval();
-  else startTimer = setTimeout(() => { onTimer(); scheduleInterval(); }, startDelayMs);
-
-  // stop() and an abort of context.signal both end the runner for good.
-  const stop = () => {
-    clearTimeout(startTimer);
-    clearInterval(intervalTimer);
-    context.signal?.removeEventListener('abort', stop);
-    controller.abort();
-    state.complete();
-  };
-  if (context.signal?.aborted) stop();
-  else context.signal?.addEventListener('abort', stop);
-
+  let summary: CatalogueReconcileSummary | undefined;
+  let result: FingerprintReconcileResult | undefined;
+  catalogue$.subscribe({
+    next: ({ lastResult, ...rest }) => {
+      if (lastResult !== summary) { summary = lastResult; result = lastResult && toResult(lastResult); }
+      state.next(result ? { ...rest, lastResult: result } : rest);
+    },
+    complete: () => state.complete(),
+  });
+  // `.then` is attached at call time, so it reads this pass's counts before a follow-up starts.
+  const reconcile = () => request().then(toResult);
   return { reconcile, stop, state$: state.asObservable() };
 }

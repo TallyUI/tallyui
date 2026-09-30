@@ -25,6 +25,7 @@ export type {
   StoreSettingsChoice,
 } from './types';
 export type { SignInResult, ServerCapabilities } from './types/connector';
+export type { CatalogueReconcileAdapter, CatalogueReconcileEntry } from './types/reconcile';
 export { resolveCapabilities } from './types/connector';
 export { SignInError } from './sign-in';
 export { ConnectorUnauthorizedError } from './unauthorized';
@@ -58,7 +59,7 @@ export { compareIds } from './utils/compare-ids';
 export { STOCK_LEVELS_LAST_PASS, withStockOverlay, getProductStock } from './stock-overlay';
 export { combinePullAdapters } from './replication/combine';
 export { createReconcileFeed } from './replication/reconcile-feed';
-export type { ReconcileFeed, ReconcileFeedEntry } from './replication/reconcile-feed';
+export type { ReconcileFeed, ReconcileFeedEntry, ReconcileFetchEntry, KeyedReconcileFeedOptions } from './replication/reconcile-feed';
 
 // Context & hooks
 export {
