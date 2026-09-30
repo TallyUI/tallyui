@@ -45,14 +45,31 @@ a rule on the field kind, not on one command type, and a malformed value
 is refused whether the field is an instruction or informational
 (ruling 19).
 - **Format first:** client time must be RFC 3339 with a Z or offset
-  (Front desk, 2026-09-30): the strict form, a date, `T`, a time and a
-  zone. A value with no zone, or any other form, is malformed. A time
-  read in the server's own zone would shift sale times silently. It's
-  checked before the bounds, and the message, verbatim on every backend,
-  is `{path} must be an RFC 3339 time with Z or an offset`. A field that
-  fails the format gets only this message, not the bounds message; it
-  follows the same stage, order, `; ` joining and limit of 10 as the
-  bounds messages below.
+  (Front desk, 2026-09-30). A time read in the server's own zone would
+  shift sale times silently.
+  - **The accepted form**, exactly:
+    `YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|-HH:MM)`.
+    - An uppercase `T` and `Z`, never a space or a lowercase letter.
+    - Seconds are required. Fractional seconds are allowed, any number
+      of digits; the till sends `toISOString()`, so `.000Z` is normal.
+    - An offset is `+HH:MM` or `-HH:MM`, and `-00:00` is accepted as
+      UTC.
+    - The date and time must be real, so `2026-02-30` or `25:00` is
+      malformed.
+  - **Anything else** that reaches the client-time stage is malformed:
+    no zone, `+HHMM`, a date alone, a lowercase `t` or `z`, or a space
+    separator. The message, verbatim on every backend, is
+    `{path} must be an RFC 3339 time with Z or an offset`.
+  - **It's checked before the bounds.** A field that fails the format
+    gets only this message, not the bounds message. It follows the same
+    stage, order, `; ` joining and limit of 10 as the bounds messages
+    below.
+  - **What core refuses earlier keeps core's message.** A value that
+    isn't a string never reaches this stage: an envelope `createdAt`
+    fails the batch's shape check, and a register command's time field
+    that doesn't parse is refused by its payload check as
+    `expected a valid date`. This rule covers the strings that reach the
+    client-time stage.
 - **Upper bound:** at most 24 hours ahead of the server's clock, per ADR-038's value checks.
 - **Lower bound:** not earlier than `2020-01-01T00:00:00Z`.
 - **Outside either bound, it's malformed.** The server refuses the
