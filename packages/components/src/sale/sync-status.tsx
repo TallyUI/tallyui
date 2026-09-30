@@ -9,7 +9,8 @@ const BACKEND_MISSING_SINCE = "Sales haven't reached the online store since {tim
 // The line instead when no sale waits but till updates do, and its "since" variant once registerState.stuck is set.
 const TILL_UPDATES_MISSING = "Till updates aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
 const TILL_UPDATES_MISSING_SINCE = "Till updates haven't reached the online store since {time}. Keep selling: they're saved on this till and will send by themselves.";
-// The detail below it; {pluginName} becomes the pluginName prop. With nothing waiting the line is only "Sales are up to date." and {lastTime} is set.
+// The detail below it; {pluginName} becomes the pluginName prop. With nothing waiting (store missing or not) the line is only
+// "Sales are up to date.", and here {lastTime} is set.
 const BACKEND_MISSING_DETAIL = "This till couldn't find {pluginName} on the online store{lastTime}. Ask the store owner to check that it is installed "
   + "and switched on, and that the store address in this till's settings is right.";
 
@@ -25,7 +26,7 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   }, [state.nextAttemptAt]);
   const seconds = Math.max(0, Math.ceil(((state.nextAttemptAt ?? now) - now) / 1000));
   const updates = registerState?.pending ?? 0;
-  const label = state.pending === 0 && updates === 0 ? 'All sales synced' : [state.pending && count(state.pending, 'sale'),
+  const label = [state.pending && count(state.pending, 'sale'),
     updates && count(updates, 'till update')].filter(Boolean).join(' and ') + ' waiting to sync';
   const { stuck } = state;
   const backendMissing = state.backendMissing ?? registerState?.backendMissing;
@@ -34,7 +35,7 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   const backendMissingText = state.pending === 0 && updates > 0 ? (registerState?.stuck
     ? TILL_UPDATES_MISSING_SINCE.replace('{time}', at(registerState.stuck.since)) : TILL_UPDATES_MISSING)
     : stuck ? BACKEND_MISSING_SINCE.replace('{time}', at(stuck.since)) : BACKEND_MISSING;
-  const upToDate = backendMissing && state.pending === 0 && updates === 0;
+  const upToDate = state.pending === 0 && updates === 0;
   const stuckText = !stuck || backendMissing ? ''
     : ` · Not syncing ${stuck.commandIds.length} order${stuck.commandIds.length === 1 ? '' : 's'}: `
       + (stuck.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing') + ` (${stuck.reason}) since ${at(stuck.since)}`;

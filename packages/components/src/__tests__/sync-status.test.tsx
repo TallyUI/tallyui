@@ -13,9 +13,9 @@ function line() {
 }
 
 describe('SyncStatus', () => {
-  it('shows "All sales synced" when nothing is pending', () => {
+  it('shows "Sales are up to date." when nothing is pending', () => {
     render(<SyncStatus state={{ pending: 0, sending: false }} />);
-    expect(line()).toBe('All sales synced');
+    expect(line()).toBe('Sales are up to date.');
   });
   it('pluralizes a single pending sale', () => {
     render(<SyncStatus state={{ pending: 1, sending: false }} />);
@@ -169,31 +169,42 @@ describe('SyncStatus', () => {
     expect(line()).toBe('Sales are up to date.');
     expect(screen.getByLabelText('Sales are up to date.').textContent).toBe('Sales are up to date.');
     expect(screen.getByText(lastChecked('the POS plugin')).textContent).toBe(lastChecked('the POS plugin'));
-    expect(screen.queryByText(/All sales synced|aren't reaching/)).toBeNull();
+    expect(screen.queryByText(/synced|aren't reaching/)).toBeNull();
     cleanup();
     render(<SyncStatus state={{ pending: 0, sending: false, backendMissing }} pluginName="Medusa POS" />);
     expect(line()).toBe('Sales are up to date.');
     expect(screen.getByText(lastChecked('Medusa POS')).textContent).toBe(lastChecked('Medusa POS'));
   });
 
-  it('with nothing waiting and the store not missing, says "All sales synced" with no detail line', () => {
+  it('with nothing waiting and the store not missing, says exactly "Sales are up to date." with no detail line', () => {
     render(<SyncStatus state={{ pending: 0, sending: false }} registerState={{ pending: 0, sending: false }} />);
-    expect(line()).toBe('All sales synced');
+    expect(line()).toBe('Sales are up to date.');
     expect(screen.queryByText(/store owner/)).toBeNull();
+    cleanup();
+    // Nothing after it either: no sending or retrying text.
+    render(<SyncStatus state={{ pending: 0, sending: true, lastRetryReason: 'status_503', nextAttemptAt: Date.now() + 3000 }} />);
+    expect(line()).toBe('Sales are up to date.');
+    expect(screen.queryByText(/store owner|synced/)).toBeNull();
   });
 
-  it('never says "All sales synced" while a till update waits', () => {
-    render(<SyncStatus state={{ pending: 0, sending: false }} registerState={{ pending: 2, sending: false }} />);
-    expect(line()).toBe('2 till updates waiting to sync');
-    expect(screen.queryByText(/All sales synced/)).toBeNull();
-    cleanup();
+  it('never says "Sales are up to date." while a sale or a till update waits', () => {
+    const waiting: [OutboxState, OutboxState, string][] = [
+      [{ pending: 0, sending: false }, { pending: 2, sending: false }, '2 till updates waiting to sync'],
+      [{ pending: 1, sending: false }, { pending: 0, sending: false }, '1 sale waiting to sync'],
+      [{ pending: 1, sending: false }, { pending: 1, sending: false }, '1 sale and 1 till update waiting to sync']];
+    for (const [state, registerState, text] of waiting) {
+      render(<SyncStatus state={state} registerState={registerState} />);
+      expect(line()).toBe(text);
+      expect(screen.queryByText(/up to date|synced/)).toBeNull();
+      cleanup();
+    }
     render(<SyncStatus state={{ pending: 0, sending: false }} registerState={{ pending: 0, sending: false }} />);
-    expect(line()).toBe('All sales synced');
+    expect(line()).toBe('Sales are up to date.');
   });
 
   it('labels the status line with exactly the line shown, idle and with the store missing', () => {
     render(<SyncStatus state={{ pending: 0, sending: false }} />);
-    expect(screen.getByLabelText('All sales synced').textContent).toBe('All sales synced');
+    expect(screen.getByLabelText('Sales are up to date.').textContent).toBe('Sales are up to date.');
     cleanup();
     render(<SyncStatus state={{ pending: 2, sending: false, backendMissing: { since: Date.now() } }} />);
     const shown = `2 sales waiting to sync · ${cashierLine}`;
