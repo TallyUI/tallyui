@@ -26,8 +26,8 @@ export async function signedOut(context: SyncContext): Promise<boolean | undefin
 }
 
 /**
- * The error for a `FORBIDDEN` answer: only a signed-out session signs the till out. The plain
- * errors name everything refused, in the answer's order (each GraphQL `path`, e.g. `product.variants`),
+ * The error for a `FORBIDDEN` answer: a signed-out session is 401, a confirmed missing permission
+ * is 403, and a failed probe is a plain Error. Errors name everything refused in answer order (each GraphQL `path`, e.g. `product.variants`),
  * for the store owner's log. One probe answers for the whole response.
  */
 export async function forbiddenError(context: SyncContext, forbidden: Array<{ message?: string; path?: ReadonlyArray<string | number> }>): Promise<Error> {
@@ -35,6 +35,6 @@ export async function forbiddenError(context: SyncContext, forbidden: Array<{ me
   // The probe confirmed a signed-out session even though Vendure answered FORBIDDEN.
   if (out === true) return new ConnectorUnauthorizedError(`Vendure GraphQL error: ${forbidden[0].message}`, 401);
   const what = forbidden.map(({ message, path }) => (path?.length ? `${path.join('.')}: ${message}` : message)).join('; ');
-  if (out === false) return new Error(`Vendure GraphQL error: FORBIDDEN: the store refused this request although the session is signed in (a permission is missing): ${what}`);
+  if (out === false) return new ConnectorUnauthorizedError(`Vendure GraphQL error: FORBIDDEN: the store refused this request although the session is signed in (a permission is missing): ${what}`, 403);
   return new Error(`Vendure GraphQL error: FORBIDDEN: ${what} (the session check failed, so this may be transient)`);
 }

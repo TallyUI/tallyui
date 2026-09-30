@@ -201,11 +201,11 @@ the error's class sets `fixedBy` to that value and a string `code`, and
 
 | Class | Who fixes it | Errors | What the pull does |
 |-------|--------------|--------|--------------------|
-| Till | the till: someone signs in | `ConnectorUnauthorizedError` (`unauthorized`) | Stops until `resume()` |
-| Store | the store owner, elsewhere | `WooDateFilterError` (`unsupported_store`), `WooMissingUuidError` (`missing_plugin`), `VendureTimezoneConfigError` (`store_misconfigured`) | Retries every 5 minutes and recovers by itself |
+| Till | the till: someone signs in | `ConnectorUnauthorizedError` with `status: 401` (`unauthorized`) | Stops until `resume()` |
+| Store | the store owner, elsewhere | `ConnectorUnauthorizedError` with `status: 403` (`forbidden`), `WooDateFilterError` (`unsupported_store`), `WooMissingUuidError` (`missing_plugin`), `VendureTimezoneConfigError` (`store_misconfigured`) | Retries every 5 minutes and recovers by itself |
 | Transient | nobody: it passes | anything without the marker: network errors, timeouts, 5xx, 429 | Retries with a doubling delay |
 
-- **Till:** the pull makes that one request, sets `notice$` once to
+- **Till (including only a 401 `ConnectorUnauthorizedError`):** the pull makes that one request, sets `notice$` once to
   `{ code, since, fixedBy: 'till' }`, and pauses. The error does not
   appear on `error$`. Until `resume()`, every pull returns an empty page
   without a request, whatever restarts the loop: `reSync()`, `stream$`, or

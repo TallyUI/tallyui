@@ -21,7 +21,10 @@ const MAX_STORE_MESSAGE = 200;
 export async function checkResponse(response: Response) {
   if (response.ok) return;
   if (response.status === 401 || response.status === 403) {
-    throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status as 401 | 403);
+    // WordPress answers 401 when nobody is logged in, but the JWT-auth plugin uses 403 for a bad token.
+    const body = response.status === 403 ? await response.json().catch(() => undefined) : undefined;
+    const status = typeof body?.code === 'string' && body.code.startsWith('jwt_auth_') ? 401 : response.status as 401 | 403;
+    throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, status);
   }
   if (response.status === 426) {
     // Only the plugin's own gate means the till needs updating; any other 426 is retried as transient, with the store's message.

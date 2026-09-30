@@ -17,3 +17,9 @@ it('exposes forbidden as status 403', () => {
   expect(error.code).toBe('forbidden');
   expect(errorKind(error)).toBe('store');
 });
+
+it('defaults to unauthorized when a JavaScript caller omits status', () => {
+  const error = new ConnectorUnauthorizedError('x', undefined as unknown as 401);
+  expect(error.code).toBe('unauthorized');
+  expect(error.fixedBy).toBe('till');
+});

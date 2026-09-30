@@ -13,7 +13,7 @@ export interface CustomerPickerProps {
   create?: (input: CustomerInput) => Promise<Customer>;
   selected: Customer | null;
   onSelect: (customer: Customer | null) => void;
-  /** Called for errors the picker can't explain to the cashier, including ConnectorUnauthorizedError, which means the app should sign in again. */
+  /** Called for errors the picker can't explain to the cashier, including `ConnectorUnauthorizedError`: sign in again only when its `code` is `'unauthorized'` (401). `'forbidden'` (403) means signed in but not allowed; never sign out for it. */
   onError?: (error: unknown) => void;
   /** false disables search and create (online only in v1). */
   online: boolean;

@@ -50,11 +50,12 @@ describe.each([
     expect(probes).toHaveLength(1);
   });
 
-  it('FORBIDDEN with a live administrator is a plain Error (a missing permission), after exactly one probe', async () => {
+  it('FORBIDDEN with a live administrator is forbidden (a missing permission), after exactly one probe', async () => {
     const { probes } = stubFetch(() => json({ data: { activeAdministrator: { id: '1' } } }));
     const result = request(context);
     await expect(result).rejects.toBeInstanceOf(Error);
-    await expect(result).rejects.not.toBeInstanceOf(ConnectorUnauthorizedError);
+    await expect(result).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+    await expect(result).rejects.toMatchObject({ status: 403, code: 'forbidden' });
     await expect(result).rejects.toThrow('although the session is signed in (a permission is missing)');
     await expect(result).rejects.toThrow(message);
     expect(probes).toHaveLength(1);
@@ -79,7 +80,7 @@ describe.each([
     { path: ['product', 'variants'], what: `product.variants: ${message}` },
     { path: ['products', 'items', 0, 'name'], what: `products.items.0.name: ${message}` },
     { path: undefined, what: message },
-  ])('the plain errors name what was refused ($what); signing out keeps the message as is', async ({ path, what }) => {
+  ])('the errors name what was refused ($what); signing out keeps the message as is', async ({ path, what }) => {
     const answer = { errors: [{ message, path, extensions: { code: 'FORBIDDEN' } }], data: null };
     const messageFor = async (probe: unknown) => {
       stubFetch(() => json(probe), answer);
@@ -99,13 +100,13 @@ describe.each([
       { message, path: ['product', 'variants'], extensions: { code: 'FORBIDDEN' } },
     ] };
     const what = `products: ${message}; product.variants: ${message}`;
-    for (const [probe, expected] of [
-      [{ data: { activeAdministrator: { id: '1' } } }, `Vendure GraphQL error: FORBIDDEN: the store refused this request although the session is signed in (a permission is missing): ${what}`],
-      [{ errors: [{ message: 'boom' }] }, `Vendure GraphQL error: FORBIDDEN: ${what} (the session check failed, so this may be transient)`],
+    for (const [probe, expected, forbidden] of [
+      [{ data: { activeAdministrator: { id: '1' } } }, `Vendure GraphQL error: FORBIDDEN: the store refused this request although the session is signed in (a permission is missing): ${what}`, true],
+      [{ errors: [{ message: 'boom' }] }, `Vendure GraphQL error: FORBIDDEN: ${what} (the session check failed, so this may be transient)`, false],
     ] as const) {
       const { probes } = stubFetch(() => json(probe), answer);
       const error = await request(context).catch((e: unknown) => e);
-      expect(error).not.toBeInstanceOf(ConnectorUnauthorizedError);
+      expect(error instanceof ConnectorUnauthorizedError).toBe(forbidden);
       expect((error as Error).message).toBe(expected);
       expect(probes).toHaveLength(1);
       vi.restoreAllMocks();

@@ -9,7 +9,7 @@ export class ConnectorUnauthorizedError extends Error {
     super(message);
     this.name = 'ConnectorUnauthorizedError';
     this.status = status;
-    this.code = status === 401 ? 'unauthorized' : 'forbidden';
-    this.fixedBy = status === 401 ? 'till' : 'store';
+    this.code = status === 403 ? 'forbidden' : 'unauthorized';
+    this.fixedBy = status === 403 ? 'store' : 'till';
   }
 }

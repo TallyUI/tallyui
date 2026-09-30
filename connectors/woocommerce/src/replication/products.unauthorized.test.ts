@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, type SyncContext } from '@tallyui/core';
 import { ConnectorUnauthorizedError as ExportedError } from '../index';
-import { wooProductReplication } from './products';
+import { checkResponse, wooProductReplication } from './products';
 
 const context: SyncContext = {
   connectorId: 'woocommerce',
@@ -18,6 +18,16 @@ it.each([401, 403])('rejects the product pull with ConnectorUnauthorizedError (H
   await expect(result).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
   await expect(result).rejects.toMatchObject({ code: status === 403 ? 'forbidden' : 'unauthorized', status });
   await expect(result).rejects.toThrow(`WooCommerce API error: ${status}`);
+});
+
+it.each([
+  { body: JSON.stringify({ code: 'jwt_auth_invalid_token' }), status: 401, code: 'unauthorized' },
+  { body: JSON.stringify({ code: 'rest_forbidden' }), status: 403, code: 'forbidden' },
+  { body: 'not json', status: 403, code: 'forbidden' },
+])('classifies a 403 response with $body as $code', async ({ body, status, code }) => {
+  const result = checkResponse(new Response(body, { status: 403 }));
+  await expect(result).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+  await expect(result).rejects.toMatchObject({ status, code });
 });
 
 it('keeps HTTP 500 a plain error', async () => {
