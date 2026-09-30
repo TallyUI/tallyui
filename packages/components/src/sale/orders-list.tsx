@@ -44,7 +44,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
                   no reason code. */}
               Not syncing: {stuckEntry.reason === 'timeout' ? 'no answer from the store' : 'the online store keeps refusing this'} since {new Date(stuckEntry.since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
             </Text> : null}
-            {order.syncStatus === 'rejected' && order.error ? <Text className="text-destructive">{order.error.code}: {order.error.message}</Text> : null}
+            {/* The store's message alone: the cashier sees no error code, and nothing when there is no message. */}
+            {order.syncStatus === 'rejected' && order.error?.message ? <Text className="text-destructive">{order.error.message}</Text> : null}
             {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
             {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
             {order.localWarnings?.map((warning, index) => <Text key={index} className="text-foreground">

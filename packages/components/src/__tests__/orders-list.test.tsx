@@ -55,7 +55,7 @@ describe('OrdersList', () => {
     render(<OrdersList orders={[rejected, warned, order('p')]} onRetry={async () => 0} formatDate={formatDate} />);
     expect(headers()).toEqual(['Needs attention', 'Recent']);
     expect(screen.getAllByText(/· Not accepted$/)).toHaveLength(2);
-    expect(screen.getAllByText('unknown_variant: Variant was removed')).toHaveLength(2);
+    expect(screen.getAllByText('Variant was removed')).toHaveLength(2);
     expect(screen.getAllByText('Stock short by 1 for Blue shirt')).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
   });
@@ -107,6 +107,14 @@ describe('OrdersList', () => {
     expect(screen.getAllByText(/^Not syncing: /)).toHaveLength(2);
     expect(container.textContent).not.toMatch(/status_|\([^)]*\)/);
     expect(container.textContent).not.toContain(reason);
+  });
+
+  it.each(['Variant was removed', ''])('shows a rejected order\'s message "%s" alone, with no error code and no empty ": "', (message) => {
+    const { container } = render(<OrdersList orders={[order('r', { syncStatus: 'rejected', error: { code: 'unknown_variant', message } })]}
+      onRetry={async () => 0} formatDate={formatDate} />);
+    expect(container.textContent).not.toContain('unknown_variant');
+    for (const element of Array.from(container.querySelectorAll('*'))) expect(element.textContent).not.toMatch(/^\s*:|:\s*$|\w+_\w+:/);
+    if (message) expect(screen.getAllByText(message)).toHaveLength(2);
   });
 
   it('asks for a manual check instead of Retry on an idempotency mismatch', () => {
@@ -184,7 +192,7 @@ describe('OrdersList', () => {
     render(<OrdersList orders={[rejected, warned, base]} onRetry={async () => 0} formatDate={formatDate} />);
     expect(headers()).toEqual(['Needs attention', 'Recent']);
     const money = formatMoney({ amount: base.totalMinor, currency: base.currency });
-    for (const label of ['invalid: Unknown variant', 'Stock short by 2 for Blue shirt',
+    for (const label of ['Unknown variant', 'Stock short by 2 for Blue shirt',
       `Store total ${formatMoney({ amount: 1000, currency: base.currency })} vs POS ${formatMoney({ amount: 1200, currency: base.currency })}`,
       'Order #42 · 3 items']) {
       expect(screen.getAllByText(label)).toHaveLength(2);
