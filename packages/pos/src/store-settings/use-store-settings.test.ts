@@ -235,6 +235,7 @@ describe('useStoreSettings', () => {
 
       it.each([
         new ConnectorUnauthorizedError('x', 403),
+        new SignInError('server_error', 'x'),
         new Error('offline'),
       ])('retries a non-till error (%s)', async (failure) => {
         const capabilities = vi.fn().mockRejectedValue(failure);
@@ -330,8 +331,36 @@ describe('useStoreSettings', () => {
         act(() => result.current.state === 'error' && result.current.retry());
         await act(async () => {});
         expect(result.current.state).toBe('ready');
+        expect(vi.getTimerCount()).toBe(0);
         await act(async () => { await vi.advanceTimersByTimeAsync(3_001); });
         expect(capabilities).toHaveBeenCalledTimes(2);
+      });
+
+      it('resets the backoff after an automatic retry reaches choose and the pick fails', async () => {
+        const capabilities = vi.fn()
+          .mockRejectedValueOnce(new Error('offline'))
+          .mockResolvedValueOnce({ orderCreate: 3, taxRounding: vendure })
+          .mockRejectedValueOnce(new Error('offline again'));
+        let picks = 0;
+        const storeSettings = vi.fn(async (_context: SyncContext, choice?: StoreSettingsChoice) => {
+          if (!choice) throw new StoreSettingsError('choice_required', 'pick a country', choices);
+          if (picks++ === 0) throw new StoreSettingsError('failed', 'pick failed');
+          return settings;
+        });
+        const connector = { storeSettings, capabilities } as unknown as TallyConnector;
+        const { result } = track(connector);
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        expect(result.current.state).toBe('choose');
+        act(() => result.current.state === 'choose' && result.current.choose({ country: 'de' }));
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        act(() => result.current.state === 'error' && result.current.retry());
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        if (result.current.state === 'error') expect(result.current.nextRetryAt).toBe(Date.now() + 5_000);
+        expect(capabilities).toHaveBeenCalledTimes(3);
       });
 
       it('resets the backoff after success before a new failure', async () => {

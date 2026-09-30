@@ -37,7 +37,7 @@ function readTaxRounding({ connector, context }: ResolveStoreSettingsOptions): P
     },
     (cause) => {
       // The till must fix its own credentials or software; retrying cannot help.
-      if (errorKind(cause) === 'till' || cause instanceof SignInError) throw cause;
+      if (errorKind(cause) === 'till' || (cause instanceof SignInError && cause.code === 'invalid_credentials')) throw cause;
       throw new StoreCapabilitiesUnavailableError(cause);
     },
   );
@@ -51,7 +51,9 @@ function readTaxRounding({ connector, context }: ResolveStoreSettingsOptions): P
  * The capabilities are read beside the settings, before `ready`, so each resolve emits the settings once, with the
  * rounding already known: no later change of `settings` holds a sale.
  * Unknown rounding keeps settings unresolved and retries by itself; show "Can't reach the store's settings yet. Retrying…" while `nextRetryAt` is set.
- * A till-class or sign-in error is not retried by itself, so the app prompts to sign in or update the till.
+ * A till-class or invalid-credentials sign-in error is not retried by itself, so the app prompts to sign in or update the till.
+ * An app shows a sign-in prompt when the `error` state's error is a `ConnectorUnauthorizedError` with `code: 'unauthorized'`
+ * or a `SignInError` with `code: 'invalid_credentials'`, and an update prompt for `code: 'till_update_required'`.
  *
  * ```tsx
  * const store = useStoreSettings({ connector, context, loadChoice, saveChoice });

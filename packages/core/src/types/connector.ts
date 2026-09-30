@@ -103,7 +103,7 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     warn?.('non-object info body: capabilities unknown');
     return undefined;
   }
-  const { contracts, taxRounding } = (body ?? {}) as { contracts?: Record<string, unknown> | null; taxRounding?: unknown };
+  const { contracts, taxRounding } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown };
   const register = maxVersion(contracts?.register);
   const rounding = parseTaxRounding(taxRounding);
   if (taxRounding !== undefined && rounding === undefined) {
