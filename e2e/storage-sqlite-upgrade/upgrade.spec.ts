@@ -27,6 +27,9 @@ const orderIds = Array.from({ length: 10 }, (_, i) => `order-${String(i + 1).pad
 const pendingIds = ['command-1', 'command-10', 'command-2', 'command-3', 'command-6', 'command-7', 'command-8', 'command-9'];
 // order.create versions for the v2 set, as the carry-over test has them: order-0007 and order-0010 carry ADR-065's figures.
 const sentVersions = { 'command-1': 1, 'command-2': 1, 'command-3': 1, 'command-6': 1, 'command-8': 1, 'command-9': 1, 'command-7': 3, 'command-10': 3 };
+// The orders after the v2 → v5 migration, as the carry-over test has them: every field RxDB 16.21.1 stored, plus
+// version 5's sentVersion, the version it went out at (order-0004 and order-0005, with no lines, 1).
+const migrated = expected.map((order) => ({ ...order, sentVersion: (sentVersions as Record<string, number>)[order.commandId as string] ?? 1 }));
 // order-0006's 300-character line name, frozen to the sent form when it is sent.
 const frozenName = `${'L'.repeat(254)}…`;
 const DB_NAME = 'tally_upgrade';
@@ -66,16 +69,16 @@ test.describe('storage-sqlite 16.21.1 → 17.5.0 upgrade on SQLite-wasm over OPF
     test.setTimeout(120_000);
     const written = await test.step('2.0.0 writes the fixture orders and the register state', () => writeWithV16(page));
 
-    await test.step('17.5.0 opens the same database and every document survives the v2 → v4 migration', async () => {
+    await test.step('17.5.0 opens the same database and every document survives the v2 → v5 migration', async () => {
       await page.goto('/v17/');
       // The 2.0.0 worker's SAH pool (VFS `tallyui`) is in this origin's OPFS, where the 17.5.0 worker installs the same pool.
       expect(await tally<string[]>(page, 'opfsRoot')).toEqual(['.tallyui']);
       const opened = await timed('17.5.0 open with migration', () => tally<any>(page, 'open', DB_NAME));
-      expect(opened, JSON.stringify(opened)).toMatchObject({ ok: true, rxdbVersion: '17.5.0', worker: '/v17/tallyui-sqlite-worker.js', ordersSchemaVersion: 4 });
+      expect(opened, JSON.stringify(opened)).toMatchObject({ ok: true, rxdbVersion: '17.5.0', worker: '/v17/tallyui-sqlite-worker.js', ordersSchemaVersion: 5 });
       const stored = await tally<any>(page, 'readAll');
       expect(stored.orders.map((order: { id: string }) => order.id)).toEqual(orderIds);
-      // Every migrated order, every field, exactly as RxDB 16.21.1 stored it; nothing added.
-      expect(stored.orders).toStrictEqual(expected);
+      // Every migrated order, every field, exactly as RxDB 16.21.1 stored it, plus version 5's sentVersion; nothing else added.
+      expect(stored.orders).toStrictEqual(migrated);
       for (const order of stored.orders) {
         expect(order).not.toHaveProperty('localWarnings');
         expect(order).not.toHaveProperty('serverFailures');
@@ -103,6 +106,13 @@ test.describe('storage-sqlite 16.21.1 → 17.5.0 upgrade on SQLite-wasm over OPF
       expect(stored.orders.map((order: { id: string; syncStatus: string }) => [order.id, order.syncStatus]))
         .toEqual(orderIds.map((id) => [id, id === 'order-0005' ? 'rejected' : 'applied']));
       expect(stored.orders[5].lines[0].name).toHaveLength(255);
+      // Each sent order keeps its sentVersion stored: the version it went out at. The fake transport advertises no
+      // order.create max, so none is 4.
+      const storedSent = Object.fromEntries(stored.orders
+        .filter((order: { commandId: string }) => pendingIds.includes(order.commandId))
+        .map((order: { commandId: string; sentVersion?: number }) => [order.commandId, order.sentVersion]));
+      expect(storedSent).toStrictEqual(sentVersions);
+      for (const version of Object.values(storedSent)) expect(version).toBeLessThanOrEqual(3);
     });
 
     await test.step('after a reload, the 17.5.0 till reopens and a second flush sends nothing', async () => {
@@ -133,9 +143,8 @@ test.describe('storage-sqlite 16.21.1 → 17.5.0 upgrade on SQLite-wasm over OPF
       expect(result.message).toContain('could not create instance');
       expect(result.message).toContain('"code":"RM1"');
       expect(result.message).toContain('"mainVersion":"17.5.0","remoteVersion":"16.21.1"');
-      // Recorded, not endorsed: `isStorageWorkerStartError` does not classify it, so an app that shows its
-      // reload advice only for that class shows this as a generic open failure.
-      expect(result.isStorageWorkerStartError).toBe(false);
+      // `isStorageWorkerStartError` classifies RM1 as a failed start (#280), so the app shows its reload advice.
+      expect(result.isStorageWorkerStartError).toBe(true);
     });
 
     await test.step('the 17.5.0 build then opens the untouched 2.0.0 database with every order', async () => {
@@ -143,7 +152,7 @@ test.describe('storage-sqlite 16.21.1 → 17.5.0 upgrade on SQLite-wasm over OPF
       const opened = await tally<any>(page, 'open', DB_NAME);
       expect(opened, JSON.stringify(opened)).toMatchObject({ ok: true, rxdbVersion: '17.5.0' });
       const stored = await tally<any>(page, 'readAll');
-      expect(stored.orders).toStrictEqual(expected);
+      expect(stored.orders).toStrictEqual(migrated);
     });
   });
 });
