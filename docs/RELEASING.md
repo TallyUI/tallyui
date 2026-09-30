@@ -10,7 +10,8 @@ the four `connector-*` packages (ADR-041). A release takes two steps:
    his explicit word, which re-enables the Release workflow first. Until
    then it stays open.
 2. **The Release workflow publishes.** On every push to `main`,
-   `.github/workflows/release.yml` counts the pending changesets. If there
+   `.github/workflows/release.yml` counts the pending changesets (in pre
+   mode, those not yet listed in `.changeset/pre.json`). If there
    are none, it runs `pnpm changeset publish`. That publishes every package
    version not yet on npm, then pushes the git tags and creates the GitHub
    releases. If any changesets are pending, the publish job is skipped.
@@ -68,9 +69,7 @@ A `@tallyui/*` package's peer dependency on another one is written
 - **Check:** before `pnpm changeset version`, `pnpm changeset status
   --verbose` must show no major unless a changeset asks for one. It is the
   first step of the procedure below.
-- **Pre-release mode** (not used today): a prerelease such as
-  `2.1.0-next.0` doesn't satisfy `^2.0.0`, so a core minor in pre mode
-  still gives a major. The status check shows it.
+- **Prereleases:** see "Prereleases (the `next` dist-tag)" below.
 
 ## Worker procedure: open the version PR
 
@@ -92,7 +91,8 @@ Check the result before committing:
 
 - `pnpm smoke:pack` passes: every tarball has LICENSE, its entry files and no `workspace:` ranges, and installs and imports in a clean project.
 - `.changeset/` holds only `config.json` (and `README.md`, if present). Every
-  pending changeset is consumed.
+  pending changeset is consumed. In pre mode the changeset files stay, and
+  every one is listed in `.changeset/pre.json`.
 - All 11 packages have the same new version, and each one's `CHANGELOG.md`
   has an entry for it.
 - `demo` and `web` are unchanged, because changesets ignores them. The
@@ -112,6 +112,45 @@ since the branch was cut. If one has, rebase the branch and run
 `pnpm changeset version` again. Otherwise the merge leaves a pending
 changeset on `main`, the Release workflow skips publishing, and the release
 waits for the next version PR.
+
+## Prereleases (the `next` dist-tag)
+
+### How it works
+
+- A prerelease is changesets pre mode. The pre tag is both the version
+  suffix and the npm dist-tag. `pnpm changeset pre enter next` gives
+  `3.0.0-next.0`, then `3.0.0-next.1` and so on. The counter starts at 0.
+  All of them are published under `next`. `latest` is untouched.
+- In pre mode, `changeset version` keeps the changeset files and lists them
+  in `.changeset/pre.json`. The Release workflow counts only the unlisted
+  ones (`scripts/pending-changesets.mjs`), so a merged prerelease version PR
+  still publishes.
+
+### Procedure
+
+- **First prerelease:** on the version branch, run
+  `pnpm changeset pre enter next` before the normal procedure. Commit
+  `pre.json` with the version output.
+- **Further prereleases** (`next.1`, and so on): the normal procedure,
+  without entering again.
+- **The final release:** `pnpm changeset pre exit`, then the normal
+  procedure. That consumes every changeset, deletes `pre.json` and
+  publishes to `latest`.
+- **Verify:** `npm view @tallyui/core dist-tags`.
+
+### Things to know
+
+- **Pinning:** apps pin a prerelease exactly (`3.0.0-next.0`). A caret
+  range such as `^2.0.0` never matches a prerelease.
+- **Only-pre packages:** `changeset publish` puts a package that has never
+  had a regular release on `latest` rather than `next`. All 11 packages
+  have one today. A new package needs its bootstrap publish first (see
+  Prerequisites).
+- **Peer ranges:** a prerelease doesn't satisfy a caret range on the release
+  before it (`3.1.0-next.0` is outside `^3.0.0`). So a minor in pre mode
+  lifts every peer-dependent to a major, and the fixed group then lifts all
+  packages. `pnpm changeset status --verbose` and `pnpm check:release-plan`
+  show it.
 
 ## After the merge
 
