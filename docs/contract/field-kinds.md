@@ -94,9 +94,9 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
 | `payload.lines[].quantity` | instruction | 1 |
 | `payload.lines[].unitPriceMinor` | instruction | 1 |
 | `payload.lines[].taxInclusive` | instruction | 1 (ADR-038 amendment 2, without a version bump) |
-| `payload.lines[].discountMinor` | instruction | 2 (net from 4) |
+| `payload.lines[].discountMinor` | instruction | 2 (net from 4, see Amounts) |
 | `payload.subtotalMinor` | informational | 1 |
-| `payload.discountMinor` | instruction | 2 (net from 4) |
+| `payload.discountMinor` | instruction | 2 (net from 4, see Amounts) |
 | `payload.taxMinor` | informational | 1 |
 | `payload.totalMinor` | instruction | 1 |
 | `payload.payments` | instruction | 1 |
@@ -142,13 +142,8 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
   a difference is a check of the command against itself, so
   `invalid_payload` (`@tallyui/core/server`'s
   `order-payload-shape.ts:58`), not a comparison with the server's
-  computation.
-- `lines[].discountMinor` and `payload.discountMinor`, by version
-  (#286): v4: net at every level; v3 and earlier: each line's discount
-  in its own mode and the order's discount their sum. An inclusive
-  line's v4 discount D on its amount A is `net(A) − net(A − D)`, exact
-  in micro-units, rounded half away from zero per line. The till sends
-  v4 only to a server that advertises it.
+  computation. What each `discountMinor` means in each version is under
+  "Amounts" below.
 - `payload.customer` absent or `null` is the walk-in customer (ADR-038).
   A `customerId` the store cannot resolve (unknown, deleted or in another
   channel) is one sale's own reference, so the sale is kept as a guest
@@ -174,7 +169,7 @@ The builder recomputes every figure on each change to the sale
 (`order/order-builder.ts:143`, `:247`). `finalizeOrder` copies the
 figures and adds `taxByRate` (`pos-order/finalize.ts:189`, `:204`), and
 `toOrderCreateEnvelope` sends the stored order unchanged, so a resend
-never recomputes (`pos-order/command.ts:42`).
+never recomputes (`pos-order/command.ts:56`).
 
 #### Tax modes
 
@@ -185,7 +180,7 @@ never recomputes (`pos-order/command.ts:42`).
   `pricesIncludeTax` (`pos-order/finalize.ts:145`,
   `order/order-builder.ts:296`); absent means the order's mode.
 - An order with such a line is **mixed**. That line's `unitPriceMinor`
-  and `discountMinor` are in its own mode.
+  is in its own mode, and so is its `discountMinor` up to version 3.
 
 #### Discounts and how the order discount is spread
 
@@ -211,23 +206,34 @@ never recomputes (`pos-order/command.ts:42`).
 
 - `lines[].unitPriceMinor`: the unit price as sold, before any
   discount, in the line's own mode (`order/order-builder.ts:282`,
-  `pos-order/command.ts:67`).
+  `pos-order/command.ts:86`).
 - `lines[].discountMinor`: the line's own discounts plus its share of
-  the order discount, in the line's own mode; absent when 0
-  (`order/order-builder.ts:106`, `pos-order/command.ts:69`).
+  the order discount; absent when 0 (`order/order-builder.ts:106`,
+  `pos-order/command.ts:88`).
+  - **Version 4:** tax-exclusive (net). An exclusive line's is
+    unchanged; an inclusive line's discount D on its amount A
+    (`unitPriceMinor × quantity`) is `net(A) − net(A − D)`, exact in
+    micro-units from the line's tax, rounded half away from zero per
+    line (`pos-order/command.ts:48`).
+  - **Version 3 and earlier:** in the line's own mode.
 - `payload.discountMinor`: the order's line and order discounts
-  together, on one basis, **tax-exclusive**, like `subtotalMinor`:
-  since `totalMinor = subtotalMinor + taxMinor`, the discount that
-  produced that subtotal is net of tax too. Absent when 0. It is never
-  the order discount alone.
-  - **Today the till does not follow this rule (TallyUI #286).** It
-    sends the plain sum of `lines[].discountMinor`
-    (`pos-order/command.ts:51`), each in its line's own mode, so it is
-    tax-inclusive in an inclusive order and mixes modes in a mixed one
-    (the mixed example below: 750 = 596 tax-inclusive + 154 tax-free).
-    Core's shape check also requires that sum today
-    (`@tallyui/core/server`'s `order-payload-shape.ts:58`).
-  - Backends should not compare `discountMinor` until #286 lands.
+  together, the sum of `lines[].discountMinor` in every version (core's
+  `order-payload-shape.ts:58` refuses a command where it differs).
+  Absent when 0. It is never the order discount alone.
+  - **Version 4:** tax-exclusive, like `subtotalMinor`: since
+    `totalMinor = subtotalMinor + taxMinor`, the discount that produced
+    that subtotal is net of tax too. Core accepts version 4, and the
+    till's envelope builder (`toOrderCreateEnvelope`) produces it when
+    capped at 4 or more (`pos-order/command.ts:70`).
+  - **Version 3 and earlier:** the sum of each line's discount in its
+    own mode, so it is tax-inclusive in an inclusive order and mixes
+    modes in a mixed one (the mixed example below: 750 = 596
+    tax-inclusive + 154 tax-free).
+  - **Today the till still sends version 3 or lower,** because the
+    outbox does not yet pass the server's max to the envelope builder
+    (a follow-up; see #286's PR). So what a backend receives today is
+    the version-3 sum, and `discountMinor` is net only in a version-4
+    command.
 - `payload.taxMinor`: the sum of every line's exact tax, rounded once
   for the order (`order/order-builder.ts:28`, `:30`); line tax is on
   the line's amount after all discounts.
@@ -319,11 +325,12 @@ never recomputes (`pos-order/command.ts:42`).
 | `display.discountMinor = display.orderDiscountMinor + Σ discount rows` | holds | holds | holds |
 | `display.subtotalMinor = Σ unitPriceMinor × quantity` | holds | holds | no |
 
-The rows with `Σ lines[].discountMinor` sum each line's discount in its
-own mode, so they are identities of the lines, not of
-`payload.discountMinor`'s rule. Today `payload.discountMinor` equals
-that sum (core refuses otherwise); that is the #286 bug, so no identity
-here uses `payload.discountMinor`.
+The rows with `Σ lines[].discountMinor` use version 3's figures, each
+line's discount in its own mode. In version 4, `Σ net(A) −
+payload.discountMinor = subtotalMinor` holds in all four worked
+examples below, with each line's net(A) exact and the sum rounded once
+(`pos-order/command-v4.test.ts`). It is not listed as an identity,
+because each line's net discount is rounded on its own.
 
 `totalMinor = subtotalMinor − discountMinor + taxMinor` is never an
 identity: `subtotalMinor` has already had every discount taken off, so
@@ -344,7 +351,8 @@ is inclusive.
 | `lines[0]` unit × qty, `discountMinor` | 1250 × 2, 596 | 1250 × 2, 596 | 1250 × 2, 596 | 1250 × 2, 596 |
 | `lines[1]` unit × qty, `discountMinor` | 999 × 1, 154 | 999 × 1, 154 | 999 × 1, 154 (excl.) | 999 × 1, 154 (incl.) |
 | `subtotalMinor` | 2749 | 2499 | 2576 | 2672 |
-| `discountMinor` as sent today (#286: not yet the rule) | 750 | 750 | 750 | 750 |
+| `discountMinor`, version 3 (as sent today) | 750 | 750 | 750 | 750 |
+| version 4: `lines[].discountMinor`, `discountMinor` | 596, 154; 750 | 542, 140; 682 | 542, 154; 696 | 596, 140; 736 |
 | `taxMinor` | 275 | 250 | 258 | 267 |
 | `totalMinor` | 3024 | 2749 | 2834 | 2939 |
 | `display.subtotalMinor` | 3499 | 3499 | 3599 | 3408 |
@@ -359,11 +367,13 @@ is inclusive.
   customer pays 3499 − 750 = 2749.
 - Mixed, inclusive order: the total is 1904 + 845 + 85 (line b's 84.5
   tax, rounded half away from zero) = 2834; the tax is 257.590909, so
-  258. Today's `discountMinor` 750 adds line a's tax-inclusive 596 to
-  line b's tax-free 154, which is the #286 bug; the display shows line
-  b's share as 169 and the order discount as 515.
-- In the exclusive order 750 is already tax-exclusive, so it is what
-  the rule asks for; in the inclusive and mixed orders it is not.
+  258. Version 3's `discountMinor` 750 adds line a's tax-inclusive 596
+  to line b's tax-free 154; version 4 sends line a's as 542 net, so
+  696. The display shows line b's share as 169 and the order discount
+  as 515.
+- In the exclusive order version 3's 750 is already tax-exclusive, so
+  version 4 sends the same figures; in the inclusive and mixed orders
+  they differ.
 
 Where rounding shows (three lines of 1 × 3.33 at 10%):
 

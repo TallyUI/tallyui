@@ -21,11 +21,12 @@ function probe(pricesIncludeTax: boolean, lineBInclusive: boolean): PosOrder {
   return finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 3 } });
 }
 
-// [case, order, v4 line discounts, subtotalMinor]; v3 sends today's 596 and 154, 750 in all three.
+// [case, order, v4 line discounts, subtotalMinor], field-kinds.md's worked examples; v3 sends 596 and 154, 750 in all.
 const cases = [
   ['G, exclusive', probe(false, false), [596, 154], 2749],
   ['H, inclusive', probe(true, true), [542, 140], 2499],
   ['I, mixed: inclusive order, exclusive line b', probe(true, false), [542, 154], 2576],
+  ['mixed: exclusive order, inclusive line b', probe(false, true), [596, 140], 2672],
 ] as const;
 
 /** Σ net(A) over the lines, exact in micro-units and rounded once, half away from zero. */

@@ -6,7 +6,7 @@ export interface CommandEnvelope<P = unknown> {
   id: string; // UUIDv7, the idempotency key; never reused
   type: CommandType;
   /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1;
-   *  4 is 3 with every `discountMinor` tax-exclusive, sent only to a store that advertises 4 (#286). */
+   *  4 is 3 with every `discountMinor` tax-exclusive, built only when capped at 4 or more (#286). */
   version: 1 | 2 | 3 | 4;
   payload: P;
   createdAt: string; // ISO 8601, client clock

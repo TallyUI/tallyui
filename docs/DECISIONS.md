@@ -3074,7 +3074,9 @@ interface OrderCreatePayload {
 - **Amended: version 4 (Front desk, 2026-09-30, #286).** Version 4 is
   version 3 with every `discountMinor` tax-exclusive, the order's and
   each line's, so their sum still holds. A changed meaning needs a
-  version (ADR-038). The till sends 4 only to a server advertising it.
+  version (ADR-038). Core accepts 4, and the till's envelope builder
+  produces it when capped at 4 or more; the till doesn't send it yet
+  (a follow-up; see #286's PR).
 
 ## ADR-066 Standalone app: TallyUI with no backend
 
