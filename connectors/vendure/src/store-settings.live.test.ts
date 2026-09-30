@@ -20,6 +20,7 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure store settings', () 
       currency: 'USD',
       pricesIncludeTax: false,
       taxRatesPpm: { default: 250000, '1': 250000, '2': 70000 },
+      taxRateCodes: { default: 'Standard Europe', '1': 'Standard Europe', '2': 'Reduced Europe' },
     });
   }, 30000);
 });
