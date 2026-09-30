@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { SyncContext } from '@tallyui/core';
+import { isPermanentError, type SyncContext } from '@tallyui/core';
 
 import { woocommerceConnector, WooDateFilterError, WooMissingUuidError } from '../index';
 import { wooProductSync } from '../sync/products';
@@ -578,5 +578,16 @@ describe('wooProductReplication.pull.handler', () => {
 
     expect(new URL(String(fetchSpy.mock.calls[1][0])).searchParams.get('offset')).toBe('0');
     expect(result.checkpoint).toEqual({ modified: checkpoint.modified, offset: 2, pass_mark: '2026-01-02T08:00:00', pass_count: 3 });
+  });
+
+  it('WooDateFilterError is a permanent error', () => {
+    const error = new WooDateFilterError(1, 'b', 'r');
+    expect(isPermanentError(error)).toBe(true);
+    expect(error.code).toBe('unsupported_store');
+  });
+
+  // Today's choice, pinned: the front desk may make it permanent later.
+  it('WooMissingUuidError is not a permanent error', () => {
+    expect(isPermanentError(new WooMissingUuidError(1))).toBe(false);
   });
 });

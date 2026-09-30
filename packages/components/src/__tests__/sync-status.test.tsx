@@ -113,4 +113,34 @@ describe('SyncStatus', () => {
     expect(time).toMatch(/^2:49\sAM$/);
     expect(time).not.toMatch(/\b0\d:/);
   });
+
+  it.each([
+    ['unauthorized', "The catalogue isn't updating: this till needs to sign in to the store again.",
+      'Products, prices and stock stay as they were until someone signs in again.'],
+    ['unsupported_store', "The catalogue isn't updating: the store needs a software update.",
+      'The store owner needs to update WooCommerce to version 5.8 or later.'],
+    ['some_new_code', "The catalogue isn't updating.",
+      'Products, prices and stock stay as they were. Restart the app; if it keeps happening, contact the store owner.'],
+  ])('shows a pull notice %s as a plain line and a detail, never the raw code', (code, line, detail) => {
+    const { container } = render(<SyncStatus state={{ pending: 0, sending: false }} pullNotice={{ code, since: Date.now() }} />);
+    expect(screen.getByLabelText('Catalogue status').textContent).toBe(line);
+    expect(screen.getByLabelText('Catalogue status detail').textContent).toBe(detail);
+    expect(screen.getByLabelText('Sync status').textContent).toBe('All sales synced');
+    expect(container.textContent).not.toContain(code);
+  });
+
+  it('shows no catalogue notice without pullNotice', () => {
+    render(<SyncStatus state={{ pending: 0, sending: false }} />);
+    expect(screen.queryByLabelText('Catalogue status')).toBeNull();
+  });
+
+  it('shows the catalogue notice first, then the outbox status, when both are set', () => {
+    const { container } = render(<SyncStatus state={{ pending: 2, sending: false, backendMissing: { since: Date.now() } }}
+      pullNotice={{ code: 'unauthorized', since: Date.now() }} />);
+    const text = container.textContent ?? '';
+    const order = [screen.getByLabelText('Catalogue status').textContent!, screen.getByLabelText('Catalogue status detail').textContent!,
+      screen.getByLabelText('Sync status').textContent!, detail('the POS plugin')].map((part) => text.indexOf(part));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
 });

@@ -37,6 +37,8 @@ export class WooMissingUuidError extends Error {
 export class WooDateFilterError extends Error {
   name = 'WooDateFilterError';
   readonly code = 'unsupported_store' as const;
+  /** Retrying cannot succeed until the store is updated, so replication stops (`isPermanentError`). */
+  readonly permanent = true as const;
 
   constructor(readonly productId: number | undefined, readonly bound: string, readonly received: string | undefined) {
     super('This store needs WooCommerce 5.8 or later to sync products.');

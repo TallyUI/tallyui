@@ -174,7 +174,7 @@ startReplication({
 });
 ```
 
-Returns an `RxReplicationState` with:
+Returns a `TallyReplicationState`: RxDB's `RxReplicationState` with `notice$` and `resume()` added.
 
 | Property/Method | Description |
 |-----------------|-------------|
@@ -185,6 +185,34 @@ Returns an `RxReplicationState` with:
 | `cancel()` | Stop replication |
 | `awaitInSync()` | Promise that resolves when fully synced |
 | `reSync()` | Trigger an immediate sync cycle |
+| `notice$` | Observable: a `SyncNotice` (`{ code, since }`) after a permanent pull error, otherwise `undefined` |
+| `resume()` | Clear the notice and the backoff, and pull again from the stored checkpoint |
+
+### Errors
+
+A pull error is either permanent or transient.
+
+- **Permanent:** the error has `permanent === true` and a string `code`
+  (`isPermanentError` from `@tallyui/core`). `ConnectorUnauthorizedError`
+  (`code: 'unauthorized'`) is one. The pull makes that one request, sets
+  `notice$` to `{ code, since }` once, and pauses. It is not retried,
+  `reSync()` does nothing, and the error does not appear on `error$`. Call
+  `resume()` once the cause is fixed (after sign-in, say); an app restart
+  starts afresh anyway. Show the notice with `SyncStatus`'s `pullNotice`
+  prop, which turns the code into words for the cashier.
+- **Transient:** anything else, such as network errors, timeouts, 5xx and
+  429. RxDB emits it on `error$` and retries. The wait starts at
+  `retryTime`, doubles after each consecutive failure up to 5 minutes, and
+  goes back to `retryTime` after a successful pull. If the error has a
+  numeric `retryAfterMs`, the wait is at least that long.
+
+Push errors are retried by RxDB at a fixed `retryTime`, as before.
+
+```tsx
+replicationState.notice$.subscribe((notice) => setPullNotice(notice));
+// after the till signs in again:
+await replicationState.resume();
+```
 
 ## Connector Checkpoint Formats
 
