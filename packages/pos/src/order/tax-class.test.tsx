@@ -10,7 +10,7 @@ import { catalogueEntries } from '../sale/catalogue';
 import { finalizeOrder } from '../pos-order/finalize';
 
 // #288: a store with two tax classes, the default 25% and `reduced` 12%, through the real TaxProvider.
-const rates = { default: 250000, reduced: 120000 };
+const rates = { default: 250000, reduced: 120000, zero: 0 };
 function taxContext(pricesIncludeTax: boolean) {
   const wrapper = ({ children }: { children: ReactNode }) =>
     <TaxProvider ratesPpm={rates} pricesIncludeTax={pricesIncludeTax}>{children}</TaxProvider>;
@@ -84,6 +84,20 @@ describe('each line is taxed at its product tax class (#288)', () => {
       expect(logged.map((entry) => entry.data)).toEqual([{ taxClass: 'misconfigured' }]);
     } finally {
       taxLogger.removeSink('tax-class-288');
+    }
+  });
+
+  it('a class the store rates at 0 (a Vendure category with no rate in the zone) is taxed 0, with no warning', () => {
+    const logged: LogEntry[] = [];
+    taxLogger.addSink({ id: 'tax-class-288-zero', levels: ['warn'], write: (entry) => logged.push(entry) });
+    try {
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext: taxContext(false) });
+      builder.addProduct({ ...coffee, taxClass: 'zero' }, traits);
+      expect(builder.getSnapshot().lineItems[0].taxLines).toEqual([{ ratePpm: 0, taxMicros: '0' }]);
+      expect(builder.getSnapshot().taxMinor).toBe(0);
+      expect(logged).toEqual([]);
+    } finally {
+      taxLogger.removeSink('tax-class-288-zero');
     }
   });
 
