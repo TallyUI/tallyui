@@ -1092,8 +1092,8 @@ interface OrderCreatePayload {
           bound. On Vendure this needs a replay read before ADR-047's
           `INSERT … ON CONFLICT` claim.
           **Amended 2026-09-30 (Front desk):** the bounds are now one rule
-          on every backend, for both the envelope's `createdAt` and
-          `payload.createdAt`:
+          on every backend, for every `createdAt` in every command's
+          envelope and payload (`order.create`, `register.*`):
           - at most 24 hours ahead of the server's clock;
           - not earlier than `2020-01-01T00:00:00Z`.
 

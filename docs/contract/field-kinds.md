@@ -29,15 +29,18 @@ of the command, not of the server's view of it, and it applies to a field
 of either kind. An informational field is never refused because it
 differs from the server's own computation (ADR-070 decision 3).
 
-**Both `createdAt` fields have one set of bounds, the same on every
-backend** (Front desk, 2026-09-30). That covers the envelope's
-`createdAt` (informational) and `payload.createdAt` (an instruction):
-a malformed value is refused whichever kind the field is (ruling 19).
+**Every `createdAt` has one set of bounds, in every command, on every
+backend** (Front desk, 2026-09-30). That's every envelope's `createdAt`
+and every payload's `createdAt`: `order.create`, the `register.*`
+commands and `register.movement.*`. It's a rule on the field, not on one
+command type, and a malformed value is refused whichever kind the field
+is (ruling 19).
 - **Upper bound:** at most 24 hours ahead of the server's clock, per ADR-038's value checks.
 - **Lower bound:** not earlier than `2020-01-01T00:00:00Z`.
-- **Outside either bound, it's malformed.** The server refuses it as
-  `invalid_payload`, naming the field (`createdAt` or `payload.createdAt`).
-  It's never clamped to the bound.
+- **Outside either bound, it's malformed.** The server refuses the
+  command as `invalid_payload`, naming the field's path (for example
+  `createdAt` or `payload.createdAt`), with the same message shape for
+  every command. It's never clamped to the bound.
 
 An offline till's old sales stay well inside the lower bound; a time
 before it can only come from a broken clock.
