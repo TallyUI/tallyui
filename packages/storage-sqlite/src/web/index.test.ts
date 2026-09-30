@@ -10,7 +10,14 @@ const { getRxStorageWorker, fakeStorage } = vi.hoisted(() => {
 
 vi.mock('rxdb-premium/plugins/storage-worker', () => ({ getRxStorageWorker }));
 
-import { getRxStorageSQLiteWasm, SQLITE_SAHPOOL_ENGINE, StorageWorkerStartError, isStorageWorkerStartError } from './index';
+import {
+  getRxStorageSQLiteWasm,
+  SQLITE_SAHPOOL_ENGINE,
+  StorageWorkerStartError,
+  isStorageWorkerStartError,
+  StorageUnavailableError,
+  isStorageUnavailableError,
+} from './index';
 
 /**
  * Premium's mode 'one' as 16.21.1 builds it: rxdb's real storage-remote,
@@ -78,6 +85,8 @@ describe('getRxStorageSQLiteWasm', () => {
   it('re-exports the worker start error helpers', () => {
     expect(typeof StorageWorkerStartError).toBe('function');
     expect(typeof isStorageWorkerStartError).toBe('function');
+    expect(typeof StorageUnavailableError).toBe('function');
+    expect(typeof isStorageUnavailableError).toBe('function');
   });
 });
 

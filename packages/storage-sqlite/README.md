@@ -114,21 +114,40 @@ the function instead.
 
 ### Recognising a failed start
 
-If the worker's start-up fails — most commonly another tab still holding the
-opfs-sahpool database, or a browser with no OPFS or no sync access handles —
-every storage call rejects with a `StorageWorkerStartError` instead of
-hanging. A stale worker counts too: after an upgrade the browser may still
-have the old worker cached, and RxDB refuses it (RM1). Recognise either with
-`isStorageWorkerStartError` and tell the user to close other tabs or reload:
+If the worker's start-up fails, every storage call rejects instead of
+hanging, with one of two errors. Each carries its cause's name and message in
+its own message, since the cause itself doesn't cross the worker channel.
+
+- **Storage unavailable: `StorageUnavailableError`**, recognised with
+  `isStorageUnavailableError`. The browser gives the page no usable OPFS:
+  `navigator.storage.getDirectory()` fails, or sync access handles are
+  missing. This is what happens in a **private window**: Safari Private
+  Browsing (WebKit's ephemeral storage, #293) refuses OPFS. No other tab is
+  involved, and neither closing tabs nor reloading helps, so
+  `isStorageWorkerStartError` is false for it.
+- **Held by another tab, or a stale worker: `StorageWorkerStartError`**,
+  recognised with `isStorageWorkerStartError`. OPFS is reachable, but another
+  tab holds the opfs-sahpool database (WebKit's `InvalidStateError`,
+  Chromium's `NoModificationAllowedError`). A stale worker counts too: after
+  an upgrade the browser may still have the old worker cached, and RxDB
+  refuses it (RM1). Any other start failure is a `StorageWorkerStartError`
+  as well, with its cause in the message.
+
+Check for storage unavailable first. The wording TallyUI apps use:
 
 ```ts
-import { isStorageWorkerStartError } from '@tallyui/storage-sqlite/web';
+import { isStorageUnavailableError, isStorageWorkerStartError } from '@tallyui/storage-sqlite/web';
 
 try {
   await db.addCollections({ /* ... */ });
 } catch (error) {
-  if (isStorageWorkerStartError(error)) {
-    showMessage('Close other tabs or reload.');
+  if (isStorageUnavailableError(error)) {
+    showMessage(
+      "This till can't save sales in a private window.",
+      'Open it in a normal Safari window (or another browser) and sign in again. Nothing has been lost: no sale was taken here.'
+    );
+  } else if (isStorageWorkerStartError(error)) {
+    showMessage('This till is already open in another tab. Close the other tab, then reload this one.');
   } else {
     throw error;
   }

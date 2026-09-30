@@ -39,6 +39,14 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${ports.sqlite}` },
       dependencies: ['server-identity'],
     },
+    // The same storage suite in WebKit (Safari, iPad web tills; #293). Its fixture runs each test in a persistent
+    // profile, as normal Safari browsing does; one test uses the default, ephemeral context, a private window.
+    {
+      name: 'storage-sqlite-webkit',
+      testDir: './e2e/storage-sqlite',
+      use: { ...devices['Desktop Safari'], baseURL: `http://localhost:${ports.sqlite}` },
+      dependencies: ['server-identity'],
+    },
   ],
 
   webServer: [

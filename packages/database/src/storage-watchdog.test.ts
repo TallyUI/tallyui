@@ -262,6 +262,16 @@ describe('storage-watchdog', () => {
     expect(isStorageWorkerFailure(new Error('CONFLICT'))).toBe(false);
   });
 
+  // #293: a private window's storage is unavailable, and reloading can't help, so no reload advice.
+  it('isStorageWorkerFailure is false for a StorageUnavailableError, as thrown and as RxDB wraps it', () => {
+    const message = 'StorageUnavailableError: this browser gives the page no OPFS storage (a private window?): UnknownError: The operation failed';
+    const unavailable = new Error(message);
+    unavailable.name = 'StorageUnavailableError';
+    expect(isStorageWorkerFailure(unavailable)).toBe(false);
+    const wrapped = new Error('could not create instance ' + JSON.stringify({ name: 'StorageUnavailableError', message }));
+    expect(isStorageWorkerFailure(wrapped)).toBe(false);
+  });
+
   // The RM1 check itself is @tallyui/core's isRxdbRemoteVersionMismatch, tested there; this pins the wiring.
   it('isStorageWorkerFailure recognises a stale worker (RxDB RM1) and rejects a data error mentioning RM1', () => {
     expect(isStorageWorkerFailure(new Error(RM1_MESSAGE))).toBe(true);

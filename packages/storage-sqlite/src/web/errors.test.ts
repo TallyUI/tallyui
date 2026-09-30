@@ -1,7 +1,47 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { StorageWorkerStartError } from './errors';
+import { StorageUnavailableError, StorageWorkerStartError, isStorageUnavailableError } from './errors';
 import { isStorageWorkerStartError } from './is-storage-worker-start-error';
+
+// The worker's messages (./worker), as RxDB's remote storage wraps them on the main thread.
+const wrap = (name: string, message: string) => 'could not create instance ' + JSON.stringify({ name, message });
+const UNAVAILABLE_MESSAGE =
+  'StorageUnavailableError: this browser gives the page no OPFS storage (a private window?): UnknownError: The operation failed for an unknown transient reason (e.g. out of memory).';
+const HELD_MESSAGE =
+  'StorageWorkerStartError: another tab holds the database (opfs-sahpool): InvalidStateError: The object is in an invalid state.';
+
+describe('StorageUnavailableError / isStorageUnavailableError (#293)', () => {
+  it('names the error and keeps the cause', () => {
+    const cause = new Error('UnknownError');
+    const error = new StorageUnavailableError(UNAVAILABLE_MESSAGE, { cause });
+    expect(error.name).toBe('StorageUnavailableError');
+    expect(error.cause).toBe(cause);
+    expect(error).toBeInstanceOf(Error);
+  });
+
+  it('recognises the error, a { name, message } copy, the wrapped message and a bare string', () => {
+    const forms = [
+      new StorageUnavailableError(UNAVAILABLE_MESSAGE),
+      { name: 'StorageUnavailableError', message: 'x' },
+      new Error(wrap('StorageUnavailableError', UNAVAILABLE_MESSAGE)),
+      wrap('StorageUnavailableError', UNAVAILABLE_MESSAGE),
+    ];
+    for (const form of forms) {
+      expect(isStorageUnavailableError(form)).toBe(true);
+      // A reload can't help, so it is never a failed start.
+      expect(isStorageWorkerStartError(form)).toBe(false);
+    }
+  });
+
+  it('is false for the held case, RM1 and unrelated errors', () => {
+    expect(isStorageUnavailableError(new Error(wrap('StorageWorkerStartError', HELD_MESSAGE)))).toBe(false);
+    expect(isStorageWorkerStartError(new Error(wrap('StorageWorkerStartError', HELD_MESSAGE)))).toBe(true);
+    expect(isStorageUnavailableError(new Error(RM1_MESSAGE))).toBe(false);
+    expect(isStorageUnavailableError({ name: 'TypeError', message: 'nope' })).toBe(false);
+    expect(isStorageUnavailableError(undefined)).toBe(false);
+    expect(isStorageUnavailableError(null)).toBe(false);
+  });
+});
 
 describe('StorageWorkerStartError / isStorageWorkerStartError', () => {
   it('names the error and keeps the cause', () => {

@@ -1,6 +1,25 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { test, expect, type Page } from '@playwright/test';
+import { test as base, expect, webkit, type Page } from '@playwright/test';
+
+// Playwright's default WebKit context is ephemeral, like a Safari private window, and has no OPFS (#293), so
+// WebKit runs this suite in a persistent profile, as normal Safari does. WebKit keeps one OPFS store per origin
+// across profiles, so each test starts by emptying the origin's OPFS. Chromium keeps the default context.
+const test = base.extend({
+  context: async ({ browserName, context, baseURL }, use, testInfo) => {
+    if (browserName !== 'webkit') return use(context);
+    const persistent = await webkit.launchPersistentContext(testInfo.outputPath('profile'), { baseURL });
+    const blank = persistent.pages()[0] ?? (await persistent.newPage());
+    await blank.goto('/');
+    await blank.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      for await (const name of (root as any).keys()) await root.removeEntry(name, { recursive: true });
+    });
+    await blank.close();
+    await use(persistent);
+    await persistent.close();
+  },
+});
 
 // The tests need rxdb-premium, which only installs with the RXDB_PREMIUM
 // token (docs/CONTRIBUTING.md). CI sets that secret for the e2e-web job;
@@ -10,7 +29,9 @@ const rxdbPremiumInstalled = existsSync(path.resolve('packages/storage-sqlite/no
 
 const DB_NAME = 'e2e_sqlite_wasm';
 
-type OpenResult = { ok: true } | { ok: false; isStorageWorkerStartError: boolean; message: string };
+type OpenResult =
+  | { ok: true }
+  | { ok: false; isStorageWorkerStartError: boolean; isStorageUnavailableError: boolean; message: string };
 
 function openDb(page: Page, name: string): Promise<OpenResult> {
   return page.evaluate((n) => (window as any).tally.open(n), name);
@@ -22,10 +43,10 @@ async function timed<T>(work: () => Promise<T>): Promise<{ value: T; ms: number 
   return { value, ms: Date.now() - start };
 }
 
-test.describe('storage-sqlite worker cold start (real Chromium, ADR-061)', () => {
-  // Each test gets its own Playwright BrowserContext (the default `page`
-  // fixture), which is a separate storage origin partition, so OPFS never
-  // carries over between tests without any explicit clearing.
+test.describe('storage-sqlite worker cold start (real Chromium and WebKit, ADR-061)', () => {
+  // Each test gets its own Playwright BrowserContext (the `context` fixture
+  // above). In Chromium that is a separate storage origin partition, so OPFS
+  // never carries over between tests; in WebKit the fixture empties OPFS.
   test.skip(!rxdbPremiumInstalled, 'rxdb-premium is not installed (needs the RXDB_PREMIUM token; see docs/CONTRIBUTING.md)');
 
   test('a fresh page opens the database, and the open completes well under 5s', async ({ page }) => {
@@ -62,9 +83,13 @@ test.describe('storage-sqlite worker cold start (real Chromium, ADR-061)', () =>
     await second.goto('/');
     const { value: result, ms } = await timed(() => openDb(second, DB_NAME));
     // eslint-disable-next-line no-console
-    console.log(`[storage-sqlite e2e] second tab rejection: ${ms}ms`);
+    console.log(`[storage-sqlite e2e] second tab rejection: ${ms}ms: ${JSON.stringify(result)}`);
     expect(result.ok, JSON.stringify(result)).toBe(false);
-    if (!result.ok) expect(result.isStorageWorkerStartError).toBe(true);
+    if (!result.ok) {
+      expect(result.isStorageWorkerStartError).toBe(true);
+      expect(result.isStorageUnavailableError).toBe(false);
+      expect(result.message).toContain('another tab holds the database');
+    }
     expect(ms).toBeLessThan(5000);
     await second.close();
 
@@ -125,5 +150,22 @@ test.describe('storage-sqlite worker cold start (real Chromium, ADR-061)', () =>
     // eslint-disable-next-line no-console
     console.log(`[storage-sqlite e2e] reopen after terminate: ${ms}ms`);
     expect(reopened).toEqual(['item-0000']);
+  });
+
+  // #293: the app shows its private-window message for this error, never "open in another tab".
+  test('a WebKit private window (the default, ephemeral context) fails the open as storage unavailable, not another tab', async ({ browser, browserName, baseURL }) => {
+    test.skip(browserName !== 'webkit', "WebKit's ephemeral context is the private-window case");
+    const ephemeral = await browser.newContext({ baseURL });
+    const page = await ephemeral.newPage();
+    await page.goto('/');
+    const result = await openDb(page, DB_NAME);
+    // eslint-disable-next-line no-console
+    console.log(`[storage-sqlite e2e] private window: ${JSON.stringify(result)}`);
+    expect(result.ok, JSON.stringify(result)).toBe(false);
+    if (!result.ok) {
+      expect(result.isStorageUnavailableError).toBe(true);
+      expect(result.isStorageWorkerStartError).toBe(false);
+    }
+    await ephemeral.close();
   });
 });
