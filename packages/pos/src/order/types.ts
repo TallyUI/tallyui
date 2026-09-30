@@ -1,4 +1,4 @@
-import type { Money } from '@tallyui/core';
+import type { Money, TaxRounding } from '@tallyui/core';
 
 export interface Order {
   id: string;
@@ -10,10 +10,12 @@ export interface Order {
   note: string;
   currency: string;
   pricesIncludeTax: boolean;
+  /** The store's tax rounding strategy the figures were computed with (#287), from the sale's tax context; absent is per_order. */
+  taxRounding?: TaxRounding;
   // Settlement figures, sent in `order.create` (ADR-038, ADR-062). Show `display` instead (ADR-063).
   subtotalMinor: number;      // settlement: excl. tax, after line and order discounts (both pre-tax, ADR-062)
   discountMinor: number;      // settlement: Σ lineItems[].discountMinor, each in its line's own mode, so it mixes modes; not for display
-  taxMinor: number;           // settlement: rounded once per order
+  taxMinor: number;           // settlement: rounded once per order, unless taxRounding says otherwise (#287)
   totalMinor: number;         // settlement: what the customer pays
   display: DisplayTotals;
   paidMinor: number;

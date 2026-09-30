@@ -186,7 +186,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
         })),
       })),
     };
-    taxByRate = taxLinesByRate(order.lineItems, order.taxMinor).map(({ ratePpm, code, netMinor, amountMinor }) => ({
+    taxByRate = taxLinesByRate(order.lineItems, order.taxMinor, undefined, order.taxRounding).map(({ ratePpm, code, netMinor, amountMinor }) => ({
       ratePpm, ...(code !== undefined ? { code } : {}), netMinor, amountMinor, grossMinor: netMinor + amountMinor,
     }));
     if (display.totalMinor !== order.totalMinor || display.taxMinor !== order.taxMinor
