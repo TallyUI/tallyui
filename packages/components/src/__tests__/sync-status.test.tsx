@@ -8,15 +8,17 @@ import { SyncStatus } from '../sale/sync-status';
 const os = Platform.OS;
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); Object.assign(Platform, { OS: os }); });
 
-// The status line's text as shown, checking on the way that its live region (the only labelled element) holds exactly its label,
-// never the countdown, and that the countdown, if any, is the element after it.
+// The status line as shown: its live region (the only labelled element), whose text is exactly its label and never sending,
+// retrying or a countdown; then, after a newline, the short sending or retrying line below it, if any, which has neither.
 function line() {
   const live = document.querySelector('[aria-label]');
   expect(live?.getAttribute('aria-label')).toBe(live?.textContent);
   expect(live?.getAttribute('aria-live')).toBe('polite');
-  expect(live?.textContent).not.toMatch(/ in \d/);
-  expect(live?.parentElement?.textContent).toBe((live?.textContent ?? '') + (live?.nextElementSibling?.textContent ?? ''));
-  return live?.parentElement?.textContent;
+  expect(live?.textContent).not.toMatch(/sending|retrying| in \d/i);
+  const next = live?.nextElementSibling;
+  if (!next?.textContent?.match(/^(Sending|Retrying)/)) return live?.textContent;
+  expect([next.getAttribute('aria-live'), next.getAttribute('aria-label')]).toEqual([null, null]);
+  return `${live?.textContent}\n${next.textContent}`;
 }
 const label = () => document.querySelector('[aria-label]')?.getAttribute('aria-label');
 
@@ -35,7 +37,7 @@ describe('SyncStatus', () => {
   });
   it('appends "sending" while a flush is in flight', () => {
     render(<SyncStatus state={{ pending: 2, sending: true }} />);
-    expect(line()).toBe('2 sales waiting to sync · sending');
+    expect(line()).toBe('2 sales waiting to sync\nSending…');
   });
   it('appends "retrying" and a countdown to the next attempt when not sending, with no reason code', () => {
     vi.useFakeTimers();
@@ -43,7 +45,7 @@ describe('SyncStatus', () => {
     vi.setSystemTime(now);
     const state: OutboxState = { pending: 1, sending: false, lastRetryReason: 'offline', nextAttemptAt: now + 5000 };
     render(<SyncStatus state={state} />);
-    expect(line()).toBe('1 sale waiting to sync · retrying in 5s');
+    expect(line()).toBe('1 sale waiting to sync\nRetrying in 5 s.');
     expect(label()).toBe('1 sale waiting to sync');
   });
   // #263's "since" sentence, which a stuck order shows with the store missing or not, for any reason.
@@ -62,12 +64,12 @@ describe('SyncStatus', () => {
         orders: ['a', 'b'].map((commandId) => ({ commandId, since, reason: 'status_503' })) } };
     render(<SyncStatus state={state} />);
     // Sending or retrying comes last, outside the live region.
-    expect(line()).toBe(`4 sales waiting to sync · ${salesSince(time)} · retrying in 5s`);
+    expect(line()).toBe(`4 sales waiting to sync · ${salesSince(time)}\nRetrying in 5 s.`);
     expect(label()).toBe(`4 sales waiting to sync · ${salesSince(time)}`);
     cleanup();
     render(<SyncStatus state={{ pending: 3, sending: true, stuck: { commandIds: ['a'], since, reason: 'no_progress',
       orders: [{ commandId: 'a', since, reason: 'no_progress' }] } }} />);
-    expect(line()).toBe(`3 sales waiting to sync · ${salesSince(time)} · sending`);
+    expect(line()).toBe(`3 sales waiting to sync · ${salesSince(time)}\nSending…`);
     expect(label()).toBe(`3 sales waiting to sync · ${salesSince(time)}`);
   });
   it.each(['timeout', 'status_503'])('shows a stuck %s with the same words, and no "Not syncing" or per-reason wording', (reason) => {
@@ -85,7 +87,7 @@ describe('SyncStatus', () => {
       stuck: { commandIds: ['r'], since, reason: 'status_503', orders: [{ commandId: 'r', since, reason: 'status_503' }] } }} />);
     const tillSince = `1 till update waiting to sync · Till updates haven't reached the online store since ${time}. `
       + "Keep selling: they're saved on this till and will send by themselves.";
-    expect(line()).toBe(`${tillSince} · sending`);
+    expect(line()).toBe(`${tillSince}\nSending…`);
     expect(label()).toBe(tillSince);
   });
 
@@ -94,7 +96,7 @@ describe('SyncStatus', () => {
     const now = Date.now();
     vi.setSystemTime(now);
     render(<SyncStatus state={{ pending: 2, sending: false, lastRetryReason: 'status_503', nextAttemptAt: now + 3000, stuck: undefined }} />);
-    expect(line()).toBe('2 sales waiting to sync · retrying in 3s');
+    expect(line()).toBe('2 sales waiting to sync\nRetrying in 3 s.');
   });
 
   const cashierLine = "Sales aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
@@ -121,7 +123,7 @@ describe('SyncStatus', () => {
     expect(screen.queryByText(/TallyUI|the POS plugin/)).toBeNull();
     cleanup();
     render(<SyncStatus state={state} />);
-    expect(line()).toBe('2 sales waiting to sync · retrying in 3s');
+    expect(line()).toBe('2 sales waiting to sync\nRetrying in 3 s.');
     expect(screen.queryByText(/store owner/)).toBeNull();
   });
 
@@ -250,7 +252,7 @@ describe('SyncStatus', () => {
 
   it('with only till updates waiting, takes the sending text from the register outbox, not the order outbox', () => {
     render(<SyncStatus state={{ pending: 0, sending: false }} registerState={{ pending: 1, sending: true }} />);
-    expect(line()).toBe('1 till update waiting to sync · sending');
+    expect(line()).toBe('1 till update waiting to sync\nSending…');
     cleanup();
     render(<SyncStatus state={{ pending: 0, sending: true }} registerState={{ pending: 1, sending: false }} />);
     expect(line()).toBe('1 till update waiting to sync');
@@ -266,9 +268,9 @@ describe('SyncStatus', () => {
     vi.setSystemTime(now);
     render(<SyncStatus state={{ pending: 0, sending: false }}
       registerState={{ pending: 1, sending: false, lastRetryReason: 'status_503', nextAttemptAt: now + 5000 }} />);
-    expect(line()).toBe('1 till update waiting to sync · retrying in 5s');
+    expect(line()).toBe('1 till update waiting to sync\nRetrying in 5 s.');
     act(() => { vi.advanceTimersByTime(2000); });
-    expect(line()).toBe('1 till update waiting to sync · retrying in 3s');
+    expect(line()).toBe('1 till update waiting to sync\nRetrying in 3 s.');
   });
 
   it('on iOS, announces only the substance: nothing as sending or retrying flips or the countdown ticks; the screen keeps them', () => {
@@ -280,22 +282,53 @@ describe('SyncStatus', () => {
     const { rerender } = render(<SyncStatus state={{ pending: 0, sending: false }} />);
     rerender(<SyncStatus state={{ pending: 1, sending: true }} />);
     expect(announce.mock.calls).toEqual([['1 sale waiting to sync']]);
-    expect(line()).toBe('1 sale waiting to sync · sending');
-    // Sending, then retrying, is its own element after the live region, which holds only the spoken line.
+    expect(line()).toBe('1 sale waiting to sync\nSending…');
+    // Sending, then retrying, is a short line of its own below the live region, which holds only the spoken line.
     const live = document.querySelector('[aria-live]')!;
-    expect([live.textContent, live.nextElementSibling?.textContent]).toEqual(['1 sale waiting to sync', ' · sending']);
+    expect([live.textContent, live.nextElementSibling?.textContent]).toEqual(['1 sale waiting to sync', 'Sending…']);
     rerender(<SyncStatus state={{ pending: 1, sending: false, lastRetryReason: 'status_503', nextAttemptAt: now + 5000 }} />);
-    expect(line()).toBe('1 sale waiting to sync · retrying in 5s');
+    expect(line()).toBe('1 sale waiting to sync\nRetrying in 5 s.');
     const doing = live.nextElementSibling!;
-    expect([doing.getAttribute('aria-live'), doing.getAttribute('aria-label')]).toEqual([null, null]);
+    expect(doing.textContent).toBe('Retrying in 5 s.');
     act(() => { vi.advanceTimersByTime(3000); });
-    expect(line()).toBe('1 sale waiting to sync · retrying in 2s');
+    expect(line()).toBe('1 sale waiting to sync\nRetrying in 2 s.');
     expect(document.querySelector('[aria-live]')).toBe(live);
-    expect([live.textContent, doing.textContent]).toEqual(['1 sale waiting to sync', ' · retrying in 2s']);
+    expect([live.textContent, doing.textContent]).toEqual(['1 sale waiting to sync', 'Retrying in 2 s.']);
     rerender(<SyncStatus state={{ pending: 1, sending: true }} />);
-    expect(line()).toBe('1 sale waiting to sync · sending');
+    expect(line()).toBe('1 sale waiting to sync\nSending…');
     expect(label()).toBe('1 sale waiting to sync');
     expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows retrying as its own short line below the status line, "Retrying in 5 s." then "Retrying in 2 s." after the tick', () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    vi.setSystemTime(now);
+    const { container } = render(<SyncStatus state={{ pending: 1, sending: false, lastRetryReason: 'offline', nextAttemptAt: now + 5000 }}
+      pullNotice={notice('unauthorized')} />);
+    const short = screen.getByText('Retrying in 5 s.');
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(short.textContent).toBe('Retrying in 2 s.');
+    // The pull-notice line (and its detail), then the status line, then the short line.
+    const lines = Array.from(container.querySelectorAll('[dir]')).map((element) => element.textContent);
+    expect(lines).toEqual(["Products aren't updating: this till needs to sign in to the online store again.",
+      'You can keep selling. Products, prices and stock stay as they were until someone signs in again.',
+      '1 sale waiting to sync', 'Retrying in 2 s.']);
+  });
+
+  it('never renders " · " after a full stop', () => {
+    const since = Date.now();
+    const stuck = { commandIds: ['a'], since, reason: 'status_503', orders: [{ commandId: 'a', since, reason: 'status_503' }] };
+    const cases: [OutboxState, OutboxState?][] = [
+      [{ pending: 2, sending: false, lastRetryReason: 'status_503', nextAttemptAt: since + 5000, stuck }],
+      [{ pending: 2, sending: true, stuck }], [{ pending: 2, sending: false, backendMissing: { since }, stuck }],
+      [{ pending: 0, sending: false }, { pending: 1, sending: true, stuck }]];
+    for (const [state, registerState] of cases) {
+      const { container } = render(<SyncStatus state={state} registerState={registerState} pullNotice={notice('missing_plugin')} />);
+      expect(container.textContent).toMatch(/haven't reached the online store since/);
+      for (const element of Array.from(container.querySelectorAll('*'))) expect(element.textContent).not.toContain('. ·');
+      cleanup();
+    }
   });
 
   it('never shows or announces a reason code (status_… or one in parentheses)', () => {
@@ -353,7 +386,7 @@ describe('SyncStatus', () => {
     const announce = vi.spyOn(AccessibilityInfo, 'announceForAccessibility');
     const { rerender } = render(<SyncStatus state={{ pending: 0, sending: false }} />);
     rerender(<SyncStatus state={{ pending: 1, sending: true }} />);
-    expect(line()).toBe('1 sale waiting to sync · sending');
+    expect(line()).toBe('1 sale waiting to sync\nSending…');
     expect(announce).not.toHaveBeenCalled();
   });
 

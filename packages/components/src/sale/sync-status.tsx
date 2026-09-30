@@ -91,10 +91,10 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   // its "since" variant: the same words for any reason, and no reason code.
   const sentence = backendMissing || (state.pending === 0 && updates > 0 ? registerState?.stuck : stuck) ? ` · ${backendMissingText}` : '';
   // The live region holds only the substance (counts and the sentence), so it is announced when that changes and never as sending
-  // or retrying flips or the countdown ticks: those follow it in a Text of their own, outside it.
+  // or retrying flips or the countdown ticks: those are a short line of their own below it, outside any live region.
   const spoken = upToDate ? 'Sales are up to date.' : label + sentence;
-  const doing = upToDate || backendMissing ? '' : outbox.sending ? ' · sending'
-    : outbox.lastRetryReason ? ` · retrying in ${seconds}s` : '';
+  const doing = upToDate || backendMissing ? '' : outbox.sending ? 'Sending…'
+    : outbox.lastRetryReason ? `Retrying in ${seconds} s.` : '';
   const text = pullNotice
     && (Object.hasOwn(PULL_NOTICE_TEXT, pullNotice.code) ? PULL_NOTICE_TEXT[pullNotice.code] : PULL_NOTICE_FALLBACK);
   const notice = pullNotice && text
@@ -108,8 +108,8 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   return <View>{notice ? <>
     <Text accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{notice.line}</Text>
     {oneDetail ? null : <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>}
-  </> : null}<Text className="px-4 py-2 text-xs text-muted-foreground"><Text accessibilityLabel={spoken} accessibilityLiveRegion="polite">{spoken}</Text>
-    {doing ? <Text>{doing}</Text> : null}</Text>
+  </> : null}<Text accessibilityLabel={spoken} accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{spoken}</Text>
+  {doing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{doing}</Text> : null}
   {oneDetail && notice ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>
     : backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
     {BACKEND_MISSING_DETAIL.replace('{pluginName}', () => pluginName).replace('{lastTime}', () => upToDate ? ' the last time it checked' : '')}</Text> : null}</View>;
