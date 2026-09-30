@@ -166,6 +166,10 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const bare = ({ serverFailures, _rev, _meta, ...data }: RxDocumentData<PosOrder>) => data;
   const failuresOnly = (before: RxDocumentData<PosOrder>, after: RxDocumentData<PosOrder>) =>
     !deepEqual(before.serverFailures, after.serverFailures) && deepEqual(bare(before), bare(after));
+  // The outbox's own write of an order's sent form (#300): the form frozen, and sentVersion stored on a first send.
+  // Not new work (medusapos/app#160). A changed sentVersion (a downgrade) is not this write.
+  const recordsSentForm = (before: RxDocumentData<PosOrder>, after: RxDocumentData<PosOrder>) =>
+    deepEqual(bare({ ...freezeSentForm(before), sentVersion: before.sentVersion ?? after.sentVersion } as RxDocumentData<PosOrder>), bare(after));
 
   // Every read bypasses the query cache. RxDB 17 fixed RxDB 16.21.1's bug 4 (rxdb#7067);
   // readFresh, countFresh and watchFresh remain correct public API.
@@ -482,7 +486,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       if (!subscription) subscription = collection.$.subscribe((event) => {
         // An UPDATE without previousDocumentData counts as a change: a needless send costs a request, a skipped one a sale.
         if (event.documentData?.syncStatus === 'pending' && (event.operation === 'INSERT' || event.operation === 'UPDATE' &&
-          !(event.previousDocumentData !== undefined && failuresOnly(event.previousDocumentData, event.documentData)))) {
+          !(event.previousDocumentData !== undefined && (failuresOnly(event.previousDocumentData, event.documentData)
+            || recordsSentForm(event.previousDocumentData, event.documentData))))) {
           insertedDuringRun = true;
           flush().catch(() => {});
         }
