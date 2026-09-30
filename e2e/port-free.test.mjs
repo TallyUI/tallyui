@@ -1,15 +1,20 @@
 // `node --test e2e/port-free.test.mjs`: the preflight refuses a held port and passes a free one.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const script = fileURLToPath(new URL('./port-free.mjs', import.meta.url));
-const preflight = (port) => spawnSync(process.execPath, [script, String(port)], { encoding: 'utf8' });
+// `env` may put a fake lsof first on PATH; the timeout (ms) ends a preflight stuck on a hung lsof.
+const preflight = (port, env) =>
+  spawnSync(process.execPath, [script, String(port)], { encoding: 'utf8', env, timeout: 20000 });
 
 // Holds a free port on `host` (undefined: Node's default, both families), runs the preflight, then releases it.
-async function checkHeld(host, busyAddress) {
+async function checkHeld(host, busyAddress, env) {
   const server = net.createServer();
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -18,7 +23,7 @@ async function checkHeld(host, busyAddress) {
   const { port } = server.address();
   let held;
   try {
-    held = preflight(port);
+    held = preflight(port, env);
   } finally {
     await new Promise((resolve) => server.close(resolve)); // an open server would keep the run alive after a failure
   }
@@ -46,3 +51,10 @@ test('a port held on ::1 only is refused, and passes once released', { skip: !ha
 
 test("a port held by Node's default listen is refused, and passes once released", () =>
   checkHeld(undefined, (port) => `[::]:${port}`));
+
+test('a hung lsof cannot stall the preflight: the holder lookup times out and names the holder unknown', () => {
+  const bin = mkdtempSync(path.join(os.tmpdir(), 'tallyui-lsof-')); // left for the OS to clean
+  writeFileSync(path.join(bin, 'lsof'), '#!/bin/sh\nexec sleep 60\n', { mode: 0o755 });
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  return checkHeld('127.0.0.1', (port) => `(127.0.0.1:${port}) by unknown;`, env);
+});
