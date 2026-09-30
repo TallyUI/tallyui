@@ -479,7 +479,9 @@ export async function writeClosure({
   const taxRates = new Map<string, { ratePpm: number; net_minor: number; tax_minor: number }>();
   const roundings = new Set<string>();
   for (const order of bound) {
-    const { granularity, mode } = { mode: '', ...(order.taxRounding ?? DEFAULT_TAX_ROUNDING) };
+    // Grouped by the rule applied: a `custom` sale used the default figures, so it joins the default's group.
+    const recorded = order.taxRounding ?? DEFAULT_TAX_ROUNDING;
+    const { granularity, mode } = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
     roundings.add(`${granularity} ${mode}`);
     const lines = order.lines.map((line) => ({ ...line, taxInclusive: line.taxInclusive ?? order.pricesIncludeTax }));
     for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(lines, order.taxMinor, undefined, order.taxRounding)) {

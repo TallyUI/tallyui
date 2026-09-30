@@ -21,7 +21,8 @@ function order(id: string, overrides: Partial<PosOrder> = {}): PosOrder {
     lines: [{ id: `line-${id}`, productId: 'shirt', variantId: 'blue', name: 'Blue shirt', sku: 'BLUE', quantity: 2,
       unitPriceMinor: 600, discountMinor: 0, netMinor: 1200, taxLines: [] }],
     payments: [{ id: `payment-${id}`, method: 'cash', amountMinor: 1200 }], customer: null,
-    subtotalMinor: 1200, discountMinor: 0, taxMinor: 0, totalMinor: 1200, syncStatus: 'pending', ...overrides,
+    subtotalMinor: 1200, discountMinor: 0, taxMinor: 0, totalMinor: 1200, syncStatus: 'pending',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' }, ...overrides,
   };
 }
 const formatDate = (iso: string) => `date:${iso.slice(0, 10)}`;

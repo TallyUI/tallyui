@@ -20,6 +20,7 @@ const order: PosOrder = {
     { id: 'payment2', method: 'cash', amountMinor: 2451, tenderedMinor: 3000, changeMinor: 549 },
   ],
   customer: { id: 'c1', name: 'Customer', email: 'buyer@example.com' }, note: 'Local note', registerId: 'r1', cashierRef: 'staff1',
+  taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
 };
 
 const v3: PosOrder = { ...order,

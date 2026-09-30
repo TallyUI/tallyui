@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
-import { countVariance, varianceText } from '@tallyui/pos';
+import { countVariance, TAX_ROUNDING_MIXED_NOTE, varianceText } from '@tallyui/pos';
 
 import { formatMoney, minorUnitDigits } from '@tallyui/core';
 import { Button } from '../ui/button';
@@ -136,10 +136,10 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
         )}
         {/* Not a figure: shows who approved the close even while blind. */}
         {!!approvedBy && <Text testID="closure-approved-by">Approved by {approvedBy}</Text>}
-        {/* Not a figure either (#287). The wording is proposed to the Front desk, not yet ruled. */}
+        {/* Not a figure either (#287). The wording is approved by the Front desk, 2026-09-30. */}
         {closure.breakdowns.tax_rounding_mixed === true && (
           <Text testID="closure-tax-rounding-mixed" className="text-muted-foreground">
-            {"This register's sales used more than one tax rounding method. Each sale's tax is as its receipt showed."}
+            {TAX_ROUNDING_MIXED_NOTE}
           </Text>
         )}
         {!!error && (

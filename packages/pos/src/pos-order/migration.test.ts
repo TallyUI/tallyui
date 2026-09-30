@@ -12,7 +12,7 @@ import { mintUuid } from '../register/register-document';
 import { DEFAULT_TAX_ROUNDING } from '../tax/exact';
 import { finalizeOrder } from './finalize';
 import { addPosOrderCollection, POS_ORDER_MIGRATION_CLOSE_WAIT_MS, PosOrderOpenClosedError } from './open';
-import { addPosOrderCollectionTests, olderCollection, type Origin } from './open.test-helper';
+import { addPosOrderCollectionTests, olderCollection, type OlderPosOrder, type Origin } from './open.test-helper';
 import { posOrderCollection, posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
@@ -21,7 +21,7 @@ import { uuidv7 } from './uuidv7';
  * A sale the outbox has tried and will try again: pending, with lines, split payments and its last error. A version-1 one has its
  * session; a version-2 one ADR-065's figures and both sessions; a version-3 one was also downgraded to order.create version 2.
  */
-function pendingOrder(from: Origin = 0): PosOrder {
+function pendingOrder(from: Origin = 0): OlderPosOrder {
   const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
   builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Item 1', sku: 'SKU1', unitPrice: { amount: 850, currency: 'EUR' }, quantity: 2,
     taxRates: [{ code: 'VAT', ratePpm: 190000 }] });
@@ -46,7 +46,7 @@ async function open(name: string, storage: RxStorage<any, any>, collection: RxCo
 }
 
 /** Writes `order` into a new database's `pos_orders` at version `from`, and returns the database's name. */
-async function seed(storage: RxStorage<any, any>, order: PosOrder, from: Origin) {
+async function seed(storage: RxStorage<any, any>, order: OlderPosOrder, from: Origin) {
   const name = `posmigrate${uuidv7().replaceAll('-', '')}`;
   const before = await open(name, storage, olderCollection(from));
   await (await before.added).pos_orders.insert(order);
@@ -390,7 +390,7 @@ describe('from version 2', () => {
 describe('from version 3', () => {
   it('keeps a pending, unsynced version-3 order with every optional field set byte for byte through the migration to the current version', async () => {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
-    const order: PosOrder = { ...pendingOrder(3), serverRefs: { orderId: 'server-1', displayId: '#1001', totalMinor: 3451 } };
+    const order: OlderPosOrder = { ...pendingOrder(3), serverRefs: { orderId: 'server-1', displayId: '#1001', totalMinor: 3451 } };
     const original = { ...structuredClone(order), taxRounding: DEFAULT_TAX_ROUNDING };
     const optional = ['note', 'registerId', 'sessionId', 'cashierRef', 'serverRefs', 'warnings', 'error', 'lateSessionId', 'sentVersion',
       'downgradedFrom', 'display', 'taxByRate'];

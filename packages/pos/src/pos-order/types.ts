@@ -80,7 +80,7 @@ export interface PosOrder {
    * The tax rounding the figures were computed with (#287), frozen at finalize; the till's own record, never sent.
    * Version 6's migration sets the default on every older row.
    */
-  taxRounding?: TaxRounding;
+  taxRounding: TaxRounding;
   cashierRef?: string;
   syncStatus: PosOrderSyncStatus;
   commandId: string;

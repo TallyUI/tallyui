@@ -138,7 +138,12 @@ it('shows no approved-by line without an approver', async () => {
   expect(screen.queryByTestId('closure-approved-by')).toBeNull();
 });
 
-it.each([true, false])("says when the session's sales used more than one tax rounding method (mixed: %s, #287)", async (mixed) => {
+// A custom sale used the default figures, so beside a default sale it is not mixed.
+it.each([
+  [{ granularity: 'per_line_items', mode: 'half_up' }, true],
+  [{ granularity: 'per_order', mode: 'half_away_from_zero' }, false],
+  [{ granularity: 'custom' }, false],
+] as Array<[TaxRounding, boolean]>)("says when the session's sales used more than one tax rounding method (beside the default, %o: mixed %s, #287)", async (other, mixed) => {
   const session = await seedSession(db, 10000);
   const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 10000 } });
   // Only what a closure reads from a sale; no payments, so the count is unchanged.
@@ -148,7 +153,7 @@ it.each([true, false])("says when the session's sales used more than one tax rou
     closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000,
     otherTenders: {}, movements: [], softwareVersion: '1.0.0',
     orders: [sale('a', { granularity: 'per_order', mode: 'half_away_from_zero' }),
-      sale('b', mixed ? { granularity: 'per_line_items', mode: 'half_up' } : { granularity: 'per_order', mode: 'half_away_from_zero' })],
+      sale('b', other)],
   });
   expect(closure.breakdowns.tax_rounding_mixed).toBe(mixed ? true : undefined);
   await renderClosure();

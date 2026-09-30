@@ -8,7 +8,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { OrderCreateEnvelope } from '@tallyui/core';
 import { createOrderOutbox, type OrderOutbox } from '@tallyui/pos/outbox/order-outbox';
 import type { CommandTransport } from '@tallyui/pos/outbox/types';
-import { addPosOrderCollectionTests, olderCollection } from '@tallyui/pos/pos-order/open.test-helper';
+import { addPosOrderCollectionTests, olderCollection, type OlderPosOrder } from '@tallyui/pos/pos-order/open.test-helper';
 import { createOrderBuilder } from '@tallyui/pos/order/order-builder';
 import { mintUuid } from '@tallyui/pos/register/register-document';
 import { DEFAULT_TAX_ROUNDING } from '@tallyui/pos/tax/exact';
@@ -38,7 +38,7 @@ if (!getRxStorageSQLite && process.env.CI) {
   addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 3 }));
 
 /** A pending version-3 order with every optional field set: sent at order.create version 3, answered, then downgraded to 2. */
-function versionThreeOrder(): PosOrder {
+function versionThreeOrder(): OlderPosOrder {
   const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
   builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Item 1', sku: 'SKU1', unitPrice: { amount: 850, currency: 'EUR' }, quantity: 2,
     taxRates: [{ code: 'VAT', ratePpm: 190000 }] });

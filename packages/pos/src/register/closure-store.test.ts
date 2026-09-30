@@ -68,6 +68,7 @@ function order(id: string, sessionId: string, payments: Omit<PosOrderPayment, 'i
     id, commandId: `command-${id}`, createdAt: '2026-09-16T10:00:00.000Z', updatedAt: '2026-09-16T10:00:00.000Z',
     currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: total, discountMinor: 0, taxMinor: 0,
     totalMinor: total, customer: null, syncStatus: 'pending', sessionId, cashierRef: '7',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
     payments: payments.map((payment, i) => ({ ...payment, id: `${id}-payment-${i}` })),
   };
 }
@@ -369,6 +370,32 @@ it("splits each sale by its recorded tax rounding, sums its receipts' rows, and 
   }
   expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(perLine.order.taxMinor + plain.order.taxMinor);
   expect(closure.breakdowns.tax_rounding_mixed).toBe(true);
+});
+
+// #287: a custom sale used the default figures, so the Z report groups it with the default; it still records custom.
+it.each([
+  [{ granularity: 'per_order', mode: 'half_away_from_zero' }, false],
+  [{ granularity: 'per_line_items', mode: 'half_up' }, true],
+] as Array<[TaxRounding, boolean]>)('groups a custom sale with the default rounding it applied (beside %o: mixed %s)', async (other, mixed) => {
+  const session = await openSession(db.register_sessions, {
+    registerId: 'register', expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: '7',
+    businessDay: { year: 2026, month: 9, day: 16 },
+  });
+  const sale = (rounding: TaxRounding) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false, rounding } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 105, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    return { ...finalizeOrder(builder.getSnapshot(), { registerId: 'register', cashierRef: '7' }), sessionId: session.id };
+  };
+  const orders = [sale({ granularity: 'custom' }), sale(other)];
+  expect(orders[0].taxRounding).toStrictEqual({ granularity: 'custom' });
+  const totalMinor = orders.reduce((sum, order) => sum + order.totalMinor, 0);
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: totalMinor }, closedBy: '7' });
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: totalMinor,
+    otherTenders: {}, movements: [], orders, softwareVersion: '1.0.0', timezone: 'UTC',
+  });
+  expect(closure.breakdowns.tax_rounding_mixed).toBe(mixed ? true : undefined);
 });
 
 // TallyUI: the three collections are local only (the #53 rule). Every RxDB replication, including
