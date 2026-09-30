@@ -3846,7 +3846,7 @@ interface OrderCreatePayload {
       code (`packages/medusa-plugin/src/api/tally/v1/commands/`
       `process.ts:25`). A body over the plugin's own `sizeLimit: '1mb'`
       (`src/api/middlewares.ts:24`) also gets no code. It will send both
-      codes with their bodies (medusapos/app#131).
+      codes with their bodies (medusapos/app#131, PR medusapos/app#134).
   - Today the outbox sends at most 10 per batch, and a `413` is `refused`:
     sending pauses and no order changes until the outbox is next flushed,
     for example by the next sale (`OutboxState.refused`). So one oversized
