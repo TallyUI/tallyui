@@ -339,8 +339,12 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
 
     checkAborted();
     const lastCompletedAt = now();
-    await save({ lastCompletedAt, lastCompleteAt: current.uninterrupted ? lastCompletedAt : saved.lastCompleteAt });
-    const summary = { pages, compared, refetched, tombstoned, kept, unlisted, complete: current.uninterrupted, durationMs: lastCompletedAt - startedAt };
+    // A pass that yielded no page listed nothing: it is neither complete nor a completed pass, so the gate runs it again at the next check (#368).
+    const counted = pages > 0;
+    await save(counted
+      ? { lastCompletedAt, lastCompleteAt: current.uninterrupted ? lastCompletedAt : saved.lastCompleteAt }
+      : { lastCompletedAt: saved.lastCompletedAt, lastCompleteAt: saved.lastCompleteAt });
+    const summary = { pages, compared, refetched, tombstoned, kept, unlisted, complete: counted && current.uninterrupted, durationMs: lastCompletedAt - startedAt };
     log({ type: 'pass-completed', ...summary });
     return summary;
   };

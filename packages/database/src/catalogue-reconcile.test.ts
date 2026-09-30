@@ -333,6 +333,73 @@ describe('startCatalogueReconcile', () => {
     expect(second.count('pass-started')).toBe(0);
   }, 30_000);
 
+  it('a pass that yields no pages is not complete and moves neither time', async () => {
+    const { server, feed, collection } = await setup(2);
+    const time = fakeTime();
+    const { adapter } = fakeAdapter(server, feed);
+    const first = start(collection, adapter, time);
+    const seen: any[] = [];
+    first.runner.state$.subscribe((state) => seen.push(state));
+    first.runner.reconcile();
+    await time.runUntil(() => first.count('pass-completed') === 1);
+    const completedAt = time.now();
+    expect(seen.at(-1)).toMatchObject({ lastCompleteAt: completedAt, lastResult: { complete: true } });
+
+    adapter.fetchPages = async function* () {};
+    await time.advance(1000);
+    first.runner.reconcile();
+    await time.runUntil(() => first.count('pass-completed') === 2);
+    expect(first.events.filter((event) => event.type === 'pass-completed')[1]).toMatchObject({ pages: 0, complete: false });
+    expect(seen.at(-1)).toMatchObject({ lastCompleteAt: completedAt });
+    const saved = await collection.getLocal('catalogue-reconcile');
+    expect(saved?.get('lastCompletedAt')).toBe(completedAt);
+    expect(saved?.get('lastCompleteAt')).toBe(completedAt);
+    expect(saved?.get('pass')).toBeUndefined();
+    first.runner.stop();
+
+    const second = start(collection, adapter, time);
+    const restored: any[] = [];
+    second.runner.state$.subscribe((state) => restored.push(state));
+    await vi.waitFor(() => expect(restored.at(-1)).toMatchObject({ lastCompleteAt: completedAt }));
+    expect(second.count('pass-started')).toBe(0);
+  }, 30_000);
+
+  it('the gate runs again after a zero-page pass', async () => {
+    const { server, feed, collection } = await setup(2);
+    const time = fakeTime();
+    const { adapter } = fakeAdapter(server, feed);
+    const listing = adapter.fetchPages.bind(adapter);
+    let list = false;
+    adapter.fetchPages = async function* (ctx, from) { if (list) yield* listing(ctx, from); };
+    const { events, count } = start(collection, adapter, time, { startDelayMs: 1000, intervalMs: DAY });
+    await time.advance(1000);
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(count('pass-started')).toBe(1);
+
+    list = true;
+    await time.advance(HOUR);
+    await vi.waitFor(() => expect(count('pass-started')).toBe(2));
+    await time.runUntil(() => count('pass-completed') === 2);
+    expect(events.filter((event) => event.type === 'pass-completed')[1]).toMatchObject({ pages: 1, complete: true });
+    await time.advance(DAY - 1);
+    expect(count('pass-started')).toBe(2);
+  }, 30_000);
+
+  it('an empty page counts as a complete, empty catalogue', async () => {
+    const { server, feed, collection } = await setup(0);
+    const time = fakeTime();
+    const { adapter } = fakeAdapter(server, feed);
+    adapter.fetchPages = async function* () { yield { entries: [], cursor: 1 }; };
+    const { runner, events, count } = start(collection, adapter, time);
+    const seen: any[] = [];
+    runner.state$.subscribe((state) => seen.push(state));
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(events.find((event) => event.type === 'pass-completed')).toMatchObject({ pages: 1, compared: 0, complete: true });
+    expect(seen.at(-1)).toMatchObject({ lastCompleteAt: time.now() });
+    expect((await collection.getLocal('catalogue-reconcile'))?.get('lastCompleteAt')).toBe(time.now());
+  }, 30_000);
+
   it('persists the last complete time when a later pass fails before its first page', async () => {
     const { server, feed, collection } = await setup(4);
     const time = fakeTime();
