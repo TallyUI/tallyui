@@ -3900,12 +3900,12 @@ interface OrderCreatePayload {
       decision (1), is vendurepos/app#36, under review.
     - **medusapos** honours it today: the payload's location comes first,
       then the plugin option, then the sales channel's first location. An
-      unknown location is already an unstored `store_configuration`, but
-      its message names the plugin option, not the field. An unknown
-      location, or one not assigned to the sale's sales channel, will be
-      answered with an unstored `store_configuration` naming
-      `payload.locationId` (medusapos/app#130). That code fits because it
-      is a fact about the store, and the merchant can put it right.
+      unknown location, or one not assigned to the sale's sales channel,
+      is answered with an unstored `store_configuration` naming
+      `payload.locationId` (`packages/medusa-plugin/src/workflows/`
+      `tally-order-create/run.ts:47-60`, medusapos/app#130). That code
+      fits because it is a fact about the store, and the merchant can put
+      it right.
 - **Consequences:**
   - medusapos will change its lenient shape check, and both plugins will
     refuse unknown fields with the path named (vendurepos/app#36,
