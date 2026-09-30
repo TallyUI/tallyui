@@ -126,9 +126,9 @@ test.describe('storage-sqlite 16.21.1 → 17.5.0 upgrade on SQLite-wasm over OPF
       const result = await timed('mixed open', () => tally<any>(page, 'open', DB_NAME));
       // eslint-disable-next-line no-console
       console.log(`[storage-sqlite-upgrade] stale-worker error: ${JSON.stringify(result, null, 2)}`);
-      expect(result.worker).toBe('/v16/tallyui-sqlite-worker.js');
       expect(result.ok, 'the stale worker opened the database').toBe(false);
       expect(result.hung, 'the stale worker hung instead of failing').toBe(false);
+      expect(result.worker).toBe('/v16/tallyui-sqlite-worker.js');
       // createRxDatabase rejects: RxDB's remote storage refuses a worker of another RxDB version (RM1), naming both versions.
       expect(result.message).toContain('could not create instance');
       expect(result.message).toContain('"code":"RM1"');
