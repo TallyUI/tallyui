@@ -141,10 +141,45 @@ describe('SyncStatus', () => {
     render(<SyncStatus state={{ pending: 2, sending: false, backendMissing }} registerState={registerState} />);
     expect(line()).toBe(`2 sales and 1 till update waiting to sync · ${cashierLine}`);
     cleanup();
-    render(<SyncStatus state={{ pending: 1, sending: false, backendMissing, stuck: { commandIds: ['a'], since, reason: 'status_404',
-      orders: [{ commandId: 'a', since, reason: 'status_404' }] } }} registerState={{ ...registerState, pending: 4 }} />);
+    // Both stuck (the till updates an hour earlier): the sales "since" sentence wins, with the sales time.
+    const stuck = (at: number) => ({ commandIds: ['a'], since: at, reason: 'status_404', orders: [{ commandId: 'a', since: at, reason: 'status_404' }] });
+    render(<SyncStatus state={{ pending: 1, sending: false, backendMissing, stuck: stuck(since) }}
+      registerState={{ ...registerState, pending: 4, stuck: stuck(since - 3_600_000) }} />);
     expect(line()).toBe(`1 sale and 4 till updates waiting to sync · Sales haven't reached the online store since ${time}. `
       + "Keep selling: they're saved on this till and will send by themselves.");
+  });
+
+  it('with only till updates waiting and registerState.stuck set, says since when till updates have not reached the store', () => {
+    const since = new Date(2026, 8, 30, 2, 49, 10).getTime();
+    const time = new Date(since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    const backendMissing = { since };
+    render(<SyncStatus state={{ pending: 0, sending: false, backendMissing }} registerState={{ pending: 1, sending: false, backendMissing,
+      stuck: { commandIds: ['r'], since, reason: 'status_404', orders: [{ commandId: 'r', since, reason: 'status_404' }] } }} />);
+    expect(line()).toBe(`1 till update waiting to sync · Till updates haven't reached the online store since ${time}. `
+      + "Keep selling: they're saved on this till and will send by themselves.");
+  });
+
+  it('with nothing waiting but the store missing, says only "Sales are up to date." and the store was missing when last checked', () => {
+    const lastChecked = (plugin: string) => `This till couldn't find ${plugin} on the online store the last time it checked. `
+      + "Ask the store owner to check that it is installed and switched on, and that the store address in this till's settings is right.";
+    expect(lastChecked('the POS plugin')).toBe("This till couldn't find the POS plugin on the online store the last time it checked. Ask the store owner to check that it is installed and switched on, and that the store address in this till's settings is right.");
+    const backendMissing = { since: Date.now() };
+    render(<SyncStatus state={{ pending: 0, sending: true, lastRetryReason: 'status_404', nextAttemptAt: Date.now() + 3000, backendMissing }}
+      registerState={{ pending: 0, sending: false, backendMissing }} />);
+    expect(line()).toBe('Sales are up to date.');
+    expect(screen.getByLabelText('Sales are up to date.').textContent).toBe('Sales are up to date.');
+    expect(screen.getByText(lastChecked('the POS plugin')).textContent).toBe(lastChecked('the POS plugin'));
+    expect(screen.queryByText(/All sales synced|aren't reaching/)).toBeNull();
+    cleanup();
+    render(<SyncStatus state={{ pending: 0, sending: false, backendMissing }} pluginName="Medusa POS" />);
+    expect(line()).toBe('Sales are up to date.');
+    expect(screen.getByText(lastChecked('Medusa POS')).textContent).toBe(lastChecked('Medusa POS'));
+  });
+
+  it('with nothing waiting and the store not missing, says "All sales synced" with no detail line', () => {
+    render(<SyncStatus state={{ pending: 0, sending: false }} registerState={{ pending: 0, sending: false }} />);
+    expect(line()).toBe('All sales synced');
+    expect(screen.queryByText(/store owner/)).toBeNull();
   });
 
   it('never says "All sales synced" while a till update waits', () => {
