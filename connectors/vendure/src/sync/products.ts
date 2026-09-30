@@ -1,5 +1,6 @@
 import { ConnectorUnauthorizedError } from '@tallyui/core';
 import type { CollectionSync, SyncContext } from '@tallyui/core';
+import { forbiddenError } from '../session-probe';
 
 /**
  * GraphQL query fragments used by the Vendure sync.
@@ -155,6 +156,6 @@ async function gql(
   if (!res.ok) throw new Error(`Vendure API error: ${res.status}`);
   const body: { data?: any; errors?: Array<{ message?: string; extensions?: { code?: string } }> } = await res.json();
   const forbidden = body.errors?.find((error) => error.extensions?.code === 'FORBIDDEN');
-  if (forbidden) throw new ConnectorUnauthorizedError(`Vendure GraphQL error: ${forbidden.message}`);
+  if (forbidden) throw await forbiddenError(context, forbidden.message);
   return body;
 }
