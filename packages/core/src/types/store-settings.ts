@@ -1,3 +1,5 @@
+import type { TaxRounding } from './connector';
+
 /** What the POS needs from the store's own settings (TV4). Read once after sign-in; the app feeds all three consumers from it. */
 export interface StoreSettings {
   /** ISO 4217, upper case (the currency prices are sold in). */
@@ -8,6 +10,8 @@ export interface StoreSettings {
   taxRatesPpm: { default: number; [taxClass: string]: number };
   /** Connector-specific and opaque to the app: what the connector needs to price documents. The app passes it back to the connector unchanged, and never logs it. */
   pricingContext?: Record<string, string>;
+  /** Derived, never read by `storeSettings`: the store's `ServerCapabilities.taxRounding`, which `useStoreSettings` fills in (#324). */
+  taxRounding?: TaxRounding;
 }
 
 /**
