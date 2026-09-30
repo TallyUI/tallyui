@@ -3771,11 +3771,18 @@ interface OrderCreatePayload {
   - Every new field needs a version bump. So a field that changes what the
     customer pays, or what stock moves, reaches an older server only in a
     version it refuses, never one it quietly ignores.
-  - Arbitrary keys are allowed only inside a map the contract declares for
-    that purpose, and nothing in it may affect price, payment or stock.
-    Today the contract declares no such map for commands. The only open map
-    on the wire is `CommandError.data`, which the server sends back to the
-    till in a result.
+  - Keys are free only where the contract declares a map. Today those are
+    `counted` and `tillExpected` in the register commands, keyed by payment
+    method, with integer values in minor units; a map's keys are data and
+    are checked by that map's own rule (a payment method the store knows,
+    an integer value). Every other object accepts only the fields its
+    version names.
+  - Today (checked with both workers on 2026-09-30) no backend checks that
+    a key is a payment method the store knows. TallyUI core's
+    `registerPayloadErrors` and the medusapos plugin require an object
+    with non-empty keys and safe-integer values (core also refuses a NUL in
+    a key); vendurepos has no register commands yet (its M6). Checking the
+    key against the store's payment methods is a follow-up for both.
   - Why: a misspelled optional money field from a buggy till must be refused
     in plain sight, not ignored in silence. Refused, the sale stays on the
     till and nothing is lost. Ignored, the till and the server would
@@ -3793,8 +3800,9 @@ interface OrderCreatePayload {
     `{ code: 'batch_too_large', maxCommands, message }`, never `400`; the
     exact body is in ADR-038 and `@tallyui/core/server`'s `validateBatch`
     (#249).
-  - The till's rules, the same as ADR-038's: a till never sends more than
-    the server's limit. On a `413` it halves the batch and sends again,
+  - The till's rules, the same as ADR-038's, describe what programme item
+    55 will make the till do, not what it does today: a till never sends
+    more than the server's limit. On a `413` it halves the batch and sends again,
     using `maxCommands` from the body when it is present; a `413` without
     the code (a proxy or a body-size limit) is handled the same way. When
     a batch of one is still answered `413`, that order is shown as refused
@@ -3803,17 +3811,26 @@ interface OrderCreatePayload {
     up the queue.
   - A body over the server's size limit is answered `413` with
     `{ code: 'body_too_large', maxBytes, message }`, never
-    `invalid_payload` (ruling 20). The till treats it as it treats
-    `batch_too_large`: it halves the batch and sends again, and a single
-    order that is still too large is shown as refused. The size limit
-    belongs to each backend's body parser; `validateBatch` receives a
-    parsed body and does not check it.
+    `invalid_payload` (ruling 20). Under item 55 the till treats it as it
+    treats `batch_too_large`: it halves the batch and sends again, and a
+    single order that is still too large is shown as refused. The size
+    limit belongs to each backend's body parser; `validateBatch` receives
+    a parsed body and does not check it.
+  - Neither backend sends these codes yet (checked with both workers on
+    2026-09-30); both will. vendurepos answers a body over 1 MB with
+    `413` and `code: 'invalid_payload'`, and will answer
+    `body_too_large` with `maxBytes: 1048576`. medusapos answers it with
+    Medusa's body-parser default, and more than 50 commands with a `413`
+    that has no code; it will answer `body_too_large` and
+    `batch_too_large` with their codes.
   - Today the outbox sends at most 10 per batch, and a `413` is `refused`:
     sending pauses and no order changes until the outbox is next flushed,
     for example by the next sale (`OutboxState.refused`). So one oversized
     order, or a proxy's body-size limit, holds up every later sale. Meeting
-    the rules above is the programme item after item 24, which shares its
-    machinery (isolating one order and letting the rest through).
+    the rules above is programme item 55, sequenced after item 24 because
+    it shares its machinery (isolating one order and letting the rest
+    through). Its acceptance covers `body_too_large` as well as
+    `batch_too_large`.
 - **Decision (3), a declared field is honoured or refused, never ignored**
   (ruling 19):
   - A field the contract declares, in a version the command declares, is
@@ -3822,8 +3839,8 @@ interface OrderCreatePayload {
     workers on 2026-09-30):
     - **vendurepos** accepts it today and ignores it. It will refuse it
       with `invalid_payload` ('not supported by this server yet') until a
-      ruling says how it is honoured (vendurepos/app#35); the change is
-      being written together with decision (1).
+      ruling says how it is honoured (vendurepos/app#35); the change, with
+      decision (1), is vendurepos/app#36, under review.
     - **medusapos** honours it today: the payload's location comes first,
       then the plugin option, then the sales channel's first location. An
       unknown location is already an unstored `store_configuration`, but
