@@ -5,6 +5,7 @@ import { test as base, expect, webkit, type Page } from '@playwright/test';
 // Playwright's default WebKit context is ephemeral, like a Safari private window, and has no OPFS (#293), so
 // WebKit runs this suite in a persistent profile, as normal Safari does. WebKit keeps one OPFS store per origin
 // across profiles, so each test starts by emptying the origin's OPFS. Chromium keeps the default context.
+// The WebKit project is a macOS proof: Linux WebKit has no OPFS, so it skips there, and CI runs Chromium only.
 const test = base.extend({
   context: async ({ browserName, context, baseURL }, use, testInfo) => {
     if (browserName !== 'webkit') return use(context);
@@ -54,6 +55,11 @@ test.describe('storage-sqlite worker cold start (real Chromium and WebKit, ADR-0
   // above). In Chromium that is a separate storage origin partition, so OPFS
   // never carries over between tests; in WebKit the fixture empties OPFS.
   test.skip(!rxdbPremiumInstalled, 'rxdb-premium is not installed (needs the RXDB_PREMIUM token; see docs/CONTRIBUTING.md)');
+  // By platform, never by feature, so a macOS regression can't hide behind the skip.
+  test.skip(
+    ({ browserName }) => browserName === 'webkit' && process.platform !== 'darwin',
+    "Playwright's Linux WebKit has no navigator.storage (no OPFS), as seen on the CI runner for #293; the WebKit proof is a macOS run"
+  );
 
   test('a fresh page opens the database, and the open completes well under 5s', async ({ page }) => {
     await page.goto('/');

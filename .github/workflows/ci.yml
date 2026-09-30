@@ -90,7 +90,7 @@ jobs:
         run: pnpm build
 
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium webkit
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Test the e2e port and server-identity checks
         run: node --test e2e/port-free.test.mjs e2e/server-identity.test.mjs

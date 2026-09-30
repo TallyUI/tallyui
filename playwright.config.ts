@@ -41,6 +41,8 @@ export default defineConfig({
     },
     // The same storage suite in WebKit (Safari, iPad web tills; #293). Its fixture runs each test in a persistent
     // profile, as normal Safari browsing does; one test uses the default, ephemeral context, a private window.
+    // macOS only: Playwright's Linux WebKit has no navigator.storage (no OPFS), so the suite skips there, and CI
+    // installs and runs Chromium only.
     {
       name: 'storage-sqlite-webkit',
       testDir: './e2e/storage-sqlite',
