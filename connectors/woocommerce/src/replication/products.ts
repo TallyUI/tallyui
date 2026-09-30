@@ -21,20 +21,21 @@ async function checkResponse(response: Response) {
     throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status);
   }
   if (response.status === 426) {
+    // Only the plugin's own gate means the till needs updating; any other 426 is retried as transient.
     const body = await response.json().catch(() => undefined);
-    throw new WooTillUpdateRequiredError(typeof body?.code === 'string' ? body.code : undefined);
+    if (body?.code === 'wcpos_update_required') throw new WooTillUpdateRequiredError(body.code);
   }
   throw new Error(`WooCommerce API error: ${response.status}`);
 }
 
-/** WCPOS's protocol gate refused this till (HTTP 426, normally `wcpos_update_required`): only updating the till fixes it. */
+/** WCPOS's protocol gate refused this till (HTTP 426 with `wcpos_update_required`): only updating the till fixes it. */
 export class WooTillUpdateRequiredError extends Error {
   name = 'WooTillUpdateRequiredError';
   readonly code = 'till_update_required' as const;
   /** Only updating this till fixes it, so the pull pauses until resume() (`errorKind`). */
   readonly fixedBy = 'till' as const;
 
-  /** The body's `code`, for diagnostics; the status alone makes the error. */
+  /** The body's `code`, kept for diagnostics. */
   constructor(readonly serverCode: string | undefined) {
     super('WooCommerce API error: 426: this till needs updating to sync with the store');
   }

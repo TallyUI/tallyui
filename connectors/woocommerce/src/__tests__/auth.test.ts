@@ -26,7 +26,8 @@ describe('woocommerceConnector.auth', () => {
 
   it('getHeaders sends the package.json version sanitised', async () => {
     vi.resetModules();
-    vi.doMock('../../package.json', () => ({ default: { version: '2.1.0+Build.7' } }));
+    // Only the named `version`: the index imports nothing else from package.json, so the bundle carries nothing else.
+    vi.doMock('../../package.json', () => ({ version: '2.1.0+Build.7' }));
     try {
       const { woocommerceConnector: fresh } = await import('../index');
       expect(fresh.auth.getHeaders({ token: 't' })['X-WCPOS-Client']).toBe('tallyui/2.1.0build.7');
