@@ -91,7 +91,7 @@ export class WooDateFilterError extends Error {
 }
 
 /**
- * A `jwt_auth_*` 403: the store's JWT layer refused the till's token. WCPOS 1.10.0–1.10.7 sent it for a valid token
+ * A `jwt_auth_*` 403: the store's JWT Authentication plugin refused the till's token. WCPOS 1.10.0–1.10.7 sent it for a valid token
  * (wcpos/woocommerce-pos#1863); 1.10.8 and later can still send it when the token resolves to another user. So the
  * message names no version: a version hint belongs only where a response itself carries the WCPOS version (#360).
  */
@@ -101,10 +101,10 @@ export class WooTokenRefusedError extends Error {
   /** The store owner fixes it on the store, so the pull waits the store delay and the till stays signed in (`errorKind`). */
   readonly fixedBy = 'store' as const;
   /** The store-side remedy, for `SyncStatus`'s detail. */
-  readonly fix = "check the WCPOS plugin's JWT settings";
+  readonly fix = "check the JWT Authentication plugin's settings";
 
   constructor(readonly storeCode: string) {
-    super("The store refused the sign-in token (403). Check the WCPOS plugin's JWT settings, or pair the till again.");
+    super("The store refused the sign-in token (403). Ask the store owner to check the JWT Authentication plugin's settings, or pair the till again.");
   }
 }
 

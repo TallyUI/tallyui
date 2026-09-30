@@ -231,7 +231,7 @@ minutes and `retryAfterMs`, also up to one hour.
 
 The error's own `software`, `minVersion` and `fix` strings, when it has
 them, are copied onto the notice: `WooDateFilterError` names WooCommerce
-and 5.8, `WooTokenRefusedError` gives the fix, checking the WCPOS plugin's JWT settings, and
+and 5.8, `WooTokenRefusedError` gives the fix, checking the JWT Authentication plugin's settings, and
 `VendureTimezoneConfigError` gives the fix, running the server in UTC. Show the notice with `SyncStatus`'s `pullNotice` prop,
 which turns the code into words for the cashier and never shows the code
 itself.

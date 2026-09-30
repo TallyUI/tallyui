@@ -34,7 +34,7 @@ it('maps a jwt_auth 403 to a store-class token refusal that names no version', a
   const error = await checkResponse(new Response(JSON.stringify({ code: 'jwt_auth_invalid_token' }), { status: 403 })).catch((cause: unknown) => cause);
   expect(error).toBeInstanceOf(WooTokenRefusedError);
   expect(error).toMatchObject({
-    code: 'store_misconfigured', fixedBy: 'store', fix: "check the WCPOS plugin's JWT settings", storeCode: 'jwt_auth_invalid_token',
+    code: 'store_misconfigured', fixedBy: 'store', fix: "check the JWT Authentication plugin's settings", storeCode: 'jwt_auth_invalid_token',
   });
   expect((error as Error).message).not.toMatch(/1\.10|update/i);
   expect(errorKind(error)).toBe('store');
