@@ -222,7 +222,7 @@ describe('OrdersList', () => {
   it('renders a customer_ignored as a guest sale naming the id', () => {
     const warned = order('w', { syncStatus: 'applied', warnings: [{ code: 'customer_ignored', customerId: 'cus_1' }] });
     render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
-    const expected = "Customer cus_1 wasn't found in the store; the sale was kept as a guest sale.";
+    const expected = "The online store didn't recognise the customer on this sale, so it was saved as a guest sale. Customer id: cus_1.";
     expect(screen.getAllByText(expected)).toHaveLength(2);
   });
 

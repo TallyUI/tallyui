@@ -40,7 +40,8 @@ naming the id, because a sale stuck in an outbox for days is worse.
 
 `customer_ignored` is one of `CommandWarning`'s codes in `@tallyui/core`
 (#266): `{ code: 'customer_ignored'; customerId: string }`, the id the
-till sent (1 to 64 characters). A warning never rejects a sale.
+till sent (1 to 64 characters), for a customer unknown, deleted or in
+another channel. A warning never rejects a sale.
 
 ## Reading the tables
 

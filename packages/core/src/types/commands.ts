@@ -60,8 +60,8 @@ export type CommandWarning =
       code: 'tax_rate_mismatch'; ratePpm: number; expectedMinor: number; serverMinor: number;
     }
   /**
-   * The sale's `customerId` (1 to 64 characters) didn't resolve, so the sale was kept as a guest
-   * sale rather than held (ADR-070).
+   * The sale's `customerId` (1 to 64 characters) was unknown, deleted or in another channel, so
+   * the sale was kept as a guest sale rather than held (ADR-070).
    */
   | { code: 'customer_ignored'; customerId: string };
 
