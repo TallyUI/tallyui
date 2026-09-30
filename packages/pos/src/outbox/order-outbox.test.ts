@@ -161,6 +161,25 @@ describe('order outbox', () => {
     } finally { warn.mockRestore(); error.mockRestore(); }
   });
 
+  it("caps the store's message in the refusal log at 200 characters, and logs a short one unchanged (#269 review)", async () => {
+    const inputs = [order(0), order(1)];
+    await collection.bulkInsert(inputs);
+    const [long, short] = ['x'.repeat(300), 'Only 0 of SKU1 left'];
+    const warn = vi.spyOn(outboxLogger, 'warn');
+    try {
+      const { outbox, send } = setup();
+      send.mockResolvedValueOnce({ kind: 'results', results: [
+        { id: inputs[0].commandId, status: 'rejected', error: { code: 'insufficient_stock', message: long } },
+        { id: inputs[1].commandId, status: 'rejected', error: { code: 'insufficient_stock', message: short } },
+      ] });
+      await outbox.flush();
+      expect(warn.mock.calls.filter(([message]) => message === 'Order refused by the store')).toEqual([
+        ['Order refused by the store', { orderId: inputs[0].id, code: 'insufficient_stock', message: 'x'.repeat(200) }],
+        ['Order refused by the store', { orderId: inputs[1].id, code: 'insufficient_stock', message: short }],
+      ]);
+    } finally { warn.mockRestore(); }
+  });
+
   it.each([0, 2.5, -1])('an invalid app max (0, 2.5, -1) never downgrades or stalls: %s', async (max) => {
     const input = v3Order(0, false);
     await collection.insert(input);

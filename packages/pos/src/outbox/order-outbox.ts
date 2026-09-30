@@ -15,6 +15,9 @@ const AUTH_FAILURES_BEFORE_PROMPT = 3;
 // command id could duplicate it, so requeue() leaves these for manual reconciliation.
 const NOT_REQUEUEABLE = new Set(['idempotency_mismatch']);
 
+// The store's message in the refusal log is cut to this many characters, the cap connectors use for a foreign 426 message.
+const REFUSAL_LOG_MESSAGE_MAX = 200;
+
 // After this many consecutive failures the store answered (not offline) with the same head order and
 // no progress, the queue is probed one order at a time, so an order the store can't take holds up only
 // itself. With the default backoff the first probe goes after about 30 s: sales keep flowing within minutes.
@@ -382,7 +385,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         // Every refusal goes to the sync log once, with the store's code and message (the orders list shows the cashier
         // only the code's sentence, #269); unsupported_version stays an error.
         if (result.status === 'rejected') outboxLogger[error?.code === 'unsupported_version' ? 'error' : 'warn']('Order refused by the store',
-          { orderId: order.id, code: error?.code, message: error?.message });
+          { orderId: order.id, code: error?.code, message: error?.message?.slice(0, REFUSAL_LOG_MESSAGE_MAX) });
         const updatedAt = new Date(now()).toISOString();
         // Progress removes the stored serverFailures in the write that marks the order applied or rejected.
         await current.incrementalModify((data) => {

@@ -22,7 +22,7 @@ const REFUSAL_SENTENCES = new Map([
   ['underpaid', 'The online store refused this sale: the payments add up to less than the total.'],
   ['unsupported_currency', "The online store refused this sale: the store doesn't take this currency."],
 ]);
-// Any other code, or none: platform_error's sentence, as the generic fallback (proposed to the Front desk).
+// Any other code, or none: platform_error's sentence, as the generic fallback (approved by the Front desk, 2026-09-30).
 const refusalSentence = (code: string | undefined) => REFUSAL_SENTENCES.get(code ?? '') ?? REFUSAL_SENTENCES.get('platform_error')!;
 
 /** Keeps an unparseable value as is, like medusapos's date util, since `Intl` throws on an invalid date. */
