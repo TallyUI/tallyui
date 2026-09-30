@@ -171,6 +171,12 @@ describe('taxProviderProps', () => {
     expect(taxProviderProps(settings)).toEqual({ ratesPpm: { default: 190000 }, pricesIncludeTax: true });
   });
 
+  it('passes rate codes when present and leaves the key out otherwise', () => {
+    const taxRateCodes = { default: 'Standard', '1': 'Reduced' };
+    expect(taxProviderProps({ ...settings, taxRateCodes })).toMatchObject({ rateCodes: taxRateCodes });
+    expect(taxProviderProps(settings)).not.toHaveProperty('rateCodes');
+  });
+
   it("passes the store's rounding, and none when it is absent or custom (#324)", () => {
     const rounding = { granularity: 'per_rate_group_items', mode: 'half_up' } as const;
     expect(taxProviderProps({ ...settings, taxRounding: rounding })).toEqual({ ratesPpm: { default: 190000 }, pricesIncludeTax: true, rounding });
