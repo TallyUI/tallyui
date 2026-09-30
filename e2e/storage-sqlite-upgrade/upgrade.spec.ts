@@ -27,9 +27,12 @@ const orderIds = Array.from({ length: 10 }, (_, i) => `order-${String(i + 1).pad
 const pendingIds = ['command-1', 'command-10', 'command-2', 'command-3', 'command-6', 'command-7', 'command-8', 'command-9'];
 // order.create versions for the v2 set, as the carry-over test has them: order-0007 and order-0010 carry ADR-065's figures.
 const sentVersions = { 'command-1': 1, 'command-2': 1, 'command-3': 1, 'command-6': 1, 'command-8': 1, 'command-9': 1, 'command-7': 3, 'command-10': 3 };
-// The orders after the v2 → v5 migration, as the carry-over test has them: every field RxDB 16.21.1 stored, plus
-// version 5's sentVersion, the version it went out at (order-0004 and order-0005, with no lines, 1).
-const migrated = expected.map((order) => ({ ...order, sentVersion: (sentVersions as Record<string, number>)[order.commandId as string] ?? 1 }));
+// The orders after the v2 → v6 migration, as the carry-over test has them: every field RxDB 16.21.1 stored, plus
+// version 5's sentVersion, the version it went out at (order-0004 and order-0005, with no lines, 1); and version 6's
+// taxRounding, the default every older sale was computed with (DEFAULT_TAX_ROUNDING, packages/pos/src/tax/exact.ts;
+// packages/integration-tests/src/rxdb16-carry-over-sqlite.test.ts expects `taxRounding: DEFAULT_TAX_ROUNDING`).
+const taxRounding = { granularity: 'per_order', mode: 'half_away_from_zero' };
+const migrated = expected.map((order) => ({ ...order, sentVersion: (sentVersions as Record<string, number>)[order.commandId as string] ?? 1, taxRounding }));
 // order-0006's 300-character line name, frozen to the sent form when it is sent.
 const frozenName = `${'L'.repeat(254)}…`;
 const DB_NAME = 'tally_upgrade';
@@ -69,15 +72,16 @@ test.describe('storage-sqlite 16.21.1 → 17.5.0 upgrade on SQLite-wasm over OPF
     test.setTimeout(120_000);
     const written = await test.step('2.0.0 writes the fixture orders and the register state', () => writeWithV16(page));
 
-    await test.step('17.5.0 opens the same database and every document survives the v2 → v5 migration', async () => {
+    await test.step('17.5.0 opens the same database and every document survives the v2 → v6 migration', async () => {
       await page.goto('/v17/');
       // The 2.0.0 worker's SAH pool (VFS `tallyui`) is in this origin's OPFS, where the 17.5.0 worker installs the same pool.
       expect(await tally<string[]>(page, 'opfsRoot')).toEqual(['.tallyui']);
       const opened = await timed('17.5.0 open with migration', () => tally<any>(page, 'open', DB_NAME));
-      expect(opened, JSON.stringify(opened)).toMatchObject({ ok: true, rxdbVersion: '17.5.0', worker: '/v17/tallyui-sqlite-worker.js', ordersSchemaVersion: 5 });
+      expect(opened, JSON.stringify(opened)).toMatchObject({ ok: true, rxdbVersion: '17.5.0', worker: '/v17/tallyui-sqlite-worker.js', ordersSchemaVersion: 6 });
       const stored = await tally<any>(page, 'readAll');
       expect(stored.orders.map((order: { id: string }) => order.id)).toEqual(orderIds);
-      // Every migrated order, every field, exactly as RxDB 16.21.1 stored it, plus version 5's sentVersion; nothing else added.
+      // Every migrated order, every field, exactly as RxDB 16.21.1 stored it, plus version 5's sentVersion and version
+      // 6's taxRounding; nothing else added.
       expect(stored.orders).toStrictEqual(migrated);
       for (const order of stored.orders) {
         expect(order).not.toHaveProperty('localWarnings');
