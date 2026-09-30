@@ -619,6 +619,81 @@ describe('startCatalogueReconcile', () => {
   }, 30_000);
 });
 
+describe('matchKey: a listing keyed by the backend id, not the primary key (#313)', () => {
+  /** One page listing the store by numeric id; a local document is matched by `String(doc.id)`, unless `unmatched` says not. */
+  function byIdAdapter(server: Server, unmatched = (_doc: Product) => false) {
+    const enqueued: Array<Array<{ key: string; local?: Product; remote?: unknown; tombstone?: boolean }>> = [];
+    const confirmCalls: string[][] = [];
+    const adapter: CatalogueReconcileAdapter<Product, number> = {
+      async *fetchPages() {
+        const all = [...server.products.values()].sort((a, b) => a.id - b.id);
+        yield { entries: all.map((p) => ({ key: String(p.id), fingerprint: p.stamp, remote: p.id })), cursor: 1 };
+      },
+      fingerprint: (doc) => doc.stamp,
+      matchKey: (doc) => (unmatched(doc) ? undefined : String(doc.id)),
+      async confirmGone(locals) {
+        confirmCalls.push(locals.map((d) => d.uuid));
+        return locals.filter((d) => !server.products.has(d.uuid)).map((d) => d.uuid);
+      },
+      enqueue: (entries) => { enqueued.push(entries); },
+    };
+    return { adapter, enqueued, confirmCalls };
+  }
+
+  it('entries keyed by the match key find their locals: only the differing one is refetched, under its primary key', async () => {
+    const { server, collection } = await setup(4);
+    server.edit(2, { stamp: 's2' });
+    const time = fakeTime();
+    const { adapter, enqueued } = byIdAdapter(server);
+    const { runner, events, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(enqueued).toEqual([[{ key: uuid(2), local: product(2), remote: 2 }]]);
+    expect(events).toContainEqual({ type: 'refetched', count: 1, keys: [uuid(2)] });
+    expect(events).toContainEqual(expect.objectContaining({ type: 'pass-completed', compared: 4, refetched: 1, unlisted: 0, tombstoned: 0 }));
+  }, 30_000);
+
+  it('a remote-only entry is enqueued under the listing key', async () => {
+    const { server, collection } = await setup(4);
+    server.products.set(uuid(5), product(5)); // the incremental pull never returns it
+    const time = fakeTime();
+    const { adapter, enqueued } = byIdAdapter(server);
+    const { runner, events, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(enqueued).toEqual([[{ key: '5', local: undefined, remote: 5 }]]);
+    expect(events).toContainEqual({ type: 'refetched', count: 1, keys: ['5'] });
+  }, 30_000);
+
+  it('a local with no match key is a candidate, even when the listing names its id', async () => {
+    const { server, collection } = await setup(4);
+    const time = fakeTime();
+    const { adapter, confirmCalls } = byIdAdapter(server, (doc) => doc.id === 3);
+    const { runner, events, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(confirmCalls).toEqual([[uuid(3)]]);
+    expect(events).toContainEqual({ type: 'kept', count: 1, keys: [uuid(3)], reason: 'unconfirmed' });
+  }, 30_000);
+
+  it('candidates, confirmGone and tombstones use primary keys', async () => {
+    const { server, collection } = await setup(4);
+    server.remove(4);
+    const time = fakeTime();
+    const { adapter, enqueued, confirmCalls } = byIdAdapter(server);
+    const { runner, events, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(confirmCalls).toEqual([[uuid(4)]]);
+    expect(enqueued).toEqual([[{ key: uuid(4), local: product(4), tombstone: true }]]);
+    expect(events).toContainEqual({ type: 'tombstoned', count: 1, keys: [uuid(4)] });
+  }, 30_000);
+});
+
 describe('shouldReconcileAfterGap', () => {
   it('is true once the last successful pull is more than 6 hours old', () => {
     const now = Date.UTC(2026, 8, 30, 12);

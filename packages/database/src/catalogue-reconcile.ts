@@ -214,7 +214,22 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     await save({ lastCompletedAt: saved.lastCompletedAt, pass: current });
     log({ type: 'pass-started', resumed });
 
+    // The listing's keys; with adapter.matchKey these are match keys, not primary keys (#313).
     const seen = new Set<string>();
+    // With matchKey: match key to primary key, built at the first page of each pass (a resumed one too). Strings only.
+    let index: Map<string, string> | undefined;
+    const buildIndex = async (matchKey: (doc: Doc) => string | undefined) => {
+      const built = new Map<string, string>();
+      for await (const chunk of readFreshInChunks(collection)) {
+        checkAborted();
+        for (const doc of chunk) {
+          const match = matchKey(doc);
+          // On a duplicate match key the first document wins.
+          if (match !== undefined && !built.has(match)) built.set(match, keyOf(doc));
+        }
+      }
+      return built;
+    };
     let pages = 0;
     let compared = 0;
     let refetched = 0;
@@ -227,14 +242,17 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
         if (next.done) break;
         pages++;
         const { entries, cursor } = next.value;
-        const locals = await readByKeys(entries.map((e) => e.key));
+        const byMatch = adapter.matchKey ? (index ??= await buildIndex(adapter.matchKey.bind(adapter))) : undefined;
+        const primaries = entries.map((e) => (byMatch ? byMatch.get(e.key) : e.key));
+        const locals = await readByKeys(primaries.filter((key): key is string => key !== undefined));
         const queue: Array<{ key: string; local?: Doc; remote?: unknown }> = [];
-        for (const { key, fingerprint, remote } of entries) {
+        entries.forEach(({ key, fingerprint, remote }, i) => {
           seen.add(key);
-          const local = locals.get(key);
+          const local = primaries[i] === undefined ? undefined : locals.get(primaries[i]!);
           if (local) compared++;
-          if (!local || adapter.fingerprint(local) !== fingerprint) queue.push({ key, local, remote });
-        }
+          // A remote-only entry keeps the listing's key.
+          if (!local || adapter.fingerprint(local) !== fingerprint) queue.push({ key: local ? keyOf(local) : key, local, remote });
+        });
         checkAborted();
         if (queue.length) {
           // The refetch this page causes runs in the pull, outside the runner: its slots, one per fetchByIds request
@@ -269,7 +287,10 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
       for await (const chunk of readFreshInChunks(collection)) {
         checkAborted();
         localCount += chunk.length;
-        for (const doc of chunk) if (!seen.has(keyOf(doc))) candidates.push(doc);
+        for (const doc of chunk) {
+          const key = adapter.matchKey ? adapter.matchKey(doc) : keyOf(doc);
+          if (key === undefined || !seen.has(key)) candidates.push(doc);
+        }
       }
       unlisted = candidates.length;
       // The brake applies to the candidates, before confirmGone: a broken listing never sends

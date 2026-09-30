@@ -26,9 +26,10 @@ export async function wooFetchByIds(entries: Array<ReconcileFetchEntry<any>>, co
 }
 
 /**
- * The reconcile feed for `products`, keyed by the primary key (`uuid`): the numeric `id` is only how the
- * store is asked (#248 design note, §6). Its corrections reach the collection only through the pull.
+ * The reconcile feed for `products`, keyed by the primary key (`uuid`): the numeric `id` is how the store is
+ * asked (#248 design note, §6), and how a listed product the till lacks, queued under its id, is matched (#313).
+ * Its corrections reach the collection only through the pull.
  */
 export function createWooReconcileFeed(): ReconcileFeed<any> {
-  return createReconcileFeed<any>({ key: (doc) => doc.uuid, fetchByIds: wooFetchByIds });
+  return createReconcileFeed<any>({ key: (doc) => doc.uuid, remote: (doc) => doc.id, fetchByIds: wooFetchByIds });
 }

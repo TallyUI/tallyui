@@ -30,7 +30,8 @@ The incremental pull can miss an edit: a `modified_after` that over-excludes (in
 - A product the till holds but the listing omits is removed only when a by-id re-read (`include=`, `status=any`) finds it gone, trashed or unpublished, and within the runner's mass-delete brake.
 - A product hidden from the POS after it synced (WCPOS "online only" visibility, with POS-only products turned on) is removed from the till by the pass; hiding many at once is held by the mass-delete brake.
 - An existing install keeps its pull checkpoint: the combined pull reads it under `legacyKey: 'products'`.
-- The WCPOS bulk-id fast path is dormant: it is chosen only when `status.capabilities` includes `products_id_fast_path` (wcpos/woocommerce-pos#2113), and until its id-to-uuid mapping exists the listing stays paged.
+- When `wcpos/v2/status` lists `products_id_fast_path` in `capabilities`, the whole catalogue is listed in one request (`per_page=-1` with `_fields=id,date_modified_gmt,stock_quantity,stock_status`) instead of pages of 100; a store that refuses it (a 400) is listed page by page in the same pass.
+- Both listings key on the numeric product id, never the till-local uuid; the adapter's `matchKey` is how the runner finds the till's copy.
 
 ## Errors
 

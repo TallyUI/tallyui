@@ -6,8 +6,9 @@ const MAX_CHUNK = 1000;
 
 /**
  * One queued correction, keyed by the local primary key: `key`, or `id`, its
- * older name. `local` is the till's copy, if it has one; `remote` is whatever
- * the connector needs to refetch it.
+ * older name. An entry without a local copy may carry the listing's key instead
+ * (#313). `local` is the till's copy, if it has one; `remote` is whatever the
+ * connector needs to refetch it.
  */
 export type ReconcileFeedEntry<Doc = any> = ({ key: string; id?: undefined } | { id: string; key?: undefined }) & {
   local?: Doc;
@@ -31,6 +32,11 @@ export interface CreateReconcileFeedOptions<Doc = any> {
 export interface KeyedReconcileFeedOptions<Doc = any> {
   /** The local primary key of a fetched document; fetched documents are matched to entries by it. */
   key(doc: Doc): string;
+  /**
+   * The value an entry's `remote` names this document by. An entry with no local copy whose key finds no
+   * fetched document is matched by it (a listing that carries no primary key, #313).
+   */
+  remote?(doc: Doc): unknown;
   /** The current documents for the entries that still exist. A document may carry `_deleted: true` (an unpublished product). */
   fetchByIds(entries: Array<ReconcileFetchEntry<Doc>>, context: SyncContext): Promise<Doc[]>;
 }
@@ -85,8 +91,10 @@ export function createReconcileFeed<Doc = any>(
             const toFetch = chunk.filter((e) => !e.tombstone);
             const fetched = toFetch.length ? await fetch(toFetch, context) : [];
             const byKey = new Map(fetched.map((doc) => [docKey(doc), doc]));
+            const byRemote = keyed?.remote && new Map(fetched.map((doc) => [keyed.remote!(doc), doc]));
             for (const entry of chunk) {
-              const doc = entry.tombstone ? undefined : byKey.get(keyOf(entry));
+              const doc = entry.tombstone ? undefined : byKey.get(keyOf(entry))
+                ?? (entry.local === undefined && entry.remote !== undefined && byRemote ? byRemote.get(entry.remote) : undefined);
               // A fetched document keeps a `_deleted` the connector set (an unpublished product, #248).
               if (doc) documents.push({ ...doc, _deleted: (doc as { _deleted?: boolean })._deleted ?? false });
               // A refreshOnly entry (the fingerprint path) is skipped, not tombstoned, when the
