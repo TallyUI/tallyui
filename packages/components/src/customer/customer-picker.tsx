@@ -44,7 +44,9 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
       setError(error.code === 'network' ? "Couldn't reach the store. Try again."
         : error.code === 'server' ? "The store couldn't do that. Try again." : error.message);
     } else {
-      setError(error instanceof ConnectorUnauthorizedError ? 'Sign in again to continue.' : 'Something went wrong. Try again.');
+      setError(error instanceof ConnectorUnauthorizedError && error.code === 'unauthorized' ? 'Sign in again to continue.'
+        : error instanceof ConnectorUnauthorizedError && error.code === 'forbidden' ? "Your account isn't allowed to do this on this store. Ask the store owner."
+          : 'Something went wrong. Try again.');
       onError?.(error);
     }
   }

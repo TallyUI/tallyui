@@ -15,7 +15,7 @@ export function wcposClientPart(part: string): string {
 
 export class WooMissingTokenError extends ConnectorUnauthorizedError {
   constructor() {
-    super('WooCommerce credentials have no WCPOS access token: sign in again');
+    super('WooCommerce credentials have no WCPOS access token: sign in again', 401);
     this.name = 'WooMissingTokenError';
   }
 }

@@ -1,13 +1,15 @@
-/** A backend refused the stored credentials (expired, revoked or insufficient); the app should sign in again. */
+/** 401 needs sign-in again (`unauthorized`, till); 403 is signed in but not allowed (`forbidden`, store). A 403 pull retries on the store schedule; apps must not sign out. */
 export class ConnectorUnauthorizedError extends Error {
-  readonly code = 'unauthorized' as const;
-  /** Only signing in on this till fixes it, so the pull stops until `resume()` (`errorKind`). */
-  readonly fixedBy = 'till' as const;
-  readonly status?: number;
+  readonly code: 'unauthorized' | 'forbidden';
+  readonly fixedBy: 'till' | 'store';
+  /** Set by meaning, not copied from the HTTP answer: a backend that answers both with the same code decides first (Vendure's session probe). */
+  readonly status: 401 | 403;
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status: 401 | 403) {
     super(message);
     this.name = 'ConnectorUnauthorizedError';
     this.status = status;
+    this.code = status === 401 ? 'unauthorized' : 'forbidden';
+    this.fixedBy = status === 401 ? 'till' : 'store';
   }
 }

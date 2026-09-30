@@ -18,7 +18,7 @@ async function get(context: SyncContext, path: string): Promise<any> {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa store settings request failed (HTTP ${response.status})${body?.message ? `: ${body.message}` : ''}`, response.status);
+    if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa store settings request failed (HTTP ${response.status})${body?.message ? `: ${body.message}` : ''}`, response.status as 401 | 403);
     throw new StoreSettingsError('failed', `Medusa store settings request failed (HTTP ${response.status})${body?.message ? `: ${body.message}` : ''}`);
   }
   return response.json();

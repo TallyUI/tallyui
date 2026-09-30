@@ -127,6 +127,23 @@ describe('startReplication on pull errors, through the real RxDB loop', () => {
     expect(state.isPaused()).toBe(true);
   });
 
+  it('a 403 emits a forbidden store notice, retries, and clears on success without resume()', async () => {
+    const pull = { current: ((call, checkpoint) => {
+      if (call <= 2) throw new ConnectorUnauthorizedError('x', 403);
+      return call === 3 ? widget : empty(call, checkpoint);
+    }) as Pull };
+    const { state, products, calls, notices, errors, delays } = await setup(pull, { ceiling: CEILING });
+    await until(() => notices.length > 1);
+    expect(notices[1]).toEqual({ code: 'forbidden', since: expect.any(Number), fixedBy: 'store' });
+    await until(() => calls.length >= 3);
+    await state.awaitInSync();
+    expect(errors).toHaveLength(2);
+    expect(delays).toEqual([CEILING, CEILING]);
+    expect(notices).toEqual([undefined, notices[1], undefined]);
+    expect(state.isPaused()).toBe(false);
+    expect(await products.find().exec()).toHaveLength(1);
+  });
+
   it('a till-fixed error makes no further request when the page becomes visible again, until resume()', async () => {
     const page = fakeDocument();
     const pull = { current: unauthorized as Pull };

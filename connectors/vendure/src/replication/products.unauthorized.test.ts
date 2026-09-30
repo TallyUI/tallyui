@@ -35,7 +35,7 @@ describe.each([
       fetchSpy.mockResolvedValueOnce(json(forbidden, status));
       const result = request(context);
       await expect(result).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
-      await expect(result).rejects.toMatchObject({ code: 'unauthorized', status });
+      await expect(result).rejects.toMatchObject({ code: status === 403 ? 'forbidden' : 'unauthorized', status });
       await expect(result).rejects.toThrow(String(status));
     }
     expect(fetchSpy).toHaveBeenCalledTimes(2);
@@ -45,7 +45,7 @@ describe.each([
     const { probes } = stubFetch(() => json({ data: { activeAdministrator: null } }));
     const result = request(context);
     await expect(result).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
-    await expect(result).rejects.toMatchObject({ code: 'unauthorized', status: undefined });
+    await expect(result).rejects.toMatchObject({ code: 'unauthorized', status: 401 });
     await expect(result).rejects.toThrow(`Vendure GraphQL error: ${message}`);
     expect(probes).toHaveLength(1);
   });

@@ -17,7 +17,7 @@ async function get(path: string, context: SyncContext) {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status);
+    if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status as 401 | 403);
     throw new Error(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`);
   }
   return response.json();

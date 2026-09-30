@@ -32,7 +32,8 @@ export async function signedOut(context: SyncContext): Promise<boolean | undefin
  */
 export async function forbiddenError(context: SyncContext, forbidden: Array<{ message?: string; path?: ReadonlyArray<string | number> }>): Promise<Error> {
   const out = await signedOut(context);
-  if (out === true) return new ConnectorUnauthorizedError(`Vendure GraphQL error: ${forbidden[0].message}`);
+  // The probe confirmed a signed-out session even though Vendure answered FORBIDDEN.
+  if (out === true) return new ConnectorUnauthorizedError(`Vendure GraphQL error: ${forbidden[0].message}`, 401);
   const what = forbidden.map(({ message, path }) => (path?.length ? `${path.join('.')}: ${message}` : message)).join('; ');
   if (out === false) return new Error(`Vendure GraphQL error: FORBIDDEN: the store refused this request although the session is signed in (a permission is missing): ${what}`);
   return new Error(`Vendure GraphQL error: FORBIDDEN: ${what} (the session check failed, so this may be transient)`);

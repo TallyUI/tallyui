@@ -30,7 +30,7 @@ export const medusaStockReconcile: StockReconcileAdapter = {
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status);
+        if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status as 401 | 403);
         throw new Error(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`);
       }
       const data = await response.json() as { inventory_items: Array<{ id: string; location_levels?: Level[] }>; count: number };

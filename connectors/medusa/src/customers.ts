@@ -30,7 +30,7 @@ async function customerRequest(url: string, key: 'customers' | 'customer', init:
   } catch (error) {
     throw new CustomerServiceError('network', errorMessage(error));
   }
-  if (res.status === 401 || res.status === 403) throw new ConnectorUnauthorizedError(`Medusa rejected the credentials (HTTP ${res.status})`, res.status);
+  if (res.status === 401 || res.status === 403) throw new ConnectorUnauthorizedError(`Medusa rejected the credentials (HTTP ${res.status})`, res.status as 401 | 403);
   if (res.status === 404 && key === 'customer' && init.method === 'GET') return null;
   if (!res.ok && res.status !== 400) throw new CustomerServiceError('server', `HTTP ${res.status}`);
   let body;
