@@ -2,7 +2,7 @@ import type { RxCollection } from 'rxdb';
 import type { IdReconcileAdapter, SyncContext } from '@tallyui/core';
 
 import { startCatalogueRunner } from './catalogue-reconcile';
-import { skipPages } from './fingerprint-reconcile';
+import { confirmAll, skipPages } from './fingerprint-reconcile';
 
 export interface StartIdReconcileOptions<Doc> {
   /** The replicated products collection. Read only. */
@@ -59,6 +59,9 @@ export function startIdReconcile<Doc>({
       fetchPages: (context, from) => skipPages(adapter.fetchPages(context),
         (rows) => rows.map((row) => ({ key: row.id, fingerprint: fingerprint(row.variantIds) })), from),
       fingerprint: (doc) => fingerprint(adapter.variantIds(doc)),
+      // The proof is the feed's by-id re-read: every candidate is confirmed here and reaches the feed below as a
+      // plain entry, never `tombstone: true`, so the feed tombstones it only when fetchByIds does not return it.
+      confirmGone: confirmAll(options.collection),
       // The old entry shape. A product the till lacks is left to the pull, as before.
       enqueue: (entries) => {
         const known = entries.flatMap(({ key, local }) => (local ? [{ id: key, local }] : []));

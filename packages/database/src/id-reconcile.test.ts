@@ -273,7 +273,7 @@ describe('startIdReconcile', () => {
     stop();
   });
 
-  it('runs a pass at the startDelayMs check, the next at the first hourly check past intervalMs, and none after stop()', async () => {
+  it('runs a pass at startDelayMs, the next at startDelayMs + intervalMs (checked every intervalMs / 2), and none after stop()', async () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([[]]);
     const { stop } = startIdReconcile({
@@ -284,24 +284,24 @@ describe('startIdReconcile', () => {
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
-    // #248: the gate is checked hourly, so a pass due after 5 s runs at the next check.
-    await vi.advanceTimersByTimeAsync(3_600_000 - 1);
+    // #248: the gate is checked every min(1 hour, intervalMs / 2): at 3.5 s (not due), then at 6 s.
+    await vi.advanceTimersByTimeAsync(4999);
     expect(fetchPages).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(2);
     stop();
-    await vi.advanceTimersByTimeAsync(3 * 3_600_000);
+    await vi.advanceTimersByTimeAsync(20000);
     expect(fetchPages).toHaveBeenCalledTimes(2);
   });
 
-  it('startDelayMs: null skips the start check; the first hourly check runs the pass none has completed', async () => {
+  it('startDelayMs: null skips the start check; the first check (intervalMs / 2) runs the pass none has completed', async () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([[]]);
     const { stop } = startIdReconcile({
       collection: db.products, adapter, context, reSync: vi.fn(), startDelayMs: null, intervalMs: 5000,
     });
 
-    await vi.advanceTimersByTimeAsync(3_600_000 - 1);
+    await vi.advanceTimersByTimeAsync(2499);
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);

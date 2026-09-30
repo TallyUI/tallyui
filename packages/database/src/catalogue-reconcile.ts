@@ -13,8 +13,8 @@ import { MAX_RETRY_AFTER_MS, retryAfter } from './replication';
  * `maxDeleteShare` says: in a small shop, deleting 2 of 5 products is normal.
  */
 const MASS_DELETE_MINIMUM = 10;
-/** How often the runner checks its gate after the first check. */
-const CHECK_EVERY_MS = 3_600_000;
+/** The longest time between gate checks; a shorter interval checks at half of it (see `checkEveryMs`). */
+const MAX_CHECK_EVERY_MS = 3_600_000;
 /** A transient error's first retry; it doubles, up to MAX_RETRY_AFTER_MS (1 hour). */
 const FIRST_RETRY_MS = 5 * 60_000;
 /** The request budget's window. */
@@ -41,8 +41,10 @@ export interface CatalogueReconcileSummary {
   /** Differing or missing documents handed to the pull. */
   refetched: number;
   tombstoned: number;
-  /** Absent documents kept: unconfirmed, or held by the brake. */
+  /** Deletion candidates kept: unconfirmed, or held by the brake. */
   kept: number;
+  /** Local documents the listing did not name, counted in an uninterrupted pass (0 in a resumed one). */
+  unlisted: number;
   durationMs: number;
 }
 
@@ -68,7 +70,7 @@ export interface StartCatalogueReconcileOptions<Doc, Cursor = unknown> {
   confirmChunk?: number;
   /** Time from the last completed pass to the next (default 86400000, 24 hours). */
   intervalMs?: number;
-  /** The first gate check after start (default 120000); then one every hour. */
+  /** The first gate check after start (default 120000); then one every `min(1 hour, intervalMs / 2)`. */
   startDelayMs?: number;
   /** The brake holds deletion candidates above this share of local documents (and above 10), unless `allowMassDelete`. */
   maxDeleteShare?: number;
@@ -115,9 +117,12 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
   maxDeleteShare = 0.2, allowMassDelete = false, log = () => {}, now = Date.now, stateId = 'catalogue-reconcile',
   setTimer = (fn, ms) => { const timer = setTimeout(fn, ms); return () => clearTimeout(timer); }, keepCandidates = false,
 }: Omit<StartCatalogueReconcileOptions<Doc, Cursor>, 'startDelayMs'> & {
-  /** `null`: no start check, only the hourly ones. */
+  /** `null`: no start check, only the periodic ones. */
   startDelayMs?: number | null;
-  /** Never delete: every absent document is kept as unconfirmed (the fingerprint wrapper). */
+  /**
+   * Never delete (the fingerprint wrapper): candidates are only counted as `unlisted`, before the
+   * brake and confirmGone, so nothing is logged about them and no budget slot is taken.
+   */
   keepCandidates?: boolean;
 }) {
   const controller = new AbortController();
@@ -239,6 +244,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
 
     let tombstoned = 0;
     let kept = 0;
+    let unlisted = 0;
     const keep = (docs: Doc[], reason: 'unconfirmed' | 'brake') => {
       kept += docs.length;
       if (docs.length) log({ type: 'kept', ...listed(docs.map(keyOf)), reason });
@@ -253,29 +259,28 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
         localCount += chunk.length;
         for (const doc of chunk) if (!seen.has(keyOf(doc))) candidates.push(doc);
       }
+      unlisted = candidates.length;
       // The brake applies to the candidates, before confirmGone: a broken listing never sends
       // thousands of confirmation requests, and whatever confirmGone confirms stays under it.
       let gone: Doc[] = [];
-      if (keepCandidates) keep(candidates, 'unconfirmed');
-      else if (braked(candidates.length, localCount)) {
+      if (!candidates.length || keepCandidates) {
+        // Nothing to prove, or nothing will ever be deleted: the candidates are only counted.
+      } else if (braked(candidates.length, localCount)) {
         console.warn(
           `Catalogue reconcile braked: ${candidates.length} of ${localCount} local documents `
           + `(${((candidates.length / localCount) * 100).toFixed(1)}%) were kept. Pass allowMassDelete: true to override.`,
         );
         keep(candidates, 'brake');
       } else {
-        gone = candidates;
-        if (adapter.confirmGone && candidates.length) {
-          // In chunks of confirmChunk, each taking one budget slot, so a connector never bursts.
-          const confirmed = new Set<string>();
-          for (let i = 0; i < candidates.length; i += confirmChunk) {
-            const chunk = candidates.slice(i, i + confirmChunk);
-            await budget();
-            for (const key of await adapter.confirmGone(chunk, ctx)) confirmed.add(key);
-            checkAborted();
-          }
-          gone = candidates.filter((doc) => confirmed.has(keyOf(doc)));
+        // In chunks of confirmChunk, each taking one budget slot, so a connector never bursts.
+        const confirmed = new Set<string>();
+        for (let i = 0; i < candidates.length; i += confirmChunk) {
+          const chunk = candidates.slice(i, i + confirmChunk);
+          await budget();
+          for (const key of await adapter.confirmGone(chunk, ctx)) confirmed.add(key);
+          checkAborted();
         }
+        gone = candidates.filter((doc) => confirmed.has(keyOf(doc)));
         const goneSet = new Set(gone);
         keep(candidates.filter((doc) => !goneSet.has(doc)), 'unconfirmed');
       }
@@ -290,7 +295,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     checkAborted();
     const lastCompletedAt = now();
     await save({ lastCompletedAt });
-    const summary = { pages, compared, refetched, tombstoned, kept, durationMs: lastCompletedAt - startedAt };
+    const summary = { pages, compared, refetched, tombstoned, kept, unlisted, durationMs: lastCompletedAt - startedAt };
     log({ type: 'pass-completed', ...summary });
     return summary;
   };
@@ -333,14 +338,16 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     if (pending || lastCompletedAt === undefined || now() - lastCompletedAt >= intervalMs) await run();
     else log({ type: 'skipped', reason: 'gate' });
   };
+  // Hourly, or at half the interval when that is shorter, so a 30-minute runner runs every 30 minutes.
+  const checkEveryMs = Math.min(MAX_CHECK_EVERY_MS, intervalMs / 2);
   let cancelTimer = () => {};
   const schedule = (ms: number) => {
     cancelTimer = setTimer(() => {
-      schedule(CHECK_EVERY_MS);
+      schedule(checkEveryMs);
       check().catch((error) => console.warn('Catalogue reconcile failed:', error));
     }, ms);
   };
-  schedule(startDelayMs ?? CHECK_EVERY_MS);
+  schedule(startDelayMs ?? checkEveryMs);
 
   // stop() and an abort of context.signal both end the runner for good.
   const stop = () => {

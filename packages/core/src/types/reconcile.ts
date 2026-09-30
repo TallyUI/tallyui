@@ -56,8 +56,12 @@ export interface CatalogueReconcileAdapter<Doc = any, Cursor = unknown> {
   fetchPages(context: SyncContext, from?: Cursor): AsyncIterable<{ entries: CatalogueReconcileEntry[]; cursor: Cursor }>;
   /** Pure: the same fingerprint from a local document. */
   fingerprint(doc: Doc): string;
-  /** Deletion proof: of these local documents, the keys the backend confirms gone (absent, or no longer sellable). One or more requests. */
-  confirmGone?(locals: Doc[], context: SyncContext): Promise<string[]>;
+  /**
+   * Deletion proof, required: of these local documents (the ones the listing did not name), the keys
+   * the backend confirms gone (absent, or no longer sellable). One or more requests. Only confirmed
+   * keys are tombstoned; an adapter that never deletes returns none.
+   */
+  confirmGone(locals: Doc[], context: SyncContext): Promise<string[]>;
   /** Hand documents to the collection's pull (the reconcile feed). */
   enqueue(entries: Array<{ key: string; local?: Doc; remote?: unknown; tombstone?: boolean }>): void;
 }

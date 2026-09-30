@@ -63,6 +63,16 @@ export function isFingerprintResultCurrent(state: FingerprintReconcileState): bo
 }
 
 /**
+ * The id wrapper's deletion proof: a pass-through that confirms every candidate. The wrapper hands
+ * each to the reconcile feed as a plain `{ id, local }` entry, not a tombstone, and the feed's by-id
+ * re-read (`fetchByIds`) tombstones only what does not come back: that refetch is the proof.
+ */
+export function confirmAll<Doc>(collection: RxCollection<Doc>) {
+  const primary = collection.schema.primaryPath as string;
+  return async (locals: Doc[]) => locals.map((doc) => (doc as Record<string, unknown>)[primary] as string);
+}
+
+/**
  * An old adapter's pages as catalogue pages. The cursor is the count of pages read. Old adapters
  * cannot start mid-way, so a resumed pass re-reads the pages before its cursor; each comes back
  * empty, so the runner takes a budget slot for its request but compares nothing, and counts it as a page.
@@ -104,6 +114,9 @@ export function startFingerprintReconcile<Doc>({
       fetchPages: (context, from) => skipPages(adapter.fetchPages(context),
         (page) => [...page].map(([key, fingerprint]) => ({ key, fingerprint })), from),
       fingerprint: (doc) => adapter.fingerprint(doc),
+      // It never deletes: keepCandidates only counts the products the listing did not name (`unreported`), before the
+      // brake and confirmGone, so this is never called; a call is a runner bug, and it fails the pass loudly.
+      confirmGone: async () => { throw new Error('The fingerprint reconcile never deletes; confirmGone must not be called.'); },
       // refreshOnly: a missing re-fetch is skipped, never tombstoned (ADR-060). A product the till lacks is left to the pull.
       enqueue: (entries) => {
         const known = entries.flatMap(({ key, local }) => (local ? [{ id: key, local, refreshOnly: true as const }] : []));
@@ -114,8 +127,8 @@ export function startFingerprintReconcile<Doc>({
       },
     },
   });
-  const toResult = ({ pages, compared, kept }: CatalogueReconcileSummary): FingerprintReconcileResult =>
-    ({ pages, compared, queued, truncated: false, unreported: pages > 0 ? kept : 0 });
+  const toResult = ({ pages, compared, unlisted }: CatalogueReconcileSummary): FingerprintReconcileResult =>
+    ({ pages, compared, queued, truncated: false, unreported: pages > 0 ? unlisted : 0 });
 
   // Mapped as each pass ends, while `queued` is still that pass's count.
   const state = new BehaviorSubject<FingerprintReconcileState>({ running: false });

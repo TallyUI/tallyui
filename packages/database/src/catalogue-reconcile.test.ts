@@ -12,7 +12,7 @@ import {
   type CatalogueReconcileAdapter, type FingerprintReconcileAdapter, type IdReconcileAdapter, type ReplicationAdapter, type SyncContext,
 } from '@tallyui/core';
 
-import { startCatalogueReconcile, shouldReconcileAfterGap, type CatalogueReconcileEvent } from './catalogue-reconcile';
+import { startCatalogueReconcile, startCatalogueRunner, shouldReconcileAfterGap, type CatalogueReconcileEvent } from './catalogue-reconcile';
 import { connectorCollection } from './connector-collection';
 import { skipPages, startFingerprintReconcile } from './fingerprint-reconcile';
 import { startIdReconcile } from './id-reconcile';
@@ -146,8 +146,8 @@ interface FakeOptions {
   now?: () => number;
   /** Throws `error` once, instead of this page. */
   fail?: { page: number; error: unknown };
-  /** The keys `confirmGone` confirms; false: no `confirmGone`. Default: every key absent from the store. */
-  confirm?: false | ((key: string) => boolean);
+  /** Which keys absent from the store `confirmGone` confirms (default: all of them). */
+  confirm?: (key: string) => boolean;
 }
 
 /** A listing adapter over the store: pages of `pageSize` by uuid; the cursor is the next page number. */
@@ -171,16 +171,14 @@ function fakeAdapter(server: Server, feed: { enqueue(entries: any[]): void }, op
       }
     },
     fingerprint: (doc) => doc.stamp,
-    enqueue: (entries) => feed.enqueue(entries),
-  };
-  if (confirm) {
-    adapter.confirmGone = async (locals) => {
+    async confirmGone(locals) {
       confirmCalls.push({ at: now(), size: locals.length });
       const keys = locals.filter((d) => !server.products.has(d.uuid) && confirm(d.uuid)).map((d) => d.uuid);
       confirmed.push(keys);
       return keys;
-    };
-  }
+    },
+    enqueue: (entries) => feed.enqueue(entries),
+  };
   return { adapter, requests, froms, confirmed, confirmCalls };
 }
 
@@ -298,26 +296,27 @@ describe('startCatalogueReconcile', () => {
       expect(events[2]).toEqual({ type: 'kept', count: 1, keys: [uuid(12)], reason: 'unconfirmed' });
       expect(events[3]).toEqual({ type: 'tombstoned', count: 2, keys: [uuid(10), uuid(11)] });
       expect(events[4]).toEqual({
-        type: 'pass-completed', pages: 5, compared: 9, refetched: 1, tombstoned: 2, kept: 1, durationMs: expect.any(Number),
+        type: 'pass-completed', pages: 5, compared: 9, refetched: 1, tombstoned: 2, kept: 1, unlisted: 3, durationMs: expect.any(Number),
       });
       await settle();
       expect([await present(10), await present(11), await present(12)]).toEqual([false, false, true]);
       expect(await stampOf(3)).toBe('s2');
     }, 30_000);
 
-    it('without confirmGone, every absent key is tombstoned, as the id runner did', async () => {
+    it('a confirmGone that confirms nothing tombstones nothing: every candidate is kept as unconfirmed', async () => {
       const { server, feed, collection } = await setup(12);
       const time = fakeTime();
       server.remove(10, 11, 12);
-      const { adapter } = fakeAdapter(server, feed, { now: time.now, confirm: false });
+      const { adapter, confirmed } = fakeAdapter(server, feed, { now: time.now, confirm: () => false });
       const { runner, events, count } = start(collection, adapter, time);
 
       runner.reconcile();
       await time.runUntil(() => count('pass-completed') === 1);
-      expect(events).toContainEqual({ type: 'tombstoned', count: 3, keys: [uuid(10), uuid(11), uuid(12)] });
-      expect(count('kept')).toBe(0);
+      expect(confirmed).toEqual([[]]);
+      expect(count('tombstoned')).toBe(0);
+      expect(events).toContainEqual({ type: 'kept', count: 3, keys: [uuid(10), uuid(11), uuid(12)], reason: 'unconfirmed' });
       await settle();
-      expect([await present(10), await present(11), await present(12)]).toEqual([false, false, false]);
+      expect([await present(10), await present(11), await present(12)]).toEqual([true, true, true]);
     }, 30_000);
   });
 
@@ -476,6 +475,7 @@ describe('startCatalogueReconcile', () => {
     const adapter: CatalogueReconcileAdapter<Product, number> = {
       fetchPages: (_ctx, from) => skipPages(listing(), (page: Product[]) => page.map((p) => ({ key: p.uuid, fingerprint: p.stamp })), from),
       fingerprint: (doc) => doc.stamp,
+      confirmGone: async () => [], // nothing is absent here
       enqueue: (entries) => feed.enqueue(entries),
     };
     const { runner, events, count } = start(collection, adapter, time, { requestsPerMinute: 2 });
@@ -508,6 +508,49 @@ describe('startCatalogueReconcile', () => {
     await settle();
     expect(await stampOf(600)).toBe('s2');
   }, 60_000);
+
+  it('checks the gate every min(1 hour, intervalMs / 2): a 30-minute runner runs every 30 minutes, not hourly', async () => {
+    const { server, feed, collection } = await setup(2);
+    const time = fakeTime();
+    const { adapter, froms } = fakeAdapter(server, feed, { now: time.now });
+    const { count } = start(collection, adapter, time, { startDelayMs: 1000, intervalMs: 30 * 60_000 });
+
+    await time.advance(1000);
+    await time.runUntil(() => count('pass-completed') === 1);
+    await time.advance(30 * 60_000 - 1);
+    expect(froms).toHaveLength(1); // the 15-minute check found it not yet due
+    await time.advance(1); // 30 minutes after the first pass
+    await vi.waitFor(() => expect(froms).toHaveLength(2), { timeout: 5_000, interval: 10 });
+    await time.runUntil(() => count('pass-completed') === 2);
+    await time.advance(30 * 60_000);
+    await time.runUntil(() => count('pass-completed') === 3);
+    expect(froms).toHaveLength(3);
+  }, 30_000);
+
+  it('the keep-all path (the fingerprint wrapper) never calls confirmGone and takes no budget slot, even under the brake threshold', async () => {
+    const { server, feed, collection } = await setup(12);
+    const time = fakeTime();
+    server.remove(10, 11, 12); // 3 of 12, under the brake: a deleting runner would ask confirmGone
+    const { adapter, confirmCalls } = fakeAdapter(server, feed, { pageSize: 9, now: time.now });
+    const events: CatalogueReconcileEvent[] = [];
+    // Two slots: the page and the end of the listing. A confirmGone chunk would need a third, a minute later.
+    const runner = startCatalogueRunner({
+      collection, adapter, context, reSync: () => replication!.reSync(), now: time.now, setTimer: time.setTimer,
+      startDelayMs: 1e12, requestsPerMinute: 2, keepCandidates: true, log: (event) => events.push(event),
+    });
+    stops.push(runner.stop);
+    const started = time.now();
+
+    let summary: Awaited<ReturnType<typeof runner.request>> | undefined;
+    runner.request().then((result) => { summary = result; });
+    await time.runUntil(() => summary !== undefined);
+    expect(confirmCalls).toEqual([]);
+    expect(time.now()).toBe(started);
+    expect(events.map(({ type }) => type)).toEqual(['pass-started', 'pass-completed']);
+    expect(summary).toMatchObject({ pages: 1, tombstoned: 0, kept: 0, unlisted: 3 });
+    await settle();
+    expect([await present(10), await present(11), await present(12)]).toEqual([true, true, true]);
+  }, 30_000);
 
   it('state$ reports running, the last result and the last error', async () => {
     const { server, feed, collection } = await setup(2);
@@ -553,6 +596,48 @@ describe('the old runners are wrappers over the catalogue runner', () => {
     expect(await runner.reconcileIds()).toEqual({ pages: 1, queued: 1, truncated: false, braked: false });
     expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: uuid(4), local: product(4) }]);
     expect(await stateOf('id-reconcile')).toEqual(expect.any(Number));
+  });
+
+  it('startIdReconcile hands candidates to the feed as plain entries: the feed\'s by-id re-read tombstones only what does not come back', async () => {
+    const { server, collection } = await setup(4);
+    // Products 3 and 4 are missing from the id listing; the by-id read still returns 3 (a listing glitch) but not 4.
+    server.remove(4);
+    const feed = createReconcileFeed<Product>({
+      key: (doc) => doc.uuid,
+      fetchByIds: async (entries) => entries.map((e) => server.products.get(e.key)).filter((p): p is Product => Boolean(p)),
+    });
+    const enqueue = vi.fn((entries: Array<{ id: string; local: Product }>) => feed.enqueue(entries));
+    const adapter: IdReconcileAdapter<Product> = {
+      async *fetchPages() { yield [...server.products.values()].filter((p) => p.uuid !== uuid(3)).map((p) => ({ id: p.uuid, variantIds: [] })); },
+      variantIds: () => [],
+      enqueue,
+    };
+    const runner = startIdReconcile({ collection, adapter, context, reSync: vi.fn(), startDelayMs: null });
+    stops.push(runner.stop);
+
+    expect(await runner.reconcileIds()).toEqual({ pages: 1, queued: 2, truncated: false, braked: false });
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith([{ id: uuid(3), local: product(3) }, { id: uuid(4), local: product(4) }]);
+    const { documents } = await feed.adapter.pull.handler(undefined, 100, context);
+    expect(documents).toEqual([{ ...product(3), _deleted: false }, { ...product(4), _deleted: true }]);
+  });
+
+  it('startFingerprintReconcile with 60% unreported: no brake warning, confirmGone never called, unreported counted', async () => {
+    const { server, collection } = await setup(20);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const enqueue = vi.fn();
+    // The listing reports 8 of the 20 local products: 12 unreported, over 20% and over 10.
+    const adapter: FingerprintReconcileAdapter<Product> = {
+      async *fetchPages() { yield new Map([...server.products.values()].slice(0, 8).map((p) => [p.uuid, p.stamp])); },
+      fingerprint: (doc) => doc.stamp,
+      enqueue,
+    };
+    const runner = startFingerprintReconcile({ collection, adapter, context, reSync: vi.fn() });
+    stops.push(runner.stop);
+
+    // The wrapper's internal confirmGone throws if called, which would reject this pass.
+    expect(await runner.reconcile()).toEqual({ pages: 1, compared: 8, queued: 0, truncated: false, unreported: 12 });
+    expect(warn).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it('startFingerprintReconcile drives a pass through it: refreshOnly entries, nothing deleted, the gate persisted', async () => {
