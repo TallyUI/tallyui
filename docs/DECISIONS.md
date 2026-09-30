@@ -3793,8 +3793,10 @@ interface OrderCreatePayload {
       order.create version <n>`, and a later-version field as `<path>:
       requires version <m>`, for every command and the envelope
       (`packages/medusa-plugin/src/workflows/tally-order-create/`
-      `payload-shape.ts:19-21,38`; the register commands'
-      `payload-shape.ts:37`; medusapos/app#137, merged as ccb3311).
+      `payload-shape.ts:19-21,38`; medusapos/app#137, merged as ccb3311).
+      The register commands word it differently, naming the top-level key
+      and the command type: `<key>: unknown field for <type> version 1`
+      (`tally-register-command/payload-shape.ts:37`).
       Before that it refused only the fields a later version declares;
       ADR-065's "medusapos is strict (#62)" meant that version gate.
     - vendurepos refuses an unknown field as `<path>: unknown field in
