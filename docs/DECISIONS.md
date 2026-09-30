@@ -885,7 +885,11 @@ bodies and design docs, and the source is given for each.
     `MAX_COMMANDS_PER_BATCH`), never `400`: a `400` would read as a bad
     command, and a till's poisoned-order isolation (programme item 24)
     would hunt for one that doesn't exist (Front desk ruling 18,
-    2026-09-30). Today TallyUI tills send at most 10 per batch. A till
+    2026-09-30). Today TallyUI tills send at most 10 per batch, and a
+    `413` is `refused`: sending pauses and no order changes until the
+    outbox is next flushed, so one oversized order or a proxy limit holds
+    up every later sale. Programme item 55 makes the till follow these
+    rules, which describe what it will do, not what it does today: a till
     never sends more than the server's limit. On a `413` it halves the
     batch and sends again, using `maxCommands` from the body when it is
     present; a `413` without the code (a proxy or a body-size limit) is
@@ -895,9 +899,10 @@ bodies and design docs, and the source is given for each.
     order as poisoned and never holds up the queue. A body over the
     server's size limit is answered `413` with
     `{ code: 'body_too_large', maxBytes, message }`, never
-    `invalid_payload`. The till treats it as it treats `batch_too_large`:
-    it halves the batch and sends again, and a single order that is still
-    too large is shown as refused. The size limit belongs to each
+    `invalid_payload`. Under item 55 the till treats it as it treats
+    `batch_too_large`: it halves the batch and sends again, and a single
+    order that is still too large is shown as refused; today it is
+    `refused` like any `413`. The size limit belongs to each
     backend's body parser; `validateBatch` receives a parsed body and does
     not check it.
   - A `200` response is `{ results: CommandResult[] }`, in the same order.
