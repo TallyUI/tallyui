@@ -81,6 +81,7 @@ export async function gql(
   if (!res.ok) {
     const body = await res.json().catch(() => undefined) as GqlBody | undefined;
     const message = body?.errors?.[0]?.message;
+    // Vendure answers FORBIDDEN with HTTP 200; an HTTP 401/403 comes from a proxy or firewall and is taken at face value.
     if (res.status === 401 || res.status === 403) throw new ConnectorUnauthorizedError(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`, res.status as 401 | 403);
     throw new Error(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`);
   }

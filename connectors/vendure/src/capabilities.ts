@@ -11,8 +11,8 @@ export const CAPABILITIES_PATH = '/tally/v1/info';
  * non-2xx other than 404/401/403, non-JSON 2xx or malformed `taxRounding` is unknown and gives
  * `undefined`. The route answers a dead session and a missing
  * `CreateOrder` permission alike with 403, so a 401/403 asks who is signed in (#279): nobody
- * throws `ConnectorUnauthorizedError`, an administrator throws a plain Error naming the
- * permission, and a failed check is unknown.
+ * throws `ConnectorUnauthorizedError` 401, an administrator throws `ConnectorUnauthorizedError`
+ * 403 naming the permission, and a failed check is unknown.
  */
 export async function readVendureCapabilities(
   baseUrl: string,
@@ -30,7 +30,7 @@ export async function readVendureCapabilities(
     const out = await signedOut({ connectorId: 'vendure', baseUrl, headers, signal: init.signal });
     // The probe confirms sign-out; the route's 403 also covers missing permissions.
     if (out === true) throw new ConnectorUnauthorizedError(`Vendure refused ${CAPABILITIES_PATH}: the session is signed out`, 401);
-    if (out === false) throw new Error(`Vendure refused ${CAPABILITIES_PATH} although the session is signed in: the CreateOrder permission is missing (HTTP ${res.status})`);
+    if (out === false) throw new ConnectorUnauthorizedError(`Vendure refused ${CAPABILITIES_PATH} although the session is signed in: the CreateOrder permission is missing (HTTP ${res.status})`, 403);
     return undefined;
   }
   if (res.status === 404) return { orderCreate: 1 };

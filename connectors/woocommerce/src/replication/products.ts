@@ -21,6 +21,9 @@ const MAX_STORE_MESSAGE = 200;
 export async function checkResponse(response: Response) {
   if (response.ok) return;
   if (response.status === 401 || response.status === 403) {
+    // Older WCPOS versions leak the JWT plugin's stale 403 despite a valid token.
+    const body = response.status === 403 ? await response.json().catch(() => undefined) : undefined;
+    if (typeof body?.code === 'string' && body.code.startsWith('jwt_auth_')) throw new WooPluginUpdateRequiredError(body.code);
     throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status as 401 | 403);
   }
   if (response.status === 426) {
@@ -84,6 +87,19 @@ export class WooDateFilterError extends Error {
 
   constructor(readonly productId: number | undefined, readonly bound: string, readonly received: string | undefined) {
     super('This store needs WooCommerce 5.8 or later to sync products.');
+  }
+}
+
+/** A stale JWT plugin 403 on WCPOS 1.10.0–1.10.7 (wcpos/woocommerce-pos#1863; fixed by 7243675c9). */
+export class WooPluginUpdateRequiredError extends Error {
+  name = 'WooPluginUpdateRequiredError';
+  readonly code = 'unsupported_store' as const;
+  readonly fixedBy = 'store' as const;
+  readonly software = 'WCPOS';
+  readonly minVersion = '1.10.8';
+
+  constructor(readonly storeCode: string) {
+    super('This store needs WCPOS 1.10.8 or later: the JWT Authentication plugin blocks the till on older versions.');
   }
 }
 

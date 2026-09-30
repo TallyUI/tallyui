@@ -76,10 +76,11 @@ describe('readVendureCapabilities', () => {
     expect(spy.mock.calls[1]![1]!.headers).toMatchObject({ Authorization: 'Bearer tok' });
   });
 
-  it('throws a plain Error naming CreateOrder on a 403 when the session is signed in (#279)', async () => {
+  it('throws forbidden naming CreateOrder on a 403 when the session is signed in (#279)', async () => {
     stubFetch(() => json({}, 403), () => json({ data: { activeAdministrator: { id: '1' } } }));
     const result = read();
-    await expect(result).rejects.not.toBeInstanceOf(ConnectorUnauthorizedError);
+    await expect(result).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+    await expect(result).rejects.toMatchObject({ status: 403, code: 'forbidden' });
     await expect(result).rejects.toThrow('the CreateOrder permission is missing');
   });
 
