@@ -139,10 +139,16 @@ export function startFingerprintReconcile<Doc>({
   const state = new BehaviorSubject<FingerprintReconcileState>({ running: false });
   let summary: CatalogueReconcileSummary | undefined;
   let result: FingerprintReconcileResult | undefined;
+  let lastCompleteAt: number | undefined;
   catalogue$.subscribe({
-    next: ({ lastResult, ...rest }) => {
-      if (lastResult !== summary) { summary = lastResult; result = lastResult && toResult(lastResult); }
-      state.next(result ? { ...rest, lastResult: result } : rest);
+    next: ({ lastResult, lastCompleteAt: completedAt, ...rest }) => {
+      if (!summary && !lastResult) lastCompleteAt = completedAt;
+      if (lastResult !== summary) {
+        summary = lastResult;
+        result = lastResult && toResult(lastResult);
+        if (result?.complete) lastCompleteAt = completedAt;
+      }
+      state.next({ ...rest, ...(lastCompleteAt !== undefined && { lastCompleteAt }), ...(result && { lastResult: result }) });
     },
     complete: () => state.complete(),
   });

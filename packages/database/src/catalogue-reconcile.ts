@@ -175,7 +175,11 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     if (memory) memory = value;
     else await collection.upsertLocal(stateId, JSON.parse(JSON.stringify(value)));
   };
-  load().then(({ lastCompleteAt }) => { if (lastCompleteAt !== undefined) update({ lastCompleteAt }); }).catch(() => {});
+  load().then(({ lastCompleteAt }) => {
+    if (lastCompleteAt !== undefined && (state.value.lastCompleteAt === undefined || state.value.lastCompleteAt < lastCompleteAt)) {
+      update({ lastCompleteAt });
+    }
+  }).catch(() => {});
 
   const sleep = (ms: number) => new Promise<void>((resolve) => {
     const onAbort = () => { cancel(); resolve(); };
