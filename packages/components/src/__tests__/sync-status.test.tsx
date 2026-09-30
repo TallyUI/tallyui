@@ -35,7 +35,7 @@ describe('SyncStatus', () => {
     const now = Date.now();
     vi.setSystemTime(now);
     const since = new Date(2026, 8, 29, 14, 5, 30).getTime();
-    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const time = new Date(since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
     expect(time).toMatch(/05/);
     expect(time).not.toMatch(/30/);
     const state: OutboxState = { pending: 4, sending: false, lastRetryReason: 'status_503', nextAttemptAt: now + 5000,
@@ -53,7 +53,7 @@ describe('SyncStatus', () => {
   it.each([['timeout', 'no answer from the store (timeout)'], ['status_503', 'the store keeps failing (status_503)']])(
     'shows a stuck %s with the matching wording', (reason, wording) => {
     const since = Date.now();
-    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const time = new Date(since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
     render(<SyncStatus state={{ pending: 1, sending: false,
       stuck: { commandIds: ['a'], since, reason, orders: [{ commandId: 'a', since, reason }] } }} />);
     expect(screen.getByLabelText('Sync status').textContent)
@@ -91,14 +91,26 @@ describe('SyncStatus', () => {
     expect(screen.queryByText(/store owner/)).toBeNull();
   });
 
-  it('the stuck line uses the cashier wording, with no raw code, while backendMissing is set', () => {
-    const since = Date.now();
-    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  it('says the backend-missing sentence once, with "since {time}" once an order is stuck, and no raw code', () => {
+    const since = new Date(2026, 8, 30, 2, 49, 10).getTime();
+    const time = new Date(since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    const stuckLine = `Sales haven't reached the online store since ${time}. `
+      + "Keep selling: they're saved on this till and will send by themselves.";
     const stuck = { commandIds: ['a', 'b'], since, reason: 'status_404',
       orders: ['a', 'b'].map((commandId) => ({ commandId, since, reason: 'status_404' })) };
-    render(<SyncStatus state={{ pending: 2, sending: false, lastRetryReason: 'status_404', stuck, backendMissing: { since } }} />);
-    const text = screen.getByLabelText('Sync status').textContent;
-    expect(text).toBe(`2 sales waiting to sync · ${cashierLine} · ${cashierLine} since ${time}`);
-    expect(text).not.toMatch(/status_404/);
+    const state: OutboxState = { pending: 2, sending: false, lastRetryReason: 'status_404', backendMissing: { since } };
+    render(<SyncStatus state={{ ...state, stuck }} />);
+    const text = screen.getByLabelText('Sync status').textContent ?? '';
+    expect(text.match(/Keep selling/g)).toHaveLength(1);
+    expect(text).toBe(`2 sales waiting to sync · ${stuckLine}`);
+    expect(text).not.toMatch(/status_404|Not syncing|aren't reaching/);
+    cleanup();
+    render(<SyncStatus state={state} />);
+    expect(screen.getByLabelText('Sync status').textContent).toBe(`2 sales waiting to sync · ${cashierLine}`);  });
+
+  it('formats the time with no forced leading zero on a 12-hour clock', () => {
+    const time = new Date(2026, 8, 30, 2, 49, 10).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    expect(time).toMatch(/^2:49\sAM$/);
+    expect(time).not.toMatch(/\b0\d:/);
   });
 });
