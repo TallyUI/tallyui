@@ -96,8 +96,13 @@ const maxVersion = (list: unknown): number | undefined => {
  * `contracts["order.create"]`, or 1 when it's missing or malformed; `register` is the max of
  * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287).
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
+ * A non-object body is also unknown, not a statement of the store's defaults.
  */
 export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => void): ServerCapabilities | undefined {
+  if (body === null || Array.isArray(body) || typeof body !== 'object') {
+    warn?.('non-object info body: capabilities unknown');
+    return undefined;
+  }
   const { contracts, taxRounding } = (body ?? {}) as { contracts?: Record<string, unknown> | null; taxRounding?: unknown };
   const register = maxVersion(contracts?.register);
   const rounding = parseTaxRounding(taxRounding);

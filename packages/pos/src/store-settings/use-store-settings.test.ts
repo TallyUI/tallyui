@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { StoreSettingsError } from '@tallyui/core';
+import { ConnectorUnauthorizedError, SignInError, StoreSettingsError } from '@tallyui/core';
 import type { ServerCapabilities, StoreSettings, StoreSettingsChoice, SyncContext, TallyConnector, TaxRounding } from '@tallyui/core';
 import { useStoreSettings } from './use-store-settings';
 import type { StoreSettingsState } from './use-store-settings';
@@ -218,6 +218,34 @@ describe('useStoreSettings', () => {
       });
       afterEach(() => vi.useRealTimers());
 
+      it.each([
+        new ConnectorUnauthorizedError('x', 401),
+        new SignInError('invalid_credentials', 'x'),
+      ])('does not retry a till error (%s)', async (failure) => {
+        const capabilities = vi.fn().mockRejectedValue(failure);
+        const { result } = track(withCapabilities(capabilities));
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        if (result.current.state !== 'error') return;
+        expect(result.current.error).toBe(failure);
+        expect(result.current).not.toHaveProperty('nextRetryAt');
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        expect(capabilities).toHaveBeenCalledOnce();
+      });
+
+      it.each([
+        new ConnectorUnauthorizedError('x', 403),
+        new Error('offline'),
+      ])('retries a non-till error (%s)', async (failure) => {
+        const capabilities = vi.fn().mockRejectedValue(failure);
+        const { result } = track(withCapabilities(capabilities));
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        if (result.current.state !== 'error') return;
+        expect(result.current.error).toMatchObject({ name: 'StoreCapabilitiesUnavailableError', cause: failure });
+        expect(result.current.nextRetryAt).toBe(105_000);
+      });
+
       it('a throwing read waits and re-reads after 5 seconds, then emits the rounding', async () => {
         const failure = new Error('offline');
         const capabilities = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ orderCreate: 3, taxRounding: vendure });
@@ -290,6 +318,40 @@ describe('useStoreSettings', () => {
         expect(result.current.state).toBe('ready');
         await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
         expect(capabilities).toHaveBeenCalledTimes(2);
+      });
+
+      it('a successful manual retry prevents the old timer from reading again', async () => {
+        const capabilities = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ orderCreate: 3, taxRounding: vendure });
+        const { result } = track(withCapabilities(capabilities));
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        if (result.current.state !== 'error') return;
+        await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+        act(() => result.current.state === 'error' && result.current.retry());
+        await act(async () => {});
+        expect(result.current.state).toBe('ready');
+        await act(async () => { await vi.advanceTimersByTimeAsync(3_001); });
+        expect(capabilities).toHaveBeenCalledTimes(2);
+      });
+
+      it('resets the backoff after success before a new failure', async () => {
+        const capabilities = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ orderCreate: 3, taxRounding: vendure }).mockRejectedValueOnce(new Error('offline again'));
+        const connector = withCapabilities(capabilities);
+        const { result, rerender } = renderHook(
+          ({ ctx }: { ctx: SyncContext }) => useStoreSettings({ connector, context: ctx, loadChoice: () => undefined, saveChoice: vi.fn() }),
+          { initialProps: { ctx: context } },
+        );
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        if (result.current.state !== 'error') return;
+        act(() => result.current.state === 'error' && result.current.retry());
+        await act(async () => {});
+        expect(result.current.state).toBe('ready');
+        rerender({ ctx: { ...context, baseUrl: 'https://other.test' } });
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        if (result.current.state === 'error') expect(result.current.nextRetryAt).toBe(105_000);
+        expect(capabilities).toHaveBeenCalledTimes(3);
       });
     });
 

@@ -45,6 +45,11 @@ describe('readVendureCapabilities', () => {
     await expect(read()).resolves.toBeUndefined();
   });
 
+  it('gives undefined on a 2xx null JSON body', async () => {
+    stubFetch(() => json(null));
+    await expect(read()).resolves.toBeUndefined();
+  });
+
   it('gives undefined on a malformed taxRounding', async () => {
     stubFetch(() => json({ contracts: { 'order.create': [1, 2] }, taxRounding: { granularity: 'bogus' } }));
     await expect(read()).resolves.toBeUndefined();

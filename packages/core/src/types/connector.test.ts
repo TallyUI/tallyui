@@ -81,6 +81,11 @@ describe('parseInfoCapabilities (ADR-062, #287)', () => {
 
   it('gives orderCreate 1 for missing or malformed contracts without taxRounding', () => {
     expect(parseInfoCapabilities({ contracts: { 'order.create': ['2', -1] } })).toStrictEqual({ orderCreate: 1 });
-    expect(parseInfoCapabilities(null)).toStrictEqual({ orderCreate: 1 });
+  });
+
+  it.each([null, [], 42, 'x'])('gives unknown for a non-object body (%s)', (body) => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities(body, warn)).toBeUndefined();
+    expect(warn).toHaveBeenCalledOnce();
   });
 });
