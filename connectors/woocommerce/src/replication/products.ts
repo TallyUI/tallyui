@@ -9,13 +9,7 @@ export type WooProductCheckpoint = {
   pass_mark?: string;
   /** X-WP-Total of the window on the last page; undefined when the store sends none. */
   pass_count?: number;
-  /** Times the current pass has restarted at offset 0 after its window shrank. */
-  restarts?: number;
 };
-
-// A store losing products between every page must not keep one pass restarting forever:
-// at the cap a fresh pass starts in the same call, keeping its lower bound and mark.
-const MAX_PASS_RESTARTS = 3;
 
 // RxDB drops the checkpoint of an empty result, so the handler moves on to the next useful request
 // in the same call instead; every fetch in one call, mark requests included, counts against this.
@@ -39,6 +33,16 @@ export class WooMissingUuidError extends Error {
   }
 }
 
+/** The store returned a product outside a modified_after window, so it does not apply the filter. */
+export class WooDateFilterError extends Error {
+  name = 'WooDateFilterError';
+  readonly code = 'unsupported_store' as const;
+
+  constructor(readonly productId: number | undefined, readonly bound: string, readonly received: string | undefined) {
+    super('This store needs WooCommerce 5.8 or later to sync products.');
+  }
+}
+
 /**
  * Replication adapter for WooCommerce products.
  *
@@ -56,13 +60,22 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       let passMark = lastCheckpoint?.pass_mark ?? modified;
       if (offset === 0 && lastCheckpoint?.pass_mark === undefined) {
         if (requests++ >= MAX_REQUESTS_PER_CALL) return spent;
+        // orderby=modified sorts by local time, so the store is asked in GMT whether anything is newer than L.
+        // No Z or offset on modified_after: WP_Date_Query::build_mysql_datetime parses it in the site time zone and
+        // formats it back in that zone, so an offset would move the bound to local time before the post_modified_gmt comparison.
+        const newer: Record<string, string> = modified ? { modified_after: modified, dates_are_gmt: 'true' } : {};
+        const mark = new URLSearchParams({ per_page: '1', orderby: 'modified', order: 'desc', ...newer });
         const markResponse = await fetch(
-          `${context.baseUrl}/products?per_page=1&orderby=modified&order=desc`,
+          `${context.baseUrl}/products?${mark}`,
           { headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal },
         );
         checkResponse(markResponse);
-        passMark = (await markResponse.json())[0]?.date_modified_gmt ?? modified;
-        if (lastCheckpoint?.modified && passMark === modified) return { documents: [], checkpoint: lastCheckpoint };
+        const [newest] = await markResponse.json();
+        // Nothing modified after L (or no product at all): every window is empty.
+        if (newest === undefined) return { documents: [], checkpoint: lastCheckpoint ?? { modified: '', offset: 0 } };
+        if (modified && !(newest.date_modified_gmt > modified)) throw new WooDateFilterError(newest.id, modified, newest.date_modified_gmt);
+        // The local sort may put an older GMT time first: as the next lower bound that costs a re-read, never a skip.
+        passMark = newest.date_modified_gmt ?? modified;
       }
       const params = new URLSearchParams({
         per_page: String(batchSize),
@@ -72,6 +85,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       });
 
       if (modified) {
+        // GMT digits with no offset, for WP_Date_Query (see the mark request).
         params.set('modified_after', new Date(Date.parse(modified + 'Z') - 1000).toISOString().slice(0, 19));
         params.set('dates_are_gmt', 'true');
       }
@@ -90,14 +104,17 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       const products: any[] = await response.json();
       const total = response.headers.get('X-WP-Total');
       const count = total !== null && /^\d+$/.test(total) ? Number(total) : undefined;
-      const restarts = lastCheckpoint?.restarts ?? 0;
       if (offset > 0 && count !== undefined && (products.length === 0 || count < (lastCheckpoint?.pass_count ?? count))) {
-        // At the cap a fresh pass (restarts 0) starts in this call, so RxDB stores its first page's checkpoint.
-        return pull({ modified, offset: 0, pass_mark: passMark, restarts: restarts >= MAX_PASS_RESTARTS ? 0 : restarts + 1 }, batchSize, context, requests);
+        // Restart the pass in this call, so RxDB stores its first page's checkpoint; the request budget bounds the call.
+        return pull({ modified, offset: 0, pass_mark: passMark }, batchSize, context, requests);
       }
       for (const product of products) {
         if (typeof product.uuid !== 'string' || product.uuid.length === 0) {
           throw new WooMissingUuidError(product.id);
+        }
+        // The window is modified_after = L − 1 s, so a product missing its time or below L was not filtered.
+        if (modified && !(product.date_modified_gmt >= modified)) {
+          throw new WooDateFilterError(product.id, params.get('modified_after')!, product.date_modified_gmt);
         }
       }
       const documents = products.map((p) => ({ ...p, _deleted: p.status !== 'publish' }));
@@ -105,8 +122,8 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       // RxDB merges checkpoints, so clear pass state explicitly at completion.
       const complete = count === undefined ? products.length < batchSize : offset + products.length >= count;
       const checkpoint: WooProductCheckpoint = complete
-        ? { modified: passMark, offset: 0, pass_mark: undefined, pass_count: undefined, restarts: undefined }
-        : { modified, offset: offset + products.length, pass_mark: passMark, pass_count: count, restarts: lastCheckpoint?.restarts };
+        ? { modified: passMark, offset: 0, pass_mark: undefined, pass_count: undefined }
+        : { modified, offset: offset + products.length, pass_mark: passMark, pass_count: count };
       if (complete && products.length === 0) {
         // Chain into the next pass: RxDB would drop this completion with the empty result. While the next pass
         // has nothing either, each poll re-derives these requests from the stored checkpoint, at most

@@ -40,7 +40,7 @@ replicationState.error$.subscribe((error) => {
 
 ## How It Works
 
-Each connector's `ReplicationAdapter` provides a **pull** handler, which fetches documents changed since the last checkpoint. The checkpoint format is connector-specific -- WooCommerce uses a modified date, Shopify uses cursor pagination, Medusa uses offset + date, Vendure uses GraphQL skip + date.
+Each connector's `ReplicationAdapter` provides a **pull** handler, which fetches documents changed since the last checkpoint. The checkpoint format is connector-specific -- WooCommerce uses offset + modified date, Shopify uses cursor pagination, Medusa uses offset + date, Vendure uses GraphQL skip + date.
 
 Product replication is **pull-only**. Catalogue data is owned by the server, so the POS never writes products back. Data the POS creates, such as orders, will travel through a separate command outbox with idempotent writes (see the programme plan in `docs/plans/`). `ReplicationAdapter` keeps an optional `push` for that work.
 
@@ -192,7 +192,7 @@ Each connector uses a checkpoint format that matches its API's pagination model:
 
 | Connector | Checkpoint | Pull Strategy |
 |-----------|-----------|---------------|
-| WooCommerce | `{ id, modified }` | `?modified_after=` ordered by date |
+| WooCommerce | `{ modified, offset, pass_mark?, pass_count? }` | Pass-based: `?modified_after=` (−1 s, `dates_are_gmt=true`) from a high-water mark, `orderby=id`, offset pages, ends on `X-WP-Total` or a short page |
 | Shopify | `{ updated_at }` | `?updated_at_min=` with Link header cursors |
 | Medusa | `{ offset, updated_at, pass_mark?, pass_count? }` | Pass-based: `?updated_at[$gte]=` from a high-water mark, `order=id`, offset pages, ends on `count` |
 | Vendure | `{ skip, updatedAt, passHighWater?, passTotal? }` | Pass-based: `updatedAt.after` from a high-water mark (−1 ms), `sort: { id: ASC }`, take/skip, ends on `totalItems` |
