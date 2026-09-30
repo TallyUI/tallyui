@@ -7,9 +7,9 @@ export const CAPABILITIES_PATH = '/tally/v1/info';
 
 /**
  * Reads the store's contract capabilities (ADR-062) and `taxRounding` (#287) with the
- * connector's own headers. A 2xx gives `parseInfoCapabilities`; a 404 or a non-JSON body
- * means no plugin and gives `{ orderCreate: 1 }`; a network failure, a 5xx or any other
- * non-2xx is unknown and gives `undefined`. The route answers a dead session and a missing
+ * connector's own headers. A 404 means an old plugin and gives the default; a network failure,
+ * non-2xx other than 404/401/403, non-JSON 2xx or malformed `taxRounding` is unknown and gives
+ * `undefined`. The route answers a dead session and a missing
  * `CreateOrder` permission alike with 403, so a 401/403 asks who is signed in (#279): nobody
  * throws `ConnectorUnauthorizedError`, an administrator throws a plain Error naming the
  * permission, and a failed check is unknown.
@@ -38,7 +38,7 @@ export async function readVendureCapabilities(
   try {
     body = await res.json();
   } catch {
-    return { orderCreate: 1 };
+    return undefined;
   }
   return parseInfoCapabilities(body, (reason) => console.warn(`@tallyui/connector-vendure: ${reason}`));
 }

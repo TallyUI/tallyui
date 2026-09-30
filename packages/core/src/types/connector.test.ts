@@ -72,10 +72,15 @@ describe('parseInfoCapabilities (ADR-062, #287)', () => {
       .toStrictEqual({ orderCreate: 3, taxRounding: { granularity: 'per_rate_group_items', mode: 'half_up' } });
   });
 
-  it('gives orderCreate 1 for missing or malformed contracts, and ignores a malformed taxRounding with one warning', () => {
+  it('gives undefined for a present malformed taxRounding and warns that settings wait', () => {
     const warn = vi.fn();
-    expect(parseInfoCapabilities({ contracts: { 'order.create': ['2', -1] }, taxRounding: { granularity: 'x' } }, warn)).toStrictEqual({ orderCreate: 1 });
-    expect(parseInfoCapabilities(null, warn)).toStrictEqual({ orderCreate: 1 });
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1, 2] }, taxRounding: { granularity: 'bogus' } }, warn)).toBeUndefined();
     expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain('settings wait');
+  });
+
+  it('gives orderCreate 1 for missing or malformed contracts without taxRounding', () => {
+    expect(parseInfoCapabilities({ contracts: { 'order.create': ['2', -1] } })).toStrictEqual({ orderCreate: 1 });
+    expect(parseInfoCapabilities(null)).toStrictEqual({ orderCreate: 1 });
   });
 });
