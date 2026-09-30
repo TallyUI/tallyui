@@ -1,5 +1,24 @@
 # @tallyui/pos
 
+## 3.0.0-next.1
+
+### Minor Changes
+
+- [#339](https://github.com/TallyUI/tallyui/pull/339) [`c26ead6`](https://github.com/TallyUI/tallyui/commit/c26ead66fd839d41d211f72f47079d408d7b975d) Thanks [@kilbot](https://github.com/kilbot)! - A till no longer sells on a guessed tax rounding. When the store's capabilities read fails (it throws, or answers "unknown", as Vendure's does for a network error or a 5xx), `useStoreSettings` keeps the settings unresolved instead of falling back to the default rounding. It retries by itself after 5 seconds, then 10, doubling to at most 5 minutes. While it waits, the state is `error` with a `nextRetryAt`, and an app shows "Can't reach the store's settings yet. Retrying…". Only a store that reports no rounding, or a connector without `capabilities`, gets the default. Before this, a failed read on a Vendure store set to `per_rate_group_items` meant every sale raised `figures_mismatch`.
+
+- [#334](https://github.com/TallyUI/tallyui/pull/334) [`e15f389`](https://github.com/TallyUI/tallyui/commit/e15f389e077a535b06a65e00c3989e7a652d7990) Thanks [@kilbot](https://github.com/kilbot)! - The Vendure connector supplies its tax rate names, so a `per_rate_group_items` store groups a sale's tax the way Vendure does (#324). Apps no longer fetch the names themselves.
+
+  - **`StoreSettings.taxRateCodes`** (core, optional): the backend's tax rate name per tax class, keyed like `taxRatesPpm`, including `default`.
+  - **`vendureStoreSettings`** reads each rate's `name` in the tax-rate query it already runs, so no extra request is made. Only the rates `taxRatesPpm` uses count, and `default` follows the same default-category rule. `taxRateCodes` is left out when no names come back.
+  - **`taxProviderProps(settings)`** passes `taxRateCodes` to `<TaxProvider>` as `rateCodes`.
+
+### Patch Changes
+
+- [#335](https://github.com/TallyUI/tallyui/pull/335) [`8cd7860`](https://github.com/TallyUI/tallyui/commit/8cd78603e7edd7dc237d55ec3bab7f7e950a3518) Thanks [@kilbot](https://github.com/kilbot)! - A sale the store refuses on its first send is sent once, not twice (found by the Medusa POS app's 3.0.0-next.0 adoption). Before it sends, the outbox stores the order's sent form and version (#300). That write had re-armed the flush, so a refused batch went out again. A write that only records the sent form, for a new sale or for an older one carried over by the pos_orders migrations, is no longer counted as new work. Any other change to a pending sale still sends it.
+
+- Updated dependencies [[`7fee0c1`](https://github.com/TallyUI/tallyui/commit/7fee0c19d57eb45130549101e5dd32cf593fdeea), [`eb5a032`](https://github.com/TallyUI/tallyui/commit/eb5a0322fe11b55e9158fb3374be14a12ac6b78b), [`8cf3ea4`](https://github.com/TallyUI/tallyui/commit/8cf3ea4a442a67ff0b229a6498503fd8b65a2ae5), [`e15f389`](https://github.com/TallyUI/tallyui/commit/e15f389e077a535b06a65e00c3989e7a652d7990), [`ddd9e85`](https://github.com/TallyUI/tallyui/commit/ddd9e85008f43e780cc0ee3754463eb7aa819a2a)]:
+  - @tallyui/core@3.0.0-next.1
+
 ## 3.0.0-next.0
 
 ### Major Changes

@@ -1,5 +1,35 @@
 # @tallyui/database
 
+## 3.0.0-next.1
+
+### Minor Changes
+
+- [#336](https://github.com/TallyUI/tallyui/pull/336) [`e77d552`](https://github.com/TallyUI/tallyui/commit/e77d5521a33bfa31b83cd7b277fb473dff6107cb) Thanks [@kilbot](https://github.com/kilbot)! - A reconcile result now says whether its pass was complete, so a till never shows a partial pass's "0 not sold" as current (found by the Medusa POS app's 3.0.0-next.0 adoption).
+
+  - **`complete`** on `CatalogueReconcileSummary`, `FingerprintReconcileResult` and `IdReconcileResult`: true when the pass ran from its first page to its last in one go, so `unlisted` and `unreported` are real counts. It is false for a resumed pass, whose counts are 0. For the fingerprint result, the pass must also have read at least one page.
+  - **`lastCompleteAt`** on the runner's and the fingerprint wrapper's state: when the last complete pass finished. It is persisted with the runner's gate, and is available before the first pass after a restart.
+  - **A failed pass that finished no page** is restarted rather than resumed. It re-reads from the first page anyway, so it now runs as a complete pass.
+
+- [#330](https://github.com/TallyUI/tallyui/pull/330) [`ddd9e85`](https://github.com/TallyUI/tallyui/commit/ddd9e85008f43e780cc0ee3754463eb7aa819a2a) Thanks [@kilbot](https://github.com/kilbot)! - The WooCommerce catalogue reconcile uses the WCPOS products fast path (#313). When `wcpos/v2/status` lists `products_id_fast_path` in `capabilities`, the whole catalogue is listed in one request (`per_page=-1`, `_fields=id,date_modified_gmt,stock_quantity,stock_status`) instead of pages of 100. A store that refuses it, or answers with something that is not a list, is listed page by page in the same pass.
+
+  - **Keyed on the remote id:** both WooCommerce listings key on the numeric product id, never the till-local uuid.
+  - **`CatalogueReconcileAdapter.matchKey`** (core, optional): an adapter whose listing carries no primary key declares how to match a local document. The catalogue runner indexes the local documents by it for each pass. Deletion is unchanged: `confirmGone`, then the mass-delete brake, by primary key.
+  - **`remote` on the keyed reconcile feed** (core, optional): a listed product the till does not hold yet is matched back by its remote id, so it is delivered rather than dropped.
+
+### Patch Changes
+
+- [#342](https://github.com/TallyUI/tallyui/pull/342) [`8cf3ea4`](https://github.com/TallyUI/tallyui/commit/8cf3ea4a442a67ff0b229a6498503fd8b65a2ae5) Thanks [@kilbot](https://github.com/kilbot)! - A till tells "sign in again" apart from "signed in, but not allowed" (found by the Medusa POS app's adoption).
+
+  - **`ConnectorUnauthorizedError.status`** is now required, typed `401 | 403`, and set by meaning at every connector.
+    - `401`: the credentials are not accepted, so sign in again. `code: 'unauthorized'`, fixed by the till.
+    - `403`: the till is signed in but not allowed. `code: 'forbidden'`, fixed by the store.
+    - Vendure answers a signed-out session with 403 too. Its connector checks who is signed in first, so a confirmed sign-out is always `401`.
+  - **A 403 on the pull** gives the `forbidden` notice, never a sign-out. The pull retries on the store schedule and clears by itself once the store owner grants the permission. SyncStatus shows "Products aren't updating: your account isn't allowed to do this on this store." with "You can keep selling. Ask the store owner."
+  - **The customer picker** shows "Your account isn't allowed to do this on this store. Ask the store owner." for a 403, instead of asking the cashier to sign in again.
+
+- Updated dependencies [[`7fee0c1`](https://github.com/TallyUI/tallyui/commit/7fee0c19d57eb45130549101e5dd32cf593fdeea), [`eb5a032`](https://github.com/TallyUI/tallyui/commit/eb5a0322fe11b55e9158fb3374be14a12ac6b78b), [`8cf3ea4`](https://github.com/TallyUI/tallyui/commit/8cf3ea4a442a67ff0b229a6498503fd8b65a2ae5), [`e15f389`](https://github.com/TallyUI/tallyui/commit/e15f389e077a535b06a65e00c3989e7a652d7990), [`ddd9e85`](https://github.com/TallyUI/tallyui/commit/ddd9e85008f43e780cc0ee3754463eb7aa819a2a)]:
+  - @tallyui/core@3.0.0-next.1
+
 ## 3.0.0-next.0
 
 ### Major Changes
