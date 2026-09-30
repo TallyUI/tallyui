@@ -54,7 +54,8 @@ is refused whether the field is an instruction or informational
       of digits; the till sends `toISOString()`, so `.000Z` is normal.
     - An offset is `+HH:MM` or `-HH:MM`, and `-00:00` is accepted as
       UTC.
-    - The date and time must be real, so `2026-02-30` or `25:00` is
+    - The date and time must be real calendar values: no `24:00`, no
+      `2026-02-30`, and no leap second `:60`. Each of those is
       malformed.
   - **Anything else** that reaches the client-time stage is malformed:
     no zone, `+HHMM`, a date alone, a lowercase `t` or `z`, or a space
