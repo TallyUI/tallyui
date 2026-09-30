@@ -42,10 +42,11 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             <Text className="text-foreground">{order.serverRefs?.displayId ? `Order #${order.serverRefs.displayId} · ` : ''}{count} {count === 1 ? 'item' : 'items'}</Text>
             <Text className="text-muted-foreground">{formatDate(order.createdAt)} · {formatMoney({ amount: order.totalMinor, currency: order.currency })} · {STATUS_LABEL[order.syncStatus]}</Text>
             {stuckEntry ? <Text className="text-destructive">
-              {/* A hanging link reads as the store failing otherwise: `timeout` means it never answered. */}
-              Not syncing: {stuckEntry.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing'} ({stuckEntry.reason}) since {new Date(stuckEntry.since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+              {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}
+              {`Hasn't reached the online store since ${new Date(stuckEntry.since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.`}
             </Text> : null}
-            {order.syncStatus === 'rejected' && order.error ? <Text className="text-destructive">{order.error.code}: {order.error.message}</Text> : null}
+            {/* The store's message alone: the cashier sees no error code, and nothing when there is no message. */}
+            {order.syncStatus === 'rejected' && order.error?.message ? <Text className="text-destructive">{order.error.message}</Text> : null}
             {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
             {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
             {order.localWarnings?.map((warning, index) => <Text key={index} className="text-foreground">
