@@ -190,9 +190,9 @@ never recomputes (`pos-order/command.ts:42`).
   taxed on its amount after its share of it. It is not tax-exclusive,
   because its base is the sum of every line's amount after its line
   discounts, each in its own mode (tax-inclusive for an inclusive line),
-  so a mixed order's base mixes modes. A percentage is taken of that base (several
-  percentages add up rather than compound); a fixed amount of what is
-  left (`order/order-builder.ts:150`).
+  so a mixed order's base mixes modes. A percentage is taken of that
+  base (several percentages add up rather than compound); a fixed
+  amount of what is left (`order/order-builder.ts:150`).
 - The order discount is then spread over the lines in proportion to
   those same after-line-discount amounts, by largest remainder, ties to
   the earlier line (`order/allocate-order-discount.ts:11`,
