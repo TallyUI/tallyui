@@ -8,13 +8,10 @@ import { medusaProductSync } from './sync/products';
 import { MEDUSA_PULL_BATCH_SIZE, medusaProductReplication } from './replication/products';
 import { createMedusaVariantFeedReplication } from './replication/variant-feed';
 import { medusaStockReconcile } from './reconcile/stock';
-import { fetchByIds, fetchPages, variantIds } from './reconcile/ids';
+import { fetchByIds, fetchPages, MAX_IDS_PER_REQUEST, variantIds } from './reconcile/ids';
 import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from './reconcile/prices';
 import { fetchPages as fetchCalculatedPricePages, fingerprint as calculatedPriceFingerprint } from './reconcile/calculated-prices';
 import { medusaStoreSettings } from './store-settings';
-
-// The id reconcile's corrections reach `products` only through this pull adapter (ADR-060).
-const idFeed = createReconcileFeed({ fetchByIds });
 
 export const medusaSecretKeyAuth: ConnectorAuth = {
   type: 'Medusa Admin API',
@@ -95,21 +92,51 @@ export const medusaAdminUserAuth: ConnectorAuth = {
 };
 
 /**
- * MedusaJS v2 connector for Tally UI.
+ * MedusaJS v2 connector for Tally UI, with a secret API key. Build one per store session, anew on each
+ * sign-in or store change: it owns the reconcile feed, whose queued work must never reach another store's database (#307).
  *
  * Connects to Medusa backends via the Admin API.
  * Products are stored in RxDB using a schema that mirrors the Medusa API shape.
  *
  * ```ts
- * import { medusaConnector } from '@tallyui/connector-medusa';
+ * import { createMedusaConnector } from '@tallyui/connector-medusa';
  * import { ConnectorProvider } from '@tallyui/core';
  *
- * <ConnectorProvider connector={medusaConnector}>
+ * const connector = useMemo(() => createMedusaConnector(), [backendUrl]);
+ * <ConnectorProvider connector={connector}>
  *   <App />
  * </ConnectorProvider>
  * ```
  */
-export const medusaConnector: TallyConnector = {
+export function createMedusaConnector(): TallyConnector {
+  // The id reconcile's corrections reach `products` only through this pull adapter (ADR-060).
+  const idFeed = createReconcileFeed({ fetchByIds });
+  // fetchByIds asks for at most this many ids per request; the runner budgets a page's refetch by requests.
+  const refetchBatchSize = MAX_IDS_PER_REQUEST;
+  return {
+    ...medusaConnectorParts,
+    replication: {
+      // One replication per collection: the product, variant and id-reconcile
+      // feeds share it (ADR-060). The variant feed catches price-only edits,
+      // which bump only the variant. reconcile is last so its fetch wins duplicates.
+      products: combinePullAdapters({
+        products: medusaProductReplication,
+        variants: createMedusaVariantFeedReplication(),
+        reconcile: idFeed.adapter,
+      }, { legacyKey: 'products', batchSize: MEDUSA_PULL_BATCH_SIZE }),
+    },
+    reconcile: {
+      stock: medusaStockReconcile,
+      ids: { fetchPages, variantIds, enqueue: idFeed.enqueue, refetchBatchSize },
+      prices: { fetchPages: fetchPricePages, fingerprint: priceFingerprint, enqueue: idFeed.enqueue, refetchBatchSize },
+      // Re-fetched through the enriched fetchByIds, so the corrected document carries the new calculated prices (D2b).
+      calculatedPrices: { fetchPages: fetchCalculatedPricePages, fingerprint: calculatedPriceFingerprint, enqueue: idFeed.enqueue, refetchBatchSize },
+    },
+  };
+}
+
+// Everything but the reconcile feed and what is wired to it: stateless, so every instance shares it.
+const medusaConnectorParts = {
   id: 'medusa',
   name: 'MedusaJS',
   description: 'Connect to MedusaJS v2 backends via the Admin API',
@@ -129,32 +156,28 @@ export const medusaConnector: TallyConnector = {
     products: medusaProductSync,
   },
 
-  replication: {
-    // One replication per collection: the product, variant and id-reconcile
-    // feeds share it (ADR-060). The variant feed catches price-only edits,
-    // which bump only the variant. reconcile is last so its fetch wins duplicates.
-    products: combinePullAdapters({
-      products: medusaProductReplication,
-      variants: createMedusaVariantFeedReplication(),
-      reconcile: idFeed.adapter,
-    }, { legacyKey: 'products', batchSize: MEDUSA_PULL_BATCH_SIZE }),
-  },
-
-  reconcile: {
-    stock: medusaStockReconcile,
-    ids: { fetchPages, variantIds, enqueue: idFeed.enqueue },
-    prices: { fetchPages: fetchPricePages, fingerprint: priceFingerprint, enqueue: idFeed.enqueue },
-    // Re-fetched through the enriched fetchByIds, so the corrected document carries the new calculated prices (D2b).
-    calculatedPrices: { fetchPages: fetchCalculatedPricePages, fingerprint: calculatedPriceFingerprint, enqueue: idFeed.enqueue },
-  },
-
   storeSettings: medusaStoreSettings,
 
   // No capabilities read here: the plugin's routes authenticate users only, so this connector can't send orders through the plugin either.
-};
+} satisfies Omit<TallyConnector, 'replication' | 'reconcile'>;
 
-/** Medusa connector using an admin user's Bearer JWT. */
-export const medusaAdminUserConnector: TallyConnector = { ...medusaConnector, auth: medusaAdminUserAuth, capabilities: medusaCapabilities, searchCustomers: medusaSearchCustomers, createCustomer: medusaCreateCustomer, getCustomer: medusaGetCustomer };
+/** Medusa connector using an admin user's Bearer JWT; like createMedusaConnector(), one per store session with its own feed. */
+export const createMedusaAdminUserConnector = (): TallyConnector => ({
+  ...createMedusaConnector(), auth: medusaAdminUserAuth, capabilities: medusaCapabilities,
+  searchCustomers: medusaSearchCustomers, createCustomer: medusaCreateCustomer, getCustomer: medusaGetCustomer,
+});
+
+/**
+ * @deprecated One instance for the whole app: a store switch can leak queued reconcile work across stores.
+ * Use createMedusaConnector() per store session. Removed in 4.0.
+ */
+export const medusaConnector: TallyConnector = createMedusaConnector();
+
+/**
+ * @deprecated One instance for the whole app: a store switch can leak queued reconcile work across stores.
+ * Use createMedusaAdminUserConnector() per store session. Removed in 4.0.
+ */
+export const medusaAdminUserConnector: TallyConnector = createMedusaAdminUserConnector();
 
 // Re-export pieces for advanced usage
 export { medusaProductSchema } from './schemas/products';

@@ -50,6 +50,26 @@ Connects to Vendure backends via the GraphQL Admin API. Supports products with v
 - **Square** — Square APIs for retail
 - **Vend/Lightspeed** — Lightspeed Retail
 
+## One connector per store session
+
+Build each connector with its factory, anew on each sign-in or store change, and never share one instance between two stores: an instance owns the reconcile feed that carries corrections into its own database.
+
+```tsx
+import { useMemo, type ReactNode } from 'react';
+import { ConnectorProvider } from '@tallyui/core';
+import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
+// Likewise createMedusaConnector() or createMedusaAdminUserConnector() from '@tallyui/connector-medusa',
+// and createVendureConnector({ pricesIncludeTax }) from '@tallyui/connector-vendure'.
+
+// `session` is a new object on each sign-in or store change, so each session gets its own connector.
+function StoreSession({ session, children }: { session: object; children: ReactNode }) {
+  const connector = useMemo(() => createWooCommerceConnector(), [session]);
+  return <ConnectorProvider connector={connector}>{children}</ConnectorProvider>;
+}
+```
+
+The static exports `woocommerceConnector`, `medusaConnector`, `medusaAdminUserConnector` and `vendureConnector` are deprecated, because one shared instance can leak queued reconcile work across stores; they are removed in 4.0.
+
 ## Replication
 
 All four connectors ship with pull-only product replication adapters. Each adapter knows how to pull changes from its API using checkpoint-based pagination. The POS never writes catalogue data back. See the [Replication guide](/docs/replication) for setup and usage.

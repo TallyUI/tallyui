@@ -11,15 +11,23 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { callbackSink, type LogEntry } from '../logging';
 import { createOrderBuilder } from '../order/order-builder';
 import { mintUuid } from '../register/register-document';
+import { DEFAULT_TAX_ROUNDING } from '../tax/exact';
 import { finalizeOrder } from './finalize';
 import { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from './open';
 import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
+/** The version-5 schema: before `taxRounding`. */
+export function versionFive(): RxJsonSchema<PosOrder> {
+  const schema = structuredClone(posOrderSchema);
+  delete (schema.properties as Record<string, unknown>).taxRounding;
+  return { ...schema, required: schema.required!.filter((key) => key !== 'taxRounding'), version: 5 };
+}
+
 /** The version-4 schema: `sentVersion` and `downgradedFrom` at most 3. */
 export function versionFour(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
+  const schema = versionFive();
   schema.properties.sentVersion.maximum = 3;
   schema.properties.downgradedFrom.maximum = 3;
   return { ...schema, version: 4 };
@@ -56,12 +64,13 @@ export function versionZero(): RxJsonSchema<PosOrder> {
 }
 
 /** A stored older `pos_orders` version, which `addPosOrderCollection` migrates to the current one. */
-export type Origin = 0 | 1 | 2 | 3 | 4;
+export type Origin = 0 | 1 | 2 | 3 | 4 | 5;
 
 /** `pos_orders` as the shipped app at `from` added it: version 1 came with its identity strategy. */
 export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
   addRxPlugin(RxDBMigrationSchemaPlugin);
   const identity = (doc: PosOrder) => doc;
+  if (from === 5) return { schema: versionFive(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity } };
   if (from === 4) return { schema: versionFour(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity } };
   if (from === 3) return { schema: versionThree(), migrationStrategies: { 1: (doc: PosOrder) => doc, 2: (doc: PosOrder) => doc, 3: (doc: PosOrder) => doc } };
   if (from === 2) return { schema: versionTwo(), migrationStrategies: { 1: (doc: PosOrder) => doc, 2: (doc: PosOrder) => doc } };
@@ -69,7 +78,10 @@ export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
 }
 
 /** A pending sale; `syncStatus: 'queued'` makes one no version's validator accepts. */
-function sale(n: number, syncStatus = 'pending'): PosOrder {
+/** A sale stored before version 6, which recorded no tax rounding. */
+export type OlderPosOrder = Omit<PosOrder, 'taxRounding'>;
+
+function sale(n: number, syncStatus = 'pending'): OlderPosOrder {
   const at = new Date(Date.UTC(2026, 8, 25, 0, 0, n)).toISOString();
   return {
     id: `order-${String(n).padStart(4, '0')}`, commandId: `command-${n}`, createdAt: at, updatedAt: at, currency: 'EUR',
@@ -131,9 +143,12 @@ function slow(storage: RxStorage<any, any>): RxStorage<any, any> {
  */
 export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any>, { sqlite = false, from = 0 as Origin } = {}) {
   // A version-1 order carries its session, which the migration keeps.
-  const order = (n: number, syncStatus?: string): PosOrder => ({ ...sale(n, syncStatus), ...(from >= 1 ? { sessionId: `session-${n}` } : {}) });
-  // Version 5's migration records each order's content version as sent: a sale() has no discount, so 1.
-  const moved = (...orders: PosOrder[]) => orders.map((o) => ({ ...o, sentVersion: o.sentVersion ?? 1 }));
+  const order = (n: number, syncStatus?: string): OlderPosOrder => ({ ...sale(n, syncStatus), ...(from >= 1 ? { sessionId: `session-${n}` } : {}) });
+  // Version 5's migration records each order's content version as sent: a sale() has no discount, so 1. Version 6's
+  // records the default tax rounding.
+  const moved = (...orders: OlderPosOrder[]) => orders.map((o) => ({ ...o, sentVersion: o.sentVersion ?? 1, taxRounding: DEFAULT_TAX_ROUNDING }));
+  // A sale rung at the current version, which finalize records its tax rounding on.
+  const current = (n: number): PosOrder => ({ ...order(n), taxRounding: DEFAULT_TAX_ROUNDING });
 
   if (from === 2) {
     it.each([true, false])('keeps a pending version-2 order with sessionId, lateSessionId, display and taxByRate byte for byte (validated: %s)', async (validated) => {
@@ -146,7 +161,9 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
       builder.addPayment({ method: 'cash', amountMinor: 3000 });
       builder.setCustomer({ id: 'c1', name: 'Customer', email: 'buyer@example.com' });
       builder.setNote('Sale note');
-      const finalized = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1', capabilities: { orderCreate: 3 } });
+      // A version-2 till recorded no tax rounding.
+      const { taxRounding: _rounding, ...finalized } = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
+        capabilities: { orderCreate: 3 } });
       const original = { ...finalized, lines: [{ ...finalized.lines[0], taxInclusive: true }, finalized.lines[1]],
         sessionId: mintUuid(), lateSessionId: mintUuid(), warnings: [{ code: 'total_mismatch', expectedMinor: 3451, serverMinor: 3452 }],
         error: { code: 'network', message: 'fetch failed' } };
@@ -156,10 +173,10 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
       try {
         const pos = await addPosOrderCollection(db);
         const migrated = await pos.findOne(original.id).exec();
-        expect(migrated?.toJSON()).toStrictEqual({ ...original, sentVersion: 3 });
+        expect(migrated?.toJSON()).toStrictEqual({ ...original, sentVersion: 3, taxRounding: DEFAULT_TAX_ROUNDING });
         expect(migrated?.toJSON(true)._meta).toStrictEqual(metadata);
         const pending = await pos.find({ selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }] }).exec();
-        expect(pending.map((doc) => doc.toJSON())).toStrictEqual([{ ...original, sentVersion: 3 }]);
+        expect(pending.map((doc) => doc.toJSON())).toStrictEqual([{ ...original, sentVersion: 3, taxRounding: DEFAULT_TAX_ROUNDING }]);
       } finally {
         await db.close();
       }
@@ -346,8 +363,8 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
 
     const next = await open();
     const pos = await addPosOrderCollection(next);
-    await pos.insert(order(4));
-    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...moved(...orders), order(4)]);
+    await pos.insert(current(4));
+    expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...moved(...orders), current(4)]);
     await next.close();
     expect(await stored()).toMatchObject({ v0: [], v1: [...orders, order(4)] });
   };
@@ -428,8 +445,8 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
       // The stored status is still the open's own reset, RUNNING: the cancelled run wrote neither ERROR nor DONE.
       expect((await status(next))?.status).toBe('RUNNING');
       const pos = await addPosOrderCollection(next);
-      await pos.insert(order(4));
-      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...moved(...orders), order(4)]);
+      await pos.insert(current(4));
+      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...moved(...orders), current(4)]);
       await next.close();
       expect(await stored()).toMatchObject({ v0: [], v1: [...orders, order(4)] });
       expect(unhandled).toEqual([]);
@@ -500,8 +517,8 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
 
       const next = await open();
       const pos = await addPosOrderCollection(next);
-      await pos.insert(order(4));
-      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...moved(...orders), order(4)]);
+      await pos.insert(current(4));
+      expect((await pos.find().exec()).map((doc) => doc.toJSON())).toStrictEqual([...moved(...orders), current(4)]);
       await next.close();
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(unhandled).toEqual([]);
@@ -581,7 +598,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
 
   it('opens a new database without migrating, and refuses a second pos_orders', async () => {
     const db = await store(makeStorage(), from).open();
-    await (await addPosOrderCollection(db)).insert(order(1));
+    await (await addPosOrderCollection(db)).insert(current(1));
     expect(await status(db)).toBeUndefined();
     await expect(addPosOrderCollection(db)).rejects.toMatchObject({ code: 'DB3' });
     await db.close();

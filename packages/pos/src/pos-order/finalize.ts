@@ -1,6 +1,6 @@
-import { minorUnitDigits, type ServerCapabilities } from '@tallyui/core';
+import { minorUnitDigits, type ServerCapabilities, type TaxRounding } from '@tallyui/core';
 import type { Order, SentOrder } from '../order/types';
-import { taxLinesByRate } from '../tax/exact';
+import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import { outboxLogger } from '../outbox/logger';
 import { cutText, PAYLOAD_STRING_MAX, sendable } from './command';
 import type { PosOrder, PosOrderLocalWarning, PosOrderPayment } from './types';
@@ -186,7 +186,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
         })),
       })),
     };
-    taxByRate = taxLinesByRate(order.lineItems, order.taxMinor).map(({ ratePpm, code, netMinor, amountMinor }) => ({
+    taxByRate = taxLinesByRate(order.lineItems, order.taxMinor, undefined, order.taxRounding).map(({ ratePpm, code, netMinor, amountMinor }) => ({
       ratePpm, ...(code !== undefined ? { code } : {}), netMinor, amountMinor, grossMinor: netMinor + amountMinor,
     }));
     if (display.totalMinor !== order.totalMinor || display.taxMinor !== order.taxMinor
@@ -197,12 +197,17 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       throw new Error('finalize: tax by rate does not sum to the order tax');
     }
   }
+  // Frozen with the figures (#287), the default included, and never recomputed from the store's later capability:
+  // absent on the snapshot is the default the figures used; `custom` computes as the default but records itself.
+  const rounding = order.taxRounding ?? DEFAULT_TAX_ROUNDING;
+  const taxRounding: TaxRounding = rounding.granularity === 'custom' ? { granularity: 'custom' }
+    : { granularity: rounding.granularity, mode: rounding.mode };
   const now = (options.now ?? new Date()).toISOString();
   return freezeSentForm({
     id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
     currency: order.currency, pricesIncludeTax: order.pricesIncludeTax, lines, payments,
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
-    taxMinor: order.taxMinor, totalMinor: order.totalMinor,
+    taxMinor: order.taxMinor, totalMinor: order.totalMinor, taxRounding,
     ...(display && taxByRate ? { display, taxByRate } : {}),
     customer: order.customer ? { id: order.customer.id, name: order.customer.name,
       ...(order.customer.email !== undefined ? { email: order.customer.email } : {}) } : null,

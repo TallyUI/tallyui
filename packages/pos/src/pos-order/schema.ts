@@ -1,5 +1,6 @@
 import { addRxPlugin, type MigrationStrategies, type RxJsonSchema } from 'rxdb';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
+import { DEFAULT_TAX_ROUNDING } from '../tax/exact';
 import { contentVersion } from './command';
 import type { PosOrder } from './types';
 
@@ -15,9 +16,11 @@ import type { PosOrder } from './types';
  * Version 5 lets `sentVersion` and `downgradedFrom` be 4 (order.create version 4, #286), and changes nothing else. Its
  * migration sets a row's missing `sentVersion` to its content version, the version any earlier attempt went out at.
  * Like version 4 (ADR-069), it is one-way: an older build shows no orders.
+ * Version 6 adds `taxRounding`, the strategy the sale's figures were computed with (#287; never sent), and changes
+ * nothing else. Its migration sets it on every older row. It is one-way like version 5.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 5, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 6, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     commandId: { type: 'string', maxLength: 36 },
@@ -63,6 +66,10 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       since: { type: 'integer', minimum: 0 }, reason: { type: 'string', maxLength: 64 }, isolated: { type: 'boolean' },
     }, required: ['since', 'reason', 'isolated'] },
     lateSessionId: { type: 'string' },
+    taxRounding: { type: 'object', additionalProperties: false, properties: {
+      granularity: { type: 'string', enum: ['per_order', 'per_line_items', 'per_rate_group_items', 'custom'] },
+      mode: { type: 'string', enum: ['half_away_from_zero', 'half_up'] },
+    }, required: ['granularity'] },
     sentVersion: { type: 'integer', minimum: 1, maximum: 4 },
     downgradedFrom: { type: 'integer', minimum: 1, maximum: 4 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
@@ -89,7 +96,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     } },
   },
   required: ['id', 'createdAt', 'currency', 'pricesIncludeTax', 'lines', 'subtotalMinor', 'discountMinor', 'taxMinor',
-    'totalMinor', 'payments', 'customer', 'syncStatus', 'commandId', 'updatedAt'],
+    'totalMinor', 'payments', 'customer', 'syncStatus', 'commandId', 'updatedAt', 'taxRounding'],
   indexes: ['createdAt', 'syncStatus', ['syncStatus', 'createdAt'], 'sessionId'],
 };
 
@@ -114,5 +121,10 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // Every row before version 5 was built without version 4, so its content version is what any earlier attempt
   // went out at (a downgraded row has its sentVersion already): each retry then resends those bytes (#286).
   const recordSent = (doc: PosOrder) => { doc.sentVersion ??= contentVersion(doc); return doc; };
-  return { schema: posOrderSchema, migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent } };
+  // Every row before version 6 was computed per_order + half_away_from_zero: no released build or app set another
+  // strategy (#309's `rounding` reaches a sale only through TaxProvider's props, which no app passes yet). Recording
+  // it means no older sale is ever re-rounded (#287).
+  const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
+  return { schema: posOrderSchema,
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding } };
 }

@@ -11,7 +11,7 @@
  * to the decimal strings its envelope carries.
  */
 import type { RxCollection } from 'rxdb';
-import { taxLinesByRate } from '../tax/exact';
+import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import type { PosOrder } from '../pos-order/types';
 import { readFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
@@ -474,11 +474,17 @@ export async function writeClosure({
   }
   // Same per-rate split a receipt shows (`taxLinesByRate`), run per order so each order's rates
   // add up to its own taxMinor, then summed across the session's orders by rate. A line's own
-  // taxInclusive overrides the order's, matching PosOrderLine's own fallback convention.
+  // taxInclusive overrides the order's, matching PosOrderLine's own fallback convention. Each order is split by the
+  // tax rounding it recorded (#287), so its rows are its receipt's; absent is the default, today's split.
   const taxRates = new Map<string, { ratePpm: number; net_minor: number; tax_minor: number }>();
+  const roundings = new Set<string>();
   for (const order of bound) {
+    // Grouped by the rule applied: a `custom` sale used the default figures, so it joins the default's group.
+    const recorded = order.taxRounding ?? DEFAULT_TAX_ROUNDING;
+    const { granularity, mode } = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
+    roundings.add(`${granularity} ${mode}`);
     const lines = order.lines.map((line) => ({ ...line, taxInclusive: line.taxInclusive ?? order.pricesIncludeTax }));
-    for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(lines, order.taxMinor)) {
+    for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(lines, order.taxMinor, undefined, order.taxRounding)) {
       const existing = taxRates.get(String(ratePpm));
       taxRates.set(String(ratePpm), {
         ratePpm,
@@ -523,6 +529,8 @@ export async function writeClosure({
           ratePpm, { name: `Tax ${ratePpm / 10000}%`, net_minor, tax_minor, gross_minor: net_minor + tax_minor },
         ]),
       ),
+      // The session's sales used more than one tax rounding (#287): the Z report says so.
+      ...(roundings.size > 1 ? { tax_rounding_mixed: true } : {}),
       opening_float: {
         expected_minor: session.expected_float_minor ?? null,
         counted_minor: session.counted_float_minor,

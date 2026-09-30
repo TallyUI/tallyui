@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { isStorageHeldError } from './errors';
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -40,8 +41,16 @@ vi.mock('@sqlite.org/sqlite-wasm', () => ({ default: sqlite3InitModule }));
 vi.mock('rxdb-premium/plugins/storage-sqlite', () => ({ getRxStorageSQLite }));
 vi.mock('rxdb-premium/plugins/storage-worker', () => ({ exposeWorkerRxStorage }));
 
+/** A browser's OPFS: sync access handles exist, and `getDirectory` answers as `getDirectory` says. */
+function stubOpfs(getDirectory: () => Promise<unknown> = async () => ({}), withSyncAccessHandles = true) {
+  vi.stubGlobal('FileSystemFileHandle', withSyncAccessHandles ? class { createSyncAccessHandle() {} } : class {});
+  vi.stubGlobal('navigator', { storage: { getDirectory } });
+}
+
 describe('web worker entry', () => {
   beforeEach(() => {
+    vi.unstubAllGlobals();
+    stubOpfs();
     vi.resetModules();
     sqlite3InitModule.mockReset();
     installOpfsSAHPoolVfs.mockReset();
@@ -97,11 +106,53 @@ describe('web worker entry', () => {
     await import('./worker');
     const { storage } = exposeWorkerRxStorage.mock.calls[0][0];
 
-    await expect(storage.createStorageInstance({})).rejects.toMatchObject({
+    const error = await storage.createStorageInstance({}).catch((e: Error) => e);
+    expect(error).toMatchObject({
       name: 'StorageWorkerStartError',
+      message: 'StorageWorkerStartError: SQLite worker start failed: Error: no OPFS in this browser',
       cause,
     });
+    expect(isStorageHeldError(error)).toBe(false);
     expect(realCreateStorageInstance).not.toHaveBeenCalled();
+  });
+
+  // #293: the errors WebKit (InvalidStateError) and Chromium (NoModificationAllowedError) give a second tab.
+  it.each(['InvalidStateError', 'NoModificationAllowedError'])(
+    'names another tab, and the cause, when the pool install fails with %s while OPFS is reachable',
+    async (causeName) => {
+      const cause = new DOMException('the pool is held', causeName);
+      sqlite3InitModule.mockResolvedValue({ installOpfsSAHPoolVfs });
+      installOpfsSAHPoolVfs.mockRejectedValue(cause);
+
+      await import('./worker');
+      const { storage } = exposeWorkerRxStorage.mock.calls[0][0];
+
+      const error = await storage.createStorageInstance({}).catch((e: Error) => e);
+      expect(error).toMatchObject({
+        name: 'StorageWorkerStartError',
+        message: `StorageWorkerStartError: another tab holds the database (opfs-sahpool): ${causeName}: the pool is held`,
+        cause,
+      });
+      expect(isStorageHeldError(error)).toBe(true);
+    }
+  );
+
+  it.each([
+    ['getDirectory() rejects, as in a WebKit private window', () => stubOpfs(() => Promise.reject(new DOMException('The operation failed', 'UnknownError'))), 'UnknownError: The operation failed'],
+    ['sync access handles are missing', () => stubOpfs(undefined, false), 'TypeError: FileSystemFileHandle.createSyncAccessHandle is missing'],
+  ])('rejects with StorageUnavailableError, never naming StorageWorkerStartError, when %s', async (_case, stub, cause) => {
+    stub();
+    sqlite3InitModule.mockResolvedValue({ installOpfsSAHPoolVfs });
+    installOpfsSAHPoolVfs.mockRejectedValue(new DOMException('held', 'InvalidStateError'));
+
+    await import('./worker');
+    const { storage } = exposeWorkerRxStorage.mock.calls[0][0];
+
+    const error = await storage.createStorageInstance({}).catch((e: Error) => e);
+    expect(error).toMatchObject({ name: 'StorageUnavailableError' });
+    expect(error.message).toBe(`StorageUnavailableError: this browser gives the page no OPFS storage (a private window?): ${cause}`);
+    expect(error.message).not.toContain('StorageWorkerStartError');
+    expect(isStorageHeldError(error)).toBe(false);
   });
 
   it('raises no unhandled rejection when the pool install fails and createStorageInstance is never called', async () => {

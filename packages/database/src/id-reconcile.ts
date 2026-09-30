@@ -59,6 +59,8 @@ export function startIdReconcile<Doc>({
       fetchPages: (context, from) => skipPages(adapter.fetchPages(context),
         (rows) => rows.map((row) => ({ key: row.id, fingerprint: fingerprint(row.variantIds) })), from),
       fingerprint: (doc) => fingerprint(adapter.variantIds(doc)),
+      // The feed's request size, so the runner budgets a page's refetch by its requests (#307).
+      refetchBatchSize: adapter.refetchBatchSize,
       // The proof is the feed's by-id re-read: every candidate is confirmed here and reaches the feed below as a
       // plain entry, never `tombstone: true`, so the feed tombstones it only when fetchByIds does not return it.
       confirmGone: confirmAll(options.collection),

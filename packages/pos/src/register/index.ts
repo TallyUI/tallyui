@@ -23,7 +23,7 @@ export { labelKeys } from './document-labels';
 export { clampClosureScope, selectClosureRows } from './closure-rows';
 export type { ClosureScope } from './closure-rows';
 export { minorToDecimal } from './money';
-export { formatClosureDate, buildClosureDocument, buildXReportDocument } from './closure-document';
+export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE } from './closure-document';
 export type { ClosureContext } from './closure-document';
 export { registerFactsLogger, recordRegisterFact, type Actor, type RegisterFact } from './facts';
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError } from './use-register-session';

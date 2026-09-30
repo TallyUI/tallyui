@@ -6,8 +6,8 @@
 //     component directly, not useSale.
 //   - the whole `describe('store settings on the POS screen')` block: renders the app's
 //     ProductsScreen and fetchStoreSettings, not the hook.
-import type { ReactNode } from 'react';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
@@ -380,6 +380,85 @@ describe('sale', () => {
     }
   });
 
+});
+
+// #301, ported from medusapos's settings-tap-race test: a line tapped while new store settings land is never
+// dropped. Outside act() React runs on its real scheduler, as in the browser: a default-priority render (settings
+// landing from a fetch) commits in one task and runs its passive effects in a later one, so a tap can land between.
+describe('a tap while new store settings land (#301)', () => {
+  const inclusive: PricingSettings = { currency: 'EUR', pricesIncludeTax: true, taxRatesPpm: { default: 190000 } };
+  const actEnvironment = (on: boolean) => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = on; };
+  let sale!: ReturnType<typeof useSale>; // the latest render's result, as a screen's onPress holds it
+  const tap = () => sale.add(entries[1], traits); // Red, €10
+  type Hooks = { commit?: () => void; effect?: () => void };
+  /** Calls `on.commit` from a layout effect (inside the commit) and `on.effect` from a passive one, once settings change. */
+  function Probe({ settings, on }: { settings: PricingSettings; on: Hooks }) {
+    useLayoutEffect(() => { if (settings !== pricing) on.commit?.(); }, [settings, on]);
+    useEffect(() => { if (settings !== pricing) on.effect?.(); }, [settings, on]);
+    return null;
+  }
+  function Till({ settings }: { settings: PricingSettings }) {
+    sale = useSale(settings, saleOpts());
+    return null;
+  }
+  /** Renders the sale on `pricing` between two probes, then lands `next` outside act(); returns the first sale's id. */
+  async function settingsLand(next: PricingSettings, before: Hooks, after: Hooks = {}) {
+    let land!: (settings: PricingSettings) => void;
+    function Screen() {
+      const [settings, setSettings] = useState(pricing);
+      land = setSettings;
+      return <TaxProvider {...taxProviderProps(settings)}>
+        <Probe settings={settings} on={before} /><Till settings={settings} /><Probe settings={settings} on={after} />
+      </TaxProvider>;
+    }
+    render(<Screen />);
+    const first = sale.order.id;
+    actEnvironment(false);
+    try {
+      land(next);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } finally {
+      actEnvironment(true);
+    }
+    expect(sale.order.lineItems.map((line) => line.variantId)).toEqual(['red']);
+    return first;
+  }
+  // After the fix, a tap once the new settings have committed lands on the new sale, started inside that commit:
+  // "the settings the sale was started with" are the new ones, Red at €10 with 19% included.
+  const onNewSettings = { pricesIncludeTax: true, totalMinor: 1000, taxMinor: 160 };
+  // A tap that reaches the sale before its new-sale effect runs makes it a sale in progress: it keeps the old
+  // settings (a money rule), Red at €10 plus 25%.
+  const onOldSettings = { pricesIncludeTax: false, totalMinor: 1250, taxMinor: 250 };
+
+  it('window 1: a tap after the new settings commit, before their passive effects, lands on the new sale', async () => {
+    const first = await settingsLand(inclusive, {}, { commit: () => queueMicrotask(tap) });
+    expect(sale.order.id).not.toBe(first);
+    expect(sale.order).toMatchObject(onNewSettings);
+  });
+
+  it("window 1, inside the commit: a tap before useSale's own effect keeps the sale in progress on its settings", async () => {
+    const first = await settingsLand(inclusive, { commit: tap });
+    expect(sale.order.id).toBe(first);
+    expect(sale.order).toMatchObject(onOldSettings);
+  });
+
+  it("window 2: a tap after newSale(), before the new builder renders, reaches the new builder", async () => {
+    const first = await settingsLand(inclusive, {}, { effect: tap });
+    expect(sale.order.id).not.toBe(first);
+    expect(sale.order).toMatchObject(onNewSettings);
+  });
+
+  it('control: with no tax or currency change, the tap stays on the same sale', async () => {
+    const first = await settingsLand({ ...pricing }, {}, { commit: () => queueMicrotask(tap) });
+    expect(sale.order.id).toBe(first);
+    expect(sale.order).toMatchObject(onOldSettings);
+  });
+
+  it('control: a tap once the new builder has rendered lands on the new sale', async () => {
+    const first = await settingsLand(inclusive, {}, { effect: () => setTimeout(tap, 20) });
+    expect(sale.order.id).not.toBe(first);
+    expect(sale.order).toMatchObject(onNewSettings);
+  });
 });
 
 // Registers c1a (ADR-032, late sale): complete() runs after the money is taken, so a refused stamp
@@ -1093,7 +1172,9 @@ describe('complete() is idempotent for one tender', () => {
       expect(await stored()).toEqual([requeued]);
       const commands = transport.mock.calls.flatMap(([batch]) => batch.map((command) => command.id));
       expect(commands.filter((id) => id === requeued.commandId)).toHaveLength(1);
-      expect(logged).toEqual([expect.objectContaining({ level: 'warn',
+      // The first send's refusal goes to the sync log too (#269).
+      expect(logged).toEqual([expect.objectContaining({ level: 'warn', message: 'Order refused by the store',
+        data: { orderId: first.id, code: 'unknown_variant', message: 'gone' } }), expect.objectContaining({ level: 'warn',
         data: { orderId: first.id, storedCommandId: requeued.commandId, recordedCommandId: first.commandId } })]);
     } finally {
       outboxLogger.removeSink('requeue-retry-capture');

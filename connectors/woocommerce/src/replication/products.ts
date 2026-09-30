@@ -15,26 +15,35 @@ export type WooProductCheckpoint = {
 // in the same call instead; every fetch in one call, mark requests included, counts against this.
 const MAX_REQUESTS_PER_CALL = 4;
 
-async function checkResponse(response: Response) {
+/** The most of a foreign 426's message kept in the error, so a store's long page never floods the log; longer is cut with "…". */
+const MAX_STORE_MESSAGE = 200;
+
+export async function checkResponse(response: Response) {
   if (response.ok) return;
   if (response.status === 401 || response.status === 403) {
     throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status);
   }
   if (response.status === 426) {
+    // Only the plugin's own gate means the till needs updating; any other 426 is retried as transient, with the store's message.
     const body = await response.json().catch(() => undefined);
-    throw new WooTillUpdateRequiredError(typeof body?.code === 'string' ? body.code : undefined);
+    if (body?.code === 'wcpos_update_required') throw new WooTillUpdateRequiredError(body.code);
+    // `426 (code): message`, each part only when the body has it.
+    const code = typeof body?.code === 'string' && body.code ? ` (${body.code})` : '';
+    const text = typeof body?.message === 'string' ? body.message : '';
+    const message = text ? `: ${text.length > MAX_STORE_MESSAGE ? `${text.slice(0, MAX_STORE_MESSAGE)}…` : text}` : '';
+    throw new Error(`WooCommerce API error: 426${code}${message}`);
   }
   throw new Error(`WooCommerce API error: ${response.status}`);
 }
 
-/** WCPOS's protocol gate refused this till (HTTP 426, normally `wcpos_update_required`): only updating the till fixes it. */
+/** WCPOS's protocol gate refused this till (HTTP 426 with `wcpos_update_required`): only updating the till fixes it. */
 export class WooTillUpdateRequiredError extends Error {
   name = 'WooTillUpdateRequiredError';
   readonly code = 'till_update_required' as const;
   /** Only updating this till fixes it, so the pull pauses until resume() (`errorKind`). */
   readonly fixedBy = 'till' as const;
 
-  /** The body's `code`, for diagnostics; the status alone makes the error. */
+  /** The body's `code`, kept for diagnostics. */
   constructor(readonly serverCode: string | undefined) {
     super('WooCommerce API error: 426: this till needs updating to sync with the store');
   }
@@ -51,6 +60,15 @@ export class WooMissingUuidError extends Error {
     super(`WooCommerce product ${id} has no uuid: the store must run the WCPOS Free plugin (1.10.0 or later) and be reached through its wcpos/v2 routes`);
     this.productId = id;
   }
+}
+
+/**
+ * One product row as the till stores it, the rule the pull and the reconcile feed share: a uuid is
+ * required (WooMissingUuidError), and a product that is not published arrives deleted (#229).
+ */
+export function toProductDocument(product: any): any {
+  if (typeof product.uuid !== 'string' || product.uuid.length === 0) throw new WooMissingUuidError(product.id);
+  return { ...product, _deleted: product.status !== 'publish' };
 }
 
 /** The store returned a product outside a modified_after window, so it does not apply the filter. */
@@ -134,16 +152,14 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
         // Restart the pass in this call, so RxDB stores its first page's checkpoint; the request budget bounds the call.
         return pull({ modified, offset: 0, pass_mark: passMark }, batchSize, context, requests);
       }
-      for (const product of products) {
-        if (typeof product.uuid !== 'string' || product.uuid.length === 0) {
-          throw new WooMissingUuidError(product.id);
-        }
+      const documents = products.map((product) => {
+        const document = toProductDocument(product);
         // The window is modified_after = L − 1 s, so a product missing its time or below L was not filtered.
         if (modified && !(product.date_modified_gmt >= modified)) {
           throw new WooDateFilterError(product.id, params.get('modified_after')!, product.date_modified_gmt);
         }
-      }
-      const documents = products.map((p) => ({ ...p, _deleted: p.status !== 'publish' }));
+        return document;
+      });
 
       // RxDB merges checkpoints, so clear pass state explicitly at completion.
       const complete = count === undefined ? products.length < batchSize : offset + products.length >= count;

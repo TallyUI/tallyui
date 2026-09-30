@@ -1,86 +1,14 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addRxPlugin, createRxDatabase } from 'rxdb';
-import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
-import { replicateRxCollection } from 'rxdb/plugins/replication';
-import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
-import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { wooProductSchema } from '../schemas/products';
-import { wooProductReplication, type WooProductCheckpoint } from './products';
+import { at, closeTills, createFakeStore, stamp, startTill, type FakeRow } from '../__tests__/fake-store';
 
-addRxPlugin(RxDBDevModePlugin);
-const context = { connectorId: 'woocommerce', baseUrl: 'https://woo.test/wp-json/wcpos/v2', headers: {} };
-const stamp = (n: number) => `2026-01-01T08:00:${String(n).padStart(2, '0')}`;
-// A GMT time and the store's local time `hours` ahead of it (0: the store's clocks are on GMT).
-const at = (gmt: string, hours = 0) => ({
-  date_modified_gmt: gmt, date_modified: new Date(Date.parse(`${gmt}Z`) + hours * 3_600_000).toISOString().slice(0, 19),
-});
-const cleanup: (() => Promise<unknown>)[] = [];
-afterEach(async () => {
-  for (const close of cleanup.splice(0).reverse()) await close();
-  vi.restoreAllMocks();
-});
+afterEach(closeTills);
 
-// A fake wcpos/v2 products endpoint: the mark request (orderby=modified desc) and id-ordered pages.
-// Like WooCommerce, orderby=modified sorts by local time, and modified_after with dates_are_gmt filters on GMT.
-// Like WP_Date_Query, a modified_after with Z or an offset is read as site-local digits (utcOffset hours ahead of GMT).
-async function setup(size: number, { total = true, filter = true, utcOffset = 0, afterCall = (_call: number, _rows: any[]) => {} } = {}) {
-  const rows = Array.from({ length: size }, (_, i) => ({
-    id: i + 1, uuid: `u${i + 1}`, name: `Product ${i + 1}`, status: 'publish', ...at(stamp(i + 1), utcOffset),
-  }));
-  let calls = 0;
-  let requests = 0;
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-    requests++;
-    const params = new URL(String(input)).searchParams;
-    const sent = filter && params.get('dates_are_gmt') === 'true' ? params.get('modified_after') ?? '' : '';
-    const after = /(Z|[+-]\d{2}:\d{2})$/.test(sent) ? at(new Date(sent).toISOString().slice(0, 19), utcOffset).date_modified : sent;
-    const byId = params.get('orderby') === 'id';
-    const window = rows.filter((p) => p.date_modified_gmt > after).sort((a, b) =>
-      byId ? a.id - b.id : b.date_modified.localeCompare(a.date_modified));
-    const offset = Number(params.get('offset') ?? 0);
-    // The local time only orders the fake; the product schema has no date_modified field.
-    const body = JSON.stringify(window.slice(offset, offset + Number(params.get('per_page'))).map(({ date_modified: _, ...p }) => p));
-    return new Response(body, { headers: total ? { 'X-WP-Total': String(window.length) } : {} });
-  });
-  const db = await createRxDatabase({
-    name: `woo${size}${Date.now()}`,
-    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
-    multiInstance: false,
-  });
-  cleanup.push(() => db.close());
-  const { products } = await db.addCollections({ products: { schema: wooProductSchema } });
-  const state = replicateRxCollection<any, WooProductCheckpoint>({
-    collection: products, replicationIdentifier: 'woo-products',
-    live: true, waitForLeadership: false,
-    pull: {
-      batchSize: 2,
-      handler: async (checkpoint, batchSize) => {
-        const result = await wooProductReplication.pull.handler(checkpoint, batchSize, context);
-        afterCall(++calls, rows);
-        return result;
-      },
-    },
-  });
-  cleanup.push(() => state.cancel());
-  const errors: unknown[] = [];
-  state.error$.subscribe((error) => errors.push(error));
-  const sync = async () => {
-    await state.awaitInSync();
-    expect(errors).toEqual([]);
-  };
-  const poll = async () => {
-    state.reSync();
-    await sync();
-  };
-  const local = async () => new Map((await products.find().exec()).map((p) => [p.uuid, p.toJSON()]));
-  // Requests one poll costs, from the stored checkpoint through the end of the run.
-  const pollCost = async () => {
-    const before = requests;
-    await poll();
-    return requests - before;
-  };
-  return { rows, poll, sync, local, pollCost, state, errors };
+// The shared fake store (see its header) and a till replicating through the connector's combined pull
+// (the product feed and the reconcile feed), so every case here also proves the combined wiring.
+async function setup(size: number, { total = true, filter = true, utcOffset = 0, afterCall = (_call: number, _rows: FakeRow[]) => {} } = {}) {
+  const store = createFakeStore(size, { total, filter, zone: utcOffset });
+  return { rows: store.rows, ...(await startTill(store, { afterCall })) };
 }
 
 describe('WooCommerce product pass cursor in the real RxDB replication loop', () => {

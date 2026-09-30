@@ -21,11 +21,27 @@ function order(id: string, overrides: Partial<PosOrder> = {}): PosOrder {
     lines: [{ id: `line-${id}`, productId: 'shirt', variantId: 'blue', name: 'Blue shirt', sku: 'BLUE', quantity: 2,
       unitPriceMinor: 600, discountMinor: 0, netMinor: 1200, taxLines: [] }],
     payments: [{ id: `payment-${id}`, method: 'cash', amountMinor: 1200 }], customer: null,
-    subtotalMinor: 1200, discountMinor: 0, taxMinor: 0, totalMinor: 1200, syncStatus: 'pending', ...overrides,
+    subtotalMinor: 1200, discountMinor: 0, taxMinor: 0, totalMinor: 1200, syncStatus: 'pending',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' }, ...overrides,
   };
 }
 const formatDate = (iso: string) => `date:${iso.slice(0, 10)}`;
 const headers = () => screen.getAllByRole('heading').map((heading) => heading.textContent);
+// #269: each refusal code's sentence, word for word as the Front desk accepted it (2026-09-30).
+const refusals = {
+  invalid_payload: "The online store refused this sale: this till sent it in a form the store can't read. Ask the store owner to look at the till's sync log.",
+  unsupported_version: "The online store refused this sale: the store's software is older than this till's. Ask the store owner to update the POS plugin.",
+  idempotency_mismatch: "The online store has a different sale under this sale's number. Don't send it again; ask the store owner to compare the two.",
+  store_configuration: 'The online store refused this sale: a setting on the store needs changing. Once the store owner fixes it, press Retry.',
+  platform_error: "The online store refused this sale. Ask the store owner to look at the till's sync log.",
+  internal_error: "The online store hit a fault in its POS plugin and refused this sale. Ask the store owner to look at the till's sync log.",
+  insufficient_stock: "The online store refused this sale: it doesn't have enough stock of one of the items.",
+  unsupported_tax_mode: "The online store refused this sale: its tax settings can't take a sale like this one. Ask the store owner to check them.",
+  unknown_variant: 'The online store refused this sale: that product variation no longer exists.',
+  invalid_quantity: "The online store refused this sale: a quantity or a discount on it isn't allowed.",
+  underpaid: 'The online store refused this sale: the payments add up to less than the total.',
+  unsupported_currency: "The online store refused this sale: the store doesn't take this currency.",
+};
 
 describe('OrdersList', () => {
   it('shows customer omissions and dropped payment references under Needs attention', () => {
@@ -55,7 +71,7 @@ describe('OrdersList', () => {
     render(<OrdersList orders={[rejected, warned, order('p')]} onRetry={async () => 0} formatDate={formatDate} />);
     expect(headers()).toEqual(['Needs attention', 'Recent']);
     expect(screen.getAllByText(/· Not accepted$/)).toHaveLength(2);
-    expect(screen.getAllByText('Variant was removed')).toHaveLength(2);
+    expect(screen.getAllByText(refusals.unknown_variant)).toHaveLength(2);
     expect(screen.getAllByText('Stock short by 1 for Blue shirt')).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
   });
@@ -114,18 +130,34 @@ describe('OrdersList', () => {
     expect(container.textContent).not.toContain(reason);
   });
 
-  it.each(['Variant was removed', ''])('shows a rejected order\'s message "%s" alone, with no error code and no empty ": "', (message) => {
-    const { container } = render(<OrdersList orders={[order('r', { syncStatus: 'rejected', error: { code: 'unknown_variant', message } })]}
+  it.each(Object.entries(refusals))('shows a %s refusal as its sentence in both sections, never the store\'s message or the code', (code, sentence) => {
+    const message = `Store says ${code} happened (distinctive)`;
+    const { container } = render(<OrdersList orders={[order('r', { syncStatus: 'rejected', error: { code, message } })]}
       onRetry={async () => 0} formatDate={formatDate} />);
-    expect(container.textContent).not.toContain('unknown_variant');
+    expect(headers()).toEqual(['Needs attention', 'Recent']);
+    expect(screen.getAllByText(sentence)).toHaveLength(2);
+    expect(container.textContent).not.toContain(message);
+    expect(container.textContent).not.toContain(code);
     for (const element of Array.from(container.querySelectorAll('*'))) expect(element.textContent).not.toMatch(/^\s*:|:\s*$|\w+_\w+:/);
-    if (message) expect(screen.getAllByText(message)).toHaveLength(2);
+    // idempotency_mismatch isn't requeueable: no Retry. Every other code keeps it under Needs attention.
+    expect(screen.queryAllByRole('button', { name: 'Retry' })).toHaveLength(code === 'idempotency_mismatch' ? 0 : 1);
+  });
+
+  it.each([
+    ['an unknown code', { code: 'future_code', message: 'Something new (distinctive)' }],
+    ['no error', undefined],
+  ])('shows the generic sentence, with Retry, for a rejected order with %s', (_, error) => {
+    const { container } = render(<OrdersList orders={[order('r', { syncStatus: 'rejected', error })]} onRetry={async () => 0} />);
+    expect(screen.getAllByText(refusals.platform_error)).toHaveLength(2);
+    expect(container.textContent).not.toMatch(/future_code|distinctive/);
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
   });
 
   it('asks for a manual check instead of Retry on an idempotency mismatch', () => {
     render(<OrdersList orders={[order('m', { syncStatus: 'rejected', error: { code: 'idempotency_mismatch', message: 'Differs' } })]}
       onRetry={async () => 0} />);
-    expect(screen.getByText('This sale needs checking against the store before it can be sent again.')).toBeTruthy();
+    expect(screen.getAllByText(refusals.idempotency_mismatch)).toHaveLength(2);
+    expect(screen.queryByText('Differs')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 
@@ -197,7 +229,7 @@ describe('OrdersList', () => {
     render(<OrdersList orders={[rejected, warned, base]} onRetry={async () => 0} formatDate={formatDate} />);
     expect(headers()).toEqual(['Needs attention', 'Recent']);
     const money = formatMoney({ amount: base.totalMinor, currency: base.currency });
-    for (const label of ['Unknown variant', 'Stock short by 2 for Blue shirt',
+    for (const label of [refusals.platform_error, 'Stock short by 2 for Blue shirt',
       `Store total ${formatMoney({ amount: 1000, currency: base.currency })} vs POS ${formatMoney({ amount: 1200, currency: base.currency })}`,
       'Order #42 · 3 items']) {
       expect(screen.getAllByText(label)).toHaveLength(2);
@@ -223,7 +255,7 @@ describe('OrdersList', () => {
       expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
       expect(onRetry).not.toHaveBeenCalled();
     }
-    expect(screen.queryByText('This sale needs checking against the store before it can be sent again.') !== null).toBe(kind === 'idempotency_mismatch');
+    expect(screen.queryAllByText(refusals.idempotency_mismatch)).toHaveLength(kind === 'idempotency_mismatch' ? 2 : 0);
   });
 
   it('renders no warning line and no NaN for an unknown warning code', () => {

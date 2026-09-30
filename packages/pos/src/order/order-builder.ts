@@ -1,7 +1,8 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
-import { resolvePrice, type ProductTraits } from '@tallyui/core';
+import { resolvePrice, type ProductTraits, type TaxRounding } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
-import { taxMicros, roundMicrosToMinor } from '../tax/exact';
+import { taxMicros, roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
+import { taxLogger } from '../tax/tax-provider';
 import { allocateOrderDiscount } from './allocate-order-discount';
 import type {
   Order,
@@ -13,6 +14,9 @@ import type {
   AddLineInput,
 } from './types';
 
+/** Tax contexts already warned that per_rate_group_items fell back to per_order for inclusive lines (#287). */
+const perRateGroupWarned = new WeakSet<TaxContext>();
+
 let nextId = 0;
 function uid(): string {
   return `${Date.now()}-${++nextId}`;
@@ -23,14 +27,18 @@ function roundHalfAway(n: number): number {
 }
 
 /** The settlement totals of recalculated lines; the display figures derive from them (ADR-063). */
-function sumLines(lines: LineItem[]): { subtotalMinor: number; taxMinor: number; totalMinor: number } {
+function sumLines(lines: LineItem[], rounding?: TaxRounding): { subtotalMinor: number; taxMinor: number; totalMinor: number } {
+  // per_line_items, per_rate_group_items (#287): total = Σ rounded nets + tax (order-level-tax-calculation-strategy.js:44-49, order.entity.js:88-89).
+  const rounded = roundedTaxByRate(lines, rounding);
+  if (rounded) return { subtotalMinor: rounded.baseMinor, taxMinor: rounded.taxMinor, totalMinor: Math.max(0, rounded.baseMinor + rounded.taxMinor) };
+  const mode = rounding?.granularity === 'per_order' ? rounding.mode : undefined;
   const netMinor = lines.reduce((sum, li) => sum + li.netMinor, 0);
   const lineTaxMicros = lines.reduce((sum, li) => sum + BigInt(li.taxMicros), 0n);
   const exclusiveTaxMicros = lines.reduce((sum, li) => li.taxInclusive ? sum : sum + BigInt(li.taxMicros), 0n);
-  const taxMinor = roundMicrosToMinor(lineTaxMicros);
+  const taxMinor = roundMicrosToMinor(lineTaxMicros, mode);
   // Each line pays in its own mode: an inclusive line its gross, an exclusive line its net plus tax.
   // The totals sum the lines as recalculated; nothing is subtracted after tax.
-  const linesTotal = netMinor + roundMicrosToMinor(exclusiveTaxMicros);
+  const linesTotal = netMinor + roundMicrosToMinor(exclusiveTaxMicros, mode);
   return { subtotalMinor: linesTotal - taxMinor, taxMinor, totalMinor: Math.max(0, linesTotal) };
 }
 
@@ -158,7 +166,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const lines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
 
-    const { subtotalMinor, taxMinor, totalMinor } = sumLines(lines);
+    const { subtotalMinor, taxMinor, totalMinor } = sumLines(lines, taxContext.rounding);
+    if (taxContext.rounding?.granularity === 'per_rate_group_items' && lines.some((li) => li.taxInclusive) && !perRateGroupWarned.has(taxContext)) {
+      perRateGroupWarned.add(taxContext);
+      taxLogger.warn('per_rate_group_items with inclusive lines: using per_order figures until the display has a rounding row (#287, #310)');
+    }
     const discountMinor = lines.reduce((sum, li) => sum + li.discountMinor, 0);
     // Display figures (ADR-063): every discount the cashier entered, and each line's order share, converted on its own
     // into the display mode. A line in the display mode shows quantity × unit price; a converted line shows its
@@ -239,6 +251,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       changeDueMinor,
       currency,
       pricesIncludeTax: taxContext.pricesIncludeTax,
+      ...(taxContext.rounding ? { taxRounding: taxContext.rounding } : {}),
       createdAt: now,
       updatedAt: new Date().toISOString(),
     };
@@ -254,7 +267,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (unitPrice.currency !== currency) throw new RangeError('Line currency must match ' + currency);
     if (!Number.isInteger(unitPrice.amount)) throw new RangeError('Price must be integer minor units');
     if (!Number.isInteger(quantity) || quantity < 1) throw new RangeError('Quantity must be an integer >= 1');
-    const taxRates = input.taxRates ?? [{ ratePpm: taxContext.getTaxRatePpm(input.taxClass) }];
+    // A rate from the tax class carries the backend's name for it when one is mapped (#287, #288).
+    const code = input.taxRates ? undefined : taxContext.getTaxRateCode?.(input.taxClass);
+    const taxRates = input.taxRates ?? [{ ...(code !== undefined ? { code } : {}), ratePpm: taxContext.getTaxRatePpm(input.taxClass) }];
     const taxInclusive = unitPrice.taxInclusive ?? taxContext.pricesIncludeTax;
 
     const existing = lineItems.find(

@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
-import { resolveCapabilities } from '@tallyui/core';
+import { resolveCapabilities, type TaxRounding } from '@tallyui/core';
 import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order/order-builder';
 import { taxLinesByRate } from '../tax/exact';
@@ -489,6 +489,7 @@ describe('finalizeOrder version 3 (ADR-065)', () => {
         ],
         payments: [{ id: 'id-4', method: 'cash', amountMinor: 3451, tenderedMinor: 5000, changeMinor: 1549 }],
         subtotalMinor: 2900, discountMinor: 0, taxMinor: 551, totalMinor: 3451, customer: null,
+        taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
       });
     }
   });
@@ -631,5 +632,35 @@ describe('finalizeOrder version 3 (ADR-065)', () => {
     }
     expect(() => finalizeOrder({ ...input, lineItems: input.lineItems.map((line) => ({ ...line, taxLines: [] })) },
       { capabilities: { orderCreate: 3 } })).toThrow('finalize: tax by rate does not sum to the order tax');
+  });
+});
+
+describe('finalizeOrder records the tax rounding its figures were computed with (#287)', () => {
+  const ruled = (rounding?: TaxRounding) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false, rounding } });
+    // 19% of each is x.38: per_line_items/half_up rounds each down (114), per_order rounds the 115.14 sum (115).
+    for (const amount of [102, 202, 302]) builder.addLine({ productId: `p${amount}`, name: 'Item', unitPrice: { amount, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 1000 });
+    return builder.getSnapshot();
+  };
+
+  it('stores per_line_items/half_up as recorded, a default sale the explicit default, and custom without a mode', () => {
+    const perLine = ruled({ granularity: 'per_line_items', mode: 'half_up' });
+    const stored = finalizeOrder(perLine, { capabilities: { orderCreate: 3 } });
+    expect(stored.taxRounding).toStrictEqual({ granularity: 'per_line_items', mode: 'half_up' });
+    // Its figures differ from the default's here, so the record names the arithmetic its rows used.
+    expect(stored.taxMinor).not.toBe(finalizeOrder(ruled()).taxMinor);
+    expect(stored.taxByRate!.map((row) => row.amountMinor))
+      .toStrictEqual(taxLinesByRate(perLine.lineItems, perLine.taxMinor, undefined, perLine.taxRounding).map((row) => row.amountMinor));
+    expect(finalizeOrder(ruled()).taxRounding).toStrictEqual({ granularity: 'per_order', mode: 'half_away_from_zero' });
+    expect(finalizeOrder(ruled({ granularity: 'custom' })).taxRounding).toStrictEqual({ granularity: 'custom' });
+  });
+
+  it("keeps the strategy the sale was computed with when the store's capability later says another", () => {
+    const stored = finalizeOrder(ruled({ granularity: 'per_line_items', mode: 'half_up' }),
+      { capabilities: { orderCreate: 3, taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' } } });
+    expect(stored.taxRounding).toStrictEqual({ granularity: 'per_line_items', mode: 'half_up' });
+    // The outbox freezes an order before its first send; that never rewrites the record.
+    expect(freezeSentForm(stored).taxRounding).toStrictEqual({ granularity: 'per_line_items', mode: 'half_up' });
   });
 });

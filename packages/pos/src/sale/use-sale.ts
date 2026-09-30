@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
@@ -51,8 +51,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
 }) {
   const taxContext = useTax();
   const madeWith = useRef({ taxContext, currency: settings.currency });
-  const [builder, setBuilder] = useState(() => createOrderBuilder({ currency: settings.currency, taxContext }));
-  const [order, setOrder] = useState(() => builder.getSnapshot());
+  const [rendered, setBuilder] = useState(() => createOrderBuilder({ currency: settings.currency, taxContext }));
+  // The live builder, which every mutator reads (#301): newSale() sets it before setBuilder(next) renders, so a
+  // call from an older render never reaches a discarded builder. The state only moves the `order` subscription.
+  const builderNow = useRef(rendered);
+  const [order, setOrder] = useState(() => rendered.getSnapshot());
   const [stage, setStage] = useState<SaleStage>({ kind: 'cart' });
   const [saleError, setError] = useState<string | null>(null);
   // App configuration is checked on every render (so on mount and on each change), by finalize's own rule, which
@@ -114,20 +117,25 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     madeWith.current = { taxContext, currency: settings.currency };
     const next = createOrderBuilder({ currency: settings.currency, taxContext });
     if (customer !== null) next.setCustomer(customer);
+    builderNow.current = next;
     setBuilder(next);
     setOrder(next.getSnapshot());
     setStage({ kind: 'cart' });
     setError(null);
   }
   useEffect(() => {
-    const subscription = builder.order$.subscribe(setOrder);
+    const subscription = rendered.order$.subscribe(setOrder);
     return () => subscription.unsubscribe();
-  }, [builder]);
+  }, [rendered]);
   // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
   // a sale in progress (lines, tender or receipt) finishes on the settings it started with (a money rule).
   const idle = stage.kind === 'cart' && !order.lineItems.length;
-  useEffect(() => {
-    if (idle && (madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency)) resetSale(order.customer ?? null);
+  // A layout effect, on live idleness (#301): it runs inside the settings' commit, before any tap can be handled, and
+  // the rendered `idle` would miss a line added since this render (it would then be dropped with the old builder).
+  useLayoutEffect(() => {
+    const live = builderNow.current.getSnapshot();
+    const liveIdle = stageNow.current.kind === 'cart' && !live.lineItems.length && !inFlight.current && !pending.current;
+    if (liveIdle && (madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency)) resetSale(live.customer ?? null);
   });
   // A screen that unmounts (medusapos: Sign out) mid-save must still leave a trace of the loss.
   useEffect(() => () => {
@@ -146,6 +154,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     const reason = referenceReason(tender?.reference);
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
     const kept = tender && dropped ? { method: tender.method, amountMinor: tender.amountMinor } : tender;
+    const builder = builderNow.current;
     const previous = builder.getSnapshot().payments[0];
     if (previous) builder.removePayment(previous.id);
     const paymentId = kept ? builder.addPayment(kept) : null;
@@ -229,6 +238,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     canContinue,
     add(entry: CatalogueEntry<any>, traits: ProductTraits<any>) {
       if (locked()) return;
+      const builder = builderNow.current;
       try {
         const known = new Set(builder.getSnapshot().lineItems.map((line) => line.id));
         const lineId = addEntryToCart(builder, entry, traits, madeWith.current.currency);
@@ -247,12 +257,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
         setError(error.message);
       }
     },
-    setQuantity(lineId: string, quantity: number) { if (!locked()) builder.updateQuantity(lineId, quantity); },
-    remove(lineId: string) { if (!locked()) builder.removeItem(lineId); },
+    setQuantity(lineId: string, quantity: number) { if (!locked()) builderNow.current.updateQuantity(lineId, quantity); },
+    remove(lineId: string) { if (!locked()) builderNow.current.removeItem(lineId); },
     /** A line's discount, or the order's without a line; returns the refusal to show, or null once applied. */
     applyDiscount(lineId: string | null, discount: Discount): string | null {
       if (locked()) return SALE_SAVING;
       if ((opts.capabilities?.orderCreate ?? 1) < 2) return DISCOUNTS_UNSUPPORTED;
+      const builder = builderNow.current;
       const applied = (snapshot: Order) => lineId === null ? snapshot.discounts
         : snapshot.lineItems.find((line) => line.id === lineId)?.discounts ?? [];
       const before = new Set(applied(builder.getSnapshot()).map((entry) => entry.id));
@@ -266,14 +277,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       }
       return null;
     },
-    removeDiscount(id: string) { if (!locked()) builder.removeDiscount(id); },
+    removeDiscount(id: string) { if (!locked()) builderNow.current.removeDiscount(id); },
     /** the picked customer reaches the server as order.create v3's customer.customerId */
     setCustomer(customer: CustomerSummary | null) {
       if (locked()) return;
       // A searched customer's email or id the server would refuse never reaches the sale; the customer stays as it was.
       const refused = customer && customerRefusal(customer);
       if (refused) return setError(refused);
-      builder.setCustomer(customer);
+      builderNow.current.setCustomer(customer);
       setError((current) => current !== null && CUSTOMER_REFUSALS.includes(current) ? null : current); // any other error stays
     },
     /**
@@ -283,7 +294,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
      */
     startTender(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
       if (locked()) return;
-      const current = builder.getSnapshot();
+      const current = builderNow.current.getSnapshot();
       if (!current.lineItems.length) return;
       tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
       setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
@@ -316,7 +327,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       confirm(null);
       if (pending.current) return deliver(pending.current);
       setSaving(true);
-      const current = builder.getSnapshot();
+      const current = builderNow.current.getSnapshot();
       let posOrder: PosOrder;
       try {
         posOrder = finalizeOrder(current, { registerId: opts.registerId, cashierRef: opts.cashierRef, capabilities: opts.capabilities,
