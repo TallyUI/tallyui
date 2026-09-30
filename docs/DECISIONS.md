@@ -3924,7 +3924,14 @@ interface OrderCreatePayload {
       (`docs/adr/0002-order-path-vendure-plugin.md`) lists every declared
       `order.create` field with its kind (vendurepos/app#36).
     - One warning for these differences, with each field's two values,
-      is to be settled in core first (#257); both backends follow it.
+      is settled in core (#257); both backends follow it.
+      - **Amendment (2026-09-30, Front desk; #257):** `CommandWarning`
+        gains `{ code: 'figures_mismatch'; fields: Array<{ field:
+        'subtotalMinor' | 'taxMinor' | 'discountMinor'; tillMinor:
+        number; serverMinor: number }> }`: one warning per sale, one
+        entry per field that differs (non-empty, no field repeated, two
+        different safe integers), never a refusal. `total_mismatch`
+        stays as released; additive under ADR-038.
   - `payload.locationId` is the case that prompted it (checked with both
     workers on 2026-09-30):
     - **vendurepos** refuses it with `invalid_payload`

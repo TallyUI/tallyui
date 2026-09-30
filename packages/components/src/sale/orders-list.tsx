@@ -4,6 +4,7 @@ import { formatMoney, knownWarnings } from '@tallyui/core';
 import { needsAttention, type OutboxState, type PosOrder } from '@tallyui/pos';
 
 const STATUS_LABEL = { pending: 'Waiting to sync', applied: 'Synced', rejected: 'Not accepted' };
+const FIGURE_LABELS = { subtotalMinor: 'Subtotal', taxMinor: 'Tax', discountMinor: 'Discount' };
 
 /** Keeps an unparseable value as is, like medusapos's date util, since `Intl` throws on an invalid date. */
 function defaultFormatDate(iso: string) {
@@ -71,6 +72,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
                 ? `Tax at ${(warning.ratePpm / 10000).toLocaleString(undefined, { maximumFractionDigits: 4 })}%: store ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
                 : warning.code === 'customer_ignored'
                 ? `The online store didn't recognise the customer on this sale, so it was saved as a guest sale. Customer id: ${warning.customerId}.`
+                : warning.code === 'figures_mismatch'
+                ? warning.fields.map(({ field, tillMinor, serverMinor }) => `${FIGURE_LABELS[field]}: store ${formatMoney({ amount: serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: tillMinor, currency: order.currency })}`).join('; ')
                 : warning.bridgeMinor !== undefined
                 ? `Store calculated ${formatMoney({ amount: warning.serverMinor, currency: order.currency })}; a rounding line of ${warning.bridgeMinor > 0 ? '+' : ''}${formatMoney({ amount: warning.bridgeMinor, currency: order.currency })} brought it to ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
                 : `Store total ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`}
