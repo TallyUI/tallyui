@@ -292,9 +292,9 @@ describe('SyncStatus', () => {
     expect(announce.mock.calls).toEqual([[refusedOne], [refusedMany(2)]]);
   });
 
-  const batchRefused = (waiting: string) => `${waiting} waiting to sync · The online store refused the last send. `
-    + 'This till will try again with the next sale, or when the app is reopened.';
-  it('with a refused batch, says so after the waiting count, over the stuck and missing sentences, with no Sending or Retrying line', () => {
+  const batchRefused = (waiting: string, next = 'sale') => `${waiting} waiting to sync · The online store refused the last send. `
+    + `This till will try again with the next ${next}, or when the app is reopened.`;
+  it('with a refused batch (sales, or till updates alone), says so after the waiting count, over the stuck and missing sentences, with no Sending or Retrying line', () => {
     const since = Date.now();
     const stuck = { commandIds: ['a'], since, reason: 'status_503', orders: [{ commandId: 'a', since, reason: 'status_503' }] };
     const refused = { status: 413, reason: 'status_413' };
@@ -302,7 +302,14 @@ describe('SyncStatus', () => {
       [{ pending: 3, sending: false, refused, lastRetryReason: 'refused' }, undefined, batchRefused('3 sales')],
       [{ pending: 1, sending: false, refused, lastRetryReason: 'refused' }, undefined, batchRefused('1 sale')],
       [{ pending: 1, sending: true, refused, lastRetryReason: 'refused', stuck, backendMissing: { since } },
-        { pending: 2, sending: false }, batchRefused('1 sale and 2 till updates')]];
+        { pending: 2, sending: false }, batchRefused('1 sale and 2 till updates')],
+      [{ pending: 0, sending: false }, { pending: 2, sending: false, refused, lastRetryReason: 'refused' },
+        batchRefused('2 till updates', 'till update')],
+      [{ pending: 0, sending: false }, { pending: 1, sending: false, refused, lastRetryReason: 'refused' },
+        batchRefused('1 till update', 'till update')],
+      // Both refused with a sale waiting: the sales line wins.
+      [{ pending: 2, sending: false, refused, lastRetryReason: 'refused' }, { pending: 1, sending: false, refused,
+        lastRetryReason: 'refused' }, batchRefused('2 sales and 1 till update')]];
     for (const [state, registerState, text] of cases) {
       const { container } = render(<SyncStatus state={state} registerState={registerState} />);
       expect(line()).toBe(text);
