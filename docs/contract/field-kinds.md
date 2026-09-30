@@ -334,8 +334,13 @@ more points apply to them all:
   default gives a line one tax line
   (`default-tax-line-calculation-strategy.js:14`). A custom
   `TaxLineCalculationStrategy` may return several
-  (`tax-line-calculation-strategy.d.ts:36`), so stacked rates follow
-  Vendure too.
+  (`tax-line-calculation-strategy.d.ts:36`). With stacked rates the
+  till's order figures (subtotal, tax, total) follow Vendure exactly;
+  only the per-rate rows differ: Vendure rounds each rate's share of an
+  item's tax on its own (`default-order-tax-calculation-strategy.js:38-86`),
+  while the till gives the last rate the remainder so its `taxByRate`
+  rows always sum to `taxMinor` (#312). A server whose tax-line strategy
+  isn't Vendure's default advertises `custom`.
 - **Code:** `tax/exact.ts:129` (`roundedTaxByRate`), and for the
   order figures `order/order-builder.ts:33`.
 - **Known gap: inclusive lines under `per_rate_group_items`.**
