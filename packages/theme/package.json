@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/theme",
-  "version": "3.0.0-next.1",
+  "version": "3.0.0-next.2",
   "type": "module",
   "description": "Shared design tokens and utilities for Tally UI",
   "main": "./dist/index.js",
