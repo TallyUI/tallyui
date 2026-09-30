@@ -15,8 +15,11 @@ export const posOrdersLogger = createLogger('pos-orders');
  * After this long waiting for the open, a close gives up rather than hang forever. RxDB 17.5 cancels
  * a running migration as the database closes, and the open then rejects with
  * `PosOrderOpenClosedError`; the run reads or writes nothing more in a store the close closes (see
- * `openPosOrders`). The next open finds the leftover `RUNNING` status, resets it and the checkpoint,
- * and migrates again. An order that run already copied is found equal and skipped, so no order is lost.
+ * `openPosOrders`). The next open adds the collection without `autoMigrate` and starts and awaits the
+ * migration directly, so it migrates again: RxDB 17.5's `startMigration()` ignores the leftover status
+ * (only `migratePromise()` trusts a leftover `DONE`). It also resets that status, so the record
+ * describes the new run, and removes the run's checkpoint (RxDB bug 1). An order that run already
+ * copied is found equal and skipped, so no order is lost.
  */
 export const POS_ORDER_MIGRATION_CLOSE_WAIT_MS = 10_000;
 
@@ -77,8 +80,11 @@ async function writeOverStaleCopies(collection: RxCollection, from: RxStorageIns
  * RxDB 17.5.0 trusts the status its last migration stored: a leftover `ERROR` rejects
  * `migratePromise` at once while the migration keeps running (a close then interrupts it), and a
  * `DONE` left before a rollback resolves it before the older version's new orders have moved. So the
- * collection is added without `autoMigrate`, the status and a failed run's checkpoint are reset
- * (never an order or its storage), and the migration itself is awaited.
+ * collection is added without `autoMigrate` and the migration is started and awaited directly: RxDB
+ * 17.5's `startMigration()` ignores a leftover status (only `migratePromise()` trusts a leftover
+ * `DONE`), which lets a rolled-back or interrupted run migrate again and recovers its orders. The
+ * status is reset first so its record describes the new run, and a failed run's checkpoint is
+ * removed (RxDB bug 1); never an order or its storage.
  *
  * A close waits for the open, up to `POS_ORDER_MIGRATION_CLOSE_WAIT_MS`, and cancels a running
  * migration (RxDB 17.5). Called once the database's close has begun, when the close cancels its
@@ -132,7 +138,10 @@ async function openPosOrders(db: RxDatabase, previous: Promise<unknown> | undefi
     // migration on this database starts only once the one before it has fully settled.
     await previous;
     stopIfClosing();
-    // Older-version orders exist (their collection record is there), so any stored status is a past run's.
+    // Makes the stored status record describe this run (RUNNING, a fresh count, no leftover error):
+    // RxDB 17.5's `runMigration` overwrites only `count.total` and counts `handled` on from the stored
+    // value. It isn't what recovers a rollback (`startMigration()` ignores the status); "after a
+    // rollback to the version-N app" in open.test-helper.ts pins the record after a recovery.
     await state.updateStatus((status) => {
       // RxDB writes only what the handler changes in place.
       delete status.error;

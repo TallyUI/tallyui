@@ -39,7 +39,7 @@ export type {
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
-  CommandBatchRequest, CommandBatchResponse,
+  CommandBatchRequest, CommandBatchResponse, BatchTooLargeBody,
   RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionTransitionPayload,
   RegisterMovementRecordPayload, RegisterMovementVoidPayload, RegisterClosureSubmitPayload,
 } from './types';

@@ -1,4 +1,5 @@
-import type { AnyCommandEnvelope, CommandEnvelope, CommandResult, OrderCreatePayload, RegisterCommandEnvelope } from '../types'
+import { MAX_COMMANDS_PER_BATCH } from '../commands'
+import type { AnyCommandEnvelope, BatchTooLargeBody, CommandEnvelope, CommandResult, OrderCreatePayload, RegisterCommandEnvelope } from '../types'
 import { fiscalFiguresErrors, type OrderCreatePayloadV3 } from './fiscal-figures'
 import { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
 import { SUPPORTED_ORDER_CREATE_VERSIONS, SUPPORTED_REGISTER_VERSIONS } from './versions'
@@ -12,13 +13,17 @@ export type ValidatedCommandEnvelope =
 /** Validates every envelope before any command is claimed. */
 export function validateBatch(body: unknown):
   | { ok: true; commands: ValidatedCommandEnvelope[] }
-  | { ok: false; status: 400 | 413; message: string } {
+  | { ok: false; status: 400; message: string }
+  | { ok: false; status: 413; message: string; body: BatchTooLargeBody } {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     return { ok: false, status: 400, message: 'Expected body object with commands array' }
   }
   const { commands } = body as Record<string, unknown>
   if (!Array.isArray(commands)) return { ok: false, status: 400, message: 'Expected commands array' }
-  if (commands.length > 50) return { ok: false, status: 413, message: 'At most 50 commands are allowed' }
+  if (commands.length > MAX_COMMANDS_PER_BATCH) {
+    const message = `At most ${MAX_COMMANDS_PER_BATCH} commands are allowed`
+    return { ok: false, status: 413, message, body: { code: 'batch_too_large', maxCommands: MAX_COMMANDS_PER_BATCH, message } }
+  }
   if (commands.length === 0) return { ok: false, status: 400, message: 'commands must not be empty' }
   for (const [index, command] of commands.entries()) {
     if (typeof command !== 'object' || command === null || Array.isArray(command)) {

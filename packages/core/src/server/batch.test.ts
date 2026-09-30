@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import fixture from './__fixtures__/order-create-v3.json'
 import { precheckCommand, validateBatch } from './batch'
+import { MAX_COMMANDS_PER_BATCH } from './index'
 import { fiscalFiguresErrors } from './fiscal-figures'
 import { payloadShapeErrors } from './order-payload-shape'
 
@@ -16,8 +17,19 @@ describe('validateBatch', () => {
     expect(validateBatch({ commands: Array(50).fill(command) }).ok).toBe(true)
   })
 
-  it('rejects more than 50 commands', () => {
-    expect(validateBatch({ commands: Array(51).fill(command) })).toMatchObject({ ok: false, status: 413 })
+  it('answers more than 50 commands with 413 batch_too_large (ADR-038, Front desk ruling 18)', () => {
+    const message = 'At most 50 commands are allowed'
+    expect(validateBatch({ commands: Array(51).fill(command) })).toEqual({
+      ok: false, status: 413, message, body: { code: 'batch_too_large', maxCommands: 50, message },
+    })
+  })
+
+  it('accepts exactly 50 commands, the limit', () => {
+    expect(validateBatch({ commands: Array(50).fill(command) })).toEqual({ ok: true, commands: Array(50).fill(command) })
+  })
+
+  it('pins MAX_COMMANDS_PER_BATCH at 50', () => {
+    expect(MAX_COMMANDS_PER_BATCH).toBe(50)
   })
 
   it.each([null, [], 'batch', 1, {}, { commands: {} }, { commands: [] }])('rejects invalid body %p', body => {
