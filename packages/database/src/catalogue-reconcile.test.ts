@@ -332,6 +332,58 @@ describe('startCatalogueReconcile', () => {
     expect(second.count('pass-started')).toBe(0);
   }, 30_000);
 
+  it('persists the last complete time when a later pass fails before its first page', async () => {
+    const { server, feed, collection } = await setup(4);
+    const time = fakeTime();
+    const { adapter } = fakeAdapter(server, feed);
+    const listing = adapter.fetchPages.bind(adapter);
+    let fail = false;
+    adapter.fetchPages = async function* (ctx, from) {
+      if (fail) throw transient();
+      yield* listing(ctx, from);
+    };
+    const first = start(collection, adapter, time);
+    first.runner.reconcile();
+    await time.runUntil(() => first.count('pass-completed') === 1);
+    const completedAt = time.now();
+
+    fail = true;
+    first.runner.reconcile();
+    await time.runUntil(() => first.count('stopped') === 1);
+    first.runner.stop();
+
+    const second = start(collection, adapter, time);
+    const restored: any[] = [];
+    second.runner.state$.subscribe((state) => restored.push(state));
+    await vi.waitFor(() => expect(restored.at(-1)).toMatchObject({ lastCompleteAt: completedAt }));
+    expect(second.count('pass-started')).toBe(0);
+  }, 30_000);
+
+  it('keeps the newer last complete time when the start-up load resolves late', async () => {
+    const { server, feed, collection } = await setup(4);
+    const time = fakeTime(2000);
+    await collection.upsertLocal('catalogue-reconcile', { lastCompleteAt: 1000 });
+    const getLocal = collection.getLocal.bind(collection);
+    let release!: () => void;
+    const delayed = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(collection, 'getLocal').mockImplementationOnce(async (...args) => {
+      const doc = await getLocal(...args);
+      await delayed;
+      return doc;
+    });
+    const { adapter } = fakeAdapter(server, feed);
+    const { runner, count } = start(collection, adapter, time);
+    const seen: any[] = [];
+    runner.state$.subscribe((state) => seen.push(state));
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(seen.at(-1)).toMatchObject({ lastCompleteAt: 2000 });
+
+    release();
+    await settle();
+    expect(seen.at(-1)).toMatchObject({ lastCompleteAt: 2000 });
+  }, 30_000);
+
   it('restarts a stored pass without a cursor from the first page', async () => {
     const { server, feed, collection } = await setup(4);
     const time = fakeTime();

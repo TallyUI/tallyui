@@ -390,6 +390,35 @@ describe('startFingerprintReconcile', () => {
     stop();
   });
 
+  it('keeps the last complete time when a later pass reads no pages', async () => {
+    const pages = [{ p1: '10', p2: '20' }];
+    const { adapter } = fakeAdapter(pages);
+    let clock = 1000;
+    const { reconcile, stop, state$ } = start(adapter, vi.fn(), { now: () => clock });
+    const seen: FingerprintReconcileState[] = [];
+    state$.subscribe((state) => seen.push(state));
+    try {
+      expect(await reconcile()).toMatchObject({ pages: 1, complete: true });
+      expect(seen.at(-1)).toMatchObject({ lastCompleteAt: 1000 });
+      clock = 2000;
+      pages.length = 0;
+      expect(await reconcile()).toMatchObject({ pages: 0, complete: false });
+      expect(seen.at(-1)).toMatchObject({ lastCompleteAt: 1000, lastResult: { complete: false } });
+    } finally { stop(); }
+  });
+
+  it('has no last complete time when its first pass reads no pages', async () => {
+    const { adapter } = fakeAdapter([]);
+    const { reconcile, stop, state$ } = start(adapter, vi.fn(), { now: () => 1000 });
+    const seen: FingerprintReconcileState[] = [];
+    state$.subscribe((state) => seen.push(state));
+    try {
+      expect(await reconcile()).toMatchObject({ pages: 0, complete: false });
+      expect(seen.at(-1)).toMatchObject({ lastResult: { complete: false } });
+      expect(seen.at(-1)).not.toHaveProperty('lastCompleteAt');
+    } finally { stop(); }
+  });
+
   it('a failed later pass keeps the count and marks it stale, then a good pass clears it', async () => {
     let fail = false;
     const adapter: FingerprintReconcileAdapter<Doc> = {
