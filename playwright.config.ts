@@ -22,14 +22,22 @@ export default defineConfig({
   },
 
   projects: [
+    // Before any test, each server must be this worktree's (e2e/server-identity.setup.ts).
+    {
+      name: 'server-identity',
+      testDir: './e2e',
+      testMatch: /server-identity\.setup\.ts$/,
+    },
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['server-identity'],
     },
     {
       name: 'storage-sqlite',
       testDir: './e2e/storage-sqlite',
       use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${ports.sqlite}` },
+      dependencies: ['server-identity'],
     },
   ],
 

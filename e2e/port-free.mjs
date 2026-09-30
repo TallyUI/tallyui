@@ -19,7 +19,7 @@ const canBind = (host) =>
 
 function holder() {
   try {
-    const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' });
+    const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8', timeout: 5000 });
     const [command, pid] = out.split('\n')[1].trim().split(/\s+/);
     return `${command} (pid ${pid})`;
   } catch {
