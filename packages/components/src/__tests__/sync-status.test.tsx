@@ -327,10 +327,9 @@ describe('SyncStatus', () => {
 
   const batchRefused = (waiting: string) => `${waiting} waiting to sync · The online store refused the last send. `
     + 'This till will try again with the next sale, or when the app is reopened.';
-  // The till-updates line promises nothing about reopening: no app starts the register outbox at launch.
   const tillUpdatesRefused = {
-    2: '2 till updates waiting to sync · The online store refused the last send. This till will try again with the next till update.',
-    1: '1 till update waiting to sync · The online store refused the last send. This till will try again with the next till update.',
+    2: '2 till updates waiting to sync · The online store refused the last send. This till will try again with the next till update, or when the app is reopened.',
+    1: '1 till update waiting to sync · The online store refused the last send. This till will try again with the next till update, or when the app is reopened.',
   };
   it('with a refused batch (sales, or till updates alone), says so after the waiting count, over the stuck and missing sentences, with no Sending or Retrying line', () => {
     const since = Date.now();

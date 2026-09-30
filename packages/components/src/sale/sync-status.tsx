@@ -66,10 +66,10 @@ const REFUSED = (n: number, waiting: string) => n === 1
 const REFUSED_DETAIL = 'Refused sales stay on this till under Needs attention, each with what to do next.';
 // The sentence after the waiting count once the store refused a whole batch (OutboxState.refused) from the outbox shown, when
 // no command carries a code. Neither outbox sets a timer then: a new pending command flushes its outbox. For sales,
-// useOrderOutbox also calls start() when the store opens, which flushes; no app starts the register outbox at launch today,
-// so the till-updates sentence names only the next till update (#269).
+// useOrderOutbox calls start() when its store opens and useRegisterOutbox when its collection opens, so both flush
+// on reopen and both sentences name a reopen.
 const SALES_REFUSED = 'The online store refused the last send. This till will try again with the next sale, or when the app is reopened.';
-const TILL_UPDATES_REFUSED = 'The online store refused the last send. This till will try again with the next till update.';
+const TILL_UPDATES_REFUSED = 'The online store refused the last send. This till will try again with the next till update, or when the app is reopened.';
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 // iOS has no live region (accessibilityLiveRegion is Android-only), so there each text is announced when it changes: never on

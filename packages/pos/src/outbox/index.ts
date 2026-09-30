@@ -4,6 +4,8 @@ export { createOrderOutbox } from './order-outbox';
 export type { OrderOutboxOptions, OrderOutbox } from './order-outbox';
 export { createRegisterOutbox } from './register-outbox';
 export type { RegisterOutboxOptions, RegisterOutbox } from './register-outbox';
+export { useRegisterOutbox } from './use-register-outbox';
+export type { UseRegisterOutboxOptions, UseRegisterOutboxResult } from './use-register-outbox';
 export type { TransportOutcome, CommandTransport, OutboxState } from './types';
 export { useOrderOutbox, outboxLogger } from './use-order-outbox';
 export type { UseOrderOutboxOptions, UseOrderOutboxResult } from './use-order-outbox';
