@@ -1091,6 +1091,14 @@ interface OrderCreatePayload {
           till legitimately sends old sales. The Medusa plugin has no such
           bound. On Vendure this needs a replay read before ADR-047's
           `INSERT … ON CONFLICT` claim.
+          **Amended 2026-09-30 (Front desk):** the bounds are now one rule
+          on every backend:
+          - at most 24 hours ahead of the server's clock;
+          - not earlier than `2020-01-01T00:00:00Z`.
+
+          Outside either bound, `createdAt` is refused as
+          `invalid_payload` naming `createdAt`, never clamped
+          (`docs/contract/field-kinds.md`, "Malformed commands").
       - **Shape and value refusals answer `invalid_payload`.** It keeps its
         single meaning for `order.create`: decided before the claim, never
         stored. This widens the 2026-09-24 amendment's "fails shape

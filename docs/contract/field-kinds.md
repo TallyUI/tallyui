@@ -29,6 +29,16 @@ of the command, not of the server's view of it, and it applies to a field
 of either kind. An informational field is never refused because it
 differs from the server's own computation (ADR-070 decision 3).
 
+**`payload.createdAt` has one set of bounds, the same on every backend**
+(Front desk, 2026-09-30):
+- **Upper bound:** at most 24 hours ahead of the server's clock, per ADR-038's value checks.
+- **Lower bound:** not earlier than `2020-01-01T00:00:00Z`.
+- **Outside either bound, it's malformed.** The server refuses it as
+  `invalid_payload`, naming `createdAt`. It's never clamped to the bound.
+
+An offline till's old sales stay well inside the lower bound; a time
+before it can only come from a broken clock.
+
 ## Instructions the server can't carry out
 
 A refusal is for a problem that would make every sale from this till fail
