@@ -92,6 +92,26 @@ async function storeSwitch(connectorFor: () => TallyConnector) {
   return leaked(b, a.docs);
 }
 
+/**
+ * The worst case (#307): two stores with the same product and variant ids. Product 1 goes from store A, and A's till
+ * queues every product for its id reconcile (drained against A, the entry for product 1 is a tombstone) and is
+ * cancelled with that work queued. Store B's till, on a new database, then syncs; B's product 1 is live. What became
+ * of B's product 1, and how many by-id re-reads B's store answered: B's own queue is empty, so every one came from A's.
+ */
+async function sharedIdSwitch(connectorFor: () => TallyConnector) {
+  const a = await tillAt('a.test', 'p', connectorFor());
+  a.store.products.shift();
+  queueWork(a);
+  await a.state.cancel();
+  const b = await tillAt('b.test', 'p', connectorFor());
+  expect(b.store.products[0]).toMatchObject({ id: 'p_prod_1', status: 'published' });
+  const [product1] = await b.db.products.storageInstance.findDocumentsById(['p_prod_1'], true);
+  return {
+    product1: product1 && { id: product1.id, deleted: product1._deleted },
+    requests: b.store.requests.filter((params) => params.has('id[]')).length,
+  };
+}
+
 describe.each([
   ['secret key', medusaConnector, createMedusaConnector],
   ['admin user', medusaAdminUserConnector, createMedusaAdminUserConnector],
@@ -104,6 +124,16 @@ describe.each([
 
   it('a store switch with the factory: nothing of A reaches B\'s database or B\'s store', async () => {
     expect(await storeSwitch(factory)).toEqual({ documents: [], requests: 0 });
+  });
+
+  it('the deprecated static export, stores with the same ids: B\'s store is asked for A\'s queued ids', async () => {
+    // The id reconcile decides a tombstone when the queue drains, against the store it drains into: B's re-read finds
+    // B's own product 1, so it survives here (unlike WooCommerce's proven tombstones), but A's queue reached B's store.
+    expect(await sharedIdSwitch(() => staticExport)).toEqual({ product1: { id: 'p_prod_1', deleted: false }, requests: 1 });
+  });
+
+  it('a store switch with the factory, stores with the same ids: B\'s product 1 stays live, B\'s store gets nothing of A\'s queue', async () => {
+    expect(await sharedIdSwitch(factory)).toEqual({ product1: { id: 'p_prod_1', deleted: false }, requests: 0 });
   });
 
   it('two stores at once, one instance each: each queue reaches only its own store and database', async () => {
