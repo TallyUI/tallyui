@@ -191,7 +191,7 @@ describe('WooCommerce catalogue reconcile: guards', () => {
   });
 
   it('every request carries context.headers and Content-Type: the pull, the status read, the listing, confirmGone and fetchByIds', async () => {
-    const sentinel = { ...context, headers: { 'X-Test-Sentinel': '1' } };
+    const sentinel = { ...context, headers: { ...woocommerceConnector.auth.getHeaders({ token: 't' }), 'X-Test-Sentinel': '1' } };
     const store = createFakeStore(10);
     const till = await tillOf(store, { batchSize: 100, syncContext: sentinel });
     store.writeStock(2, 0, 'outofstock'); // refetched by fetchByIds
@@ -203,7 +203,7 @@ describe('WooCommerce catalogue reconcile: guards', () => {
     const kinds = store.requests.map((url) => `${url.pathname.split('/').pop()} ${url.searchParams.get('_fields') ?? (url.searchParams.has('include') ? 'include' : '')}`);
     expect(new Set(kinds)).toEqual(new Set(['products ', 'status ', 'products id,uuid,date_modified_gmt,stock_quantity,stock_status', 'products id,uuid,status', 'products include']));
     const missing = store.headers.flatMap((headers, i) =>
-      (headers['X-Test-Sentinel'] === '1' && headers['Content-Type'] === 'application/json' ? [] : [kinds[i]]));
+      (headers['X-Test-Sentinel'] === '1' && headers['X-WCPOS-Protocol'] === '2' && headers['Content-Type'] === 'application/json' ? [] : [kinds[i]]));
     expect(missing).toEqual([]);
   });
 
