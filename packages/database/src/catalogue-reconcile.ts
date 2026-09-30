@@ -302,7 +302,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
         for (const doc of chunk) {
           const key = adapter.matchKey ? adapter.matchKey(doc) : keyOf(doc);
           if (key === undefined || !seen.has(key)) candidates.push(doc);
-          else if (adapter.matchKey && index?.get(key) !== keyOf(doc)) duplicates.push(doc);
+          else if (adapter.matchKey && index?.has(key) && index.get(key) !== keyOf(doc)) duplicates.push(doc);
         }
       }
       unlisted = candidates.length;

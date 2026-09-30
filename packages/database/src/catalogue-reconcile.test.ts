@@ -778,6 +778,27 @@ describe('matchKey: a listing keyed by the backend id, not the primary key (#313
     expect(events).toContainEqual(expect.objectContaining({ type: 'pass-completed', compared: 4, refetched: 1, unlisted: 0, tombstoned: 0 }));
   }, 30_000);
 
+  it('a listed product the pull delivers after the index was built is not a duplicate', async () => {
+    const { server, collection } = await setup(1);
+    server.products.set(uuid(2), product(2));
+    const time = fakeTime();
+    const { adapter, confirmCalls } = byIdAdapter(server);
+    const listing = adapter.fetchPages.bind(adapter);
+    adapter.fetchPages = async function* (ctx, from) {
+      for await (const page of listing(ctx, from)) {
+        yield page;
+        await collection.insert(product(2));
+      }
+    };
+    const { runner, events, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(count('duplicate')).toBe(0);
+    expect(confirmCalls).toEqual([]);
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'kept', reason: 'brake' }));
+  }, 30_000);
+
   it('duplicate match keys enqueue the first document in primary-key order', async () => {
     const { server, collection } = await setup(2);
     await (await collection.findOne(uuid(2)).exec())!.incrementalPatch({ id: 1 });
