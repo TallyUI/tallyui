@@ -6,7 +6,7 @@ import { wooProductSync } from './sync/products';
 import { wooProductReplication } from './replication/products';
 import { wooCatalogueReconcile } from './reconcile/catalogue';
 import { createWooReconcileFeed, MAX_IDS_PER_REQUEST } from './reconcile/feed';
-import pkg from '../package.json';
+import { version } from '../package.json';
 
 /** One part of X-WCPOS-Client as WCPOS keeps it: lowercase [a-z0-9._-], at most 32 characters. */
 export function wcposClientPart(part: string): string {
@@ -89,7 +89,7 @@ const wooConnectorParts = {
         // WCPOS 2.0 refuses a POS request below protocol 2 (HTTP 426); the connector already speaks 2.
         'X-WCPOS-Protocol': '2',
         // For WCPOS's consent-gated telemetry only.
-        'X-WCPOS-Client': `tallyui/${wcposClientPart(pkg.version)}`,
+        'X-WCPOS-Client': `tallyui/${wcposClientPart(version)}`,
       };
     },
   },

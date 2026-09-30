@@ -8,6 +8,7 @@ export type {
   RemoteIdEntry,
   SyncContext,
   ServerCapabilities,
+  TaxRounding,
 } from './connector';
 
 export type { ReplicationAdapter } from './replication';
