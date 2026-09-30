@@ -17,6 +17,7 @@ import {
   isStorageWorkerStartError,
   StorageUnavailableError,
   isStorageUnavailableError,
+  isStorageHeldError,
 } from './index';
 
 /**
@@ -87,6 +88,7 @@ describe('getRxStorageSQLiteWasm', () => {
     expect(typeof isStorageWorkerStartError).toBe('function');
     expect(typeof StorageUnavailableError).toBe('function');
     expect(typeof isStorageUnavailableError).toBe('function');
+    expect(typeof isStorageHeldError).toBe('function');
   });
 });
 

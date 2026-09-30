@@ -8,6 +8,7 @@ import {
   getRxStorageSQLiteWasm,
   isStorageWorkerStartError,
   isStorageUnavailableError,
+  isStorageHeldError,
   type RxStorageSQLiteWasm,
 } from '../../../packages/storage-sqlite/src/web/index';
 // Its own module, so the page bundles without createTallyDatabase's dev-mode setup.
@@ -49,7 +50,13 @@ let storage: RxStorageSQLiteWasm | undefined;
 
 type OpenResult =
   | { ok: true }
-  | { ok: false; isStorageWorkerStartError: boolean; isStorageUnavailableError: boolean; message: string };
+  | {
+      ok: false;
+      isStorageWorkerStartError: boolean;
+      isStorageUnavailableError: boolean;
+      isStorageHeldError: boolean;
+      message: string;
+    };
 
 async function open(name: string, version: 0 | 1 = 0): Promise<OpenResult> {
   try {
@@ -66,6 +73,7 @@ async function open(name: string, version: 0 | 1 = 0): Promise<OpenResult> {
       ok: false,
       isStorageWorkerStartError: isStorageWorkerStartError(error),
       isStorageUnavailableError: isStorageUnavailableError(error),
+      isStorageHeldError: isStorageHeldError(error),
       message: String(error),
     };
   }

@@ -2,4 +2,4 @@
 "@tallyui/storage-sqlite": minor
 ---
 
-Tell storage unavailable apart from another tab (#293). When the browser gives the worker no usable OPFS, as in a Safari private window, the worker now throws the new `StorageUnavailableError`, recognised with `isStorageUnavailableError`; `isStorageWorkerStartError` is false for it, since neither closing tabs nor reloading helps. `StorageWorkerStartError` now means OPFS is reachable but another tab holds the database (or a stale worker, or another start failure), and both errors carry their cause's name and message in their own message.
+Tell the three start failures apart (#293), each with its own sentence for the cashier. Storage unavailable, as in a Safari private window where the browser gives the worker no usable OPFS, is the new `StorageUnavailableError`, recognised with `isStorageUnavailableError`. Another tab holding the database is recognised with the new `isStorageHeldError`. A stale worker stays `isRxdbRemoteVersionMismatch` from `@tallyui/core` (RM1). `isStorageWorkerStartError` still means any failed start except storage unavailable, and every start error carries its cause's name and message in its own message.

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { StorageUnavailableError, StorageWorkerStartError, isStorageUnavailableError } from './errors';
+import { isRxdbRemoteVersionMismatch } from '@tallyui/core';
+import { StorageUnavailableError, StorageWorkerStartError, isStorageHeldError, isStorageUnavailableError } from './errors';
 import { isStorageWorkerStartError } from './is-storage-worker-start-error';
 
 // The worker's messages (./worker), as RxDB's remote storage wraps them on the main thread.
@@ -97,5 +98,50 @@ describe('isStorageWorkerStartError and a stale worker (RxDB RM1)', () => {
   it('recognises the real RM1 error and rejects a data error mentioning RM1', () => {
     expect(isStorageWorkerStartError(new Error(RM1_MESSAGE))).toBe(true);
     expect(isStorageWorkerStartError(new Error('Invalid SKU RM1 in row 3'))).toBe(false);
+  });
+});
+
+// Each start failure in the forms it takes: as thrown, as a { name, message } copy, and as RxDB's remote storage
+// wraps it on the main thread (RM1's wrapped shape is #280's, above).
+const GENERIC_MESSAGE = 'StorageWorkerStartError: SQLite worker start failed: TypeError: boom';
+const FAILURES = {
+  unavailable: [
+    new StorageUnavailableError(UNAVAILABLE_MESSAGE),
+    { name: 'StorageUnavailableError', message: UNAVAILABLE_MESSAGE },
+    new Error(wrap('StorageUnavailableError', UNAVAILABLE_MESSAGE)),
+  ],
+  held: [
+    new StorageWorkerStartError(HELD_MESSAGE),
+    { name: 'StorageWorkerStartError', message: HELD_MESSAGE },
+    new Error(wrap('StorageWorkerStartError', HELD_MESSAGE)),
+    wrap('StorageWorkerStartError', HELD_MESSAGE),
+  ],
+  stale: [
+    Object.assign(new Error('RxDB Error-Code: RM1.'), { code: 'RM1', rxdb: true }),
+    { name: 'Error', message: RM1_MESSAGE },
+    new Error(RM1_MESSAGE),
+  ],
+  generic: [
+    new StorageWorkerStartError(GENERIC_MESSAGE),
+    { name: 'StorageWorkerStartError', message: GENERIC_MESSAGE },
+    new Error(wrap('StorageWorkerStartError', GENERIC_MESSAGE)),
+  ],
+};
+const PREDICATES = { unavailable: isStorageUnavailableError, held: isStorageHeldError, stale: isRxdbRemoteVersionMismatch };
+
+describe('three start failures, told apart: unavailable, held, stale worker (#293)', () => {
+  it.each(['unavailable', 'held', 'stale'] as const)('%s: its own predicate is true and the other two false, in every form', (failure) => {
+    for (const form of FAILURES[failure]) {
+      for (const [name, predicate] of Object.entries(PREDICATES)) {
+        expect(predicate(form), `${name} on ${failure}: ${JSON.stringify(form)}`).toBe(name === failure);
+      }
+    }
+  });
+
+  it('a generic start failure: all three are false, and isStorageWorkerStartError is true', () => {
+    for (const form of FAILURES.generic) {
+      for (const [name, predicate] of Object.entries(PREDICATES)) expect(predicate(form), name).toBe(false);
+      expect(isStorageWorkerStartError(form)).toBe(true);
+    }
   });
 });

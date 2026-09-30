@@ -31,7 +31,13 @@ const DB_NAME = 'e2e_sqlite_wasm';
 
 type OpenResult =
   | { ok: true }
-  | { ok: false; isStorageWorkerStartError: boolean; isStorageUnavailableError: boolean; message: string };
+  | {
+      ok: false;
+      isStorageWorkerStartError: boolean;
+      isStorageUnavailableError: boolean;
+      isStorageHeldError: boolean;
+      message: string;
+    };
 
 function openDb(page: Page, name: string): Promise<OpenResult> {
   return page.evaluate((n) => (window as any).tally.open(n), name);
@@ -88,7 +94,7 @@ test.describe('storage-sqlite worker cold start (real Chromium and WebKit, ADR-0
     if (!result.ok) {
       expect(result.isStorageWorkerStartError).toBe(true);
       expect(result.isStorageUnavailableError).toBe(false);
-      expect(result.message).toContain('another tab holds the database');
+      expect(result.isStorageHeldError).toBe(true);
     }
     expect(ms).toBeLessThan(5000);
     await second.close();
@@ -164,6 +170,7 @@ test.describe('storage-sqlite worker cold start (real Chromium and WebKit, ADR-0
     expect(result.ok, JSON.stringify(result)).toBe(false);
     if (!result.ok) {
       expect(result.isStorageUnavailableError).toBe(true);
+      expect(result.isStorageHeldError).toBe(false);
       expect(result.isStorageWorkerStartError).toBe(false);
     }
     await ephemeral.close();

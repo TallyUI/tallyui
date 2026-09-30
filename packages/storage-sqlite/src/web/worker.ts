@@ -4,7 +4,7 @@ import { setPremiumFlag } from 'rxdb-premium/plugins/shared';
 import { getRxStorageSQLite } from 'rxdb-premium/plugins/storage-sqlite';
 import { exposeWorkerRxStorage } from 'rxdb-premium/plugins/storage-worker';
 import { getSQLiteBasicsOpfsSahPool, type Oo1Db } from './sqlite-basics-sahpool';
-import { StorageUnavailableError, StorageWorkerStartError } from './errors';
+import { STORAGE_HELD_MARKER, StorageUnavailableError, StorageWorkerStartError } from './errors';
 
 // What a pool install rejects with while another tab holds the pool (#293): WebKit's, then Chromium's.
 const HELD_ERROR_NAMES = ['InvalidStateError', 'NoModificationAllowedError'];
@@ -74,7 +74,7 @@ const storage: RxStorage<any, any> = {
       // pool install means another tab holds it; any other failure keeps its cause for diagnosis.
       if (cause instanceof StorageUnavailableError) throw cause;
       const held = HELD_ERROR_NAMES.includes((cause as Error | undefined)?.name ?? '');
-      const what = held ? 'another tab holds the database (opfs-sahpool)' : 'SQLite worker start failed';
+      const what = held ? `${STORAGE_HELD_MARKER} (opfs-sahpool)` : 'SQLite worker start failed';
       throw new StorageWorkerStartError(`StorageWorkerStartError: ${what}: ${describeCause(cause)}`, { cause });
     }
     return realStorage.createStorageInstance(params);

@@ -30,6 +30,18 @@ export class StorageUnavailableError extends Error {
   }
 }
 
+/** The fixed text of the held `StorageWorkerStartError`'s message: the worker writes it, `isStorageHeldError` reads it. */
+export const STORAGE_HELD_MARKER = 'another tab holds the database';
+
+/**
+ * True for the held `StorageWorkerStartError` (another tab holds the database), its `{ name, message }` copy or its
+ * message; false for any other start failure, a stale worker (RM1) or storage unavailable.
+ */
+export function isStorageHeldError(error: unknown): boolean {
+  const text = typeof error === 'string' ? error : (error as { message?: unknown } | null | undefined)?.message;
+  return typeof text === 'string' && text.includes('StorageWorkerStartError') && text.includes(STORAGE_HELD_MARKER);
+}
+
 /** True for a `StorageUnavailableError`, its `{ name, message }` copy or its message (see above). */
 export function isStorageUnavailableError(error: unknown): boolean {
   if (typeof error === 'string') return error.includes('StorageUnavailableError');
