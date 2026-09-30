@@ -86,6 +86,8 @@ export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>)
           return;
         }
         if (!failed) console.warn('WooCommerce catalogue reconcile: the fast path answered with something that is not a list; listing page by page.');
+        // so the fallback's first page takes its own budget slot, as the status read does
+        yield { entries: [], cursor: from };
       }
       // status=publish: a product that is not published is absent, so it becomes a deletion candidate and
       // confirmGone decides; drafts cost no daily refetch.

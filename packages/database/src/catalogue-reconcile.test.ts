@@ -14,6 +14,7 @@ import {
 
 import { startCatalogueReconcile, startCatalogueRunner, shouldReconcileAfterGap, type CatalogueReconcileEvent } from './catalogue-reconcile';
 import { connectorCollection } from './connector-collection';
+import { BACKGROUND_CHUNK_SIZE } from './chunks';
 import { skipPages, startFingerprintReconcile } from './fingerprint-reconcile';
 import { startIdReconcile } from './id-reconcile';
 
@@ -775,6 +776,43 @@ describe('matchKey: a listing keyed by the backend id, not the primary key (#313
     expect(enqueued).toEqual([[{ key: uuid(2), local: product(2), remote: 2 }]]);
     expect(events).toContainEqual({ type: 'refetched', count: 1, keys: [uuid(2)] });
     expect(events).toContainEqual(expect.objectContaining({ type: 'pass-completed', compared: 4, refetched: 1, unlisted: 0, tombstoned: 0 }));
+  }, 30_000);
+
+  it('duplicate match keys enqueue the first document in primary-key order', async () => {
+    const { server, collection } = await setup(2);
+    await (await collection.findOne(uuid(2)).exec())!.incrementalPatch({ id: 1 });
+    server.remove(2);
+    server.edit(1, { stamp: 's2' });
+    const time = fakeTime();
+    const { adapter, enqueued } = byIdAdapter(server);
+    const { runner, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(enqueued).toEqual([[{ key: uuid(1), local: product(1), remote: 1 }]]);
+  }, 30_000);
+
+  it('stopping between index chunks ends the walk without enqueueing or completing the pass', async () => {
+    const { server, collection } = await setup(BACKGROUND_CHUNK_SIZE + 1);
+    server.edit(1, { stamp: 's2' });
+    const time = fakeTime();
+    const { adapter, enqueued } = byIdAdapter(server);
+    const matchKey = vi.spyOn(adapter, 'matchKey');
+    const { runner, count } = start(collection, adapter, time);
+    let matchedAtStop = 0;
+    const query = collection.storageInstance.query.bind(collection.storageInstance);
+    vi.spyOn(collection.storageInstance, 'query').mockImplementationOnce(async (prepared) => {
+      const result = await query(prepared);
+      setTimeout(() => { matchedAtStop = matchKey.mock.calls.length; runner.stop(); }, 0);
+      return result;
+    });
+
+    runner.reconcile();
+    await time.runUntil(() => count('stopped') === 1);
+    expect(matchedAtStop).toBe(BACKGROUND_CHUNK_SIZE);
+    expect(matchKey).toHaveBeenCalledTimes(BACKGROUND_CHUNK_SIZE);
+    expect(enqueued).toEqual([]);
+    expect(count('pass-completed')).toBe(0);
   }, 30_000);
 
   it('a remote-only entry is enqueued under the listing key', async () => {
