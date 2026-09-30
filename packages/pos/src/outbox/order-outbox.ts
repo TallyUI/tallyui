@@ -5,13 +5,11 @@ import { outboxLogger } from './logger';
 import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, type PosOrder } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
+import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
 import type { CommandTransport, OutboxState } from './types';
 
 // Pause after three 401s since the server last accepted credentials.
 const AUTH_FAILURES_BEFORE_PROMPT = 3;
-
-// Consecutive 404 answers before OutboxState.backendMissing tells the cashier; fewer may be a deploy blip.
-const NOT_FOUND_BEFORE_NOTICE = 3;
 
 // Rejections that may hide an order the server already created: resending under a new
 // command id could duplicate it, so requeue() leaves these for manual reconciliation.
@@ -41,6 +39,8 @@ export interface OrderOutboxOptions {
   isolateAfterAttempts?: number;
   /** Tests only: overrides STUCK_AFTER_MS. */
   stuckAfterMs?: number;
+  /** Counts 404s toward OutboxState.backendMissing; pass the register outbox's too, so either one's 404s show one notice. */
+  backendNotFound?: BackendNotFound;
 }
 
 export interface OrderOutbox {
@@ -64,10 +64,13 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const random = options.random ?? Math.random;
   const now = options.now ?? Date.now;
   const state$ = new BehaviorSubject<OutboxState>({ pending: 0, sending: false });
+  const backendNotFound = options.backendNotFound ?? createBackendNotFound();
+  backendNotFound.backendMissing$.subscribe((backendMissing) => {
+    if (backendMissing !== state$.value.backendMissing) state$.next({ ...state$.value, backendMissing });
+  });
   const attempts = new Map<string, number>();
   let backoff = initialBackoff;
   let unauthorizedSinceAccepted = 0;
-  let notFound: { count: number; since: number } | undefined; // consecutive 404 answers, and when the first arrived
   let running: Promise<void> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let subscription: Subscription | undefined;
@@ -209,6 +212,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         return toOrderCreateEnvelope(frozen, deviceId, attempt);
       }));
       let outcome = await transport.send(batch);
+      // A 404 answers the whole batch (the route is missing); any other answer resets the count. Offline changes nothing.
+      backendNotFound.record(outcome, now());
       if (outcome.kind !== 'retry' || outcome.reason !== 'network') {
         // The store answered: every paused clock resumes, leaving out the offline gap. A device clock set back
         // during it makes the gap negative, which keeps the answered time exact, since `now` moved back too.
@@ -216,13 +221,6 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         for (const clock of clocks.values()) if (clock.pausedAt !== undefined) {
           clock.since += at - clock.pausedAt;
           clock.pausedAt = undefined;
-        }
-        // A 404 answers the whole batch (the route is missing); any other answer resets the count. Offline changes nothing.
-        notFound = outcome.kind === 'retry' && outcome.reason === 'status_404'
-          ? { count: (notFound?.count ?? 0) + 1, since: notFound?.since ?? at } : undefined;
-        const missing = (notFound?.count ?? 0) >= NOT_FOUND_BEFORE_NOTICE;
-        if (missing !== !!state$.value.backendMissing) {
-          state$.next({ ...state$.value, backendMissing: missing ? { since: notFound!.since } : undefined });
         }
       }
       let batchMax: number | undefined;

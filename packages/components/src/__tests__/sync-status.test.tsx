@@ -68,17 +68,37 @@ describe('SyncStatus', () => {
     expect(screen.getByLabelText('Sync status').textContent).toBe('2 sales waiting to sync · retrying (status_503) in 3s');
   });
 
-  it('tells the cashier in plain words when the store has no TallyUI (backendMissing), instead of the raw 404', () => {
+  const cashierLine = "Sales aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
+  const detail = (plugin: string) => `The store didn't recognise this till. Ask the store owner to check that ${plugin} is installed `
+    + "and switched on, and that the store address in this till's settings is right.";
+
+  it('tells the cashier in plain words when the store keeps answering 404 (backendMissing), with a detail below', () => {
     vi.useFakeTimers();
     const now = Date.now();
     vi.setSystemTime(now);
-    const message = "Can't find TallyUI on the store. The store address may be wrong, or its TallyUI plugin isn't installed. "
-      + "Sales stay safe on this till and will send once it's fixed.";
     const state: OutboxState = { pending: 2, sending: false, lastRetryReason: 'status_404', nextAttemptAt: now + 3000 };
     render(<SyncStatus state={{ ...state, backendMissing: { since: now - 60_000 } }} />);
-    expect(screen.getByLabelText('Sync status').textContent).toBe(`2 sales waiting to sync · ${message}`);
+    expect(screen.getByLabelText('Sync status').textContent).toBe(`2 sales waiting to sync · ${cashierLine}`);
+    expect(screen.getByText(detail('the POS plugin')).textContent).toBe(detail('the POS plugin'));
+    cleanup();
+    render(<SyncStatus state={{ ...state, backendMissing: { since: now - 60_000 } }} pluginName="Medusa POS" />);
+    expect(screen.getByLabelText('Sync status').textContent).toBe(`2 sales waiting to sync · ${cashierLine}`);
+    expect(screen.getByText(detail('Medusa POS')).textContent).toBe(detail('Medusa POS'));
+    expect(screen.queryByText(/TallyUI|the POS plugin/)).toBeNull();
     cleanup();
     render(<SyncStatus state={state} />);
     expect(screen.getByLabelText('Sync status').textContent).toBe('2 sales waiting to sync · retrying (status_404) in 3s');
+    expect(screen.queryByText(/store owner/)).toBeNull();
+  });
+
+  it('the stuck line uses the cashier wording, with no raw code, while backendMissing is set', () => {
+    const since = Date.now();
+    const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const stuck = { commandIds: ['a', 'b'], since, reason: 'status_404',
+      orders: ['a', 'b'].map((commandId) => ({ commandId, since, reason: 'status_404' })) };
+    render(<SyncStatus state={{ pending: 2, sending: false, lastRetryReason: 'status_404', stuck, backendMissing: { since } }} />);
+    const text = screen.getByLabelText('Sync status').textContent;
+    expect(text).toBe(`2 sales waiting to sync · ${cashierLine} · ${cashierLine} since ${time}`);
+    expect(text).not.toMatch(/status_404/);
   });
 });
