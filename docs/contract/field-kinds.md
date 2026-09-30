@@ -154,6 +154,202 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
   keeps it as the order's `tally_session_id` metadata and vendurepos as
   `tallySessionId`.
 
+### Amounts
+
+What each amount in `order.create` means, as the till computes it today
+(`@tallyui/pos` on `main`; file:line below is in `packages/pos/src`). It
+is the contract a backend compares its own figures with, for example for
+`figures_mismatch`: medusapos/app#133 and vendurepos/app#38 map their
+figures to it. Every number in the examples was printed by running the
+till's own `createOrderBuilder`, `finalizeOrder` and
+`toOrderCreateEnvelope`.
+
+The builder recomputes every figure on each change to the sale
+(`order/order-builder.ts:143`, `:247`). `finalizeOrder` copies the
+figures and adds `taxByRate` (`pos-order/finalize.ts:189`, `:204`), and
+`toOrderCreateEnvelope` sends the stored order unchanged, so a resend
+never recomputes (`pos-order/command.ts:42`).
+
+#### Tax modes
+
+- A line's **own mode** is its price's `taxInclusive` flag, or the
+  order's `pricesIncludeTax` when the price has none
+  (`order/order-builder.ts:258`).
+- `lines[].taxInclusive` is sent only when that mode differs from
+  `pricesIncludeTax` (`pos-order/finalize.ts:145`,
+  `order/order-builder.ts:296`); absent means the order's mode.
+- An order with such a line is **mixed**. That line's `unitPriceMinor`
+  and `discountMinor` are in its own mode.
+
+#### Discounts and how the order discount is spread
+
+- A line discount is on `unitPriceMinor × quantity`: a percentage of
+  it, or a fixed amount capped at what the earlier ones leave
+  (`order/order-builder.ts:97`).
+- An order discount is pre-tax. Its base is the sum of every line's
+  amount after its line discounts, each in its own mode, so a mixed
+  order's base mixes modes. A percentage is taken of that base (several
+  percentages add up rather than compound); a fixed amount of what is
+  left (`order/order-builder.ts:150`).
+- The order discount is then spread over the lines in proportion to
+  those same after-line-discount amounts, by largest remainder, ties to
+  the earlier line (`order/allocate-order-discount.ts:11`,
+  `order/order-builder.ts:158`). Each line's share is part of its
+  `discountMinor`, in the line's own mode.
+- Each line is taxed on `unitPriceMinor × quantity − discountMinor`
+  (`order/order-builder.ts:107`): after both kinds of discount.
+
+#### Definitions
+
+- `lines[].unitPriceMinor`: the unit price as sold, before any
+  discount, in the line's own mode (`order/order-builder.ts:282`,
+  `pos-order/command.ts:67`).
+- `lines[].discountMinor`: the line's own discounts plus its share of
+  the order discount, in the line's own mode; absent when 0
+  (`order/order-builder.ts:106`, `pos-order/command.ts:69`).
+- `payload.discountMinor`: the sum of `lines[].discountMinor`, so line
+  and order discounts together; absent when 0
+  (`pos-order/command.ts:51`). It is net of tax in an exclusive order,
+  tax-inclusive in an inclusive one, and **mixes modes** in a mixed
+  order. It is never the order discount alone.
+- `payload.taxMinor`: the sum of every line's exact tax, rounded once
+  for the order (`order/order-builder.ts:28`, `:30`); line tax is on
+  the line's amount after all discounts.
+- `payload.totalMinor`: what the customer pays. It is the sum of every
+  line's amount after all discounts, each in its own mode, plus the
+  exclusive lines' tax rounded once (`order/order-builder.ts:33`); the
+  payments sum to it (`pos-order/finalize.ts:171`).
+- `payload.subtotalMinor`: `totalMinor − taxMinor`
+  (`order/order-builder.ts:34`), so **after all discounts and without
+  tax, in every mode**, whatever `pricesIncludeTax` says. It is not a
+  before-discount subtotal. A backend whose own subtotal is before
+  discounts compares its after-discount, tax-free figure with it.
+- `display.*` (v3) is the receipt, in the order's mode
+  (`display.taxInclusive` = `pricesIncludeTax`,
+  `pos-order/finalize.ts:193`):
+  - `display.lines[].amountMinor`: `unitPriceMinor × quantity`, before
+    any discount; a line in the other mode is converted, and such lines
+    also take the rounding residue (`order/order-builder.ts:178`,
+    `:196`).
+  - `display.lines[].discounts[].amountMinor`: each line discount,
+    converted on its own into the order's mode
+    (`order/order-builder.ts:173`, `:38`).
+  - `display.orderDiscountMinor`: the lines' order-discount shares,
+    each converted on its own, summed (`order/order-builder.ts:176`,
+    `:183`). In a mixed order it is not the amount the cashier entered.
+  - `display.discountMinor`: `orderDiscountMinor` plus every line
+    discount row (`order/order-builder.ts:184`).
+  - `display.subtotalMinor`: before discounts, in the order's mode:
+    `totalMinor + discountMinor` when inclusive, `totalMinor −
+    taxMinor + discountMinor` when exclusive
+    (`order/order-builder.ts:186`).
+  - `display.taxMinor` and `display.totalMinor` equal `payload.taxMinor`
+    and `payload.totalMinor` (`pos-order/finalize.ts:192`).
+- `taxByRate[]` (v3), one entry per tax `code` and `ratePpm`
+  (`tax/exact.ts:120`, called at `pos-order/finalize.ts:189`):
+  - `netMinor`: the tax-free base of each line carrying that rate,
+    summed. An exclusive line's base is its amount after discounts; an
+    inclusive line's is that amount minus its own tax, **rounded per
+    line** (`tax/exact.ts:132`). A line with stacked rates (ADR-040)
+    counts its base once under each rate.
+  - `taxMinor`: the rate's exact tax floored, then the order's leftover
+    units by largest remainder, ties to the higher rate, so the rates
+    sum to `payload.taxMinor` (`tax/exact.ts:143`, `:150`).
+  - `grossMinor`: `netMinor + taxMinor` (`pos-order/finalize.ts:190`).
+
+#### Rounding
+
+- **Tax is rounded once per order, half away from zero.** Each line's
+  tax is kept exact in micro-units (a millionth of a minor unit):
+  exclusive tax is exactly `amount × ratePpm`; inclusive tax is
+  `amount × rate / (1 + rate)` rounded half away from zero to a
+  micro-unit (`tax/exact.ts:22`). The order's micro-units are summed and
+  rounded half away from zero to a minor unit by `roundMicrosToMinor`
+  (`tax/exact.ts:36`) at `order/order-builder.ts:30`.
+- The total adds the exclusive lines' tax, rounded on its own by the
+  same function (`order/order-builder.ts:33`). In a single-mode order
+  that is the same rounding (exclusive) or nothing (inclusive); in a
+  mixed order it is a second rounding, and `subtotalMinor` absorbs any
+  difference.
+- An inclusive line with stacked rates splits its tax across them by
+  truncating division, the last rate taking the rest
+  (`order/order-builder.ts:112`); the line's sum is unchanged.
+- A percentage discount is rounded half away from zero
+  (`order/order-builder.ts:21`, `:137`); a fixed one is whole minor
+  units already. The order discount's spread is by largest remainder.
+- Display conversions round each amount on its own
+  (`order/order-builder.ts:38`); `taxByRate` floors and hands out the
+  remainder, as above.
+- `computeOrderTax` (`tax/exact.ts:64`) is exported but not on the sale
+  path; it is not how `order.create`'s figures are made.
+
+#### Identities
+
+| Identity | Exclusive | Inclusive | Mixed |
+|---|---|---|---|
+| `totalMinor = subtotalMinor + taxMinor` (`totalMinor` is clamped at 0, `order/order-builder.ts:34`) | holds | holds | holds |
+| `discountMinor = Σ lines[].discountMinor` (else `invalid_payload`) | holds | holds | holds |
+| `subtotalMinor = Σ unitPriceMinor × quantity − discountMinor` | holds | no | no |
+| `totalMinor = Σ unitPriceMinor × quantity − discountMinor` | no | holds | no |
+| `totalMinor = subtotalMinor − discountMinor + taxMinor` | only with no discount | only with no discount | only with no discount |
+| `display.totalMinor = display.subtotalMinor − display.discountMinor (+ taxMinor when exclusive)` | holds | holds | holds |
+| `display.subtotalMinor = Σ display.lines[].amountMinor` | holds | holds | holds |
+| `display.discountMinor = display.orderDiscountMinor + Σ discount rows` | holds | holds | holds |
+| `display.discountMinor = discountMinor`, `display.subtotalMinor = Σ unitPriceMinor × quantity` | holds | holds | no |
+| `Σ taxByRate[].taxMinor = taxMinor` (`pos-order/finalize.ts:196`) | holds | holds | holds |
+| `Σ taxByRate[].netMinor = subtotalMinor`, `Σ grossMinor = totalMinor` | one rate per line only | may differ by rounding | may differ |
+
+With no discount, `subtotalMinor − discountMinor + taxMinor` is just
+`subtotalMinor + taxMinor`. Once there is one, `subtotalMinor` has
+already had it taken off, so subtracting `discountMinor` again is wrong.
+
+#### Worked examples
+
+Rate 10% (`ratePpm` 100000), AUD. Line a is 2 × 12.50 with a 10% line
+discount; line b is 1 × 9.99; a fixed 5.00 order discount. Line a's
+discount is 250 + a 346 share and line b's a 154 share (500 spread
+2250 : 999). "Mixed" is an inclusive order whose line b is exclusive
+(`lines[1].taxInclusive: false`), then an exclusive order whose line b
+is inclusive.
+
+| Field | Exclusive | Inclusive | Mixed (incl. order) | Mixed (excl. order) |
+|---|---|---|---|---|
+| `lines[0]` unit × qty, `discountMinor` | 1250 × 2, 596 | 1250 × 2, 596 | 1250 × 2, 596 | 1250 × 2, 596 |
+| `lines[1]` unit × qty, `discountMinor` | 999 × 1, 154 | 999 × 1, 154 | 999 × 1, 154 (excl.) | 999 × 1, 154 (incl.) |
+| `subtotalMinor` | 2749 | 2499 | 2576 | 2672 |
+| `discountMinor` | 750 | 750 | 750 | 750 |
+| `taxMinor` | 275 | 250 | 258 | 267 |
+| `totalMinor` | 3024 | 2749 | 2834 | 2939 |
+| `display.subtotalMinor` | 3499 | 3499 | 3599 | 3408 |
+| `display.discountMinor` | 750 | 750 | 765 | 736 |
+| `display.orderDiscountMinor` | 500 | 500 | 515 | 486 |
+| `display.lines[].amountMinor` | 2500, 999 | 2500, 999 | 2500, 1099 | 2500, 908 |
+| `display.lines[].discounts[]` | [250], [] | [250], [] | [250], [] | [250], [] |
+| `taxByRate[0]` net, tax, gross | 2749, 275, 3024 | 2499, 250, 2749 | 2576, 258, 2834 | 2672, 267, 2939 |
+
+- Exclusive: tax is (1904 + 845) × 10% = 274.9, so 275.
+- Inclusive: tax is 173.090909 + 76.818182 = 249.909091, so 250; the
+  customer pays 3499 − 750 = 2749.
+- Mixed, inclusive order: the total is 1904 + 845 + 85 (line b's 84.5
+  tax, rounded half away from zero) = 2834; the tax is 257.590909, so
+  258. `discountMinor` 750 adds line a's tax-inclusive 596 to line b's
+  tax-free 154; the display shows line b's share as 169 and the order
+  discount as 515.
+
+Where rounding shows (three lines of 1 × 3.33 at 10%):
+
+| Field | Exclusive | Inclusive |
+|---|---|---|
+| each line's exact tax (minor units) | 33.3 | 30.272727 |
+| `taxMinor` (once per order) | 100 (per line would be 99) | 91 (per line would be 90) |
+| `subtotalMinor`, `totalMinor` | 999, 1099 | 908, 999 |
+| `taxByRate[0]` net, tax, gross | 999, 100, 1099 | 909, 91, 1000 |
+
+In the inclusive order `taxByRate`'s net is 3 × (333 − 30) = 909 and its
+gross 1000, one more than `subtotalMinor` and `totalMinor`. A single
+line of 0.25 at 10% exclusive has 2.5 cents of tax and sends
+`taxMinor` 3 (half away from zero; half to even would give 2).
+
 ## `register.session.open`
 
 | Field | Kind | Since |
