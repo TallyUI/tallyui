@@ -16,6 +16,10 @@ export type { LiveTabState, LiveTabOptions, LiveTabHandle } from './live-tab';
 
 export { startStockReconcile } from './reconcile';
 export type { StartStockReconcileOptions, StockReconcileResult, StockReconcileState } from './reconcile';
+export { startCatalogueReconcile, shouldReconcileAfterGap, CATALOGUE_OFFLINE_GAP_MS } from './catalogue-reconcile';
+export type {
+  StartCatalogueReconcileOptions, CatalogueReconcileEvent, CatalogueReconcileState, CatalogueReconcileSummary,
+} from './catalogue-reconcile';
 export { startIdReconcile } from './id-reconcile';
 export type { StartIdReconcileOptions, IdReconcileResult } from './id-reconcile';
 export { startFingerprintReconcile, isFingerprintResultCurrent } from './fingerprint-reconcile';

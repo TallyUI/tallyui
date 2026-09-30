@@ -145,4 +145,65 @@ describe('createReconcileFeed', () => {
       expect(documents).toEqual([]);
     });
   });
+
+  describe('keyed by the primary key (#248)', () => {
+    // WooCommerce's trap: the primary key is a uuid, the backend id is numeric.
+    type Product = { uuid: string; id: number; name: string; _deleted?: boolean };
+    const product = (n: number, name = `local-${n}`): Product => ({ uuid: `u-${n}`, id: n, name });
+    const byUuid = (doc: Product) => doc.uuid;
+
+    it('the key option matches fetched documents by the primary key when doc.id differs; without it every entry is tombstoned', async () => {
+      const remote = [product(1, 'remote-1'), product(2, 'remote-2')];
+      const keyed = createReconcileFeed<Product>({ key: byUuid, fetchByIds: vi.fn(async () => remote) });
+      keyed.enqueue([{ key: 'u-1', local: product(1) }, { key: 'u-2', local: product(2) }]);
+      expect((await keyed.adapter.pull.handler(undefined, 100, context)).documents).toEqual([
+        { ...remote[0], _deleted: false },
+        { ...remote[1], _deleted: false },
+      ]);
+
+      // The trap the option prevents: matched by doc.id (1, 2), no uuid entry is found, so all are tombstoned.
+      const byId = createReconcileFeed<Product>({ fetchByIds: vi.fn(async () => remote) });
+      byId.enqueue([{ id: 'u-1', local: product(1) }, { id: 'u-2', local: product(2) }]);
+      const { documents } = await byId.adapter.pull.handler(undefined, 100, context);
+      expect(documents.map((doc) => doc._deleted)).toEqual([true, true]);
+    });
+
+    it('fetchByIds receives the queued entries, with local and remote, so a connector can map a uuid to its backend id', async () => {
+      const fetchByIds = vi.fn(async (entries: Array<{ key: string; local?: Product; remote?: unknown }>) =>
+        entries.map((e) => product(e.remote as number, `remote-${e.key}`)));
+      const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, fetchByIds });
+      enqueue([{ key: 'u-1', local: product(1), remote: 1 }, { key: 'u-7', remote: 7 }]);
+      const { documents } = await adapter.pull.handler(undefined, 100, context);
+      expect(fetchByIds).toHaveBeenCalledExactlyOnceWith(
+        [{ key: 'u-1', local: product(1), remote: 1 }, { key: 'u-7', local: undefined, remote: 7 }],
+        context,
+      );
+      expect(documents.map((doc) => [doc.uuid, doc._deleted])).toEqual([['u-1', false], ['u-7', false]]);
+    });
+
+    it('a tombstone entry is written as deleted from local without a fetch', async () => {
+      const fetchByIds = vi.fn(async () => [product(1, 'remote-1')]);
+      const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, fetchByIds });
+      enqueue([{ key: 'u-1', local: product(1), tombstone: true }]);
+      const { documents } = await adapter.pull.handler(undefined, 100, context);
+      expect(documents).toEqual([{ ...product(1), _deleted: true }]);
+      expect(fetchByIds).not.toHaveBeenCalled();
+    });
+
+    it('a fetched document keeps the _deleted: true that fetchByIds set (an unpublished product)', async () => {
+      const fetchByIds = vi.fn(async () => [{ ...product(1, 'draft-1'), _deleted: true }]);
+      const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, fetchByIds });
+      enqueue([{ key: 'u-1', local: product(1) }]);
+      const { documents } = await adapter.pull.handler(undefined, 100, context);
+      expect(documents).toEqual([{ ...product(1, 'draft-1'), _deleted: true }]);
+    });
+
+    it('a missing refreshOnly entry is never tombstoned, and an entry with no local copy is skipped', async () => {
+      const fetchByIds = vi.fn(async () => []);
+      const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, fetchByIds });
+      enqueue([{ key: 'u-1', local: product(1), refreshOnly: true }, { key: 'u-2', remote: 2 }]);
+      const { documents } = await adapter.pull.handler(undefined, 100, context);
+      expect(documents).toEqual([]);
+    });
+  });
 });

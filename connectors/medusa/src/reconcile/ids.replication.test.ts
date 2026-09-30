@@ -125,7 +125,7 @@ function removeVariant(products: Product[], productId: string, variantId: string
 }
 
 describe('Medusa id reconcile, run against a real RxDB replication', () => {
-  it('rule proof: a failed id-listing page leaves everything unchanged, even with the same deletions pending', async () => {
+  it('rule proof: a failed id-listing page deletes nothing, even with the same deletions pending; only a first-page difference may be refetched', async () => {
     const products = makeProducts();
     const { runner } = await start(products);
     const before = await snapshot();
@@ -137,7 +137,10 @@ describe('Medusa id reconcile, run against a real RxDB replication', () => {
 
     await expect(runner.reconcileIds()).rejects.toThrow();
     expect(await db.products.findOne(id(11)).exec()).not.toBeNull();
-    expect(await snapshot()).toEqual(before);
+    // #248: differences are refetched page by page, so id(12)'s vanished variant (page 1) may already be
+    // re-delivered; the failed pass deletes nothing and touches no other product.
+    const after = await snapshot();
+    for (const [pid, rev] of Object.entries(before)) if (pid !== id(12)) expect(after[pid], `product ${pid}`).toBe(rev);
     runner.stop();
   }, 60000);
 

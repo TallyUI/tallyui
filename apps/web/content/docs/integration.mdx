@@ -99,16 +99,27 @@ function Totals() {
 
 ## Background checks
 
-`startStockReconcile`, `startIdReconcile` and `startFingerprintReconcile` (for `reconcile.prices` and `reconcile.calculatedPrices`) each read on an interval and enqueue what disagrees with the local documents. Medusa and Vendure each export their own base-price interval as `*_PRICE_RECONCILE_INTERVAL_MS` from their `reconcile/prices` module rather than from the package root, so pass it as a literal or take the runner's 24-hour default; the calculated-price runner's own `MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS` is exported, and needs `maxPages: 1000` since its default of 100 pages of 100 products would truncate a large catalogue. A call to `reconcileStock()`, `reconcileIds()` or `reconcile()` right after a sale, or on foreground, folds into any pass already running rather than waiting for the interval (#108).
+`startStockReconcile`, `startIdReconcile` and `startFingerprintReconcile` (for `reconcile.prices` and `reconcile.calculatedPrices`) each read the backend and enqueue what disagrees with the local documents. Medusa and Vendure each export their own base-price interval as `*_PRICE_RECONCILE_INTERVAL_MS` from their `reconcile/prices` module rather than from the package root, so pass it as a literal or take the runner's 24-hour default; the calculated-price runner's own `MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS` is exported. A call to `reconcileStock()`, `reconcileIds()` or `reconcile()` right after a sale, or on foreground, folds into any pass already running rather than waiting for the interval (#108).
+
+`startIdReconcile` and `startFingerprintReconcile` are wrappers over the catalogue runner below (#248), so they share its rules:
+
+- **A persisted daily gate.** A pass runs at a gate check (after `startDelayMs`, then every hour, or every `intervalMs / 2` when that is shorter) only when none has completed within `intervalMs`, or a stopped pass is waiting to resume. The gate lives in a local document on the collection, so a restart does not run a pass. Create the collection with `createTallyDatabase` or `connectorCollection`, which turn local documents on.
+- **One gate per runner.** Two fingerprint runners on one collection need their own `stateId`, as `calculated-prices` below.
+- **A request budget, no page cap.** At most 30 adapter calls in any minute; `maxPages` is accepted but ignored, so a large catalogue never truncates.
+- **Refetch as it goes, delete only after a whole pass.** A difference is enqueued with its page. A deletion waits for a pass that ran from the first page to the last in one go, and the reconcile feed's by-id re-read still decides it: a product that comes back is re-delivered, not deleted. A pass resumed after an error never deletes, and the fingerprint runner never deletes.
+
+A connector with `reconcile.catalogue` gets the catalogue check directly: one walk of the whole catalogue that refetches what differs and deletes only what the adapter's required `confirmGone` confirms, under the mass-delete brake. Its corrections reach the collection through the connector's reconcile feed and the pull, never a local write. A till error stops it until `reconcile()` (call it after sign-in); a store error skips it until the next gate check; a transient error retries with backoff. `log` receives what each pass refetched, deleted and kept, and why a pass stopped or was skipped; there is no cashier notice. Call `reconcile()` after a sale, on foreground, after sign-in, and when `shouldReconcileAfterGap` says the last successful pull is more than 6 hours old.
 
 ```ts
-import { startStockReconcile, startIdReconcile, startFingerprintReconcile } from '@tallyui/database';
+import {
+  startStockReconcile, startIdReconcile, startFingerprintReconcile, startCatalogueReconcile, shouldReconcileAfterGap,
+} from '@tallyui/database';
 import { MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS } from '@tallyui/connector-medusa';
 import type { TallyConnector, SyncContext } from '@tallyui/core';
 import type { TallyDatabase } from '@tallyui/database';
 
 declare const connector: TallyConnector, db: TallyDatabase;
-declare const context: SyncContext, reSync: () => void;
+declare const context: SyncContext, reSync: () => void, lastPullAt: number | undefined;
 
 startStockReconcile({ collection: db.stock_levels, adapter: connector.reconcile!.stock!, context });
 startIdReconcile({ collection: db.products, adapter: connector.reconcile!.ids!, context, reSync });
@@ -116,8 +127,15 @@ startIdReconcile({ collection: db.products, adapter: connector.reconcile!.ids!, 
 startFingerprintReconcile({ collection: db.products, adapter: connector.reconcile!.prices!, context, reSync, intervalMs: 24 * 60 * 60 * 1000 });
 startFingerprintReconcile({
   collection: db.products, adapter: connector.reconcile!.calculatedPrices!, context, reSync,
-  intervalMs: MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS, maxPages: 1000,
+  intervalMs: MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS, stateId: 'calculated-prices',
 });
+
+// A connector with a catalogue adapter (#248):
+const catalogue = startCatalogueReconcile({
+  collection: db.products, adapter: connector.reconcile!.catalogue!, context, reSync,
+  log: (event) => console.info('catalogue reconcile', event),
+});
+if (shouldReconcileAfterGap(lastPullAt)) catalogue.reconcile();
 ```
 
 ## Status

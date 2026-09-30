@@ -309,7 +309,18 @@ should follow them.
   can be lost until the document changes again. Keep derived or
   corrected data in a separate, non-replicated collection and merge
   it when reading, as the stock reconcile does with `stock_levels`
-  (ADR-060).
+  (ADR-060). A reconcile that corrects replicated documents hands
+  them to the collection's pull through `createReconcileFeed`
+  instead; the catalogue reconcile keeps its own gate and cursor in
+  RxDB local documents, which are never replicated (#248).
+- **Key the reconcile feed by the primary key.** The feed matches
+  fetched documents to queued entries by `doc.id` unless it is given
+  `key`. Where the primary key is not the backend id (WooCommerce's
+  `uuid`), pass `key: (doc) => doc.uuid`: `fetchByIds` then receives
+  the entries, with `local` and `remote`, to find each backend id.
+  Unkeyed, no fetched document would match, and every entry would be
+  tombstoned. A fetched document may carry `_deleted: true` (an
+  unpublished product), and the feed keeps it.
 - **One replication per collection.** Two replications on one
   collection each see the other's writes as local writes, so either
   can skip a pulled version the same way. Give a collection several

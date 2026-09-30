@@ -131,7 +131,7 @@ describe('Vendure id reconcile, run against a real RxDB replication', () => {
     runner.stop();
   }, 60000);
 
-  it('rule proof: a failed id-listing page leaves everything unchanged, even with the same deletions pending', async () => {
+  it('rule proof: a failed id-listing page deletes nothing, even with the same deletions pending; only a first-page difference may be refetched', async () => {
     const products = makeProducts();
     serve(products);
     const { runner } = await start(products);
@@ -144,7 +144,10 @@ describe('Vendure id reconcile, run against a real RxDB replication', () => {
 
     await expect(runner.reconcileIds()).rejects.toThrow();
     expect(await db.products.findOne('11').exec()).not.toBeNull();
-    expect(await snapshot()).toEqual(before);
+    // #248: differences are refetched page by page, so 12's vanished variant (page 1) may already be
+    // re-delivered; the failed pass deletes nothing and touches no other product.
+    const after = await snapshot();
+    for (const [id, rev] of Object.entries(before)) if (id !== '12') expect(after[id], `product ${id}`).toBe(rev);
     runner.stop();
   }, 60000);
 });

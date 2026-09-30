@@ -41,7 +41,7 @@ export type TallyReplicationState<RxDocType, CheckpointType = any> = RxReplicati
 };
 
 /** A valid `retryAfterMs` on the error (a finite number >= 0), else 0. */
-function retryAfter(error: unknown): number {
+export function retryAfter(error: unknown): number {
   const value = (error as { retryAfterMs?: unknown } | null)?.retryAfterMs;
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }

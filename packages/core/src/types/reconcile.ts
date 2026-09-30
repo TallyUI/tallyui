@@ -41,3 +41,27 @@ export interface FingerprintReconcileAdapter<Doc = any> {
    */
   enqueue(entries: Array<{ id: string; local: Doc; refreshOnly?: boolean }>): void;
 }
+
+/** One product in the catalogue listing. `key` is the local primary key value; `remote` is whatever the connector needs to refetch it (a numeric backend id, say). */
+export interface CatalogueReconcileEntry { key: string; fingerprint: string; remote?: unknown }
+
+/**
+ * The daily catalogue check (#248): one walk that refetches what differs and
+ * deletes only with proof. Nothing is written locally: `enqueue` hands
+ * documents to the collection's pull (the reconcile feed). `Cursor` must be
+ * JSON-serialisable, since the runner persists it to resume a stopped pass.
+ */
+export interface CatalogueReconcileAdapter<Doc = any, Cursor = unknown> {
+  /** Remote listing, one backend request per page, from `from` (a cursor this adapter yielded earlier) or the start. */
+  fetchPages(context: SyncContext, from?: Cursor): AsyncIterable<{ entries: CatalogueReconcileEntry[]; cursor: Cursor }>;
+  /** Pure: the same fingerprint from a local document. */
+  fingerprint(doc: Doc): string;
+  /**
+   * Deletion proof, required: of these local documents (the ones the listing did not name), the keys
+   * the backend confirms gone (absent, or no longer sellable). One or more requests. Only confirmed
+   * keys are tombstoned; an adapter that never deletes returns none.
+   */
+  confirmGone(locals: Doc[], context: SyncContext): Promise<string[]>;
+  /** Hand documents to the collection's pull (the reconcile feed). */
+  enqueue(entries: Array<{ key: string; local?: Doc; remote?: unknown; tombstone?: boolean }>): void;
+}
