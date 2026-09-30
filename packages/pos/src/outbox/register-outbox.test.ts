@@ -432,7 +432,8 @@ describe('register outbox', () => {
       pricesIncludeTax: false, customer: null, lines: [{ id: uuidv7(), productId: 'product', name: 'Item', sku: 'SKU', quantity: 1,
         unitPriceMinor: 100, discountMinor: 0, netMinor: 100, taxLines: [] }],
       payments: [{ id: uuidv7(), method: 'cash', amountMinor: 100 }],
-      subtotalMinor: 100, discountMinor: 0, taxMinor: 0, totalMinor: 100, syncStatus: 'pending' };
+      subtotalMinor: 100, discountMinor: 0, taxMinor: 0, totalMinor: 100, syncStatus: 'pending',
+      taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' } };
     await db.pos_orders.insert(order);
     const orderStorage = db.pos_orders.storageInstance;
     const spies = [vi.spyOn(orderStorage, 'query'), vi.spyOn(orderStorage, 'count'),
@@ -582,7 +583,8 @@ describe('register outbox backend missing (repeated 404s)', () => {
     await db.pos_orders.insert({ id: uuidv7(), commandId: uuidv7(), createdAt: at, updatedAt: at, currency: 'EUR',
       pricesIncludeTax: false, customer: null, lines: [{ id: uuidv7(), productId: 'product', name: 'Item', sku: 'SKU', quantity: 1,
         unitPriceMinor: 100, discountMinor: 0, netMinor: 100, taxLines: [] }], payments: [{ id: uuidv7(), method: 'cash', amountMinor: 100 }],
-      subtotalMinor: 100, discountMinor: 0, taxMinor: 0, totalMinor: 100, syncStatus: 'pending' });
+      subtotalMinor: 100, discountMinor: 0, taxMinor: 0, totalMinor: 100, syncStatus: 'pending',
+      taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' } });
     const orderSend = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>().mockResolvedValue(notFound);
     const orders = createOrderOutbox({ collection: db.pos_orders, transport: { send: orderSend }, deviceId: 'device-1',
       random: () => 0.5, backendNotFound });

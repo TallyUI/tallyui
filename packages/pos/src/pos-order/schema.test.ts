@@ -55,7 +55,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(5);
+  expect(posOrderSchema.version).toBe(6);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -90,6 +90,31 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–4', as
     await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 5 as 4 })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 5 as 4 })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 0 as 1 })).rejects.toThrow();
+  } finally {
+    await db.remove();
+  }
+});
+
+it('requires taxRounding, and refuses an unknown granularity, an unknown mode and an extra key inside it (#287)', async () => {
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const order = finalizeOrder(builder.getSnapshot());
+    for (const taxRounding of [{ granularity: 'custom' }, { granularity: 'per_rate_group_items', mode: 'half_up' }] as const) {
+      const recorded = { ...order, id: uuidv7(), taxRounding };
+      await pos_orders.insert(recorded);
+      expect((await pos_orders.findOne(recorded.id).exec())?.toJSON()).toStrictEqual(recorded);
+    }
+    const { taxRounding: _rounding, ...unrecorded } = order;
+    await expect(pos_orders.insert({ ...unrecorded, id: uuidv7() })).rejects.toMatchObject({ code: 'VD2' });
+    for (const taxRounding of [{ granularity: 'per_line' }, { granularity: 'per_order', mode: 'half_even' },
+      { granularity: 'per_order', mode: 'half_up', extra: 1 }]) {
+      await expect(pos_orders.insert({ ...order, id: uuidv7(), taxRounding } as unknown as typeof order)).rejects.toMatchObject({ code: 'VD2' });
+    }
   } finally {
     await db.remove();
   }
