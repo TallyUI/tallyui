@@ -289,19 +289,19 @@ describe('startFingerprintReconcile', () => {
   it('runs no start check by default; the first check (intervalMs / 2) runs a pass, the first check past intervalMs another, none after stop()', async () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([{ p1: '10' }]);
-    const { stop } = startFingerprintReconcile({ collection: db.products, adapter, context, reSync: vi.fn(), intervalMs: 5000 });
+    const { stop } = startFingerprintReconcile({ collection: db.products, adapter, context, reSync: vi.fn(), intervalMs: 300_000 });
 
     // #248: the persisted gate is checked every min(1 hour, intervalMs / 2); none has completed, so the first check runs a pass.
-    await vi.advanceTimersByTimeAsync(2499);
+    await vi.advanceTimersByTimeAsync(149_999);
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(4999); // the check at 5 s finds it not yet due
+    await vi.advanceTimersByTimeAsync(299_999); // the check at 300 s finds it not yet due
     expect(fetchPages).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(2);
     stop();
-    await vi.advanceTimersByTimeAsync(20000);
+    await vi.advanceTimersByTimeAsync(1_200_000);
     expect(fetchPages).toHaveBeenCalledTimes(2);
   });
 
@@ -309,14 +309,14 @@ describe('startFingerprintReconcile', () => {
     vi.useFakeTimers();
     const { adapter, fetchPages } = fakeAdapter([{ p1: '10' }]);
     const { stop } = startFingerprintReconcile({
-      collection: db.products, adapter, context, reSync: vi.fn(), startDelayMs: 1000, intervalMs: 5000,
+      collection: db.products, adapter, context, reSync: vi.fn(), startDelayMs: 1000, intervalMs: 300_000,
     });
 
     await vi.advanceTimersByTimeAsync(999);
     expect(fetchPages).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(299_999);
     expect(fetchPages).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchPages).toHaveBeenCalledTimes(2);
