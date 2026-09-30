@@ -139,7 +139,7 @@ describe('the bulk-id fast path switch (wcpos/woocommerce-pos#2113)', () => {
     store.respond = (url) => (url.searchParams.get('per_page') === '-1' ? new Response('no', { status: 400 }) : undefined);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const listed = await pages(wooCatalogueReconcile(createWooReconcileFeed()));
-    expect(listed.map((p) => p.entries.length)).toEqual([0, 3]);
+    expect(listed.map((p) => [p.entries.length, p.cursor])).toEqual([[0, 1], [0, 1], [3, 2]]);
     expect(store.requests.map((url) => url.searchParams.get('page'))).toEqual([null, null, '1']);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('400'));

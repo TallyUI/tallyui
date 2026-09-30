@@ -443,7 +443,8 @@ describe('WooCommerce catalogue reconcile: fast path (#313)', () => {
     const before = store.requests.length;
 
     const events = await reconcile(till);
-    expect(summaryOf(events)).toEqual(UNCHANGED); // F1's outcome: the status page and one listing page
+    // F1's outcome plus one page: the status page, the fallback's empty page (its own budget slot) and one listing page
+    expect(summaryOf(events)).toEqual({ ...UNCHANGED, pages: 3 });
     expect(store.requests.slice(before).map((url) => url.searchParams.get('page'))).toEqual([null, null, '1']);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('400'));
@@ -457,7 +458,7 @@ describe('WooCommerce catalogue reconcile: fast path (#313)', () => {
     const before = store.requests.length;
 
     const events = await reconcile(till);
-    expect(summaryOf(events)).toEqual(UNCHANGED);
+    expect(summaryOf(events)).toEqual({ ...UNCHANGED, pages: 3 }); // plus the fallback's empty page
     expect(store.requests.slice(before).map((url) => url.searchParams.get('page'))).toEqual([null, null, '1']);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('not a list'));

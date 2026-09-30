@@ -70,8 +70,9 @@ export function combinePullAdapters<Doc>(
           // keeps a sub-adapter's explicit undefined (cleared pass state).
           checkpoint[key] = { ...previous?.[key], ...result.checkpoint };
         }
-        // Each sub-adapter returns unique keys, so one full sub-page makes the
-        // combined page full: RxDB keeps pulling while any sub-adapter has more.
+        // The full-page claim rests on each sub-adapter returning unique keys within a page (for WooCommerce,
+        // WCPOS keeps uuids unique per response): then one full sub-page makes the combined page full, and RxDB
+        // keeps pulling while any sub-adapter has more.
         return { documents: [...byKey.values()], checkpoint };
       },
     },
