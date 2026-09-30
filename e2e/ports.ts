@@ -5,11 +5,14 @@ import path from 'node:path';
 // CI runs one checkout per machine, so it keeps the fixed ports.
 const CI_WEB_PORT = 8081;
 const CI_SQLITE_PORT = 8090;
+const CI_SQLITE_UPGRADE_PORT = 8092;
 // Derived ports start here, above the common dev-server ports.
 const DERIVED_BASE = 20000;
 // Number of port pairs; web ports are even in 20000–29998, and sqlite takes the next odd port.
 // 5000 pairs keeps collisions rare across this machine's ~50 worktrees (1000 gave ~65% odds of one).
 const DERIVED_PAIRS = 5000;
+// The storage-sqlite upgrade proof's server (#242) sits this far above the web port: even, in 30000–39998.
+const UPGRADE_OFFSET = 10000;
 // FNV-1a 32-bit offset basis and prime.
 const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
@@ -33,13 +36,14 @@ function portFromEnv(env: Record<string, string | undefined>, name: string, fall
 export function isCI(env: Record<string, string | undefined>): boolean {
   return !!env.CI && env.CI !== '0' && env.CI !== 'false';
 }
-type E2EPorts = { web: number; sqlite: number; reuse: boolean };
+type E2EPorts = { web: number; sqlite: number; sqliteUpgrade: number; reuse: boolean };
 export function e2ePorts(root: string, env: Record<string, string | undefined>): E2EPorts {
-  if (isCI(env)) return { web: CI_WEB_PORT, sqlite: CI_SQLITE_PORT, reuse: false };
+  if (isCI(env)) return { web: CI_WEB_PORT, sqlite: CI_SQLITE_PORT, sqliteUpgrade: CI_SQLITE_UPGRADE_PORT, reuse: false };
   const derived = DERIVED_BASE + 2 * (fnv1a(root) % DERIVED_PAIRS);
   return {
     web: portFromEnv(env, 'E2E_WEB_PORT', derived),
     sqlite: portFromEnv(env, 'E2E_SQLITE_PORT', derived + 1),
+    sqliteUpgrade: portFromEnv(env, 'E2E_SQLITE_UPGRADE_PORT', derived + UPGRADE_OFFSET),
     reuse: env.E2E_REUSE === '1',
   };
 }

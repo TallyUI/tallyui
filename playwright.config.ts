@@ -6,6 +6,9 @@ const ci = isCI(process.env);
 const ports = e2ePorts(__dirname, process.env);
 // Unless reusing, fail before starting a server whose port is taken (see e2e/port-free.mjs).
 const preflight = (port: number) => (ports.reuse ? '' : `node e2e/port-free.mjs ${port} && `);
+// The 16.21.1 → 17.5.0 upgrade proof (#242) needs a built @tallyui/storage-sqlite@2.0.0 checkout; without one, its
+// project and server are left out (see e2e/storage-sqlite-upgrade/upgrade.spec.ts).
+const upgradeProof = !!process.env.E2E_V16_TREE;
 
 export default defineConfig({
   testDir: './e2e/web',
@@ -39,6 +42,14 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${ports.sqlite}` },
       dependencies: ['server-identity'],
     },
+    ...(upgradeProof
+      ? [{
+        name: 'storage-sqlite-upgrade',
+        testDir: './e2e/storage-sqlite-upgrade',
+        use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${ports.sqliteUpgrade}` },
+        dependencies: ['server-identity'],
+      }]
+      : []),
   ],
 
   webServer: [
@@ -55,5 +66,14 @@ export default defineConfig({
       reuseExistingServer: ports.reuse,
       timeout: 120_000,
     },
+    ...(upgradeProof
+      ? [{
+        command: `${preflight(ports.sqliteUpgrade)}node e2e/storage-sqlite-upgrade/page/build-and-serve.mjs`,
+        url: `http://localhost:${ports.sqliteUpgrade}/v17/`,
+        env: { PORT: String(ports.sqliteUpgrade) },
+        reuseExistingServer: ports.reuse,
+        timeout: 120_000,
+      }]
+      : []),
   ],
 });

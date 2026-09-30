@@ -16,7 +16,9 @@ test('each web server was started from this worktree', () => {
     test.info().annotations.push({ type: 'server-identity', description: `not checked: ${skipped}` });
     return;
   }
-  const refusals = [ports.web, ports.sqlite].flatMap((port) => {
+  // The upgrade proof's server runs only with E2E_V16_TREE (playwright.config.ts).
+  const served = process.env.E2E_V16_TREE ? [ports.web, ports.sqlite, ports.sqliteUpgrade] : [ports.web, ports.sqlite];
+  const refusals = served.flatMap((port) => {
     const owned = ownsPort(port, root);
     return owned.ok ? [] : [owned.message];
   });
