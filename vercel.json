@@ -1,5 +1,6 @@
 {
   "framework": "nextjs",
+  "ignoreCommand": "sh scripts/vercel-ignore.sh",
   "installCommand": "pnpm install --frozen-lockfile --filter \"@tallyui/web...\"",
   "buildCommand": "pnpm --filter \"@tallyui/web...\" build",
   "outputDirectory": "apps/web/.next"

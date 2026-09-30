@@ -65,6 +65,14 @@ anywhere public.
 `rxdb` and `rxdb-premium` are pinned to the same exact version (currently
 17.5.0; ADR-031). Upgrade them together, in one PR.
 
+## Vercel previews
+
+Vercel builds a preview only when a change touches `apps/web`, a workspace
+package it depends on, or a root build file: the list is in
+`scripts/vercel-ignore.sh`, and
+`packages/integration-tests/src/vercel-ignore.test.ts` fails when it no longer
+matches `@tallyui/web`'s dependency closure.
+
 ## Releasing
 
 See [RELEASING.md](RELEASING.md).
