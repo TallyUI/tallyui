@@ -25,10 +25,15 @@ export async function signedOut(context: SyncContext): Promise<boolean | undefin
   }
 }
 
-/** The error for a `FORBIDDEN` answer: only a signed-out session signs the till out. */
-export async function forbiddenError(context: SyncContext, message: string | undefined): Promise<Error> {
+/**
+ * The error for a `FORBIDDEN` answer: only a signed-out session signs the till out. The plain
+ * errors name what was refused (the GraphQL `path`, e.g. `product.variants`) for the store owner's log.
+ */
+export async function forbiddenError(context: SyncContext, forbidden: { message?: string; path?: ReadonlyArray<string | number> }): Promise<Error> {
   const out = await signedOut(context);
+  const { message } = forbidden;
   if (out === true) return new ConnectorUnauthorizedError(`Vendure GraphQL error: ${message}`);
-  if (out === false) return new Error(`Vendure GraphQL error: FORBIDDEN: the store refused this request although the session is signed in (a permission is missing): ${message}`);
-  return new Error(`Vendure GraphQL error: FORBIDDEN: ${message} (the session check failed, so this may be transient)`);
+  const what = forbidden.path?.length ? `${forbidden.path.join('.')}: ${message}` : message;
+  if (out === false) return new Error(`Vendure GraphQL error: FORBIDDEN: the store refused this request although the session is signed in (a permission is missing): ${what}`);
+  return new Error(`Vendure GraphQL error: FORBIDDEN: ${what} (the session check failed, so this may be transient)`);
 }

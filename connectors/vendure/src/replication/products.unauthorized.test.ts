@@ -74,6 +74,24 @@ describe.each([
     expect(probes).toHaveLength(1);
   });
 
+  it.each([
+    { path: ['products'], what: `products: ${message}` },
+    { path: ['product', 'variants'], what: `product.variants: ${message}` },
+    { path: ['products', 'items', 0, 'name'], what: `products.items.0.name: ${message}` },
+    { path: undefined, what: message },
+  ])('the plain errors name what was refused ($what); signing out keeps the message as is', async ({ path, what }) => {
+    const answer = { errors: [{ message, path, extensions: { code: 'FORBIDDEN' } }], data: null };
+    const messageFor = async (probe: unknown) => {
+      stubFetch(() => json(probe), answer);
+      const error = await request(context).catch((e: unknown) => e);
+      vi.restoreAllMocks();
+      return (error as Error).message;
+    };
+    expect(await messageFor({ data: { activeAdministrator: { id: '1' } } })).toBe(`Vendure GraphQL error: FORBIDDEN: the store refused this request although the session is signed in (a permission is missing): ${what}`);
+    expect(await messageFor({ errors: [{ message: 'boom' }] })).toBe(`Vendure GraphQL error: FORBIDDEN: ${what} (the session check failed, so this may be transient)`);
+    expect(await messageFor({ data: { activeAdministrator: null } })).toBe(`Vendure GraphQL error: ${message}`);
+  });
+
   it('the probe sends the failed request\'s headers and signal to the same admin-api', async () => {
     const controller = new AbortController();
     const { spy, probes } = stubFetch(() => json({ data: { activeAdministrator: null } }));

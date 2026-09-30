@@ -66,7 +66,7 @@ export async function gql(
   query: string,
   variables?: Record<string, any>,
 ): Promise<any> {
-  type GqlBody = { data?: any; errors?: Array<{ message?: string; extensions?: { code?: string } }> };
+  type GqlBody = { data?: any; errors?: Array<{ message?: string; path?: Array<string | number>; extensions?: { code?: string } }> };
   const res = await fetch(`${context.baseUrl}/admin-api`, {
     method: 'POST',
     headers: {
@@ -85,7 +85,7 @@ export async function gql(
   }
   const body = await res.json() as GqlBody;
   const forbidden = body.errors?.find((error) => error.extensions?.code === 'FORBIDDEN');
-  if (forbidden) throw await forbiddenError(context, forbidden.message);
+  if (forbidden) throw await forbiddenError(context, forbidden);
   if (body.errors?.length) throw new Error(`Vendure GraphQL error: ${body.errors[0].message}`);
   return body;
 }
