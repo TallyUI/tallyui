@@ -3802,13 +3802,13 @@ interface OrderCreatePayload {
     (#249).
   - The till's rules, the same as ADR-038's, describe what programme item
     55 will make the till do, not what it does today: a till never sends
-    more than the server's limit. On a `413` it halves the batch and sends again,
-    using `maxCommands` from the body when it is present; a `413` without
-    the code (a proxy or a body-size limit) is handled the same way. When
-    a batch of one is still answered `413`, that order is shown as refused
-    because it is too large for the store to accept, and the orders behind
-    it are sent. A `413` never marks an order as poisoned and never holds
-    up the queue.
+    more than the server's limit. On a `413` it halves the batch and sends
+    again, using `maxCommands` from the body when it is present; a `413`
+    without the code (a proxy or a body-size limit) is handled the same
+    way. When a batch of one is still answered `413`, that order is shown
+    as refused because it is too large for the store to accept, and the
+    orders behind it are sent. A `413` never marks an order as poisoned and
+    never holds up the queue.
   - A body over the server's size limit is answered `413` with
     `{ code: 'body_too_large', maxBytes, message }`, never
     `invalid_payload` (ruling 20). Under item 55 the till treats it as it
