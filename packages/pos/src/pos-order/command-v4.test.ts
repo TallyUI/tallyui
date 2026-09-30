@@ -50,7 +50,7 @@ describe('order.create version 4 (#286): every discountMinor is tax-exclusive', 
     expect(v4).toStrictEqual({ ...v3, version: 4, payload: { ...v3.payload, discountMinor: sum,
       lines: v3.payload.lines.map((line, i) => ({ ...line, discountMinor: net[i] })) } });
     expect(payloadShapeErrors(v4.payload)).toStrictEqual([]);
-    expect(precheckCommand(v4)).toBeUndefined();
+    expect(precheckCommand(v4, { orderCreate: [1, 2, 3, 4], register: [1] })).toBeUndefined();
     // The subtotal identity: Σ net(A) − payload.discountMinor = subtotalMinor.
     expect(v4.payload.subtotalMinor).toBe(subtotal);
     expect(netAmountsMinor(order) - sum).toBe(subtotal);
