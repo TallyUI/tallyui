@@ -28,6 +28,7 @@ export type { SignInResult, ServerCapabilities } from './types/connector';
 export { resolveCapabilities } from './types/connector';
 export { SignInError } from './sign-in';
 export { ConnectorUnauthorizedError } from './unauthorized';
+export { isRxdbRemoteVersionMismatch } from './rxdb-remote-version-mismatch';
 export { errorKind, type ErrorKind, type SyncNotice } from './sync-notice';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
