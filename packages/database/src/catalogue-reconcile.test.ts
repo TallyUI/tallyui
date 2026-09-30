@@ -322,8 +322,8 @@ describe('startCatalogueReconcile', () => {
 
   describe('the mass-delete brake', () => {
     // For the store owner: plain words, no backend named, the pass's own count.
-    const BRAKE_13 = '13 products the online store no longer lists were kept on this till, because removing that many at once '
-      + 'needs a check. If they were hidden or removed on purpose, whoever manages this till can allow the removal.';
+    const BRAKE_13 = '13 products the online store no longer lists were kept on this till: removing that many at once needs a '
+      + 'check. If they were hidden or removed on purpose, the person who manages this till can allow the removal.';
 
     it('keeps 13 of 60 confirmed-gone keys (over 20% and over 10) and logs kept: brake', async () => {
       const { server, feed, collection } = await setup(60);
@@ -389,8 +389,8 @@ describe('startCatalogueReconcile', () => {
 
       runner.reconcile();
       await time.runUntil(() => count('pass-completed') === 1);
-      const message = '1 product the online store no longer lists was kept on this till, because removing that many at once '
-        + 'needs a check. If it was hidden or removed on purpose, whoever manages this till can allow the removal.';
+      const message = 'The only product on this till is no longer listed by the online store, so it was kept: removing everything '
+        + 'at once needs a check. If it was hidden or removed on purpose, the person who manages this till can allow the removal.';
       expect(events).toContainEqual({ type: 'kept', count: 1, keys: [uuid(1)], reason: 'brake', message });
       expect(warn).toHaveBeenCalledWith(`Catalogue reconcile: ${message} (pass allowMassDelete: true to the reconcile runner to apply it)`);
       await settle();

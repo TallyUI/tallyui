@@ -162,8 +162,8 @@ describe('WooCommerce catalogue reconcile: planted missed-edit cases', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const events = await reconcile(till);
-    const message = '12 products the online store no longer lists were kept on this till, because removing that many at once needs a check. '
-      + 'If they were hidden or removed on purpose, whoever manages this till can allow the removal.';
+    const message = '12 products the online store no longer lists were kept on this till: removing that many at once needs a check. '
+      + 'If they were hidden or removed on purpose, the person who manages this till can allow the removal.';
     const hidden = Array.from({ length: 12 }, (_, i) => `u${i + 1}`).sort(); // the keys come in primary-key order
     expect(events).toContainEqual({ type: 'kept', count: 12, keys: hidden, reason: 'brake', message });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(message));

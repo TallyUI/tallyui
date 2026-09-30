@@ -278,10 +278,12 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
       if (!candidates.length || keepCandidates) {
         // Nothing to prove, or nothing will ever be deleted: the candidates are only counted.
       } else if (braked(candidates.length, localCount)) {
+        // One candidate brakes only when it is the till's whole catalogue (see braked).
         const one = candidates.length === 1;
-        const message = `${candidates.length} ${one ? 'product' : 'products'} the online store no longer lists ${one ? 'was' : 'were'} `
-          + 'kept on this till, because removing that many at once needs a check. '
-          + `If ${one ? 'it was' : 'they were'} hidden or removed on purpose, whoever manages this till can allow the removal.`;
+        const message = (one
+          ? 'The only product on this till is no longer listed by the online store, so it was kept: removing everything at once needs a check. '
+          : `${candidates.length} products the online store no longer lists were kept on this till: removing that many at once needs a check. `)
+          + `If ${one ? 'it was' : 'they were'} hidden or removed on purpose, the person who manages this till can allow the removal.`;
         console.warn(`Catalogue reconcile: ${message} (pass allowMassDelete: true to the reconcile runner to apply it)`);
         keep(candidates, { reason: 'brake', message });
       } else {
