@@ -379,7 +379,10 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
             }
           }
         }
-        if (result.status === 'rejected' && error?.code === 'unsupported_version') outboxLogger.error(error.message, { orderId: order.id });
+        // Every refusal goes to the sync log once, with the store's code and message (the orders list shows the cashier
+        // only the code's sentence, #269); unsupported_version stays an error.
+        if (result.status === 'rejected') outboxLogger[error?.code === 'unsupported_version' ? 'error' : 'warn']('Order refused by the store',
+          { orderId: order.id, code: error?.code, message: error?.message });
         const updatedAt = new Date(now()).toISOString();
         // Progress removes the stored serverFailures in the write that marks the order applied or rejected.
         await current.incrementalModify((data) => {
