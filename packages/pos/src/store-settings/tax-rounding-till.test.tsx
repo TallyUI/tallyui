@@ -62,10 +62,7 @@ function twoRates() {
   act(() => sale!.add(entry({ id: 'a', price: 5 }), traits));
   act(() => sale!.add(entry({ id: 'b', price: 5, taxClass: 'reduced' }), traits));
 }
-const settle = async () => {
-  await waitFor(() => expect(sale).toBeDefined());
-  await act(async () => {}); // lets a connector's capabilities read land
-};
+const settle = () => waitFor(() => expect(sale).toBeDefined());
 const lineIds = () => sale!.order.lineItems.map((line) => line.id);
 
 describe("the till takes the store's taxRounding with no app code (#324)", () => {
@@ -117,35 +114,15 @@ describe("the till takes the store's taxRounding with no app code (#324)", () =>
     expect(figures(sale!.order)).toEqual([10, 2, 12]);
   });
 
-  it('a strategy arriving late restarts an idle sale under it', async () => {
+  it("a read landing after the settings: no till until the rounding is known, and the first sale rounds like the store", async () => {
     let arrive!: (value: ServerCapabilities) => void;
     render(<Till connector={connector(() => new Promise((resolve) => (arrive = resolve)))} ctx={context} />);
-    await waitFor(() => expect(sale).toBeDefined());
-    expect(tax!.rounding).toBeUndefined();
-    const before = sale!.order.id;
+    await act(async () => {});
+    expect(sale).toBeUndefined();
 
     await act(async () => arrive(info(vendureRounding)));
-    expect(sale!.idle).toBe(true);
-    expect(sale!.order.id).not.toBe(before);
+    await waitFor(() => expect(sale).toBeDefined());
     expect(sale!.order.taxRounding).toEqual(vendureRounding);
-    twoRates();
-    expect(figures(sale!.order)).toEqual([10, 1, 11]);
-  });
-
-  it('a sale with lines finishes on its old rounding, and the next sale takes the new one (#301)', async () => {
-    let arrive!: (value: ServerCapabilities) => void;
-    render(<Till connector={connector(() => new Promise((resolve) => (arrive = resolve)))} ctx={context} />);
-    await waitFor(() => expect(sale).toBeDefined());
-    twoRates();
-    const before = sale!.order.id;
-
-    await act(async () => arrive(info(vendureRounding)));
-    expect(sale!.order.id).toBe(before);
-    expect(figures(sale!.order)).toEqual([10, 2, 12]);
-    expect('taxRounding' in sale!.order).toBe(false);
-
-    for (const id of lineIds()) act(() => sale!.remove(id));
-    expect(sale!.order.id).not.toBe(before);
     twoRates();
     expect(figures(sale!.order)).toEqual([10, 1, 11]);
   });

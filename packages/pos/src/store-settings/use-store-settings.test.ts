@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { StoreSettingsError } from '@tallyui/core';
-import type { StoreSettings, StoreSettingsChoice, SyncContext, TallyConnector, TaxRounding } from '@tallyui/core';
+import type { ServerCapabilities, StoreSettings, StoreSettingsChoice, SyncContext, TallyConnector, TaxRounding } from '@tallyui/core';
 import { useStoreSettings } from './use-store-settings';
+import type { StoreSettingsState } from './use-store-settings';
 
 const context: SyncContext = { connectorId: 'fake', baseUrl: 'https://store.test', headers: {} };
 const settings: StoreSettings = { currency: 'EUR', pricesIncludeTax: false, taxRatesPpm: { default: 0 } };
@@ -152,14 +153,27 @@ describe('useStoreSettings', () => {
     const vendure: TaxRounding = { granularity: 'per_rate_group_items', mode: 'half_up' };
     const withCapabilities = (capabilities: TallyConnector['capabilities']) =>
       ({ storeSettings: async () => settings, capabilities }) as unknown as TallyConnector;
+    /** Records every state the hook returns; `readies()` is each distinct ready `settings` identity, in order. */
+    const track = (connector: TallyConnector, ctx: SyncContext = context) => {
+      const seen: StoreSettingsState[] = [];
+      const hook = renderHook(() => {
+        const state = useStoreSettings({ connector, context: ctx, loadChoice: () => undefined, saveChoice: vi.fn() });
+        seen.push(state);
+        return state;
+      });
+      const readies = () => [...new Set(seen.flatMap((s) => (s.state === 'ready' ? [s.settings] : [])))];
+      return { result: hook.result, readies };
+    };
+    /** The one ready settings of a resolve: a second identity, e.g. a late patch, fails. */
     const resolved = async (connector: TallyConnector, ctx: SyncContext = context) => {
-      const { result } = renderHook(() => useStoreSettings({ connector, context: ctx, loadChoice: () => undefined, saveChoice: vi.fn() }));
+      const { result, readies } = track(connector, ctx);
       await waitFor(() => expect(result.current.state).toBe('ready'));
-      await act(async () => {}); // lets the connector's read land
-      return result.current.state === 'ready' ? result.current.settings : undefined;
+      await act(async () => {}); // a later change would land here
+      expect(readies()).toHaveLength(1);
+      return readies()[0];
     };
 
-    it("takes the context's capabilities, without reading the connector's", async () => {
+    it("takes the context's capabilities, without reading the connector's, and emits once", async () => {
       const capabilities = vi.fn();
       const ctx = { ...context, capabilities: { orderCreate: 3, taxRounding: vendure } };
       expect(await resolved(withCapabilities(capabilities), ctx)).toEqual({ ...settings, taxRounding: vendure });
@@ -172,13 +186,57 @@ describe('useStoreSettings', () => {
       expect(capabilities).toHaveBeenCalledExactlyOnceWith(context);
     });
 
-    it('leaves the field out when no capabilities carry it, or the read fails', async () => {
-      for (const capabilities of [undefined, async () => undefined, async () => ({ orderCreate: 3 }),
-        async () => { throw new Error('offline'); }, () => { throw new Error('sync'); }]) {
+    it('waits for a read landing after the settings, then emits the settings once, with the rounding', async () => {
+      const read = deferred<ServerCapabilities | undefined>();
+      const storeSettings = vi.fn(async () => settings);
+      const { result, readies } = track({ storeSettings, capabilities: () => read.promise } as unknown as TallyConnector);
+      await act(async () => {});
+      expect(storeSettings).toHaveBeenCalledOnce();
+      expect(result.current).toEqual({ state: 'loading' });
+
+      await act(async () => read.resolve({ orderCreate: 3, taxRounding: vendure }));
+      await act(async () => {});
+      expect(result.current.state).toBe('ready');
+      expect(readies()).toEqual([{ ...settings, taxRounding: vendure }]);
+    });
+
+    it('a throwing read gives the settings without taxRounding, emitted once', async () => {
+      for (const capabilities of [async () => { throw new Error('offline'); }, () => { throw new Error('sync'); }]) {
         const got = await resolved(withCapabilities(capabilities as TallyConnector['capabilities']));
         expect(got).toEqual(settings);
         expect(got).not.toHaveProperty('taxRounding');
       }
+    });
+
+    it('a connector without capabilities gives the settings without taxRounding, emitted once', async () => {
+      const got = await resolved(fakeConnector(async () => settings));
+      expect(got).toEqual(settings);
+      expect(got).not.toHaveProperty('taxRounding');
+    });
+
+    it('leaves the field out when the capabilities read carries none', async () => {
+      for (const capabilities of [async () => undefined, async () => ({ orderCreate: 3 })]) {
+        const got = await resolved(withCapabilities(capabilities as TallyConnector['capabilities']));
+        expect(got).not.toHaveProperty('taxRounding');
+      }
+    });
+
+    it("reads once through a choose, reusing the request's read for the pick", async () => {
+      const capabilities = vi.fn(async () => ({ orderCreate: 3, taxRounding: vendure }));
+      const storeSettings = async (_context: SyncContext, choice?: StoreSettingsChoice) => {
+        if (!choice) throw new StoreSettingsError('choice_required', 'pick a country', choices);
+        return settings;
+      };
+      const { result, readies } = track({ storeSettings, capabilities } as unknown as TallyConnector);
+      await waitFor(() => expect(result.current.state).toBe('choose'));
+      const current = result.current;
+      if (current.state !== 'choose') return;
+
+      act(() => current.choose({ country: 'de' }));
+      await waitFor(() => expect(result.current.state).toBe('ready'));
+      await act(async () => {});
+      expect(readies()).toEqual([{ ...settings, taxRounding: vendure }]);
+      expect(capabilities).toHaveBeenCalledOnce();
     });
   });
 
