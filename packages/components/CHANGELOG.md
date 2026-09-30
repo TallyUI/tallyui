@@ -1,5 +1,33 @@
 # @tallyui/components
 
+## 3.0.0-next.2
+
+### Patch Changes
+
+- [#359](https://github.com/TallyUI/tallyui/pull/359) [`eb203b4`](https://github.com/TallyUI/tallyui/commit/eb203b4489c58111f10011e825edeff671627ec3) Thanks [@kilbot](https://github.com/kilbot)! - Review follow-ups with no behaviour change (#356, #358):
+
+  - `SyncStatus` and `OrdersList` build their "since {time}" and "since about {time}" text with one shared helper.
+  - `useRegisterOutbox`'s docs now say when `transport()` is called, and that the latest `isEnabled` and `onResult` are used without restarting the outbox.
+
+- [#355](https://github.com/TallyUI/tallyui/pull/355) [`0e4c9cc`](https://github.com/TallyUI/tallyui/commit/0e4c9cc3f9cd329666bf3b565dd24614bafbb590) Thanks [@kilbot](https://github.com/kilbot)! - The "since" a cashier reads is a real time (#253). `OutboxState.stuck` (both outboxes) gains `firstFailedAt`: the wall-clock time the first failure of the current stuck run was answered, so an offline gap no longer moves it. `since` keeps its meaning, the clock's virtual start, and still drives the 15-minute threshold. `firstFailedAt` is kept in memory only. After a restart it is absent, and `SyncStatus` and `OrdersList` show the stored time instead, worded "since about 2:49 AM".
+
+- [#353](https://github.com/TallyUI/tallyui/pull/353) [`e51f1b7`](https://github.com/TallyUI/tallyui/commit/e51f1b70f0631e8f3b3d061ebb5e3aadc759fc77) Thanks [@kilbot](https://github.com/kilbot)! - Times shown to a cashier no longer force a leading zero on the hour (#252): `ProductStockBadge`'s "as of" time and the catalogue's time label now read "2:49 AM", not "02:49 AM", on a 12-hour clock, like `SyncStatus` and the orders list.
+
+- [#349](https://github.com/TallyUI/tallyui/pull/349) [`3cf5452`](https://github.com/TallyUI/tallyui/commit/3cf5452ba0f6a2f25e88c230201d0e0e68e2e5b5) Thanks [@kilbot](https://github.com/kilbot)! - Follow-ups to the 401/403 split (#345):
+
+  - **Vendure:** a signed-in user missing a permission (confirmed by the session probe) is now `ConnectorUnauthorizedError` with `status: 403`, the `forbidden` notice, instead of a plain transient error.
+  - **WooCommerce:** a 403 from the JWT-auth plugin (`jwt_auth_*`) reaches the till only with a valid token on WCPOS 1.10.0–1.10.7 (wcpos/woocommerce-pos#1863). It is now `WooPluginUpdateRequiredError` (`unsupported_store`, WCPOS 1.10.8): the store owner updates WCPOS, and the till is never sent into a sign-in loop.
+  - **`ConnectorUnauthorizedError`:** only a 403 is `forbidden`. A caller that omits `status` gets `unauthorized`, as before 3.0.
+  - **Docs:** the customer picker's `onError`, the replication guide's error classes, and the connector comments now say that only a 401 means sign in again.
+
+- [#357](https://github.com/TallyUI/tallyui/pull/357) [`6278d8d`](https://github.com/TallyUI/tallyui/commit/6278d8d44f36d4c7f8601f1222807e510662a576) Thanks [@kilbot](https://github.com/kilbot)! - The register outbox can start when its store opens, as the order outbox does (#290). The new `useRegisterOutbox({ commands, transport, deviceId, isEnabled?, onResult?, backendNotFound? })` runs `createRegisterOutbox` over an already-open `register_commands` collection, and calls `start()` so that till updates left pending (after a refused batch, for instance) go out when the app reopens. It returns `{ state, flush }`. A new collection or device id restarts the outbox, and `commands: null` leaves it idle. Apps that create the register outbox themselves should switch to this hook. `SyncStatus`'s till-updates refusal line now ends "…with the next till update, or when the app is reopened.", matching the sales line.
+
+- Updated dependencies [[`eb203b4`](https://github.com/TallyUI/tallyui/commit/eb203b4489c58111f10011e825edeff671627ec3), [`c48e1dd`](https://github.com/TallyUI/tallyui/commit/c48e1dd808622191fb97104ecd58cc8cde7dde0d), [`0e4c9cc`](https://github.com/TallyUI/tallyui/commit/0e4c9cc3f9cd329666bf3b565dd24614bafbb590), [`3cf5452`](https://github.com/TallyUI/tallyui/commit/3cf5452ba0f6a2f25e88c230201d0e0e68e2e5b5), [`6278d8d`](https://github.com/TallyUI/tallyui/commit/6278d8d44f36d4c7f8601f1222807e510662a576)]:
+  - @tallyui/pos@3.0.0-next.2
+  - @tallyui/core@3.0.0-next.2
+  - @tallyui/primitives@3.0.0-next.2
+  - @tallyui/theme@3.0.0-next.2
+
 ## 3.0.0-next.1
 
 ### Minor Changes

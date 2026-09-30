@@ -1,5 +1,28 @@
 # @tallyui/pos
 
+## 3.0.0-next.2
+
+### Minor Changes
+
+- [#355](https://github.com/TallyUI/tallyui/pull/355) [`0e4c9cc`](https://github.com/TallyUI/tallyui/commit/0e4c9cc3f9cd329666bf3b565dd24614bafbb590) Thanks [@kilbot](https://github.com/kilbot)! - The "since" a cashier reads is a real time (#253). `OutboxState.stuck` (both outboxes) gains `firstFailedAt`: the wall-clock time the first failure of the current stuck run was answered, so an offline gap no longer moves it. `since` keeps its meaning, the clock's virtual start, and still drives the 15-minute threshold. `firstFailedAt` is kept in memory only. After a restart it is absent, and `SyncStatus` and `OrdersList` show the stored time instead, worded "since about 2:49 AM".
+
+- [#357](https://github.com/TallyUI/tallyui/pull/357) [`6278d8d`](https://github.com/TallyUI/tallyui/commit/6278d8d44f36d4c7f8601f1222807e510662a576) Thanks [@kilbot](https://github.com/kilbot)! - The register outbox can start when its store opens, as the order outbox does (#290). The new `useRegisterOutbox({ commands, transport, deviceId, isEnabled?, onResult?, backendNotFound? })` runs `createRegisterOutbox` over an already-open `register_commands` collection, and calls `start()` so that till updates left pending (after a refused batch, for instance) go out when the app reopens. It returns `{ state, flush }`. A new collection or device id restarts the outbox, and `commands: null` leaves it idle. Apps that create the register outbox themselves should switch to this hook. `SyncStatus`'s till-updates refusal line now ends "…with the next till update, or when the app is reopened.", matching the sales line.
+
+### Patch Changes
+
+- [#359](https://github.com/TallyUI/tallyui/pull/359) [`eb203b4`](https://github.com/TallyUI/tallyui/commit/eb203b4489c58111f10011e825edeff671627ec3) Thanks [@kilbot](https://github.com/kilbot)! - Review follow-ups with no behaviour change (#356, #358):
+
+  - `SyncStatus` and `OrdersList` build their "since {time}" and "since about {time}" text with one shared helper.
+  - `useRegisterOutbox`'s docs now say when `transport()` is called, and that the latest `isEnabled` and `onResult` are used without restarting the outbox.
+
+- [#351](https://github.com/TallyUI/tallyui/pull/351) [`c48e1dd`](https://github.com/TallyUI/tallyui/commit/c48e1dd808622191fb97104ecd58cc8cde7dde0d) Thanks [@kilbot](https://github.com/kilbot)! - Store settings follow-ups to #339 and #341 (#340):
+
+  - **A signed-out till is asked to sign in**, not shown "Retrying…". When the capabilities read fails with an error only the till can fix, `useStoreSettings` gives `error` without `nextRetryAt` and doesn't retry by itself, so the app prompts. That covers a till-class error (a 401, or a till that needs updating) and a `SignInError` with `code: 'invalid_credentials'`; any other sign-in error still waits and retries. Every other failure still waits and retries.
+  - **A `/tally/v1/info` JSON body that isn't an object** (`null`, an array or a scalar) is unknown, not the default rounding.
+
+- Updated dependencies [[`c48e1dd`](https://github.com/TallyUI/tallyui/commit/c48e1dd808622191fb97104ecd58cc8cde7dde0d), [`3cf5452`](https://github.com/TallyUI/tallyui/commit/3cf5452ba0f6a2f25e88c230201d0e0e68e2e5b5)]:
+  - @tallyui/core@3.0.0-next.2
+
 ## 3.0.0-next.1
 
 ### Minor Changes

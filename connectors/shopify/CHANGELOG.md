@@ -1,5 +1,12 @@
 # @tallyui/connector-shopify
 
+## 3.0.0-next.2
+
+### Patch Changes
+
+- Updated dependencies [[`c48e1dd`](https://github.com/TallyUI/tallyui/commit/c48e1dd808622191fb97104ecd58cc8cde7dde0d), [`3cf5452`](https://github.com/TallyUI/tallyui/commit/3cf5452ba0f6a2f25e88c230201d0e0e68e2e5b5)]:
+  - @tallyui/core@3.0.0-next.2
+
 ## 3.0.0-next.1
 
 ### Patch Changes
