@@ -3786,31 +3786,35 @@ interface OrderCreatePayload {
     unknown key is refused as `invalid_payload` naming the full path; one
     that a later version declares is refused naming the version it needs.
     Every other object accepts only the fields its version names.
-  - Today (read on each main branch, 2026-09-30) only vendurepos refuses
-    an unknown field, and nothing refuses an unknown map key:
+  - Today (read on each main branch, 2026-09-30) both backends refuse an
+    unknown field; only medusapos refuses an unknown map key:
     - TallyUI core's `payloadShapeErrors` and `registerPayloadErrors`
       accept unknown fields (`register-payload-shape.ts:1`: "Unknown
       top-level keys are allowed"); `precheckCommand` refuses only the
       version-gated fields. Strict per-version fields will come in
       TallyUI #255.
-    - The medusapos plugin is lenient on unknown fields, pinned by
-      `packages/medusa-plugin/src/workflows/tally-order-create/__tests__/`
-      `payload-shape.unit.spec.ts:128`, and refuses only the fields a
-      later version declares (`process.ts:101-105`). ADR-065's "medusapos
-      is strict (#62)" means exactly that version gate; it never refused a
-      field that no version declares. Strict fields will come in
-      medusapos/app#132.
+    - medusapos refuses an unknown field as `<path>: unknown field for
+      order.create version <n>`, and a later-version field as `<path>:
+      requires version <m>`, for every command and the envelope
+      (`packages/medusa-plugin/src/workflows/tally-order-create/`
+      `payload-shape.ts:19-21,38`; medusapos/app#137, merged as ccb3311).
+      The register commands word it differently, naming the top-level key
+      and the command type: `<key>: unknown field for <type> version 1`
+      (`tally-register-command/payload-shape.ts:37`).
+      Before that it refused only the fields a later version declares;
+      ADR-065's "medusapos is strict (#62)" meant that version gate.
     - vendurepos refuses an unknown field as `<path>: unknown field in
       order.create version <n>`, and a later-version field as `<path>:
       requires order.create version <m>, command is version <n>`
       (`packages/vendure-plugin/src/service/strict-shape.ts:35-36`,
       vendurepos/app#36).
-    - For the map keys, core's `registerPayloadErrors` and the medusapos
-      plugin require an object with non-empty keys and safe-integer values
-      (core also refuses a NUL in a key); vendurepos has no register
-      commands yet (its M6). No backend checks a key against the declared
-      payment methods; that will be built in TallyUI #256 and
-      medusapos/app#132.
+    - For the map keys, medusapos accepts only `cash` and `external`
+      (`PaymentMethodKind`), refusing any other key by its full path
+      (`tally-register-command/payload-shape.ts:23-24,54`; medusapos/app#137).
+      Core's `registerPayloadErrors` still requires only an object with
+      non-empty keys and safe-integer values (and no NUL in a key); checking
+      the key against the declared methods will be built in TallyUI #256.
+      vendurepos has no register commands yet (its M6).
   - Why: a misspelled optional money field from a buggy till must be refused
     in plain sight, not ignored in silence. Refused, the sale stays on the
     till and nothing is lost. Ignored, the till and the server would
@@ -3951,10 +3955,10 @@ interface OrderCreatePayload {
       fits because it is a fact about the store, and the merchant can put
       it right.
 - **Consequences:**
-  - vendurepos refuses unknown fields with the path named
-    (vendurepos/app#36). medusapos will change its lenient shape check
-    and do the same (medusapos/app#132). TallyUI core's shared checks will
-    do the same (#255), so a backend built on them is strict by default.
+  - Both plugins refuse unknown fields with the path named
+    (vendurepos/app#36, medusapos/app#137). TallyUI core's shared checks
+    will do the same (#255), so a backend built on them is strict by
+    default.
   - A new optional field in `order.create` always comes with a version bump
     and `precheckCommand`'s version checks, as `discountMinor` (version 2)
     and `display`/`taxByRate` (version 3) already did.
