@@ -4,7 +4,7 @@
 // replication and a poll, and shows the till corrected. Every change reaches the till through the pull.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startCatalogueReconcile, type CatalogueReconcileEvent } from '@tallyui/database';
-import { closeTills, context, createFakeStore, stamp, startTill, type FakeRow, type FakeStore } from '../__tests__/fake-store';
+import { at, closeTills, context, createFakeStore, stamp, startTill, type FakeRow, type FakeStore } from '../__tests__/fake-store';
 import { createWooCommerceConnector } from '../index';
 import { wooProductReplication } from '../replication/products';
 
@@ -196,7 +196,7 @@ describe('WooCommerce catalogue reconcile: guards', () => {
     await till.poll();
     expect((await till.local()).has('u11')).toBe(false);
 
-    expect(keysOf(await reconcile(till), 'refetched')).toEqual(['u11']);
+    expect(keysOf(await reconcile(till), 'refetched')).toEqual(['11']); // no local copy: the listing's key
     expect(store.requests.some((url) => url.searchParams.get('include') === '11' && !url.searchParams.has('_fields'))).toBe(true);
     await till.poll();
     expect(await nameOf(till, 'u11')).toBe('Imported');
@@ -300,7 +300,7 @@ describe('WooCommerce catalogue reconcile: guards', () => {
     await till.poll();
     expect([keysOf(events, 'refetched'), keysOf(events, 'tombstoned')]).toEqual([['u2'], ['u3']]);
     const kinds = store.requests.map((url) => `${url.pathname.split('/').pop()} ${url.searchParams.get('_fields') ?? (url.searchParams.has('include') ? 'include' : '')}`);
-    expect(new Set(kinds)).toEqual(new Set(['products ', 'status ', 'products id,uuid,date_modified_gmt,stock_quantity,stock_status', 'products id,uuid,status', 'products include']));
+    expect(new Set(kinds)).toEqual(new Set(['products ', 'status ', 'products id,date_modified_gmt,stock_quantity,stock_status', 'products id,uuid,status', 'products include']));
     const missing = store.headers.flatMap((headers, i) =>
       (headers['X-Test-Sentinel'] === '1' && headers['X-WCPOS-Protocol'] === '2' && headers['Content-Type'] === 'application/json' ? [] : [kinds[i]]));
     expect(missing).toEqual([]);
@@ -327,5 +327,126 @@ describe('WooCommerce catalogue reconcile: guards', () => {
     const events = await reconcile(till);
     expect(events).toContainEqual({ type: 'stopped', reason: 'till', code: 'unauthorized' });
     expect((await till.local()).size).toBe(3);
+  });
+});
+
+describe('WooCommerce catalogue reconcile: fast path (#313)', () => {
+  const fastStore = (size: number) => {
+    const store = createFakeStore(size);
+    store.capabilities = ['products_id_fast_path'];
+    return store;
+  };
+  const isFastPath = (url: URL) => url.searchParams.get('per_page') === '-1';
+  const summaryOf = (events: CatalogueReconcileEvent[]) => {
+    const { type: _, durationMs: __, ...summary } = events.find((e) => e.type === 'pass-completed') as Extract<CatalogueReconcileEvent, { type: 'pass-completed' }>;
+    return summary;
+  };
+  const UNCHANGED = { pages: 2, compared: 10, refetched: 0, tombstoned: 0, kept: 0, unlisted: 0 };
+  /** One pass that went through the fast path. */
+  const fastPass = async (till: Till, store: FakeStore) => {
+    const events = await reconcile(till);
+    expect(store.requests.some(isFastPath)).toBe(true);
+    return events;
+  };
+
+  it('F1. an unchanged catalogue: one status request, one fast-path request, nothing refetched, unlisted or tombstoned', async () => {
+    const store = fastStore(10);
+    const till = await tillOf(store);
+    const before = store.requests.length;
+
+    const events = await reconcile(till);
+    expect(store.requests.slice(before).map((url) => `${url.pathname.split('/').pop()} ${isFastPath(url)}`)).toEqual(['status false', 'products true']);
+    expect(summaryOf(events)).toEqual(UNCHANGED);
+  });
+
+  it('F2. a stamp-only edit and a stock-only direct write are each refetched', async () => {
+    const store = fastStore(10);
+    const till = await tillOf(store);
+    store.edit(3, {}, stamp(30));
+    store.writeStock(5, 0, 'outofstock');
+
+    expect(keysOf(await fastPass(till, store), 'refetched').sort()).toEqual(['u3', 'u5']);
+    await till.poll();
+    expect((await till.local()).get('u5')).toMatchObject({ stock_quantity: 0, stock_status: 'outofstock' });
+  });
+
+  it('F3. a product new to the store and missed by the pull is delivered with its uuid', async () => {
+    const store = fastStore(10);
+    const till = await tillOf(store);
+    store.rows.push({ ...store.row(1), id: 11, uuid: 'u11', name: 'Imported', date_modified_gmt: stamp(0), date_modified: stamp(0) } satisfies FakeRow);
+    await till.poll();
+    expect((await till.local()).has('u11')).toBe(false);
+
+    expect(keysOf(await fastPass(till, store), 'refetched')).toEqual(['11']);
+    await till.poll();
+    expect(await nameOf(till, 'u11')).toBe('Imported');
+  });
+
+  it('F4. a held product that is deleted, set to draft or POS-hidden is confirmed gone by include= and tombstoned', async () => {
+    const store = fastStore(10);
+    store.posOnlyProducts = true;
+    const till = await tillOf(store);
+    store.rows.splice(store.rows.findIndex((r) => r.id === 2), 1);
+    store.row(4).status = 'draft';
+    store.onlineOnly.add(6);
+
+    const events = await fastPass(till, store);
+    expect([keysOf(events, 'refetched'), keysOf(events, 'tombstoned')]).toEqual([[], ['u2', 'u4', 'u6']]);
+    expect(store.requests.some((url) => url.searchParams.get('include') === '2,4,6')).toBe(true);
+    await till.poll();
+    expect([...(await till.local()).keys()].sort()).toEqual(['u1', 'u10', 'u3', 'u5', 'u7', 'u8', 'u9']);
+  });
+
+  it('F5. a draft the till never held is ignored: no refetch, and no request names it', async () => {
+    const store = fastStore(10);
+    const till = await tillOf(store);
+    store.rows.push({ ...store.row(1), id: 11, uuid: 'u11', name: 'Draft', status: 'draft', ...at(stamp(40)) } satisfies FakeRow);
+    const before = store.requests.length;
+
+    const events = await fastPass(till, store);
+    expect(summaryOf(events)).toEqual(UNCHANGED);
+    expect(store.requests.slice(before).some((url) => url.searchParams.get('include')?.split(',').includes('11'))).toBe(false);
+  });
+
+  it('F6. hiding more than 20% at once is held by the brake', async () => {
+    const store = fastStore(50);
+    store.posOnlyProducts = true;
+    const till = await tillOf(store);
+    for (let id = 1; id <= 12; id++) store.onlineOnly.add(id);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const events = await fastPass(till, store);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'kept', count: 12, reason: 'brake' }));
+    expect(store.requests.some((url) => url.searchParams.has('include'))).toBe(false);
+    await till.poll();
+    expect((await till.local()).size).toBe(50);
+  });
+
+  it('F7. a fast path answering 400 falls through to the paged listing in the same pass, with one warning', async () => {
+    const store = fastStore(10);
+    const till = await tillOf(store);
+    store.respond = (url) => (isFastPath(url) ? new Response('{"code":"rest_invalid_param"}', { status: 400 }) : undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const before = store.requests.length;
+
+    const events = await reconcile(till);
+    expect(summaryOf(events)).toEqual(UNCHANGED); // F1's outcome: the status page and one listing page
+    expect(store.requests.slice(before).map((url) => url.searchParams.get('page'))).toEqual([null, null, '1']);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('400'));
+  });
+
+  it('F7b. a fast path answering 200 with a non-list falls through to the paged listing, with one warning', async () => {
+    const store = fastStore(10);
+    const till = await tillOf(store);
+    store.respond = (url) => (isFastPath(url) ? new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }) : undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const before = store.requests.length;
+
+    const events = await reconcile(till);
+    expect(summaryOf(events)).toEqual(UNCHANGED);
+    expect(store.requests.slice(before).map((url) => url.searchParams.get('page'))).toEqual([null, null, '1']);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not a list'));
   });
 });

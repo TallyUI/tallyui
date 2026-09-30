@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError } from '@tallyui/core';
 import { closeTills, context, createFakeStore } from '../__tests__/fake-store';
 import { WooMissingUuidError, wooCatalogueReconcile, wooReconcileFingerprint } from '../index';
@@ -21,11 +21,11 @@ describe('wooCatalogueReconcile listing', () => {
     const listed = await pages(wooCatalogueReconcile(createWooReconcileFeed()));
     // First the status read, as an empty page so that it takes its own budget slot.
     expect(listed.map((p) => [p.entries.length, p.cursor])).toEqual([[0, 1], [100, 2], [100, 3], [49, 4]]);
-    expect(listed[1].entries[0]).toEqual({ key: 'u1', fingerprint: '2026-01-01T08:00:01|10|instock', remote: 1 });
+    expect(listed[1].entries[0]).toEqual({ key: '1', fingerprint: '2026-01-01T08:00:01|10|instock', remote: 1 });
     expect(store.requests[0].pathname).toBe('/wp-json/wcpos/v2/status');
     expect(Object.fromEntries(store.requests[1].searchParams)).toEqual({
       per_page: '100', page: '1', orderby: 'id', order: 'asc', status: 'publish',
-      _fields: 'id,uuid,date_modified_gmt,stock_quantity,stock_status',
+      _fields: 'id,date_modified_gmt,stock_quantity,stock_status',
     });
     expect(store.requests.some((url) => url.searchParams.has('modified_after'))).toBe(false);
   });
@@ -37,10 +37,14 @@ describe('wooCatalogueReconcile listing', () => {
     expect(store.requests.map((url) => url.searchParams.get('page'))).toEqual([null, '2', '3']);
   });
 
-  it('a listed row without a uuid throws WooMissingUuidError; a 401 throws ConnectorUnauthorizedError', async () => {
-    const store = createFakeStore(2);
+  it('keys on the id: a row without a uuid is listed (the pull checks it), one without an integer id is dropped; a 401 throws', async () => {
+    const store = createFakeStore(3);
     delete store.row(2).uuid;
-    await expect(pages(wooCatalogueReconcile(createWooReconcileFeed()))).rejects.toBeInstanceOf(WooMissingUuidError);
+    delete (store.row(3) as { id?: number }).id;
+    const listed = await pages(wooCatalogueReconcile(createWooReconcileFeed()));
+    expect(listed[1].entries.map((e) => (e as { key: string }).key)).toEqual(['1', '2']);
+    expect(wooCatalogueReconcile(createWooReconcileFeed()).matchKey!({ uuid: 'u1', id: 1 })).toBe('1');
+    expect(wooCatalogueReconcile(createWooReconcileFeed()).matchKey!({ uuid: 'u1' })).toBeUndefined();
     store.respond = () => new Response('no', { status: 401 });
     await expect(pages(wooCatalogueReconcile(createWooReconcileFeed()))).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
   });
@@ -120,17 +124,30 @@ describe('the bulk-id fast path switch (wcpos/woocommerce-pos#2113)', () => {
     expect(store.requests.map((url) => url.pathname)).toEqual(Array(3).fill('/wp-json/wcpos/v2/status'));
   });
 
-  it.each([[undefined], [['products_id_fast_path']]])('capabilities %j: one status read per pass, then (stub) the paged listing', async (capabilities) => {
+  it.each([[undefined, '100'], [['products_id_fast_path'], '-1']])('capabilities %j: one status read per pass, then one listing request of per_page %s', async (capabilities, perPage) => {
     const store = createFakeStore(3);
     store.capabilities = capabilities;
+    const listed = await pages(wooCatalogueReconcile(createWooReconcileFeed()), 5);
+    expect(listed.map((p) => [p.entries.length, p.cursor])).toEqual(capabilities ? [[0, 5], [3, 5]] : [[0, 5], [0, 6]]);
+    expect(store.requests.map((url) => url.pathname.split('/').pop())).toEqual(['status', 'products']);
+    expect(store.requests[1].searchParams.get('per_page')).toBe(perPage);
+  });
+
+  it('a fast path answering 400 falls through to the paged listing from the cursor, with one warning; a 401 rejects', async () => {
+    const store = createFakeStore(3);
+    store.capabilities = ['products_id_fast_path'];
+    store.respond = (url) => (url.searchParams.get('per_page') === '-1' ? new Response('no', { status: 400 }) : undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const listed = await pages(wooCatalogueReconcile(createWooReconcileFeed()));
     expect(listed.map((p) => p.entries.length)).toEqual([0, 3]);
-    expect(store.requests.map((url) => url.pathname.split('/').pop())).toEqual(['status', 'products']);
+    expect(store.requests.map((url) => url.searchParams.get('page'))).toEqual([null, null, '1']);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('400'));
+    store.respond = (url) => (url.searchParams.get('per_page') === '-1' ? new Response('no', { status: 401 }) : undefined);
+    await expect(pages(wooCatalogueReconcile(createWooReconcileFeed()))).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
   });
 
   it('the request builder pins the recorded contract', () => {
-    expect(wooBulkListingUrl(context.baseUrl)).toBe(
-      `${context.baseUrl}/products?per_page=-1&fields%5B%5D=id&fields%5B%5D=date_modified_gmt&fields%5B%5D=stock_quantity&fields%5B%5D=stock_status`,
-    );
+    expect(wooBulkListingUrl(context.baseUrl)).toBe(`${context.baseUrl}/products?per_page=-1&_fields=id%2Cdate_modified_gmt%2Cstock_quantity%2Cstock_status`);
   });
 });

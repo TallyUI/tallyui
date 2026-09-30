@@ -1,10 +1,13 @@
 import { errorKind, type CatalogueReconcileAdapter, type CatalogueReconcileEntry, type ReconcileFeed, type SyncContext } from '@tallyui/core';
-import { checkResponse, WooMissingUuidError } from '../replication/products';
+import { checkResponse } from '../replication/products';
 
 /** The listing's page size, WordPress's per_page maximum. */
 const PAGE_SIZE = 100;
-/** Enough to compare: the key, the numeric id to refetch by, and the fingerprint's fields. */
-const LISTING_FIELDS = 'id,uuid,date_modified_gmt,stock_quantity,stock_status';
+/**
+ * Both listings' fields, and exactly the fast path's: the numeric id (the key, and how a product is refetched) and
+ * the fingerprint's. No uuid: the pull's `toProductDocument` still requires one on every product it delivers.
+ */
+const LISTING_FIELDS = 'id,date_modified_gmt,stock_quantity,stock_status';
 /** The wcpos/v2/status capability that announces the bulk-id listing (wcpos/woocommerce-pos#2113). */
 const ID_FAST_PATH = 'products_id_fast_path';
 
@@ -42,19 +45,21 @@ export async function wooHasIdFastPath(context: SyncContext): Promise<boolean> {
 }
 
 /**
- * The fast path's one request, pinned to the contract recorded for wcpos/woocommerce-pos#2113: WCPOS's own
- * `fields`, not WordPress's `_fields`, answered from SQL. The context headers carry `X-WCPOS`.
+ * The fast path's one request (wcpos/woocommerce-pos #2116, #2119, #2121): WordPress's `_fields` with exactly these
+ * four, answered from SQL, published POS-visible products only. The context headers carry `X-WCPOS`.
  */
 export function wooBulkListingUrl(baseUrl: string): string {
-  const params = new URLSearchParams({ per_page: '-1' });
-  for (const field of ['id', 'date_modified_gmt', 'stock_quantity', 'stock_status']) params.append('fields[]', field);
-  return `${baseUrl}/products?${params}`;
+  return `${baseUrl}/products?${new URLSearchParams({ per_page: '-1', _fields: LISTING_FIELDS })}`;
 }
 
+/** Listing rows as entries keyed by the numeric id (#313); a row without an integer id cannot be asked about, and is dropped. */
+const toEntries = (rows: any[]) => rows.filter((row) => Number.isInteger(row?.id))
+  .map((row): CatalogueReconcileEntry => ({ key: String(row.id), fingerprint: wooReconcileFingerprint(row), remote: row.id }));
+
 /**
- * The daily catalogue check for WooCommerce (#248): lists every published product with its fingerprint,
- * page by page with no date filter, and hands differences to `feed`, which reaches the collection only
- * through the pull. `confirmGone` is the deletion proof: a by-id re-read.
+ * The daily catalogue check for WooCommerce (#248): lists every published product with its fingerprint, in one
+ * fast-path request where the store offers it (#313), else page by page, with no date filter, and hands differences
+ * to `feed`, which reaches the collection only through the pull. `confirmGone` is the deletion proof: a by-id re-read.
  */
 export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>): CatalogueReconcileAdapter<any, number> {
   return {
@@ -63,9 +68,22 @@ export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>)
       const fast = await wooHasIdFastPath(context);
       yield { entries: [], cursor: from };
       if (fast) {
-        // TODO(#2113): list with one wooBulkListingUrl request. It returns `id` but no `uuid`, and entries are
-        // keyed by uuid, so it needs an id-to-uuid mapping from the till's documents, which this adapter cannot
-        // read. Until that is designed, a store with the capability is listed page by page like any other.
+        // The whole catalogue in one request, so `from` is moot. A store that refuses it (a store scope answers 400)
+        // is listed page by page in this pass; only a till-class error or an abort stops it.
+        let rows: any;
+        let failed = false;
+        try {
+          rows = await get(wooBulkListingUrl(''), context); // get() prefixes context.baseUrl
+        } catch (error) {
+          if (errorKind(error) === 'till' || context.signal?.aborted) throw error;
+          failed = true;
+          console.warn(`WooCommerce catalogue reconcile: the fast path failed (${(error as Error)?.message ?? error}); listing page by page.`);
+        }
+        if (Array.isArray(rows)) {
+          yield { entries: toEntries(rows), cursor: from };
+          return;
+        }
+        if (!failed) console.warn('WooCommerce catalogue reconcile: the fast path answered with something that is not a list; listing page by page.');
       }
       // status=publish: a product that is not published is absent, so it becomes a deletion candidate and
       // confirmGone decides; drafts cost no daily refetch.
@@ -74,15 +92,13 @@ export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>)
           per_page: String(PAGE_SIZE), page: String(page), orderby: 'id', order: 'asc', status: 'publish', _fields: LISTING_FIELDS,
         });
         const rows: any[] = await get(`/products?${params}`, context);
-        const entries = rows.map((row): CatalogueReconcileEntry => {
-          if (typeof row.uuid !== 'string' || row.uuid.length === 0) throw new WooMissingUuidError(row.id);
-          return { key: row.uuid, fingerprint: wooReconcileFingerprint(row), remote: row.id };
-        });
-        yield { entries, cursor: page + 1 };
+        yield { entries: toEntries(rows), cursor: page + 1 };
         if (rows.length < PAGE_SIZE) return;
       }
     },
     fingerprint: wooReconcileFingerprint,
+    // Both listings key on the numeric id, never the till-local uuid (#313).
+    matchKey: (doc) => (Number.isInteger(doc.id) ? String(doc.id) : undefined),
     async confirmGone(locals, context) {
       const ids = locals.map((doc) => doc.id).filter((id) => Number.isInteger(id));
       // An empty include= would list the whole store; a local without a numeric id has no proof and is kept.

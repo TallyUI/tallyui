@@ -46,7 +46,7 @@ export interface FingerprintReconcileAdapter<Doc = any> {
   refetchBatchSize?: number;
 }
 
-/** One product in the catalogue listing. `key` is the local primary key value; `remote` is whatever the connector needs to refetch it (a numeric backend id, say). */
+/** One product in the catalogue listing. `key` is the local primary key, or the `matchKey` value when the adapter sets one; `remote` is whatever the connector needs to refetch it (a numeric backend id, say). */
 export interface CatalogueReconcileEntry { key: string; fingerprint: string; remote?: unknown }
 
 /**
@@ -61,12 +61,22 @@ export interface CatalogueReconcileAdapter<Doc = any, Cursor = unknown> {
   /** Pure: the same fingerprint from a local document. */
   fingerprint(doc: Doc): string;
   /**
-   * Deletion proof, required: of these local documents (the ones the listing did not name), the keys
-   * the backend confirms gone (absent, or no longer sellable). One or more requests. Only confirmed
-   * keys are tombstoned; an adapter that never deletes returns none.
+   * When set, each listing entry's `key` is this value, not the local primary key (a listing that carries no
+   * primary key, such as WCPOS's fast path, #313). The runner indexes the local documents by it for the pass.
+   * A document for which it returns undefined can't be matched: it is never compared, and it is a deletion
+   * candidate, as today.
+   */
+  matchKey?(doc: Doc): string | undefined;
+  /**
+   * Deletion proof, required: of these local documents (the ones the listing did not name), the primary keys
+   * the backend confirms gone (absent, or no longer sellable), with or without `matchKey`. One or more requests.
+   * Only confirmed keys are tombstoned; an adapter that never deletes returns none.
    */
   confirmGone(locals: Doc[], context: SyncContext): Promise<string[]>;
-  /** Hand documents to the collection's pull (the reconcile feed). */
+  /**
+   * Hand documents to the collection's pull (the reconcile feed). An entry's `key` is the local primary key when
+   * there is a local copy, and otherwise the listing's key.
+   */
   enqueue(entries: Array<{ key: string; local?: Doc; remote?: unknown; tombstone?: boolean }>): void;
   /** Ids per `fetchByIds` request of the feed this adapter enqueues into: a page's `n` refetches take `ceil(n / refetchBatchSize)` budget slots (1 when unset). */
   refetchBatchSize?: number;

@@ -1,0 +1,58 @@
+{
+    "source": "woocommerce-pos PHPUnit probe modelled on tests/includes/API/V2/Test_Catalog_Proxy_Products_Fast_Path.php (#2113 contract: published products only, stock from postmeta); recorded with WP_REST_Server::dispatch(), wp-env WordPress 7.1.2, WooCommerce 10.4.3",
+    "request": {
+        "method": "GET",
+        "path": "/wp-json/wcpos/v2/products",
+        "query": {
+            "per_page": "-1",
+            "_fields": "id,date_modified_gmt,stock_quantity,stock_status"
+        },
+        "headers": {
+            "X-WCPOS": "1",
+            "X-WCPOS-Protocol": "2"
+        }
+    },
+    "response": {
+        "status": 200,
+        "headers": {
+            "X-WP-Total": "4",
+            "X-WP-TotalPages": "1",
+            "X-Server-Load": "[0.08935546875,0.125,0.087890625]",
+            "Allow": "GET",
+            "X-WCPOS-Pressure": "low"
+        },
+        "body": [
+            {
+                "id": 13,
+                "date_modified_gmt": "2026-09-30T07:31:06",
+                "stock_quantity": 7,
+                "stock_status": "instock"
+            },
+            {
+                "id": 12,
+                "date_modified_gmt": "2026-09-30T07:31:06",
+                "stock_quantity": 0,
+                "stock_status": "outofstock"
+            },
+            {
+                "id": 11,
+                "date_modified_gmt": "2026-09-30T07:31:06",
+                "stock_quantity": null,
+                "stock_status": "instock"
+            },
+            {
+                "id": 10,
+                "date_modified_gmt": "2026-09-30T07:31:06",
+                "stock_quantity": 5,
+                "stock_status": "instock"
+            }
+        ]
+    },
+    "products": {
+        "10": "publish, stock managed (qty 5, instock)",
+        "11": "publish, stock not managed",
+        "12": "publish, stock managed (qty 0, outofstock), wc_product_meta_lookup row deleted",
+        "13": "publish, stock not managed, leftover _stock = 7 (the product reports 7)",
+        "14": "draft, stock managed (qty 2): NOT listed (published products only)"
+    }
+}

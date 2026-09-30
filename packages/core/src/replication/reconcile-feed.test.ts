@@ -205,5 +205,28 @@ describe('createReconcileFeed', () => {
       const { documents } = await adapter.pull.handler(undefined, 100, context);
       expect(documents).toEqual([]);
     });
+
+    describe('the remote option: a listing that carries no primary key (#313)', () => {
+      const byId = (doc: Product) => doc.id;
+
+      it('an entry with no local copy whose key finds nothing is matched by remote', async () => {
+        const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, remote: byId, fetchByIds: vi.fn(async () => [product(7, 'remote-7')]) });
+        enqueue([{ key: '7', remote: 7 }]);
+        expect((await adapter.pull.handler(undefined, 100, context)).documents).toEqual([{ ...product(7, 'remote-7'), _deleted: false }]);
+      });
+
+      it('an entry with a local copy is never matched by remote: a missing product is tombstoned, not swapped', async () => {
+        const other = { ...product(7, 'another'), uuid: 'u-other' };
+        const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, remote: byId, fetchByIds: vi.fn(async () => [other]) });
+        enqueue([{ key: 'u-7', local: product(7), remote: 7 }]);
+        expect((await adapter.pull.handler(undefined, 100, context)).documents).toEqual([{ ...product(7), _deleted: true }]);
+      });
+
+      it('without remote, an entry with no local copy whose key finds nothing is dropped, as before', async () => {
+        const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, fetchByIds: vi.fn(async () => [product(7, 'remote-7')]) });
+        enqueue([{ key: '7', remote: 7 }]);
+        expect((await adapter.pull.handler(undefined, 100, context)).documents).toEqual([]);
+      });
+    });
   });
 });
