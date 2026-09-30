@@ -5,7 +5,6 @@ function isSafeInt(value: unknown): value is number {
 }
 
 type FiguresMismatchField = Extract<CommandWarning, { code: 'figures_mismatch' }>['fields'][number];
-const FIGURES = ['subtotalMinor', 'taxMinor', 'discountMinor'];
 
 function figuresMismatchFields(fields: unknown): FiguresMismatchField[] | null {
   if (!Array.isArray(fields) || fields.length === 0) return null;
@@ -13,9 +12,9 @@ function figuresMismatchFields(fields: unknown): FiguresMismatchField[] | null {
   for (const entry of fields) {
     if (typeof entry !== 'object' || entry === null) return null;
     const { field, tillMinor, serverMinor } = entry as Record<string, unknown>;
-    if (typeof field !== 'string' || !FIGURES.includes(field) || rebuilt.some((kept) => kept.field === field)) return null;
+    if (typeof field !== 'string' || field === '' || rebuilt.some((kept) => kept.field === field)) return null;
     if (!isSafeInt(tillMinor) || !isSafeInt(serverMinor) || tillMinor === serverMinor) return null;
-    rebuilt.push({ field: field as FiguresMismatchField['field'], tillMinor, serverMinor });
+    rebuilt.push({ field, tillMinor, serverMinor });
   }
   return rebuilt;
 }
@@ -28,6 +27,7 @@ function figuresMismatchFields(fields: unknown): FiguresMismatchField[] | null {
  * A `customer_ignored` is dropped unless its `customerId` is a string of 1 to 64 characters.
  * A `figures_mismatch` is dropped entirely unless `fields` is non-empty and each entry names a
  * different figure with two differing safe integers; each entry is rebuilt from its known keys.
+ * A figure name it doesn't know (any non-empty string) is kept, since a newer store may send one.
  */
 export function knownWarnings(warnings: unknown): CommandWarning[] {
   if (!Array.isArray(warnings)) return [];

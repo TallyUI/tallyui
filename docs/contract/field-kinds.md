@@ -44,6 +44,11 @@ worse.
 till sent (1 to 64 characters), for a customer unknown, deleted or in
 another channel. A warning never rejects a sale.
 
+`figures_mismatch` (#257) is one warning per sale, `{ code:
+'figures_mismatch'; fields: Array<{ field; tillMinor; serverMinor }> }`,
+with one entry for each of `subtotalMinor`, `taxMinor` and
+`discountMinor` that differs from the server's own computation.
+
 ## Reading the tables
 
 - **Field** is the full path from the envelope; `[]` stands for every

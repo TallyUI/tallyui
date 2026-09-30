@@ -95,7 +95,8 @@ describe('knownWarnings', () => {
   it.each([
     ['an empty fields', []],
     ['a non-array fields', { 0: subtotal }],
-    ['an unknown field name', [{ ...subtotal, field: 'totalMinor' }]],
+    ['an empty field name', [{ ...subtotal, field: '' }]],
+    ['a non-string field name', [{ ...subtotal, field: 1 }]],
     ['a repeated field name', [subtotal, { ...subtotal, tillMinor: 1100 }]],
     ['a non-integer tillMinor', [subtotal, { ...tax, tillMinor: 210.5 }]],
     ['a non-integer serverMinor', [{ ...tax, serverMinor: '200' }]],
@@ -103,6 +104,11 @@ describe('knownWarnings', () => {
     ['a non-object entry', [subtotal, null]],
   ])('drops a whole figures_mismatch with %s', (_label, fields) => {
     expect(knownWarnings([{ code: 'figures_mismatch', fields }])).toEqual([]);
+  });
+
+  it('keeps a figures_mismatch entry whose field name it does not know, from a newer store', () => {
+    const warning = { code: 'figures_mismatch', fields: [subtotal, { field: 'grandTotalMinor', tillMinor: 100, serverMinor: 200 }] };
+    expect(knownWarnings([warning])).toEqual([warning]);
   });
 
   it('drops extra keys in a figures_mismatch entry', () => {

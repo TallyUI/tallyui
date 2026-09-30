@@ -139,7 +139,7 @@ it('accepts a figures_mismatch and drops extra keys', () => {
 it.each([
   ['warnings[1].fields', []],
   ['warnings[1].fields', { 0: subtotal }],
-  ['warnings[1].fields[0].field', [{ ...subtotal, field: 'totalMinor' }]],
+  ['warnings[1].fields[0].field', [{ ...subtotal, field: 'grandTotalMinor' }]],
   ['warnings[1].fields[1].field', [subtotal, { ...subtotal, tillMinor: 1100 }]],
   ['warnings[1].fields[1].tillMinor', [subtotal, { ...tax, tillMinor: 210.5 }]],
   ['warnings[1].fields[0].serverMinor', [{ ...tax, serverMinor: '200' }]],

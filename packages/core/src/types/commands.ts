@@ -67,10 +67,12 @@ export type CommandWarning =
   /**
    * One warning per sale, never a refusal: each of the till's figures that differs from the
    * server's own computation, once, with both values (#257). `total_mismatch` stays separate.
+   * `parseCommandResult` refuses a `field` it doesn't know; `knownWarnings` keeps it (a newer
+   * store's figure), so the type admits any non-empty string besides the three names.
    */
   | {
       code: 'figures_mismatch';
-      fields: Array<{ field: 'subtotalMinor' | 'taxMinor' | 'discountMinor'; tillMinor: number; serverMinor: number }>;
+      fields: Array<{ field: 'subtotalMinor' | 'taxMinor' | 'discountMinor' | (string & {}); tillMinor: number; serverMinor: number }>;
     };
 
 /** Error reported when a command is rejected. */
