@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { StoreSettingsError } from '@tallyui/core';
 import type { ServerCapabilities, StoreSettings, StoreSettingsChoice, SyncContext, TallyConnector, TaxRounding } from '@tallyui/core';
@@ -200,14 +200,6 @@ describe('useStoreSettings', () => {
       expect(readies()).toEqual([{ ...settings, taxRounding: vendure }]);
     });
 
-    it('a throwing read gives the settings without taxRounding, emitted once', async () => {
-      for (const capabilities of [async () => { throw new Error('offline'); }, () => { throw new Error('sync'); }]) {
-        const got = await resolved(withCapabilities(capabilities as TallyConnector['capabilities']));
-        expect(got).toEqual(settings);
-        expect(got).not.toHaveProperty('taxRounding');
-      }
-    });
-
     it('a connector without capabilities gives the settings without taxRounding, emitted once', async () => {
       const got = await resolved(fakeConnector(async () => settings));
       expect(got).toEqual(settings);
@@ -215,10 +207,90 @@ describe('useStoreSettings', () => {
     });
 
     it('leaves the field out when the capabilities read carries none', async () => {
-      for (const capabilities of [async () => undefined, async () => ({ orderCreate: 3 })]) {
-        const got = await resolved(withCapabilities(capabilities as TallyConnector['capabilities']));
-        expect(got).not.toHaveProperty('taxRounding');
-      }
+      const got = await resolved(withCapabilities(async () => ({ orderCreate: 3 })));
+      expect(got).not.toHaveProperty('taxRounding');
+    });
+
+    describe('unavailable capabilities', () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(100_000);
+      });
+      afterEach(() => vi.useRealTimers());
+
+      it('a throwing read waits and re-reads after 5 seconds, then emits the rounding', async () => {
+        const failure = new Error('offline');
+        const capabilities = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ orderCreate: 3, taxRounding: vendure });
+        const { result, readies } = track(withCapabilities(capabilities));
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        if (result.current.state !== 'error') return;
+        expect(result.current.error).toMatchObject({ name: 'StoreCapabilitiesUnavailableError', cause: failure });
+        expect(result.current.nextRetryAt).toBe(105_000);
+        expect(readies()).toEqual([]);
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(4_999); });
+        expect(capabilities).toHaveBeenCalledTimes(1);
+        await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+        expect(capabilities).toHaveBeenCalledTimes(2);
+        expect(result.current.state).toBe('ready');
+        expect(readies()).toEqual([{ ...settings, taxRounding: vendure }]);
+      });
+
+      it('an undefined read stays unresolved and retries', async () => {
+        const capabilities = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValue({ orderCreate: 3, taxRounding: vendure });
+        const { result, readies } = track(withCapabilities(capabilities));
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        if (result.current.state !== 'error') return;
+        expect(result.current.error).toMatchObject({ name: 'StoreCapabilitiesUnavailableError', cause: undefined });
+        expect(result.current.nextRetryAt).toBe(105_000);
+        expect(readies()).toEqual([]);
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        expect(capabilities).toHaveBeenCalledTimes(2);
+        expect(readies()).toEqual([{ ...settings, taxRounding: vendure }]);
+      });
+
+      it('doubles the retry delay and caps it at five minutes', async () => {
+        const capabilities = vi.fn(async () => undefined);
+        const { result } = track(withCapabilities(capabilities));
+        await act(async () => {});
+        for (const delay of [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000]) {
+          expect(result.current.state).toBe('error');
+          if (result.current.state !== 'error') return;
+          expect(result.current.nextRetryAt).toBe(Date.now() + delay);
+          await act(async () => { await vi.advanceTimersByTimeAsync(delay); });
+        }
+        expect(capabilities).toHaveBeenCalledTimes(9);
+        expect(result.current.state).toBe('error');
+        if (result.current.state === 'error') expect(result.current.nextRetryAt).toBe(Date.now() + 300_000);
+      });
+
+      it('clears the retry timer on unmount', async () => {
+        const capabilities = vi.fn(async () => undefined);
+        const connector = withCapabilities(capabilities);
+        const { result, unmount } = renderHook(() => useStoreSettings({ connector, context, loadChoice: () => undefined, saveChoice: vi.fn() }));
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        unmount();
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        expect(capabilities).toHaveBeenCalledOnce();
+      });
+
+      it('manual retry cancels the scheduled retry', async () => {
+        const capabilities = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ orderCreate: 3, taxRounding: vendure });
+        const connector = withCapabilities(capabilities);
+        const { result } = renderHook(() => useStoreSettings({ connector, context, loadChoice: () => undefined, saveChoice: vi.fn() }));
+        await act(async () => {});
+        expect(result.current.state).toBe('error');
+        if (result.current.state !== 'error') return;
+        act(() => result.current.state === 'error' && result.current.retry());
+        await act(async () => {});
+        expect(result.current.state).toBe('ready');
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        expect(capabilities).toHaveBeenCalledTimes(2);
+      });
     });
 
     it("reads once through a choose, reusing the request's read for the pick", async () => {

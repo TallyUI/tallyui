@@ -7,19 +7,35 @@ export type StoreSettingsState =
   | { state: 'loading' }
   | { state: 'ready'; settings: StoreSettings; choice?: StoreSettingsChoice }
   | { state: 'choose'; choices: StoreSettingsChoices; initial?: StoreSettingsChoice; choose: (choice: StoreSettingsChoice) => void }
-  | { state: 'error'; error: unknown; retry: () => void }
+  | { state: 'error'; error: unknown; retry: () => void; nextRetryAt?: number }
   | { state: 'unsupported' };
 
 // One object, so re-entering loading while already loading doesn't re-render.
 const LOADING: StoreSettingsState = { state: 'loading' };
 
-// The store's taxRounding (#324): the context's capabilities, else one read of the connector's. A failure or no
-// value leaves the field out, the default rounding; so does a connector without `capabilities`, with no read.
+export class StoreCapabilitiesUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super('Store capabilities unavailable', { cause });
+    this.name = 'StoreCapabilitiesUnavailableError';
+  }
+}
+
+// Exponential retry for unknown rounding: 5 seconds, doubling up to 5 minutes.
+const INITIAL_RETRY_MS = 5_000;
+const MAX_RETRY_MS = 5 * 60_000;
+
+// The store's taxRounding (#324): the context's capabilities, else one read of the connector's.
 function readTaxRounding({ connector, context }: ResolveStoreSettingsOptions): Promise<TaxRounding | undefined> {
   if (context.capabilities) return Promise.resolve(context.capabilities.taxRounding);
   if (!connector.storeSettings || !connector.capabilities) return Promise.resolve(undefined);
   const read = connector.capabilities;
-  return Promise.resolve().then(() => read(context)).then((capabilities) => capabilities?.taxRounding, () => undefined);
+  return Promise.resolve().then(() => read(context)).then(
+    (capabilities) => {
+      if (!capabilities) throw new StoreCapabilitiesUnavailableError();
+      return capabilities.taxRounding;
+    },
+    (cause) => { throw new StoreCapabilitiesUnavailableError(cause); },
+  );
 }
 
 /**
@@ -29,6 +45,7 @@ function readTaxRounding({ connector, context }: ResolveStoreSettingsOptions): P
  * The ready settings carry the store's `taxRounding` from the capabilities, so `taxProviderProps` passes it on (#324).
  * The capabilities are read beside the settings, before `ready`, so each resolve emits the settings once, with the
  * rounding already known: no later change of `settings` holds a sale.
+ * Unknown rounding keeps settings unresolved and retries by itself; show "Can't reach the store's settings yet. Retrying…" while `nextRetryAt` is set.
  *
  * ```tsx
  * const store = useStoreSettings({ connector, context, loadChoice, saveChoice });
@@ -44,6 +61,8 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const requestRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const retryDelayRef = useRef(INITIAL_RETRY_MS);
   const [state, setState] = useState<StoreSettingsState>(LOADING);
 
   // `from`, when given, is the request that created the `choose`/`retry` calling this: a call
@@ -52,6 +71,7 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
   // a pick doesn't read it again.
   const resolve = useCallback((choice?: StoreSettingsChoice, from?: number, known?: Promise<TaxRounding | undefined>) => {
     if (from !== undefined && from !== requestRef.current) return;
+    clearTimeout(retryTimerRef.current);
     const request = ++requestRef.current;
     const current = () => request === requestRef.current;
     setState(LOADING);
@@ -59,6 +79,7 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
     Promise.all([resolveStoreSettings(optionsRef.current, choice), rounding]).then(
       ([result, taxRounding]) => {
         if (!current()) return;
+        retryDelayRef.current = INITIAL_RETRY_MS;
         if (result.status === 'ready')
           setState({ state: 'ready', settings: taxRounding ? { ...result.settings, taxRounding } : result.settings, choice: result.choice });
         else if (result.status === 'choose')
@@ -67,7 +88,15 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
       },
       // A retry keeps the choice that failed: a new pick is saved only once it resolves.
       (error: unknown) => {
-        if (current()) setState({ state: 'error', error, retry: () => resolve(choice, request) });
+        if (!current()) return;
+        const retry = () => resolve(choice, request);
+        if (error instanceof StoreCapabilitiesUnavailableError) {
+          const delay = retryDelayRef.current;
+          const nextRetryAt = Date.now() + delay;
+          retryDelayRef.current = Math.min(delay * 2, MAX_RETRY_MS);
+          retryTimerRef.current = setTimeout(retry, delay);
+          setState({ state: 'error', error, retry, nextRetryAt });
+        } else setState({ state: 'error', error, retry });
       },
     );
   }, []);
@@ -76,6 +105,8 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
     resolve();
     // Discards the in-flight result on a store switch or unmount.
     return () => {
+      clearTimeout(retryTimerRef.current);
+      retryDelayRef.current = INITIAL_RETRY_MS;
       requestRef.current += 1;
     };
   }, [connector, context, resolve]);
