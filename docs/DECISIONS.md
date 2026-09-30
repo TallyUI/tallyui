@@ -3696,12 +3696,19 @@ interface OrderCreatePayload {
      sale rung), must reopen under 3.0.0 with every order field for field,
      no older record, and each pending order sent once.
   4. **What recovers the rollback's sale** is `addPosOrderCollection`'s
-     own open path: it adds the collection without `autoMigrate`, resets
-     the stored status and checkpoint, and starts and awaits the
-     migration itself. Measured on 2026-09-30: with only the status reset
-     removed the test still passes; with RxDB's `autoMigrate` open,
-     `order-0102` is left behind. Apps open `pos_orders` only through
-     `addPosOrderCollection`.
+     own open path: it adds the collection without `autoMigrate` and
+     starts and awaits the migration directly. RxDB 17.5's
+     `startMigration()` ignores the stored status, while
+     `migratePromise()` (the `autoMigrate` path) trusts a leftover
+     `DONE`. The status reset before each migrating open keeps the
+     migration status record truthful for the new run: RxDB overwrites
+     only `count.total` and counts `handled` on from the stored value.
+     Measured on 2026-09-30: with RxDB's `autoMigrate` open, `order-0102`
+     is left behind; with the status reset removed the orders still
+     recover, but the status record carries over (`handled` 3 of 2), and
+     "after a rollback to the version-N app" in `open.test-helper.ts`
+     pins it (Front desk, 2026-09-30). Apps open `pos_orders` only
+     through `addPosOrderCollection`.
 - **Consequences:**
   - The changeset's upgrade notes and `@tallyui/storage-sqlite`'s README
     say this in the apps' terms, with the worker and version pins.
