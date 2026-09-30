@@ -89,7 +89,7 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
 | `payload.lines[].taxInclusive` | instruction | 1 (ADR-038 amendment 2, without a version bump) |
 | `payload.lines[].discountMinor` | instruction | 2 |
 | `payload.subtotalMinor` | informational | 1 |
-| `payload.discountMinor` | informational | 2 |
+| `payload.discountMinor` | instruction | 2 |
 | `payload.taxMinor` | informational | 1 |
 | `payload.totalMinor` | instruction | 1 |
 | `payload.payments` | instruction | 1 |
@@ -129,17 +129,23 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
 | `payload.locationId` | instruction | 1 |
 | `payload.sessionId` | instruction (honoured by recording) | 3 |
 
-- `payload.discountMinor` must equal the sum of `lines[].discountMinor`,
-  which is what asks for the discount; a difference is a contradiction in
-  the command, so `invalid_payload` (`@tallyui/core/server`'s
-  `order-payload-shape.ts:58`).
+- A discount, on the order or a line, is the cashier's price decision:
+  the server honours it by applying or recording it, or refuses it.
+  `payload.discountMinor` must equal the sum of `lines[].discountMinor`;
+  a difference is a check of the command against itself, so
+  `invalid_payload` (`@tallyui/core/server`'s
+  `order-payload-shape.ts:58`), not a comparison with the server's
+  computation.
 - `payload.customer` absent or `null` is the walk-in customer (ADR-038).
   An unknown `customerId` is one sale's own reference, so the sale is kept
   as a guest sale with `customer_ignored`, never refused (the warning in
   core is #266).
 - `payload.sessionId` is the session the server's register figures count
   the sale in (ADR-068 decision 13), and `payload.registerId` is the
-  till's device id, never the drawer (ADR-068 decision 7a).
+  till's device id, never the drawer (ADR-068 decision 7a). A server
+  without register support records `sessionId` verbatim; today medusapos
+  keeps it as the order's `tally_session_id` metadata and vendurepos as
+  `tallySessionId`.
 
 ## `register.session.open`
 
