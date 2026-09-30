@@ -3781,8 +3781,8 @@ interface OrderCreatePayload {
     unknown key is refused as `invalid_payload` naming the full path; one
     that a later version declares is refused naming the version it needs.
     Every other object accepts only the fields its version names.
-  - Today (read on each main branch, 2026-09-30) nothing refuses an
-    unknown field or an unknown map key:
+  - Today (read on each main branch, 2026-09-30) only vendurepos refuses
+    an unknown field, and nothing refuses an unknown map key:
     - TallyUI core's `payloadShapeErrors` and `registerPayloadErrors`
       accept unknown fields (`register-payload-shape.ts:1`: "Unknown
       top-level keys are allowed"); `precheckCommand` refuses only the
@@ -3795,8 +3795,11 @@ interface OrderCreatePayload {
       is strict (#62)" means exactly that version gate; it never refused a
       field that no version declares. Strict fields will come in
       medusapos/app#132.
-    - vendurepos will refuse unknown fields in vendurepos/app#36, under
-      review.
+    - vendurepos refuses an unknown field as `<path>: unknown field in
+      order.create version <n>`, and a later-version field as `<path>:
+      requires order.create version <m>, command is version <n>`
+      (`packages/vendure-plugin/src/service/strict-shape.ts:35-36`,
+      vendurepos/app#36).
     - For the map keys, core's `registerPayloadErrors` and the medusapos
       plugin require an object with non-empty keys and safe-integer values
       (core also refuses a NUL in a key); vendurepos has no register
@@ -3838,10 +3841,10 @@ interface OrderCreatePayload {
     a parsed body and does not check it.
   - Today, per code (read on each main branch, 2026-09-30):
     - **vendurepos** sends `batch_too_large` with `maxCommands`
-      (`packages/vendure-plugin/src/api/commands.controller.ts:23`). A body
-      over its 1 MB limit gets `413` with `code: 'invalid_payload'`
-      (`plugin.ts:39-46`); it will answer `body_too_large` with
-      `maxBytes: 1048576` (vendurepos/app#37, PR vendurepos/app#39).
+      (`packages/vendure-plugin/src/api/commands.controller.ts:23`), and
+      `body_too_large` with `maxBytes: 1048576` for a body over its 1 MB
+      limit, with or without `Content-Length` (`plugin.ts:27`, `:49`;
+      vendurepos/app#39).
     - **medusapos** answers more than 50 commands with a `413` that has no
       code (`packages/medusa-plugin/src/api/tally/v1/commands/`
       `process.ts:25`). A body over the plugin's own `sizeLimit: '1mb'`
@@ -3892,7 +3895,7 @@ interface OrderCreatePayload {
     - **vendurepos** (`packages/vendure-plugin/src/` on main) compares
       `totalMinor` in every version: Vendure's total is bridged to it by
       a `POS rounding` surcharge, and the result carries a
-      `total_mismatch` warning (`service/order-create.service.ts:668-675`).
+      `total_mismatch` warning (`service/order-create.service.ts:672-679`).
       In versions 1 and 2 it is the only amount compared: `subtotalMinor`
       and `taxMinor` are only type- and range-checked, so a difference
       from the server's subtotal or tax passes silently, with no warning
@@ -3901,18 +3904,18 @@ interface OrderCreatePayload {
       `taxByRate[].taxMinor` (`vendored/fiscal-figures.ts:93-95`), and
       each rate's tax is compared with Vendure's; a difference beyond
       the rounding tolerance gives a `tax_rate_mismatch` warning
-      (`order-create.service.ts:677-693`). Version 3 `subtotalMinor` is
-      only range-checked, as before. vendurepos's ADR 0002 §5 will list
-      every declared `order.create` field with its kind
-      (vendurepos/app#36).
+      (`order-create.service.ts:681-697`). Version 3 `subtotalMinor` is
+      only range-checked, as before. vendurepos's ADR 0002 §5
+      (`docs/adr/0002-order-path-vendure-plugin.md`) lists every declared
+      `order.create` field with its kind (vendurepos/app#36).
     - One warning for these differences, with each field's two values,
       is to be settled in core first (#257); both backends follow it.
   - `payload.locationId` is the case that prompted it (checked with both
     workers on 2026-09-30):
-    - **vendurepos** accepts it today and ignores it. It will refuse it
-      with `invalid_payload` ('not supported by this server yet') until a
-      ruling says how it is honoured (vendurepos/app#35); the change, with
-      decision (1), is vendurepos/app#36, under review.
+    - **vendurepos** refuses it with `invalid_payload`
+      (`payload.locationId: not supported by this server yet`) until a
+      ruling says how it is honoured (vendurepos/app#35)
+      (`service/strict-shape.ts:49`, vendurepos/app#36).
     - **medusapos** honours it today: the payload's location comes first,
       then the plugin option, then the sales channel's first location. An
       unknown location, or one not assigned to the sale's sales channel,
@@ -3922,10 +3925,10 @@ interface OrderCreatePayload {
       fits because it is a fact about the store, and the merchant can put
       it right.
 - **Consequences:**
-  - medusapos will change its lenient shape check, and both plugins will
-    refuse unknown fields with the path named (vendurepos/app#36,
-    medusapos/app#132). TallyUI core's shared checks will do the same
-    (#255), so a backend built on them is strict by default.
+  - vendurepos refuses unknown fields with the path named
+    (vendurepos/app#36). medusapos will change its lenient shape check
+    and do the same (medusapos/app#132). TallyUI core's shared checks will
+    do the same (#255), so a backend built on them is strict by default.
   - A new optional field in `order.create` always comes with a version bump
     and `precheckCommand`'s version checks, as `discountMinor` (version 2)
     and `display`/`taxByRate` (version 3) already did.
