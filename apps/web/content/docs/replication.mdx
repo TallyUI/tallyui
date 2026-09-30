@@ -9,22 +9,25 @@ Tally UI uses RxDB's replication protocol to keep local data in sync with your b
 
 ```tsx
 import { createTallyDatabase, startReplication, getStorage } from '@tallyui/database';
-import { woocommerceConnector } from '@tallyui/connector-woocommerce';
+import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
+
+// One connector per store session: build a new one on each sign-in or store change
+const connector = createWooCommerceConnector();
 
 // Create a persistent database
 const db = await createTallyDatabase({
-  connector: woocommerceConnector,
+  connector,
   storage: getStorage(), // in-memory in Node; on the web, pass getRxStorageSQLiteWasm explicitly -- see Storage below
 });
 
 // Start replicating products
 const replicationState = startReplication({
   collection: db.products,
-  adapter: woocommerceConnector.replication.products,
+  adapter: connector.replication.products,
   context: {
-    connectorId: woocommerceConnector.id,
+    connectorId: connector.id,
     baseUrl: 'https://mystore.com/wp-json/wcpos/v2',
-    headers: woocommerceConnector.auth.getHeaders(credentials),
+    headers: connector.auth.getHeaders(credentials),
   },
 });
 

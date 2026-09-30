@@ -50,7 +50,7 @@ const posOrders = await addPosOrderCollection(db);
 
 ```tsx
 import { useMemo, type ReactNode } from 'react';
-import { medusaConnector } from '@tallyui/connector-medusa';
+import { createMedusaConnector } from '@tallyui/connector-medusa';
 import { useStoreSettings } from '@tallyui/pos';
 import { StoreSettingsChoiceScreen } from '@tallyui/components';
 import type { StoreSettingsChoice } from '@tallyui/core';
@@ -59,8 +59,10 @@ declare const baseUrl: string, headers: Record<string, string>;
 declare const loadChoice: () => StoreSettingsChoice | undefined, saveChoice: (choice: StoreSettingsChoice) => void;
 
 function StoreGate({ children }: { children: ReactNode }) {
-  const context = useMemo(() => ({ connectorId: medusaConnector.id, baseUrl, headers }), [baseUrl, headers]);
-  const store = useStoreSettings({ connector: medusaConnector, context, loadChoice, saveChoice });
+  // One connector per store session: a new one when the store changes.
+  const connector = useMemo(() => createMedusaConnector(), [baseUrl]);
+  const context = useMemo(() => ({ connectorId: connector.id, baseUrl, headers }), [connector, baseUrl, headers]);
+  const store = useStoreSettings({ connector, context, loadChoice, saveChoice });
 
   if (store.state === 'choose') {
     return <StoreSettingsChoiceScreen choices={store.choices} initial={store.initial} onSubmit={store.choose} />;

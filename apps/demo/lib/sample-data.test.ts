@@ -1,8 +1,8 @@
 import { describe, it, afterEach } from 'vitest';
 
 import { createTallyDatabase, type TallyDatabase } from '@tallyui/database';
-import { woocommerceConnector } from '@tallyui/connector-woocommerce';
-import { medusaConnector } from '@tallyui/connector-medusa';
+import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
+import { createMedusaConnector } from '@tallyui/connector-medusa';
 
 import { wooSampleProducts, medusaSampleProducts } from './sample-data';
 
@@ -21,7 +21,7 @@ describe('demo sample data seeds validated collections', () => {
 
   it('inserts every WooCommerce sample product', async () => {
     const db = await createTallyDatabase({
-      connector: woocommerceConnector,
+      connector: createWooCommerceConnector(),
       name: `test_woo_seed_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     });
     databases.push(db);
@@ -40,7 +40,7 @@ describe('demo sample data seeds validated collections', () => {
 
   it('inserts every Medusa sample product', async () => {
     const db = await createTallyDatabase({
-      connector: medusaConnector,
+      connector: createMedusaConnector(),
       name: `test_medusa_seed_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     });
     databases.push(db);

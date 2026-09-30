@@ -26,6 +26,8 @@ export interface IdReconcileAdapter<Doc = any> {
   variantIds(doc: Doc): string[];
   /** Hand local documents that disagree with the backend to the collection's pull (see createReconcileFeed). */
   enqueue(entries: Array<{ id: string; local: Doc }>): void;
+  /** Ids per `fetchByIds` request; see `CatalogueReconcileAdapter.refetchBatchSize`. */
+  refetchBatchSize?: number;
 }
 
 /** Re-delivers products whose remote fingerprint differs from the local one (ADR-060). */
@@ -40,6 +42,8 @@ export interface FingerprintReconcileAdapter<Doc = any> {
    * id reconcile, with its mass-delete brake, may delete.
    */
   enqueue(entries: Array<{ id: string; local: Doc; refreshOnly?: boolean }>): void;
+  /** Ids per `fetchByIds` request; see `CatalogueReconcileAdapter.refetchBatchSize`. */
+  refetchBatchSize?: number;
 }
 
 /** One product in the catalogue listing. `key` is the local primary key value; `remote` is whatever the connector needs to refetch it (a numeric backend id, say). */
@@ -64,4 +68,6 @@ export interface CatalogueReconcileAdapter<Doc = any, Cursor = unknown> {
   confirmGone(locals: Doc[], context: SyncContext): Promise<string[]>;
   /** Hand documents to the collection's pull (the reconcile feed). */
   enqueue(entries: Array<{ key: string; local?: Doc; remote?: unknown; tombstone?: boolean }>): void;
+  /** Ids per `fetchByIds` request of the feed this adapter enqueues into: a page's `n` refetches take `ceil(n / refetchBatchSize)` budget slots (1 when unset). */
+  refetchBatchSize?: number;
 }

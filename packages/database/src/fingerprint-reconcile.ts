@@ -114,6 +114,8 @@ export function startFingerprintReconcile<Doc>({
       fetchPages: (context, from) => skipPages(adapter.fetchPages(context),
         (page) => [...page].map(([key, fingerprint]) => ({ key, fingerprint })), from),
       fingerprint: (doc) => adapter.fingerprint(doc),
+      // The feed's request size, so the runner budgets a page's refetch by its requests (#307).
+      refetchBatchSize: adapter.refetchBatchSize,
       // It never deletes: keepCandidates only counts the products the listing did not name (`unreported`), before the
       // brake and confirmGone, so this is never called; a call is a runner bug, and it fails the pass loudly.
       confirmGone: async () => { throw new Error('The fingerprint reconcile never deletes; confirmGone must not be called.'); },

@@ -129,3 +129,72 @@ describe('startReplication', () => {
     await state.cancel();
   });
 });
+
+describe('startReplication: one adapter object replicating into two databases (#307)', () => {
+  const databases: any[] = [];
+  // A fresh module per test: the guard's warn-once state is module-level, and one test must not hide another's warning.
+  let start: typeof startReplication;
+  beforeEach(async () => {
+    vi.resetModules();
+    ({ startReplication: start } = await import('./replication'));
+  });
+  afterEach(async () => {
+    for (const database of databases.splice(0)) await database.close();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+  const newCollection = async () => {
+    const database = await createRxDatabase({ name: `guard_${Math.random().toString(36).slice(2)}`, storage, multiInstance: false });
+    databases.push(database);
+    await database.addCollections({ products: { schema: testSchema } });
+    return database.products;
+  };
+  // A new object each call: a connector instance's combined pull adapter.
+  const newAdapter = (): ReplicationAdapter<any, any> => ({ pull: { handler: async () => ({ documents: [], checkpoint: {} }) } });
+  const warnings = () => vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+  it('warns exactly once when the same adapter object starts on another collection while the first is live', async () => {
+    const warn = warnings();
+    const shared = newAdapter();
+    const collections = [await newCollection(), await newCollection(), await newCollection()];
+    const states = collections.map((collection) => start({ collection, adapter: shared, context }));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('one connector instance is replicating into two databases');
+    for (const state of states) await state.cancel();
+  });
+
+  it('does not warn for two different adapter objects, nor for a restart on the same collection', async () => {
+    const warn = warnings();
+    const [one, two] = [await newCollection(), await newCollection()];
+    const shared = newAdapter();
+    const states = [
+      start({ collection: one, adapter: shared, context }),
+      start({ collection: one, adapter: shared, context }),
+      start({ collection: two, adapter: newAdapter(), context }),
+    ];
+    expect(warn).not.toHaveBeenCalled();
+    for (const state of states) await state.cancel();
+  });
+
+  it('does not warn for a start after the first replication was cancelled, or after a one-shot replication completed', async () => {
+    const warn = warnings();
+    const shared = newAdapter();
+    const first = start({ collection: await newCollection(), adapter: shared, context });
+    await first.cancel();
+    const oneShot = start({ collection: await newCollection(), adapter: shared, context, live: false });
+    await vi.waitFor(() => expect(oneShot.isStopped()).toBe(true), { timeout: 5_000, interval: 10 });
+    const third = start({ collection: await newCollection(), adapter: shared, context });
+    expect(warn).not.toHaveBeenCalled();
+    await third.cancel();
+  });
+
+  it('never warns in a production build', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const warn = warnings();
+    const shared = newAdapter();
+    const states = [start({ collection: await newCollection(), adapter: shared, context }),
+      start({ collection: await newCollection(), adapter: shared, context })];
+    expect(warn).not.toHaveBeenCalled();
+    for (const state of states) await state.cancel();
+  });
+});

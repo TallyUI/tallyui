@@ -6,6 +6,24 @@ import { needsAttention, type OutboxState, type PosOrder } from '@tallyui/pos';
 const STATUS_LABEL = { pending: 'Waiting to sync', applied: 'Synced', rejected: 'Not accepted' };
 /** `figures_mismatch`'s labels; a field a newer store sends that isn't here is shown by its raw name. */
 const FIGURE_LABELS = new Map([['subtotalMinor', 'Subtotal'], ['taxMinor', 'Tax'], ['discountMinor', 'Discount']]);
+/** A rejected sale's line in the cashier's words, by the store's error code (#269). The store's own message goes to the
+ * sync log (the outbox logs it), never here. */
+const REFUSAL_SENTENCES = new Map([
+  ['invalid_payload', "The online store refused this sale: this till sent it in a form the store can't read. Ask the store owner to look at the till's sync log."],
+  ['unsupported_version', "The online store refused this sale: the store's software is older than this till's. Ask the store owner to update the POS plugin."],
+  ['idempotency_mismatch', "The online store has a different sale under this sale's number. Don't send it again; ask the store owner to compare the two."],
+  ['store_configuration', 'The online store refused this sale: a setting on the store needs changing. Once the store owner fixes it, press Retry.'],
+  ['platform_error', "The online store refused this sale. Ask the store owner to look at the till's sync log."],
+  ['internal_error', "The online store hit a fault in its POS plugin and refused this sale. Ask the store owner to look at the till's sync log."],
+  ['insufficient_stock', "The online store refused this sale: it doesn't have enough stock of one of the items."],
+  ['unsupported_tax_mode', "The online store refused this sale: its tax settings can't take a sale like this one. Ask the store owner to check them."],
+  ['unknown_variant', 'The online store refused this sale: that product variation no longer exists.'],
+  ['invalid_quantity', "The online store refused this sale: a quantity or a discount on it isn't allowed."],
+  ['underpaid', 'The online store refused this sale: the payments add up to less than the total.'],
+  ['unsupported_currency', "The online store refused this sale: the store doesn't take this currency."],
+]);
+// Any other code, or none: platform_error's sentence, as the generic fallback (approved by the Front desk, 2026-09-30).
+const refusalSentence = (code: string | undefined) => REFUSAL_SENTENCES.get(code ?? '') ?? REFUSAL_SENTENCES.get('platform_error')!;
 
 /** Keeps an unparseable value as is, like medusapos's date util, since `Intl` throws on an invalid date. */
 function defaultFormatDate(iso: string) {
@@ -45,8 +63,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}
               {`Hasn't reached the online store since ${new Date(stuckEntry.since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.`}
             </Text> : null}
-            {/* The store's message alone: the cashier sees no error code, and nothing when there is no message. */}
-            {order.syncStatus === 'rejected' && order.error?.message ? <Text className="text-destructive">{order.error.message}</Text> : null}
+            {/* The code's sentence alone: the cashier sees no error code and never the store's message. */}
+            {order.syncStatus === 'rejected' ? <Text className="text-destructive">{refusalSentence(order.error?.code)}</Text> : null}
             {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
             {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
             {order.localWarnings?.map((warning, index) => <Text key={index} className="text-foreground">
@@ -54,9 +72,9 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
                 ? `The customer's ${warning.field} couldn't be sent to the store, so the order isn't linked to them.`
                 : "The terminal's payment reference couldn't be kept; the payment is recorded without it."}
             </Text>)}
-            {section.title === 'Needs attention' && order.syncStatus === 'rejected' ? order.error?.code === 'idempotency_mismatch'
-              ? <Text className="text-foreground">This sale needs checking against the store before it can be sent again.</Text>
-              : <Pressable accessibilityRole="button" disabled={retryingIds.has(order.id)} onPress={async () => {
+            {/* idempotency_mismatch isn't requeueable (the outbox's NOT_REQUEUEABLE): its sentence says not to send it again, and no Retry. */}
+            {section.title === 'Needs attention' && order.syncStatus === 'rejected' && order.error?.code !== 'idempotency_mismatch'
+              ? <Pressable accessibilityRole="button" disabled={retryingIds.has(order.id)} onPress={async () => {
                 if (retrying.current.has(order.id)) return;
                 retrying.current.add(order.id);
                 setRetryingIds(new Set(retrying.current));

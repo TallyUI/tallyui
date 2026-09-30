@@ -39,10 +39,10 @@ export interface CreateDatabaseOptions {
  * `reconcile.stock` also gets the `stock_levels` overlay collection.
  *
  * ```ts
- * import { woocommerceConnector } from '@tallyui/connector-woocommerce';
+ * import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
  * import { createTallyDatabase } from '@tallyui/database';
  *
- * const db = await createTallyDatabase({ connector: woocommerceConnector });
+ * const db = await createTallyDatabase({ connector: createWooCommerceConnector() });
  * const products = await db.products.find().exec();
  * ```
  */

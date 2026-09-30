@@ -11,7 +11,7 @@ const PAGE_SIZE = 1000;
  * At most this many ids per `fetchByIds` request. Medusa ids are about 31
  * characters; 1,000 of them would pass Node's 16 KB header/URL limit.
  */
-const MAX_IDS_PER_REQUEST = 100;
+export const MAX_IDS_PER_REQUEST = 100;
 
 async function get(path: string, context: SyncContext) {
   const response = await fetch(`${context.baseUrl}${path}`, {

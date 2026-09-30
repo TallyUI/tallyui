@@ -8,7 +8,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { connectorCollection } from '@tallyui/database';
 import { combinePullAdapters, type ReplicationAdapter } from '@tallyui/core';
 import { medusaProductSchema } from '../schemas/products';
-import { medusaConnector } from '../index';
+import { createMedusaConnector } from '../index';
 import { medusaProductReplication } from './products';
 import { createMedusaVariantFeedReplication } from './variant-feed';
 
@@ -101,7 +101,7 @@ async function start({ variantPageSize, afterVariantPage, afterProductPage, lega
       products: medusaProductReplication,
       variants: createMedusaVariantFeedReplication(variantPageSize),
     }, { legacyKey: 'products' })
-    : medusaConnector.replication!.products!;
+    : createMedusaConnector().replication!.products!;
   const checkpoints: any[] = [];
   const variantPagesPerCall: number[] = [];
   const errors: unknown[] = [];
