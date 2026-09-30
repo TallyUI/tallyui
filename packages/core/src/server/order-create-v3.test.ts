@@ -36,7 +36,7 @@ const payload: OrderCreatePayloadV3 = {
 it('the golden v3 envelope passes validation unchanged', () => {
   expect(validateBatch({ commands: [fixture] })).toStrictEqual({ ok: true, commands: [fixture] })
   expect(SUPPORTED_ORDER_CREATE_VERSIONS).toContain(fixture.version)
-  expect(precheckCommand(fixture as never)).toBeUndefined()
+  expect(precheckCommand(fixture as never, { orderCreate: [1, 2, 3], register: [1] })).toBeUndefined()
   expect(payload).toStrictEqual(fixture.payload)
   expect(payloadShapeErrors(payload)).toStrictEqual([])
   expect(fiscalFiguresErrors(payload)).toStrictEqual([])

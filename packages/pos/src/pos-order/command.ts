@@ -54,6 +54,14 @@ function netDiscountMinor(line: PosOrderLine, pricesIncludeTax: boolean): number
 }
 
 /**
+ * The order.create version an order's stored content makes: 3 with ADR-065's figures, else 2 when its lines are
+ * discounted (ADR-062), else 1. The builder's, and pos_orders v5's migration's for a row with no `sentVersion`.
+ */
+export function contentVersion(order: Pick<PosOrder, 'display' | 'taxByRate' | 'lines'>): 1 | 2 | 3 {
+  return order.display && order.taxByRate ? 3 : order.lines.reduce((sum, line) => sum + line.discountMinor, 0) > 0 ? 2 : 1;
+}
+
+/**
  * Builds the ADR-038 order.create envelope for a PosOrder. It sends the stored order unchanged, so every resend of
  * an order is byte-identical, and an order stored by an older till goes out exactly as that till sent it:
  * `finalizeOrder` freezes the sent form (names and labels cut, an unsendable customer email or id left out).
@@ -63,12 +71,12 @@ function netDiscountMinor(line: PosOrderLine, pricesIncludeTax: boolean): number
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
   options?: { maxVersion?: number }): OrderCreateEnvelope {
   const grossMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
-  const contentVersion = order.display && order.taxByRate ? 3 : grossMinor > 0 ? 2 : 1;
+  const content = contentVersion(order);
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
   if (grossMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
   // Version 4 only when the cap allows it (the server advertises 4, and no sentVersion holds the order lower).
-  const version = (contentVersion === 3 && cap !== undefined && cap >= 4 ? 4
-    : Math.min(contentVersion, cap ?? contentVersion)) as OrderCreateEnvelope['version'];
+  const version = (content === 3 && cap !== undefined && cap >= 4 ? 4
+    : Math.min(content, cap ?? content)) as OrderCreateEnvelope['version'];
   const lineDiscounts = order.lines.map((line) => version === 4 ? netDiscountMinor(line, order.pricesIncludeTax) : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);

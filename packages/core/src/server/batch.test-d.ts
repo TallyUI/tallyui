@@ -28,9 +28,17 @@ describe('server envelope types', () => {
   })
 
   it('precheckCommand accepts a register, an order.create and a validated envelope without a cast', () => {
-    precheckCommand({} as RegisterCommandEnvelope)
+    const server = { orderCreate: [1, 2, 3], register: [1] } as const
+    precheckCommand({} as RegisterCommandEnvelope, server)
+    precheckCommand({} as OrderCreateEnvelope, server)
+    precheckCommand({} as ValidatedCommandEnvelope, server)
+  })
+
+  it("precheckCommand requires the server's own supported lists (#297)", () => {
+    // @ts-expect-error no supported lists
     precheckCommand({} as OrderCreateEnvelope)
-    precheckCommand({} as ValidatedCommandEnvelope)
+    // @ts-expect-error a register list is required too
+    precheckCommand({} as OrderCreateEnvelope, { orderCreate: [1] })
   })
 
   it('commandFingerprint accepts a register envelope without a cast', () => {
@@ -39,9 +47,9 @@ describe('server envelope types', () => {
 
   it('precheckCommand rejects an unknown command type and a non-object argument', () => {
     // @ts-expect-error unknown command type
-    precheckCommand({ id: 'x', type: 'unknown.command', version: 1, payload: {} })
+    precheckCommand({ id: 'x', type: 'unknown.command', version: 1, payload: {} }, { orderCreate: [1], register: [1] })
     // @ts-expect-error non-object argument
-    precheckCommand('not an envelope')
+    precheckCommand('not an envelope', { orderCreate: [1], register: [1] })
   })
 
   it('commandFingerprint rejects a non-object argument', () => {

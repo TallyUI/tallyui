@@ -46,10 +46,12 @@ it('the fixture and its snapshots are present', () => {
 });
 
 (getRxStorageSQLite ? it : it.skip)(
-  'after a rollback to 2.0.0, the upgrade recovers every order at v4, field for field, removes the older records, and sends each pending order once',
+  'after a rollback to 2.0.0, the upgrade recovers every order at v5 on the reopen, field for field, removes the older records, and sends each pending order once',
   async () => {
     const [v3, rollback] = await Promise.all(snapshots.map(async (path) => JSON.parse(await readFile(path, 'utf8')) as PosOrder[]));
-    const expected = [...v3, ...rollback];
+    // Plus version 5's sentVersion: order-0007's recorded downgrade, order-0010's figures 3, every other order 1.
+    const expected = [...v3, ...rollback].map((order) =>
+      ({ ...order, sentVersion: order.sentVersion ?? (order.id === 'order-0010' ? 3 : 1) }));
     expect(rollback.map((order) => order.id)).toEqual(['order-0101', 'order-0102']);
     // The rollback left order-0102 in a v2 store beside the v4 one, and the v4 store's orders hidden from 2.0.0.
     expect(storedCollections(fixture)).toEqual({ records: ['collection|pos_orders-2', 'collection|pos_orders-4'],
@@ -65,8 +67,12 @@ it('the fixture and its snapshots are present', () => {
         const db = await createRxDatabase({ name: 'tally_carry',
           storage: wrappedValidateAjvStorage({ storage: getRxStorageSQLite!(handle.database) }), multiInstance: false });
         try {
+          // Two older stores (v2 and v4, a main build rolled back): an open migrates one, so the first rejects DM4
+          // with the v4 store left, and the reopen recovers the rest (ADR-069). A 2.0.0 till's v2 store takes one open.
+          await expect(addPosOrderCollection(db)).rejects.toMatchObject({ code: 'DM4' });
+          expect(storedCollections(copyPath).tables).toEqual(['pos_orders-4', 'pos_orders-5']);
           const collection = await addPosOrderCollection(db);
-          expect(collection.schema.version).toBe(4);
+          expect(collection.schema.version).toBe(5);
           expect(await readFresh(collection, { selector: {}, sort: [{ id: 'asc' }] })).toStrictEqual(expected);
 
           const pending = expected.filter((order) => order.syncStatus === 'pending').map((order) => order.commandId).sort();
@@ -90,8 +96,8 @@ it('the fixture and its snapshots are present', () => {
       } finally {
         handle.raw.close();
       }
-      // Only the v4 collection record and store are left.
-      expect(storedCollections(copyPath)).toEqual({ records: ['collection|pos_orders-4'], tables: ['pos_orders-4'] });
+      // Only the v5 collection record and store are left.
+      expect(storedCollections(copyPath)).toEqual({ records: ['collection|pos_orders-5'], tables: ['pos_orders-5'] });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -226,6 +226,120 @@ describe('SyncStatus', () => {
     expect(line()).toBe('Sales are up to date.');
   });
 
+  // #269's ruled lines and detail, written out whole.
+  const refusedOne = "1 sale needs attention · The online store refused it. Ask the store owner to look at the till's sync log.";
+  const refusedMany = (n: number) => `${n} sales need attention · The online store refused them. Ask the store owner to look at the till's sync log.`;
+  // The line with what else waits after the refused count: `counts` replaces "{n} sale(s) need(s) attention".
+  const refusedWaiting = (counts: string, them = 'them') => `${counts} · The online store refused ${them}. Ask the store owner to look at the till's sync log.`;
+  const refusedDetail = 'Refused sales stay on this till under Needs attention, each with what to do next.';
+  // Every text shown below the status line, in order.
+  const below = () => {
+    const texts: (string | null)[] = [];
+    for (let el = document.querySelector('[aria-label]')?.nextElementSibling; el; el = el.nextElementSibling) texts.push(el.textContent);
+    return texts;
+  };
+
+  it('with refused sales, says "1 sale needs attention" or "3 sales need attention", labelled so, with the detail below', () => {
+    const { container } = render(<SyncStatus state={{ pending: 0, sending: false, rejected: 1 }} />);
+    expect(line()).toBe(refusedOne);
+    expect(label()).toBe(refusedOne);
+    expect(below()).toEqual([refusedDetail]);
+    expect(container.textContent).not.toMatch(/up to date/);
+    cleanup();
+    render(<SyncStatus state={{ pending: 0, sending: false, rejected: 3 }} registerState={{ pending: 0, sending: false }} />);
+    expect(line()).toBe(refusedMany(3));
+    expect(label()).toBe(refusedMany(3));
+    expect(below()).toEqual([refusedDetail]);
+  });
+
+  it('with refused sales and others waiting, names both in the refused line, written out whole', () => {
+    render(<SyncStatus state={{ pending: 5, sending: false, rejected: 1 }} />);
+    expect(line()).toBe("1 sale needs attention, 5 waiting to sync · The online store refused it. Ask the store owner to look at the till's sync log.");
+    expect(label()).toBe("1 sale needs attention, 5 waiting to sync · The online store refused it. Ask the store owner to look at the till's sync log.");
+    cleanup();
+    render(<SyncStatus state={{ pending: 1, sending: false, rejected: 2 }} />);
+    expect(line()).toBe("2 sales need attention, 1 waiting to sync · The online store refused them. Ask the store owner to look at the till's sync log.");
+    cleanup();
+    render(<SyncStatus state={{ pending: 0, sending: false, rejected: 1 }} registerState={{ pending: 2, sending: false }} />);
+    expect(line()).toBe("1 sale needs attention, 2 till updates waiting to sync · The online store refused it. Ask the store owner to look at the till's sync log.");
+  });
+
+  it('with rejected: 2, shows the refused line with the waiting counts over a stuck order, sending and retrying', () => {
+    const since = Date.now();
+    const stuck = { commandIds: ['a'], since, reason: 'status_503', orders: [{ commandId: 'a', since, reason: 'status_503' }] };
+    for (const sending of [true, false]) {
+      const { container } = render(<SyncStatus state={{ pending: 4, sending, rejected: 2, stuck, lastRetryReason: 'status_503',
+        nextAttemptAt: since + 5000 }} registerState={{ pending: 2, sending, stuck, lastRetryReason: 'status_503', nextAttemptAt: since + 5000 }} />);
+      expect(line()).toBe(refusedWaiting('2 sales need attention, 4 sales and 2 till updates waiting to sync'));
+      expect(below()).toEqual([refusedDetail]);
+      expect(container.textContent).not.toMatch(/haven't reached|Sending|Retrying|up to date/);
+      cleanup();
+    }
+  });
+
+  it('with refused sales and the store missing, shows the refused detail first, then the backend-missing detail', () => {
+    const backendMissing = { since: Date.now() };
+    render(<SyncStatus state={{ pending: 0, sending: false, rejected: 1, backendMissing }} />);
+    expect(line()).toBe(refusedOne);
+    expect(below()).toEqual([refusedDetail, "This till couldn't find the POS plugin on the online store the last time it checked. "
+      + "Ask the store owner to check that it is installed and switched on, and that the store address in this till's settings is right."]);
+    cleanup();
+    render(<SyncStatus state={{ pending: 3, sending: true, rejected: 2, backendMissing }} pluginName="Medusa POS" />);
+    expect(line()).toBe(refusedWaiting('2 sales need attention, 3 waiting to sync'));
+    expect(below()).toEqual([refusedDetail, detail('Medusa POS')]);
+  });
+
+  it('with rejected: 0 and nothing pending, says "Sales are up to date." with no refused detail', () => {
+    const { container } = render(<SyncStatus state={{ pending: 0, sending: false, rejected: 0 }} />);
+    expect(line()).toBe('Sales are up to date.');
+    expect(below()).toEqual([]);
+    expect(container.textContent).not.toMatch(/attention|refused/i);
+  });
+
+  it('on iOS, announces the refused line once per change, and nothing as sending flips', () => {
+    Object.assign(Platform, { OS: 'ios' });
+    const announce = vi.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    const { rerender } = render(<SyncStatus state={{ pending: 1, sending: false }} />);
+    rerender(<SyncStatus state={{ pending: 1, sending: false, rejected: 1 }} />);
+    rerender(<SyncStatus state={{ pending: 1, sending: true, rejected: 1 }} />);
+    rerender(<SyncStatus state={{ pending: 0, sending: false, rejected: 2 }} />);
+    expect(announce.mock.calls).toEqual([[refusedWaiting('1 sale needs attention, 1 waiting to sync', 'it')], [refusedMany(2)]]);
+  });
+
+  const batchRefused = (waiting: string) => `${waiting} waiting to sync · The online store refused the last send. `
+    + 'This till will try again with the next sale, or when the app is reopened.';
+  // The till-updates line promises nothing about reopening: no app starts the register outbox at launch.
+  const tillUpdatesRefused = {
+    2: '2 till updates waiting to sync · The online store refused the last send. This till will try again with the next till update.',
+    1: '1 till update waiting to sync · The online store refused the last send. This till will try again with the next till update.',
+  };
+  it('with a refused batch (sales, or till updates alone), says so after the waiting count, over the stuck and missing sentences, with no Sending or Retrying line', () => {
+    const since = Date.now();
+    const stuck = { commandIds: ['a'], since, reason: 'status_503', orders: [{ commandId: 'a', since, reason: 'status_503' }] };
+    const refused = { status: 413, reason: 'status_413' };
+    const cases: [OutboxState, OutboxState | undefined, string][] = [
+      [{ pending: 3, sending: false, refused, lastRetryReason: 'refused' }, undefined, batchRefused('3 sales')],
+      [{ pending: 1, sending: false, refused, lastRetryReason: 'refused' }, undefined, batchRefused('1 sale')],
+      [{ pending: 1, sending: true, refused, lastRetryReason: 'refused', stuck, backendMissing: { since } },
+        { pending: 2, sending: false }, batchRefused('1 sale and 2 till updates')],
+      [{ pending: 0, sending: false }, { pending: 2, sending: false, refused, lastRetryReason: 'refused' },
+        tillUpdatesRefused[2]],
+      [{ pending: 0, sending: false }, { pending: 1, sending: false, refused, lastRetryReason: 'refused' },
+        tillUpdatesRefused[1]],
+      // Both refused with a sale waiting: the sales line wins.
+      [{ pending: 2, sending: false, refused, lastRetryReason: 'refused' }, { pending: 1, sending: false, refused,
+        lastRetryReason: 'refused' }, batchRefused('2 sales and 1 till update')]];
+    for (const [state, registerState, text] of cases) {
+      const { container } = render(<SyncStatus state={state} registerState={registerState} />);
+      expect(line()).toBe(text);
+      expect(label()).toBe(text);
+      expect(container.textContent).not.toMatch(/Sending|Retrying|haven't reached|aren't reaching/);
+      cleanup();
+    }
+    render(<SyncStatus state={{ pending: 3, sending: false, refused, lastRetryReason: 'refused', rejected: 1 }} />);
+    expect(line()).toBe(refusedWaiting('1 sale needs attention, 3 waiting to sync', 'it'));
+  });
+
   it('labels the status line with exactly the line shown, idle and with the store missing', () => {
     render(<SyncStatus state={{ pending: 0, sending: false }} />);
     expect(screen.getByLabelText('Sales are up to date.').textContent).toBe('Sales are up to date.');
@@ -433,6 +547,9 @@ describe('SyncStatus', () => {
     ['store_misconfigured without one', notice('store_misconfigured'), undefined,
       "Products aren't updating: a setting on the online store needs changing.",
       "You can keep selling. Ask the store owner to check the store's settings."],
+    ['till_update_required', notice('till_update_required', { fixedBy: 'till' }), undefined,
+      "Products aren't updating: this till needs updating.",
+      'You can keep selling. Products, prices and stock stay as they were until this till is updated.'],
     ['an unknown code', notice('some_new_code'), undefined, fallbackLine, fallbackDetail],
     ['an unknown till code', notice('some_till_code', { fixedBy: 'till' }), undefined, fallbackLine, fallbackDetail],
   ])('shows the pull notice for %s as a plain line and a detail, never the raw code', (_name, pullNotice, pluginName, noticeLine, noticeDetail) => {

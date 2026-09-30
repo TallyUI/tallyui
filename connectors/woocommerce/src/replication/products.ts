@@ -15,12 +15,29 @@ export type WooProductCheckpoint = {
 // in the same call instead; every fetch in one call, mark requests included, counts against this.
 const MAX_REQUESTS_PER_CALL = 4;
 
-function checkResponse(response: Response) {
+async function checkResponse(response: Response) {
   if (response.ok) return;
   if (response.status === 401 || response.status === 403) {
     throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status);
   }
+  if (response.status === 426) {
+    const body = await response.json().catch(() => undefined);
+    throw new WooTillUpdateRequiredError(typeof body?.code === 'string' ? body.code : undefined);
+  }
   throw new Error(`WooCommerce API error: ${response.status}`);
+}
+
+/** WCPOS's protocol gate refused this till (HTTP 426, normally `wcpos_update_required`): only updating the till fixes it. */
+export class WooTillUpdateRequiredError extends Error {
+  name = 'WooTillUpdateRequiredError';
+  readonly code = 'till_update_required' as const;
+  /** Only updating this till fixes it, so the pull pauses until resume() (`errorKind`). */
+  readonly fixedBy = 'till' as const;
+
+  /** The body's `code`, for diagnostics; the status alone makes the error. */
+  constructor(readonly serverCode: string | undefined) {
+    super('WooCommerce API error: 426: this till needs updating to sync with the store');
+  }
 }
 
 export class WooMissingUuidError extends Error {
@@ -78,7 +95,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
           `${context.baseUrl}/products?${mark}`,
           { headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal },
         );
-        checkResponse(markResponse);
+        await checkResponse(markResponse);
         const [newest] = await markResponse.json();
         // Nothing modified after L (or no product at all): every window is empty.
         if (newest === undefined) return { documents: [], checkpoint: lastCheckpoint ?? { modified: '', offset: 0 } };
@@ -108,7 +125,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
         signal: context.signal,
       });
 
-      checkResponse(response);
+      await checkResponse(response);
 
       const products: any[] = await response.json();
       const total = response.headers.get('X-WP-Total');

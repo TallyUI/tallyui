@@ -101,22 +101,24 @@ describe('order outbox', () => {
     expect((await collection.findOne(input.id).exec())!.toJSON(true)).toStrictEqual(stored);
   });
 
-  it('a backlog larger than one batch on an old plugin downgrades batch by batch and never enters refused', async () => {
+  it('a backlog larger than one batch on an old plugin: the first batch is downgraded, the rest go at its max; never refused', async () => {
     const inputs = Array.from({ length: 25 }, (_, i) => v3Order(i));
     await collection.bulkInsert(inputs);
-    const { outbox, send, states } = setup({ getMaxOrderCreateVersion: () => 2 });
+    // The max is unknown at the first send, then 2.
+    const { outbox, send, states } = setup({ getMaxOrderCreateVersion: vi.fn().mockReturnValueOnce(undefined).mockReturnValue(2) });
     send.mockImplementation(async (batch) => {
       const index = batch.findIndex((command) => command.version > 2);
       return index < 0 ? { kind: 'results', results: applied(batch) }
         : { kind: 'refused', status: 400, reason: `Invalid commands[${index}].version` };
     });
     await outbox.flush();
-    expect(send).toHaveBeenCalledTimes(6);
-    for (const input of inputs) {
+    expect(send).toHaveBeenCalledTimes(4);
+    for (const [i, input] of inputs.entries()) {
       expect(send.mock.calls.flatMap(([batch]) => batch.filter((command) => command.payload.clientOrderId === input.id))
-        .map((command) => [command.id, command.version])).toEqual([[input.commandId, 3], [input.commandId, 2]]);
+        .map((command) => [command.id, command.version])).toEqual([...(i < 10 ? [[input.commandId, 3]] : []), [input.commandId, 2]]);
       const stored = (await collection.findOne(input.id).exec())!.toJSON();
-      expect(stored).toMatchObject({ syncStatus: 'applied', commandId: input.commandId, sentVersion: 2, downgradedFrom: 3 });
+      expect(stored).toMatchObject({ syncStatus: 'applied', commandId: input.commandId, sentVersion: 2 });
+      expect(stored.downgradedFrom).toBe(i < 10 ? 3 : undefined);
       expect(stored.display).toStrictEqual(input.display);
       expect(stored.taxByRate).toStrictEqual(input.taxByRate);
     }
@@ -129,7 +131,7 @@ describe('order outbox', () => {
     const write = vi.fn();
     outboxLogger.addSink({ id: 'fallback-capture', levels: ['warn', 'error'], write });
     try {
-      const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 1 });
+      const { outbox, send } = setup({ getMaxOrderCreateVersion: vi.fn().mockReturnValueOnce(undefined).mockReturnValue(1) });
       send.mockResolvedValueOnce({ kind: 'results', results: inputs.map((input) => unsupported(input, 1)) });
       await outbox.flush();
       expect(write).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn', scope: 'outbox',
@@ -149,7 +151,8 @@ describe('order outbox', () => {
     expect(send).toHaveBeenCalledTimes(1);
     const stored = (await collection.findOne(input.id).exec())!.toJSON();
     expect(stored).toMatchObject({ syncStatus: 'rejected', error: result.error, commandId: input.commandId });
-    expect(stored.sentVersion).toBeUndefined();
+    // An invalid max is unknown: sent and recorded at 3.
+    expect(stored.sentVersion).toBe(3);
     expect(states.at(-1)).toMatchObject({ pending: 0, sending: false, nextAttemptAt: undefined });
   });
 
@@ -171,15 +174,15 @@ describe('order outbox', () => {
     } finally { outboxLogger.removeSink('refresh-capture'); }
   });
 
-  it("an order can be lowered again when the server's max drops, and downgradedFrom keeps the first version", async () => {
+  it("an order can be lowered again when the server's max drops, and a requeue records its downgrade afresh", async () => {
     const input = v3Order(0, false);
     await collection.insert(input);
-    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 2 });
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: vi.fn().mockReturnValueOnce(undefined).mockReturnValue(2) });
     send.mockResolvedValueOnce({ kind: 'results', results: [unsupported(input, 2)] });
     await outbox.flush();
     const current = (await collection.findOne(input.id).exec())!;
     expect(current.toJSON()).toMatchObject({ syncStatus: 'applied', sentVersion: 2, downgradedFrom: 3 });
-    // A persisted refusal after the server's maximum drops is requeueable, with the prior cap intact.
+    // A persisted refusal after the server's maximum drops is requeueable; the new command chooses afresh, at the max 2.
     await current.incrementalPatch({ syncStatus: 'rejected', error: unsupported(input, 1).error });
     outbox.stop();
     expect(await outbox.requeue([input.id])).toBe(1);
@@ -190,7 +193,7 @@ describe('order outbox', () => {
       [input.commandId, 3], [input.commandId, 2], [requeued.commandId, 2], [requeued.commandId, 1],
     ]);
     const stored = (await collection.findOne(input.id).exec())!.toJSON();
-    expect(stored).toMatchObject({ syncStatus: 'applied', sentVersion: 1, downgradedFrom: 3 });
+    expect(stored).toMatchObject({ syncStatus: 'applied', sentVersion: 1, downgradedFrom: 2 });
     for (const key of ['display', 'taxByRate', 'lines', 'payments', 'subtotalMinor', 'discountMinor', 'taxMinor', 'totalMinor'] as const) {
       expect(stored[key]).toStrictEqual(input[key]);
     }
@@ -200,12 +203,13 @@ describe('order outbox', () => {
     const inputs = [v3Order(0, false), v3Order(1, false)];
     await collection.bulkInsert(inputs);
     const refreshCapabilities = vi.fn(async () => {});
-    const getMaxOrderCreateVersion = vi.fn().mockReturnValueOnce(2).mockReturnValue(1);
+    const getMaxOrderCreateVersion = vi.fn().mockReturnValueOnce(undefined).mockReturnValueOnce(2).mockReturnValue(1);
     const { outbox, send } = setup({ refreshCapabilities, getMaxOrderCreateVersion });
     send.mockResolvedValueOnce({ kind: 'results', results: inputs.map((input) => unsupported(input)) });
     await outbox.flush();
     expect(refreshCapabilities).toHaveBeenCalledTimes(1);
-    expect(getMaxOrderCreateVersion).toHaveBeenCalledTimes(1);
+    // The first send's read, then the batch's one downgrade read.
+    expect(getMaxOrderCreateVersion).toHaveBeenCalledTimes(2);
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[1][0].map((command) => [command.id, command.version])).toEqual(inputs.map((input) => [input.commandId, 2]));
     for (const input of inputs) expect((await collection.findOne(input.id).exec())!.syncStatus).toBe('applied');
@@ -233,7 +237,8 @@ describe('order outbox', () => {
     expect(stored.display).toStrictEqual(input.display);
     expect(stored.taxByRate).toStrictEqual(input.taxByRate);
     expect(refreshCapabilities).toHaveBeenCalledTimes(1);
-    expect(getMaxOrderCreateVersion).not.toHaveBeenCalled();
+    // Only the first send's read: the downgrade takes the error's max.
+    expect(getMaxOrderCreateVersion).toHaveBeenCalledTimes(1);
     expect(states.some((state) => state.refused)).toBe(false);
   });
 
@@ -264,7 +269,7 @@ describe('order outbox', () => {
     for (const input of inputs) {
       const stored = (await collection.findOne(input.id).exec())!;
       expect(stored.syncStatus).toBe('applied');
-      expect(stored.sentVersion).toBe(input.display ? 2 : undefined);
+      expect(stored.sentVersion).toBe(input.display ? 2 : 1);
       expect(stored.downgradedFrom).toBe(input.display ? 3 : undefined);
     }
     expect(refreshCapabilities).toHaveBeenCalledTimes(1);
@@ -275,14 +280,14 @@ describe('order outbox', () => {
   it.each([false, true])('a discounted order with max 1 is rejected unsupported_version while the others are applied, batch 400: %s', async (legacy) => {
     const inputs = [v3Order(), order(1), v3Order(2, false)];
     await collection.bulkInsert(inputs);
-    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 1 });
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: vi.fn().mockReturnValueOnce(undefined).mockReturnValue(1) });
     send.mockResolvedValueOnce(legacy ? { kind: 'refused', status: 400, reason: 'Invalid commands[0].version' }
       : { kind: 'results', results: [unsupported(inputs[0], 1), ...applied([toOrderCreateEnvelope(inputs[1], 'device-1')]), unsupported(inputs[2], 1)] });
     await outbox.flush();
     const rejected = (await collection.findOne(inputs[0].id).exec())!.toJSON();
     expect(rejected.syncStatus).toBe('rejected');
     expect(rejected.error).toStrictEqual({ code: 'unsupported_version', message: 'This sale needs order.create version 2; the server supports up to 1.' });
-    expect(rejected.sentVersion).toBeUndefined();
+    expect(rejected.sentVersion).toBe(3);
     expect(rejected.downgradedFrom).toBeUndefined();
     expect(rejected.display).toStrictEqual(inputs[0].display);
     expect(rejected.taxByRate).toStrictEqual(inputs[0].taxByRate);
@@ -291,23 +296,28 @@ describe('order outbox', () => {
     expect(send.mock.calls[1][0].every((command) => command.version === 1 && command.id !== inputs[0].commandId)).toBe(true);
   });
 
-  it('requeue picks up an unsupported_version rejection and keeps sentVersion', async () => {
+  it('requeue clears sentVersion and downgradedFrom: the new command chooses afresh, at v4 when the server advertises 4', async () => {
     const input: PosOrder = { ...v3Order(), sentVersion: 2, downgradedFrom: 3, syncStatus: 'rejected',
       error: { code: 'unsupported_version', message: 'not supported' } };
     await collection.insert(input);
-    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 3 });
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 4 });
     outbox.stop();
     expect(await outbox.requeue([input.id])).toBe(1);
-    expect((await collection.findOne(input.id).exec())!.sentVersion).toBe(2);
+    const requeued = (await collection.findOne(input.id).exec())!.toMutableJSON();
+    expect(requeued).not.toHaveProperty('sentVersion');
+    expect(requeued).not.toHaveProperty('downgradedFrom');
     await outbox.flush();
-    expect(send.mock.calls[0][0][0].version).toBe(2);
-    expect((await collection.findOne(input.id).exec())!.toJSON()).toMatchObject({ syncStatus: 'applied', sentVersion: 2, downgradedFrom: 3 });
+    expect(send.mock.calls[0][0]).toStrictEqual([toOrderCreateEnvelope(requeued, 'device-1', 1, { maxVersion: 4 })]);
+    expect(send.mock.calls[0][0][0]).toMatchObject({ id: requeued.commandId, version: 4 });
+    const stored = (await collection.findOne(input.id).exec())!.toJSON();
+    expect(stored).toMatchObject({ syncStatus: 'applied', sentVersion: 4 });
+    expect(stored).not.toHaveProperty('downgradedFrom');
   });
 
   it('a second unsupported answer with a lower maximum lowers the order again', async () => {
     const input = v3Order(0, false);
     await collection.insert(input);
-    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 1 });
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: vi.fn().mockReturnValueOnce(undefined).mockReturnValue(1) });
     const second = unsupported(input, 1);
     send.mockResolvedValueOnce({ kind: 'results', results: [unsupported(input, 2)] })
       .mockResolvedValueOnce({ kind: 'results', results: [second] });
@@ -333,7 +343,7 @@ describe('order outbox', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const input = v3Order();
     await collection.insert(input);
-    const first = setup({ getMaxOrderCreateVersion: () => 2 });
+    const first = setup({ getMaxOrderCreateVersion: vi.fn().mockReturnValueOnce(undefined).mockReturnValue(2) });
     first.send.mockResolvedValueOnce({ kind: 'results', results: [unsupported(input, 2)] })
       .mockResolvedValueOnce({ kind: 'retry', reason: 'offline' });
     await first.outbox.flush();
@@ -360,7 +370,7 @@ describe('order outbox', () => {
     expect(send).toHaveBeenCalledTimes(1);
     expect(refreshCapabilities).not.toHaveBeenCalled();
     expect((await collection.findOne(input.id).exec())!.toJSON()).toMatchObject({ syncStatus: 'rejected', error: result.error });
-    expect((await collection.findOne(input.id).exec())!.sentVersion).toBeUndefined();
+    expect((await collection.findOne(input.id).exec())!.sentVersion).toBe(3);
   });
 
   it.each([undefined, 3])('an unsupported answer with no lower maximum is terminal: %s', async (max) => {
@@ -379,7 +389,8 @@ describe('order outbox', () => {
     const input = v3Order(0, false);
     await collection.insert(input);
     const refreshCapabilities = vi.fn(async () => {});
-    const { outbox, send, states } = setup({ refreshCapabilities, getMaxOrderCreateVersion: vi.fn().mockReturnValueOnce(2).mockReturnValue(1) });
+    const { outbox, send, states } = setup({ refreshCapabilities,
+      getMaxOrderCreateVersion: vi.fn().mockReturnValueOnce(undefined).mockReturnValueOnce(2).mockReturnValue(1) });
     send.mockResolvedValue({ kind: 'refused', status: 400, reason: 'Invalid commands[0].version' });
     await outbox.flush();
     expect(send).toHaveBeenCalledTimes(3);
@@ -398,7 +409,7 @@ describe('order outbox', () => {
     expect(send).toHaveBeenCalledTimes(1);
     expect(refreshCapabilities).not.toHaveBeenCalled();
     expect(states.at(-1)?.refused).toStrictEqual({ status: 400, reason });
-    expect((await collection.findOne(input.id).exec())!.toJSON()).toStrictEqual(input);
+    expect((await collection.findOne(input.id).exec())!.toJSON()).toStrictEqual({ ...input, sentVersion: 2 });
   });
 
   it('sends a version-3 order as version 3 and a pre-v3 pending order as before', async () => {
@@ -491,7 +502,9 @@ describe('order outbox', () => {
     for (const doc of await collection.find().exec()) {
       expect(doc.syncStatus).toBe('pending');
       expect(doc.error).toBeUndefined();
-      expect(doc.toJSON()).toEqual(inputs.find((input) => input.id === doc.id));
+      // The one batch sent (the oldest 10) recorded its version.
+      const i = inputs.findIndex((input) => input.id === doc.id);
+      expect(doc.toJSON()).toEqual({ ...inputs[i], ...(i < 10 ? { sentVersion: 1 } : {}) });
     }
     expect(states.at(-1)).toMatchObject({ pending: 25, sending: false, lastRetryReason: 'refused',
       refused: { status: 400, reason: 'unsupported_protocol' }, nextAttemptAt: undefined });
@@ -529,6 +542,19 @@ describe('order outbox', () => {
     expect(send).toHaveBeenCalledTimes(stopped ? 1 : 2);
     await outbox.flush();
     expect(send.mock.calls[1][0][0]).toMatchObject({ id: requeued.commandId, attempt: 1 });
+  });
+
+  it('counts a rejected order in state.rejected once a batch result rejects it, and 0 after requeue()', async () => {
+    const input = order(0);
+    await collection.insert(input);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: input.commandId,
+      status: 'rejected', error: { code: 'unknown_variant', message: 'x' } }] });
+    await outbox.flush();
+    expect(states.at(-1)).toMatchObject({ pending: 0, rejected: 1 });
+    outbox.stop();
+    await expect(outbox.requeue()).resolves.toBe(1);
+    expect(states.at(-1)).toMatchObject({ pending: 1, rejected: 0 });
   });
 
   it('requeues once when two calls find the same rejected order', async () => {
@@ -798,7 +824,7 @@ describe('order outbox', () => {
     const { outbox, send, states } = setup();
     send.mockResolvedValueOnce({ kind: 'retry', reason: 'network' }).mockResolvedValueOnce({ kind: 'retry', reason: 'status_500' });
     await outbox.flush();
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, lastRetryReason: 'network', nextAttemptAt: epoch + 1000 });
+    expect(states.at(-1)).toEqual({ pending: 1, rejected: 0, sending: false, lastRetryReason: 'network', nextAttemptAt: epoch + 1000 });
     await vi.advanceTimersByTimeAsync(999);
     expect(send).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -820,12 +846,12 @@ describe('order outbox', () => {
     send.mockResolvedValue({ kind: 'results', results: [] });
     await outbox.flush();
     expect(send).toHaveBeenCalledTimes(1);
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
+    expect(states.at(-1)).toEqual({ pending: 1, rejected: 0, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
     await vi.advanceTimersByTimeAsync(999);
     expect(send).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(send).toHaveBeenCalledTimes(2);
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 3000 });
+    expect(states.at(-1)).toEqual({ pending: 1, rejected: 0, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 3000 });
     await vi.advanceTimersByTimeAsync(1999);
     expect(send).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
@@ -848,7 +874,7 @@ describe('order outbox', () => {
     expect(Date.now()).toBe(epoch);
     expect((await collection.findOne(orders[0].id).exec())?.syncStatus).toBe('applied');
     expect((await collection.findOne(orders[1].id).exec())?.syncStatus).toBe('pending');
-    expect(states.at(-1)).toEqual({ pending: 1, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
+    expect(states.at(-1)).toEqual({ pending: 1, rejected: 0, sending: false, authRequired: false, lastRetryReason: 'no_progress', nextAttemptAt: epoch + 1000 });
   });
 
   it('shares the same promise between concurrent flush calls', async () => {
@@ -2110,5 +2136,95 @@ describe('order outbox backend missing (repeated 404s)', () => {
     await next();
     expect(send).toHaveBeenCalledTimes(7);
     expect(missing()).toBeUndefined();
+  });
+});
+
+// #286: an order goes out, on every attempt, at the version it first went out at (sentVersion, recorded before the send).
+describe('order outbox order.create version 4', () => {
+  const timeout = { kind: 'retry', reason: 'timeout' } as const;
+  const stored = async (id: string) => (await collection.findOne(id).exec())!.toJSON();
+
+  it('first sent at v3 while the server advertises 3, then timed out: the retry after it advertises 4 is v3, byte-identical', async () => {
+    const input = v3Order();
+    await collection.insert(input);
+    let max = 3;
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => max });
+    send.mockResolvedValueOnce(timeout);
+    await outbox.flush();
+    expect(await stored(input.id)).toMatchObject({ syncStatus: 'pending', sentVersion: 3 });
+    max = 4;
+    await outbox.flush();
+    const [[[first]], [[retry]]] = send.mock.calls;
+    expect(first).toStrictEqual(toOrderCreateEnvelope(input, 'device-1', 1));
+    expect(first.version).toBe(3);
+    expect(retry).toStrictEqual({ ...first, attempt: 2 });
+    expect(commandFingerprint(retry)).toBe(commandFingerprint(first));
+    // Without the record, the retry would have been v4, and the store would answer idempotency_mismatch.
+    expect(toOrderCreateEnvelope(input, 'device-1', 2, { maxVersion: 4 }).version).toBe(4);
+    expect(await stored(input.id)).toMatchObject({ syncStatus: 'applied', sentVersion: 3 });
+  });
+
+  it('the server advertises 4 on the first send: the order goes at v4, sentVersion 4 is stored, and the retry is v4', async () => {
+    const input = v3Order();
+    await collection.insert(input);
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: async () => 4 });
+    send.mockResolvedValueOnce(timeout);
+    await outbox.flush();
+    expect(await stored(input.id)).toMatchObject({ syncStatus: 'pending', sentVersion: 4 });
+    await outbox.flush();
+    const [[[first]], [[retry]]] = send.mock.calls;
+    expect(first).toStrictEqual(toOrderCreateEnvelope(input, 'device-1', 1, { maxVersion: 4 }));
+    expect(first.version).toBe(4);
+    expect(retry).toStrictEqual({ ...first, attempt: 2 });
+    expect(await stored(input.id)).toMatchObject({ syncStatus: 'applied', sentVersion: 4 });
+  });
+
+  it.each([['no getter', false], ['a getter with no max yet', true]])('the max unknown (%s): sent at 3 and recorded; the retry stays 3 once 4 is advertised',
+    async (_name, getter) => {
+      const input = v3Order();
+      await collection.insert(input);
+      let max: number | undefined;
+      const { outbox, send } = setup(getter ? { getMaxOrderCreateVersion: () => max } : {});
+      send.mockResolvedValueOnce(timeout);
+      await outbox.flush();
+      expect(await stored(input.id)).toMatchObject({ syncStatus: 'pending', sentVersion: 3 });
+      max = 4;
+      await outbox.flush();
+      expect(send.mock.calls.map(([[command]]) => command.version)).toEqual([3, 3]);
+      expect(await stored(input.id)).toMatchObject({ syncStatus: 'applied', sentVersion: 3 });
+    });
+
+  it('a crash between the write and the send leaves sentVersion stored, and the next outbox sends at it', async () => {
+    const input = v3Order();
+    await collection.insert(input);
+    // What the store holds as the request would leave; then the till "crashes" before sending.
+    const atSend: unknown[] = [];
+    const crash = setup({ getMaxOrderCreateVersion: () => 3 });
+    crash.send.mockImplementation((batch) => {
+      const read = collection.storageInstance.findDocumentsById([batch[0].payload.clientOrderId], false);
+      return read.then(([row]) => { atSend.push(row?.sentVersion); throw new Error('crashed before the request left'); });
+    });
+    await crash.outbox.flush();
+    crash.outbox.stop();
+    expect(atSend).toEqual([3]);
+    expect(await stored(input.id)).toMatchObject({ syncStatus: 'pending', sentVersion: 3 });
+    const next = setup({ getMaxOrderCreateVersion: () => 4 });
+    await next.outbox.flush();
+    expect(next.send.mock.calls[0][0]).toStrictEqual([toOrderCreateEnvelope(input, 'device-1', 1)]);
+    expect(await stored(input.id)).toMatchObject({ syncStatus: 'applied', sentVersion: 3 });
+  });
+
+  it('through the normal send, with the server advertising 4: an order recorded at 3 goes at 3, a new one at 4 with sentVersion 4', async () => {
+    const recorded: PosOrder = { ...v3Order(0), sentVersion: 3 };
+    const fresh = v3Order(1);
+    await collection.bulkInsert([recorded, fresh]);
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 4 });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toStrictEqual([toOrderCreateEnvelope(recorded, 'device-1'),
+      toOrderCreateEnvelope(fresh, 'device-1', 1, { maxVersion: 4 })]);
+    expect(send.mock.calls[0][0].map((command) => command.version)).toEqual([3, 4]);
+    expect(await stored(recorded.id)).toMatchObject({ syncStatus: 'applied', sentVersion: 3 });
+    expect(await stored(fresh.id)).toMatchObject({ syncStatus: 'applied', sentVersion: 4 });
   });
 });

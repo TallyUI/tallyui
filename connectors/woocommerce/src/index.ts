@@ -4,6 +4,12 @@ import { wooProductSchema } from './schemas/products';
 import { wooProductTraits } from './traits/product';
 import { wooProductSync } from './sync/products';
 import { wooProductReplication } from './replication/products';
+import pkg from '../package.json';
+
+/** One part of X-WCPOS-Client as WCPOS keeps it: lowercase [a-z0-9._-], at most 32 characters. */
+export function wcposClientPart(part: string): string {
+  return part.toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 32);
+}
 
 export class WooMissingTokenError extends ConnectorUnauthorizedError {
   constructor() {
@@ -58,6 +64,10 @@ export const woocommerceConnector: TallyConnector = {
       return {
         Authorization: `Bearer ${credentials.token}`,
         'X-WCPOS': '1',
+        // WCPOS 2.0 refuses a POS request below protocol 2 (HTTP 426); the connector already speaks 2.
+        'X-WCPOS-Protocol': '2',
+        // For WCPOS's consent-gated telemetry only.
+        'X-WCPOS-Client': `tallyui/${wcposClientPart(pkg.version)}`,
       };
     },
   },
@@ -84,4 +94,4 @@ export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { wooProductSchema } from './schemas/products';
 export { wooProductTraits } from './traits/product';
 export { wooProductSync } from './sync/products';
-export { wooProductReplication, WooDateFilterError, WooMissingUuidError } from './replication/products';
+export { wooProductReplication, WooDateFilterError, WooMissingUuidError, WooTillUpdateRequiredError } from './replication/products';
