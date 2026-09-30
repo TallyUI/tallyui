@@ -49,8 +49,27 @@ describe('SyncStatus', () => {
     expect(label()).toBe('1 sale waiting to sync');
   });
   // #263's "since" sentence, which a stuck order shows with the store missing or not, for any reason.
-  const salesSince = (time: string) => `Sales haven't reached the online store since ${time}. `
+  const salesSince = (time: string) => `Sales haven't reached the online store since about ${time}. `
     + "Keep selling: they're saved on this till and will send by themselves.";
+  it.each(['sales', 'till updates'] as const)('shows a wall-clock time for %s, else says about the virtual time', (kind) => {
+    const firstFailedAt = new Date(2026, 8, 30, 2, 49).getTime();
+    const since = new Date(2026, 8, 30, 5, 12).getTime();
+    const time = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    const prefix = kind === 'sales' ? "Sales haven't" : "Till updates haven't";
+    const count = kind === 'sales' ? '1 sale' : '1 till update';
+    const stuck = { commandIds: ['a'], since, firstFailedAt, reason: 'status_503',
+      orders: [{ commandId: 'a', since, firstFailedAt, reason: 'status_503' }] };
+    const state = { pending: kind === 'sales' ? 1 : 0, sending: false, stuck: kind === 'sales' ? stuck : undefined };
+    const registerState = kind === 'till updates' ? { pending: 1, sending: false, stuck } : undefined;
+    render(<SyncStatus state={state} registerState={registerState} />);
+    expect(line()).toBe(`${count} waiting to sync · ${prefix} reached the online store since ${time(firstFailedAt)}. `
+      + "Keep selling: they're saved on this till and will send by themselves.");
+    cleanup();
+    render(<SyncStatus state={{ ...state, stuck: kind === 'sales' ? { ...stuck, firstFailedAt: undefined } : undefined }}
+      registerState={registerState && { ...registerState, stuck: { ...stuck, firstFailedAt: undefined } }} />);
+    expect(line()).toBe(`${count} waiting to sync · ${prefix} reached the online store since about ${time(since)}. `
+      + "Keep selling: they're saved on this till and will send by themselves.");
+  });
   it('says since when sales have not reached the store once orders are stuck, with sending or retrying after it', () => {
     vi.useFakeTimers();
     const now = Date.now();
@@ -85,7 +104,7 @@ describe('SyncStatus', () => {
     const time = new Date(since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
     render(<SyncStatus state={{ pending: 0, sending: false }} registerState={{ pending: 1, sending: true,
       stuck: { commandIds: ['r'], since, reason: 'status_503', orders: [{ commandId: 'r', since, reason: 'status_503' }] } }} />);
-    const tillSince = `1 till update waiting to sync · Till updates haven't reached the online store since ${time}. `
+    const tillSince = `1 till update waiting to sync · Till updates haven't reached the online store since about ${time}. `
       + "Keep selling: they're saved on this till and will send by themselves.";
     expect(line()).toBe(`${tillSince}\nSending…`);
     expect(label()).toBe(tillSince);
@@ -130,7 +149,7 @@ describe('SyncStatus', () => {
   it('says the backend-missing sentence once, with "since {time}" once an order is stuck, and no raw code', () => {
     const since = new Date(2026, 8, 30, 2, 49, 10).getTime();
     const time = new Date(since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    const stuckLine = `Sales haven't reached the online store since ${time}. `
+    const stuckLine = `Sales haven't reached the online store since about ${time}. `
       + "Keep selling: they're saved on this till and will send by themselves.";
     const stuck = { commandIds: ['a', 'b'], since, reason: 'status_404',
       orders: ['a', 'b'].map((commandId) => ({ commandId, since, reason: 'status_404' })) };
@@ -169,7 +188,7 @@ describe('SyncStatus', () => {
     const stuck = (at: number) => ({ commandIds: ['a'], since: at, reason: 'status_404', orders: [{ commandId: 'a', since: at, reason: 'status_404' }] });
     render(<SyncStatus state={{ pending: 1, sending: false, backendMissing, stuck: stuck(since) }}
       registerState={{ ...registerState, pending: 4, stuck: stuck(since - 3_600_000) }} />);
-    expect(line()).toBe(`1 sale and 4 till updates waiting to sync · Sales haven't reached the online store since ${time}. `
+    expect(line()).toBe(`1 sale and 4 till updates waiting to sync · Sales haven't reached the online store since about ${time}. `
       + "Keep selling: they're saved on this till and will send by themselves.");
   });
 
@@ -179,7 +198,7 @@ describe('SyncStatus', () => {
     const backendMissing = { since };
     render(<SyncStatus state={{ pending: 0, sending: false, backendMissing }} registerState={{ pending: 1, sending: false, backendMissing,
       stuck: { commandIds: ['r'], since, reason: 'status_404', orders: [{ commandId: 'r', since, reason: 'status_404' }] } }} />);
-    expect(line()).toBe(`1 till update waiting to sync · Till updates haven't reached the online store since ${time}. `
+    expect(line()).toBe(`1 till update waiting to sync · Till updates haven't reached the online store since about ${time}. `
       + "Keep selling: they're saved on this till and will send by themselves.");
   });
 

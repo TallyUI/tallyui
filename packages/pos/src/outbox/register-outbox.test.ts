@@ -481,8 +481,8 @@ describe('register outbox stuck clock (answered time only, in memory)', () => {
     expect(states.some((state) => state.stuck)).toBe(false);
     await at(outbox, STUCK_AFTER_MS);
     const { commandId } = inputs[0];
-    expect(states.at(-1)?.stuck).toEqual({ commandIds: [commandId], since: epoch, reason: 'status_502',
-      orders: [{ commandId, since: epoch, reason: 'status_502' }] });
+    expect(states.at(-1)?.stuck).toEqual({ commandIds: [commandId], since: epoch, firstFailedAt: epoch, reason: 'status_502',
+      orders: [{ commandId, since: epoch, firstFailedAt: epoch, reason: 'status_502' }] });
   });
 
   it.each<[string, TransportOutcome]>([['timeout', fail('timeout')], ['no_progress', { kind: 'results', results: [] }]])(
@@ -508,6 +508,8 @@ describe('register outbox stuck clock (answered time only, in memory)', () => {
     expect(states.some((state) => state.stuck)).toBe(false);
     await at(outbox, 25 * 60_000);
     expect(states.at(-1)?.stuck).toMatchObject({ since: epoch + 10 * 60_000, reason: 'status_503' });
+    expect(states.at(-1)?.stuck?.firstFailedAt).toBe(epoch);
+    expect(states.at(-1)?.stuck?.orders[0].firstFailedAt).toBe(epoch);
   });
 
   it.each(['applied', 'rejected'] as const)('a batch that marks the stuck command %s clears it', async (status) => {

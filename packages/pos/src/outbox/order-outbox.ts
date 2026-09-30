@@ -105,7 +105,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // moving `since` on by the offline gap: a pause is about the connection. So `since` is when the clock would have
   // started had there been no offline gaps: now minus its answered time (while paused, as of the pause). Progress,
   // or the order leaving pending, clears it.
-  const clocks = new Map<string, { since: number; pausedAt?: number; seq: number; reason: string }>();
+  const clocks = new Map<string, { since: number; firstFailedAt?: number; pausedAt?: number; seq: number; reason: string }>();
   let failureSeq = 0; // numbers failures, so `stuck` can name the latest reason
   // Timer runs alternate between the batch turn (the batch, or the walk's probe) and the isolated turn (one due
   // isolated order); a turn with nothing to send gives way to the other, so neither side can starve the other.
@@ -119,8 +119,11 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     const stuck = [...clocks].filter(([, clock]) => (clock.pausedAt ?? now()) - clock.since >= stuckAfter);
     if (!stuck.length) return undefined;
     return { commandIds: stuck.map(([id]) => id), since: Math.min(...stuck.map(([, clock]) => clock.since)),
+      ...(stuck.every(([, clock]) => clock.firstFailedAt !== undefined)
+        ? { firstFailedAt: Math.min(...stuck.map(([, clock]) => clock.firstFailedAt!)) } : {}),
       reason: stuck.reduce((latest, entry) => (entry[1].seq > latest[1].seq ? entry : latest))[1].reason,
-      orders: stuck.map(([commandId, { since, reason }]) => ({ commandId, since, reason })) };
+      orders: stuck.map(([commandId, { since, firstFailedAt, reason }]) => ({ commandId, since, reason,
+        ...(firstFailedAt === undefined ? {} : { firstFailedAt }) })) };
   }
 
   // An isolated order is due once its backoff has passed, or when the clock was set back further than any backoff.
@@ -190,7 +193,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // floor for the retry: the store's Retry-After, or an isolated order's own backoff.
   function serverFailed(orders: PosOrder[], alone: 'probe' | 'isolated' | undefined, reason: string, retryAfterMs?: number) {
     const at = now();
-    for (const { commandId } of orders) clocks.set(commandId, { since: clocks.get(commandId)?.since ?? at, seq: ++failureSeq, reason });
+    for (const { commandId } of orders) clocks.set(commandId, { ...(clocks.get(commandId) ?? { since: at, firstFailedAt: at }), seq: ++failureSeq, reason });
     const id = orders[0].commandId;
     if (alone === 'isolated') {
       isolate(id, reason, retryAfterMs);

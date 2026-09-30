@@ -73,19 +73,20 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   // of a register's ledger holds up the commands behind it, by design, since register facts apply in `seq` order.
   // In memory only: a restart starts with no clocks, and the first answered failure after it starts them afresh
   // (accepted: register commands are few, and a restart re-sends at once).
-  const clocks = new Map<string, { since: number; pausedAt?: number; seq: number; reason: string }>();
+  const clocks = new Map<string, { since: number; firstFailedAt: number; pausedAt?: number; seq: number; reason: string }>();
   let failureSeq = 0; // numbers failures, so `stuck` can name the latest reason
 
   function stuckState(): OutboxState['stuck'] {
     const stuck = [...clocks].filter(([, clock]) => (clock.pausedAt ?? now()) - clock.since >= stuckAfter);
     if (!stuck.length) return undefined;
     return { commandIds: stuck.map(([id]) => id), since: Math.min(...stuck.map(([, clock]) => clock.since)),
+      firstFailedAt: Math.min(...stuck.map(([, clock]) => clock.firstFailedAt)),
       reason: stuck.reduce((latest, entry) => (entry[1].seq > latest[1].seq ? entry : latest))[1].reason,
-      orders: stuck.map(([commandId, { since, reason }]) => ({ commandId, since, reason })) };
+      orders: stuck.map(([commandId, { since, firstFailedAt, reason }]) => ({ commandId, since, firstFailedAt, reason })) };
   }
   function serverFailed(commands: RegisterCommand[], reason: string) {
     const at = now();
-    for (const { commandId } of commands) clocks.set(commandId, { since: clocks.get(commandId)?.since ?? at, seq: ++failureSeq, reason });
+    for (const { commandId } of commands) clocks.set(commandId, { ...(clocks.get(commandId) ?? { since: at, firstFailedAt: at }), seq: ++failureSeq, reason });
   }
 
   async function updateState(patch: Partial<OutboxState> = {}) {
