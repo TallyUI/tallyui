@@ -18,8 +18,15 @@ enterprise policy forbids Actions from creating pull requests (ADR-043).
 
 ## Prerequisites
 
-- Paul has given the go-ahead for this release. The Release workflow stays
-  disabled until he does.
+- Paul has given the go-ahead for this release. The Release workflow
+  (`release.yml`, id 238319860) stays disabled until he does. It has been
+  disabled since 2026-09-30 (the Front desk, 05:10): while it is active,
+  merging the version PR publishes to npm at once, and publishing is
+  Paul's call alone.
+- The version PR (#200 or its successor) is never merged by any agent
+  session. On Paul's word the workflow is re-enabled
+  (`gh workflow enable 238319860`), and then the version PR is merged and
+  #242's release checklist runs.
 - Each package has an npm trusted publisher: org `TallyUI`, repo
   `tallyui`, workflow `release.yml`, environment blank (ADR-042). No npm
   token exists anywhere.
@@ -106,7 +113,9 @@ waits for the next version PR.
 
 ## After the merge
 
-The Release workflow run on the merge commit publishes. Verify it:
+The Release workflow run on the merge commit publishes, provided Paul has
+re-enabled it (see Prerequisites); if it is still disabled, nothing
+publishes and nothing is tagged. Verify it:
 
 ```sh
 npm view @tallyui/core version                 # the new version
