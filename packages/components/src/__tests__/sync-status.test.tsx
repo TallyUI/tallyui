@@ -229,7 +229,9 @@ describe('SyncStatus', () => {
   // #269's ruled lines and detail, written out whole.
   const refusedOne = "1 sale needs attention · The online store refused it. Ask the store owner to look at the till's sync log.";
   const refusedMany = (n: number) => `${n} sales need attention · The online store refused them. Ask the store owner to look at the till's sync log.`;
-  const refusedDetail = 'Refused sales stay on this till under Needs attention. Once the cause is fixed, each can be sent again with Retry.';
+  // The line with what else waits after the refused count: `counts` replaces "{n} sale(s) need(s) attention".
+  const refusedWaiting = (counts: string, them = 'them') => `${counts} · The online store refused ${them}. Ask the store owner to look at the till's sync log.`;
+  const refusedDetail = 'Refused sales stay on this till under Needs attention, each with what to do next.';
   // Every text shown below the status line, in order.
   const below = () => {
     const texts: (string | null)[] = [];
@@ -250,15 +252,27 @@ describe('SyncStatus', () => {
     expect(below()).toEqual([refusedDetail]);
   });
 
-  it('with rejected: 2, shows only the plural line over pending sales, a stuck order, till updates, sending and retrying', () => {
+  it('with refused sales and others waiting, names both in the refused line, written out whole', () => {
+    render(<SyncStatus state={{ pending: 5, sending: false, rejected: 1 }} />);
+    expect(line()).toBe("1 sale needs attention, 5 waiting to sync · The online store refused it. Ask the store owner to look at the till's sync log.");
+    expect(label()).toBe("1 sale needs attention, 5 waiting to sync · The online store refused it. Ask the store owner to look at the till's sync log.");
+    cleanup();
+    render(<SyncStatus state={{ pending: 1, sending: false, rejected: 2 }} />);
+    expect(line()).toBe("2 sales need attention, 1 waiting to sync · The online store refused them. Ask the store owner to look at the till's sync log.");
+    cleanup();
+    render(<SyncStatus state={{ pending: 0, sending: false, rejected: 1 }} registerState={{ pending: 2, sending: false }} />);
+    expect(line()).toBe("1 sale needs attention, 2 till updates waiting to sync · The online store refused it. Ask the store owner to look at the till's sync log.");
+  });
+
+  it('with rejected: 2, shows the refused line with the waiting counts over a stuck order, sending and retrying', () => {
     const since = Date.now();
     const stuck = { commandIds: ['a'], since, reason: 'status_503', orders: [{ commandId: 'a', since, reason: 'status_503' }] };
     for (const sending of [true, false]) {
       const { container } = render(<SyncStatus state={{ pending: 4, sending, rejected: 2, stuck, lastRetryReason: 'status_503',
         nextAttemptAt: since + 5000 }} registerState={{ pending: 2, sending, stuck, lastRetryReason: 'status_503', nextAttemptAt: since + 5000 }} />);
-      expect(line()).toBe(refusedMany(2));
+      expect(line()).toBe(refusedWaiting('2 sales need attention, 4 sales and 2 till updates waiting to sync'));
       expect(below()).toEqual([refusedDetail]);
-      expect(container.textContent).not.toMatch(/waiting|haven't reached|Sending|Retrying|up to date/);
+      expect(container.textContent).not.toMatch(/haven't reached|Sending|Retrying|up to date/);
       cleanup();
     }
   });
@@ -271,7 +285,7 @@ describe('SyncStatus', () => {
       + "Ask the store owner to check that it is installed and switched on, and that the store address in this till's settings is right."]);
     cleanup();
     render(<SyncStatus state={{ pending: 3, sending: true, rejected: 2, backendMissing }} pluginName="Medusa POS" />);
-    expect(line()).toBe(refusedMany(2));
+    expect(line()).toBe(refusedWaiting('2 sales need attention, 3 waiting to sync'));
     expect(below()).toEqual([refusedDetail, detail('Medusa POS')]);
   });
 
@@ -289,7 +303,7 @@ describe('SyncStatus', () => {
     rerender(<SyncStatus state={{ pending: 1, sending: false, rejected: 1 }} />);
     rerender(<SyncStatus state={{ pending: 1, sending: true, rejected: 1 }} />);
     rerender(<SyncStatus state={{ pending: 0, sending: false, rejected: 2 }} />);
-    expect(announce.mock.calls).toEqual([[refusedOne], [refusedMany(2)]]);
+    expect(announce.mock.calls).toEqual([[refusedWaiting('1 sale needs attention, 1 waiting to sync', 'it')], [refusedMany(2)]]);
   });
 
   const batchRefused = (waiting: string) => `${waiting} waiting to sync · The online store refused the last send. `
@@ -323,7 +337,7 @@ describe('SyncStatus', () => {
       cleanup();
     }
     render(<SyncStatus state={{ pending: 3, sending: false, refused, lastRetryReason: 'refused', rejected: 1 }} />);
-    expect(line()).toBe(refusedOne);
+    expect(line()).toBe(refusedWaiting('1 sale needs attention, 3 waiting to sync', 'it'));
   });
 
   it('labels the status line with exactly the line shown, idle and with the store missing', () => {

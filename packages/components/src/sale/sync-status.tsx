@@ -50,11 +50,12 @@ const BACKEND_MISSING_DETAIL = "This till couldn't find {pluginName} on the onli
   + "and switched on, and that the store address in this till's settings is right.";
 
 // The whole status line while the store has refused sales (OutboxState.rejected), in place of every other outbox line (#269).
-const REFUSED = (n: number) => n === 1
-  ? "1 sale needs attention · The online store refused it. Ask the store owner to look at the till's sync log."
-  : `${n} sales need attention · The online store refused them. Ask the store owner to look at the till's sync log.`;
-// The first detail below it, in the Front desk's ruling (#269).
-const REFUSED_DETAIL = 'Refused sales stay on this till under Needs attention. Once the cause is fixed, each can be sent again with Retry.';
+// `waiting` is empty, or ", " and what else waits, so the line never hides waiting sales.
+const REFUSED = (n: number, waiting: string) => n === 1
+  ? `1 sale needs attention${waiting} · The online store refused it. Ask the store owner to look at the till's sync log.`
+  : `${n} sales need attention${waiting} · The online store refused them. Ask the store owner to look at the till's sync log.`;
+// The first detail below it, in the Front desk's ruling (#269). Not every refusal can be retried (idempotency_mismatch can't).
+const REFUSED_DETAIL = 'Refused sales stay on this till under Needs attention, each with what to do next.';
 // The sentence after the waiting count once the store refused a whole batch (OutboxState.refused) from the outbox shown, when
 // no command carries a code. Neither outbox sets a timer then: a new pending command flushes its outbox. For sales,
 // useOrderOutbox also calls start() when the store opens, which flushes; no app starts the register outbox at launch today,
@@ -108,8 +109,9 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
     : backendMissing || (state.pending === 0 && updates > 0 ? registerState?.stuck : stuck) ? ` · ${backendMissingText}` : '';
   // The live region holds only the substance (counts and the sentence), so it is announced when that changes and never as sending
   // or retrying flips or the countdown ticks: those are a short line of their own below it, outside any live region.
-  // Refused sales are never up to date, and their line outranks the waiting count, the sentences and sending or retrying.
-  const refused = state.rejected ? REFUSED(state.rejected) : '';
+  // Refused sales are never up to date, and their line outranks the sentences and sending or retrying. It keeps what else waits:
+  // "5 waiting to sync" for sales alone, else the label, which names the till updates (and the sales, if any).
+  const refused = state.rejected ? REFUSED(state.rejected, upToDate ? '' : `, ${updates ? label : `${state.pending} waiting to sync`}`) : '';
   const spoken = refused || (upToDate ? 'Sales are up to date.' : label + sentence);
   const doing = refused || upToDate || backendMissing || outbox.refused ? '' : outbox.sending ? 'Sending…'
     : outbox.lastRetryReason ? `Retrying in ${seconds} s.` : '';
