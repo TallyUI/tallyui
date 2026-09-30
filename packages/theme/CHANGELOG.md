@@ -1,5 +1,7 @@
 # @tallyui/theme
 
+## 3.0.0-next.1
+
 ## 3.0.0-next.0
 
 ## 2.0.0
