@@ -3715,7 +3715,7 @@ interface OrderCreatePayload {
   - Parked sales live in a collection each app supplies
     (`draftsCollection`); TallyUI's fixtures prove `pos_orders` only.
 
-## ADR-070 Command payloads are strict per version; a batch holds at most 50
+## ADR-070 Strict command payloads, a batch limit, and declared fields
 
 - **Date:** 2026-09-30 · **Status:** Accepted (Front desk rulings for both
   backends, 2026-09-30) · **Source:** the medusapos and vendurepos workers,
@@ -3761,13 +3761,38 @@ interface OrderCreatePayload {
     `{ code: 'batch_too_large', maxCommands, message }`, never `400`; the
     exact body is in ADR-038 and `@tallyui/core/server`'s `validateBatch`
     (#249).
-  - The outbox never sends more than the limit. On a `413` it should halve
-    the batch and carry on, and never read a `413` as one poisoned order.
-  - Today the outbox sends at most 10 per batch, so a `413` needs a server
-    limit below 10. A `413` today is `refused`: sending pauses and no order
-    changes until the outbox is next flushed, for example by the next
-    sale (`OutboxState.refused`). Halving the batch is its own small code
-    change, after programme item 24.
+  - The till's rules, the same as ADR-038's: a till never sends more than
+    the server's limit. On a `413` it halves the batch and sends again,
+    using `maxCommands` from the body when it is present; a `413` without
+    the code (a proxy or a body-size limit) is handled the same way. When
+    a batch of one is still answered `413`, that order is shown as refused
+    because it is too large for the store to accept, and the orders behind
+    it are sent. A `413` never marks an order as poisoned and never holds
+    up the queue.
+  - Today the outbox sends at most 10 per batch, and a `413` is `refused`:
+    sending pauses and no order changes until the outbox is next flushed,
+    for example by the next sale (`OutboxState.refused`). So one oversized
+    order, or a proxy's body-size limit, holds up every later sale. Meeting
+    the rules above is the programme item after item 24, which shares its
+    machinery (isolating one order and letting the rest through).
+- **Decision (3), a declared field is honoured or refused, never ignored**
+  (ruling 19):
+  - A field the contract declares, in a version the command declares, is
+    either acted on by the server or refused by name.
+  - `payload.locationId` is the case that prompted it (checked with both
+    workers on 2026-09-30):
+    - **vendurepos** accepts it today and ignores it. It will refuse it
+      with `invalid_payload` ('not supported by this server yet') until a
+      ruling says how it is honoured (vendurepos/app#35); the change is
+      being written together with decision (1).
+    - **medusapos** honours it today: the payload's location comes first,
+      then the plugin option, then the sales channel's first location. An
+      unknown location is already an unstored `store_configuration`, but
+      its message names the plugin option, not the field. An unknown
+      location, or one not assigned to the sale's sales channel, will be
+      answered with an unstored `store_configuration` naming
+      `payload.locationId` (a PR is to follow). That code fits because it
+      is a fact about the store, and the merchant can put it right.
 - **Consequences:**
   - medusapos changes its lenient shape check, and both plugins refuse
     unknown fields with the path named.
