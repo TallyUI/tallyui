@@ -431,6 +431,33 @@ describe('startFingerprintReconcile', () => {
     } finally { second.stop(); }
   });
 
+  it('a new wrapper keeps the last complete time after a zero-page pass', async () => {
+    await db.addCollections({ products_local: { schema: productSchema, localDocuments: true } });
+    await db.products_local.insert({ id: 'p1', price: '10' });
+    const pages = [{ p1: '10' }];
+    const { adapter } = fakeAdapter(pages);
+    let clock = 1000;
+    const first = startFingerprintReconcile({
+      collection: db.products_local, adapter, context, reSync: vi.fn(), startDelayMs: null, now: () => clock,
+    });
+    try {
+      expect(await first.reconcile()).toMatchObject({ pages: 1, complete: true });
+      clock = 2000;
+      pages.length = 0;
+      expect(await first.reconcile()).toMatchObject({ pages: 0, complete: false });
+    } finally { first.stop(); }
+
+    const second = startFingerprintReconcile({
+      collection: db.products_local, adapter, context, reSync: vi.fn(), startDelayMs: null,
+    });
+    const seen: FingerprintReconcileState[] = [];
+    second.state$.subscribe((state) => seen.push(state));
+    try {
+      await vi.waitFor(() => expect(seen.at(-1)).toMatchObject({ lastCompleteAt: 1000 }));
+      expect(seen.at(-1)?.lastResult).toBeUndefined();
+    } finally { second.stop(); }
+  });
+
   it('has no last complete time when its first pass reads no pages', async () => {
     const { adapter } = fakeAdapter([]);
     const { reconcile, stop, state$ } = start(adapter, vi.fn(), { now: () => 1000 });
