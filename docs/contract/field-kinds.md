@@ -44,6 +44,33 @@ each payload's (`order.create`, `register.*`, `register.movement.*`), and
 a rule on the field kind, not on one command type, and a malformed value
 is refused whether the field is an instruction or informational
 (ruling 19).
+- **Format first:** client time must be RFC 3339 with a Z or offset
+  (Front desk, 2026-09-30). A time read in the server's own zone would
+  shift sale times silently.
+  - **The accepted form**, exactly:
+    `YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|-HH:MM)`.
+    - An uppercase `T` and `Z`, never a space or a lowercase letter.
+    - Seconds are required. Fractional seconds are allowed, any number
+      of digits; the till sends `toISOString()`, so `.000Z` is normal.
+    - An offset is `+HH:MM` or `-HH:MM`, and `-00:00` is accepted as
+      UTC.
+    - The date and time must be real calendar values: no `24:00`, no
+      `2026-02-30`, and no leap second `:60`. Each of those is
+      malformed.
+  - **Anything else** that reaches the client-time stage is malformed:
+    no zone, `+HHMM`, a date alone, a lowercase `t` or `z`, or a space
+    separator. The message, verbatim on every backend, is
+    `{path} must be an RFC 3339 time with Z or an offset`.
+  - **It's checked before the bounds.** A field that fails the format
+    gets only this message, not the bounds message. It follows the same
+    stage, order, `; ` joining and limit of 10 as the bounds messages
+    below.
+  - **What core refuses earlier keeps core's message.** A value that
+    isn't a string never reaches this stage: an envelope `createdAt`
+    fails the batch's shape check, and a register command's time field
+    that doesn't parse is refused by its payload check as
+    `expected a valid date`. This rule covers the strings that reach the
+    client-time stage.
 - **Upper bound:** at most 24 hours ahead of the server's clock, per ADR-038's value checks.
 - **Lower bound:** not earlier than `2020-01-01T00:00:00Z`.
 - **Outside either bound, it's malformed.** The server refuses the
@@ -64,7 +91,7 @@ is refused whether the field is an instruction or informational
     validation (`precheckCommand`) and before the command is claimed, so
     a replay returns its stored result and a refused command is never
     claimed. Its refusal carries only client-time messages: one per
-    out-of-bounds field, joined with `; `, at most 10, the envelope's
+    field that fails the format or the bounds, joined with `; `, at most 10, the envelope's
     field first, then the payload's in the order of its table on this
     page.
 
@@ -438,8 +465,10 @@ or `"taxRounding": { "granularity": "custom" }`. Core's
 Vendure connectors alike:
 - **Absent** means the default (`per_order`, half away from zero).
 - **Malformed** (an unknown granularity, a missing or unknown `mode` on a
-  granularity that needs one, or not an object) is ignored with one
-  warning, so the default applies.
+  granularity that needs one, `null`, or not an object) makes the whole
+  read unknown, with one warning: the till's store settings wait and
+  retry, and never sell on the default (#341). So does a 2xx whose body
+  is not JSON. A 404 is an older plugin and means the default.
 - **`custom` ignores `mode`**: a `mode` sent with it is dropped.
 - Extra keys are dropped.
 
