@@ -8,12 +8,15 @@ import { SyncStatus } from '../sale/sync-status';
 const os = Platform.OS;
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); Object.assign(Platform, { OS: os }); });
 
-// The status line's text, checking on the way that its accessibility label (the only one rendered) is that same text without
-// the countdown.
+// The status line's text as shown, checking on the way that its live region (the only labelled element) holds exactly its label,
+// never the countdown, and that the countdown, if any, is the element after it.
 function line() {
-  const element = document.querySelector('[aria-label]');
-  expect(element?.getAttribute('aria-label')).toBe(element?.textContent?.replace(/ in \d+s/, ''));
-  return element?.textContent;
+  const live = document.querySelector('[aria-label]');
+  expect(live?.getAttribute('aria-label')).toBe(live?.textContent);
+  expect(live?.getAttribute('aria-live')).toBe('polite');
+  expect(live?.textContent).not.toMatch(/ in \d/);
+  expect(live?.parentElement?.textContent).toBe((live?.textContent ?? '') + (live?.nextElementSibling?.textContent ?? ''));
+  return live?.parentElement?.textContent;
 }
 const label = () => document.querySelector('[aria-label]')?.getAttribute('aria-label');
 
@@ -55,14 +58,15 @@ describe('SyncStatus', () => {
       stuck: { commandIds: ['a', 'b'], since, reason: 'status_503',
         orders: ['a', 'b'].map((commandId) => ({ commandId, since, reason: 'status_503' })) } };
     render(<SyncStatus state={state} />);
+    // Sending or retrying comes last, so the countdown ends the line, outside the live region.
     expect(line())
-      .toBe(`4 sales waiting to sync · retrying in 5s · Not syncing 2 orders: the store keeps failing since ${time}`);
-    expect(label()).toBe(`4 sales waiting to sync · retrying · Not syncing 2 orders: the store keeps failing since ${time}`);
+      .toBe(`4 sales waiting to sync · Not syncing 2 orders: the store keeps failing since ${time} · retrying in 5s`);
+    expect(label()).toBe(`4 sales waiting to sync · Not syncing 2 orders: the store keeps failing since ${time} · retrying`);
     cleanup();
     render(<SyncStatus state={{ pending: 3, sending: true, stuck: { commandIds: ['a'], since, reason: 'no_progress',
       orders: [{ commandId: 'a', since, reason: 'no_progress' }] } }} />);
     expect(line())
-      .toBe(`3 sales waiting to sync · sending · Not syncing 1 order: the store keeps failing since ${time}`);
+      .toBe(`3 sales waiting to sync · Not syncing 1 order: the store keeps failing since ${time} · sending`);
   });
   it.each([['timeout', 'no answer from the store'], ['status_503', 'the store keeps failing']])(
     'shows a stuck %s with the matching wording', (reason, wording) => {
@@ -266,8 +270,15 @@ describe('SyncStatus', () => {
     rerender(<SyncStatus state={{ pending: 1, sending: false, lastRetryReason: 'status_503', nextAttemptAt: now + 5000 }} />);
     expect(announce.mock.calls).toEqual([['1 sale waiting to sync · retrying']]);
     expect(line()).toBe('1 sale waiting to sync · retrying in 5s');
+    // The countdown is its own element after the live region, which holds only the spoken line; a tick changes only the countdown.
+    const live = document.querySelector('[aria-live]')!;
+    const countdown = live.nextElementSibling!;
+    expect([live.textContent, countdown.textContent]).toEqual(['1 sale waiting to sync · retrying', ' in 5s']);
+    expect([countdown.getAttribute('aria-live'), countdown.getAttribute('aria-label')]).toEqual([null, null]);
     act(() => { vi.advanceTimersByTime(3000); });
     expect(line()).toBe('1 sale waiting to sync · retrying in 2s');
+    expect(document.querySelector('[aria-live]')).toBe(live);
+    expect([live.textContent, countdown.textContent]).toEqual(['1 sale waiting to sync · retrying', ' in 2s']);
     expect(label()).toBe('1 sale waiting to sync · retrying');
     expect(announce).toHaveBeenCalledTimes(1);
   });

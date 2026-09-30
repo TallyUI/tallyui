@@ -90,11 +90,11 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   const stuckText = !stuck || backendMissing ? ''
     : ` · Not syncing ${stuck.commandIds.length} order${stuck.commandIds.length === 1 ? '' : 's'}: `
       + (stuck.reason === 'timeout' ? 'no answer from the store' : 'the store keeps failing') + ` since ${at(stuck.since)}`;
-  // No raw reason code is shown or spoken. The screen shows the countdown; the label and the announcement leave it out, so a
-  // retry is announced once, when it starts, and not at every tick.
-  const lineWith = (countdown: string) => upToDate ? 'Sales are up to date.' : label + (backendMissing ? ` · ${backendMissingText}`
-    : outbox.sending ? ' · sending' : outbox.lastRetryReason ? ` · retrying${countdown}` : '') + stuckText;
-  const line = lineWith(` in ${seconds}s`), spoken = lineWith('');
+  // No raw reason code is shown or spoken. The live region holds only the spoken line; the countdown is a Text of its own after
+  // it (so sending or retrying comes last), outside the live region, so a retry is announced once, when it starts, not at each tick.
+  const doing = backendMissing ? '' : outbox.sending ? ' · sending' : outbox.lastRetryReason ? ' · retrying' : '';
+  const spoken = upToDate ? 'Sales are up to date.' : label + (backendMissing ? ` · ${backendMissingText}` : stuckText + doing);
+  const countdown = !upToDate && doing === ' · retrying' ? ` in ${seconds}s` : '';
   useAnnounceOnIos(spoken);
   const text = pullNotice
     && (Object.hasOwn(PULL_NOTICE_TEXT, pullNotice.code) ? PULL_NOTICE_TEXT[pullNotice.code] : PULL_NOTICE_FALLBACK);
@@ -109,7 +109,8 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   return <View>{notice ? <>
     <Text accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{notice.line}</Text>
     {oneDetail ? null : <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>}
-  </> : null}<Text accessibilityLabel={spoken} accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{line}</Text>
+  </> : null}<Text className="px-4 py-2 text-xs text-muted-foreground"><Text accessibilityLabel={spoken} accessibilityLiveRegion="polite">{spoken}</Text>
+    {countdown ? <Text>{countdown}</Text> : null}</Text>
   {oneDetail && notice ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>
     : backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
     {BACKEND_MISSING_DETAIL.replace('{pluginName}', () => pluginName).replace('{lastTime}', () => upToDate ? ' the last time it checked' : '')}</Text> : null}</View>;

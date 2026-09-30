@@ -60,7 +60,7 @@ describe('OrdersList', () => {
     expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
   });
 
-  it.each([['timeout', 'no answer from the store (timeout)'], ['status_503', 'the store keeps failing (status_503)']])(
+  it.each([['timeout', 'no answer from the store'], ['status_503', 'the online store keeps refusing this']])(
     'shows a stuck %s with the matching wording', (reason, wording) => {
     const since = new Date(2026, 8, 29, 14, 2).getTime();
     const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -72,7 +72,7 @@ describe('OrdersList', () => {
   it('lists a stuck pending order under Needs attention, with why it is not syncing and since when', () => {
     const since = new Date(2026, 8, 29, 14, 2).getTime();
     const time = new Date(since).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    const line = `Not syncing: the store keeps failing (status_503) since ${time}`;
+    const line = `Not syncing: the online store keeps refusing this since ${time}`;
     const stuck = order('s', { createdAt: '2026-09-25T09:00:00.000Z' });
     render(<OrdersList orders={[stuck, order('p'), order('x', { commandId: 'command-a', syncStatus: 'applied' })]} onRetry={async () => 0}
       formatDate={formatDate} stuck={{ commandIds: ['command-s', 'command-a'], reason: 'status_503', since,
@@ -95,9 +95,18 @@ describe('OrdersList', () => {
     expect(time(early)).not.toBe(time(late));
     render(<OrdersList orders={[order('a'), order('b', { createdAt: '2026-09-25T09:00:00.000Z' })]} onRetry={async () => 0}
       formatDate={formatDate} stuck={{ commandIds: ['command-a', 'command-b'], since: early, reason: 'no_progress', orders: [
-        { commandId: 'command-a', since: early, reason: 'status_503' }, { commandId: 'command-b', since: late, reason: 'no_progress' }] }} />);
-    expect(screen.getAllByText(`Not syncing: the store keeps failing (status_503) since ${time(early)}`)).toHaveLength(2);
-    expect(screen.getAllByText(`Not syncing: the store keeps failing (no_progress) since ${time(late)}`)).toHaveLength(2);
+        { commandId: 'command-a', since: early, reason: 'status_503' }, { commandId: 'command-b', since: late, reason: 'timeout' }] }} />);
+    expect(screen.getAllByText(`Not syncing: the online store keeps refusing this since ${time(early)}`)).toHaveLength(2);
+    expect(screen.getAllByText(`Not syncing: no answer from the store since ${time(late)}`)).toHaveLength(2);
+  });
+
+  it.each(['timeout', 'status_503', 'status_404', 'no_progress'])('shows no reason code for a stuck %s order', (reason) => {
+    const since = Date.now();
+    const { container } = render(<OrdersList orders={[order('s')]} onRetry={async () => 0} formatDate={formatDate}
+      stuck={{ commandIds: ['command-s'], reason, since, orders: [{ commandId: 'command-s', since, reason }] }} />);
+    expect(screen.getAllByText(/^Not syncing: /)).toHaveLength(2);
+    expect(container.textContent).not.toMatch(/status_|\([^)]*\)/);
+    expect(container.textContent).not.toContain(reason);
   });
 
   it('asks for a manual check instead of Retry on an idempotency mismatch', () => {
