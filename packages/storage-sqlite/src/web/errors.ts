@@ -9,6 +9,10 @@
  * `isStorageWorkerStartError` matches that fixed substring in the message
  * too, for whichever of the error, a `{ name, message }` copy, or the
  * message alone actually arrives.
+ *
+ * RxDB's RM1 (the worker was built on another RxDB version, e.g. a cached old
+ * worker after an upgrade) is recognised too: a stale worker is a failed
+ * start, and reloading loads the matching worker.
  */
 export class StorageWorkerStartError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -17,9 +21,17 @@ export class StorageWorkerStartError extends Error {
   }
 }
 
+// How RM1 appears inside the remote storage's wrapping message (the RxError as JSON).
+const RM1_IN_MESSAGE = '"code":"RM1"';
+
+function namesStartError(message: string): boolean {
+  return message.includes('StorageWorkerStartError') || message.includes(RM1_IN_MESSAGE);
+}
+
 export function isStorageWorkerStartError(error: unknown): boolean {
-  if (typeof error === 'string') return error.includes('StorageWorkerStartError');
+  if (typeof error === 'string') return namesStartError(error);
   if (!error || typeof error !== 'object') return false;
-  const { name, message } = error as { name?: unknown; message?: unknown };
-  return name === 'StorageWorkerStartError' || (typeof message === 'string' && message.includes('StorageWorkerStartError'));
+  const { name, message, code } = error as { name?: unknown; message?: unknown; code?: unknown };
+  if (name === 'StorageWorkerStartError' || code === 'RM1') return true;
+  return typeof message === 'string' && namesStartError(message);
 }
