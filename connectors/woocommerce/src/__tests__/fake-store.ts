@@ -10,6 +10,20 @@
 // - status: `any` (the default) lists everything but trash; include= and _fields are honoured;
 // - wcpos/v2/status answers healthy, missing_tables, schema_version and, when set, capabilities (#2113);
 // - a direct stock write (update_product_stock) changes stock_quantity without touching date_modified_gmt.
+//
+// Not modelled (check these against a real store):
+// 1. POS visibility: the fake returns products hidden from the POS; real WCPOS excludes online_only products from the
+//    listing (post__not_in) and from include= re-reads (subtracted from post__in, an all-hidden request pinned to empty)
+//    when pos_only_products is on (woocommerce-pos: Pos_Visibility.php, Collection_Rules_Plan.php:550).
+// 2. Pro store scopes: only the default visibility scope applies on v2 reads.
+// 3. Third-party filters on woocommerce_rest_product_object_query.
+// 4. The bulk-ID fast path (#2113): not modelled beyond the request shape.
+// 5. status=any excludes only trash here; WordPress also drops auto-draft and statuses the token cannot read.
+// 6. per_page is not capped at 100 or validated (WordPress answers 400), and X-WP-TotalPages is not sent.
+// 7. Requests without orderby (include= re-reads) come back in id order, not WordPress's default date order.
+// 8. The spring-forward gap is found at whole-hour offsets only; half-hour zones are not modelled.
+// 9. A fall-back (repeated) hour's local time is only what a test sets in date_modified.
+// 10. Variations, latency, rate limits and server errors are absent unless a test sets `respond`.
 import { vi, expect } from 'vitest';
 import { addRxPlugin, createRxDatabase, type RxDatabase } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';

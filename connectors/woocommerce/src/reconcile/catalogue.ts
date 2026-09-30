@@ -1,4 +1,4 @@
-import type { CatalogueReconcileAdapter, CatalogueReconcileEntry, ReconcileFeed, SyncContext } from '@tallyui/core';
+import { errorKind, type CatalogueReconcileAdapter, type CatalogueReconcileEntry, type ReconcileFeed, type SyncContext } from '@tallyui/core';
 import { checkResponse, WooMissingUuidError } from '../replication/products';
 
 /** The listing's page size, WordPress's per_page maximum. */
@@ -27,9 +27,17 @@ async function get(path: string, context: SyncContext): Promise<any> {
 /**
  * The switch for the bulk-id fast path: true only when wcpos/v2/status lists `products_id_fast_path` in
  * `capabilities` (a missing field is false). Never a version number, and never a failed attempt.
+ * A failed read (network, non-OK, non-JSON) is "no capability known", so the paged listing runs; only a
+ * till-class error (401, 403, 426 through checkResponse) stops the pass, since the listing would fail the same way.
  */
 export async function wooHasIdFastPath(context: SyncContext): Promise<boolean> {
-  const status = await get('/status', context);
+  let status: any;
+  try {
+    status = await get('/status', context);
+  } catch (error) {
+    if (errorKind(error) === 'till' || context.signal?.aborted) throw error;
+    return false;
+  }
   return Array.isArray(status?.capabilities) && status.capabilities.includes(ID_FAST_PATH);
 }
 

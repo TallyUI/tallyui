@@ -25,9 +25,10 @@ Dates are sent as GMT digits **without** a timezone offset, together with `dates
 ## Reconciliation
 
 The incremental pull can miss an edit: a `modified_after` that over-excludes (including a bound in the site's spring-forward hour), an edit in the same second as the last mark, a removal mid-pass on a store that hides `X-WP-Total`, a trashed product, or a stock change written without a modified-time bump. `reconcile.catalogue` is the daily safety net for all of them. Run it with `@tallyui/database`'s `startCatalogueReconcile`, beside the product replication, on the same collection.
-- It reads `wcpos/v2/status` once per pass, then lists every published product (`status=publish`, `_fields=id,uuid,date_modified_gmt,stock_quantity,stock_status`, 100 per page) with no date filter.
+- It reads `wcpos/v2/status` once per pass, then lists every published product (`status=publish`, `_fields=id,uuid,date_modified_gmt,stock_quantity,stock_status`, 100 per page) with no date filter. A failed status read only means no capability is known; a rejected token (401, 403) or a till that needs updating (426) stops the pass.
 - A product whose `(date_modified_gmt, stock_quantity, stock_status)` differs from the till's copy, or that the till lacks, is refetched by id through the product pull (`replication.products` combines the product feed with a reconcile feed). Nothing is written locally.
 - A product the till holds but the listing omits is removed only when a by-id re-read (`include=`, `status=any`) finds it gone, trashed or unpublished, and within the runner's mass-delete brake.
+- A product hidden from the POS after it synced (WCPOS "online only" visibility, with POS-only products turned on) is removed from the till by the pass; hiding many at once is held by the mass-delete brake.
 - An existing install keeps its pull checkpoint: the combined pull reads it under `legacyKey: 'products'`.
 - The WCPOS bulk-id fast path is dormant: it is chosen only when `status.capabilities` includes `products_id_fast_path` (wcpos/woocommerce-pos#2113), and until its id-to-uuid mapping exists the listing stays paged.
 

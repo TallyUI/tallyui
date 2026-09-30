@@ -258,6 +258,19 @@ describe('WooCommerce catalogue reconcile: guards', () => {
     expect(missing).toEqual([]);
   });
 
+  it('a /status answering 500 is "no capability known": the pass lists page by page and corrects the till', async () => {
+    const store = createFakeStore(10);
+    const till = await tillOf(store);
+    store.respond = (url) => (url.pathname.endsWith('/status') ? new Response('boom', { status: 500 }) : undefined);
+    store.writeStock(4, 0, 'outofstock');
+
+    const events = await reconcile(till);
+    expect(events.some((e) => e.type === 'pass-completed')).toBe(true);
+    expect(keysOf(events, 'refetched')).toEqual(['u4']);
+    await till.poll();
+    expect((await till.local()).get('u4')).toMatchObject({ stock_quantity: 0 });
+  });
+
   it('a 401 on the listing stops the pass (errorKind till) and changes nothing', async () => {
     const store = createFakeStore(3);
     const till = await tillOf(store);

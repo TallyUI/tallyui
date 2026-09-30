@@ -99,6 +99,17 @@ describe('wooFetchByIds', () => {
 });
 
 describe('the bulk-id fast path switch (wcpos/woocommerce-pos#2113)', () => {
+  it('a failed status read is off (500, non-JSON, network error); 401 and 426 still reject as till errors', async () => {
+    const store = createFakeStore(1);
+    const answers = [new Response('boom', { status: 500 }), new Response('<html>'), undefined];
+    store.respond = () => { const answer = answers.shift(); if (answer) return answer; throw new TypeError('fetch failed'); };
+    for (let i = 0; i < 3; i++) expect(await wooHasIdFastPath(context)).toBe(false);
+    store.respond = () => new Response('no', { status: 401 });
+    await expect(wooHasIdFastPath(context)).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+    store.respond = () => new Response('{}', { status: 426 });
+    await expect(wooHasIdFastPath(context)).rejects.toMatchObject({ name: 'WooTillUpdateRequiredError', fixedBy: 'till' });
+  });
+
   it('reads wcpos/v2/status: only capabilities including products_id_fast_path turn it on; a missing field is off', async () => {
     const store = createFakeStore(1);
     expect(await wooHasIdFastPath(context)).toBe(false);
