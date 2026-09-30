@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { SyncNotice } from '@tallyui/core';
 import type { OutboxState } from '@tallyui/pos';
 import { SyncStatus } from '../sale/sync-status';
 
@@ -277,5 +278,112 @@ describe('SyncStatus', () => {
     const time = new Date(2026, 8, 30, 2, 49, 10).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     expect(time).toMatch(/^2:49\sAM$/);
     expect(time).not.toMatch(/\b0\d:/);
+  });
+
+  // The pull notice: its own line and detail above the outbox line, found by their exact text (they carry no label).
+  const notice = (code: string, extra: Partial<SyncNotice> = {}): SyncNotice =>
+    ({ code, since: Date.now(), fixedBy: code === 'unauthorized' ? 'till' : 'store', ...extra });
+  const fallbackLine = "Products aren't updating.";
+  const fallbackDetail = 'You can keep selling. Products, prices and stock stay as they were. '
+    + 'Restart the app; if it keeps happening, tell the store owner.';
+
+  it.each<[string, SyncNotice, string | undefined, string, string]>([
+    ['unauthorized', notice('unauthorized'), undefined,
+      "Products aren't updating: this till needs to sign in to the online store again.",
+      'You can keep selling. Products, prices and stock stay as they were until someone signs in again.'],
+    ['unsupported_store with software and minVersion', notice('unsupported_store', { software: 'ShopSoft', minVersion: '9.1' }), undefined,
+      "Products aren't updating: the online store needs a software update.",
+      'You can keep selling. Ask the store owner to update ShopSoft to version 9.1 or later.'],
+    ['unsupported_store from WooCommerce', notice('unsupported_store', { software: 'WooCommerce', minVersion: '5.8' }), undefined,
+      "Products aren't updating: the online store needs a software update.",
+      'You can keep selling. Ask the store owner to update WooCommerce to version 5.8 or later.'],
+    ['unsupported_store without them', notice('unsupported_store'), undefined,
+      "Products aren't updating: the online store needs a software update.",
+      "You can keep selling. Ask the store owner to update the store's software."],
+    ['unsupported_store with only software', notice('unsupported_store', { software: 'ShopSoft' }), undefined,
+      "Products aren't updating: the online store needs a software update.",
+      "You can keep selling. Ask the store owner to update the store's software."],
+    ['missing_plugin with the default pluginName', notice('missing_plugin'), undefined,
+      "Products aren't updating: the online store is missing the POS plugin.",
+      "You can keep selling. This till couldn't find the POS plugin on the online store. Ask the store owner to check that it is "
+        + "installed and switched on, and that the store address in this till's settings is right."],
+    ['missing_plugin with a custom pluginName', notice('missing_plugin'), 'WCPOS',
+      "Products aren't updating: the online store is missing WCPOS.",
+      "You can keep selling. This till couldn't find WCPOS on the online store. Ask the store owner to check that it is "
+        + "installed and switched on, and that the store address in this till's settings is right."],
+    ['store_misconfigured with a fix', notice('store_misconfigured', { fix: 'run the Vendure server with its time zone set to UTC' }), undefined,
+      "Products aren't updating: a setting on the online store needs changing.",
+      'You can keep selling. Ask the store owner to run the Vendure server with its time zone set to UTC.'],
+    ['store_misconfigured without one', notice('store_misconfigured'), undefined,
+      "Products aren't updating: a setting on the online store needs changing.",
+      "You can keep selling. Ask the store owner to check the store's settings."],
+    ['an unknown code', notice('some_new_code'), undefined, fallbackLine, fallbackDetail],
+    ['an unknown till code', notice('some_till_code', { fixedBy: 'till' }), undefined, fallbackLine, fallbackDetail],
+  ])('shows the pull notice for %s as a plain line and a detail, never the raw code', (_name, pullNotice, pluginName, noticeLine, noticeDetail) => {
+    const { container } = render(<SyncStatus state={{ pending: 0, sending: false }} pullNotice={pullNotice} pluginName={pluginName} />);
+    expect(screen.getByText(noticeLine).textContent).toBe(noticeLine);
+    expect(screen.getByText(noticeDetail).textContent).toBe(noticeDetail);
+    expect(noticeDetail.startsWith('You can keep selling. ')).toBe(true);
+    expect(line()).toBe('Sales are up to date.');
+    expect(container.textContent).not.toContain(pullNotice.code);
+  });
+
+  it('never names WooCommerce or 5.8 unless the notice does', () => {
+    const { container } = render(<SyncStatus state={{ pending: 0, sending: false }}
+      pullNotice={notice('unsupported_store', { software: 'ShopSoft', minVersion: '9.1' })} />);
+    expect(container.textContent).not.toMatch(/WooCommerce|5\.8/);
+    cleanup();
+    const again = render(<SyncStatus state={{ pending: 0, sending: false }} pullNotice={notice('unsupported_store')} />);
+    expect(again.container.textContent).not.toMatch(/WooCommerce|5\.8/);
+  });
+
+  it('shows no pull notice without pullNotice', () => {
+    render(<SyncStatus state={{ pending: 0, sending: false }} />);
+    expect(screen.queryByText(/Products aren't updating|You can keep selling/)).toBeNull();
+  });
+
+  it('shows the pull notice first, then the outbox line and its detail, when both are set', () => {
+    const { container } = render(<SyncStatus state={{ pending: 2, sending: false, backendMissing: { since: Date.now() } }}
+      pullNotice={notice('unauthorized')} />);
+    const text = container.textContent ?? '';
+    const order = ["Products aren't updating: this till needs to sign in to the online store again.",
+      'You can keep selling. Products, prices and stock stay as they were until someone signs in again.',
+      `2 sales waiting to sync · ${cashierLine}`, detail('the POS plugin')].map((part) => text.indexOf(part));
+    expect(line()).toBe(`2 sales waiting to sync · ${cashierLine}`);
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('with missing_plugin and the store missing, shows both lines and the missing-plugin detail once, below both', () => {
+    const productsLine = "Products aren't updating: the online store is missing WCPOS.";
+    const pluginDetail = "You can keep selling. This till couldn't find WCPOS on the online store. Ask the store owner to check that it is "
+      + "installed and switched on, and that the store address in this till's settings is right.";
+    const outboxDetail = (lastTime: string) => `This till couldn't find WCPOS on the online store${lastTime}. Ask the store owner to check that it is `
+      + "installed and switched on, and that the store address in this till's settings is right.";
+    const backendMissing = { since: Date.now() };
+    const cases: [OutboxState, OutboxState | undefined, string, string][] = [
+      [{ pending: 2, sending: false, backendMissing }, undefined, `2 sales waiting to sync · ${cashierLine}`, ''],
+      [{ pending: 0, sending: false, backendMissing }, undefined, 'Sales are up to date.', ' the last time it checked'],
+      // The register outbox alone (its own tracker) sets it: the same one detail.
+      [{ pending: 0, sending: false }, { pending: 1, sending: false, backendMissing }, `1 till update waiting to sync · ${tillLine}`, ''],
+    ];
+    for (const [state, registerState, salesLine, lastTime] of cases) {
+      const { container } = render(<SyncStatus state={state} registerState={registerState} pluginName="WCPOS"
+        pullNotice={notice('missing_plugin')} />);
+      const text = container.textContent ?? '';
+      expect(line()).toBe(salesLine);
+      expect(screen.getByText(productsLine)).toBeTruthy();
+      expect(screen.getByText(pluginDetail)).toBeTruthy();
+      expect(text.match(/couldn't find WCPOS/g)).toHaveLength(1);
+      expect(screen.queryByText(outboxDetail(lastTime))).toBeNull();
+      const order = [productsLine, salesLine, pluginDetail].map((part) => text.indexOf(part));
+      expect(order.every((at) => at >= 0)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      cleanup();
+    }
+    // Without backendMissing the missing-plugin notice keeps its detail under its own line, as before.
+    render(<SyncStatus state={{ pending: 0, sending: false }} pluginName="WCPOS" pullNotice={notice('missing_plugin')} />);
+    expect(screen.getByText(pluginDetail)).toBeTruthy();
+    expect(screen.queryByText(outboxDetail(''))).toBeNull();
   });
 });

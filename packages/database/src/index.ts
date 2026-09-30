@@ -9,7 +9,7 @@ export { STORAGE_WRITE_STALL_MS, STORAGE_READ_WATCHDOG_MS, isStorageWorkerFailur
 export type { StorageHealth, StorageWatchdogOptions } from './storage-watchdog';
 
 export { startReplication } from './replication';
-export type { StartReplicationOptions } from './replication';
+export type { StartReplicationOptions, TallyReplicationState } from './replication';
 
 export { startLiveTab } from './live-tab';
 export type { LiveTabState, LiveTabOptions, LiveTabHandle } from './live-tab';
