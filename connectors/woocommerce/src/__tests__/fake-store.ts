@@ -30,9 +30,9 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { replicateRxCollection } from 'rxdb/plugins/replication';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
+import type { ReplicationAdapter, SyncContext, TallyConnector } from '@tallyui/core';
 import { connectorCollection } from '@tallyui/database';
-import { woocommerceConnector } from '../index';
+import { createWooCommerceConnector } from '../index';
 import { wooProductSchema } from '../schemas/products';
 
 addRxPlugin(RxDBDevModePlugin);
@@ -67,9 +67,14 @@ export interface FakeRow {
 }
 export interface FakeStoreOptions {
   total?: boolean; filter?: boolean; zone?: Zone; stamp?: (n: number) => string;
+  /** Requests to this host reach this store; any other host reaches the store created last. */
+  host?: string;
 }
 
-export function createFakeStore(size: number, { total = true, filter = true, zone = 0, stamp: time = stamp }: FakeStoreOptions = {}) {
+// The live fake stores by host, so that two stores can answer at once (#307).
+const stores = new Map<string, { answer(url: URL, headers?: Record<string, string>): Response }>();
+
+export function createFakeStore(size: number, { total = true, filter = true, zone = 0, stamp: time = stamp, host = 'woo.test' }: FakeStoreOptions = {}) {
   const store = {
     rows: Array.from({ length: size }, (_, i): FakeRow => ({
       id: i + 1, uuid: `u${i + 1}`, name: `Product ${i + 1}`, status: 'publish', stock_quantity: 10, stock_status: 'instock', ...at(time(i + 1), zone),
@@ -122,7 +127,11 @@ export function createFakeStore(size: number, { total = true, filter = true, zon
       return new Response(JSON.stringify(body), { headers: store.total ? { 'X-WP-Total': String(window.length) } : {} });
     },
   };
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => store.answer(new URL(String(input)), init?.headers as Record<string, string>));
+  stores.set(host, store);
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = new URL(String(input));
+    return (stores.get(url.host) ?? store).answer(url, init?.headers as Record<string, string>);
+  });
   return store;
 }
 export type FakeStore = ReturnType<typeof createFakeStore>;
@@ -131,6 +140,7 @@ const cleanup: Array<() => Promise<unknown>> = [];
 /** Call from afterEach: cancels every replication and closes every database, newest first. */
 export async function closeTills() {
   for (const close of cleanup.splice(0).reverse()) await close();
+  stores.clear();
   vi.restoreAllMocks();
 }
 
@@ -138,9 +148,13 @@ export async function closeTills() {
  * A till: an in-memory products collection (local documents on, for the reconcile gate) replicated from the
  * store through the connector's own adapter, the combined pull and reconcile feed, unless `adapter` says otherwise.
  */
-export async function startTill(store: FakeStore, { batchSize = 2, afterCall = (_call: number, _rows: FakeRow[]) => {}, adapter, db, syncContext = context }: {
+export async function startTill(store: FakeStore, {
+  batchSize = 2, afterCall = (_call: number, _rows: FakeRow[]) => {}, adapter, db, syncContext = context, connector = createWooCommerceConnector(),
+}: {
   batchSize?: number; afterCall?: (call: number, rows: FakeRow[]) => void; adapter?: ReplicationAdapter<any, any>; db?: RxDatabase;
   syncContext?: SyncContext;
+  /** The connector instance whose combined pull the till replicates through, and whose reconcile a test drives (default: a new one). */
+  connector?: TallyConnector;
 } = {}) {
   let database = db;
   if (!database) {
@@ -151,7 +165,7 @@ export async function startTill(store: FakeStore, { batchSize = 2, afterCall = (
     await created.addCollections({ products: connectorCollection(wooProductSchema) });
     database = created;
   }
-  const pull = adapter ?? woocommerceConnector.replication!.products!;
+  const pull = adapter ?? connector.replication!.products!;
   let calls = 0;
   const state = replicateRxCollection<any, any>({
     collection: database.products, replicationIdentifier: 'woo-products', live: true, waitForLeadership: false,
@@ -182,5 +196,5 @@ export async function startTill(store: FakeStore, { batchSize = 2, afterCall = (
     await poll();
     return store.requests.length - before;
   };
-  return { db: database, collection: database.products, state, errors, sync, poll, local, pollCost };
+  return { db: database, collection: database.products, connector, state, errors, sync, poll, local, pollCost };
 }

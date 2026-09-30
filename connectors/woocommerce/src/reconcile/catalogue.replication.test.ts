@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startCatalogueReconcile, type CatalogueReconcileEvent } from '@tallyui/database';
 import { closeTills, context, createFakeStore, stamp, startTill, type FakeRow, type FakeStore } from '../__tests__/fake-store';
-import { woocommerceConnector } from '../index';
+import { createWooCommerceConnector } from '../index';
 import { wooProductReplication } from '../replication/products';
 
 afterEach(closeTills);
@@ -16,7 +16,7 @@ type Till = Awaited<ReturnType<typeof startTill>>;
 async function reconcile(till: Till, syncContext = context) {
   const events: CatalogueReconcileEvent[] = [];
   const runner = startCatalogueReconcile({
-    collection: till.collection, adapter: woocommerceConnector.reconcile!.catalogue!, context: syncContext,
+    collection: till.collection, adapter: till.connector.reconcile!.catalogue!, context: syncContext,
     reSync: () => till.state.reSync(), setTimer: () => () => {}, log: (event) => events.push(event),
   });
   runner.reconcile();
@@ -178,7 +178,7 @@ describe('WooCommerce catalogue reconcile: guards', () => {
     };
     const events: CatalogueReconcileEvent[] = [];
     const runner = startCatalogueReconcile({
-      collection: till.collection, adapter: woocommerceConnector.reconcile!.catalogue!, context, reSync: () => till.state.reSync(),
+      collection: till.collection, adapter: till.connector.reconcile!.catalogue!, context, reSync: () => till.state.reSync(),
       requestsPerMinute: 4, now: () => t, setTimer, log: (event) => events.push(event),
     });
     runner.reconcile();
@@ -242,7 +242,7 @@ describe('WooCommerce catalogue reconcile: guards', () => {
   });
 
   it('every request carries context.headers and Content-Type: the pull, the status read, the listing, confirmGone and fetchByIds', async () => {
-    const sentinel = { ...context, headers: { ...woocommerceConnector.auth.getHeaders({ token: 't' }), 'X-Test-Sentinel': '1' } };
+    const sentinel = { ...context, headers: { ...createWooCommerceConnector().auth.getHeaders({ token: 't' }), 'X-Test-Sentinel': '1' } };
     const store = createFakeStore(10);
     const till = await tillOf(store, { batchSize: 100, syncContext: sentinel });
     store.writeStock(2, 0, 'outofstock'); // refetched by fetchByIds

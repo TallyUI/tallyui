@@ -2,7 +2,7 @@ import { createReconcileFeed, type ReconcileFeed, type ReconcileFetchEntry, type
 import { checkResponse, toProductDocument } from '../replication/products';
 
 /** WordPress caps per_page at 100, so at most this many ids per include= request. */
-const MAX_IDS_PER_REQUEST = 100;
+export const MAX_IDS_PER_REQUEST = 100;
 
 /**
  * `fetchByIds` for the reconcile feed (#248): full products by numeric id (the till's own `id`, else the

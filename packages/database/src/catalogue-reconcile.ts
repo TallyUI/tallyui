@@ -67,8 +67,8 @@ export interface StartCatalogueReconcileOptions<Doc, Cursor = unknown> {
   /** The app's `() => replication.reSync()`; called once per page that enqueued anything, and once for the tombstones. */
   reSync: () => void;
   /**
-   * Requests allowed in any 60 s window (default 30): each page, each `confirmGone` chunk, and one for the refetch
-   * each page that enqueued anything causes (the pull's `fetchByIds`; a connector fetching a page's ids in one request).
+   * Requests allowed in any 60 s window (default 30): each page, each `confirmGone` chunk, and the refetch requests
+   * each page that enqueued anything causes (the pull's `fetchByIds`: `ceil(n / adapter.refetchBatchSize)`, or 1 when unset).
    */
   requestsPerMinute?: number;
   /** Most candidates per `confirmGone` call (default 100); each call takes one budget slot. */
@@ -176,7 +176,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     signal.addEventListener('abort', onAbort);
   });
   // The request budget: a sliding window of adapter calls, so no 60 s window holds more than
-  // requestsPerMinute. Each page, each confirmGone call and each page's refetch counts as one. It bounds the pass, not a page cap.
+  // requestsPerMinute. Each page, each confirmGone call and each of a page's refetch requests counts as one. It bounds the pass, not a page cap.
   const sent: number[] = [];
   const budget = async () => {
     for (;;) {
@@ -235,8 +235,11 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
         }
         checkAborted();
         if (queue.length) {
-          // The refetch this page causes runs in the pull, outside the runner: its slot is taken before it is enqueued.
-          await budget();
+          // The refetch this page causes runs in the pull, outside the runner: its slots, one per fetchByIds request
+          // (#307), are taken before it is enqueued. A size that is unset or not positive counts as one request.
+          const size = adapter.refetchBatchSize;
+          const slots = size !== undefined && size > 0 ? Math.max(1, Math.ceil(queue.length / size)) : 1;
+          for (let slot = 0; slot < slots; slot++) await budget();
           adapter.enqueue(queue);
           reSync();
           refetched += queue.length;

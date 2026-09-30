@@ -10,15 +10,15 @@ import { Link, Stack } from 'expo-router';
 import { cn } from '@tallyui/theme';
 import { ConnectorProvider } from '@tallyui/core';
 import { ProductGrid, ProductCard, Switch } from '@tallyui/components';
-import { woocommerceConnector } from '@tallyui/connector-woocommerce';
-import { medusaConnector } from '@tallyui/connector-medusa';
+import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
+import { createMedusaConnector } from '@tallyui/connector-medusa';
 import { stockOverlay$, stockOverlayAsOf$ } from '@tallyui/pos';
 import type { TallyConnector } from '@tallyui/core';
 
 import { useDemoDatabase } from '../lib/use-demo-database';
 import { PRIMARY } from '../lib/theme-colors';
 
-const connectors = [woocommerceConnector, medusaConnector];
+const connectors = [createWooCommerceConnector(), createMedusaConnector()];
 
 /**
  * Product list component — renders inside a ConnectorProvider

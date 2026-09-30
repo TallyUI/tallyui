@@ -31,7 +31,8 @@ describe('Medusa auth', () => {
     expect(medusaAdminUserConnector.schemas).toBe(medusaConnector.schemas);
     expect(medusaAdminUserConnector.traits).toBe(medusaConnector.traits);
     expect(medusaAdminUserConnector.sync).toBe(medusaConnector.sync);
-    expect(medusaAdminUserConnector.replication).toBe(medusaConnector.replication);
+    // Each is built by its factory with its own reconcile feed (#307), so the replication is not shared.
+    expect(medusaAdminUserConnector.replication).not.toBe(medusaConnector.replication);
     expect(medusaAdminUserConnector.auth).toBe(medusaAdminUserAuth);
   });
 

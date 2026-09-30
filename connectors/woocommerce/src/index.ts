@@ -5,11 +5,8 @@ import { wooProductTraits } from './traits/product';
 import { wooProductSync } from './sync/products';
 import { wooProductReplication } from './replication/products';
 import { wooCatalogueReconcile } from './reconcile/catalogue';
-import { createWooReconcileFeed } from './reconcile/feed';
+import { createWooReconcileFeed, MAX_IDS_PER_REQUEST } from './reconcile/feed';
 import { version } from '../package.json';
-
-// The catalogue reconcile's corrections reach `products` only through this pull adapter (#248).
-const catalogueFeed = createWooReconcileFeed();
 
 /** One part of X-WCPOS-Client as WCPOS keeps it: lowercase [a-z0-9._-], at most 32 characters. */
 export function wcposClientPart(part: string): string {
@@ -24,22 +21,42 @@ export class WooMissingTokenError extends ConnectorUnauthorizedError {
 }
 
 /**
- * WooCommerce connector for Tally UI.
+ * WooCommerce connector for Tally UI. Build one per store session, anew on each sign-in or store change:
+ * it owns the reconcile feed, whose queued work must never reach another store's database (#307).
  *
  * Requires the WCPOS Free plugin 1.10.0 or later. SyncContext.baseUrl must
  * be the store's wcpos/v2 root: <site>/wp-json/wcpos/v2.
  * Products are stored in RxDB using a schema that mirrors the WC API shape.
  *
  * ```ts
- * import { woocommerceConnector } from '@tallyui/connector-woocommerce';
+ * import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
  * import { ConnectorProvider } from '@tallyui/core';
  *
- * <ConnectorProvider connector={woocommerceConnector}>
+ * const connector = useMemo(() => createWooCommerceConnector(), [storeUrl]);
+ * <ConnectorProvider connector={connector}>
  *   <App />
  * </ConnectorProvider>
  * ```
  */
-export const woocommerceConnector: TallyConnector = {
+export function createWooCommerceConnector(): TallyConnector {
+  // The catalogue reconcile's corrections reach `products` only through this pull adapter (#248).
+  const catalogueFeed = createWooReconcileFeed();
+  return {
+    ...wooConnectorParts,
+    replication: {
+      // One replication per collection; the reconcile feed is last, so its fetch wins duplicates. legacyKey
+      // reads an existing install's plain pull checkpoint as the product feed's, so it does not resync.
+      products: combinePullAdapters({ products: wooProductReplication, reconcile: catalogueFeed.adapter }, { legacyKey: 'products' }),
+    },
+    reconcile: {
+      // The feed's fetchByIds asks for at most this many ids per request; the runner budgets by requests.
+      catalogue: { ...wooCatalogueReconcile(catalogueFeed), refetchBatchSize: MAX_IDS_PER_REQUEST },
+    },
+  };
+}
+
+// Everything but the reconcile feed and what is wired to it: stateless, so every instance shares it.
+const wooConnectorParts = {
   id: 'woocommerce',
   name: 'WooCommerce',
   description: 'Connect to WooCommerce stores via the REST API',
@@ -88,17 +105,13 @@ export const woocommerceConnector: TallyConnector = {
   sync: {
     products: wooProductSync,
   },
+} satisfies Omit<TallyConnector, 'replication' | 'reconcile'>;
 
-  replication: {
-    // One replication per collection; the reconcile feed is last, so its fetch wins duplicates. legacyKey
-    // reads an existing install's plain pull checkpoint as the product feed's, so it does not resync.
-    products: combinePullAdapters({ products: wooProductReplication, reconcile: catalogueFeed.adapter }, { legacyKey: 'products' }),
-  },
-
-  reconcile: {
-    catalogue: wooCatalogueReconcile(catalogueFeed),
-  },
-};
+/**
+ * @deprecated One instance for the whole app: a store switch can leak queued reconcile work across stores.
+ * Use createWooCommerceConnector() per store session. Removed in 4.0.
+ */
+export const woocommerceConnector: TallyConnector = createWooCommerceConnector();
 
 // Re-export pieces for advanced usage
 export { ConnectorUnauthorizedError } from '@tallyui/core';

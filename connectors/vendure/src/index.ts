@@ -12,17 +12,22 @@ import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from '
 import { vendureStoreSettings } from './store-settings';
 import { vendureGlobalStockSettings } from './global-settings';
 
+/** Ids per fetchByIds request: it sends the reconcile feed's whole chunk (at most 1,000 ids, ADR-060) in one query. */
+const VENDURE_IDS_PER_REQUEST = 1000;
+
 /**
- * Vendure connector for Tally UI.
+ * Vendure connector for Tally UI. Build one per store session, anew on each sign-in or store change:
+ * each instance owns its reconcile feed, whose queued work must never reach another store's database (#307).
  *
  * Connects to Vendure backends via the Admin GraphQL API.
  * Products are stored in RxDB using a schema that mirrors the Vendure API shape.
  *
  * ```ts
- * import { vendureConnector } from '@tallyui/connector-vendure';
+ * import { createVendureConnector } from '@tallyui/connector-vendure';
  * import { ConnectorProvider } from '@tallyui/core';
  *
- * <ConnectorProvider connector={vendureConnector}>
+ * const connector = useMemo(() => createVendureConnector({ pricesIncludeTax }), [backendUrl, pricesIncludeTax]);
+ * <ConnectorProvider connector={connector}>
  *   <App />
  * </ConnectorProvider>
  * ```
@@ -74,14 +79,18 @@ export const createVendureConnector = (options: {
 
     reconcile: {
       stock: vendureStockReconcile,
-      ids: { fetchPages, variantIds, enqueue: idFeed.enqueue },
-      prices: { fetchPages: fetchPricePages, fingerprint: priceFingerprint, enqueue: idFeed.enqueue },
+      ids: { fetchPages, variantIds, enqueue: idFeed.enqueue, refetchBatchSize: VENDURE_IDS_PER_REQUEST },
+      prices: { fetchPages: fetchPricePages, fingerprint: priceFingerprint, enqueue: idFeed.enqueue, refetchBatchSize: VENDURE_IDS_PER_REQUEST },
     },
 
     storeSettings: vendureStoreSettings,
   };
 };
 
+/**
+ * @deprecated One instance for the whole app: a store switch can leak queued reconcile work across stores.
+ * Use createVendureConnector() per store session. Removed in 4.0.
+ */
 export const vendureConnector = createVendureConnector();
 
 // Re-export pieces for advanced usage
