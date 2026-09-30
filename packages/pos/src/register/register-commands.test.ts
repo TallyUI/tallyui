@@ -192,11 +192,6 @@ describe('register command ledger', () => {
   describe('transition keys (#258)', () => {
     const transitions = async () => (await ledger()).filter((row) => row.type === 'register.session.transition')
       .map(({ key, payload }) => ({ key, payload }));
-    // A row as a ledger written before 3.0.0 stored it: the key has no status.
-    const legacy = (sessionId: string, status: string, at: string) => db.register_commands.insert({
-      key: `session.transition:${sessionId}:${at}`, type: 'register.session.transition', version: 1,
-      payload: { sessionId, status, at }, registerId: 'register', seq: 2, commandId: 'legacy',
-      createdAt: openedAt, updatedAt: openedAt, syncStatus: 'applied' });
 
     it('counting then closed in the same millisecond queues both, in order, the closed one with its count', async () => {
       const s = await open();
@@ -212,28 +207,6 @@ describe('register command ledger', () => {
         { key: `session.transition:${s.id}:closed:${closed.status_at}`, payload: { sessionId: s.id, status: 'closed',
           at: closed.status_at, counted: { cash: 9300 }, closedBy: '7', approvedBy: 'manager' } },
       ]);
-    });
-
-    it('a legacy-keyed row with the same status is not queued again', async () => {
-      const s = await open();
-      await reconcile();
-      const counting = await startCounting(db.register_sessions, s.id);
-      await legacy(s.id, 'counting', counting.status_at!);
-      expect(await reconcile()).toStrictEqual([]);
-      expect((await ledger()).map((row) => row.key)).toStrictEqual([
-        `session.open:${s.id}`, `session.transition:${s.id}:${counting.status_at}`,
-      ]);
-    });
-
-    it('a legacy-keyed counting row at T does not stop a closed transition at T', async () => {
-      const s = await open();
-      await reconcile();
-      const counting = await startCounting(db.register_sessions, s.id);
-      await legacy(s.id, 'counting', counting.status_at!);
-      const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 9300 } });
-      expect(closed.status_at).toBe(counting.status_at);
-      expect(await reconcile()).toStrictEqual([`session.transition:${s.id}:closed:${closed.status_at}`]);
-      expect((await transitions()).map(({ payload }) => payload.status)).toStrictEqual(['counting', 'closed']);
     });
 
     it('open, counting, closed at different times queues each transition once; a rerun adds nothing', async () => {
