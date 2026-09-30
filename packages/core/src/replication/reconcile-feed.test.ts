@@ -215,9 +215,29 @@ describe('createReconcileFeed', () => {
         expect((await adapter.pull.handler(undefined, 100, context)).documents).toEqual([{ ...product(7, 'remote-7'), _deleted: false }]);
       });
 
-      it('an entry with a local copy is never matched by remote: a missing product is tombstoned, not swapped', async () => {
+      it('an entry with a local copy whose remote id comes back under another key: the current document is delivered and the old copy tombstoned (#331)', async () => {
         const other = { ...product(7, 'another'), uuid: 'u-other' };
         const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, remote: byId, fetchByIds: vi.fn(async () => [other]) });
+        enqueue([{ key: 'u-7', local: product(7), remote: 7 }]);
+        expect((await adapter.pull.handler(undefined, 100, context)).documents).toEqual([{ ...other, _deleted: false }, { ...product(7), _deleted: true }]);
+      });
+
+      it('a refreshOnly entry whose primary key moved delivers the current document without a tombstone (#331)', async () => {
+        const other = { ...product(7, 'another'), uuid: 'u-other' };
+        const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, remote: byId, fetchByIds: vi.fn(async () => [other]) });
+        enqueue([{ key: 'u-7', local: product(7), remote: 7, refreshOnly: true }]);
+        expect((await adapter.pull.handler(undefined, 100, context)).documents).toEqual([{ ...other, _deleted: false }]);
+      });
+
+      it('a moved document also queued by remote and key is delivered only once (#331)', async () => {
+        const other = { ...product(7, 'another'), uuid: 'u-other' };
+        const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, remote: byId, fetchByIds: vi.fn(async () => [other]) });
+        enqueue([{ key: 'u-7', local: product(7), remote: 7 }, { key: '7', remote: 7 }, { key: 'u-other', local: other, remote: 7 }]);
+        expect((await adapter.pull.handler(undefined, 100, context)).documents).toEqual([{ ...other, _deleted: false }, { ...product(7), _deleted: true }]);
+      });
+
+      it('a missing product with a local copy and no remote match is only tombstoned', async () => {
+        const { adapter, enqueue } = createReconcileFeed<Product>({ key: byUuid, remote: byId, fetchByIds: vi.fn(async () => []) });
         enqueue([{ key: 'u-7', local: product(7), remote: 7 }]);
         expect((await adapter.pull.handler(undefined, 100, context)).documents).toEqual([{ ...product(7), _deleted: true }]);
       });

@@ -44,9 +44,10 @@ export function createWooCommerceConnector(): TallyConnector {
   return {
     ...wooConnectorParts,
     replication: {
-      // One replication per collection; the reconcile feed is last, so its fetch wins duplicates. legacyKey
+      // One replication per collection; the reconcile feed is last, so its fetch wins duplicates;
+      // duplicates are matched by uuid, the primary key, not the store id (#331). legacyKey
       // reads an existing install's plain pull checkpoint as the product feed's, so it does not resync.
-      products: combinePullAdapters({ products: wooProductReplication, reconcile: catalogueFeed.adapter }, { legacyKey: 'products' }),
+      products: combinePullAdapters({ products: wooProductReplication, reconcile: catalogueFeed.adapter }, { legacyKey: 'products', key: (doc: any) => doc.uuid }),
     },
     reconcile: {
       // The feed's fetchByIds asks for at most this many ids per request; the runner budgets by requests.

@@ -14,11 +14,12 @@ import type { ReplicationAdapter } from '../types';
  *
  * `options.batchSize` sets the combined pull page size; sub-adapters' own
  * `pull.batchSize` is ignored.
+ * Duplicates across sub-adapters are resolved by this key, the last one winning; it defaults to `doc.id`. Pass the collection's primary key when `id` is not it (WooCommerce's uuid, #331): two documents that share an `id`, such as a product's new copy and its old copy's tombstone, must both reach the collection.
  * Pull only: a sub-adapter with `push` or `pull.stream$` throws here.
  */
 export function combinePullAdapters<Doc>(
   adapters: Record<string, ReplicationAdapter<Doc, any>>,
-  options: { legacyKey?: string; batchSize?: number } = {},
+  options: { legacyKey?: string; batchSize?: number; key?: (doc: Doc) => unknown } = {},
 ): ReplicationAdapter<Doc, Record<string, any>> {
   const keys = Object.keys(adapters);
   for (const key of keys) {
@@ -50,7 +51,8 @@ export function combinePullAdapters<Doc>(
           }
           previous = seeded;
         }
-        const byId = new Map<unknown, Doc & { _deleted: boolean }>();
+        const keyOf = options.key ?? ((doc: Doc) => (doc as { id?: unknown }).id);
+        const byKey = new Map<unknown, Doc & { _deleted: boolean }>();
         const checkpoint: Record<string, any> = {};
         // Call sub-adapters strictly one after another, in key order: a
         // correctness rule, not politeness. Each feed writes whole documents.
@@ -62,15 +64,15 @@ export function combinePullAdapters<Doc>(
         // it, with neither checkpoint ever revisiting the document.
         for (const key of keys) {
           const result = await adapters[key].pull.handler(previous?.[key], batchSize, context);
-          for (const doc of result.documents) byId.set((doc as { id?: unknown }).id, doc);
+          for (const doc of result.documents) byKey.set(keyOf(doc), doc);
           // RxDB merges only the top level of the combined checkpoint, so merge
           // each sub-checkpoint here as it would for a single adapter. Spread
           // keeps a sub-adapter's explicit undefined (cleared pass state).
           checkpoint[key] = { ...previous?.[key], ...result.checkpoint };
         }
-        // Each sub-adapter returns unique ids, so one full sub-page makes the
+        // Each sub-adapter returns unique keys, so one full sub-page makes the
         // combined page full: RxDB keeps pulling while any sub-adapter has more.
-        return { documents: [...byId.values()], checkpoint };
+        return { documents: [...byKey.values()], checkpoint };
       },
     },
   };

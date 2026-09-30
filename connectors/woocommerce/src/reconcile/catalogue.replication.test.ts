@@ -185,6 +185,19 @@ describe('WooCommerce catalogue reconcile: planted missed-edit cases', () => {
     await till.poll();
     expect(await nameOf(till, 'u7')).toBe('Online only');
   });
+
+  it('9. a product whose uuid changed in the store is replaced: delivered under its new uuid, the old copy removed by the feed, nothing tombstoned by the runner (#331)', async () => {
+    const store = createFakeStore(20);
+    const till = await tillOf(store);
+    store.edit(12, { uuid: 'u12-new' }, stamp(12));
+    store.writeStock(12, 0, 'outofstock');
+    const events = await reconcile(till);
+    await till.poll();
+    const local = await till.local();
+    expect(local.get('u12-new')).toMatchObject({ id: 12, stock_quantity: 0, stock_status: 'outofstock' });
+    expect(local.has('u12')).toBe(false);
+    expect(keysOf(events, 'tombstoned')).toEqual([]);
+  });
 });
 
 describe('WooCommerce catalogue reconcile: guards', () => {
@@ -448,5 +461,20 @@ describe('WooCommerce catalogue reconcile: fast path (#313)', () => {
     expect(store.requests.slice(before).map((url) => url.searchParams.get('page'))).toEqual([null, null, '1']);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('not a list'));
+  });
+
+  it('F8. a product whose uuid moved is delivered with its new stock and its old copy removed by the feed (#331)', async () => {
+    const store = fastStore(20);
+    const till = await tillOf(store);
+    expect((await till.local()).has('u12')).toBe(true);
+    store.edit(12, { uuid: 'u12-new' }, stamp(12));
+    store.writeStock(12, 0, 'outofstock');
+
+    const events = await fastPass(till, store);
+    await till.poll();
+    const local = await till.local();
+    expect(local.get('u12-new')).toMatchObject({ id: 12, stock_quantity: 0, stock_status: 'outofstock' });
+    expect(local.has('u12')).toBe(false);
+    expect(keysOf(events, 'tombstoned')).toEqual([]);
   });
 });
