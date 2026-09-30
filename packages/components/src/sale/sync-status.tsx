@@ -49,6 +49,20 @@ const TILL_UPDATES_MISSING_SINCE = "Till updates haven't reached the online stor
 const BACKEND_MISSING_DETAIL = "This till couldn't find {pluginName} on the online store{lastTime}. Ask the store owner to check that it is installed "
   + "and switched on, and that the store address in this till's settings is right.";
 
+// The whole status line while the store has refused sales (OutboxState.rejected), in place of every other outbox line (#269).
+// `waiting` is empty, or ", " and what else waits, so the line never hides waiting sales.
+const REFUSED = (n: number, waiting: string) => n === 1
+  ? `1 sale needs attention${waiting} · The online store refused it. Ask the store owner to look at the till's sync log.`
+  : `${n} sales need attention${waiting} · The online store refused them. Ask the store owner to look at the till's sync log.`;
+// The first detail below it, in the Front desk's ruling (#269). Not every refusal can be retried (idempotency_mismatch can't).
+const REFUSED_DETAIL = 'Refused sales stay on this till under Needs attention, each with what to do next.';
+// The sentence after the waiting count once the store refused a whole batch (OutboxState.refused) from the outbox shown, when
+// no command carries a code. Neither outbox sets a timer then: a new pending command flushes its outbox. For sales,
+// useOrderOutbox also calls start() when the store opens, which flushes; no app starts the register outbox at launch today,
+// so the till-updates sentence names only the next till update (#269).
+const SALES_REFUSED = 'The online store refused the last send. This till will try again with the next sale, or when the app is reopened.';
+const TILL_UPDATES_REFUSED = 'The online store refused the last send. This till will try again with the next till update.';
+
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 // iOS has no live region (accessibilityLiveRegion is Android-only), so there each text is announced when it changes: never on
 // the first mount, nor on a re-render with the same text. Texts that change in the same render go in ONE call, joined by a space.
@@ -89,11 +103,17 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   const upToDate = state.pending === 0 && updates === 0;
   // The sentence shows with the store missing, or once the waiting sales (with none waiting, the till updates) are stuck, then as
   // its "since" variant: the same words for any reason, and no reason code.
-  const sentence = backendMissing || (state.pending === 0 && updates > 0 ? registerState?.stuck : stuck) ? ` · ${backendMissingText}` : '';
+  // A refused batch from the outbox shown (the sales', whenever a sale waits) replaces that sentence: it is the store's latest
+  // answer, and sending waits for that outbox's next command or start.
+  const sentence = outbox.refused ? ` · ${outbox === state ? SALES_REFUSED : TILL_UPDATES_REFUSED}`
+    : backendMissing || (state.pending === 0 && updates > 0 ? registerState?.stuck : stuck) ? ` · ${backendMissingText}` : '';
   // The live region holds only the substance (counts and the sentence), so it is announced when that changes and never as sending
   // or retrying flips or the countdown ticks: those are a short line of their own below it, outside any live region.
-  const spoken = upToDate ? 'Sales are up to date.' : label + sentence;
-  const doing = upToDate || backendMissing ? '' : outbox.sending ? 'Sending…'
+  // Refused sales are never up to date, and their line outranks the sentences and sending or retrying. It keeps what else waits:
+  // "5 waiting to sync" for sales alone, else the label, which names the till updates (and the sales, if any).
+  const refused = state.rejected ? REFUSED(state.rejected, upToDate ? '' : `, ${updates ? label : `${state.pending} waiting to sync`}`) : '';
+  const spoken = refused || (upToDate ? 'Sales are up to date.' : label + sentence);
+  const doing = refused || upToDate || backendMissing || outbox.refused ? '' : outbox.sending ? 'Sending…'
     : outbox.lastRetryReason ? `Retrying in ${seconds} s.` : '';
   const text = pullNotice
     && (Object.hasOwn(PULL_NOTICE_TEXT, pullNotice.code) ? PULL_NOTICE_TEXT[pullNotice.code] : PULL_NOTICE_FALLBACK);
@@ -110,6 +130,7 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
     {oneDetail ? null : <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>}
   </> : null}<Text accessibilityLabel={spoken} accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{spoken}</Text>
   {doing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{doing}</Text> : null}
+  {refused ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{REFUSED_DETAIL}</Text> : null}
   {oneDetail && notice ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>
     : backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
     {BACKEND_MISSING_DETAIL.replace('{pluginName}', () => pluginName).replace('{lastTime}', () => upToDate ? ' the last time it checked' : '')}</Text> : null}</View>;

@@ -166,7 +166,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // Retiring them is a separate decision.
   async function updateState(patch: Partial<OutboxState> = {}) {
     const pending = await countFresh(collection, { syncStatus: 'pending' });
-    state$.next({ ...state$.value, ...patch, pending, stuck: stuckState() });
+    const rejected = await countFresh(collection, { syncStatus: 'rejected' });
+    state$.next({ ...state$.value, ...patch, pending, rejected, stuck: stuckState() });
   }
 
   function isolate(id: string, reason: string, retryAfterMs = 0) {
