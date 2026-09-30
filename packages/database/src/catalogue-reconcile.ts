@@ -31,6 +31,8 @@ export type CatalogueReconcileEvent =
   | { type: 'pass-started'; resumed: boolean }
   | { type: 'refetched'; count: number; keys: string[] }
   | { type: 'tombstoned'; count: number; keys: string[] }
+  /** Local copies sharing a listed match key with another: deletion candidates, sent to confirmGone (#369). */
+  | { type: 'duplicate'; count: number; keys: string[]; code: 'duplicate_match_key' }
   | { type: 'kept'; count: number; keys: string[]; reason: 'unconfirmed' | 'resumed-pass' }
   /** `message` tells the store owner, in plain words and without naming a backend, what was kept and why. */
   | { type: 'kept'; count: number; keys: string[]; reason: 'brake'; message: string }
@@ -292,6 +294,7 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
     else {
       // Local documents the listing never named are candidates; only confirmed ones may go.
       const candidates: Doc[] = [];
+      const duplicates: Doc[] = [];
       let localCount = 0;
       for await (const chunk of readFreshInChunks(collection)) {
         checkAborted();
@@ -299,9 +302,15 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
         for (const doc of chunk) {
           const key = adapter.matchKey ? adapter.matchKey(doc) : keyOf(doc);
           if (key === undefined || !seen.has(key)) candidates.push(doc);
+          else if (adapter.matchKey && index?.get(key) !== keyOf(doc)) duplicates.push(doc);
         }
       }
       unlisted = candidates.length;
+      candidates.push(...duplicates);
+      if (duplicates.length) {
+        log({ type: 'duplicate', ...listed(duplicates.map(keyOf)), code: 'duplicate_match_key' });
+        console.warn('Catalogue reconcile: duplicate_match_key', duplicates.length);
+      }
       // The brake applies to the candidates, before confirmGone: a broken listing never sends
       // thousands of confirmation requests, and whatever confirmGone confirms stays under it.
       let gone: Doc[] = [];

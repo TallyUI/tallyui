@@ -789,7 +789,65 @@ describe('matchKey: a listing keyed by the backend id, not the primary key (#313
 
     runner.reconcile();
     await time.runUntil(() => count('pass-completed') === 1);
-    expect(enqueued).toEqual([[{ key: uuid(1), local: product(1), remote: 1 }]]);
+    expect(enqueued).toEqual([
+      [{ key: uuid(1), local: product(1), remote: 1 }],
+      [{ key: uuid(2), local: { ...product(2), id: 1 }, tombstone: true }],
+    ]);
+  }, 30_000);
+
+  it('a duplicate copy of a listed product is a deletion candidate, logged as duplicate_match_key, and tombstoned when confirmGone confirms it', async () => {
+    const { server, collection } = await setup(2);
+    await (await collection.findOne(uuid(2)).exec())!.incrementalPatch({ id: 1 });
+    server.remove(2);
+    const time = fakeTime();
+    const { adapter, enqueued, confirmCalls } = byIdAdapter(server);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { runner, events, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(confirmCalls).toEqual([[uuid(2)]]);
+    expect(events).toContainEqual({ type: 'duplicate', count: 1, keys: [uuid(2)], code: 'duplicate_match_key' });
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('duplicate_match_key'), 1);
+    expect(enqueued).toEqual([[{ key: uuid(2), local: { ...product(2), id: 1 }, tombstone: true }]]);
+    expect(events).toContainEqual({ type: 'tombstoned', count: 1, keys: [uuid(2)] });
+    expect(events).toContainEqual(expect.objectContaining({ type: 'pass-completed', unlisted: 0, refetched: 0, tombstoned: 1 }));
+    expect(await collection.findOne(uuid(1)).exec()).not.toBeNull();
+  }, 30_000);
+
+  it('a duplicate confirmGone does not confirm is kept (unconfirmed)', async () => {
+    const { server, collection } = await setup(2);
+    await (await collection.findOne(uuid(2)).exec())!.incrementalPatch({ id: 1 });
+    server.remove(2);
+    const time = fakeTime();
+    const { adapter, enqueued } = byIdAdapter(server);
+    adapter.confirmGone = vi.fn(async () => []);
+    const { runner, events, count } = start(collection, adapter, time);
+
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(adapter.confirmGone).toHaveBeenCalledExactlyOnceWith([{ ...product(2), id: 1 }], expect.anything());
+    expect(events).toContainEqual({ type: 'kept', count: 1, keys: [uuid(2)], reason: 'unconfirmed' });
+    expect(enqueued).toEqual([]);
+    expect(count('tombstoned')).toBe(0);
+  }, 30_000);
+
+  it('duplicates count toward the brake', async () => {
+    const { server, collection } = await setup(11);
+    for (let n = 2; n <= 11; n++) {
+      await (await collection.findOne(uuid(n)).exec())!.incrementalPatch({ id: 1 });
+      server.remove(n);
+    }
+    const time = fakeTime();
+    const { adapter, enqueued, confirmCalls } = byIdAdapter(server);
+    const { runner, events, count } = start(collection, adapter, time);
+    const keys = Array.from({ length: 10 }, (_, i) => uuid(i + 2));
+    runner.reconcile();
+    await time.runUntil(() => count('pass-completed') === 1);
+    expect(events).toContainEqual({ type: 'duplicate', count: 10, keys, code: 'duplicate_match_key' });
+    expect(events).toContainEqual(expect.objectContaining({ type: 'kept', count: 10, keys, reason: 'brake' }));
+    expect(confirmCalls).toEqual([]);
+    expect(enqueued).toEqual([]);
   }, 30_000);
 
   it('stopping between index chunks ends the walk without enqueueing or completing the pass', async () => {
