@@ -882,10 +882,24 @@ bodies and design docs, and the source is given for each.
     order. More than 50 is answered `413` with
     `{ code: 'batch_too_large', maxCommands: 50, message: 'At most 50
     commands are allowed' }` (`@tallyui/core/server`'s `validateBatch`,
-    `MAX_BATCH_COMMANDS`), never `400`: a `400` would read as a bad
+    `MAX_COMMANDS_PER_BATCH`), never `400`: a `400` would read as a bad
     command, and a till's poisoned-order isolation (programme item 24)
     would hunt for one that doesn't exist (Front desk ruling 18,
-    2026-09-30). TallyUI tills send at most 10 per batch.
+    2026-09-30). Today TallyUI tills send at most 10 per batch. A till
+    never sends more than the server's limit. On a `413` it halves the
+    batch and sends again, using `maxCommands` from the body when it is
+    present; a `413` without the code (a proxy or a body-size limit) is
+    handled the same way. When a batch of one is still answered `413`,
+    that order is shown as refused because it is too large for the store
+    to accept, and the orders behind it are sent. A `413` never marks an
+    order as poisoned and never holds up the queue. A body over the
+    server's size limit is answered `413` with
+    `{ code: 'body_too_large', maxBytes, message }`, never
+    `invalid_payload`. The till treats it as it treats `batch_too_large`:
+    it halves the batch and sends again, and a single order that is still
+    too large is shown as refused. The size limit belongs to each
+    backend's body parser; `validateBatch` receives a parsed body and does
+    not check it.
   - A `200` response is `{ results: CommandResult[] }`, in the same order.
   - Retryable (the client keeps the command and backs off): network errors,
     `5xx`, `429`, and `409 {code: 'in_progress'}` (the same id is being

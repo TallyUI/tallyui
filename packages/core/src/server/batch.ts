@@ -10,9 +10,6 @@ export type ValidatedCommandEnvelope =
   | (Omit<CommandEnvelope<Record<string, unknown>>, 'version'> & { type: 'order.create'; version: number })
   | RegisterCommandEnvelope<Record<string, unknown>>
 
-/** The ADR-038 batch limit; more is answered 413 with a BatchTooLargeBody. */
-export const MAX_BATCH_COMMANDS = MAX_COMMANDS_PER_BATCH
-
 /** Validates every envelope before any command is claimed. */
 export function validateBatch(body: unknown):
   | { ok: true; commands: ValidatedCommandEnvelope[] }
@@ -23,9 +20,9 @@ export function validateBatch(body: unknown):
   }
   const { commands } = body as Record<string, unknown>
   if (!Array.isArray(commands)) return { ok: false, status: 400, message: 'Expected commands array' }
-  if (commands.length > MAX_BATCH_COMMANDS) {
-    const message = `At most ${MAX_BATCH_COMMANDS} commands are allowed`
-    return { ok: false, status: 413, message, body: { code: 'batch_too_large', maxCommands: MAX_BATCH_COMMANDS, message } }
+  if (commands.length > MAX_COMMANDS_PER_BATCH) {
+    const message = `At most ${MAX_COMMANDS_PER_BATCH} commands are allowed`
+    return { ok: false, status: 413, message, body: { code: 'batch_too_large', maxCommands: MAX_COMMANDS_PER_BATCH, message } }
   }
   if (commands.length === 0) return { ok: false, status: 400, message: 'commands must not be empty' }
   for (const [index, command] of commands.entries()) {

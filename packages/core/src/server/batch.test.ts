@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import fixture from './__fixtures__/order-create-v3.json'
-import { MAX_BATCH_COMMANDS, precheckCommand, validateBatch } from './batch'
+import { precheckCommand, validateBatch } from './batch'
+import { MAX_COMMANDS_PER_BATCH } from './index'
 import { fiscalFiguresErrors } from './fiscal-figures'
 import { payloadShapeErrors } from './order-payload-shape'
 
@@ -27,8 +28,8 @@ describe('validateBatch', () => {
     expect(validateBatch({ commands: Array(50).fill(command) })).toEqual({ ok: true, commands: Array(50).fill(command) })
   })
 
-  it('pins MAX_BATCH_COMMANDS at 50', () => {
-    expect(MAX_BATCH_COMMANDS).toBe(50)
+  it('pins MAX_COMMANDS_PER_BATCH at 50', () => {
+    expect(MAX_COMMANDS_PER_BATCH).toBe(50)
   })
 
   it.each([null, [], 'batch', 1, {}, { commands: {} }, { commands: [] }])('rejects invalid body %p', body => {
