@@ -3769,6 +3769,13 @@ interface OrderCreatePayload {
     because it is too large for the store to accept, and the orders behind
     it are sent. A `413` never marks an order as poisoned and never holds
     up the queue.
+  - A body over the server's size limit is answered `413` with
+    `{ code: 'body_too_large', maxBytes, message }`, never
+    `invalid_payload` (ruling 20). The till treats it as it treats
+    `batch_too_large`: it halves the batch and sends again, and a single
+    order that is still too large is shown as refused. The size limit
+    belongs to each backend's body parser; `validateBatch` receives a
+    parsed body and does not check it.
   - Today the outbox sends at most 10 per batch, and a `413` is `refused`:
     sending pauses and no order changes until the outbox is next flushed,
     for example by the next sale (`OutboxState.refused`). So one oversized
