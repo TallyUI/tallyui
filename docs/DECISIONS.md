@@ -3071,6 +3071,12 @@ interface OrderCreatePayload {
   - **The golden envelope** (`packages/pos/src/pos-order/__fixtures__/order-create-v3.json`) is the fullest version-3 envelope, and the medusapos plugin pins the same file.
     - TallyUI's pipeline (builder, then `finalizeOrder`, the stamp, then the envelope) is its source of truth: the hand-built first draft was regenerated from it.
     - A structural test checks its figures agree with each other.
+- **Amended: version 4 (Front desk, 2026-09-30, #286).** Version 4 is
+  version 3 with every `discountMinor` tax-exclusive, the order's and
+  each line's, so their sum still holds. A changed meaning needs a
+  version (ADR-038). Core accepts 4, and the till's envelope builder
+  produces it when capped at 4 or more; the till doesn't send it yet
+  (a follow-up; see #286's PR).
 
 ## ADR-066 Standalone app: TallyUI with no backend
 

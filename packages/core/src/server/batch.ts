@@ -79,7 +79,8 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     || (Array.isArray(lines) && lines.some(line => (line as { discountMinor?: unknown } | null)?.discountMinor !== undefined))
   const payload = command.payload as OrderCreatePayloadV3
   const { display, taxByRate, sessionId } = payload
-  const v3 = (command.version as number) === 3
+  // Version 4 carries version 3's fields (#286); only what discountMinor means changes.
+  const v3 = command.version >= 3
   const versionError = command.version === 2 && discountMinor === undefined ? 'version 2 requires discountMinor'
     : command.version === 1 && discounted ? 'discountMinor requires version 2'
     : !v3 && (display !== undefined || taxByRate !== undefined) ? 'display and taxByRate require version 3'

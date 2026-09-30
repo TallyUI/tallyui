@@ -336,10 +336,11 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
             capabilitiesRefreshed = true;
           }
           const max = batchMax;
-          const from = batch.find((command) => command.id === order.commandId)!.version;
+          // Never 4: the batch is built without maxVersion, so no order is sent at 4 here yet (#286).
+          const from = batch.find((command) => command.id === order.commandId)!.version as 1 | 2 | 3;
           if (max !== undefined && max < (stored.sentVersion ?? from)) {
             try {
-              const to = toOrderCreateEnvelope(stored, deviceId, 1, { maxVersion: max }).version;
+              const to = toOrderCreateEnvelope(stored, deviceId, 1, { maxVersion: max }).version as 1 | 2 | 3;
               let changed = false;
               await current.incrementalModify((data) => {
                 changed = data.syncStatus === 'pending' && data.commandId === order.commandId && max < (data.sentVersion ?? from);
