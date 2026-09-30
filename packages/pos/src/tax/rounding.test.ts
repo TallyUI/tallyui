@@ -21,7 +21,7 @@ describe('rounding modes (#287)', () => {
     expect(roundMicrosToMinor(2_500_000n, 'half_up')).toBe(3);
   });
 
-  it.each(['per_line', 'per_rate_group'] as const)('%s: a return line of −25 at 10% is −2 half up, −3 away from zero; +25 is 3 both', (granularity) => {
+  it.each(['per_line_items', 'per_rate_group_items'] as const)('%s: a return line of −25 at 10% is −2 half up, −3 away from zero; +25 is 3 both', (granularity) => {
     // Exclusive −25 × 10% = −2.5 exactly: Math.round gives −2, half away from zero −3. +2.5 gives 3 in both modes.
     const tax = (netMinor: number, mode: 'half_up' | 'half_away_from_zero') =>
       roundedTaxByRate([line(netMinor, 100000)], { granularity, mode })!.taxMinor;
@@ -31,31 +31,31 @@ describe('rounding modes (#287)', () => {
     expect(tax(25, 'half_away_from_zero')).toBe(3);
   });
 
-  it('per_line inclusive returns: the net is rounded in the mode, so only an exact negative half net differs', () => {
+  it('per_line_items inclusive returns: the net is rounded in the mode, so only an exact negative half net differs', () => {
     // Inclusive −21 at 10%: net = round(−21 / 1.1) = round(−19.0909) = −19 both modes, tax = −21 − (−19) = −2.
-    expect(roundedTaxByRate([line(-21, 100000, undefined, true)], { granularity: 'per_line', mode: 'half_up' })!.taxMinor).toBe(-2);
+    expect(roundedTaxByRate([line(-21, 100000, undefined, true)], { granularity: 'per_line_items', mode: 'half_up' })!.taxMinor).toBe(-2);
     // Inclusive −231 at 10%: net = −231 / 1.1 = −210 exactly, tax −21, no half.
-    expect(roundedTaxByRate([line(-231, 100000, undefined, true)], { granularity: 'per_line', mode: 'half_up' })!.taxMinor).toBe(-21);
+    expect(roundedTaxByRate([line(-231, 100000, undefined, true)], { granularity: 'per_line_items', mode: 'half_up' })!.taxMinor).toBe(-21);
     // Inclusive −21 at 100%: net = −10.5 exactly: half up −10 (tax −11), away from zero −11 (tax −10).
-    expect(roundedTaxByRate([line(-21, 1000000, undefined, true)], { granularity: 'per_line', mode: 'half_up' })!).toMatchObject({ baseMinor: -10, taxMinor: -11 });
-    expect(roundedTaxByRate([line(-21, 1000000, undefined, true)], { granularity: 'per_line', mode: 'half_away_from_zero' })!).toMatchObject({ baseMinor: -11, taxMinor: -10 });
+    expect(roundedTaxByRate([line(-21, 1000000, undefined, true)], { granularity: 'per_line_items', mode: 'half_up' })!).toMatchObject({ baseMinor: -10, taxMinor: -11 });
+    expect(roundedTaxByRate([line(-21, 1000000, undefined, true)], { granularity: 'per_line_items', mode: 'half_away_from_zero' })!).toMatchObject({ baseMinor: -11, taxMinor: -10 });
   });
 });
 
-describe('stacked rates under per_line and per_rate_group (#287)', () => {
+describe('stacked rates under per_line_items and per_rate_group_items (#287)', () => {
   // One line net 1003 exclusive with 5% (A) and 2.5% (B) stacked: Vendure sums the rates (order-line.entity.js:121-122).
   const stacked = { netMinor: 1003, taxInclusive: false, taxLines: [
     { code: 'A', ratePpm: 50000, taxMicros: String(1003n * 50000n) }, { code: 'B', ratePpm: 25000, taxMicros: String(1003n * 25000n) }] };
 
-  it('per_line: the line tax is round(net × Σ r), split by rate with the last taking the rest', () => {
+  it('per_line_items: the line tax is round(net × Σ r), split by rate with the last taking the rest', () => {
     // 1003 × 7.5% = 75.225 → 75. A's share round(75 × 5/7.5) = 50; B takes 75 − 50 = 25.
-    const rows = taxLinesByRate([stacked], 75, undefined, { granularity: 'per_line', mode: 'half_up' });
+    const rows = taxLinesByRate([stacked], 75, undefined, { granularity: 'per_line_items', mode: 'half_up' });
     expect(rows.map((row) => [row.code, row.netMinor, row.amountMinor])).toEqual([['A', 1003, 50], ['B', 1003, 25]]);
   });
 
-  it('per_rate_group: each rate takes the whole net base and rounds on its own', () => {
+  it('per_rate_group_items: each rate takes the whole net base and rounds on its own', () => {
     // A: round(1003 × 5%) = round(50.15) = 50; B: round(1003 × 2.5%) = round(25.075) = 25; tax 75.
-    const rounded = roundedTaxByRate([stacked], { granularity: 'per_rate_group', mode: 'half_up' })!;
+    const rounded = roundedTaxByRate([stacked], { granularity: 'per_rate_group_items', mode: 'half_up' })!;
     expect(rounded.rates.map((row) => [row.code, row.netMinor, row.amountMinor])).toEqual([['A', 1003, 50], ['B', 1003, 25]]);
     expect(rounded.taxMinor).toBe(75);
   });

@@ -119,28 +119,33 @@ export interface RateTaxLine {
   amountMinor: number;
 }
 
-type TaxedLine = { netMinor: number; taxInclusive: boolean; taxLines: readonly { code?: string; ratePpm: number; taxMicros: string }[] };
+type TaxedLine = { netMinor: number; discountMinor?: number; taxInclusive: boolean; taxLines: readonly { code?: string; ratePpm: number; taxMicros: string }[] };
 
 /**
- * A `per_line` or `per_rate_group` store's figures (#287) as @vendure/core 3.7.3 computes them; undefined otherwise.
- * `baseMinor` (the subtotal) is Σ each line's rounded net, `rates` the tax by `code`+`ratePpm`, summing to `taxMinor`.
+ * A `per_line_items` or `per_rate_group_items` store's figures (#287) as @vendure/core 3.7.3 computes them; undefined
+ * otherwise. `baseMinor` (the subtotal) is Σ each item's rounded net, `rates` the tax by `code`+`ratePpm`, summing to
+ * `taxMinor`; the total is their sum. Vendure's rounding is `half_up`. vendurepos scores the #38 set with this.
  */
 export function roundedTaxByRate(lines: readonly TaxedLine[], rounding?: TaxRounding) {
-  if (rounding?.granularity !== 'per_line' && rounding?.granularity !== 'per_rate_group') return undefined;
-  // Known gap (#287): Vendure's inclusive per_rate_group total can fall below the shelf prices, which the display
+  if (rounding?.granularity !== 'per_line_items' && rounding?.granularity !== 'per_rate_group_items') return undefined;
+  // Known gap (#287): Vendure's inclusive per_rate_group_items total can differ from the shelf prices, which the display
   // can't show until it has a rounding row (#310), so an order with any inclusive line keeps per_order's figures and rows.
-  if (rounding.granularity === 'per_rate_group' && lines.some((line) => line.taxInclusive)) return undefined;
+  if (rounding.granularity === 'per_rate_group_items' && lines.some((line) => line.taxInclusive)) return undefined;
   const { granularity, mode } = rounding;
   const rates = new Map<string, { code?: string; ratePpm: number; netMinor: bigint; amountMinor: bigint }>();
   let baseMinor = 0n;
-  for (const line of lines) {
+  // vendurepos posts each line undiscounted (A) and its discountMinor as its own −D surcharge in the line's mode with
+  // the line's tax lines (vendurepos/app order-create.service.ts:654-663); a return line's negative D is its cap, not an item.
+  const items = lines.flatMap((line) => (line.discountMinor ?? 0) > 0
+    ? [{ ...line, netMinor: line.netMinor + line.discountMinor! }, { ...line, netMinor: -line.discountMinor! }] : [line]);
+  for (const line of items) {
     const net = BigInt(line.netMinor);
     const ratePpm = BigInt(line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0));
-    // Each line's net is rounded first, at the sum of its rates (order-line.entity.js:121-122): an inclusive line's
-    // netPriceOf(gross) (:193-196, :249-251; tax-utils.js:16-17), an exclusive line's net as it is.
+    // Each item's net is rounded first, at the sum of its rates (order-line.entity.js:121-122): an inclusive item's
+    // netPriceOf(gross) (:193-196, :249-251; surcharge.entity.js:33-38; tax-utils.js:16-17), an exclusive one's as it is.
     const base = line.taxInclusive ? roundRatio(net * MICROS_PER_MINOR, MICROS_PER_MINOR + ratePpm, mode) : net;
-    // per_line: the line's tax is its rounded gross less that net (:201-204, :259-261; default-order-tax-calculation-
-    // strategy.js:22-25): round(net × r) exclusive, gross − net inclusive.
+    // per_line_items: the item's tax is its rounded gross less that net (:201-204, :259-261; surcharge.entity.js:36-38;
+    // default-order-tax-calculation-strategy.js:22-29): round(net × r) exclusive, gross − net inclusive.
     const lineTax = line.taxInclusive ? net - base : roundRatio(net * ratePpm, MICROS_PER_MINOR, mode);
     let left = lineTax;
     baseMinor += base;
@@ -148,16 +153,17 @@ export function roundedTaxByRate(lines: readonly TaxedLine[], rounding?: TaxRoun
       // Vendure's key is the rate's name and value (order-level-tax-calculation-strategy.js:103).
       const key = JSON.stringify([tax.code ?? '', tax.ratePpm]);
       const row = rates.get(key) ?? { code: tax.code, ratePpm: tax.ratePpm, netMinor: 0n, amountMinor: 0n };
-      // per_line, stacked rates: each rate's share of the line's tax, rounded (default-order-tax-calculation-strategy.js:51-66),
-      // the last rate taking the rest so the rows sum to the tax. per_rate_group: each rate takes the whole net (:98-115 there).
+      // per_line_items, stacked rates: each rate's share of the item's tax, rounded (default-order-tax-calculation-strategy.js:51-66),
+      // the last rate taking the rest so the rows sum to the tax. per_rate_group_items: each rate takes the whole net, and
+      // a −D item joins its line's group (order-level-tax-calculation-strategy.js:88-91, :98-115).
       const share = index === line.taxLines.length - 1 ? left : ratePpm === 0n ? 0n : roundRatio(lineTax * BigInt(tax.ratePpm), ratePpm, mode);
       left -= share;
       rates.set(key, { ...row, netMinor: row.netMinor + base, amountMinor: row.amountMinor + share });
     });
   }
   const rows = [...rates.values()].map((row) => ({ ...row, netMinor: Number(row.netMinor), amountMinor: Number(
-    // per_rate_group: round(Σ net × r) once per group, and the order's tax is their sum (:35-49, :56).
-    granularity === 'per_rate_group' ? roundRatio(row.netMinor * BigInt(row.ratePpm), MICROS_PER_MINOR, mode) : row.amountMinor) }));
+    // per_rate_group_items: round(Σ net × r) once per group, and the order's tax is their sum (:35-49, :56).
+    granularity === 'per_rate_group_items' ? roundRatio(row.netMinor * BigInt(row.ratePpm), MICROS_PER_MINOR, mode) : row.amountMinor) }));
   return { baseMinor: Number(baseMinor), taxMinor: rows.reduce((sum, row) => sum + row.amountMinor, 0), rates: rows };
 }
 
@@ -168,8 +174,8 @@ export function roundedTaxByRate(lines: readonly TaxedLine[], rounding?: TaxRoun
  * so the rates sum to exactly `orderTaxMinor`. A line's `netMinor` is in its OWN tax mode
  * (`taxInclusive`): an inclusive line's net already contains its tax, so its tax-free base is
  * `netMinor − roundMicrosToMinor(Σ its taxMicros)`; an exclusive line's base is `netMinor` as is.
- * Shared by a receipt's tax summary and a Z report's per-rate breakdown. That is `per_order`'s split; a `per_line` or
- * `per_rate_group` order's rows are `roundedTaxByRate`'s (#287).
+ * Shared by a receipt's tax summary and a Z report's per-rate breakdown. That is `per_order`'s split; a `per_line_items` or
+ * `per_rate_group_items` order's rows are `roundedTaxByRate`'s (#287).
  */
 export function taxLinesByRate(
   lines: readonly TaxedLine[],

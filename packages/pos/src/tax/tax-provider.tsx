@@ -13,7 +13,7 @@ export interface TaxProviderProps {
   pricesIncludeTax: boolean;
   /** `ServerCapabilities.taxRounding` (#287); a change restarts an idle sale under it. */
   rounding?: TaxRounding;
-  /** Tax class → the backend's rate name, for `per_rate_group`'s grouping (#287). */
+  /** Tax class → the backend's rate name, for `per_rate_group_items`'s grouping (#287). */
   rateCodes?: Record<string, string>;
   children: ReactNode;
 }

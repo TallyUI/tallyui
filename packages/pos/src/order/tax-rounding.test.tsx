@@ -8,11 +8,12 @@ import type { TaxContext } from '../tax/types';
 import { roundedTaxByRate, taxLinesByRate } from '../tax/exact';
 import { createOrderBuilder } from './order-builder';
 import { finalizeOrder } from '../pos-order/finalize';
+import { taxFiguresForBasket, type BasketLine } from './tax-figures';
 import type { Order } from './types';
 
 // #287: the till computes tax with the store's rounding strategy (ServerCapabilities.taxRounding).
-const perLine: TaxRounding = { granularity: 'per_line', mode: 'half_up' };
-const perGroup: TaxRounding = { granularity: 'per_rate_group', mode: 'half_up' };
+const perLine: TaxRounding = { granularity: 'per_line_items', mode: 'half_up' };
+const perGroup: TaxRounding = { granularity: 'per_rate_group_items', mode: 'half_up' };
 const perOrder: TaxRounding = { granularity: 'per_order', mode: 'half_up' };
 const context = (pricesIncludeTax: boolean, rounding?: TaxRounding): TaxContext =>
   ({ getTaxRatePpm: () => 190000, pricesIncludeTax, ...(rounding ? { rounding } : {}) });
@@ -30,7 +31,7 @@ const figures = (order: Order) => [order.subtotalMinor, order.taxMinor, order.to
 const rows = (order: Order) => taxLinesByRate(order.lineItems, order.taxMinor, undefined, order.taxRounding)
   .map(({ code, ratePpm, netMinor, amountMinor }) => [code, ratePpm, netMinor, amountMinor]);
 
-describe('per_line (#287)', () => {
+describe('per_line_items (#287)', () => {
   it('exclusive: three lines of 0.07 at 19% round each line\'s tax, so Σ round(line) ≠ round(Σ line)', () => {
     // Each line: 7 × 19% = 1.33 → 1; tax 3, total 21 + 3 = 24. per_order: 3.99 → 4, total 25.
     expect(figures(sale(perLine, false, [[7, 190000], [7, 190000], [7, 190000]]))).toEqual([21, 3, 24]);
@@ -46,12 +47,12 @@ describe('per_line (#287)', () => {
   });
 });
 
-describe('per_rate_group (#287)', () => {
+describe('per_rate_group_items (#287)', () => {
   const basket: [number, number, string][] = [[7, 190000, 'VAT 19'], [7, 190000, 'VAT 19'], [7, 70000, 'VAT 7'], [7, 70000, 'VAT 7']];
 
   it('exclusive: two rates, two lines each, round once per group', () => {
     // VAT 19: round(14 × 19% = 2.66) = 3; VAT 7: round(14 × 7% = 0.98) = 1; tax 4, total 28 + 4 = 32.
-    // per_line: 1 + 1 + round(0.49) × 2 = 2, total 30.
+    // per_line_items: 1 + 1 + round(0.49) × 2 = 2, total 30.
     const order = sale(perGroup, false, basket);
     expect(figures(order)).toEqual([28, 4, 32]);
     expect(rows(order)).toEqual([['VAT 19', 190000, 14, 3], ['VAT 7', 70000, 14, 1]]);
@@ -74,7 +75,7 @@ describe('per_rate_group (#287)', () => {
   it('a mixed order with any inclusive line keeps per_order\'s figures for the whole order', () => {
     // Exclusive store: 0.07 and 0.07 exclusive at 19% (VAT 19), and one 0.10 inclusive at 19% (VAT 19, converted).
     // per_order: 1.33 + 1.33 + 1.5966 = 4.2566 → 4; total = 14 + 10 + round(2.66) = 27; subtotal 23. One row: 4.
-    // (Vendure's per_rate_group would round 7 + 7 + round(8.4034) = 22 at 19% = 4.18 → 4, total 26.)
+    // (Vendure's per_rate_group_items would round 7 + 7 + round(8.4034) = 22 at 19% = 4.18 → 4, total 26.)
     const mixed = (rounding?: TaxRounding) => {
       const builder = createOrderBuilder({ currency: 'EUR', taxContext: context(false, rounding) });
       [false, false, true].forEach((taxInclusive, index) => builder.addLine({ productId: `m${index}`, name: 'Item',
@@ -123,9 +124,9 @@ describe('taxLinesByRate under each granularity (#287)', () => {
   it.each([
     // per_order: exact 1.33 + 2.47 + 0.49 + 0.63 = 4.92 → 5, spread by largest remainder: VAT 19 3.80 → 4, VAT 7 1.12 → 1.
     { rounding: undefined, taxMinor: 5, amounts: [4, 1] },
-    // per_line: 1 + 2 = 3 at 19%; 0 + 1 = 1 at 7%.
+    // per_line_items: 1 + 2 = 3 at 19%; 0 + 1 = 1 at 7%.
     { rounding: perLine, taxMinor: 4, amounts: [3, 1] },
-    // per_rate_group: round(20 × 19% = 3.8) = 4; round(16 × 7% = 1.12) = 1.
+    // per_rate_group_items: round(20 × 19% = 3.8) = 4; round(16 × 7% = 1.12) = 1.
     { rounding: perGroup, taxMinor: 5, amounts: [4, 1] },
   ])('$rounding.granularity: the rows sum to the order tax', ({ rounding, taxMinor, amounts }) => {
     const order = sale(rounding, false, basket);
@@ -142,10 +143,9 @@ describe('taxLinesByRate under each granularity (#287)', () => {
 });
 
 describe('discounted baskets (#287)', () => {
-  // vendurepos's measurement scored undiscounted baskets only. These expectations apply the cited Vendure algorithm
-  // to the till's discounted line nets (its proratedLinePrice): a 10% line discount and a fixed 1.00 order discount.
-  // Line a 2 × 5.00 less 1.00 = 9.00; line b 3.29. The 1.00 splits 900 : 329 = 73.23 : 26.77, floors 73 + 26, and
-  // the last unit to b's larger remainder: a 73, b 27. Nets: a 827, b 302; subtotal 1129.
+  // A 10% line discount and a fixed 1.00 order discount. Line a 2 × 5.00 less 1.00 = 9.00; line b 3.29. The 1.00
+  // splits 900 : 329 = 73.23 : 26.77, floors 73 + 26, and the last unit to b's larger remainder: a 73, b 27.
+  // So D is a 173, b 27, and the nets a 827, b 302; subtotal 1129.
   function discounted(rounding: TaxRounding | undefined) {
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: context(false, rounding) });
     const a = builder.addLine({ productId: 'a', name: 'A', unitPrice: { amount: 500, currency: 'EUR' }, quantity: 2 });
@@ -158,15 +158,58 @@ describe('discounted baskets (#287)', () => {
   it.each([
     // per_order: 827 × 19% = 157.13, 302 × 19% = 57.38; Σ 214.51 → 215.
     { rounding: perOrder, figures: [1129, 215, 1344] },
-    // per_line: 157 + 57 = 214.
-    { rounding: perLine, figures: [1129, 214, 1343] },
-    // per_rate_group, one group: round(1129 × 19% = 214.51) = 215.
+    // per_line_items, each discount its own item: 1000 → 190, −173 → round(−32.87) = −33, 329 → round(62.51) = 63,
+    // −27 → round(−5.13) = −5; 215. (Folding D into the nets would give 157 + 57 = 214.)
+    { rounding: perLine, figures: [1129, 215, 1344] },
+    // per_rate_group_items, one group, the −D items in it: round((1000 − 173 + 329 − 27) × 19% = 214.51) = 215.
     { rounding: perGroup, figures: [1129, 215, 1344] },
   ])('$rounding.granularity', ({ rounding, figures: expected }) => {
     const order = discounted(rounding);
     expect(order.lineItems.map((li) => li.netMinor)).toEqual([827, 302]);
     expect(figures(order)).toEqual(expected);
     expect(rows(order).map((row) => row[3])).toEqual([expected[1]]);
+  });
+});
+
+describe('the worked examples, vendurepos\'s #38 basket #1 (vendurepos/app#38) (#287)', () => {
+  // TOTE 1499 × 3 = A 4497 with D 899, and TEE 1999 × 5 = A 9995 with D 2520, both at 25% ("Standard").
+  const basket = (taxInclusive: boolean, toteDiscount = 899): BasketLine[] => [
+    { unitPriceMinor: 1499, quantity: 3, discountMinor: toteDiscount, taxInclusive, taxLines: [{ code: 'Standard', ratePpm: 250000 }] },
+    { unitPriceMinor: 1999, quantity: 5, discountMinor: 2520, taxInclusive, taxLines: [{ code: 'Standard', ratePpm: 250000 }] },
+  ];
+  const run = (taxInclusive: boolean, rounding: TaxRounding | undefined, toteDiscount?: number) => {
+    const result = taxFiguresForBasket('eur', taxInclusive, basket(taxInclusive, toteDiscount), rounding);
+    return [result.subtotalMinor, result.taxMinor, result.totalMinor, result.taxByRate.map((row) => row.amountMinor)];
+  };
+  const halfAway = (granularity: 'per_line_items' | 'per_rate_group_items'): TaxRounding => ({ granularity, mode: 'half_away_from_zero' });
+
+  it('per_line_items, exclusive: each item rounds on its own, 2768 as Vendure; folding D in would give 2769', () => {
+    // 4497 × 25% = 1124.25 → 1124; −899 → −224.75 → −225; 9995 → 2498.75 → 2499; −2520 → −630. 2768, total 13841.
+    // Folded: round(3598 × 25% = 899.5) = 900, round(7475 × 25% = 1868.75) = 1869: 2769.
+    expect(run(false, perLine)).toEqual([11073, 2768, 13841, [2768]]);
+    // No exact half here (−224.75, −630), so half away from zero gives the same.
+    expect(run(false, halfAway('per_line_items'))).toEqual([11073, 2768, 13841, [2768]]);
+    // With D 898 (D mod 4 = 2) the TOTE discount's tax is −224.5: −224 half up, −225 away from zero.
+    expect(run(false, perLine, 898)).toEqual([11074, 2769, 13843, [2769]]);
+    expect(run(false, halfAway('per_line_items'), 898)).toEqual([11074, 2768, 13842, [2768]]);
+  });
+
+  it('per_line_items, inclusive: 8859 / 2214 / 11073, as Vendure', () => {
+    // Nets: round(4497 / 1.25 = 3597.6) = 3598, round(−899 / 1.25 = −719.2) = −719, 9995 / 1.25 = 7996, −2520 / 1.25 = −2016.
+    // Taxes: 899, −180, 1999, −504 = 2214. Subtotal 8859; total 11073 = Σ (A − D).
+    expect(run(true, perLine)).toEqual([8859, 2214, 11073, [2214]]);
+  });
+
+  it('per_rate_group_items, exclusive: the −D items join their lines\' group, 2768 as Vendure', () => {
+    // One group: 4497 − 899 + 9995 − 2520 = 11073, × 25% = 2768.25 → 2768. It is Σ (A − D), so folding D gives the same.
+    expect(run(false, perGroup)).toEqual([11073, 2768, 13841, [2768]]);
+  });
+
+  it('per_rate_group_items, inclusive: the known gap keeps per_order\'s figures', () => {
+    // Vendure: nets 3598 − 719 + 7996 − 2016 = 8859, tax round(2214.75) = 2215, total 11074 (the plugin bridges −1).
+    // The till (#310 fallback): per_order, 11073 × 0.25 / 1.25 = 2214.6 → 2215, subtotal 8858, total 11073.
+    expect(run(true, perGroup)).toEqual([8858, 2215, 11073, [2215]]);
+    expect(run(true, perGroup)).toEqual(run(true, undefined));
   });
 });
 
@@ -198,6 +241,11 @@ describe('the defaults (#287)', () => {
     const absent = JSON.stringify(fixtures(undefined));
     expect(JSON.stringify(fixtures({ granularity: 'custom' }))).toBe(absent);
     expect(JSON.stringify(fixtures({ granularity: 'per_order', mode: 'half_away_from_zero' }))).toBe(absent);
+  });
+
+  it('the item strategies build every fixture, mixed and discounted ones included, within the display\'s bounds', () => {
+    expect(() => fixtures(perLine)).not.toThrow();
+    expect(() => fixtures(perGroup)).not.toThrow();
   });
 
   it('the order snapshot carries the sale\'s strategy, and none when absent', () => {

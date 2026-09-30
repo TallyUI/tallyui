@@ -14,7 +14,7 @@ import type {
   AddLineInput,
 } from './types';
 
-/** Tax contexts already warned that per_rate_group fell back to per_order for inclusive lines (#287). */
+/** Tax contexts already warned that per_rate_group_items fell back to per_order for inclusive lines (#287). */
 const perRateGroupWarned = new WeakSet<TaxContext>();
 
 let nextId = 0;
@@ -28,7 +28,7 @@ function roundHalfAway(n: number): number {
 
 /** The settlement totals of recalculated lines; the display figures derive from them (ADR-063). */
 function sumLines(lines: LineItem[], rounding?: TaxRounding): { subtotalMinor: number; taxMinor: number; totalMinor: number } {
-  // per_line, per_rate_group (#287): total = Σ rounded nets + tax (order-level-tax-calculation-strategy.js:44-49, order.entity.js:88-89).
+  // per_line_items, per_rate_group_items (#287): total = Σ rounded nets + tax (order-level-tax-calculation-strategy.js:44-49, order.entity.js:88-89).
   const rounded = roundedTaxByRate(lines, rounding);
   if (rounded) return { subtotalMinor: rounded.baseMinor, taxMinor: rounded.taxMinor, totalMinor: Math.max(0, rounded.baseMinor + rounded.taxMinor) };
   const mode = rounding?.granularity === 'per_order' ? rounding.mode : undefined;
@@ -167,9 +167,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const lines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
 
     const { subtotalMinor, taxMinor, totalMinor } = sumLines(lines, taxContext.rounding);
-    if (taxContext.rounding?.granularity === 'per_rate_group' && lines.some((li) => li.taxInclusive) && !perRateGroupWarned.has(taxContext)) {
+    if (taxContext.rounding?.granularity === 'per_rate_group_items' && lines.some((li) => li.taxInclusive) && !perRateGroupWarned.has(taxContext)) {
       perRateGroupWarned.add(taxContext);
-      taxLogger.warn('per_rate_group with inclusive lines: using per_order figures until the display has a rounding row (#287, #310)');
+      taxLogger.warn('per_rate_group_items with inclusive lines: using per_order figures until the display has a rounding row (#287, #310)');
     }
     const discountMinor = lines.reduce((sum, li) => sum + li.discountMinor, 0);
     // Display figures (ADR-063): every discount the cashier entered, and each line's order share, converted on its own

@@ -4002,7 +4002,7 @@ interface OrderCreatePayload {
 
     ```ts
     taxRounding?:
-      | { granularity: 'per_order' | 'per_line' | 'per_rate_group'; mode: 'half_away_from_zero' | 'half_up' }
+      | { granularity: 'per_order' | 'per_line_items' | 'per_rate_group_items'; mode: 'half_away_from_zero' | 'half_up' }
       | { granularity: 'custom' };
     ```
 
@@ -4013,6 +4013,17 @@ interface OrderCreatePayload {
     Vendure's code with file:line. A store that needs a different
     algorithm gets a new granularity name, and a new mode is a docs and
     code change, not a version.
+  - **Each discount is its own item (Front desk ruling, 2026-09-30).**
+    The vendurepos plugin posts each discounted line undiscounted, plus
+    its `discountMinor` as a negative surcharge, and Vendure rounds the
+    two separately. So the Vendure granularities are `per_line_items`
+    and `per_rate_group_items`. On vendurepos's 1,000 discounted
+    baskets per cell, they differ from Vendure in 0 baskets, with half
+    up.
+  - **Plain `per_line` is dropped.** It folded each discount into its
+    line's net. That matches no store's code on a discounted basket:
+    387 and 290 of 1,000 differed.
+  - **A Vendure store advertises `half_up`.**
   - **`half_up`** is there now because Vendure needs it: its
     `DefaultMoneyStrategy` is `Math.round`. It differs from half away
     from zero only on exact negative halves, such as a return.
@@ -4020,7 +4031,7 @@ interface OrderCreatePayload {
     as a custom money or tax strategy. The till uses its defaults, and
     such a server never emits `figures_mismatch` for `subtotalMinor` or
     `taxMinor`.
-  - **Rate identity.** `per_rate_group` groups by the rate's name, so
+  - **Rate identity.** `per_rate_group_items` groups by the rate's name, so
     the app maps each tax class (#288) to the backend's rate name
     (`TaxProvider`'s `rateCodes`). A line priced from its class then
     carries that name as its tax line's `code`.
@@ -4031,9 +4042,12 @@ interface OrderCreatePayload {
 - **Later:** recording the strategy on the sale's own record
   (`pos_orders` v6, never sent to the server) is #287's job b.
 - **Known gap (Front desk ruling, 2026-09-30):** under Vendure's
-  `per_rate_group`, inclusive lines can pay less than their shelf
-  prices, and ADR-063's display has no row for that difference. So
-  under `per_rate_group` an order with any inclusive line, mixed orders
+  `per_rate_group_items`, inclusive lines can pay more or less than
+  their shelf prices, and ADR-063's display has no row for that
+  difference. The vendurepos plugin bridges it with an untaxed
+  `TALLY-ROUNDING` surcharge; #310's row will be the receipt's
+  explanation of that bridge. So
+  under `per_rate_group_items` an order with any inclusive line, mixed orders
   included, keeps the default `per_order` figures and `taxByRate` rows
   for the whole order; the till logs one warning per tax context and
   never refuses the sale. All-exclusive orders follow Vendure's
