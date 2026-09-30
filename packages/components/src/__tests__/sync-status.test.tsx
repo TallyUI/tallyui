@@ -226,6 +226,72 @@ describe('SyncStatus', () => {
     expect(line()).toBe('Sales are up to date.');
   });
 
+  // #269's ruled lines and the proposed detail, written out whole.
+  const refusedOne = "1 sale needs attention · The online store refused it. Ask the store owner to look at the till's sync log.";
+  const refusedMany = (n: number) => `${n} sales need attention · The online store refused them. Ask the store owner to look at the till's sync log.`;
+  const refusedDetail = 'Refused sales stay on this till under Needs attention, and each one can be sent again with Retry once the cause is fixed.';
+  // Every text shown below the status line, in order.
+  const below = () => {
+    const texts: (string | null)[] = [];
+    for (let el = document.querySelector('[aria-label]')?.nextElementSibling; el; el = el.nextElementSibling) texts.push(el.textContent);
+    return texts;
+  };
+
+  it('with refused sales, says "1 sale needs attention" or "3 sales need attention", labelled so, with the detail below', () => {
+    const { container } = render(<SyncStatus state={{ pending: 0, sending: false, rejected: 1 }} />);
+    expect(line()).toBe(refusedOne);
+    expect(label()).toBe(refusedOne);
+    expect(below()).toEqual([refusedDetail]);
+    expect(container.textContent).not.toMatch(/up to date/);
+    cleanup();
+    render(<SyncStatus state={{ pending: 0, sending: false, rejected: 3 }} registerState={{ pending: 0, sending: false }} />);
+    expect(line()).toBe(refusedMany(3));
+    expect(label()).toBe(refusedMany(3));
+    expect(below()).toEqual([refusedDetail]);
+  });
+
+  it('with rejected: 2, shows only the plural line over pending sales, a stuck order, till updates, sending and retrying', () => {
+    const since = Date.now();
+    const stuck = { commandIds: ['a'], since, reason: 'status_503', orders: [{ commandId: 'a', since, reason: 'status_503' }] };
+    for (const sending of [true, false]) {
+      const { container } = render(<SyncStatus state={{ pending: 4, sending, rejected: 2, stuck, lastRetryReason: 'status_503',
+        nextAttemptAt: since + 5000 }} registerState={{ pending: 2, sending, stuck, lastRetryReason: 'status_503', nextAttemptAt: since + 5000 }} />);
+      expect(line()).toBe(refusedMany(2));
+      expect(below()).toEqual([refusedDetail]);
+      expect(container.textContent).not.toMatch(/waiting|haven't reached|Sending|Retrying|up to date/);
+      cleanup();
+    }
+  });
+
+  it('with refused sales and the store missing, shows the refused detail first, then the backend-missing detail', () => {
+    const backendMissing = { since: Date.now() };
+    render(<SyncStatus state={{ pending: 0, sending: false, rejected: 1, backendMissing }} />);
+    expect(line()).toBe(refusedOne);
+    expect(below()).toEqual([refusedDetail, "This till couldn't find the POS plugin on the online store the last time it checked. "
+      + "Ask the store owner to check that it is installed and switched on, and that the store address in this till's settings is right."]);
+    cleanup();
+    render(<SyncStatus state={{ pending: 3, sending: true, rejected: 2, backendMissing }} pluginName="Medusa POS" />);
+    expect(line()).toBe(refusedMany(2));
+    expect(below()).toEqual([refusedDetail, detail('Medusa POS')]);
+  });
+
+  it('with rejected: 0 and nothing pending, says "Sales are up to date." with no refused detail', () => {
+    const { container } = render(<SyncStatus state={{ pending: 0, sending: false, rejected: 0 }} />);
+    expect(line()).toBe('Sales are up to date.');
+    expect(below()).toEqual([]);
+    expect(container.textContent).not.toMatch(/attention|refused/i);
+  });
+
+  it('on iOS, announces the refused line once per change, and nothing as sending flips', () => {
+    Object.assign(Platform, { OS: 'ios' });
+    const announce = vi.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    const { rerender } = render(<SyncStatus state={{ pending: 1, sending: false }} />);
+    rerender(<SyncStatus state={{ pending: 1, sending: false, rejected: 1 }} />);
+    rerender(<SyncStatus state={{ pending: 1, sending: true, rejected: 1 }} />);
+    rerender(<SyncStatus state={{ pending: 0, sending: false, rejected: 2 }} />);
+    expect(announce.mock.calls).toEqual([[refusedOne], [refusedMany(2)]]);
+  });
+
   it('labels the status line with exactly the line shown, idle and with the store missing', () => {
     render(<SyncStatus state={{ pending: 0, sending: false }} />);
     expect(screen.getByLabelText('Sales are up to date.').textContent).toBe('Sales are up to date.');
