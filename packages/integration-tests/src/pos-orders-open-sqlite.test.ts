@@ -1,17 +1,19 @@
 // @vitest-environment node
 // `addPosOrderCollection` on SQLite, the production storage, where a close can interrupt a
-// migration that RxDB's own open path leaves running (ADR-032 amendment 2), from version 0, 1 and 2;
+// migration that RxDB's own open path leaves running (ADR-032 amendment 2), from version 0, 1, 2 and 3;
 // and the order outbox restoring a stored serverFailures there.
 import { describe, expect, it, vi } from 'vitest';
-import { createRxDatabase, normalizeMangoQuery, prepareQuery } from 'rxdb';
+import { createRxDatabase, fillWithDefaultSettings, normalizeMangoQuery, prepareQuery } from 'rxdb';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { OrderCreateEnvelope } from '@tallyui/core';
 import { createOrderOutbox, type OrderOutbox } from '@tallyui/pos/outbox/order-outbox';
 import type { CommandTransport } from '@tallyui/pos/outbox/types';
-import { addPosOrderCollectionTests } from '@tallyui/pos/pos-order/open.test-helper';
+import { addPosOrderCollectionTests, olderCollection } from '@tallyui/pos/pos-order/open.test-helper';
 import { createOrderBuilder } from '@tallyui/pos/order/order-builder';
+import { mintUuid } from '@tallyui/pos/register/register-document';
 import { finalizeOrder } from '@tallyui/pos/pos-order/finalize';
 import { addPosOrderCollection } from '@tallyui/pos/pos-order/open';
+import type { PosOrder } from '@tallyui/pos/pos-order/types';
 import { uuidv7 } from '@tallyui/pos/pos-order/uuidv7';
 import { loadSQLiteStorage, openNodeSQLite } from '@tallyui/storage-sqlite/node-sqlite.test-helper';
 
@@ -24,12 +26,72 @@ if (!getRxStorageSQLite && process.env.CI) {
 (getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage', () =>
   addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true }));
 
-// The same tests from version 1 (a version-1 order carries its sessionId) to version 3.
+// The same tests from version 1 (a version-1 order carries its sessionId) to the current version.
 (getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage from version 1', () =>
   addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 1 }));
 
 (getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage from version 2', () =>
   addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 2 }));
+
+(getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage from version 3', () =>
+  addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 3 }));
+
+/** A pending version-3 order with every optional field set: sent at order.create version 3, answered, then downgraded to 2. */
+function versionThreeOrder(): PosOrder {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
+  builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Item 1', sku: 'SKU1', unitPrice: { amount: 850, currency: 'EUR' }, quantity: 2,
+    taxRates: [{ code: 'VAT', ratePpm: 190000 }] });
+  builder.addLine({ productId: 'p2', name: 'Item 2', unitPrice: { amount: 1200, currency: 'EUR' } });
+  builder.addPayment({ method: 'external', amountMinor: 1000, reference: 'terminal' });
+  builder.addPayment({ method: 'cash', amountMinor: 3000 });
+  builder.setCustomer({ id: 'c1', name: 'Customer', email: 'buyer@example.com' });
+  builder.setNote('Sale note');
+  const order = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1', capabilities: { orderCreate: 3 } });
+  return { ...order, lines: [{ ...order.lines[0], taxInclusive: true }, order.lines[1]],
+    sessionId: mintUuid(), lateSessionId: mintUuid(), sentVersion: 2, downgradedFrom: 3,
+    serverRefs: { orderId: 'server-1', displayId: '#1001', totalMinor: order.totalMinor },
+    warnings: [{ code: 'total_mismatch', expectedMinor: 3451, serverMinor: 3452 }], error: { code: 'network', message: 'fetch failed' } };
+}
+
+(getRxStorageSQLite ? it : it.skip).each([true, false])(
+  'keeps a pending version-3 order with every optional field set byte for byte through the migration to the current version (validated: %s)',
+  async (validated) => {
+    const handle = openNodeSQLite();
+    const storage = getRxStorageSQLite!(handle.database);
+    const name = `posorder${uuidv7().replaceAll('-', '')}`;
+    const original = versionThreeOrder();
+    const optional = ['note', 'registerId', 'sessionId', 'cashierRef', 'serverRefs', 'warnings', 'error', 'lateSessionId', 'sentVersion',
+      'downgradedFrom', 'display', 'taxByRate'];
+    for (const key of optional) expect(original, key).toHaveProperty(key);
+    expect(original.payments.map((payment) => Object.keys(payment).sort())).toEqual([
+      ['amountMinor', 'id', 'method', 'reference'], ['amountMinor', 'changeMinor', 'id', 'method', 'tenderedMinor']]);
+
+    const older = await createRxDatabase({ name, storage, multiInstance: false });
+    const metadata = (await (await older.addCollections({ pos_orders: olderCollection(3) })).pos_orders.insert(structuredClone(original)))
+      .toJSON(true)._meta;
+    await older.close();
+
+    const db = await createRxDatabase({ name, storage: validated ? wrappedValidateAjvStorage({ storage }) : storage, multiInstance: false });
+    try {
+      const orders = await addPosOrderCollection(db);
+      const migrated = await orders.findOne(original.id).exec();
+      expect(migrated?.toJSON()).toStrictEqual(original);
+      expect(migrated?.toJSON(true)._meta).toStrictEqual(metadata);
+      const pending = await orders.find({ selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }] }).exec();
+      expect(pending.map((doc) => doc.toJSON())).toStrictEqual([original]);
+    } finally {
+      await db.close();
+    }
+    // Nothing is left in the version-3 storage.
+    const raw = await storage.createStorageInstance<PosOrder>({ databaseName: name, collectionName: 'pos_orders',
+      schema: fillWithDefaultSettings(olderCollection(3).schema), options: {}, multiInstance: false, devMode: false, databaseInstanceToken: 'check' });
+    try {
+      expect(await raw.findDocumentsById([original.id], true)).toEqual([]);
+    } finally {
+      await raw.close();
+      handle.raw.close();
+    }
+  });
 
 (getRxStorageSQLite ? it : it.skip)('finds orders by sessionId through its index, and never returns an unstamped order', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
