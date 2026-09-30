@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import type { OrderCreateEnvelope, RegisterCommandEnvelope } from '../types'
+import type { BatchTooLargeBody, OrderCreateEnvelope, RegisterCommandEnvelope } from '../types'
 import { precheckCommand, validateBatch, type ValidatedCommandEnvelope } from './batch'
 import { commandFingerprint } from './fingerprint'
 import type { CommandRejectionCode } from './rejection-codes'
@@ -10,6 +10,12 @@ describe('server envelope types', () => {
     if (result.ok) {
       expectTypeOf(result.commands[0]).toEqualTypeOf<ValidatedCommandEnvelope>()
     }
+  })
+
+  it('carries body on the 413 failure only', () => {
+    const result = validateBatch({})
+    if (!result.ok && result.status === 413) expectTypeOf(result.body).toEqualTypeOf<BatchTooLargeBody>()
+    if (!result.ok && result.status === 400) expectTypeOf(result).not.toHaveProperty('body')
   })
 
   it('narrows on the type discriminant', () => {

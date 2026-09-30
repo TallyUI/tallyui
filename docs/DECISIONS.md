@@ -879,7 +879,13 @@ bodies and design docs, and the source is given for each.
   types and the `register_*` conflict codes
 - **Transport:** `POST /tally/v1/commands`, header `X-Tally-Protocol: 1`.
   - Body: `{ commands: CommandEnvelope[] }`, at most 50, processed in
-    order.
+    order. More than 50 is answered `413` with
+    `{ code: 'batch_too_large', maxCommands: 50, message: 'At most 50
+    commands are allowed' }` (`@tallyui/core/server`'s `validateBatch`,
+    `MAX_BATCH_COMMANDS`), never `400`: a `400` would read as a bad
+    command, and a till's poisoned-order isolation (programme item 24)
+    would hunt for one that doesn't exist (Front desk ruling 18,
+    2026-09-30). TallyUI tills send at most 10 per batch.
   - A `200` response is `{ results: CommandResult[] }`, in the same order.
   - Retryable (the client keeps the command and backs off): network errors,
     `5xx`, `429`, and `409 {code: 'in_progress'}` (the same id is being
