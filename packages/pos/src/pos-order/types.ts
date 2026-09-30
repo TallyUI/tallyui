@@ -65,10 +65,13 @@ export interface PosOrder {
    * counts it. Sent at `order.create` version 3 as the payload's `sessionId` (the stamped or late session, one field).
    */
   lateSessionId?: string;
-  /** Declared for the outbox's version fallback (ADR-065 amendment), which will set it after a server refuses a higher version (`unsupported_version`). Nothing writes it yet; absent means the content decides the version. */
-  sentVersion?: 1 | 2 | 3;
+  /**
+   * The order.create version every attempt under this `commandId` goes out at: the outbox records it before the first
+   * send, and lowers it only on a downgrade (ADR-065 amendment). Absent means not sent yet (or requeued).
+   */
+  sentVersion?: 1 | 2 | 3 | 4;
   /** The version first tried, before the downgrade (the order's audit). */
-  downgradedFrom?: 1 | 2 | 3;
+  downgradedFrom?: 1 | 2 | 3 | 4;
   /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. */
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */

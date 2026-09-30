@@ -24,6 +24,9 @@ export const ISOLATE_AFTER_ATTEMPTS = 5;
 // is flagged in OutboxState.stuck. It stays pending and keeps retrying.
 export const STUCK_AFTER_MS = 15 * 60_000;
 
+// An advertised order.create max the outbox can use: a positive safe integer, else unknown.
+const validMax = (max: unknown) => (typeof max === 'number' && Number.isSafeInteger(max) && max > 0 ? max : undefined);
+
 export interface OrderOutboxOptions {
   collection: RxCollection<PosOrder>;
   transport: CommandTransport<OrderCreateEnvelope>;
@@ -248,13 +251,30 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       const alone = due && orders[0] === due ? 'isolated' : probe ? 'probe' : undefined;
       if (alone === 'isolated') sentAlone.add(orders[0].commandId);
       turn = alone === 'isolated' ? 'batch' : 'isolated';
-      // Bounds apply when frozen: persist older tills' sent forms before sending (Front desk, 2026-09-29).
+      // An order goes out, on every attempt, at the version it first went out at: a retry's bytes never change, even
+      // after the store upgrades (#286). A first send takes the server's max, read once per batch; unknown is 3.
+      const firstSend = orders.some((order) => order.sentVersion === undefined);
+      const serverMax = (firstSend && validMax(await Promise.resolve().then(() => options.getMaxOrderCreateVersion?.())
+        .catch((cause) => { outboxLogger.warn('Failed to read capabilities', { cause }); }))) || 3;
       const batch = await Promise.all(orders.map(async (order) => {
         const frozen = freezeSentForm(order);
-        if (frozen !== order) await (await collection.findOne(order.id).exec())?.incrementalModify((data) => freezeSentForm(data));
         const attempt = (attempts.get(order.commandId) ?? 0) + 1;
         attempts.set(order.commandId, attempt);
-        return toOrderCreateEnvelope(frozen, deviceId, attempt);
+        let envelope: OrderCreateEnvelope;
+        try {
+          envelope = toOrderCreateEnvelope(frozen, deviceId, attempt, { maxVersion: order.sentVersion ?? serverMax });
+        } catch (cause) {
+          // A discounted order the server can take only at 1 goes as before (at most 3): the refusal rejects it.
+          if (!(cause instanceof UnsupportedOrderVersionError)) throw cause;
+          envelope = toOrderCreateEnvelope(frozen, deviceId, attempt, { maxVersion: 3 });
+        }
+        // Bounds apply when frozen: persist older tills' sent forms before sending (Front desk, 2026-09-29). A first
+        // send's version is stored, awaited, before the batch request leaves, so a crash in between keeps it.
+        if (frozen !== order || order.sentVersion === undefined) {
+          await (await collection.findOne(order.id).exec())?.incrementalModify((data) =>
+            ({ ...freezeSentForm(data), sentVersion: data.sentVersion ?? envelope.version }));
+        }
+        return envelope;
       }));
       let outcome = await transport.send(batch);
       // A 404 answers the whole batch (the route is missing); any other answer resets the count. Offline changes nothing.
@@ -336,11 +356,10 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
             capabilitiesRefreshed = true;
           }
           const max = batchMax;
-          // Never 4: the batch is built without maxVersion, so no order is sent at 4 here yet (#286).
-          const from = batch.find((command) => command.id === order.commandId)!.version as 1 | 2 | 3;
+          const from = batch.find((command) => command.id === order.commandId)!.version;
           if (max !== undefined && max < (stored.sentVersion ?? from)) {
             try {
-              const to = toOrderCreateEnvelope(stored, deviceId, 1, { maxVersion: max }).version as 1 | 2 | 3;
+              const to = toOrderCreateEnvelope(stored, deviceId, 1, { maxVersion: max }).version;
               let changed = false;
               await current.incrementalModify((data) => {
                 changed = data.syncStatus === 'pending' && data.commandId === order.commandId && max < (data.sentVersion ?? from);
@@ -435,6 +454,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           data.syncStatus = 'pending';
           delete data.error;
           delete data.serverFailures;
+          // A new commandId is a new idempotency key, so the next send chooses its version afresh.
+          delete data.sentVersion;
+          delete data.downgradedFrom;
           // The server ledger stored the rejection under the old id; replaying it returns that rejection.
           // For the codes requeue() accepts, the server created no order, so a fresh id cannot duplicate one.
           data.commandId = uuidv7();

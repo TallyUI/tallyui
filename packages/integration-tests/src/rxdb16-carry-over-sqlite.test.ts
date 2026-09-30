@@ -82,8 +82,10 @@ describe.each(['v2', 'v3'])('RxDB 16.21.1 %s carry-over to 17.5.0', (version) =>
           try {
             const initial = await readFresh(collection, { selector: {}, sort: [{ id: 'asc' }] });
             if (!restart) {
-              // Every migrated order, every field, exactly as RxDB 16.21.1 stored it; nothing added.
-              expect(initial).toStrictEqual(expected);
+              // Every migrated order, every field, exactly as RxDB 16.21.1 stored it, plus version 5's sentVersion:
+              // the version it went out at (order-0004 and order-0005, with no lines, 1).
+              expect(initial).toStrictEqual(expected.map((order) =>
+                ({ ...order, sentVersion: (sentVersions as Record<string, number>)[order.commandId] ?? 1 })));
               for (const order of initial) {
                 expect(order).not.toHaveProperty('localWarnings');
                 expect(order).not.toHaveProperty('serverFailures');
