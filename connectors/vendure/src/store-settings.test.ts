@@ -5,6 +5,9 @@ import type { SyncContext } from '@tallyui/core';
 import { vendureStoreSettings } from './store-settings';
 import { createVendureConnector } from './index';
 import fixture from './store-settings.fixture.json';
+import { renderHook } from '@testing-library/react';
+import { createOrderBuilder, TaxProvider, taxLogger, useTax } from '@tallyui/pos';
+import { vendureProductTraits } from './traits/product';
 
 const context: SyncContext = { connectorId: 'vendure', baseUrl: 'https://vendure.test', headers: { 'vendure-token': 'default-channel' } };
 
@@ -75,7 +78,30 @@ describe('vendureStoreSettings', () => {
       .mockResolvedValueOnce(ratesBody([rate(7, '2')]));
 
     const settings = await vendureStoreSettings(context);
-    expect(settings.taxRatesPpm).toEqual({ default: 0, '2': 70000 });
+    expect(settings.taxRatesPpm).toEqual({ default: 0, '1': 0, '2': 70000 });
+  });
+
+  it('a category with no rate in the zone maps to 0, and a line in it is taxed 0 with no warning (#288)', async () => {
+    // The recorded categories 1 and 2, with the recorded zone rates minus category 2's.
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(fixture.channelAndCategories)))
+      .mockResolvedValueOnce(ratesBody(fixture.taxRates.data.taxRates.items.filter((item) => item.category.id !== '2')));
+    const settings = await vendureStoreSettings(context);
+    // TaxProvider called as the wrapper's own render (this package has no React types to import).
+    const wrapper = ({ children }: { children?: unknown }) =>
+      TaxProvider({ ratesPpm: settings.taxRatesPpm, pricesIncludeTax: false, children: children as never });
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: renderHook(() => useTax(), { wrapper }).result.current });
+    const warnings: unknown[] = [];
+    taxLogger.addSink({ id: 'vendure-rateless-category', levels: ['warn'], write: (entry) => warnings.push(entry.data) });
+    try {
+      builder.addProduct({ id: '9', name: 'Gift card', variants: [{ id: '91', price: 5000, currencyCode: 'USD', taxCategory: { id: '2' } }] },
+        vendureProductTraits);
+    } finally {
+      taxLogger.removeSink('vendure-rateless-category');
+    }
+    expect(builder.getSnapshot().lineItems[0].taxLines).toEqual([{ ratePpm: 0, taxMicros: '0' }]);
+    expect(warnings).toEqual([]);
+    expect(settings.taxRatesPpm).toEqual({ default: 250000, '1': 250000, '2': 0 });
   });
 
   it('gives default: 0 when there are no tax categories at all', async () => {

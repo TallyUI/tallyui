@@ -58,6 +58,13 @@ export interface ProductTraits<Doc = any> {
   /** All purchasable variants, in id order (connectors store variants sorted by id). Optional: connectors without variant support omit it. */
   getVariants?: (doc: Doc, context?: TraitContext) => VariantSummary[];
 
+  /**
+   * The backend's tax class id for the variant `variantId`, or for the product (its default variant) when omitted.
+   * The id is a key of `StoreSettings.taxRatesPpm`; undefined means the default class. Optional: without it, every
+   * line is taxed at the default rate.
+   */
+  getTaxClass?: (doc: Doc, variantId?: string) => string | undefined;
+
   /** @deprecated Use `getPrices` with `resolvePrice`. */
   getPrice: (doc: Doc) => string | undefined;
 

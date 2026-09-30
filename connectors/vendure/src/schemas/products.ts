@@ -13,8 +13,9 @@ import type { RxJsonSchema } from 'rxdb';
  */
 export const vendureProductSchema: RxJsonSchema<any> = {
   // 1: declares variant trackInventory/outOfStockThreshold/useGlobalOutOfStockThreshold/enabled
-  // (backlog 28). A bump drops and resyncs (ConnectorSchemas, ADR-060 amendment 9).
-  version: 1,
+  // (backlog 28). 2: declares variant taxCategory { id } (#288). A bump drops and resyncs
+  // (ConnectorSchemas, ADR-060 amendment 9).
+  version: 2,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -116,6 +117,7 @@ export const vendureProductSchema: RxJsonSchema<any> = {
             },
           },
           customFields: { type: 'object' },
+          taxCategory: { type: ['object', 'null'], properties: { id: { type: 'string' } } },
         },
       },
     },

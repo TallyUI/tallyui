@@ -40,6 +40,7 @@ export const PRODUCT_LIST_QUERY = (barcodeField?: string) => `
           enabled
           featuredAsset { id preview }
           options { id name code }
+          taxCategory { id }
           ${barcodeField ? `customFields { ${barcodeField} }` : ''}
         }
       }

@@ -110,6 +110,14 @@ const traits: ProductTraits = {
     stock: traits.getStock({ variants: [variant] }),
   })),
 
+  // The variant's tax category id: store-settings.ts keys taxRatesPpm by the same id. No variant id: the default
+  // (first live) variant, as getPrices.
+  getTaxClass: (doc, variantId) => {
+    const variant = variantId === undefined ? liveVariants(doc)[0]
+      : (doc.variants ?? []).find((v: any) => String(v.id) === variantId);
+    return variant?.taxCategory?.id == null ? undefined : String(variant.taxCategory.id);
+  },
+
   getStock: (doc) => productStock(liveVariants(doc).map((variant: any) =>
     variantStock(variant, stockLocationId, globalTrackInventory, globalOutOfStockThreshold))),
 
