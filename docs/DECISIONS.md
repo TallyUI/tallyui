@@ -3885,11 +3885,22 @@ interface OrderCreatePayload {
       to less than `totalMinor` are a stored `underpaid` rejection
       (:99-101), and a line discount above its line amount is
       `invalid_quantity` (:76-77); overpayment is accepted.
-    - **vendurepos** range-checks version 1 and 2 `subtotalMinor` and
-      `taxMinor` only, and a difference passes silently
-      (vendurepos/app#38). Only `totalMinor` is compared, as a
-      `total_mismatch` warning with the rounding bridge. Version 3
-      compares `taxByRate` per rate (`tax_rate_mismatch`).
+    - **vendurepos** (`packages/vendure-plugin/src/` on main) compares
+      `totalMinor` in every version: Vendure's total is bridged to it by
+      a `POS rounding` surcharge, and the result carries a
+      `total_mismatch` warning (`service/order-create.service.ts:668-675`).
+      In versions 1 and 2 it is the only amount compared: `subtotalMinor`
+      and `taxMinor` are only type- and range-checked, so a difference
+      from the server's subtotal or tax passes silently, with no warning
+      and nothing stored (vendurepos/app#38). In version 3, `taxMinor`
+      must also equal `display.taxMinor` and the sum of
+      `taxByRate[].taxMinor` (`vendored/fiscal-figures.ts:93-95`), and
+      each rate's tax is compared with Vendure's; a difference beyond
+      the rounding tolerance gives a `tax_rate_mismatch` warning
+      (`order-create.service.ts:677-693`). Version 3 `subtotalMinor` is
+      only range-checked, as before. vendurepos's ADR 0002 §5 will list
+      every declared `order.create` field with its kind
+      (vendurepos/app#36).
     - One warning for these differences, with each field's two values,
       is to be settled in core first (#257); both backends follow it.
   - `payload.locationId` is the case that prompted it (checked with both
