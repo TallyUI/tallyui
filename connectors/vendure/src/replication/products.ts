@@ -1,6 +1,7 @@
 import { compareIds, ConnectorUnauthorizedError } from '@tallyui/core';
 import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
 import { vendureProductSchema } from '../schemas/products';
+import { forbiddenError } from '../session-probe';
 
 export type VendureProductCheckpoint = {
   skip: number;
@@ -65,7 +66,7 @@ export async function gql(
   query: string,
   variables?: Record<string, any>,
 ): Promise<any> {
-  type GqlBody = { data?: any; errors?: Array<{ message?: string; extensions?: { code?: string } }> };
+  type GqlBody = { data?: any; errors?: Array<{ message?: string; path?: Array<string | number>; extensions?: { code?: string } }> };
   const res = await fetch(`${context.baseUrl}/admin-api`, {
     method: 'POST',
     headers: {
@@ -83,8 +84,8 @@ export async function gql(
     throw new Error(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`);
   }
   const body = await res.json() as GqlBody;
-  const forbidden = body.errors?.find((error) => error.extensions?.code === 'FORBIDDEN');
-  if (forbidden) throw new ConnectorUnauthorizedError(`Vendure GraphQL error: ${forbidden.message}`);
+  const forbidden = body.errors?.filter((error) => error.extensions?.code === 'FORBIDDEN') ?? [];
+  if (forbidden.length) throw await forbiddenError(context, forbidden);
   if (body.errors?.length) throw new Error(`Vendure GraphQL error: ${body.errors[0].message}`);
   return body;
 }
