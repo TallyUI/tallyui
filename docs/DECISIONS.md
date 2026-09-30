@@ -3647,3 +3647,59 @@ interface OrderCreatePayload {
       `sessionId` (ADR-065) and the movements.
   - **Until c2c ships,** an over-threshold close isn't refused by the
     server.
+
+## ADR-069 `pos_orders` storage is one-way at 3.0.0; apps never roll back across it
+
+- **Date:** 2026-09-30 · **Status:** Accepted (the Front desk, from the
+  independent review of #223) · Relates to ADR-032 amendment 2
+- **Context:**
+  - 3.0.0 (RxDB 17.5.0) opens `pos_orders` at schema version 4. A till's
+    orders migrate forward from any older version, and once every order
+    has moved, RxDB removes the older version's collection record.
+  - RxDB only looks for older versions of a collection
+    (`getOldCollectionMeta`, `getPreviousVersions`). It has no way down.
+  - The #223 review opened a 3.0.0 till's file with RxDB 16.21.1, both
+    with `@tallyui/pos` 2.0.0 (version 2) and with main's version 3:
+    - both opened without an error and showed 0 orders;
+    - the pending sales stayed untouched in the version-4 store, and
+      nothing sent them;
+    - a sale rung during the rollback went into a new older-version store.
+  - Upgrading again with 3.0.0's `addPosOrderCollection` recovered every
+    order at version 4 and removed the older records. RxDB's own open
+    path (`autoMigrate`) does not: it trusts the `DONE` status the first
+    upgrade stored, and leaves the rollback's sale behind.
+- **Decision:**
+  1. **`pos_orders` storage is one-way at 3.0.0.** A rollback deletes
+     nothing, but an older build shows no orders and sends none of the
+     pending ones until the till is upgraded again.
+  2. **Apps never roll back across 3.0.0.** A release that moves storage
+     forward is a one-way door:
+     - stage it to testers first;
+     - a rollback means shipping a newer build, never reinstalling an
+       older one;
+     - never re-ring the sales an older build hides: a re-rung sale is a
+       second sale, and the next upgrade sends both.
+  3. **The round trip is pinned** by `fixtures/rollback` and
+     `rxdb-rollback-sqlite.test.ts` in `packages/integration-tests`: a
+     file opened by 17.5.0, then by 16.21.1 with 2.0.0 (0 orders seen, one
+     sale rung), must reopen under 3.0.0 with every order field for field,
+     no older record, and each pending order sent once.
+  4. **What recovers the rollback's sale** is `addPosOrderCollection`'s
+     own open path: it adds the collection without `autoMigrate`, resets
+     the stored status and checkpoint, and starts and awaits the
+     migration itself. Measured on 2026-09-30: with only the status reset
+     removed the test still passes; with RxDB's `autoMigrate` open,
+     `order-0102` is left behind. Apps open `pos_orders` only through
+     `addPosOrderCollection`.
+- **Consequences:**
+  - The changeset's upgrade notes and `@tallyui/storage-sqlite`'s README
+    say this in the apps' terms, with the worker and version pins.
+  - The device release gate is
+    [#242](https://github.com/TallyUI/tallyui/issues/242): no app release
+    on 17.5.0 storage until the upgrade is proven on the device storages.
+  - The next rollback should be loud:
+    [#243](https://github.com/TallyUI/tallyui/issues/243) has
+    `addPosOrderCollection` refuse with a coded error when a newer
+    `pos_orders` version is stored.
+  - Parked sales live in a collection each app supplies
+    (`draftsCollection`); TallyUI's fixtures prove `pos_orders` only.

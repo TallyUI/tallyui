@@ -1,0 +1,6 @@
+# SQLite's side files, created whenever the fixture is opened (tests copy it to a temp dir first).
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite.tmp
+*.sqlite.tmp-wal
+*.sqlite.tmp-shm

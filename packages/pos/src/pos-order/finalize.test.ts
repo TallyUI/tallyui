@@ -6,6 +6,8 @@ import { resolveCapabilities } from '@tallyui/core';
 import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order/order-builder';
 import { taxLinesByRate } from '../tax/exact';
+import type { LogEntry } from '../logging';
+import { outboxLogger } from '../outbox/logger';
 import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder, freezeSentForm, withSentForm } from './finalize';
 import { uuidv7 } from './uuidv7';
@@ -48,8 +50,33 @@ describe('finalizeOrder', () => {
     const { localWarnings: _warnings, ...withoutWarnings } = stored;
     const withFailures = { ...stored, serverFailures: { since: 0, reason: 'server_error', isolated: true } };
     expect(JSON.stringify(toOrderCreateEnvelope(withFailures, 'device1'))).toBe(JSON.stringify(toOrderCreateEnvelope(withoutWarnings, 'device1')));
-    expect(() => finalizeOrder(input, { localWarnings: [{ code: 'payment_reference_dropped', paymentId: 'unknown' }] }))
-      .toThrow('finalize: localWarnings names an unknown payment');
+  });
+
+  it('drops and logs a localWarnings entry naming an unknown payment rather than failing the sale, even with a throwing sink', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'external', amountMinor: 1000 });
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const input = builder.getSnapshot();
+    const logged: LogEntry[] = [];
+    outboxLogger.addSink({ id: 'finalize-unknown-payment', levels: ['warn'], write: (entry) => logged.push(entry) });
+    try {
+      const alone = finalizeOrder(input, { localWarnings: [{ code: 'payment_reference_dropped', paymentId: 'unknown' }] });
+      expect(alone).not.toHaveProperty('localWarnings');
+      expect(logged).toEqual([expect.objectContaining({ level: 'warn',
+        message: 'finalize: dropped a localWarnings entry naming an unknown payment', data: { orderId: alone.id, paymentId: 'unknown' } })]);
+      const kept = finalizeOrder(input, { localWarnings: [{ code: 'payment_reference_dropped', paymentId: 'unknown' },
+        { code: 'payment_reference_dropped', paymentId: input.payments[0].id }] });
+      expect(kept.localWarnings).toEqual([{ code: 'payment_reference_dropped', paymentId: kept.payments[0].id }]);
+    } finally {
+      outboxLogger.removeSink('finalize-unknown-payment');
+    }
+    outboxLogger.addSink({ id: 'finalize-throwing', levels: ['warn'], write: () => { throw new Error('sink down'); } });
+    try {
+      expect(finalizeOrder(input, { localWarnings: [{ code: 'payment_reference_dropped', paymentId: 'unknown' }] }))
+        .not.toHaveProperty('localWarnings');
+    } finally {
+      outboxLogger.removeSink('finalize-throwing');
+    }
   });
 
   it('copies a cash sale into a pending document without mutating or sharing input objects', () => {

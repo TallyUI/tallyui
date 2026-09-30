@@ -1,6 +1,7 @@
 import { minorUnitDigits, type ServerCapabilities } from '@tallyui/core';
 import type { Order, SentOrder } from '../order/types';
 import { taxLinesByRate } from '../tax/exact';
+import { outboxLogger } from '../outbox/logger';
 import { cutText, PAYLOAD_STRING_MAX, sendable } from './command';
 import type { PosOrder, PosOrderLocalWarning, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
@@ -147,11 +148,17 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     id: newId(), method: payment.method as PosOrderPayment['method'], amountMinor: payment.amountMinor,
     ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
   }));
-  const localWarnings = options.localWarnings?.map((warning) => {
-    if (warning.code !== 'payment_reference_dropped') return { ...warning };
+  // A warning naming a payment the order no longer has is dropped and logged, never thrown: this runs at sale completion.
+  const localWarnings = options.localWarnings?.flatMap((warning): PosOrderLocalWarning[] => {
+    if (warning.code !== 'payment_reference_dropped') return [{ ...warning }];
     const index = order.payments.findIndex((payment) => payment.id === warning.paymentId);
-    if (index === -1) throw new Error('finalize: localWarnings names an unknown payment');
-    return { ...warning, paymentId: payments[index].id };
+    if (index === -1) {
+      try {
+        outboxLogger.warn('finalize: dropped a localWarnings entry naming an unknown payment', { orderId: id, paymentId: warning.paymentId });
+      } catch { /* a failing sink must never fail the sale */ }
+      return [];
+    }
+    return [{ ...warning, paymentId: payments[index].id }];
   });
   for (let i = payments.length - 1; i >= 0; i--) {
     const payment = payments[i];
@@ -202,6 +209,6 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(order.note ? { note: order.note } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),
-    ...(localWarnings ? { localWarnings } : {}),
+    ...(localWarnings?.length ? { localWarnings } : {}),
   });
 }

@@ -23,3 +23,18 @@ RxDB 17.5.0.
   - `createTallyDatabase` returns an RxDB 17 database.
   - In development it adds RxDB's dev-mode plugin when a database is created, not at import.
 - **Stored data:** a till's SQLite data written by RxDB 16.21.1 opens unchanged under 17.5.0, and migrates its schema versions.
+
+**Upgrade notes**
+
+- **Storage is one-way.** Once a till has opened this version, `pos_orders` is at schema version 4, and an older build
+  (such as `@tallyui/pos` 2.0.0 on RxDB 16.21.1) opens it without an error but shows no orders, so it sends none of the
+  pending ones until the till is upgraded again. Nothing is deleted: the next upgrade recovers every order, including a
+  sale rung during the rollback. Never roll an app back across this version, and never re-ring sales it hides: a
+  re-rung sale is a second sale, and the upgrade sends both. See ADR-069 in `docs/DECISIONS.md`.
+- Web apps ship the 17.5.0 storage worker with the 17.5.0 main thread. A cached 16.x worker with a 17.5.0 main
+  thread is untested and unsupported.
+- Apps pin `rxdb` and `rxdb-premium` to exactly `17.5.0`.
+- RxDB 17 defaults a replication's `toggleOnDocumentVisible` to true (16.21.1: false). It then resyncs when the tab
+  becomes visible, and no longer simulates activity to keep a hidden tab awake, so a browser may throttle a hidden
+  tab's pull. RxDB pauses a hidden tab's replication only when that tab isn't the leader; a single-instance database
+  is always the leader (read in 17.5.0's `plugins/replication` source, not tested).

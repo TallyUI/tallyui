@@ -10,6 +10,21 @@ worker on the web (ADR-061 in `docs/DECISIONS.md`).
 optional peer dependencies: a native app installs only the first, a web app
 only the second.
 
+## Upgrading to 3.0.0
+
+3.0.0 moves to RxDB and RxDB Premium 17.5.0 (with `@tallyui/pos` and
+`@tallyui/database` 3.0.0). See ADR-069 in `docs/DECISIONS.md`.
+
+- **Storage is one-way.** Once a till has opened 3.0.0, an older build shows
+  no orders and sends none of the pending ones until the till is upgraded
+  again. Nothing is deleted. Never roll an app back across 3.0.0, and never
+  re-ring the sales it hides.
+- A web app ships the 17.5.0 storage worker with the 17.5.0 main thread.
+- Pin `rxdb` and `rxdb-premium` to exactly `17.5.0`.
+- RxDB 17 defaults `toggleOnDocumentVisible` to true: a replication no longer
+  keeps a hidden tab awake, so a browser may throttle its pull (see the
+  changeset for the detail).
+
 ## Supported handles
 
 - Native: expo-sqlite 16's `SQLiteDatabase` from `openDatabaseSync`, checked at

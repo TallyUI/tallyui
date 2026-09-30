@@ -1,0 +1,81 @@
+[
+  {
+    "id": "order-0101",
+    "commandId": "command-101",
+    "createdAt": "2026-09-26T00:01:01.000Z",
+    "updatedAt": "2026-09-26T00:01:01.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 1010,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 1010,
+    "syncStatus": "pending",
+    "customer": null,
+    "lines": [
+      {
+        "id": "line-101",
+        "productId": "p101",
+        "name": "Item 101",
+        "sku": "sku-101",
+        "quantity": 1,
+        "unitPriceMinor": 1010,
+        "discountMinor": 0,
+        "netMinor": 1010,
+        "taxLines": []
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-101",
+        "method": "external",
+        "amountMinor": 1010
+      }
+    ],
+    "localWarnings": [
+      {
+        "code": "payment_reference_dropped",
+        "paymentId": "payment-101"
+      }
+    ],
+    "serverFailures": {
+      "since": 1790380890000,
+      "reason": "status_503",
+      "isolated": false
+    }
+  },
+  {
+    "id": "order-0102",
+    "commandId": "command-102",
+    "createdAt": "2026-09-26T00:01:02.000Z",
+    "updatedAt": "2026-09-26T00:01:02.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": false,
+    "subtotalMinor": 1020,
+    "discountMinor": 0,
+    "taxMinor": 0,
+    "totalMinor": 1020,
+    "syncStatus": "pending",
+    "customer": null,
+    "lines": [
+      {
+        "id": "line-102",
+        "productId": "p102",
+        "name": "Item 102",
+        "sku": "sku-102",
+        "quantity": 1,
+        "unitPriceMinor": 1020,
+        "discountMinor": 0,
+        "netMinor": 1020,
+        "taxLines": []
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-102",
+        "method": "cash",
+        "amountMinor": 1020
+      }
+    ]
+  }
+]

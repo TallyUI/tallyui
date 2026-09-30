@@ -20,6 +20,8 @@ committed lockfile:
 ~/.claude/bin/rxdb-premium-install.sh "$PWD" --frozen-lockfile
 node generate.mjs
 ```
+`rollback.mjs` is step B of `../rollback/pos-orders-rollback.sqlite`; run it after
+`../rollback/forward.mjs` (see `../rollback/README.md`).
 
 The `.sqlite` files are committed binaries so RxDB 17 tests read real old-version
 storage, including its schema metadata, without generating it with the new writer.
