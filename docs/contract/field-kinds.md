@@ -401,20 +401,159 @@ Vendure too. `round` is the mode.
   example a custom money or tax strategy. The till computes exactly as
   with no strategy. **Such a server never emits `figures_mismatch` for
   `subtotalMinor` or `taxMinor`.**
-- Discounts: vendurepos's measurement scored undiscounted baskets only.
-  A discounted line's amount is the till's own (its share of the order
-  discount by largest remainder, ADR-062), and the strategy is applied
-  to that amount, as Vendure applies it to `proratedLinePrice`.
-  Vendure rounds each surcharge as its own item in both strategies
-  (`surcharge.entity.js:33-38`, and `:88-91` of
-  `order-level-tax-calculation-strategy.js`). A backend that records
-  the till's discounts as surcharges rather than line adjustments can
-  get different figures on a discounted basket. That is not measured.
+- **Discounts:** `per_line` and `per_rate_group` above apply the
+  strategy to each line's amount after its discounts. That is not how
+  Vendure computes a till's discounted sale. See the side-by-side
+  below.
 - The identities table below is for the default. Under `per_line` and
   `per_rate_group`, `totalMinor = subtotalMinor + taxMinor` and
   `Σ taxByRate[].taxMinor = taxMinor` still hold, and so does every
   inclusive-column identity (an inclusive line always pays its
   amount).
+
+##### Side by side, from the stores' code (#287; not built yet)
+
+These are the algorithms as each store's code runs them on a till's
+sale. The `_items` names are proposed; the Front desk rules on the
+names and on what is built. Notation: a line's `A` is
+`unitPriceMinor × quantity` before any discount, and its `D` is its
+`lines[].discountMinor` (its line discounts plus its share of the order
+discount, ADR-062). Both are in the line's own mode. `r` is the sum of
+its rates, and `round` is the mode. Vendure rounds half up everywhere
+(`default-money-strategy.js:19-21`).
+
+**How a till's discount reaches Vendure** (vendurepos/app, per
+vendurepos):
+- Each discounted line gets one negative `TALLY-DISCOUNT` surcharge with
+  `listPrice = −lines[i].discountMinor`, `listPriceIncludesTax` set to
+  the line's mode, and the line's own `taxLines`
+  (`packages/vendure-plugin/src/service/order-create.service.ts:654-663`).
+- The order discount is never posted on its own. The till has already
+  spread it onto the lines (`src/vendored/payload-shape.ts:53-56`).
+- No promotions run (`applyPriceAdjustments(ctx, order, [])`,
+  `order-create.service.ts:667`). So a line's `proratedLinePrice` is
+  the undiscounted line, `A`.
+
+| Step | `per_order` (the till today; Medusa) | `per_line_items` (Vendure's default + surcharges) | `per_rate_group_items` (Vendure's order-level + surcharges) |
+|---|---|---|---|
+| Items taxed | each line at `A − D` | each line at `A`, and each discount surcharge at `−D`, as separate items | the same items as `per_line_items` |
+| Item net | exclusive `A − D`; inclusive not rounded | exclusive `A`, `−D`; inclusive `round(A / (1 + r))`, `round(−D / (1 + r))` | the same as `per_line_items` |
+| Item tax | exact micro-units, not rounded | exclusive `round(A × r)`, `round(−D × r)`; inclusive gross − net | none: taxed per group |
+| Where rounding happens | once: `round(Σ exact tax)` | once per item | inclusive item nets, then once per group: `round(Σ net × rate)` |
+| `taxMinor` | that one rounding | Σ item taxes | Σ group taxes |
+| `subtotalMinor` | `totalMinor − taxMinor` | Σ item nets | Σ item nets |
+| `totalMinor` | Σ inclusive `A − D` + Σ exclusive `A − D` + `round(Σ exclusive tax)` | `subtotalMinor + taxMinor`, which is Σ `A − D` for inclusive items | `subtotalMinor + taxMinor`, which can differ from Σ `A − D` for inclusive items |
+| `taxByRate` rows | each rate floored, the remainder by largest remainder | per rate, Σ item taxes at that rate | one row per group: Σ item nets, and the group's tax |
+
+- **`per_order`:**
+  - The till: `order/order-builder.ts:34-42`.
+  - Medusa: `@medusajs/utils` 2.21.2 adds up each item's `tax_total`
+    without rounding, as a BigNumber with 20 significant digits
+    (`totals/cart/index.js:61`, `:106`, `:116`; `totals/big-number.js:137`).
+  - I found no rounding to minor units in its `totals/`, and I didn't
+    read medusapos (another repo). So where Medusa rounds to the unit is
+    not cited here. The 0-in-340,230 figure is medusapos's measurement.
+- **`per_line_items`:**
+  - A line's price and price with tax are
+    `roundMoney(unitPrice, quantity)`, which is `Math.round(value × quantity)`
+    (`order-line.entity.js:193-204`, `:249-261`; `round-money.js:13-18`).
+  - A surcharge's price is `round(listPrice)` exclusive or
+    `round(netPriceOf(listPrice, r))` inclusive. Its price with tax is
+    `round(grossPriceOf(listPrice, r))` exclusive or `round(listPrice)`
+    inclusive (`surcharge.entity.js:33-38`).
+  - So with `listPrice = −D`:
+    - exclusive: the price is `−D` and the tax is `round(−D × r)`;
+    - inclusive: the price with tax is `−D`, the net is
+      `round(−D / (1 + r))`, and the tax is `−D` minus that net.
+  - The totals add up the lines and the surcharges
+    (`default-order-tax-calculation-strategy.js:22-29`).
+  - Each item's tax-summary share is `round(item tax × r_i / r)` (`:38-86`).
+    That is exactly the item's tax when the item has one rate.
+- **`per_rate_group_items`:**
+  - Lines join their groups at `proratedLinePrice`
+    (`order-level-tax-calculation-strategy.js:84-87`), and surcharges at
+    `surcharge.price` (`:88-91`).
+  - A surcharge carries its line's tax lines, so it has the same key
+    (`:103`) and joins its line's group.
+  - Each group's tax is `round(taxPayableOn(Σ net, rate))`
+    (`:37-39`, summary `:51-77`), and the totals are `:44-49`.
+- **Why half up matters for discounts:**
+  - A discount item's tax is negative, so an exact half such as `−0.5`
+    differs by mode. At 25% that happens when `D mod 4 = 2`.
+  - With half away from zero, 491 of the 1,000 default/exclusive
+    baskets differ from Vendure. With half up, 0 differ.
+- **Worked example: default strategy, exclusive, 25%.**
+  - The basket: TOTE 1499 × 3 = 4497 with `D` 899, and TEE 1999 × 5 = 9995
+    with `D` 2520.
+  - Vendure: 1124 − 225 + 2499 − 630 = **2768**.
+  - Discounts folded into the lines: `round(3598 × 25% = 899.5) = 900`,
+    and `round(7475 × 25% = 1868.75) = 1869`, so 2769.
+- **Worked example: the same basket inclusive, order-level.**
+  - The nets are 3598, −719, 7996 and −2016, which sum to 8859.
+  - The tax is `round(2214.75) = 2215`.
+  - The total is 11074, against 11073 on the shelf (Σ `A − D`).
+  - Per vendurepos's measurement, the plugin adds an untaxed
+    `TALLY-ROUNDING` surcharge (the "bridge", −1 here) so that the
+    order charges the till's 11073. Vendure's own figure, without the
+    bridge, is 11074.
+
+**Do the built `per_line` and `per_rate_group` match any store?**
+- **`per_line`:** only on undiscounted baskets, where there are no
+  surcharges and it is `per_line_items` exactly. On discounted baskets
+  it differed from Vendure on 387 of 1,000 exclusive and 290 of 1,000
+  inclusive baskets. **No store's code computes it** for a till's
+  discounted sale. The Front desk decides whether it is dropped or
+  kept.
+- **`per_rate_group`:**
+  - On an order whose lines are all exclusive, it is
+    `per_rate_group_items` exactly. Exclusive item nets aren't rounded,
+    so each group's Σ net is Σ `A` + Σ `−D` = Σ `A − D`. Measured: 0
+    of 1,000.
+  - With inclusive lines it differs (294 of 1,000). The shipped
+    fallback (#310, above) never uses it for them.
+  - So the shipped `per_rate_group` computes Vendure's order-level
+    figures on every order it applies to.
+
+**The display gap (#310) under the item variants:**
+- `per_line_items`: no gap. Each item pays its own price with tax, so
+  an inclusive line pays `A` and its surcharge `−D`, and the total is
+  Σ `A − D`, which is what the display shows.
+- `per_rate_group_items`: the gap remains for any order with an
+  inclusive item, line or surcharge. The total can differ from Σ `A − D`
+  either way: +1 in the example above. Discounts add items, so a gap is
+  more likely. All-exclusive orders have no gap.
+
+**The measurement.**
+- The set is vendurepos's #38 measurement (vendurepos/app#38):
+  - 9,680 orders, of which 1,420 are scored undiscounted baskets;
+  - 1,000 discounted v2 baskets saved through real Vendure 3.7.3 in each
+    of 4 cells: default and order-level strategy, prices exclusive and
+    inclusive.
+  - Their data reproduces Vendure's own figures in 4,000 of 4,000
+    cases.
+- Of 1,000 baskets per cell, those where the tax differs:
+
+  | Rule | default excl | default incl | order-level excl | order-level incl |
+  |---|---:|---:|---:|---:|
+  | discounts folded into the line (built) | 387 | 290 | 0 | 98 |
+  | per item, half up | 0 | 0 | 0 | 0 |
+  | per item, half away from zero | 491 | 0 | 0 | 0 |
+
+  In the order-level inclusive cell, the folded rule's subtotal differs
+  on 290 baskets and its total on 294.
+- The data stays in vendurepos. To score a built variant, the till
+  needs one of two things:
+  1. vendurepos runs the variant's exported pure function (from
+     `@tallyui/pos` at the branch's commit) over its saved baskets and
+     reports the counts per cell. This is preferred, because no data
+     leaves vendurepos.
+  2. vendurepos exports anonymised fixtures that a TallyUI test
+     replays. Each basket needs:
+     - each line's `A`, `D`, mode, rate name and value;
+     - Vendure's `subTotal`, `subTotalWithTax`, the bridge and
+       `taxSummary`.
+- Either way, the bar is 0 differences in every cell, and on the 1,420
+  undiscounted baskets.
 
 #### Identities
 
