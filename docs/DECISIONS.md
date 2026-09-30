@@ -986,7 +986,8 @@ interface OrderCreatePayload {
   - A permanent refusal (unknown variant, invalid quantity, payments less
     than the rounded total) is `rejected` with a stable `error.code`.
 - **Change rule:** changing any of these shapes needs a new ADR and a
-  `version` bump, agreed by both tracks.
+  `version` bump, agreed by both tracks. Each declared field's kind is
+  listed in [contract/field-kinds.md](contract/field-kinds.md) (ADR-070).
 - **Amended by ADR-062:** a discounted order is `version: 2`, with
   `discountMinor` on its lines and payload; a discount-free one stays
   version 1, byte-identical.
@@ -3869,11 +3870,20 @@ interface OrderCreatePayload {
     `subtotalMinor`, `taxMinor`, `deviceId`, `attempt`). A server may
     leave them unused, and never refuses a command because they differ
     from its own computation. A command whose own figures contradict each
-    other is malformed and is refused as `invalid_payload` (version 3:
-    `taxMinor` against `display.taxMinor` and the `taxByRate` sum); that
-    is a check of the command, not of the server's view of it. The
-    contract will list each declared field with its kind (#262); a new
-    field states its kind when it is added.
+    other, or carries a malformed value, is malformed and is refused as
+    `invalid_payload` (version 3: `taxMinor` against `display.taxMinor`
+    and the `taxByRate` sum); that is a check of the command, not of the
+    server's view of it. The contract lists each declared field with its
+    kind in [contract/field-kinds.md](contract/field-kinds.md) (#262); a
+    new field states its kind there when it is added.
+  - **An instruction the server can't carry out** (Front desk,
+    2026-09-30). A refusal is for a problem that would make every sale
+    from this till fail until the store is fixed (a stock location, a
+    sales channel), so it is noticed at once and the retry applies. A
+    problem with one sale's own references (a customer unknown, or in
+    another channel) never holds the sale: the sale is kept as a guest
+    sale with a `customer_ignored` warning naming the id, because a sale
+    stuck in an outbox for days is worse.
   - For money the server's computation is authoritative; what a backend
     does when the till's amounts differ from its own is stated per
     backend, from its code today, with an issue cited where a difference
