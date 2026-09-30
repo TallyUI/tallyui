@@ -94,9 +94,9 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
 | `payload.lines[].quantity` | instruction | 1 |
 | `payload.lines[].unitPriceMinor` | instruction | 1 |
 | `payload.lines[].taxInclusive` | instruction | 1 (ADR-038 amendment 2, without a version bump) |
-| `payload.lines[].discountMinor` | instruction | 2 |
+| `payload.lines[].discountMinor` | instruction | 2 (net from 4) |
 | `payload.subtotalMinor` | informational | 1 |
-| `payload.discountMinor` | instruction | 2 |
+| `payload.discountMinor` | instruction | 2 (net from 4) |
 | `payload.taxMinor` | informational | 1 |
 | `payload.totalMinor` | instruction | 1 |
 | `payload.payments` | instruction | 1 |
@@ -143,6 +143,12 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
   `invalid_payload` (`@tallyui/core/server`'s
   `order-payload-shape.ts:58`), not a comparison with the server's
   computation.
+- `lines[].discountMinor` and `payload.discountMinor`, by version
+  (#286): v4: net at every level; v3 and earlier: each line's discount
+  in its own mode and the order's discount their sum. An inclusive
+  line's v4 discount D on its amount A is `net(A) − net(A − D)`, exact
+  in micro-units, rounded half away from zero per line. The till sends
+  v4 only to a server that advertises it.
 - `payload.customer` absent or `null` is the walk-in customer (ADR-038).
   A `customerId` the store cannot resolve (unknown, deleted or in another
   channel) is one sale's own reference, so the sale is kept as a guest

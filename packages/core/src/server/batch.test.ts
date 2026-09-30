@@ -77,12 +77,22 @@ describe('validateBatch', () => {
 
 describe('precheckCommand', () => {
   it('rejects an unsupported version before any payload rule or ledger claim', () => {
-    expect(precheckCommand({ ...command, version: 4, payload: { display: {} } } as never)).toEqual({
+    expect(precheckCommand({ ...command, version: 5, payload: { display: {} } } as never)).toEqual({
       id: command.id, status: 'rejected', error: {
-        code: 'unsupported_version', message: 'order.create version 4 is not supported; this server supports 1, 2, 3',
-        data: { orderCreate: 3 },
+        code: 'unsupported_version', message: 'order.create version 5 is not supported; this server supports 1, 2, 3, 4',
+        data: { orderCreate: 4 },
       },
     })
+  })
+
+  it('accepts version 4 (#286) with version 3 fields, and the shape check keeps the discount equality', () => {
+    // The golden v3 at version 4: its inclusive line's 203 is 169 net (the till's figure, pos command.test.ts).
+    const lines = fixture.payload.lines.map((line, i) => ({ ...line, discountMinor: [169, 37][i] }))
+    const v4 = { ...fixture, version: 4, payload: { ...fixture.payload, lines, discountMinor: 206 } }
+    expect(precheckCommand(v4 as never)).toBeUndefined()
+    expect(payloadShapeErrors(v4.payload)).toStrictEqual([])
+    expect(fiscalFiguresErrors(v4.payload as never)).toStrictEqual([])
+    expect(payloadShapeErrors({ ...v4.payload, discountMinor: 240 })).toStrictEqual(['discountMinor: expected the sum of lines[].discountMinor'])
   })
 
   it('a malformed v3 is left to the executor, whose shape check gives the v1/v2 message', () => {
@@ -110,6 +120,7 @@ describe('precheckCommand', () => {
     [2, { taxByRate: [], discountMinor: 1 }, 'display and taxByRate require version 3'],
     [3, { display: {} }, 'display and taxByRate must both be present or both absent'],
     [3, { taxByRate: [] }, 'display and taxByRate must both be present or both absent'],
+    [4, { display: {} }, 'display and taxByRate must both be present or both absent'],
     [1, { sessionId: 'session' }, 'sessionId requires version 3'],
     [2, { sessionId: 'session', discountMinor: 1 }, 'sessionId requires version 3'],
     [1, { customer: { customerId: 'customer' } }, 'customerId requires version 3'],

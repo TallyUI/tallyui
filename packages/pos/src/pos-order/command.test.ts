@@ -79,6 +79,12 @@ describe('toOrderCreateEnvelope', () => {
       .toBe(readFileSync(fileURLToPath(new URL('./__fixtures__/order-create-v3.json', import.meta.url)), 'utf8'));
   });
 
+  it("the golden v3 at version 4 (#286): its inclusive line's 203 goes as 169 net (core batch.test.ts pins these)", () => {
+    const v4 = toOrderCreateEnvelope(goldenV3(), 'device_golden', 1, { maxVersion: 4 });
+    expect(v4.payload.lines.map((line) => line.discountMinor)).toStrictEqual([169, 37]);
+    expect(v4.payload.discountMinor).toBe(206);
+  });
+
   it('caps v3 to 2, dropping only display, taxByRate, sessionId and customerId', () => {
     const full = goldenV3();
     const capped = toOrderCreateEnvelope(full, 'device_golden', 1, { maxVersion: 2 });
