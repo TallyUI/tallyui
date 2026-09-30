@@ -12,6 +12,12 @@ describe('readCapabilities', () => {
     await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toStrictEqual({ orderCreate: 1, register: 1 });
   });
 
+  it('reads the top-level taxRounding beside contracts (#287)', async () => {
+    const fetch = fetchReturning({ contracts: { 'order.create': [1, 2] }, taxRounding: { granularity: 'per_line_items', mode: 'half_up' } });
+    await expect(readCapabilities('https://medusa.test', {}, { fetch }))
+      .resolves.toStrictEqual({ orderCreate: 2, taxRounding: { granularity: 'per_line_items', mode: 'half_up' } });
+  });
+
   it('omits register when the contract is absent', async () => {
     const fetch = fetchReturning({ contracts: { 'order.create': [1, 2] } });
     await expect(readCapabilities('https://medusa.test', {}, { fetch })).resolves.toStrictEqual({ orderCreate: 2 });
