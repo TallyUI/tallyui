@@ -18,5 +18,6 @@ export function addEntryToCart<Doc>(builder: OrderBuilder, entry: CatalogueEntry
   return builder.addLine({
     productId: traits.getId(product), variantId: variant.id, name,
     sku: variant.sku ?? '', imageUrl: traits.getImageUrl?.(product), unitPrice,
+    taxClass: traits.getTaxClass?.(product, variant.id),
   });
 }

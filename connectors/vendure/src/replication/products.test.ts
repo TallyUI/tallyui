@@ -4,6 +4,8 @@ import { errorKind, type SyncContext } from '@tallyui/core';
 import { createVendureProductReplication, vendureProductReplication, toProductDocument, probeUpdatedAtSkew, type VendureProductCheckpoint } from './products';
 import { createVendureConnector, VendureTimezoneConfigError } from '../index';
 import { vendureProductTraits } from '../traits/product';
+import { vendureStoreSettings } from '../store-settings';
+import storeSettingsFixture from '../store-settings.fixture.json';
 
 const context: SyncContext = {
   connectorId: 'vendure',
@@ -149,6 +151,23 @@ describe('vendureProductReplication.pull.handler', () => {
     const result = await vendureProductReplication.pull.handler(undefined, 100, context);
 
     expect((result.documents[0].variants as any[]).map((v) => v.id)).toEqual(['2', '9', '10']);
+  });
+
+  it("replicates each variant's taxCategory, and getTaxClass returns a key of the store's taxRatesPpm (#288)", async () => {
+    const fetch = serveProducts([{ id: '1', updatedAt: '2026-01-01T00:00:00Z', variants: [
+      { id: '12', taxCategory: { id: '2' } }, { id: '11', taxCategory: { id: '1' } }] }] as any);
+    const [doc] = (await vendureProductReplication.pull.handler(undefined, 100, context)).documents;
+    const { query } = JSON.parse(fetch.mock.calls.at(-1)![1]!.body as string);
+    expect(query).toContain('taxCategory { id }');
+    expect((doc.variants as any[]).map((v) => v.taxCategory)).toEqual([{ id: '1' }, { id: '2' }]);
+    expect([vendureProductTraits.getTaxClass!(doc, '12'), vendureProductTraits.getTaxClass!(doc)]).toEqual(['2', '1']);
+    // The recorded vendure-dev settings key rates by the same category ids: '2' is 7%, not the default 25%.
+    vi.restoreAllMocks();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(storeSettingsFixture.channelAndCategories)))
+      .mockResolvedValueOnce(new Response(JSON.stringify(storeSettingsFixture.taxRates)));
+    const { taxRatesPpm } = await vendureStoreSettings(context);
+    expect(taxRatesPpm[vendureProductTraits.getTaxClass!(doc, '12')!]).toBe(70000);
   });
 });
 

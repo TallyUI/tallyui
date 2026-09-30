@@ -570,7 +570,7 @@ describe('the stock overlay applies tracking and the threshold on top (design po
   });
 });
 
-describe('vendureProductSchema v1 (backlog 28)', () => {
+describe('vendureProductSchema v1 (backlog 28) and v2 (#288)', () => {
   it('inserts a document with the new stock-tracking and enabled fields', async () => {
     const db = await createRxDatabase({
       name: `vendureschemav1${Date.now()}`, multiInstance: false,
@@ -580,11 +580,12 @@ describe('vendureProductSchema v1 (backlog 28)', () => {
     const doc = await products.insert({
       id: '1', name: 'Widget', variants: [{
         id: '1', trackInventory: 'FALSE', outOfStockThreshold: -5,
-        useGlobalOutOfStockThreshold: false, enabled: true,
+        useGlobalOutOfStockThreshold: false, enabled: true, taxCategory: { id: '2' },
       }],
     });
+    expect(vendureProductSchema.version).toBe(2); // v2 declares taxCategory (#288)
     expect(doc.toJSON().variants[0]).toMatchObject({
-      trackInventory: 'FALSE', outOfStockThreshold: -5, useGlobalOutOfStockThreshold: false, enabled: true,
+      trackInventory: 'FALSE', outOfStockThreshold: -5, useGlobalOutOfStockThreshold: false, enabled: true, taxCategory: { id: '2' },
     });
     await db.close();
   });
