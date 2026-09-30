@@ -3881,10 +3881,14 @@ interface OrderCreatePayload {
     2026-09-30). A refusal is for a problem that would make every sale
     from this till fail until the store is fixed (a stock location, a
     sales channel), so it is noticed at once and the retry applies. A
-    problem with one sale's own references (a customer unknown, or in
-    another channel) never holds the sale: the sale is kept as a guest
-    sale with a `customer_ignored` warning naming the id, because a sale
-    stuck in an outbox for days is worse.
+    problem with one sale's own references (a customer unknown, deleted
+    or in another channel) never holds the sale: the sale is kept as a
+    guest sale with a `customer_ignored` warning naming the id, because a
+    sale stuck in an outbox for days is worse.
+    - **Amendment (2026-09-30, Front desk; #266):** `CommandWarning`
+      gains `{ code: 'customer_ignored'; customerId: string }`, the id the
+      till sent (1 to 64 characters), for a customer unknown, deleted or
+      in another channel; additive under ADR-038.
   - For money the server's computation is authoritative; what a backend
     does when the till's amounts differ from its own is stated per
     backend, from its code today, with an issue cited where a difference

@@ -89,6 +89,12 @@ export function parseCommandResult(value: unknown): CommandResult {
         }
         return { code: item.code, ratePpm: item.ratePpm as number, expectedMinor: item.expectedMinor as number, serverMinor: item.serverMinor as number }
       }
+      if (item.code === 'customer_ignored') {
+        if (typeof item.customerId !== 'string' || item.customerId.length === 0 || item.customerId.length > 64) {
+          throw new CommandResultError(`Invalid ${field}.customerId`)
+        }
+        return { code: item.code, customerId: item.customerId }
+      }
       throw new CommandResultError(`Invalid ${field}.code`)
     })
   }

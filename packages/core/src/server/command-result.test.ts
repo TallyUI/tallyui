@@ -60,6 +60,9 @@ it.each([
   ['warnings[0].bridgeMinor', { ...applied, warnings: [{ ...warnings[0], bridgeMinor: '5' }] }],
   ['warnings[0].ratePpm', { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: -1, expectedMinor: 120, serverMinor: 100 }] }],
   ['warnings[0].expectedMinor', { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: 200000, expectedMinor: 1.5, serverMinor: 100 }] }],
+  ['warnings[0].customerId', { ...applied, warnings: [{ code: 'customer_ignored', customerId: '' }] }],
+  ['warnings[0].customerId', { ...applied, warnings: [{ code: 'customer_ignored', customerId: 'c'.repeat(65) }] }],
+  ['warnings[0].customerId', { ...applied, warnings: [{ code: 'customer_ignored', customerId: 1 }] }],
   ['error', { ...rejected, error: undefined }],
   ['error', { ...rejected, error: null }],
   ['error', { ...rejected, error: [] }],
@@ -116,6 +119,11 @@ it('round-trips a tax_rate_mismatch, including through JSON', () => {
 it('accepts a tax_rate_mismatch with ratePpm: 0', () => {
   const value = { ...applied, warnings: [{ code: 'tax_rate_mismatch', ratePpm: 0, expectedMinor: 120, serverMinor: 100 }] }
   expect(parseCommandResult(value)).toEqual(value)
+})
+
+it('accepts a customer_ignored (64 characters at most) and drops an extra reason', () => {
+  const value = { ...applied, warnings: [{ code: 'customer_ignored', customerId: 'c'.repeat(64), reason: 'unknown' }] }
+  expect(parseCommandResult(value).warnings).toEqual([{ code: 'customer_ignored', customerId: 'c'.repeat(64) }])
 })
 
 it('accepts a null bridgeMinor and omits it from the output', () => {
