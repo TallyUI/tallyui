@@ -52,7 +52,7 @@ export function sessionOpenCommand(s: RegisterSession): BuiltCommand {
 }
 
 export function sessionTransitionCommand(s: RegisterSession & { status_at: string }): BuiltCommand {
-  return { key: `session.transition:${s.id}:${s.status_at}`, type: 'register.session.transition', version: 1, payload: {
+  return { key: `session.transition:${s.id}:${s.status}:${s.status_at}`, type: 'register.session.transition', version: 1, payload: {
     sessionId: s.id, status: s.status, at: s.status_at,
     ...(s.status !== 'closed' || s.counted == null ? {} : { counted: s.counted }),
     ...(s.status !== 'closed' || s.closed_by == null ? {} : { closedBy: s.closed_by }),

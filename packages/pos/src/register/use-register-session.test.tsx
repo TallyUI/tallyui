@@ -166,13 +166,13 @@ describe('register commands', () => {
     await waitFor(async () => expect(await keys()).toStrictEqual(expected));
     await act(async () => {
       const row = await result.current.actions.startCounting();
-      expected.push(`session.transition:${id}:${row.status_at}`);
+      expected.push(`session.transition:${id}:counting:${row.status_at}`);
     });
     await waitFor(async () => expect(await keys()).toStrictEqual(expected));
     await waitFor(() => expect(result.current.session?.status).toBe('counting'));
     await act(() => result.current.actions.closeSession({ counted: { cash: 9500 }, approvedBy: 'manager' }));
     const [closed] = await db.register_sessions.storageInstance.findDocumentsById([id], false);
-    expected.push(`session.transition:${id}:${closed.status_at}`, `closure.submit:${id}`);
+    expected.push(`session.transition:${id}:closed:${closed.status_at}`, `closure.submit:${id}`);
     await waitFor(async () => expect(await keys()).toStrictEqual(expected));
     const rows = await ledger();
     expect(rows.at(-2)?.payload).toStrictEqual({ sessionId: id, status: 'closed', at: closed.status_at,
@@ -213,7 +213,7 @@ describe('register commands', () => {
     const [m] = await readFresh(db.cash_movements, { selector: { session_id: s.id } });
     const [closed] = await db.register_sessions.storageInstance.findDocumentsById([s.id], false);
     await waitFor(async () => expect(await keys()).toStrictEqual([
-      `session.open:${s.id}`, `movement.record:${m.id}`, `session.transition:${s.id}:${closed.status_at}`,
+      `session.open:${s.id}`, `movement.record:${m.id}`, `session.transition:${s.id}:closed:${closed.status_at}`,
     ]));
   });
 
@@ -270,10 +270,10 @@ describe('register commands', () => {
     try {
       await act(async () => {
         const counting = await result.current.actions.startCounting();
-        expected.push(`session.transition:${s.id}:${counting.status_at}`);
+        expected.push(`session.transition:${s.id}:counting:${counting.status_at}`);
         vi.setSystemTime(Date.now() + 1000);
         const selling = await result.current.actions.backToSelling();
-        expected.push(`session.transition:${s.id}:${selling.status_at}`);
+        expected.push(`session.transition:${s.id}:open:${selling.status_at}`);
       });
     } finally {
       release();
