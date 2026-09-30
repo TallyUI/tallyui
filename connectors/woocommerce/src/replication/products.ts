@@ -21,9 +21,9 @@ const MAX_STORE_MESSAGE = 200;
 export async function checkResponse(response: Response) {
   if (response.ok) return;
   if (response.status === 401 || response.status === 403) {
-    // Older WCPOS versions leak the JWT plugin's stale 403 despite a valid token.
+    // A jwt_auth_* 403 is the store's JWT layer refusing the token, on any WCPOS version (#360).
     const body = response.status === 403 ? await response.json().catch(() => undefined) : undefined;
-    if (typeof body?.code === 'string' && body.code.startsWith('jwt_auth_')) throw new WooPluginUpdateRequiredError(body.code);
+    if (typeof body?.code === 'string' && body.code.startsWith('jwt_auth_')) throw new WooTokenRefusedError(body.code);
     throw new ConnectorUnauthorizedError(`WooCommerce API error: ${response.status}`, response.status as 401 | 403);
   }
   if (response.status === 426) {
@@ -90,16 +90,21 @@ export class WooDateFilterError extends Error {
   }
 }
 
-/** A stale JWT plugin 403 on WCPOS 1.10.0–1.10.7 (wcpos/woocommerce-pos#1863; fixed by 7243675c9). */
-export class WooPluginUpdateRequiredError extends Error {
-  name = 'WooPluginUpdateRequiredError';
-  readonly code = 'unsupported_store' as const;
+/**
+ * A `jwt_auth_*` 403: the store's JWT Authentication plugin refused the till's token. WCPOS 1.10.0–1.10.7 sent it for a valid token
+ * (wcpos/woocommerce-pos#1863); 1.10.8 and later can still send it when the token resolves to another user. So the
+ * message names no version: a version hint belongs only where a response itself carries the WCPOS version (#360).
+ */
+export class WooTokenRefusedError extends Error {
+  name = 'WooTokenRefusedError';
+  readonly code = 'store_misconfigured' as const;
+  /** The store owner fixes it on the store, so the pull waits the store delay and the till stays signed in (`errorKind`). */
   readonly fixedBy = 'store' as const;
-  readonly software = 'WCPOS';
-  readonly minVersion = '1.10.8';
+  /** The store-side remedy, for `SyncStatus`'s detail. */
+  readonly fix = "check the JWT Authentication plugin's settings";
 
   constructor(readonly storeCode: string) {
-    super('This store needs WCPOS 1.10.8 or later: the JWT Authentication plugin blocks the till on older versions.');
+    super("The store refused the sign-in token (403). Ask the store owner to check the JWT Authentication plugin's settings, or pair the till again.");
   }
 }
 

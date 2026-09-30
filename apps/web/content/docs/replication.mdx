@@ -202,7 +202,7 @@ the error's class sets `fixedBy` to that value and a string `code`, and
 | Class | Who fixes it | Errors | What the pull does |
 |-------|--------------|--------|--------------------|
 | Till | the till: someone signs in | `ConnectorUnauthorizedError` with `status: 401` (`unauthorized`) | Stops until `resume()` |
-| Store | the store owner, elsewhere | `ConnectorUnauthorizedError` with `status: 403` (`forbidden`), `WooDateFilterError` (`unsupported_store`), `WooPluginUpdateRequiredError` (`unsupported_store`), `WooMissingUuidError` (`missing_plugin`), `VendureTimezoneConfigError` (`store_misconfigured`) | Retries every 5 minutes and recovers by itself |
+| Store | the store owner, elsewhere | `ConnectorUnauthorizedError` with `status: 403` (`forbidden`), `WooDateFilterError` (`unsupported_store`), `WooTokenRefusedError` (`store_misconfigured`), `WooMissingUuidError` (`missing_plugin`), `VendureTimezoneConfigError` (`store_misconfigured`) | Retries every 5 minutes and recovers by itself |
 | Transient | nobody: it passes | anything without the marker: network errors, timeouts, 5xx, 429 | Retries with a doubling delay |
 
 - **Till (including only a 401 `ConnectorUnauthorizedError`):** the pull makes that one request, sets `notice$` once to
@@ -231,9 +231,8 @@ minutes and `retryAfterMs`, also up to one hour.
 
 The error's own `software`, `minVersion` and `fix` strings, when it has
 them, are copied onto the notice: `WooDateFilterError` names WooCommerce
-and 5.8, `WooPluginUpdateRequiredError` names WCPOS and 1.10.8, and
-`VendureTimezoneConfigError` gives the fix, running the
-server in UTC. Show the notice with `SyncStatus`'s `pullNotice` prop,
+and 5.8, `WooTokenRefusedError` gives the fix, checking the JWT Authentication plugin's settings, and
+`VendureTimezoneConfigError` gives the fix, running the server in UTC. Show the notice with `SyncStatus`'s `pullNotice` prop,
 which turns the code into words for the cashier and never shows the code
 itself.
 
