@@ -21,7 +21,8 @@ const sources = [root, join(repoRoot, 'apps/demo/app'), join(repoRoot, 'apps/dem
 }));
 
 const docsRoot = join(repoRoot, 'apps/web/content/docs');
-const docs = readdirSync(docsRoot, { recursive: true, encoding: 'utf8' }).filter((file) => file.endsWith('.mdx')).map((file) => ({
+// changelog.mdx is generated from the package CHANGELOGs and quotes removed tokens as history.
+const docs = readdirSync(docsRoot, { recursive: true, encoding: 'utf8' }).filter((file) => file.endsWith('.mdx') && file !== 'changelog.mdx').map((file) => ({
   file: relative(repoRoot, join(docsRoot, file)),
   source: readFileSync(join(docsRoot, file), 'utf8'),
 }));
