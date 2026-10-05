@@ -4,7 +4,9 @@ import type { MovementType, useRegisterSession } from '@tallyui/pos';
 
 import { formatMoney } from '@tallyui/core';
 import { Button } from '../ui/button';
-import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog';
+import { IconButton } from '../ui/icon-button';
+import { XIcon } from '../ui/icon/x-icon';
 import { Text } from '../ui/text';
 import { MovementSheet } from './movement-sheet';
 
@@ -64,7 +66,14 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
       >
         {/* The heading stays visible; a phone-height viewport must never push it under the page
             header (the Front desk review, 2026-09-28) — only the body below it scrolls. */}
-        <DialogTitle testID="register-panel-amount">{registerName ?? 'Register'}</DialogTitle>
+        <View className="flex-row items-center justify-between gap-2">
+          <DialogTitle testID="register-panel-amount">{registerName ?? 'Register'}</DialogTitle>
+          <DialogClose asChild>
+            <IconButton variant="ghost" size="sm" testID="register-panel-dismiss" accessibilityLabel="Close panel">
+              <XIcon size={16} />
+            </IconButton>
+          </DialogClose>
+        </View>
         <Text testID="register-panel-sales-count">{salesCount} sale{salesCount === 1 ? '' : 's'} this session</Text>
         <ScrollView testID="register-panel-body" className="flex-1" contentContainerClassName="gap-3">
           <View className="flex-row gap-2">

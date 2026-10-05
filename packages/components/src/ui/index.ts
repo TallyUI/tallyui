@@ -7,6 +7,7 @@ export { VStack, vstackVariants, type VStackProps } from './vstack';
 export { Icon, iconVariants, type IconProps } from './icon';
 export { createSvgIcon, type SvgIconProps } from './icon/svg-icon';
 export { SearchIcon } from './icon/search-icon';
+export { XIcon } from './icon/x-icon';
 export { Loader, loaderVariants, type LoaderProps } from './loader';
 export { Badge, badgeVariants, badgeTextVariants, type BadgeProps } from './badge';
 export { Avatar, avatarVariants, type AvatarProps } from './avatar';
