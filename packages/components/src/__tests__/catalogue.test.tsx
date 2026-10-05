@@ -270,8 +270,22 @@ describe('Catalogue', () => {
     expect(screen.queryByLabelText('Choose variant')).toBeNull();
   });
   it('shows an empty catalogue', () => {
-    mount([]);
+    mount([], new Date('2026-10-06T10:00:00Z'));
     expect(screen.getByText('No products yet.')).toBeTruthy();
+  });
+  it('says Loading products… on an empty grid before the first sync completes', () => {
+    mount([]);
+    expect(screen.getByText('Loading products…')).toBeTruthy();
+    expect(screen.queryByText('No products yet.')).toBeNull();
+  });
+  it('a loading={false} override shows No products yet. even without a sync', () => {
+    render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} loading={false} />);
+    expect(screen.getByText('No products yet.')).toBeTruthy();
+  });
+  it('still shows the no-match message while loading', () => {
+    const { input } = mount([]);
+    fireEvent.change(input, { target: { value: 'missing' } });
+    expect(screen.getByText('No products match "missing".')).toBeTruthy();
   });
   it('renders a stock badge on every tile from the tile\'s own (already-overlaid) product, without an "as of"', () => {
     const soldOut = { id: 'boots', title: 'Green Boots', status: 'published', variants: [
