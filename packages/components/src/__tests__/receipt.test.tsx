@@ -48,12 +48,23 @@ describe('Receipt', () => {
     const order = sale.order;
     cleanup();
     render(<Receipt order={order} store={store} cashier="cashier" registerId="register-1" newSale={() => {}} />);
-    // In the cart's order: the line, its discount row (discountLabel), the order discount row, then Subtotal, Discount, tax and Total.
+    // The line and its discount sub-row, then Subtotal, Line discounts, Order discount, tax and Total.
     const tax = `${inclusive ? 'incl. ' : ''}Tax 25%: ${money(display.taxMinor)}`;
-    const rows = [`2 × ${money(1250)}: ${money(2500)}`, `10% off: −${money(250)}`, `Order discount: −${money(50)}`,
-      `Subtotal: ${money(2500)}`, `Discount: −${money(300)}`, tax, `Total: ${money(display.totalMinor)}`];
+    const rows = [`2 × ${money(1250)}: ${money(2500)}`, `10% off: −${money(250)}`, `Subtotal: ${money(2500)}`,
+      `Line discounts: −${money(250)}`, `Order discount: −${money(50)}`, tax, `Total: ${money(display.totalMinor)}`];
     const labels = Array.from(document.querySelectorAll('[aria-label]'), (element) => element.getAttribute('aria-label'));
     expect(labels.filter((label) => rows.includes(label!))).toEqual(rows);
+  });
+
+  it('shows an order discount once, in the totals (the demo receipt)', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 2 }}>{() => null}</SaleHarness>);
+    act(() => { sale.add(blue, traits); sale.add(blue, traits); });
+    act(() => { sale.applyDiscount(null, { type: 'percentage', value: 10 }); });
+    render(<Receipt order={sale.order} store={store} cashier="cashier" registerId="register-1" newSale={() => {}} />);
+    const labels = Array.from(document.querySelectorAll('[aria-label]'), (element) => element.getAttribute('aria-label'));
+    const amount = `−${money(sale.order.display.orderDiscountMinor)}`;
+    expect(labels.filter((label) => label?.includes(amount))).toEqual([`Order discount: ${amount}`]);
+    expect(labels.some((label) => label?.startsWith('Discount:') || label?.startsWith('Line discounts:'))).toBe(false);
   });
 
   it('shows discountLabel for a stacked percentage and a stacked fixed discount on the same line', () => {
