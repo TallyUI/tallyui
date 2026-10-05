@@ -24,6 +24,7 @@ export function Receipt({ order, store, cashier, registerId, newSale, taxLabel =
     <Text className={`text-right text-foreground ${bold ? 'font-semibold' : ''}`}>{amount}</Text>
   </View>;
   const { totals } = receipt;
+  const lineDiscountMinor = totals.discountMinor - receipt.orderDiscountMinor;
   const taxRows = totals.taxLines.map((line, index) =>
     row(`${totals.taxInclusive ? 'incl. ' : ''}${taxLabel(line.ratePpm)}`, money(line.amountMinor), false, index));
   return <>
@@ -42,11 +43,11 @@ export function Receipt({ order, store, cashier, registerId, newSale, taxLabel =
       {line.displayDiscounts.map((discount, i) => <View key={i} className="pl-4">{row(`${discountLabel(
         order.lineItems[index].discounts[i], receipt.currency)} off`, `−${money(discount.amountMinor)}`)}</View>)}
     </View>)}
-    {receipt.orderDiscountMinor > 0 ? row('Order discount', `−${money(receipt.orderDiscountMinor)}`) : null}
-    {/* order.display's figures (ADR-063; medusapos ADR 0008), in the cart's order. Exclusive: subtotal − discount + tax
-        = total; inclusive: subtotal − discount = total, and the tax is "incl.", not added. */}
+    {/* Each discount appears once in the totals: line discounts are itemised under their lines and summed once here;
+        the order discount appears once. order.display's figures (ADR-063; medusapos ADR 0008). */}
     {row('Subtotal', money(totals.subtotalMinor))}
-    {totals.discountMinor > 0 ? row('Discount', `−${money(totals.discountMinor)}`) : null}
+    {lineDiscountMinor > 0 ? row('Line discounts', `−${money(lineDiscountMinor)}`) : null}
+    {receipt.orderDiscountMinor > 0 ? row('Order discount', `−${money(receipt.orderDiscountMinor)}`) : null}
     {taxRows}
     {row('Total', money(totals.totalMinor), true)}
     {receipt.payments.map((payment, index) => row(payment.method === 'cash' ? 'Cash tendered' : 'Card terminal',
