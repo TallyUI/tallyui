@@ -1,0 +1,176 @@
+---
+title: Combobox
+description: A text input with a dropdown list of options to pick one from.
+---
+
+## Import
+
+```tsx
+import { Combobox } from '@tallyui/primitives';
+```
+
+## Usage
+
+```tsx
+import { useState } from 'react';
+import { Text } from 'react-native';
+
+type Option = { value: string; label: string };
+
+function Example() {
+  const [value, setValue] = useState<Option | undefined>();
+
+  return (
+    <Combobox.Root value={value} onValueChange={setValue}>
+      <Combobox.Input placeholder="Search fruits..." />
+      <Combobox.Trigger><Text>Toggle options</Text></Combobox.Trigger>
+      <Combobox.Portal>
+        <Combobox.Content>
+          <Combobox.Item value="apple" label="Apple">
+            <Combobox.ItemText />
+          </Combobox.Item>
+          <Combobox.Item value="banana" label="Banana">
+            <Combobox.ItemText />
+          </Combobox.Item>
+        </Combobox.Content>
+      </Combobox.Portal>
+    </Combobox.Root>
+  );
+}
+```
+
+## Filtering
+
+The primitive does not filter items. It holds the search text; your app reads it through `searchValue` and `onSearchValueChange` on Root, filters its own options, and renders the matching Items.
+
+```tsx
+import { useState } from 'react';
+import { Text } from 'react-native';
+
+const options = [
+  { value: 'apple', label: 'Apple' },
+  { value: 'banana', label: 'Banana' },
+];
+
+function FilteredExample() {
+  const [search, setSearch] = useState('');
+  const filtered = options.filter((option) =>
+    option.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <Combobox.Root searchValue={search} onSearchValueChange={setSearch}>
+      <Combobox.Input placeholder="Search fruits..." />
+      <Combobox.Trigger><Text>Toggle options</Text></Combobox.Trigger>
+      <Combobox.Portal>
+        <Combobox.Content>
+          {filtered.map((option) => (
+            <Combobox.Item key={option.value} value={option.value} label={option.label}>
+              <Combobox.ItemText />
+            </Combobox.Item>
+          ))}
+          {filtered.length === 0 && (
+            <Combobox.Empty><Text>No results</Text></Combobox.Empty>
+          )}
+        </Combobox.Content>
+      </Combobox.Portal>
+    </Combobox.Root>
+  );
+}
+```
+
+## Components
+
+### Combobox.Root
+
+Renders no element of its own. `Option` is `{ value: string; label: string }`. The search text defaults to `''`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `Option \| undefined` | — | Controlled selected option |
+| `defaultValue` | `Option \| undefined` | — | Initial option (uncontrolled) |
+| `onValueChange` | `(option: Option \| undefined) => void` | — | Called when selection changes |
+| `open` | `boolean` | — | Controlled open state |
+| `defaultOpen` | `boolean` | `false` | Initial open state (uncontrolled) |
+| `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
+| `searchValue` | `string` | `''` | Controlled search text |
+| `onSearchValueChange` | `(search: string) => void` | — | Called when search text changes |
+
+### Combobox.Input
+
+Renders a React Native `TextInput`, or its child with `asChild`. Its value is the root's search text. Typing updates the search text and opens the list if it is closed. Focusing the input also opens the list if it is closed.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `placeholder` | `string` | — | Input placeholder text |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Combobox.Trigger
+
+Renders a `Pressable`. Pressing it toggles the list open and closed.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Combobox.Portal
+
+Renders its children through a portal only while the list is open, unless `forceMount` is set. It needs a `PortalHost` in your app's layout.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always mount portal content |
+| `hostName` | `string` | — | Target portal host name |
+
+### Combobox.Content
+
+Renders a `View` only while the list is open, unless `forceMount` is set.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `forceMount` | `true` | — | Always render the content |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+### Combobox.Item
+
+Renders a `Pressable`. Pressing it sets the root value to `{ value, label }`, closes the list, clears the search text, then calls the item's own `onPress` if given.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | The value for this option |
+| `label` | `string` | required | The display label for this option |
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `PressableProps`.
+
+### Combobox.ItemText
+
+Renders a `Text` with the item's `label`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `TextProps`.
+
+### Combobox.Empty
+
+Renders a `View`. It always renders: the primitive does not decide when the list is empty, so render it yourself when your filtered list has no items.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+
+Plus all React Native `ViewProps`.
+
+## Accessibility
+
+- Roles: `combobox` on Input, `button` on Trigger, `listbox` on Content, `option` on each Item.
+- ARIA: `aria-expanded` on Input and Trigger reflects the open state; `aria-autocomplete="list"` on Input; `aria-selected` on the selected Item.
+- No keyboard navigation between options is built in.
