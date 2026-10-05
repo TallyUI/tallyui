@@ -1,9 +1,16 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
 import { ConnectorGrid } from '@/components/home/connector-grid';
 import { LiveDemo } from '@/components/home/live-demo';
 import { gitConfig } from '@/lib/layout.shared';
 import { tallyVersion } from '@/lib/site';
+
+export const metadata: Metadata = {
+  alternates: { canonical: '/' },
+  openGraph: { type: 'website', url: '/', siteName: 'Tally UI' },
+  twitter: { card: 'summary_large_image' },
+};
 
 export default function HomePage() {
   return (
