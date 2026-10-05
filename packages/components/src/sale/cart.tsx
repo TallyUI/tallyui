@@ -41,7 +41,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     {discountForm(line.id, `Discount on ${line.name}`)}
   </>;
   return <CartPanel dataSet={{ print: 'hide' }} items={order.lineItems} renderItem={renderItem}
-    emptyState={<Text className="text-muted-foreground">Scan or tap a product to start a sale.</Text>}
+    emptyState={<Text testID="cart-empty" className="px-3 py-2 text-muted-foreground">Scan or tap a product to start a sale.</Text>}
     afterItems={order.lineItems.length ? <View className="gap-3 px-3 py-2">
       <DiscountChips discounts={order.discounts} amounts={orderAmounts} currency={order.currency} onRemove={sale.removeDiscount}
         prefix="Order discount" />

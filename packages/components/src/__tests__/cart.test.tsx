@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatMoney } from '@tallyui/core';
@@ -44,6 +47,14 @@ describe('Cart', () => {
     expect(screen.queryByRole('button', { name: 'Order discount' })).toBeNull();
     act(() => sale.add(blue, traits));
     expect(screen.getByRole('button', { name: 'Order discount' })).toBeTruthy();
+  });
+
+  it('pads the empty-cart line like the cart rows (px-3 py-2)', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    expect(screen.getByTestId('cart-empty').textContent).toBe('Scan or tap a product to start a sale.');
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(here, '../sale/cart.tsx'), 'utf8');
+    expect(source).toContain('testID="cart-empty" className="px-3 py-2 text-muted-foreground"');
   });
 
   it('disables Cash and Card terminal on an empty cart, and enables them once it has lines', () => {
