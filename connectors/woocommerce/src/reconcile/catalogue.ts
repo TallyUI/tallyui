@@ -1,5 +1,5 @@
 import { errorKind, type CatalogueReconcileAdapter, type CatalogueReconcileEntry, type ReconcileFeed, type SyncContext } from '@tallyui/core';
-import { checkResponse } from '../replication/products';
+import { checkResponse, wooProductUuid } from '../replication/products';
 
 /** The listing's page size, WordPress's per_page maximum. */
 const PAGE_SIZE = 100;
@@ -107,9 +107,9 @@ export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>)
       const ids = locals.map((doc) => doc.id).filter((id) => Number.isInteger(id));
       // An empty include= would list the whole store; a local without a numeric id has no proof and is kept.
       if (!ids.length) return [];
-      const params = new URLSearchParams({ include: ids.join(','), per_page: String(PAGE_SIZE), status: 'any', _fields: 'id,uuid,status' });
+      const params = new URLSearchParams({ include: ids.join(','), per_page: String(PAGE_SIZE), status: 'any', _fields: 'id,uuid,status,meta_data' });
       const rows: Array<{ id: number; uuid: string; status: string }> = await get(`/products?${params}`, context);
-      const live = new Map(rows.filter((row) => row.status === 'publish').map((row) => [row.id, typeof row.uuid === 'string' && row.uuid.length > 0 ? row.uuid : undefined]));
+      const live = new Map(rows.filter((row) => row.status === 'publish').map((row) => [row.id, wooProductUuid(row)]));
       // A live id backs only the store's uuid; other local copies are gone (#369).
       // A row without a uuid can't prove the local copy stale, so a live id keeps it (#375 review).
       return locals.filter((doc) => Number.isInteger(doc.id) && (!live.has(doc.id) || (typeof live.get(doc.id) === 'string' && live.get(doc.id) !== doc.uuid))).map((doc) => doc.uuid);

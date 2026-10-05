@@ -65,7 +65,7 @@ describe('wooCatalogueReconcile confirmGone', () => {
     store.rows.splice(3, 1); // 4 deleted
     const locals = [1, 2, 3, 4].map((n) => ({ uuid: `u${n}`, id: n }));
     expect(await wooCatalogueReconcile(createWooReconcileFeed()).confirmGone(locals, context)).toEqual(['u2', 'u3', 'u4']);
-    expect(Object.fromEntries(store.requests[0].searchParams)).toEqual({ include: '1,2,3,4', per_page: '100', status: 'any', _fields: 'id,uuid,status' });
+    expect(Object.fromEntries(store.requests[0].searchParams)).toEqual({ include: '1,2,3,4', per_page: '100', status: 'any', _fields: 'id,uuid,status,meta_data' });
   });
 
   it('confirms only the uuid the store does not back when two locals share a live id', async () => {

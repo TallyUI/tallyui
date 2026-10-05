@@ -1,5 +1,6 @@
 import { moneyFromMajor } from '@tallyui/core';
 import type { ProductPrice, ProductTraits, StockStatus } from '@tallyui/core';
+import { wooProductBarcode } from '../replication/products';
 
 /** WooCommerce's stock_status strings, mapped to the neutral enum. */
 const WOO_STOCK_STATUS: Record<string, StockStatus> = {
@@ -69,7 +70,7 @@ export const wooProductTraits: ProductTraits = {
 
   getType: (doc) => doc.type ?? 'simple',
 
-  getBarcode: (doc) => doc.barcode || undefined,
+  getBarcode: (doc) => wooProductBarcode(doc),
 
   getCategoryNames: (doc) =>
     (doc.categories ?? []).map((cat: any) => cat.name).filter(Boolean),
