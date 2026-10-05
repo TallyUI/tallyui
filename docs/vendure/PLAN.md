@@ -97,7 +97,7 @@ written yet, and every job below is one Codex spec (ADR-018).*
 | Connector fixes, sign-in and store-settings capabilities, neutral POS screen pieces | `TallyUI/tallyui` | Platform-neutral by the "would Woo, Medusa, Shopify use it unchanged?" test |
 | Vendure plugin `@vendurepos/plugin` | `vendurepos/app` `packages/vendure-plugin` | MIT under Vendure's plugin exception |
 | Vendure dev store and e2e seed | `vendurepos/app` `dev/vendure-store` | This Mac mini on 127.0.0.1:3000 (ADR-058). **Never on the production VPS** |
-| POS web app | `vendurepos/app` `apps/expo` | Vercel project `vendurepos` on the WCPOS team |
+| POS web app | `vendurepos/app` `apps/pos` | Vercel project `vendurepos` on the WCPOS team |
 | Public demo backend | The Coolify VPS, as a follow-up after the MVP | ADR-055: `vpdemo-` resources under the demo rules. Provisioned by the Front desk only |
 
 The repo layout copies `medusapos/app`: pnpm workspace `apps/*`; a
@@ -161,7 +161,7 @@ own.
 | VA5 | The outbox with an HTTP transport to the plugin, the pending indicator and the orders / needs-attention screen | ≤ 80 | A queued order drains after reconnect (unit, fake transport) |
 | VA6 | **The offline e2e harness:** `npm pack` the plugin, install it into `dev/vendure-store` in the way a tester would, use a fresh `vendurepos_e2e` Postgres database, run `seed-e2e`, and start Vendure on :3100; serve the web export on :8099 with the Vercel CSP | ≤ 200 | `pnpm e2e` boots and tears down cleanly |
 | VA7 | The 25-sale offline e2e (§1) | ≤ 150 | The MVP acceptance numbers |
-| VA8 | Hosting and the quick-start: the Vercel project `vendurepos` (WCPOS team, Git integration, root `apps/expo`, the SPA rewrite without `cleanUrls`); **the plugin published before the quick-start names it** (avoiding medusapos's missing `plugin-v0.0.1` release); the quick-start covering plugin install, the migration, adding the POS origin to `CORS_ORIGINS` (the scaffold allows no origins in production), `bearer` in `tokenMethod`, and which tax strategy to use for each pricing mode (ADR-048) | ≤ 100 + doc | app.vendurepos.com returns 200; a clean Vendure 3.7 store follows the doc to a sale |
+| VA8 | Hosting and the quick-start: the Vercel project `vendurepos` (WCPOS team, Git integration, root `apps/pos`, the SPA rewrite without `cleanUrls`); **the plugin published before the quick-start names it** (avoiding medusapos's missing `plugin-v0.0.1` release); the quick-start covering plugin install, the migration, adding the POS origin to `CORS_ORIGINS` (the scaffold allows no origins in production), `bearer` in `tokenMethod`, and which tax strategy to use for each pricing mode (ADR-048) | ≤ 100 + doc | app.vendurepos.com returns 200; a clean Vendure 3.7 store follows the doc to a sale |
 
 ### V4: Demo (after the MVP)
 
