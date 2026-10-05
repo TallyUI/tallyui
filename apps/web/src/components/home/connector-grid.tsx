@@ -13,6 +13,7 @@ const connectors = [
     api: 'Medusa v2 through the Admin API.',
     docs: '/docs/connectors#medusajs',
     app: { label: 'Medusa POS', href: 'https://medusapos.com' },
+    demo: 'https://demo.medusapos.com/demo',
   },
   {
     name: 'Vendure',
@@ -20,6 +21,7 @@ const connectors = [
     api: 'Vendure through the GraphQL Admin API.',
     docs: '/docs/connectors#vendure',
     app: { label: 'Vendure POS', href: 'https://vendurepos.com' },
+    demo: 'https://demo.vendurepos.com/demo',
   },
 ];
 
@@ -31,7 +33,7 @@ export function ConnectorGrid() {
         Each backend has its own connector package. Medusa and Vendure each have a full POS app built on TallyUI.
       </p>
       <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
-        {connectors.map(({ name, pkg, api, docs, app }) => (
+        {connectors.map(({ name, pkg, api, docs, app, demo }) => (
           <div key={name} className="flex flex-col rounded-lg border border-fd-border p-4">
             <h3 className="font-semibold">{name}</h3>
             <code className="mt-1 text-sm">{pkg}</code>
@@ -47,6 +49,11 @@ export function ConnectorGrid() {
               {app && (
                 <a href={app.href} className="underline underline-offset-4">
                   {app.label}
+                </a>
+              )}
+              {demo && (
+                <a href={demo} aria-label={`${name} live demo`} className="underline underline-offset-4">
+                  Live demo
                 </a>
               )}
             </div>
