@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import * as Dialog from '../dialog';
@@ -102,6 +103,32 @@ describe('Dialog', () => {
     expect(screen.getByTestId('outer-content')).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByTestId('outer-content')).toBeNull();
+  });
+
+  it('keeps the inner dialog on top when the outer re-renders with a new onEscapeKeyDown', () => {
+    function TestDialog() {
+      const [count, setCount] = React.useState(0);
+      const [innerOpen, setInnerOpen] = React.useState(false);
+      return (
+        <Dialog.Root defaultOpen>
+          <Dialog.Content testID="outer" onEscapeKeyDown={() => {}}>
+            <button data-testid="open-inner" onClick={() => setInnerOpen(true)}>Open inner</button>
+            <button data-testid="rerender" onClick={() => setCount(count + 1)}>Re-render</button>
+            <span>{count}</span>
+            <Dialog.Root open={innerOpen} onOpenChange={setInnerOpen}>
+              <Dialog.Content testID="inner" />
+            </Dialog.Root>
+          </Dialog.Content>
+        </Dialog.Root>
+      );
+    }
+
+    render(<TestDialog />);
+    fireEvent.click(screen.getByTestId('open-inner'));
+    fireEvent.click(screen.getByTestId('rerender'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('inner')).toBeNull();
+    expect(screen.getByTestId('outer')).toBeTruthy();
   });
 
   it('content has dialog role', () => {

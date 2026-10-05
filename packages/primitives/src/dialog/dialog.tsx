@@ -167,13 +167,17 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
   const { open, onOpenChange } = useRootContext();
   const { nativeID } = useInternalContext();
 
+  const onEscapeKeyDownRef = React.useRef(onEscapeKeyDown);
+  const onOpenChangeRef = React.useRef(onOpenChange);
+  onEscapeKeyDownRef.current = onEscapeKeyDown;
+  onOpenChangeRef.current = onOpenChange;
   React.useEffect(() => {
     if ((!open && !forceMount) || Platform.OS !== 'web' || typeof document === 'undefined') return;
     openContentStack.push(nativeID);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || openContentStack[openContentStack.length - 1] !== nativeID) return;
-      onEscapeKeyDown?.(event);
-      if (!event.defaultPrevented) onOpenChange(false);
+      onEscapeKeyDownRef.current?.(event);
+      if (!event.defaultPrevented) onOpenChangeRef.current(false);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
@@ -181,7 +185,7 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
       const index = openContentStack.indexOf(nativeID);
       if (index !== -1) openContentStack.splice(index, 1);
     };
-  }, [open, forceMount, nativeID, onEscapeKeyDown, onOpenChange]);
+  }, [open, forceMount, nativeID]);
 
   if (!forceMount && !open) {
     return null;
