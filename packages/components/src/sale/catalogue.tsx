@@ -32,7 +32,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
   return a.getTime() >= b.getTime() ? a : b;
 }
 
-export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, lastStockCheckAt, hour12, minCodeLength }: {
+export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, lastStockCheckAt, hour12, minCodeLength }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -42,6 +42,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** Rendered at the end of the status line, e.g. a register control at phone width; the row renders even without `statusText`. */
   statusAccessory?: ReactNode;
   lastSyncedAt: Date | null;
+  /** The catalogue's first pull is still running, so an empty grid says "Loading products…" rather than "No products yet.". Defaults to lastSyncedAt === null; pass false
+   * when a null lastSyncedAt doesn't mean a pull is running (e.g. offline on first start). */
+  loading?: boolean;
   /** The last completed stock reconcile pass, persisted across restarts. The "stock as of" time shown is the
    * latest of this, the provider's stockOverlayAsOf (when valid) and lastSyncedAt; null and omitted alike. */
   lastStockCheckAt?: Date | null;
@@ -53,6 +56,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
    * in its unfocused wedge listener — not this prop's job. */
   minCodeLength?: number;
 }) {
+  const isLoading = loading ?? lastSyncedAt === null;
   // Idempotent (the adapter's overlay returns just the fields the stock map sets), so an app that already
   // merges the overlay itself keeps working, and can drop its own merge.
   const shown = useStockOverlaid(products) as Doc[];
@@ -132,7 +136,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           </Pressable>
         )}
         emptyState={<Text className="mt-10 text-center text-sm text-muted-foreground">
-          {query.trim() ? `No products match "${query.trim()}".` : 'No products yet.'}
+          {query.trim() ? `No products match "${query.trim()}".` : isLoading ? 'Loading products…' : 'No products yet.'}
         </Text>} />
     </View>
   );
