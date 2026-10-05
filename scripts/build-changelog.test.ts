@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildChangelogMdx, cleanBody, escapeMdx, isRelease, parseChangelog } from './build-changelog.mjs';
 
@@ -71,6 +71,6 @@ describe('buildChangelogMdx', () => {
 
 it('freshness: the committed changelog page is current', () => {
   expect(() => execFileSync('node', ['scripts/build-changelog.mjs', '--check'], {
-    cwd: fileURLToPath(new URL('../', import.meta.url)),
+    cwd: path.resolve(__dirname, '..'),
   })).not.toThrow();
 });
