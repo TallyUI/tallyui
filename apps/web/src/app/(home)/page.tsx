@@ -4,7 +4,8 @@ import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
 import { ConnectorGrid } from '@/components/home/connector-grid';
 import { LiveDemo } from '@/components/home/live-demo';
 import { gitConfig } from '@/lib/layout.shared';
-import { tallyVersion } from '@/lib/site';
+import { siteUrl, tallyVersion } from '@/lib/site';
+import { homeJsonLd, jsonLdScript } from '@/lib/structured-data';
 
 export const metadata: Metadata = {
   alternates: { canonical: '/' },
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div className="flex-1">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(homeJsonLd(siteUrl)) }} />
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-16 lg:grid-cols-2 lg:py-24">
         <div>
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
