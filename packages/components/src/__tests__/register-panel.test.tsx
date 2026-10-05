@@ -27,7 +27,7 @@
 //   'explains the closure restriction only while blind counting is enabled', 'keeps unknown
 //   report capabilities navigable, but hides blind amounts (%j)'.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { RegisterPanel } from '../register/register-panel';
 import { createRegisterDb, RegisterHarness, seedMovement, seedSession, type RegisterDb } from './register-harness';
 
@@ -55,10 +55,13 @@ function seedSale(id: string) {
   });
 }
 
-async function renderPanel(overrides?: Parameters<typeof RegisterHarness>[0]['overrides']) {
+async function renderPanel(
+  overrides?: Parameters<typeof RegisterHarness>[0]['overrides'],
+  onOpenChange: (open: boolean) => void = () => {},
+) {
   render(
     <RegisterHarness db={db} overrides={overrides}>
-      {(register) => <RegisterPanel register={register} currency="EUR" registerName="Front" open onOpenChange={() => {}} />}
+      {(register) => <RegisterPanel register={register} currency="EUR" registerName="Front" open onOpenChange={onOpenChange} />}
     </RegisterHarness>,
   );
   // The hook's first snapshot arrives asynchronously (an RxDB subscription, not a render-time
@@ -188,6 +191,22 @@ it.each(['1e2', '1 0', '10.50.1', '0'])(
     expect(screen.getByTestId('movement-invalid').textContent).toContain('amount');
   },
 );
+
+it('the close button dismisses the panel without closing the register', async () => {
+  const onOpenChange = vi.fn();
+  await renderPanel(undefined, onOpenChange);
+  fireEvent.click(screen.getByTestId('register-panel-dismiss'));
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+  const [row] = await db.register_sessions.find({ selector: { id: sessionId } }).exec();
+  expect(row?.status).toBe('open');
+});
+
+it('Escape dismisses the panel', async () => {
+  const onOpenChange = vi.fn();
+  await renderPanel(undefined, onOpenChange);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+});
 
 it('Close register starts counting and dismisses the panel', async () => {
   let closed = false;

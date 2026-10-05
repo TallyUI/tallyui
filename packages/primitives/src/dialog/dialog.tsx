@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, Text, View, type GestureResponderEvent } from 'react-native';
+import { Platform, Pressable, Text, View, type GestureResponderEvent } from 'react-native';
 import { useControllableState } from '../hooks';
 import { Portal as RNPortal } from '../portal';
 import { Slot } from '../slot';
@@ -14,6 +14,8 @@ import type {
   TitleProps,
   TriggerProps,
 } from './types';
+
+const openContentStack: string[] = [];
 
 // ---------------------------------------------------------------------------
 // Contexts
@@ -128,18 +130,28 @@ Portal.displayName = 'DialogPortal';
 // ---------------------------------------------------------------------------
 
 const Overlay = React.forwardRef<View, OverlayProps>(function Overlay(
-  { asChild, forceMount, ...props },
+  { asChild, forceMount, onPress: onPressProp, closeOnPress = true, ...props },
   ref
 ) {
-  const { open } = useRootContext();
+  const { open, onOpenChange } = useRootContext();
+
+  const onPress = React.useCallback(
+    (ev: GestureResponderEvent) => {
+      if (closeOnPress) {
+        onOpenChange(false);
+      }
+      onPressProp?.(ev);
+    },
+    [closeOnPress, onOpenChange, onPressProp]
+  );
 
   if (!forceMount && !open) {
     return null;
   }
 
-  const Component = asChild ? Slot : View;
+  const Component = asChild ? Slot : Pressable;
 
-  return <Component ref={ref} aria-modal={true} {...props} />;
+  return <Component ref={ref} aria-modal={true} onPress={onPress} {...props} />;
 });
 
 Overlay.displayName = 'DialogOverlay';
@@ -149,11 +161,31 @@ Overlay.displayName = 'DialogOverlay';
 // ---------------------------------------------------------------------------
 
 const Content = React.forwardRef<View, ContentProps>(function Content(
-  { asChild, forceMount, ...props },
+  { asChild, forceMount, onEscapeKeyDown, ...props },
   ref
 ) {
-  const { open } = useRootContext();
+  const { open, onOpenChange } = useRootContext();
   const { nativeID } = useInternalContext();
+
+  const onEscapeKeyDownRef = React.useRef(onEscapeKeyDown);
+  const onOpenChangeRef = React.useRef(onOpenChange);
+  onEscapeKeyDownRef.current = onEscapeKeyDown;
+  onOpenChangeRef.current = onOpenChange;
+  React.useEffect(() => {
+    if ((!open && !forceMount) || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    openContentStack.push(nativeID);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || openContentStack[openContentStack.length - 1] !== nativeID) return;
+      onEscapeKeyDownRef.current?.(event);
+      if (!event.defaultPrevented) onOpenChangeRef.current(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      const index = openContentStack.indexOf(nativeID);
+      if (index !== -1) openContentStack.splice(index, 1);
+    };
+  }, [open, forceMount, nativeID]);
 
   if (!forceMount && !open) {
     return null;

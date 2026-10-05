@@ -19,9 +19,15 @@ interface PortalProps extends ForceMountable {
   children?: React.ReactNode;
 }
 
-interface OverlayProps extends SlottableViewProps, ForceMountable {}
+interface OverlayProps extends SlottablePressableProps, ForceMountable {
+  /** Close the dialog when the overlay is pressed. Default true. */
+  closeOnPress?: boolean;
+}
 
-interface ContentProps extends SlottableViewProps, ForceMountable {}
+interface ContentProps extends SlottableViewProps, ForceMountable {
+  /** Platform: WEB ONLY. Called on Escape before the dialog closes; call event.preventDefault() to keep it open. */
+  onEscapeKeyDown?: (event: KeyboardEvent) => void;
+}
 
 interface TitleProps extends SlottableTextProps {}
 
