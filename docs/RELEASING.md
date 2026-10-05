@@ -79,13 +79,17 @@ Run these from a worktree on a fresh branch off `main`:
 git pull --ff-only origin main
 pnpm install --frozen-lockfile
 pnpm changeset status --verbose          # no major unless a changeset asks for one
-export GITHUB_TOKEN="$(gh auth token)"   # changelog-github looks up PRs and authors
 pnpm changeset version
 pnpm install --frozen-lockfile
 pnpm build
 pnpm test
 pnpm smoke:pack
 ```
+
+`changeset version` needs no GitHub token: the changelog generator is
+`@changesets/changelog-git`, which writes each entry with its commit
+hash. `@changesets/changelog-github` (PR links and authors) needed a
+`GITHUB_TOKEN`, which this machine's sessions may not set (ADR 001).
 
 Check the result before committing:
 
