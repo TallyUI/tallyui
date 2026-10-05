@@ -62,7 +62,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const stuckEntry = order.syncStatus === 'pending' ? stuck?.orders.find((entry) => entry.commandId === order.commandId) : undefined;
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
-            <Pressable accessibilityRole="button" accessibilityState={{ expanded: isExpanded }}
+            <Pressable accessibilityRole="button" aria-expanded={isExpanded}
               accessibilityHint="Shows the items and payments of this sale" testID={`order-row-${order.id}`} className="gap-1"
               onPress={() => setExpanded((current) => {
                 const next = new Set(current);
