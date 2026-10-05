@@ -42,6 +42,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
 }) {
   const retrying = useRef(new Set<string>());
   const [retryingIds, setRetryingIds] = useState(new Set<string>());
+  const [expanded, setExpanded] = useState(new Set<string>());
   useEffect(() => {
     for (const id of retrying.current) {
       if (!orders.some((order) => order.id === id && order.syncStatus === 'rejected')) retrying.current.delete(id);
@@ -52,14 +53,31 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
     {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section) => (
       <View key={section.title} className="mb-6 gap-3">
         <Text accessibilityRole="header" className="text-xl font-semibold text-foreground">{section.title}</Text>
+        {section.title === 'Recent' && orders.length === 0 ? <Text testID="orders-empty" className="text-muted-foreground">No sales yet. Completed sales appear here.</Text> : null}
         {section.orders.map((order) => {
           const count = order.lines.reduce((sum, line) => sum + line.quantity, 0);
+          const key = `${section.title}:${order.id}`;
+          const isExpanded = expanded.has(key);
           // The order's own stuck entry: its clock and latest reason, not the earliest across all stuck orders.
           const stuckEntry = order.syncStatus === 'pending' ? stuck?.orders.find((entry) => entry.commandId === order.commandId) : undefined;
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
-            <Text className="text-foreground">{order.serverRefs?.displayId ? `Order #${order.serverRefs.displayId} · ` : ''}{count} {count === 1 ? 'item' : 'items'}</Text>
-            <Text className="text-muted-foreground">{formatDate(order.createdAt)} · {formatMoney({ amount: order.totalMinor, currency: order.currency })} · {STATUS_LABEL[order.syncStatus]}</Text>
+            <Pressable accessibilityRole="button" aria-expanded={isExpanded}
+              accessibilityHint="Shows the items and payments of this sale" testID={`order-row-${order.id}`} className="gap-1"
+              onPress={() => setExpanded((current) => {
+                const next = new Set(current);
+                if (next.has(key)) next.delete(key); else next.add(key);
+                return next;
+              })}>
+              <Text className="text-foreground">{order.serverRefs?.displayId ? `Order #${order.serverRefs.displayId} · ` : ''}{count} {count === 1 ? 'item' : 'items'}</Text>
+              <Text className="text-muted-foreground">{formatDate(order.createdAt)} · {formatMoney({ amount: order.totalMinor, currency: order.currency })} · {STATUS_LABEL[order.syncStatus]}</Text>
+            </Pressable>
+            {isExpanded ? <View testID={`order-detail-${order.id}`} className="mt-1 gap-1 border-t border-border pt-2">
+              {order.lines.map((line) => <Text key={line.id} className="text-foreground">{`${line.quantity} × ${line.name}`}</Text>)}
+              {order.payments.map((payment) => <Text key={payment.id} className="text-muted-foreground">
+                {`${payment.method === 'cash' ? 'Cash' : 'Card terminal'} ${formatMoney({ amount: payment.amountMinor, currency: order.currency })}${payment.reference ? ` · ${payment.reference}` : ''}`}
+              </Text>)}
+            </View> : null}
             {stuckEntry ? <Text className="text-destructive">
               {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}
               {`Hasn't reached the online store since ${sinceText(stuckEntry)}.`}

@@ -44,6 +44,44 @@ const refusals = {
 };
 
 describe('OrdersList', () => {
+  it('says there are no sales yet when the list is empty', () => {
+    render(<OrdersList orders={[]} onRetry={async () => 0} />);
+    expect(headers()).toEqual(['Recent']);
+    expect(screen.getByTestId('orders-empty').textContent).toBe('No sales yet. Completed sales appear here.');
+  });
+
+  it('expands a row to show its items and payments, and collapses it again', () => {
+    const sale = order('sale', {
+      lines: [
+        { ...order('espresso').lines[0], name: 'Espresso', quantity: 2 },
+        { ...order('croissant').lines[0], name: 'Croissant', quantity: 1 },
+      ],
+      payments: [{ id: 'cash', method: 'cash', amountMinor: 1200 }],
+    });
+    render(<OrdersList orders={[sale]} onRetry={async () => 0} />);
+    const row = screen.getByTestId('order-row-sale');
+    expect(row.getAttribute('role')).toBe('button');
+    expect(screen.queryByTestId('order-detail-sale')).toBeNull();
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(row);
+    expect(screen.getByTestId('order-detail-sale')).toBeTruthy();
+    expect(screen.getByText('2 × Espresso')).toBeTruthy();
+    expect(screen.getByText('1 × Croissant')).toBeTruthy();
+    expect(screen.getByText(`Cash ${formatMoney({ amount: 1200, currency: 'EUR' })}`)).toBeTruthy();
+    expect(row.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(row);
+    expect(screen.queryByTestId('order-detail-sale')).toBeNull();
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('keeps Retry outside the row button', () => {
+    render(<OrdersList orders={[order('r', { syncStatus: 'rejected' })]} onRetry={async () => 0} />);
+    const row = screen.getAllByTestId('order-row-r')[0];
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    expect(row.parentElement?.contains(retry)).toBe(true);
+    expect(row.contains(retry)).toBe(false);
+  });
+
   it('shows customer omissions and dropped payment references under Needs attention', () => {
     render(<OrdersList orders={[order('local', { syncStatus: 'applied', localWarnings: [
       { code: 'customer_omitted', field: 'email' }, { code: 'customer_omitted', field: 'id' },
@@ -111,7 +149,7 @@ describe('OrdersList', () => {
     expect(screen.getAllByText(line)).toHaveLength(2);
     const attention = screen.getAllByText(/· Waiting to sync$/);
     expect(attention).toHaveLength(3);
-    expect(attention[0].nextSibling?.textContent).toBe(line);
+    expect(attention[0].parentElement?.nextSibling?.textContent).toBe(line);
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
     cleanup();
     render(<OrdersList orders={[stuck]} onRetry={async () => 0} formatDate={formatDate} />);
