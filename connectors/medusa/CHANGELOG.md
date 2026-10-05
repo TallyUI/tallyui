@@ -1,5 +1,117 @@
 # @tallyui/connector-medusa
 
+## 3.0.0
+
+### Minor Changes
+
+- faa7cda: Expose ConnectorUnauthorizedError for expired or rejected stored credentials in Vendure and Medusa requests.
+- 0d04d13: Add neutral Customer, CustomerInput and CustomerServiceError exports and optional online-only customer search, create and get connector methods.
+
+  Implement customer search, create and get for Medusa's admin-user connector.
+
+- 457162d: **One reconcile feed per store session** (#307, a release gate). The WooCommerce and Medusa reconcile feeds were module-level singletons, so after a store switch in one runtime, store A's queued tombstones and refetches could reach store B's database.
+
+  - **New factories.** `createWooCommerceConnector()`, `createMedusaConnector()` and `createMedusaAdminUserConnector()` each build their own feed; `createVendureConnector(options)` already did. **Build a connector per store session**, anew on each sign-in or store change.
+  - **Deprecated exports.** `woocommerceConnector`, `medusaConnector`, `medusaAdminUserConnector` and `vendureConnector` are deprecated: one instance for the whole app can leak queued reconcile work across stores. **They are removed in 4.0.**
+  - **A development warning.** `startReplication` warns once when the same adapter object replicates into two collections at once.
+  - **Refetch budget by requests.** `refetchBatchSize` on the reconcile adapters makes a page that enqueues `n` refetches take `ceil(n / refetchBatchSize)` request-budget slots (WooCommerce 100, Medusa 100, Vendure 1,000).
+  - **WooCommerce 426 errors.** A foreign (non-WCPOS) 426 keeps the store's `code` beside its message, and the message is capped at 200 characters.
+
+- 7d1bc98: Add `parseTaxRounding` and `parseInfoCapabilities`, which read `/tally/v1/info` including its top-level `taxRounding` (#287). The Medusa connector's capability read now carries the store's `taxRounding`.
+
+### Patch Changes
+
+- eb5a032: A `/tally/v1/info` answer that says nothing about the store no longer means the default tax rounding (a follow-up to #339).
+
+  - **Unknown:** a 2xx that is not JSON, and a `taxRounding` value that is present but malformed, now read as "unknown" (`undefined`), like a network failure or a 5xx. The till's store settings wait and retry instead of selling on a guessed rounding.
+  - **Unchanged:** a 404 still means an older plugin (`orderCreate: 1`, the default rounding), and so does a well-formed body with no `taxRounding` key.
+  - **Type change:** `parseInfoCapabilities` now returns `ServerCapabilities | undefined`. It is `undefined` when the body carries a malformed `taxRounding`.
+
+- 2ecaa36: A replication adapter can set `pull.batchSize`, and the Medusa connector pulls 500 products per page.
+- d225c58: Internal `@tallyui/*` peer dependencies are published as a caret range (for example `^2.1.0`) instead of an exact version. The packages still release together at one version.
+- 222543b: Add `RegisterCommandType`, `RegisterCommandEnvelope` and `AnyCommandEnvelope`, register payloads and results, and the register server capability. `CommandType` and `CommandEnvelope` are unchanged.
+
+  Record the local `register_commands` ledger through `reconcileRegisterCommands`, gated in `useRegisterSession` by its new `commands` and `capabilities` options. Commands are recorded but not sent. Medusa reads the `register` contract.
+
+- 6673faf: RxDB 17.5.0.
+
+  - **`@tallyui/storage-sqlite`:**
+    - Its `rxdb-premium` peer is now `17.5.0`. Apps install `rxdb-premium@17.5.0` together with `rxdb@17.5.0`.
+    - Its storages set RxDB 17's premium flag at import and when called, so the 13-collection cap never applies.
+  - **`@tallyui/pos`:**
+    - Its `rxdb` peer is now `~17.5.0`.
+    - Opening `pos_orders` rejects with `PosOrderOpenClosedError` when the database closes during a migration: RxDB 17.5.0 cancels the migration on close. The open first waits for any write already in flight, so none reaches a closed store.
+    - An open that needs no migration resolves only once RxDB allows writes, so a sale saved straight after it is never refused with COL25.
+  - **`@tallyui/database`:**
+    - `createTallyDatabase` returns an RxDB 17 database.
+    - In development it adds RxDB's dev-mode plugin when a database is created, not at import.
+  - **Stored data:** a till's SQLite data written by RxDB 16.21.1 opens unchanged under 17.5.0, and migrates its schema versions.
+
+  **Upgrade notes**
+
+  - **Storage is one-way.** Once a till has opened this version, `pos_orders` is at schema version 4, and an older build
+    (such as `@tallyui/pos` 2.0.0 on RxDB 16.21.1) opens it without an error but shows no orders, so it sends none of the
+    pending ones until the till is upgraded again. Nothing is deleted: the next upgrade recovers every order, including a
+    sale rung during the rollback. Never roll an app back across this version, and never re-ring sales it hides: a
+    re-rung sale is a second sale, and the upgrade sends both. See ADR-069 in `docs/DECISIONS.md`.
+  - Web apps ship the 17.5.0 storage worker with the 17.5.0 main thread. A cached 16.x worker with a 17.5.0 main
+    thread is untested and unsupported.
+  - Apps pin `rxdb` and `rxdb-premium` to exactly `17.5.0`.
+  - RxDB 17 defaults a replication's `toggleOnDocumentVisible` to true (16.21.1: false). It then resyncs when the tab
+    becomes visible, and no longer simulates activity to keep a hidden tab awake, so a browser may throttle a hidden
+    tab's pull. RxDB pauses a hidden tab's replication only when that tab isn't the leader; a single-instance database
+    is always the leader (read in 17.5.0's `plugins/replication` source, not tested).
+
+- 8cf3ea4: A till tells "sign in again" apart from "signed in, but not allowed" (found by the Medusa POS app's adoption).
+
+  - **`ConnectorUnauthorizedError.status`** is now required, typed `401 | 403`, and set by meaning at every connector.
+    - `401`: the credentials are not accepted, so sign in again. `code: 'unauthorized'`, fixed by the till.
+    - `403`: the till is signed in but not allowed. `code: 'forbidden'`, fixed by the store.
+    - Vendure answers a signed-out session with 403 too. Its connector checks who is signed in first, so a confirmed sign-out is always `401`.
+  - **A 403 on the pull** gives the `forbidden` notice, never a sign-out. The pull retries on the store schedule and clears by itself once the store owner grants the permission. SyncStatus shows "Products aren't updating: your account isn't allowed to do this on this store." with "You can keep selling. Ask the store owner."
+  - **The customer picker** shows "Your account isn't allowed to do this on this store. Ask the store owner." for a 403, instead of asking the cashier to sign in again.
+
+- Updated dependencies [4de75c2]
+- Updated dependencies [894b6ae]
+- Updated dependencies [04905ef]
+- Updated dependencies [faa7cda]
+- Updated dependencies [9f34416]
+- Updated dependencies [fb57e1d]
+- Updated dependencies [898e98b]
+- Updated dependencies [75c5dce]
+- Updated dependencies [ba63f04]
+- Updated dependencies [0d04d13]
+- Updated dependencies [78d324e]
+- Updated dependencies [7fee0c1]
+- Updated dependencies [24b74fd]
+- Updated dependencies [eb5a032]
+- Updated dependencies [54ee98a]
+- Updated dependencies [27d736e]
+- Updated dependencies [e59ebec]
+- Updated dependencies [2ecaa36]
+- Updated dependencies [901fa66]
+- Updated dependencies [bf2d805]
+- Updated dependencies [ca0beac]
+- Updated dependencies [af623c9]
+- Updated dependencies [ef2f64e]
+- Updated dependencies [5c90aed]
+- Updated dependencies [668f71f]
+- Updated dependencies [457162d]
+- Updated dependencies [222543b]
+- Updated dependencies [8141c1c]
+- Updated dependencies [ce4f796]
+- Updated dependencies [6673faf]
+- Updated dependencies [c48e1dd]
+- Updated dependencies [1f4d0ab]
+- Updated dependencies [5ed6281]
+- Updated dependencies [5a204a9]
+- Updated dependencies [7d1bc98]
+- Updated dependencies [3cf5452]
+- Updated dependencies [8cf3ea4]
+- Updated dependencies [e15f389]
+- Updated dependencies [ddd9e85]
+  - @tallyui/core@3.0.0
+
 ## 3.0.0-next.2
 
 ### Patch Changes

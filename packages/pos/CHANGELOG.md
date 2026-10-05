@@ -1,5 +1,160 @@
 # @tallyui/pos
 
+## 3.0.0
+
+### Major Changes
+
+- 6673faf: RxDB 17.5.0.
+
+  - **`@tallyui/storage-sqlite`:**
+    - Its `rxdb-premium` peer is now `17.5.0`. Apps install `rxdb-premium@17.5.0` together with `rxdb@17.5.0`.
+    - Its storages set RxDB 17's premium flag at import and when called, so the 13-collection cap never applies.
+  - **`@tallyui/pos`:**
+    - Its `rxdb` peer is now `~17.5.0`.
+    - Opening `pos_orders` rejects with `PosOrderOpenClosedError` when the database closes during a migration: RxDB 17.5.0 cancels the migration on close. The open first waits for any write already in flight, so none reaches a closed store.
+    - An open that needs no migration resolves only once RxDB allows writes, so a sale saved straight after it is never refused with COL25.
+  - **`@tallyui/database`:**
+    - `createTallyDatabase` returns an RxDB 17 database.
+    - In development it adds RxDB's dev-mode plugin when a database is created, not at import.
+  - **Stored data:** a till's SQLite data written by RxDB 16.21.1 opens unchanged under 17.5.0, and migrates its schema versions.
+
+  **Upgrade notes**
+
+  - **Storage is one-way.** Once a till has opened this version, `pos_orders` is at schema version 4, and an older build
+    (such as `@tallyui/pos` 2.0.0 on RxDB 16.21.1) opens it without an error but shows no orders, so it sends none of the
+    pending ones until the till is upgraded again. Nothing is deleted: the next upgrade recovers every order, including a
+    sale rung during the rollback. Never roll an app back across this version, and never re-ring sales it hides: a
+    re-rung sale is a second sale, and the upgrade sends both. See ADR-069 in `docs/DECISIONS.md`.
+  - Web apps ship the 17.5.0 storage worker with the 17.5.0 main thread. A cached 16.x worker with a 17.5.0 main
+    thread is untested and unsupported.
+  - Apps pin `rxdb` and `rxdb-premium` to exactly `17.5.0`.
+  - RxDB 17 defaults a replication's `toggleOnDocumentVisible` to true (16.21.1: false). It then resyncs when the tab
+    becomes visible, and no longer simulates activity to keep a hidden tab awake, so a browser may throttle a hidden
+    tab's pull. RxDB pauses a hidden tab's replication only when that tab isn't the leader; a single-instance database
+    is always the leader (read in 17.5.0's `plugins/replication` source, not tested).
+
+### Minor Changes
+
+- 78d324e: Add useSale.setCustomer and ReceiptData.header.customer, customerTraits, CustomerPicker, generic CustomerSelect/CustomerCard with traits overrides, CustomerForm.showAddress, and the receipt's customer line.
+
+  CustomerSelect rows are now pressable, so choosing a result works on the web (it previously did nothing).
+
+- 901fa66: Add `order.create` envelope version 3, its display and tax-rate wire types, and the payload's `sessionId` and customer reference.
+
+  At capability 3, `finalizeOrder` copies the receipt's `display` and `taxByRate` into the sale. Version 3 sends those figures and the sale's session (stamped or late) as `sessionId`. Older orders keep their existing envelope version.
+
+  Move `pos_orders` to schema version 3 with a `sessionId` index and the optional `sentVersion` and `downgradedFrom` fields (declared for the outbox's version fallback, not yet written). Apps must open `pos_orders` with `addPosOrderCollection`, which migrates it.
+
+- bf2d805: `order.create` version 4 (#286): every `discountMinor`, the order's and each line's, is tax-exclusive, so their sum still holds. Core accepts version 4 with version 3's fields. The till's envelope builder (`toOrderCreateEnvelope`) produces version 4 when capped at 4 or more and the order's `sentVersion` doesn't hold it lower. The till doesn't send version 4 yet: the outbox doesn't pass the server's max, so it still sends version 3 or lower with the same figures, byte-identical.
+- 130d28e: A store that keeps answering 404 is no longer silent. After 3 consecutive 404 answers the order and register outboxes set `OutboxState.backendMissing: { since }` (when the first of them arrived), and `SyncStatus` tells the cashier in plain words that sales aren't reaching the online store and are saved on the till, with a detail line for the store owner, instead of showing `retrying (status_404)`; the stuck line shows the same words, with no raw code. `SyncStatus` takes an optional `pluginName` (default `'the POS plugin'`) for that detail. The outboxes keep retrying on their normal backoff, and orders stay pending, so a 404 during a deploy blip recovers on its own. The next answer that isn't a 404 clears it; an offline (`network`) retry changes nothing.
+  Pass one `createBackendNotFound()` tracker as `backendNotFound` to both `createOrderOutbox` and `createRegisterOutbox` so their 404s count together and the notice shows once, whichever outbox meets it first; without it, each outbox keeps its own.
+- 9e1032f: One order the store keeps failing no longer stops every later sale. After 5 server-answered failures (offline never counts) the order outbox probes the pending queue one order per backoff interval, oldest first; once the store takes one, the orders whose probes failed are isolated and retried alone, and batching resumes. If no probe gets through, the store is down: nothing is isolated. Retries alternate between the batch (or the probe) and one due isolated order, one request per interval, so neither can starve the other, and isolated orders take turns. An order the store has kept failing for 15 minutes of answered time, on its own clock, is flagged as stuck and stays pending: `OutboxState.stuck`, with a per-order entry in `stuck.orders`, `useOrderOutbox`'s `stuckCommandIds`, `needsAttention`'s `stuckCommandIds` option, `OrdersList`'s `stuck` prop (each order with its own time and reason), and `SyncStatus`'s "Not syncing" line. An offline failure pauses every clock, and the store's next answer of any kind resumes them all; a flagged order stays flagged through an offline spell, since a paused clock keeps its answered time. The HTTP transport now reports a request that got no answer in time as `timeout`, which counts like a 503 and never pauses a clock, and keeps `network` for a store it could not reach.
+- ca0beac: Fall back to the server's supported order.create version while preserving stored fiscal figures and command IDs. Record the sent version and downgrade in the order audit, and expose command error details.
+- a9cdfc0: Migrate pos_orders to version 4 with optional localWarnings and serverFailures. Record omitted customer details and dropped payment references on the stored order, and show these warnings in the orders list; serverFailures is declared for the next outbox update.
+- 9ffa7c0: The till sends `order.create` version 4 (#286) to a server that advertises 4. Each order is resent at the version it first went out at: the outbox records `sentVersion` before an order's first send, so a retry after the store upgrades is byte-identical. With the server's max unknown, the till sends at most 3 and records that. `requeue()` clears `sentVersion` and `downgradedFrom`, since the new `commandId` chooses afresh.
+
+  `pos_orders` moves to schema version 5: `sentVersion` and `downgradedFrom` accept 1 to 4, and the migration records each order without a `sentVersion` at its content version (3 with `display` and `taxByRate`, else 2 when discounted, else 1). Like version 4, this storage is one-way: an older build opens it but shows no orders (ADR-069).
+
+- 6bbd1ba: Each sale records the tax rounding its figures were computed with (#287): `finalizeOrder` writes `taxRounding` on the stored order, the default (`per_order`, `half_away_from_zero`) included, and `custom` as `{ granularity: 'custom' }`. It is the till's own record and is never sent in `order.create`. The Z report splits each sale's tax by rate with the strategy that sale recorded, so its rows are the receipts' rows, and its `breakdowns.tax_rounding_mixed` is `true` when a session's sales used more than one strategy (a `custom` sale counts as the default it applied); `ClosureSheet` then says so, and `buildClosureDocument` carries the same line ready to print as `closure.tax_rounding_note` (`TAX_ROUNDING_MIXED_NOTE`), for the apps' closure templates. `PosOrder.taxRounding` is now required in the type.
+
+  `pos_orders` moves to schema version 6: `taxRounding` is required, and the migration records the default on every older sale, the only rounding any earlier build used. Like version 5, this storage is one-way: an older build opens it but shows no orders, so never roll an app back across it (ADR-069). Before 3.0.0 ships, #242's OPFS upgrade proof is rerun against version 6.
+
+- 222543b: Add `RegisterCommandType`, `RegisterCommandEnvelope` and `AnyCommandEnvelope`, register payloads and results, and the register server capability. `CommandType` and `CommandEnvelope` are unchanged.
+
+  Record the local `register_commands` ledger through `reconcileRegisterCommands`, gated in `useRegisterSession` by its new `commands` and `capabilities` options. Commands are recorded but not sent. Medusa reads the `register` contract.
+
+- 8141c1c: Guard register commands, movement reasons and register ids, exporting RegisterMovementReasonError and RegisterIdInvalidError. Harden register outbox result handling and batch limits.
+
+  Make CommandBatchRequest generic while preserving its existing default envelope type.
+
+- c9798a3: The register outbox now sets `OutboxState.stuck` when the store has kept failing a sent register command for 15 minutes of answered time (`STUCK_AFTER_MS`, shared with the order outbox; offline gaps pause the clock), so the app can say since when till updates haven't reached the online store. The clock clears when the command is applied or rejected. It is kept in memory only: a restart starts it afresh.
+- 581472f: Add createRegisterOutbox to send stored register commands serially per register. The app starts it only for a store with the register capability.
+- c26ead6: A till no longer sells on a guessed tax rounding. When the store's capabilities read fails (it throws, or answers "unknown", as Vendure's does for a network error or a 5xx), `useStoreSettings` keeps the settings unresolved instead of falling back to the default rounding. It retries by itself after 5 seconds, then 10, doubling to at most 5 minutes. While it waits, the state is `error` with a `nextRetryAt`, and an app shows "Can't reach the store's settings yet. Retrying…". Only a store that reports no rounding, or a connector without `capabilities`, gets the default. Before this, a failed read on a Vendure store set to `per_rate_group_items` meant every sale raised `figures_mismatch`.
+- 0e4c9cc: The "since" a cashier reads is a real time (#253). `OutboxState.stuck` (both outboxes) gains `firstFailedAt`: the wall-clock time the first failure of the current stuck run was answered, so an offline gap no longer moves it. `since` keeps its meaning, the clock's virtual start, and still drives the 15-minute threshold. `firstFailedAt` is kept in memory only. After a restart it is absent, and `SyncStatus` and `OrdersList` show the stored time instead, worded "since about 2:49 AM".
+- a94b255: `OutboxState` gains `rejected?: number`: the order outbox publishes the count of `pos_orders` the store refused (`syncStatus: 'rejected'`) wherever it publishes `pending`, so it rises when a batch result rejects an order and falls when `requeue()` sends one again. The register outbox leaves it unset. While `rejected` is above 0, `SyncStatus` never says "Sales are up to date.": its whole status line (label, polite live region and iOS announcement) is "1 sale needs attention · The online store refused it. Ask the store owner to look at the till's sync log." or "{n} sales need attention · The online store refused them. Ask the store owner to look at the till's sync log.", in place of the stuck and backend-missing sentences and the sending or retrying line. What else waits stays in the count: "1 sale needs attention, 5 waiting to sync · …" with other sales pending, "…, 2 till updates waiting to sync · …" with till updates, and "…, 5 sales and 2 till updates waiting to sync · …" with both. Below it, "Refused sales stay on this till under Needs attention, each with what to do next.", then the backend-missing detail when the store is missing. With `rejected` 0 or unset, nothing changes. When the store refused a whole batch (`refused` set, no sale carrying a code), the status line is the waiting count followed by " · The online store refused the last send. This till will try again with the next sale, or when the app is reopened." in place of the stuck or backend-missing sentence, and the sending or retrying line (which read "Retrying in 0 s.") is hidden; refused sales still outrank it. With only till updates waiting and the register outbox refused, it ends "…try again with the next till update." instead; with a sale waiting, the sales line wins.
+- 5ed6281: The till computes tax with the store's rounding strategy (#287, ADR-071). `ServerCapabilities` gains `taxRounding` (core exports `TaxRounding`): `per_order`, `per_line_items` or `per_rate_group_items`, each with `half_away_from_zero` or `half_up`, or `custom`. Absent, and `custom`, mean today's `per_order` with half away from zero. `TaxProvider` takes `rounding` and `rateCodes` (tax class → the backend's rate name, for `per_rate_group_items`); the order records the strategy as `taxRounding`, and `taxLinesByRate` takes it as a fourth argument. The algorithms are in `docs/contract/field-kinds.md`.
+- 5a204a9: `StoreSettings` gains a derived `taxRounding`. `useStoreSettings` fills it from the context's capabilities, or else from one read of the connector's `capabilities()` made before the settings are ready, so each sign-in emits the settings once with the rounding known and no later change holds a sale; a failed read or a connector without `capabilities` gives the default rounding. `taxProviderProps` passes it to `TaxProvider` as `rounding`, so the till rounds tax like the store with no app code (#324). `custom` passes no rounding, and an explicit `rounding` prop still wins.
+- 6278d8d: The register outbox can start when its store opens, as the order outbox does (#290). The new `useRegisterOutbox({ commands, transport, deviceId, isEnabled?, onResult?, backendNotFound? })` runs `createRegisterOutbox` over an already-open `register_commands` collection, and calls `start()` so that till updates left pending (after a refused batch, for instance) go out when the app reopens. It returns `{ state, flush }`. A new collection or device id restarts the outbox, and `commands: null` leaves it idle. Apps that create the register outbox themselves should switch to this hook. `SyncStatus`'s till-updates refusal line now ends "…with the next till update, or when the app is reopened.", matching the sales line.
+- e15f389: The Vendure connector supplies its tax rate names, so a `per_rate_group_items` store groups a sale's tax the way Vendure does (#324). Apps no longer fetch the names themselves.
+
+  - **`StoreSettings.taxRateCodes`** (core, optional): the backend's tax rate name per tax class, keyed like `taxRatesPpm`, including `default`.
+  - **`vendureStoreSettings`** reads each rate's `name` in the tax-rate query it already runs, so no extra request is made. Only the rates `taxRatesPpm` uses count, and `default` follows the same default-category rule. `taxRateCodes` is left out when no names come back.
+  - **`taxProviderProps(settings)`** passes `taxRateCodes` to `<TaxProvider>` as `rateCodes`.
+
+### Patch Changes
+
+- d6a5073: **The outbox freezes an order an older till stored before it first sends it** (`freezeSentForm`, which `finalizeOrder` uses too):
+
+  - line names, discount labels and payment references are cut to 255 characters, but ids never are;
+  - a customer email or id that `order.create` would refuse is left out;
+  - the frozen form is written back, so the receipt and the store see the same bytes.
+
+  So an order stored before the upgrade and still unsent is never refused as `invalid_payload`.
+
+  **New type:** `SentOrder`, an `Order` whose customer id may be missing. The receipt stage, `buildReceiptData` and `Receipt` take it, and a plain `Order` still fits.
+
+- 27d736e: `CommandWarning` gains `bridgeMinor` on `total_mismatch` and a new `tax_rate_mismatch` code, and the till now ignores warning codes it doesn't know (`knownWarnings`), instead of showing them as a store total.
+- e59ebec: Each line is taxed at its product's tax class, not the store's default (#288). `ProductTraits` gains an optional `getTaxClass(doc, variantId?)`, the backend's tax class id, a key of `StoreSettings.taxRatesPpm`. `addProduct` and `addEntryToCart` pass it to `addLine` through the new `AddLineInput.taxClass`, which the tax context resolves; a connector without the accessor is unchanged (the default rate). `TaxProvider` taxes a class with no rate at the default rate and warns once per class through the new `taxLogger`. connector-vendure replicates each variant's `taxCategory { id }` and implements the accessor, and its store settings give every tax category with no enabled rate in the default zone an explicit 0 rate, as Vendure charges; its product schema goes to version 2, so the products collection is dropped and downloaded again on the first sync after the upgrade.
+- eb203b4: Review follow-ups with no behaviour change (#356, #358):
+  - `SyncStatus` and `OrdersList` build their "since {time}" and "since about {time}" text with one shared helper.
+  - `useRegisterOutbox`'s docs now say when `transport()` is called, and that the latest `isEnabled` and `onResult` are used without restarting the outbox.
+- 8cd7860: A sale the store refuses on its first send is sent once, not twice (found by the Medusa POS app's 3.0.0-next.0 adoption). Before it sends, the outbox stores the order's sent form and version (#300). That write had re-armed the flush, so a refused batch went out again. A write that only records the sent form, for a new sale or for an older one carried over by the pos_orders migrations, is no longer counted as new work. Any other change to a pending sale still sends it.
+- af623c9: The order.create string lengths move from `payloadShapeErrors` to the new `payloadBoundErrors`, which `precheckCommand` calls after the replay lookup, so an applied order resent with a long title replays as `duplicate`; `payloadShapeErrors` keeps the types, the `customerId` and `sessionId` bounds and the NUL check. `useSale` applies a tender before logging a dropped reference, and `add()` refuses a product whose id or v3 tax code finalize would refuse; the tender's reference field caps at 255 characters. `finalizeOrder` now freezes the sent form (names and discount labels cut, an unsendable customer email or id left out) and `toOrderCreateEnvelope` sends the stored order unchanged, so every resend is byte-identical.
+- ef2f64e: The shared order.create shape check bounds string lengths and refuses NUL, and so does the v3 fiscal-figures check for its display and tax-code strings. The till cuts long names when it stores the order, refuses over-long pass-through references at finalize (and a payment reference as it's entered), refuses a searched or parked customer whose email or id the server would refuse, and validates the customer email at entry. Tills should ship this clamp before plugins adopt the new bounds, so no till sends a sale the server would now refuse.
+- d225c58: Internal `@tallyui/*` peer dependencies are published as a caret range (for example `^2.1.0`) instead of an exact version. The packages still release together at one version.
+- d329193: The order outbox stores each pending order's stuck clock and isolation in `serverFailures` and restores them when it starts, so after a restart an order the store keeps refusing no longer holds up the other sales, and its stuck flag keeps its start time.
+- c00e1ea: `OrdersList` shows a rejected sale's refusal in the cashier's words, one sentence per error code (#269), in both Needs attention and Recent, and never the store's own message. An unknown code, or a rejected sale with no error, shows `platform_error`'s sentence: "The online store refused this sale. Ask the store owner to look at the till's sync log." An `idempotency_mismatch` shows its sentence ("… Don't send it again; ask the store owner to compare the two.") in place of the old "This sale needs checking against the store before it can be sent again." line, and still has no Retry. The order outbox logs every refusal once to the sync log as "Order refused by the store" with the order id, the code and the store's message: a warning, or an error for `unsupported_version` (whose log previously used the message itself as its text).
+- 8ae3c53: A register session transition's ledger key now includes its status (`session.transition:<sessionId>:<status>:<at>`), so a close in the same millisecond as the count before it is queued with its `counted`, `closedBy` and `approvedBy` instead of being skipped (#258).
+- 9885075: Match variant barcodes and SKUs in product search, and skip disabled Vendure variants when reading the product barcode.
+- c48e1dd: Store settings follow-ups to #339 and #341 (#340):
+
+  - **A signed-out till is asked to sign in**, not shown "Retrying…". When the capabilities read fails with an error only the till can fix, `useStoreSettings` gives `error` without `nextRetryAt` and doesn't retry by itself, so the app prompts. That covers a till-class error (a 401, or a till that needs updating) and a `SignInError` with `code: 'invalid_credentials'`; any other sign-in error still waits and retries. Every other failure still waits and retries.
+  - **A `/tally/v1/info` JSON body that isn't an object** (`null`, an array or a scalar) is unknown, not the default rounding.
+
+- df80ead: `SyncStatus` takes an optional `registerState` (the register outbox's state): waiting till updates are counted ("1 till update waiting to sync", or named beside the sales), so it never says the sales are up to date while any wait, and with no sale waiting the backend-missing sentence says till updates aren't reaching the online store, or, once `registerState.stuck` is set, "Till updates haven't reached the online store since {time}. …". The backend-missing detail now reads "This till couldn't find {pluginName} on the online store. …". With nothing waiting, the line is only "Sales are up to date." (it replaces "All sales synced"), with no sending, retrying or problem text after it; if the store is missing, the detail reads "This till couldn't find {pluginName} on the online store the last time it checked. …". The status line's accessibility label is the whole visible line instead of "Sync status". The order and register outboxes let go of a shared `backendNotFound` tracker on `stop()` and take it up again on `start()` or `flush()`.
+- 37aad35: `useSale` never drops a line tapped while new store settings land (#301). The new sale that new tax settings or currency start on an idle cart now begins in a layout effect, inside the commit that brings those settings, and only when the sale is idle at that moment (no line, cart stage, no save in flight or pending), not as of the last render. Every sale change reads the current order builder, so a call from an older render never reaches a builder that `newSale()` has replaced. A line tapped once the new settings have committed lands on the new sale, priced with the new settings; a line that reaches the sale before its new sale starts keeps that sale, on its old settings.
+- 4122dc8: order.create v3 omits a malformed session ID (empty or longer than 36 characters) instead of sending it, so the plugin never refuses the sale for it. At capability 3, `finalizeOrder` refuses a sale whose display lines don't join the order's lines by id and count, or whose display tax mode differs from the order's.
+- Updated dependencies [4de75c2]
+- Updated dependencies [894b6ae]
+- Updated dependencies [04905ef]
+- Updated dependencies [faa7cda]
+- Updated dependencies [9f34416]
+- Updated dependencies [fb57e1d]
+- Updated dependencies [898e98b]
+- Updated dependencies [75c5dce]
+- Updated dependencies [ba63f04]
+- Updated dependencies [0d04d13]
+- Updated dependencies [78d324e]
+- Updated dependencies [7fee0c1]
+- Updated dependencies [24b74fd]
+- Updated dependencies [eb5a032]
+- Updated dependencies [54ee98a]
+- Updated dependencies [27d736e]
+- Updated dependencies [e59ebec]
+- Updated dependencies [2ecaa36]
+- Updated dependencies [901fa66]
+- Updated dependencies [bf2d805]
+- Updated dependencies [ca0beac]
+- Updated dependencies [af623c9]
+- Updated dependencies [ef2f64e]
+- Updated dependencies [5c90aed]
+- Updated dependencies [668f71f]
+- Updated dependencies [457162d]
+- Updated dependencies [222543b]
+- Updated dependencies [8141c1c]
+- Updated dependencies [ce4f796]
+- Updated dependencies [6673faf]
+- Updated dependencies [c48e1dd]
+- Updated dependencies [1f4d0ab]
+- Updated dependencies [5ed6281]
+- Updated dependencies [5a204a9]
+- Updated dependencies [7d1bc98]
+- Updated dependencies [3cf5452]
+- Updated dependencies [8cf3ea4]
+- Updated dependencies [e15f389]
+- Updated dependencies [ddd9e85]
+  - @tallyui/core@3.0.0
+
 ## 3.0.0-next.2
 
 ### Minor Changes

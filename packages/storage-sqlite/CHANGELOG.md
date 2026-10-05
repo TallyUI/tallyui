@@ -1,5 +1,87 @@
 # @tallyui/storage-sqlite
 
+## 3.0.0
+
+### Major Changes
+
+- 6673faf: RxDB 17.5.0.
+
+  - **`@tallyui/storage-sqlite`:**
+    - Its `rxdb-premium` peer is now `17.5.0`. Apps install `rxdb-premium@17.5.0` together with `rxdb@17.5.0`.
+    - Its storages set RxDB 17's premium flag at import and when called, so the 13-collection cap never applies.
+  - **`@tallyui/pos`:**
+    - Its `rxdb` peer is now `~17.5.0`.
+    - Opening `pos_orders` rejects with `PosOrderOpenClosedError` when the database closes during a migration: RxDB 17.5.0 cancels the migration on close. The open first waits for any write already in flight, so none reaches a closed store.
+    - An open that needs no migration resolves only once RxDB allows writes, so a sale saved straight after it is never refused with COL25.
+  - **`@tallyui/database`:**
+    - `createTallyDatabase` returns an RxDB 17 database.
+    - In development it adds RxDB's dev-mode plugin when a database is created, not at import.
+  - **Stored data:** a till's SQLite data written by RxDB 16.21.1 opens unchanged under 17.5.0, and migrates its schema versions.
+
+  **Upgrade notes**
+
+  - **Storage is one-way.** Once a till has opened this version, `pos_orders` is at schema version 4, and an older build
+    (such as `@tallyui/pos` 2.0.0 on RxDB 16.21.1) opens it without an error but shows no orders, so it sends none of the
+    pending ones until the till is upgraded again. Nothing is deleted: the next upgrade recovers every order, including a
+    sale rung during the rollback. Never roll an app back across this version, and never re-ring sales it hides: a
+    re-rung sale is a second sale, and the upgrade sends both. See ADR-069 in `docs/DECISIONS.md`.
+  - Web apps ship the 17.5.0 storage worker with the 17.5.0 main thread. A cached 16.x worker with a 17.5.0 main
+    thread is untested and unsupported.
+  - Apps pin `rxdb` and `rxdb-premium` to exactly `17.5.0`.
+  - RxDB 17 defaults a replication's `toggleOnDocumentVisible` to true (16.21.1: false). It then resyncs when the tab
+    becomes visible, and no longer simulates activity to keep a hidden tab awake, so a browser may throttle a hidden
+    tab's pull. RxDB pauses a hidden tab's replication only when that tab isn't the leader; a single-instance database
+    is always the leader (read in 17.5.0's `plugins/replication` source, not tested).
+
+### Minor Changes
+
+- 3332558: Tell the three start failures apart (#293), each with its own sentence for the cashier. Storage unavailable, as in a Safari private window where the browser gives the worker no usable OPFS, is the new `StorageUnavailableError`, recognised with `isStorageUnavailableError`. Another tab holding the database is recognised with the new `isStorageHeldError`. A stale worker stays `isRxdbRemoteVersionMismatch` from `@tallyui/core` (RM1). `isStorageWorkerStartError` still means any failed start except storage unavailable, and every start error carries its cause's name and message in its own message.
+
+### Patch Changes
+
+- 1f4d0ab: `isStorageWorkerStartError` and `isStorageWorkerFailure` also recognise RxDB's RM1, a stale storage worker built on another RxDB version (for example a cached old worker after an upgrade), so apps show their reload advice for it. Both call the new `isRxdbRemoteVersionMismatch` in `@tallyui/core`, which recognises RM1 by structure only: an RxError's own `code`, or the remote storage's `could not create instance ` wrapping of an RxError's JSON. `@tallyui/storage-sqlite` now has `@tallyui/core` as a peer dependency.
+- f96d185: Make the SQLite handle type the minimal interface used by the adapter, accepting expo-sqlite 16's `SQLiteDatabase`.
+- Updated dependencies [4de75c2]
+- Updated dependencies [894b6ae]
+- Updated dependencies [04905ef]
+- Updated dependencies [faa7cda]
+- Updated dependencies [9f34416]
+- Updated dependencies [fb57e1d]
+- Updated dependencies [898e98b]
+- Updated dependencies [75c5dce]
+- Updated dependencies [ba63f04]
+- Updated dependencies [0d04d13]
+- Updated dependencies [78d324e]
+- Updated dependencies [7fee0c1]
+- Updated dependencies [24b74fd]
+- Updated dependencies [eb5a032]
+- Updated dependencies [54ee98a]
+- Updated dependencies [27d736e]
+- Updated dependencies [e59ebec]
+- Updated dependencies [2ecaa36]
+- Updated dependencies [901fa66]
+- Updated dependencies [bf2d805]
+- Updated dependencies [ca0beac]
+- Updated dependencies [af623c9]
+- Updated dependencies [ef2f64e]
+- Updated dependencies [5c90aed]
+- Updated dependencies [668f71f]
+- Updated dependencies [457162d]
+- Updated dependencies [222543b]
+- Updated dependencies [8141c1c]
+- Updated dependencies [ce4f796]
+- Updated dependencies [6673faf]
+- Updated dependencies [c48e1dd]
+- Updated dependencies [1f4d0ab]
+- Updated dependencies [5ed6281]
+- Updated dependencies [5a204a9]
+- Updated dependencies [7d1bc98]
+- Updated dependencies [3cf5452]
+- Updated dependencies [8cf3ea4]
+- Updated dependencies [e15f389]
+- Updated dependencies [ddd9e85]
+  - @tallyui/core@3.0.0
+
 ## 3.0.0-next.2
 
 ### Patch Changes
