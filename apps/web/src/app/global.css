@@ -2,3 +2,9 @@
 @import '../../../../packages/theme/src/tokens.css';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
+
+/* Fumadocs' light muted grey (#737373) is 4.19:1 on its #f1f1f1 surfaces, below WCAG AA's 4.5:1
+   (tallyui.com site audit, 2026-10-05). Light mode only; the dark palette passes. */
+:root:not(.dark) {
+  --color-fd-muted-foreground: hsl(0, 0%, 38%);
+}
