@@ -35,7 +35,9 @@ export default function HomePage() {
       <section className="mx-auto max-w-3xl px-6 pb-16">
         <h2 className="text-2xl font-semibold tracking-tight">Install TallyUI {tallyVersion}</h2>
         <CodeBlock className="mt-4">
-          <Pre>{`pnpm add @tallyui/core@${tallyVersion} @tallyui/database@${tallyVersion} @tallyui/components@${tallyVersion} @tallyui/theme@${tallyVersion} @tallyui/connector-medusa@${tallyVersion} rxdb@17.5.0 rxjs`}</Pre>
+          <Pre className="py-3 pl-4 pr-12">{`pnpm add @tallyui/core@${tallyVersion} @tallyui/database@${tallyVersion} \\
+  @tallyui/components@${tallyVersion} @tallyui/theme@${tallyVersion} \\
+  @tallyui/connector-medusa@${tallyVersion} rxdb@17.5.0 rxjs`}</Pre>
         </CodeBlock>
         <p className="mt-4 text-fd-foreground/80">
           Swap the connector for <code>@tallyui/connector-woocommerce</code> or <code>@tallyui/connector-vendure</code>. Keep every <code>@tallyui</code> package on the same version, and <code>rxdb</code> at exactly 17.5.0. The <Link href="/docs" className="underline underline-offset-4">quick start</Link> walks through the rest.
