@@ -1,0 +1,59 @@
+[
+  {
+    "id": 80,
+    "name": "Espresso",
+    "sku": "COF-ESP",
+    "status": "publish",
+    "price": "3.00",
+    "regular_price": "3.00",
+    "type": "simple",
+    "stock_status": "instock",
+    "date_modified_gmt": "2026-01-01T08:00:01",
+    "global_unique_id": "2000000000015",
+    "meta_data": [
+      {
+        "id": 512,
+        "key": "_woocommerce_pos_uuid",
+        "value": "085da8e4-7f83-43bf-8234-8248dedd19f2"
+      }
+    ]
+  },
+  {
+    "id": 84,
+    "name": "Cold Brew",
+    "sku": "COF-CLD",
+    "status": "publish",
+    "price": "4.00",
+    "regular_price": "4.00",
+    "type": "simple",
+    "stock_status": "instock",
+    "date_modified_gmt": "2026-01-01T08:00:02",
+    "global_unique_id": "2000000000039",
+    "meta_data": [
+      {
+        "id": 513,
+        "key": "_woocommerce_pos_uuid",
+        "value": "7f0a3d1b-017e-4286-aed3-475065dff67b"
+      }
+    ]
+  },
+  {
+    "id": 102,
+    "name": "T-shirt",
+    "sku": "MER-TEE",
+    "status": "publish",
+    "price": "20.00",
+    "regular_price": "20.00",
+    "type": "simple",
+    "stock_status": "instock",
+    "date_modified_gmt": "2026-01-01T08:00:03",
+    "global_unique_id": "2000000000121",
+    "meta_data": [
+      {
+        "id": 514,
+        "key": "_woocommerce_pos_uuid",
+        "value": "72668d25-ca99-45f1-9427-9f4fa3dada85"
+      }
+    ]
+  }
+]

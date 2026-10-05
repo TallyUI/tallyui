@@ -313,7 +313,7 @@ describe('WooCommerce catalogue reconcile: guards', () => {
     await till.poll();
     expect([keysOf(events, 'refetched'), keysOf(events, 'tombstoned')]).toEqual([['u2'], ['u3']]);
     const kinds = store.requests.map((url) => `${url.pathname.split('/').pop()} ${url.searchParams.get('_fields') ?? (url.searchParams.has('include') ? 'include' : '')}`);
-    expect(new Set(kinds)).toEqual(new Set(['products ', 'status ', 'products id,date_modified_gmt,stock_quantity,stock_status', 'products id,uuid,status', 'products include']));
+    expect(new Set(kinds)).toEqual(new Set(['products ', 'status ', 'products id,date_modified_gmt,stock_quantity,stock_status', 'products id,uuid,status,meta_data', 'products include']));
     const missing = store.headers.flatMap((headers, i) =>
       (headers['X-Test-Sentinel'] === '1' && headers['X-WCPOS-Protocol'] === '2' && headers['Content-Type'] === 'application/json' ? [] : [kinds[i]]));
     expect(missing).toEqual([]);

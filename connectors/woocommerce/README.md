@@ -13,6 +13,8 @@ It also sends `X-WCPOS-Protocol: 2`, which WCPOS 2.0 requires of POS requests, a
 
 ## Product pull
 
+On WCPOS 1.10.x, the product uuid comes from the `_woocommerce_pos_uuid` meta and the barcode from `global_unique_id`. Non-empty top-level `uuid` / `barcode` fields (WCPOS 2.0) win when present.
+
 The pull works in passes:
 - a small request finds the store's newest `date_modified_gmt`;
 - the pass then pages every product modified since the last pass, by id with an offset;

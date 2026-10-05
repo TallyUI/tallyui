@@ -1,4 +1,5 @@
 import { ConnectorUnauthorizedError, type ReplicationAdapter } from '@tallyui/core';
+import { wooProductSchema } from '../schemas/products';
 
 export type WooProductCheckpoint = {
   /** Inclusive lower bound (date_modified_gmt) of the current pass; '' = the whole catalogue. */
@@ -65,13 +66,35 @@ export class WooMissingUuidError extends Error {
   }
 }
 
+/** WCPOS's own uuid meta key; 1.10.x sends the product uuid only here (Uuid_Handler.php:29). */
+export const WCPOS_UUID_META_KEY = '_woocommerce_pos_uuid';
+
+/** The product's uuid: top-level `uuid` (the `next` shape) wins, else the `_woocommerce_pos_uuid` meta (1.10.x). */
+export function wooProductUuid(product: any): string | undefined {
+  if (typeof product.uuid === 'string' && product.uuid.length > 0) return product.uuid;
+  return product.meta_data?.find((entry: any) =>
+    entry.key === WCPOS_UUID_META_KEY && typeof entry.value === 'string' && entry.value.length > 0)?.value;
+}
+
+/** The product's barcode: top-level `barcode` wins, else `global_unique_id` (WCPOS's default barcode field), else undefined. */
+export function wooProductBarcode(product: any): string | undefined {
+  if (typeof product.barcode === 'string' && product.barcode.length > 0) return product.barcode;
+  if (typeof product.global_unique_id === 'string' && product.global_unique_id.length > 0) return product.global_unique_id;
+  return undefined;
+}
+
 /**
  * One product row as the till stores it, the rule the pull and the reconcile feed share: a uuid is
  * required (WooMissingUuidError), and a product that is not published arrives deleted (#229).
  */
 export function toProductDocument(product: any): any {
-  if (typeof product.uuid !== 'string' || product.uuid.length === 0) throw new WooMissingUuidError(product.id);
-  return { ...product, _deleted: product.status !== 'publish' };
+  const uuid = wooProductUuid(product);
+  if (uuid === undefined) throw new WooMissingUuidError(product.id);
+  const barcode = wooProductBarcode(product);
+  const projected = Object.fromEntries(Object.keys(wooProductSchema.properties)
+    .filter((key) => Object.prototype.hasOwnProperty.call(product, key))
+    .map((key) => [key, product[key]]));
+  return { ...projected, uuid, ...(barcode !== undefined ? { barcode } : {}), _deleted: product.status !== 'publish' };
 }
 
 /** The store returned a product outside a modified_after window, so it does not apply the filter. */
