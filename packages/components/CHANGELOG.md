@@ -1,5 +1,16 @@
 # @tallyui/components
 
+## 3.0.1
+
+### Patch Changes
+
+- 2416b21: A Dialog now closes on an overlay press and, on web, on Escape (the topmost dialog only; `closeOnPress={false}` or `onEscapeKeyDown` + `preventDefault()` keep it open), and RegisterPanel has a close button, so the register panel can be dismissed on web.
+- Updated dependencies [2416b21]
+  - @tallyui/primitives@3.0.1
+  - @tallyui/pos@3.0.1
+  - @tallyui/core@3.0.1
+  - @tallyui/theme@3.0.1
+
 ## 3.0.0
 
 ### Minor Changes
