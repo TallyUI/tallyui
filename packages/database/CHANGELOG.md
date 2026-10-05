@@ -1,5 +1,171 @@
 # @tallyui/database
 
+## 3.0.0
+
+### Major Changes
+
+- 6673faf: RxDB 17.5.0.
+
+  - **`@tallyui/storage-sqlite`:**
+    - Its `rxdb-premium` peer is now `17.5.0`. Apps install `rxdb-premium@17.5.0` together with `rxdb@17.5.0`.
+    - Its storages set RxDB 17's premium flag at import and when called, so the 13-collection cap never applies.
+  - **`@tallyui/pos`:**
+    - Its `rxdb` peer is now `~17.5.0`.
+    - Opening `pos_orders` rejects with `PosOrderOpenClosedError` when the database closes during a migration: RxDB 17.5.0 cancels the migration on close. The open first waits for any write already in flight, so none reaches a closed store.
+    - An open that needs no migration resolves only once RxDB allows writes, so a sale saved straight after it is never refused with COL25.
+  - **`@tallyui/database`:**
+    - `createTallyDatabase` returns an RxDB 17 database.
+    - In development it adds RxDB's dev-mode plugin when a database is created, not at import.
+  - **Stored data:** a till's SQLite data written by RxDB 16.21.1 opens unchanged under 17.5.0, and migrates its schema versions.
+
+  **Upgrade notes**
+
+  - **Storage is one-way.** Once a till has opened this version, `pos_orders` is at schema version 4, and an older build
+    (such as `@tallyui/pos` 2.0.0 on RxDB 16.21.1) opens it without an error but shows no orders, so it sends none of the
+    pending ones until the till is upgraded again. Nothing is deleted: the next upgrade recovers every order, including a
+    sale rung during the rollback. Never roll an app back across this version, and never re-ring sales it hides: a
+    re-rung sale is a second sale, and the upgrade sends both. See ADR-069 in `docs/DECISIONS.md`.
+  - Web apps ship the 17.5.0 storage worker with the 17.5.0 main thread. A cached 16.x worker with a 17.5.0 main
+    thread is untested and unsupported.
+  - Apps pin `rxdb` and `rxdb-premium` to exactly `17.5.0`.
+  - RxDB 17 defaults a replication's `toggleOnDocumentVisible` to true (16.21.1: false). It then resyncs when the tab
+    becomes visible, and no longer simulates activity to keep a hidden tab awake, so a browser may throttle a hidden
+    tab's pull. RxDB pauses a hidden tab's replication only when that tab isn't the leader; a single-instance database
+    is always the leader (read in 17.5.0's `plugins/replication` source, not tested).
+
+### Minor Changes
+
+- 894b6ae: **One catalogue reconcile runner** replaces the id and fingerprint reconcile runners (#248, part A). `startIdReconcile` and `startFingerprintReconcile` remain as thin wrappers with their options and results.
+
+  - **`startCatalogueReconcile` (new)** compares the backend's product listing with the till in one pass and hands what differs to the collection's pull. It:
+    - stays within a request budget (30 a minute by default) instead of a page cap, so large catalogues never truncate;
+    - keeps its daily gate and a resume cursor in RxDB local documents, so it does not run on every start, and it resumes after an interruption;
+    - deletes only in an uninterrupted pass, and only what the connector confirms gone. The mass-delete brake is checked on the candidates _before_ the connector is asked, and the connector is asked in chunks (`confirmChunk`, default 100), each within the budget;
+    - stops or skips by `errorKind`;
+    - logs what it did through an optional `log` callback.
+  - **Behaviour changes for the existing runners:**
+    - there is no pass 5 s after every start: the daily gate is checked at the start delay and then hourly;
+    - `maxPages` is ignored;
+    - requests are paced by the budget;
+    - differences are refetched page by page;
+    - apps that run more than one runner on the same collection pass a distinct `stateId`.
+  - **`createReconcileFeed`:**
+    - it takes an optional `key` to match fetched documents by the local primary key, so it works where `doc.id` is not the primary key; `fetchByIds` then receives the queued entries;
+    - a `tombstone` entry is deleted without a fetch;
+    - a fetched document keeps a `_deleted` the connector set.
+  - **`@tallyui/core`** adds `CatalogueReconcileAdapter` and `TallyConnector.reconcile.catalogue`.
+  - **Connector collections** enable RxDB local documents.
+
+- 2ecaa36: A replication adapter can set `pull.batchSize`, and the Medusa connector pulls 500 products per page.
+- e77d552: A reconcile result now says whether its pass was complete, so a till never shows a partial pass's "0 not sold" as current (found by the Medusa POS app's 3.0.0-next.0 adoption).
+
+  - **`complete`** on `CatalogueReconcileSummary`, `FingerprintReconcileResult` and `IdReconcileResult`: true when the pass ran from its first page to its last in one go, so `unlisted` and `unreported` are real counts. It is false for a resumed pass, whose counts are 0. For the fingerprint result, the pass must also have read at least one page.
+  - **`lastCompleteAt`** on the runner's and the fingerprint wrapper's state: when the last complete pass finished. It is persisted with the runner's gate, and is available before the first pass after a restart.
+  - **A failed pass that finished no page** is restarted rather than resumed. It re-reads from the first page anyway, so it now runs as a complete pass.
+
+- 457162d: **One reconcile feed per store session** (#307, a release gate). The WooCommerce and Medusa reconcile feeds were module-level singletons, so after a store switch in one runtime, store A's queued tombstones and refetches could reach store B's database.
+
+  - **New factories.** `createWooCommerceConnector()`, `createMedusaConnector()` and `createMedusaAdminUserConnector()` each build their own feed; `createVendureConnector(options)` already did. **Build a connector per store session**, anew on each sign-in or store change.
+  - **Deprecated exports.** `woocommerceConnector`, `medusaConnector`, `medusaAdminUserConnector` and `vendureConnector` are deprecated: one instance for the whole app can leak queued reconcile work across stores. **They are removed in 4.0.**
+  - **A development warning.** `startReplication` warns once when the same adapter object replicates into two collections at once.
+  - **Refetch budget by requests.** `refetchBatchSize` on the reconcile adapters makes a page that enqueues `n` refetches take `ceil(n / refetchBatchSize)` request-budget slots (WooCommerce 100, Medusa 100, Vendure 1,000).
+  - **WooCommerce 426 errors.** A foreign (non-WCPOS) 426 keeps the store's `code` beside its message, and the message is capped at 200 characters.
+
+- ce4f796: Replication pull errors are handled according to who can fix them, instead of every error being retried every 5 s forever. A till repeating a rejected token is the traffic a store's security plugin blocks.
+
+  - `@tallyui/core`:
+    - An error class declares `fixedBy: 'till' | 'store'` with a string `code`; `errorKind(error)` returns `'till'`, `'store'` or `'transient'`.
+    - `SyncNotice` (`{ code, since, fixedBy, software?, minVersion?, fix? }`) describes a stopped pull.
+    - `ConnectorUnauthorizedError` is fixed by the till.
+  - `@tallyui/database` `startReplication` handles the three kinds and returns RxDB's state plus `notice$` and `resume()`:
+    - **till:** one request, one notice, then the pull stays stopped until the app calls `resume()`, after sign-in. The pull stays stopped even when RxDB restarts the loop on page visibility.
+    - **store:** one notice, then one attempt every 5 minutes (or the error's `retryAfterMs`, up to 1 hour). The notice clears itself on the first success, so a till recovers within 5 minutes of the owner's fix.
+    - **transient:** a doubling delay from `retryTime` to 5 minutes. It waits at least a valid `retryAfterMs` (a finite number of zero or more), capped at 1 hour.
+  - `@tallyui/components`: `SyncStatus` takes an optional `pullNotice` and tells the cashier in plain words that they can keep selling and who needs to act. It never shows a code, a backend name or a version the notice doesn't carry.
+  - `@tallyui/connector-woocommerce`:
+    - `WooDateFilterError` is fixed by the store, and carries `software` and `minVersion`.
+    - `WooMissingUuidError` gains `code: 'missing_plugin'` and is fixed by the store.
+  - `@tallyui/connector-vendure`: a new `VendureTimezoneConfigError` (`store_misconfigured`, with a plain `fix`) replaces the plain error when the `updatedAt` probe shows a server that isn't in UTC.
+
+- ddd9e85: The WooCommerce catalogue reconcile uses the WCPOS products fast path (#313). When `wcpos/v2/status` lists `products_id_fast_path` in `capabilities`, the whole catalogue is listed in one request (`per_page=-1`, `_fields=id,date_modified_gmt,stock_quantity,stock_status`) instead of pages of 100. A store that refuses it, or answers with something that is not a list, is listed page by page in the same pass.
+
+  - **Keyed on the remote id:** both WooCommerce listings key on the numeric product id, never the till-local uuid.
+  - **`CatalogueReconcileAdapter.matchKey`** (core, optional): an adapter whose listing carries no primary key declares how to match a local document. The catalogue runner indexes the local documents by it for each pass. Deletion is unchanged: `confirmGone`, then the mass-delete brake, by primary key.
+  - **`remote` on the keyed reconcile feed** (core, optional): a listed product the till does not hold yet is matched back by its remote id, so it is delivered rather than dropped.
+
+### Patch Changes
+
+- 539d2ff: The stock, id and fingerprint reconciles read and write in bounded chunks, so app queries don't wait behind a whole pass.
+- d225c58: Internal `@tallyui/*` peer dependencies are published as a caret range (for example `^2.1.0`) instead of an exact version. The packages still release together at one version.
+- 6f83dc5: The catalogue reconcile's mass-delete brake now explains itself in plain words. Its `kept` event with `reason: 'brake'` carries a `message` a till can show to the store owner, for example: "12 products the online store no longer lists were kept on this till: removing that many at once needs a check. If they were hidden or removed on purpose, the person who manages this till can allow the removal." The console warning uses the same words, plus a hint for developers (`allowMassDelete: true`).
+
+  The WooCommerce tests now model WCPOS's "POS only products" setting, and pin that a product hidden from the POS after sync is removed from the till by the next reconcile pass, while a bulk hide is held by the brake.
+
+- 1223353: A stale duplicate copy of a store product no longer stays on the till for good (#369). When two local products share one store id, the catalogue check now makes the copy its index did not pick a deletion candidate, and logs a `duplicate` event with the code `duplicate_match_key`. The copy is tombstoned only when `confirmGone` proves the store doesn't back it, and the mass-delete brake still applies. WooCommerce's `confirmGone` now also confirms a local whose id is live but whose uuid isn't the store's for that id. The store listing is the source of truth, and a later pull restores anything the store still backs.
+- a8b58a4: The catalogue and fingerprint reconciles keep `lastCompleteAt` honest (#338).
+  - The fingerprint reconcile's `state$` moves `lastCompleteAt` only on a pass whose result is complete. A pass that read no pages, which gives `complete: false`, no longer stamps it.
+  - A new runner still shows the persisted value before its first pass.
+  - The catalogue runner's start-up load now updates `lastCompleteAt` only when the stored value is newer, so a load that resolves after a pass has completed can't roll it back.
+- 20b6321: A catalogue pass that yields no pages at all no longer counts (#368). It is not complete, it moves neither `lastCompleteAt` nor the schedule's last completed time, and the gate runs it again at the next check. A page with no entries still counts: that is an adapter reporting an empty catalogue. Before this, a restarted fingerprint reconcile could show a zero-page pass's time as its last complete one.
+- 1f4d0ab: `isStorageWorkerStartError` and `isStorageWorkerFailure` also recognise RxDB's RM1, a stale storage worker built on another RxDB version (for example a cached old worker after an upgrade), so apps show their reload advice for it. Both call the new `isRxdbRemoteVersionMismatch` in `@tallyui/core`, which recognises RM1 by structure only: an RxError's own `code`, or the remote storage's `could not create instance ` wrapping of an RxError's JSON. `@tallyui/storage-sqlite` now has `@tallyui/core` as a peer dependency.
+- 8cf3ea4: A till tells "sign in again" apart from "signed in, but not allowed" (found by the Medusa POS app's adoption).
+
+  - **`ConnectorUnauthorizedError.status`** is now required, typed `401 | 403`, and set by meaning at every connector.
+    - `401`: the credentials are not accepted, so sign in again. `code: 'unauthorized'`, fixed by the till.
+    - `403`: the till is signed in but not allowed. `code: 'forbidden'`, fixed by the store.
+    - Vendure answers a signed-out session with 403 too. Its connector checks who is signed in first, so a confirmed sign-out is always `401`.
+  - **A 403 on the pull** gives the `forbidden` notice, never a sign-out. The pull retries on the store schedule and clears by itself once the store owner grants the permission. SyncStatus shows "Products aren't updating: your account isn't allowed to do this on this store." with "You can keep selling. Ask the store owner."
+  - **The customer picker** shows "Your account isn't allowed to do this on this store. Ask the store owner." for a 403, instead of asking the cashier to sign in again.
+
+- 136343c: The WooCommerce connector gets a daily reconciliation pass (#248, part B), a safety net for edits the incremental pull can miss: the spring-forward hour, an over-excluding filter, a same-second edit, a shift without `X-WP-Total`, trashed or unpublished products, and stock written without a modified-time bump.
+
+  - `reconcile.catalogue` lists the published catalogue with no date filter, comparing date, stock quantity and stock status. It re-reads deletion candidates by id and removes only those that are gone, trashed or unpublished. Everything else it re-pulls through the collection's own pull.
+  - `replication.products` now combines the product pull with the reconcile feed, with `legacyKey: 'products'`, so existing installs keep their checkpoint.
+  - A product the store cannot be asked about (no numeric id) is never deleted.
+  - The WCPOS bulk-ID fast path is read from `wcpos/v2/status` `capabilities` (`products_id_fast_path`). It stays dormant until wcpos/woocommerce-pos#2113 ships.
+  - `@tallyui/database`: the catalogue runner's gate check has a 60-second floor, so a bad interval can no longer re-arm it on every tick.
+
+- Updated dependencies [4de75c2]
+- Updated dependencies [894b6ae]
+- Updated dependencies [04905ef]
+- Updated dependencies [faa7cda]
+- Updated dependencies [9f34416]
+- Updated dependencies [fb57e1d]
+- Updated dependencies [898e98b]
+- Updated dependencies [75c5dce]
+- Updated dependencies [ba63f04]
+- Updated dependencies [0d04d13]
+- Updated dependencies [78d324e]
+- Updated dependencies [7fee0c1]
+- Updated dependencies [24b74fd]
+- Updated dependencies [eb5a032]
+- Updated dependencies [54ee98a]
+- Updated dependencies [27d736e]
+- Updated dependencies [e59ebec]
+- Updated dependencies [2ecaa36]
+- Updated dependencies [901fa66]
+- Updated dependencies [bf2d805]
+- Updated dependencies [ca0beac]
+- Updated dependencies [af623c9]
+- Updated dependencies [ef2f64e]
+- Updated dependencies [5c90aed]
+- Updated dependencies [668f71f]
+- Updated dependencies [457162d]
+- Updated dependencies [222543b]
+- Updated dependencies [8141c1c]
+- Updated dependencies [ce4f796]
+- Updated dependencies [6673faf]
+- Updated dependencies [c48e1dd]
+- Updated dependencies [1f4d0ab]
+- Updated dependencies [5ed6281]
+- Updated dependencies [5a204a9]
+- Updated dependencies [7d1bc98]
+- Updated dependencies [3cf5452]
+- Updated dependencies [8cf3ea4]
+- Updated dependencies [e15f389]
+- Updated dependencies [ddd9e85]
+  - @tallyui/core@3.0.0
+
 ## 3.0.0-next.2
 
 ### Patch Changes

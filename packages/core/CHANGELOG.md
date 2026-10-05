@@ -1,5 +1,177 @@
 # @tallyui/core
 
+## 3.0.0
+
+### Major Changes
+
+- 668f71f: Breaking: `precheckCommand` now takes the server's own supported versions as a required second argument, `{ orderCreate, register }`, and checks against them; its `unsupported_version` message and `data` name the server's list, not core's (#297). Plugins MUST pass their supported versions: `precheckCommand(envelope, { orderCreate: [1, 2, 3], register: [1] })`; an empty list throws a `TypeError`. This is part of 3.0.0's breaking changes and adds no extra major. `SUPPORTED_ORDER_CREATE_VERSIONS` and `SUPPORTED_REGISTER_VERSIONS` stay exported as the till's capability (what `toOrderCreateEnvelope` can produce), not what a server supports.
+
+### Minor Changes
+
+- 4de75c2: A batch over 50 commands is answered `413` with `{ code: 'batch_too_large', maxCommands: 50, message: 'At most 50 commands are allowed' }`, never `400` (ADR-038, Front desk ruling 18): `@tallyui/core/server`'s `validateBatch` returns that `body` on its `413` failure so plugins send it as is. `@tallyui/core/server` now also exports `MAX_COMMANDS_PER_BATCH`, and `@tallyui/core` and `@tallyui/core/server` export the `BatchTooLargeBody` type.
+- 894b6ae: **One catalogue reconcile runner** replaces the id and fingerprint reconcile runners (#248, part A). `startIdReconcile` and `startFingerprintReconcile` remain as thin wrappers with their options and results.
+
+  - **`startCatalogueReconcile` (new)** compares the backend's product listing with the till in one pass and hands what differs to the collection's pull. It:
+    - stays within a request budget (30 a minute by default) instead of a page cap, so large catalogues never truncate;
+    - keeps its daily gate and a resume cursor in RxDB local documents, so it does not run on every start, and it resumes after an interruption;
+    - deletes only in an uninterrupted pass, and only what the connector confirms gone. The mass-delete brake is checked on the candidates _before_ the connector is asked, and the connector is asked in chunks (`confirmChunk`, default 100), each within the budget;
+    - stops or skips by `errorKind`;
+    - logs what it did through an optional `log` callback.
+  - **Behaviour changes for the existing runners:**
+    - there is no pass 5 s after every start: the daily gate is checked at the start delay and then hourly;
+    - `maxPages` is ignored;
+    - requests are paced by the budget;
+    - differences are refetched page by page;
+    - apps that run more than one runner on the same collection pass a distinct `stateId`.
+  - **`createReconcileFeed`:**
+    - it takes an optional `key` to match fetched documents by the local primary key, so it works where `doc.id` is not the primary key; `fetchByIds` then receives the queued entries;
+    - a `tombstone` entry is deleted without a fetch;
+    - a fetched document keeps a `_deleted` the connector set.
+  - **`@tallyui/core`** adds `CatalogueReconcileAdapter` and `TallyConnector.reconcile.catalogue`.
+  - **Connector collections** enable RxDB local documents.
+
+- 04905ef: `Catalogue` now applies the provider's reconciled stock overlay itself (tiles, search and the variant chooser agree), and `useStockOverlaid` and `useStockOverlayAsOf` are new.
+- faa7cda: Expose ConnectorUnauthorizedError for expired or rejected stored credentials in Vendure and Medusa requests.
+- 9f34416: `@tallyui/core/server` adds the batch envelope check, the per-command version pre-check, the supported versions, `totalWarnings` and `parseCommandResult` (throwing `CommandResultError`), byte-identical to the medusapos plugin's.
+- fb57e1d: `@tallyui/core/server` adds the register payload check (`registerPayloadErrors`), the expected-cash derivation (`deriveSessionFigures`, `deriveVariance`) and the register conflict codes (`RegisterConflictCode`, `RegisterOutcome`), byte-identical to the medusapos plugin's.
+- 898e98b: Add `@tallyui/core/server`, the plugins' shared contract: money, fingerprint, the `order.create` payload shape and fiscal figures, byte-identical to the medusapos plugin's.
+- 75c5dce: `@tallyui/core/server`'s envelope types now admit register commands and any validated version, and it exports `BatchOutcome` with `inProgressOutcome` and `transientOutcome`. It also exports `CommandRejectionCode` and `platformErrorResult` (a new `platform_error` code).
+- ba63f04: `CommandWarning` gains `{ code: 'customer_ignored'; customerId: string }` (#266): a sale whose `customerId` doesn't resolve is kept as a guest sale. `knownWarnings` keeps it and `parseCommandResult` accepts it when `customerId` is 1 to 64 characters; the orders list renders it.
+- 0d04d13: Add neutral Customer, CustomerInput and CustomerServiceError exports and optional online-only customer search, create and get connector methods.
+
+  Implement customer search, create and get for Medusa's admin-user connector.
+
+- 78d324e: Add useSale.setCustomer and ReceiptData.header.customer, customerTraits, CustomerPicker, generic CustomerSelect/CustomerCard with traits overrides, CustomerForm.showAddress, and the receipt's customer line.
+
+  CustomerSelect rows are now pressable, so choosing a result works on the web (it previously did nothing).
+
+- 7fee0c1: A WooCommerce product whose uuid changed in the store is replaced on the till in one pass (#331). The till delivers it under its new uuid and removes the old copy. Before this fix, it removed the old copy and dropped the new one, so the product was missing until the next daily check, and it was removed without the usual by-id check.
+
+  - **The reconcile feed:** when an entry that has a local copy is fetched back under a different primary key but the same remote id, the feed delivers that document as well as removing the old copy.
+  - **`combinePullAdapters`** takes an optional `key` for resolving duplicates across its sub-adapters. It defaults to `doc.id`, as before. WooCommerce passes the uuid (its primary key): two documents that share a store id, such as a product's new copy and its old copy's removal, must both reach the collection.
+
+- 24b74fd: `CommandWarning` gains `{ code: 'figures_mismatch'; fields: Array<{ field: 'subtotalMinor' | 'taxMinor' | 'discountMinor' | (string & {}); tillMinor: number; serverMinor: number }> }` (#257): one warning per sale listing each of the till's figures that differs from the server's own computation. `parseCommandResult` accepts it when `fields` is non-empty, each `field` is one of the three names with none repeated, and each entry's two values are different safe integers. `knownWarnings` applies the same rules but keeps a field name it doesn't know (any non-empty string), since a newer store may send one; the orders list renders it, an unknown field by its raw name.
+- eb5a032: A `/tally/v1/info` answer that says nothing about the store no longer means the default tax rounding (a follow-up to #339).
+
+  - **Unknown:** a 2xx that is not JSON, and a `taxRounding` value that is present but malformed, now read as "unknown" (`undefined`), like a network failure or a 5xx. The till's store settings wait and retry instead of selling on a guessed rounding.
+  - **Unchanged:** a 404 still means an older plugin (`orderCreate: 1`, the default rounding), and so does a well-formed body with no `taxRounding` key.
+  - **Type change:** `parseInfoCapabilities` now returns `ServerCapabilities | undefined`. It is `undefined` when the body carries a malformed `taxRounding`.
+
+- 54ee98a: `@tallyui/core/server` adds the `internal_error` rejection code and `internalErrorResult`.
+- 27d736e: `CommandWarning` gains `bridgeMinor` on `total_mismatch` and a new `tax_rate_mismatch` code, and the till now ignores warning codes it doesn't know (`knownWarnings`), instead of showing them as a store total.
+- e59ebec: Each line is taxed at its product's tax class, not the store's default (#288). `ProductTraits` gains an optional `getTaxClass(doc, variantId?)`, the backend's tax class id, a key of `StoreSettings.taxRatesPpm`. `addProduct` and `addEntryToCart` pass it to `addLine` through the new `AddLineInput.taxClass`, which the tax context resolves; a connector without the accessor is unchanged (the default rate). `TaxProvider` taxes a class with no rate at the default rate and warns once per class through the new `taxLogger`. connector-vendure replicates each variant's `taxCategory { id }` and implements the accessor, and its store settings give every tax category with no enabled rate in the default zone an explicit 0 rate, as Vendure charges; its product schema goes to version 2, so the products collection is dropped and downloaded again on the first sync after the upgrade.
+- 2ecaa36: A replication adapter can set `pull.batchSize`, and the Medusa connector pulls 500 products per page.
+- 901fa66: Add `order.create` envelope version 3, its display and tax-rate wire types, and the payload's `sessionId` and customer reference.
+
+  At capability 3, `finalizeOrder` copies the receipt's `display` and `taxByRate` into the sale. Version 3 sends those figures and the sale's session (stamped or late) as `sessionId`. Older orders keep their existing envelope version.
+
+  Move `pos_orders` to schema version 3 with a `sessionId` index and the optional `sentVersion` and `downgradedFrom` fields (declared for the outbox's version fallback, not yet written). Apps must open `pos_orders` with `addPosOrderCollection`, which migrates it.
+
+- bf2d805: `order.create` version 4 (#286): every `discountMinor`, the order's and each line's, is tax-exclusive, so their sum still holds. Core accepts version 4 with version 3's fields. The till's envelope builder (`toOrderCreateEnvelope`) produces version 4 when capped at 4 or more and the order's `sentVersion` doesn't hold it lower. The till doesn't send version 4 yet: the outbox doesn't pass the server's max, so it still sends version 3 or lower with the same figures, byte-identical.
+- ca0beac: Fall back to the server's supported order.create version while preserving stored fiscal figures and command IDs. Record the sent version and downgrade in the order audit, and expose command error details.
+- af623c9: The order.create string lengths move from `payloadShapeErrors` to the new `payloadBoundErrors`, which `precheckCommand` calls after the replay lookup, so an applied order resent with a long title replays as `duplicate`; `payloadShapeErrors` keeps the types, the `customerId` and `sessionId` bounds and the NUL check. `useSale` applies a tender before logging a dropped reference, and `add()` refuses a product whose id or v3 tax code finalize would refuse; the tender's reference field caps at 255 characters. `finalizeOrder` now freezes the sent form (names and discount labels cut, an unsendable customer email or id left out) and `toOrderCreateEnvelope` sends the stored order unchanged, so every resend is byte-identical.
+- ef2f64e: The shared order.create shape check bounds string lengths and refuses NUL, and so does the v3 fiscal-figures check for its display and tax-code strings. The till cuts long names when it stores the order, refuses over-long pass-through references at finalize (and a payment reference as it's entered), refuses a searched or parked customer whose email or id the server would refuse, and validates the customer email at entry. Tills should ship this clamp before plugins adopt the new bounds, so no till sends a sale the server would now refuse.
+- 457162d: **One reconcile feed per store session** (#307, a release gate). The WooCommerce and Medusa reconcile feeds were module-level singletons, so after a store switch in one runtime, store A's queued tombstones and refetches could reach store B's database.
+
+  - **New factories.** `createWooCommerceConnector()`, `createMedusaConnector()` and `createMedusaAdminUserConnector()` each build their own feed; `createVendureConnector(options)` already did. **Build a connector per store session**, anew on each sign-in or store change.
+  - **Deprecated exports.** `woocommerceConnector`, `medusaConnector`, `medusaAdminUserConnector` and `vendureConnector` are deprecated: one instance for the whole app can leak queued reconcile work across stores. **They are removed in 4.0.**
+  - **A development warning.** `startReplication` warns once when the same adapter object replicates into two collections at once.
+  - **Refetch budget by requests.** `refetchBatchSize` on the reconcile adapters makes a page that enqueues `n` refetches take `ceil(n / refetchBatchSize)` request-budget slots (WooCommerce 100, Medusa 100, Vendure 1,000).
+  - **WooCommerce 426 errors.** A foreign (non-WCPOS) 426 keeps the store's `code` beside its message, and the message is capped at 200 characters.
+
+- 222543b: Add `RegisterCommandType`, `RegisterCommandEnvelope` and `AnyCommandEnvelope`, register payloads and results, and the register server capability. `CommandType` and `CommandEnvelope` are unchanged.
+
+  Record the local `register_commands` ledger through `reconcileRegisterCommands`, gated in `useRegisterSession` by its new `commands` and `capabilities` options. Commands are recorded but not sent. Medusa reads the `register` contract.
+
+- 8141c1c: Guard register commands, movement reasons and register ids, exporting RegisterMovementReasonError and RegisterIdInvalidError. Harden register outbox result handling and batch limits.
+
+  Make CommandBatchRequest generic while preserving its existing default envelope type.
+
+- ce4f796: Replication pull errors are handled according to who can fix them, instead of every error being retried every 5 s forever. A till repeating a rejected token is the traffic a store's security plugin blocks.
+
+  - `@tallyui/core`:
+    - An error class declares `fixedBy: 'till' | 'store'` with a string `code`; `errorKind(error)` returns `'till'`, `'store'` or `'transient'`.
+    - `SyncNotice` (`{ code, since, fixedBy, software?, minVersion?, fix? }`) describes a stopped pull.
+    - `ConnectorUnauthorizedError` is fixed by the till.
+  - `@tallyui/database` `startReplication` handles the three kinds and returns RxDB's state plus `notice$` and `resume()`:
+    - **till:** one request, one notice, then the pull stays stopped until the app calls `resume()`, after sign-in. The pull stays stopped even when RxDB restarts the loop on page visibility.
+    - **store:** one notice, then one attempt every 5 minutes (or the error's `retryAfterMs`, up to 1 hour). The notice clears itself on the first success, so a till recovers within 5 minutes of the owner's fix.
+    - **transient:** a doubling delay from `retryTime` to 5 minutes. It waits at least a valid `retryAfterMs` (a finite number of zero or more), capped at 1 hour.
+  - `@tallyui/components`: `SyncStatus` takes an optional `pullNotice` and tells the cashier in plain words that they can keep selling and who needs to act. It never shows a code, a backend name or a version the notice doesn't carry.
+  - `@tallyui/connector-woocommerce`:
+    - `WooDateFilterError` is fixed by the store, and carries `software` and `minVersion`.
+    - `WooMissingUuidError` gains `code: 'missing_plugin'` and is fixed by the store.
+  - `@tallyui/connector-vendure`: a new `VendureTimezoneConfigError` (`store_misconfigured`, with a plain `fix`) replaces the plain error when the `updatedAt` probe shows a server that isn't in UTC.
+
+- 5ed6281: The till computes tax with the store's rounding strategy (#287, ADR-071). `ServerCapabilities` gains `taxRounding` (core exports `TaxRounding`): `per_order`, `per_line_items` or `per_rate_group_items`, each with `half_away_from_zero` or `half_up`, or `custom`. Absent, and `custom`, mean today's `per_order` with half away from zero. `TaxProvider` takes `rounding` and `rateCodes` (tax class → the backend's rate name, for `per_rate_group_items`); the order records the strategy as `taxRounding`, and `taxLinesByRate` takes it as a fourth argument. The algorithms are in `docs/contract/field-kinds.md`.
+- 5a204a9: `StoreSettings` gains a derived `taxRounding`. `useStoreSettings` fills it from the context's capabilities, or else from one read of the connector's `capabilities()` made before the settings are ready, so each sign-in emits the settings once with the rounding known and no later change holds a sale; a failed read or a connector without `capabilities` gives the default rounding. `taxProviderProps` passes it to `TaxProvider` as `rounding`, so the till rounds tax like the store with no app code (#324). `custom` passes no rounding, and an explicit `rounding` prop still wins.
+- 7d1bc98: Add `parseTaxRounding` and `parseInfoCapabilities`, which read `/tally/v1/info` including its top-level `taxRounding` (#287). The Medusa connector's capability read now carries the store's `taxRounding`.
+- 8cf3ea4: A till tells "sign in again" apart from "signed in, but not allowed" (found by the Medusa POS app's adoption).
+
+  - **`ConnectorUnauthorizedError.status`** is now required, typed `401 | 403`, and set by meaning at every connector.
+    - `401`: the credentials are not accepted, so sign in again. `code: 'unauthorized'`, fixed by the till.
+    - `403`: the till is signed in but not allowed. `code: 'forbidden'`, fixed by the store.
+    - Vendure answers a signed-out session with 403 too. Its connector checks who is signed in first, so a confirmed sign-out is always `401`.
+  - **A 403 on the pull** gives the `forbidden` notice, never a sign-out. The pull retries on the store schedule and clears by itself once the store owner grants the permission. SyncStatus shows "Products aren't updating: your account isn't allowed to do this on this store." with "You can keep selling. Ask the store owner."
+  - **The customer picker** shows "Your account isn't allowed to do this on this store. Ask the store owner." for a 403, instead of asking the cashier to sign in again.
+
+- e15f389: The Vendure connector supplies its tax rate names, so a `per_rate_group_items` store groups a sale's tax the way Vendure does (#324). Apps no longer fetch the names themselves.
+
+  - **`StoreSettings.taxRateCodes`** (core, optional): the backend's tax rate name per tax class, keyed like `taxRatesPpm`, including `default`.
+  - **`vendureStoreSettings`** reads each rate's `name` in the tax-rate query it already runs, so no extra request is made. Only the rates `taxRatesPpm` uses count, and `default` follows the same default-category rule. `taxRateCodes` is left out when no names come back.
+  - **`taxProviderProps(settings)`** passes `taxRateCodes` to `<TaxProvider>` as `rateCodes`.
+
+- ddd9e85: The WooCommerce catalogue reconcile uses the WCPOS products fast path (#313). When `wcpos/v2/status` lists `products_id_fast_path` in `capabilities`, the whole catalogue is listed in one request (`per_page=-1`, `_fields=id,date_modified_gmt,stock_quantity,stock_status`) instead of pages of 100. A store that refuses it, or answers with something that is not a list, is listed page by page in the same pass.
+
+  - **Keyed on the remote id:** both WooCommerce listings key on the numeric product id, never the till-local uuid.
+  - **`CatalogueReconcileAdapter.matchKey`** (core, optional): an adapter whose listing carries no primary key declares how to match a local document. The catalogue runner indexes the local documents by it for each pass. Deletion is unchanged: `confirmGone`, then the mass-delete brake, by primary key.
+  - **`remote` on the keyed reconcile feed** (core, optional): a listed product the till does not hold yet is matched back by its remote id, so it is delivered rather than dropped.
+
+### Patch Changes
+
+- 5c90aed: `parseCommandResult` now accepts a `total_mismatch`'s `bridgeMinor` and the `tax_rate_mismatch` warning code, so a plugin replaying a stored v3 result no longer fails. `knownWarnings` is lenient about a bad optional `bridgeMinor` (dropping just that field, not the whole warning) and about a non-array `warnings` value. `OrdersList`'s rounding line now reads "Store calculated …; a rounding line of … brought it to …". `Catalogue` keeps its input array's identity when the stock overlay changes nothing, and takes the latest of `lastStockCheckAt`, the provider's `stockOverlayAsOf` and `lastSyncedAt` for its "stock as of" time.
+- 6673faf: RxDB 17.5.0.
+
+  - **`@tallyui/storage-sqlite`:**
+    - Its `rxdb-premium` peer is now `17.5.0`. Apps install `rxdb-premium@17.5.0` together with `rxdb@17.5.0`.
+    - Its storages set RxDB 17's premium flag at import and when called, so the 13-collection cap never applies.
+  - **`@tallyui/pos`:**
+    - Its `rxdb` peer is now `~17.5.0`.
+    - Opening `pos_orders` rejects with `PosOrderOpenClosedError` when the database closes during a migration: RxDB 17.5.0 cancels the migration on close. The open first waits for any write already in flight, so none reaches a closed store.
+    - An open that needs no migration resolves only once RxDB allows writes, so a sale saved straight after it is never refused with COL25.
+  - **`@tallyui/database`:**
+    - `createTallyDatabase` returns an RxDB 17 database.
+    - In development it adds RxDB's dev-mode plugin when a database is created, not at import.
+  - **Stored data:** a till's SQLite data written by RxDB 16.21.1 opens unchanged under 17.5.0, and migrates its schema versions.
+
+  **Upgrade notes**
+
+  - **Storage is one-way.** Once a till has opened this version, `pos_orders` is at schema version 4, and an older build
+    (such as `@tallyui/pos` 2.0.0 on RxDB 16.21.1) opens it without an error but shows no orders, so it sends none of the
+    pending ones until the till is upgraded again. Nothing is deleted: the next upgrade recovers every order, including a
+    sale rung during the rollback. Never roll an app back across this version, and never re-ring sales it hides: a
+    re-rung sale is a second sale, and the upgrade sends both. See ADR-069 in `docs/DECISIONS.md`.
+  - Web apps ship the 17.5.0 storage worker with the 17.5.0 main thread. A cached 16.x worker with a 17.5.0 main
+    thread is untested and unsupported.
+  - Apps pin `rxdb` and `rxdb-premium` to exactly `17.5.0`.
+  - RxDB 17 defaults a replication's `toggleOnDocumentVisible` to true (16.21.1: false). It then resyncs when the tab
+    becomes visible, and no longer simulates activity to keep a hidden tab awake, so a browser may throttle a hidden
+    tab's pull. RxDB pauses a hidden tab's replication only when that tab isn't the leader; a single-instance database
+    is always the leader (read in 17.5.0's `plugins/replication` source, not tested).
+
+- c48e1dd: Store settings follow-ups to #339 and #341 (#340):
+
+  - **A signed-out till is asked to sign in**, not shown "Retrying…". When the capabilities read fails with an error only the till can fix, `useStoreSettings` gives `error` without `nextRetryAt` and doesn't retry by itself, so the app prompts. That covers a till-class error (a 401, or a till that needs updating) and a `SignInError` with `code: 'invalid_credentials'`; any other sign-in error still waits and retries. Every other failure still waits and retries.
+  - **A `/tally/v1/info` JSON body that isn't an object** (`null`, an array or a scalar) is unknown, not the default rounding.
+
+- 1f4d0ab: `isStorageWorkerStartError` and `isStorageWorkerFailure` also recognise RxDB's RM1, a stale storage worker built on another RxDB version (for example a cached old worker after an upgrade), so apps show their reload advice for it. Both call the new `isRxdbRemoteVersionMismatch` in `@tallyui/core`, which recognises RM1 by structure only: an RxError's own `code`, or the remote storage's `could not create instance ` wrapping of an RxError's JSON. `@tallyui/storage-sqlite` now has `@tallyui/core` as a peer dependency.
+- 3cf5452: Follow-ups to the 401/403 split (#345):
+
+  - **Vendure:** a signed-in user missing a permission (confirmed by the session probe) is now `ConnectorUnauthorizedError` with `status: 403`, the `forbidden` notice, instead of a plain transient error.
+  - **WooCommerce:** a 403 from the JWT-auth plugin (`jwt_auth_*`) reaches the till only with a valid token on WCPOS 1.10.0–1.10.7 (wcpos/woocommerce-pos#1863). It is now `WooPluginUpdateRequiredError` (`unsupported_store`, WCPOS 1.10.8): the store owner updates WCPOS, and the till is never sent into a sign-in loop.
+  - **`ConnectorUnauthorizedError`:** only a 403 is `forbidden`. A caller that omits `status` gets `unauthorized`, as before 3.0.
+  - **Docs:** the customer picker's `onError`, the replication guide's error classes, and the connector comments now say that only a 401 means sign in again.
+
 ## 3.0.0-next.2
 
 ### Patch Changes
