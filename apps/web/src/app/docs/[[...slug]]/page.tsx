@@ -6,16 +6,25 @@ import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { LLMCopyButton, ViewOptions } from '@/components/ai/page-actions';
 import { gitConfig } from '@/lib/layout.shared';
+import { siteUrl } from '@/lib/site';
+import { breadcrumbJsonLd, jsonLdScript, type Crumb } from '@/lib/structured-data';
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
+  const crumbs: Crumb[] = [{ name: 'Tally UI', path: '/' }, { name: 'Docs', path: '/docs' }];
+  for (let i = 1; i <= page.slugs.length; i++) {
+    const parent = source.getPage(page.slugs.slice(0, i));
+    if (parent) crumbs.push({ name: parent.data.title, path: parent.url });
+  }
+
   const MDX = page.data.body;
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(breadcrumbJsonLd(siteUrl, crumbs)) }} />
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
       <div className="flex flex-row gap-2 items-center border-b pb-6">

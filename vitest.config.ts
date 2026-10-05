@@ -12,6 +12,7 @@ export default defineConfig({
       'apps/mock-api/**/*.test.ts',
       'apps/demo/**/*.test.ts',
       'apps/web/content/docs/**/*.test.ts',
+      'apps/web/src/lib/**/*.test.ts',
       'scripts/**/*.test.ts',
     ],
     typecheck: {
