@@ -5,7 +5,8 @@ import { baseOptions } from '@/lib/layout.shared';
 export default function Layout({ children }: LayoutProps<'/docs'>) {
   return (
     <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
-      {children}
+      {/* DocsPage renders no <main>; display: contents keeps its children in DocsLayout's grid. */}
+      <main className="contents">{children}</main>
     </DocsLayout>
   );
 }
