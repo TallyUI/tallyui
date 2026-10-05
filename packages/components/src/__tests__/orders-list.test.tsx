@@ -99,8 +99,16 @@ describe('OrdersList', () => {
     const money = formatMoney({ amount: 1200, currency: 'EUR' });
     expect(screen.getByText(`date:2026-09-25 · ${money} · Waiting to sync`)).toBeTruthy();
     expect(screen.getByText(`date:2026-09-25 · ${money} · Synced`)).toBeTruthy();
-    expect(screen.getByText('Order #42 · 2 items')).toBeTruthy();
+    expect(screen.getByText('Order b · #42 · 2 items')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('shows the same reference as the receipt', () => {
+    const synced = order('0192aaaa-bbbb-7ccc-8ddd-eeee12345678', {
+      syncStatus: 'applied', serverRefs: { displayId: '303', orderId: 'o', totalMinor: 1200 },
+    });
+    render(<OrdersList orders={[synced]} onRetry={async () => 0} />);
+    expect(screen.getByText('Order 12345678 · #303 · 2 items')).toBeTruthy();
   });
 
   it('lists rejected and warned orders under Needs attention as well as Recent', () => {
@@ -282,10 +290,10 @@ describe('OrdersList', () => {
     const money = formatMoney({ amount: base.totalMinor, currency: base.currency });
     for (const label of [refusals.platform_error, 'Stock short by 2 for Blue shirt',
       `Store total ${formatMoney({ amount: 1000, currency: base.currency })} vs POS ${formatMoney({ amount: 1200, currency: base.currency })}`,
-      'Order #42 · 3 items']) {
+      'Order warned · #42 · 3 items']) {
       expect(screen.getAllByText(label)).toHaveLength(2);
     }
-    expect(screen.getAllByText('1 item')).toHaveLength(3);
+    expect(screen.getAllByText(/^Order (rejected|base) · 1 item$/)).toHaveLength(3);
     const dateAndTotal = `${formatDate(base.createdAt)} · ${money}`;
     expect(screen.getByText(`${dateAndTotal} · Waiting to sync`)).toBeTruthy();
     expect(screen.getAllByText(`${dateAndTotal} · Synced`)).toHaveLength(2);

@@ -4,6 +4,7 @@ export { Tender } from './tender';
 export { DiscountForm, DiscountChips, parseDiscount, discountLabel } from './discount-form';
 export { Catalogue, formatStockSyncTime } from './catalogue';
 export { Receipt } from './receipt';
+export { orderReference } from './order-reference';
 export { injectPrintStyle } from './print-style';
 export { SyncStatus } from './sync-status';
 export { OrdersList } from './orders-list';

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { formatMoney, knownWarnings } from '@tallyui/core';
 import { needsAttention, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { orderReference } from './order-reference';
 import { sinceText } from './since-text';
 
 const STATUS_LABEL = { pending: 'Waiting to sync', applied: 'Synced', rejected: 'Not accepted' };
@@ -69,7 +70,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
                 if (next.has(key)) next.delete(key); else next.add(key);
                 return next;
               })}>
-              <Text className="text-foreground">{order.serverRefs?.displayId ? `Order #${order.serverRefs.displayId} · ` : ''}{count} {count === 1 ? 'item' : 'items'}</Text>
+              <Text className="text-foreground">{`Order ${orderReference(order)} · ${count} ${count === 1 ? 'item' : 'items'}`}</Text>
               <Text className="text-muted-foreground">{formatDate(order.createdAt)} · {formatMoney({ amount: order.totalMinor, currency: order.currency })} · {STATUS_LABEL[order.syncStatus]}</Text>
             </Pressable>
             {isExpanded ? <View testID={`order-detail-${order.id}`} className="mt-1 gap-1 border-t border-border pt-2">

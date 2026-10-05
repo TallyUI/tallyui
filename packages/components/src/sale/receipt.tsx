@@ -2,16 +2,21 @@ import { useEffect } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import { buildReceiptData, type SentOrder } from '@tallyui/pos';
+import type { PosOrder } from '@tallyui/pos';
 import { injectPrintStyle } from './print-style';
 import { discountLabel } from './discount-form';
+import { orderReference } from './order-reference';
 
 const defaultFormatDate = (iso: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 
 /** `store`/`taxLabel`/`topInset`/`formatDate` replace the app's Medusa settings, hard-coded VAT (default matches
  * TV6a's `Cart`), outbox strip and date util, so `Receipt` stays platform-neutral (ADR-052). */
-export function Receipt({ order, store, cashier, registerId, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
+export function Receipt({ order, posOrder, store, cashier, registerId, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
   topInset = 0, formatDate = defaultFormatDate }: {
   order: SentOrder; store: { name: string; address?: string }; cashier: string; registerId: string; newSale: () => void;
+  /** The finalized order (useSale's receipt stage has it). With it the receipt prints its reference and time, the
+   * same as Orders; without it (a preview before finalize) the sale id is marked as a draft. */
+  posOrder?: PosOrder;
   taxLabel?: (ratePpm: number) => string; topInset?: number; formatDate?: (iso: string) => string;
 }) {
   useEffect(injectPrintStyle, []);
@@ -32,8 +37,8 @@ export function Receipt({ order, store, cashier, registerId, newSale, taxLabel =
     <View className="w-full max-w-md self-center gap-3 p-4 bg-card">
     <Text className="text-lg font-semibold text-foreground">{receipt.header.storeName}</Text>
     {receipt.header.storeAddress ? <Text className="text-muted-foreground">{receipt.header.storeAddress}</Text> : null}
-    <Text className="text-foreground">Order {receipt.header.orderNumber.slice(-8)}</Text>
-    <Text className="text-muted-foreground">{formatDate(receipt.header.date)}</Text>
+    <Text testID="receipt-order" className="text-foreground">{posOrder ? `Order ${orderReference(posOrder)}` : `Order ${receipt.header.orderNumber.slice(-8)} (draft)`}</Text>
+    <Text className="text-muted-foreground">{formatDate(posOrder?.createdAt ?? receipt.header.date)}</Text>
     <Text className="text-muted-foreground">Cashier: {receipt.header.cashier}</Text>
     {receipt.header.customer && <Text className="text-muted-foreground">Customer: {receipt.header.customer}</Text>}
     {receipt.lineItems.map((line, index) => <View key={index}>

@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatMoney } from '@tallyui/core';
+import type { PosOrder } from '@tallyui/pos';
 import { Receipt } from '../sale/receipt';
 import { blue, pricing, sale, SaleHarness, traits } from './sale-harness';
 
@@ -10,6 +11,26 @@ const store = { name: 'Shop' };
 afterEach(() => cleanup());
 
 describe('Receipt', () => {
+  it('prints the finalized order reference and time when given the PosOrder', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    const posOrder = { id: '0192aaaa-bbbb-7ccc-8ddd-eeee12345678', createdAt: '2026-10-06T12:12:46.000Z' } as PosOrder;
+    const formatDate = (iso: string) => `date:${iso}`;
+    const { rerender } = render(<Receipt order={sale.order} posOrder={posOrder} store={store} cashier="Alex"
+      registerId="register-1" newSale={() => {}} formatDate={formatDate} />);
+    expect(screen.getByTestId('receipt-order').textContent).toBe('Order 12345678');
+    expect(screen.getByText(formatDate(posOrder.createdAt))).toBeTruthy();
+    rerender(<Receipt order={sale.order} posOrder={{ ...posOrder, serverRefs: { displayId: '303', orderId: 'o', totalMinor: 0 } }}
+      store={store} cashier="Alex" registerId="register-1" newSale={() => {}} formatDate={formatDate} />);
+    expect(screen.getByTestId('receipt-order').textContent).toBe('Order 12345678 · #303');
+    expect(screen.getByText(formatDate(posOrder.createdAt))).toBeTruthy();
+  });
+
+  it('marks a receipt rendered before finalize as a draft', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    expect(screen.getByTestId('receipt-order').textContent).toBe(`Order ${sale.order.id.slice(-8)} (draft)`);
+  });
+
   it('shows the customer under the cashier when there is one', () => {
     render(<SaleHarness>{() => null}</SaleHarness>);
     act(() => sale.setCustomer({ id: 'customer-1', name: 'Jane Smith' }));
