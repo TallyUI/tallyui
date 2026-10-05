@@ -80,6 +80,7 @@ git pull --ff-only origin main
 pnpm install --frozen-lockfile
 pnpm changeset status --verbose          # no major unless a changeset asks for one
 pnpm changeset version
+pnpm changelog:docs                     # regenerates apps/web/content/docs/changelog.mdx
 pnpm install --frozen-lockfile
 pnpm build
 pnpm test
