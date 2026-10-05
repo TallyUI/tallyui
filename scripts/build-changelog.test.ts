@@ -34,6 +34,8 @@ describe('escapeMdx', () => {
   it('escapes prose but preserves inline code and fenced code', () => {
     const markdown = '{ a } <b> `{ a }`\n\n  ```js\n  { a: "<b>" }\n  ```\n{ after }';
     expect(escapeMdx(markdown)).toBe('\\{ a \\} \\<b> `{ a }`\n\n  ```js\n  { a: "<b>" }\n  ```\n\\{ after \\}');
+    expect(escapeMdx('a \\{ b')).toBe('a \\\\\\{ b');
+    expect(escapeMdx('`\\{`')).toBe('`\\{`');
   });
 
   it('matches backtick runs and escapes prose after each span', () => {

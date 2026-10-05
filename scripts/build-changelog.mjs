@@ -64,7 +64,7 @@ export function escapeMdx(markdown) {
       if (end !== -1) {
         escaped.push(parts.slice(i, end + 1).join(''));
         i = end;
-      } else escaped.push(parts[i].replace(/[{}<]/g, '\\$&'));
+      } else escaped.push(parts[i].replace(/[\\{}<]/g, '\\$&'));
     }
     return escaped.join('');
   }).join('\n');
