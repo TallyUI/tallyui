@@ -9,6 +9,8 @@ interface ExpoSnackProps {
   dependencies?: string;
   /** Snack name */
   name?: string;
+  /** Accessible name of the iframe */
+  title?: string;
   /** Preview platform */
   platform?: 'web' | 'ios' | 'android';
   /** Show preview pane */
@@ -28,6 +30,7 @@ export function ExpoSnack({
   files,
   dependencies = '',
   name = 'Tally UI Example',
+  title = `${name} (Expo Snack)`,
   platform = 'web',
   preview = true,
   theme = 'light',
@@ -52,6 +55,7 @@ export function ExpoSnack({
   return (
     <iframe
       src={url}
+      title={title}
       style={{
         overflow: 'hidden',
         background: 'transparent',
