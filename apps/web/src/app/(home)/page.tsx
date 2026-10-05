@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+import { ConnectorGrid } from '@/components/home/connector-grid';
 import { LiveDemo } from '@/components/home/live-demo';
 import { gitConfig } from '@/lib/layout.shared';
 import { tallyVersion } from '@/lib/site';
@@ -32,6 +33,7 @@ export default function HomePage() {
         </div>
         <LiveDemo />
       </section>
+      <ConnectorGrid />
       <section className="mx-auto max-w-3xl px-6 pb-16">
         <h2 className="text-2xl font-semibold tracking-tight">Install TallyUI {tallyVersion}</h2>
         <CodeBlock className="mt-4">
