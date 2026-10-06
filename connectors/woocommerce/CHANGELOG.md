@@ -1,5 +1,28 @@
 # @tallyui/connector-woocommerce
 
+## 3.3.0
+
+### Patch Changes
+
+- f604f87: Orders with fees, shipping or custom lines can be completed and sent as `order.create` version 5 to a store that
+  accepts it (others refuse at completion, naming the plugin upgrade). `pos_orders` moves to version 8, which also
+  records the woocommerce tax rounding (ADR-075, ADR-076). **Version 8 is one-way: a till that opens this release
+  can't go back.**
+- cec1088: The WooCommerce transport pushes tax-inclusive lines with the till's 6dp ex-tax net, as WooCommerce rebuilds a line's tax from it (ADR-076); a discounted tax-inclusive line is still refused. `CommandTransport.send` takes an optional, local-only `OrderTransportContext`.
+- 9f7cffe: A WooCommerce order can carry several payments when the store's plugin records the list
+  (`order_payments_list`): the primary tender names the payment method and `_woocommerce_pos_payments` keeps all of
+  them. `ServerCapabilities.multiplePayments` tells the app whether to offer split tender. The connector also reports `lineTax: { none: true, classes: true }` itself, since WCPOS has no `/tally/v1/info`.
+- c7aa412: Woo products carry `tax_class` and `tax_status` (schema version 2: a till resyncs its products once) through the `getTaxClass`/`getTaxStatus` traits. Core adds the optional `getTaxStatus` trait, which the cart and `addProduct` pass to the line.
+- 611ce1c: The connector now reads the store's tax settings and capabilities (the WooCommerce tax strategy, ADR-076); `parseTaxRounding` accepts the `woocommerce` granularity.
+- Updated dependencies [820b8c2]
+- Updated dependencies [fcace3b]
+- Updated dependencies [9f7cffe]
+- Updated dependencies [c7aa412]
+- Updated dependencies [611ce1c]
+- Updated dependencies [585af9b]
+- Updated dependencies [71be352]
+  - @tallyui/core@3.3.0
+
 ## 3.2.1
 
 ### Patch Changes
