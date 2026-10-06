@@ -9,7 +9,7 @@ import { ensureRegister, readRegister, type RegisterDocument } from './register-
 import { cashMovementSchema, closureSchema, registerSessionCreator, type CashMovement, type Closure, type RegisterSession } from './schemas';
 import { backToSelling, closeSession, openSession, recordMovement, startCounting, voidMovement, writeClosure,
   type CashMovementCollection, type ClosureCollection, type RegisterSessionCollection } from './session-store';
-import { closureCommand, movementCommand, reconcileRegisterCommands, registerCommandCollection, registerCommandSchema,
+import { closureCommand, deviceNameOf, movementCommand, reconcileRegisterCommands, registerCommandCollection, registerCommandSchema,
   sessionOpenCommand, sessionTransitionCommand, type RegisterCommandCollection } from './register-commands';
 
 const openedAt = '2026-09-28T08:00:00.000Z';
@@ -32,6 +32,36 @@ const closure: Closure = {
 };
 
 describe('sessionOpenCommand', () => {
+  it('a v2 open has version 2 and the trimmed device name, and never supersedes', () => {
+    const v1 = sessionOpenCommand(session);
+    const v2 = sessionOpenCommand(session, { deviceName: '  Front till  ' });
+    expect(v2).toStrictEqual({ ...v1, version: 2, payload: { ...v1.payload, deviceName: 'Front till' } });
+    expect(v2.payload).not.toHaveProperty('supersedes');
+  });
+
+  it('a v2 open with no usable device name omits it', () => {
+    for (const options of [{}, { deviceName: '   ' }, { deviceName: undefined }]) {
+      const command = sessionOpenCommand(session, options);
+      expect(command.version).toBe(2);
+      expect(command.payload).not.toHaveProperty('deviceName');
+      expect(command.payload).toStrictEqual(sessionOpenCommand(session).payload);
+    }
+  });
+
+  it('deviceNameOf keeps at most 64 UTF-16 units and never splits a surrogate pair', () => {
+    expect(deviceNameOf('a'.repeat(70))).toBe('a'.repeat(64));
+    const straddling = deviceNameOf('a'.repeat(63) + '😀' + 'b')!;
+    expect(straddling).toBe('a'.repeat(63));
+    expect(straddling).toHaveLength(63);
+    expect(straddling.charCodeAt(straddling.length - 1) >= 0xd800
+      && straddling.charCodeAt(straddling.length - 1) <= 0xdbff).toBe(false);
+    const fitting = deviceNameOf('a'.repeat(62) + '😀');
+    expect(fitting).toBe('a'.repeat(62) + '😀');
+    expect(fitting).toHaveLength(64);
+    expect(deviceNameOf('a'.repeat(60) + '    ' + 'b'.repeat(10))).toBe('a'.repeat(60));
+    expect(deviceNameOf(null)).toBeUndefined();
+  });
+
   it("builds each command's payload from its row, omitting null fields", () => {
     expect(sessionOpenCommand(session)).toStrictEqual({
       key: 'session.open:session', type: 'register.session.open', version: 1,
@@ -115,11 +145,56 @@ describe('register command ledger', () => {
     expectedFloatMinor: 10000, countedFloatMinor: 10000, businessDay: { year: 2026, month: 9, day: 28 } });
   const record = (sessionId: string) => recordMovement(db.register_sessions, db.cash_movements, db.closures,
     { sessionId, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7' });
-  const reconcile = (observed?: RegisterSession[], now = openedAt) => reconcileRegisterCommands({ commands: db.register_commands, sessions: db.register_sessions,
-    movements: db.cash_movements, closures: db.closures, host: db.register_sessions, storeKey: 'store', registerId: 'register', now, observed });
+  const reconcile = (observed?: RegisterSession[], now = openedAt, options: { registerContract?: number; deviceName?: string | null } = {}) => reconcileRegisterCommands({ commands: db.register_commands, sessions: db.register_sessions,
+    movements: db.cash_movements, closures: db.closures, host: db.register_sessions, storeKey: 'store', registerId: 'register', now, observed, ...options });
   const ledger = async () => (await readFresh(db.register_commands, { selector: {} })).sort((a, b) => a.seq - b.seq);
   const write = (closed: RegisterSession) => writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store',
     session: closed, counted: 8600, otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0' });
+
+  it('reconcile appends nothing for an abandoned session', async () => {
+    const s = await open();
+    await reconcile();
+    const before = await ledger();
+    const movement = await record(s.id);
+    await s.incrementalPatch({ status: 'abandoned' });
+    expect(await reconcile()).toStrictEqual([]);
+    expect(await ledger()).toStrictEqual(before);
+    expect(await db.register_commands.findOne(`movement.record:${movement.id}`).exec()).toBeNull();
+  });
+
+  it('a register v2 store gets a version 2 open with the device name; every other command stays version 1', async () => {
+    const s = await open();
+    const movement = await record(s.id);
+    await reconcile(undefined, undefined, { registerContract: 2, deviceName: 'Front till' });
+    const rows = await ledger();
+    expect(rows.find((row) => row.key === `session.open:${s.id}`)).toMatchObject({
+      version: 2, payload: { deviceName: 'Front till' },
+    });
+    expect(rows.find((row) => row.key === `movement.record:${movement.id}`)?.version).toBe(1);
+  });
+
+  it('a v1 store, or no contract, gets the v1 open unchanged even with a device name', async () => {
+    for (const options of [{ registerContract: 1 }, {}]) {
+      const s = await open();
+      await reconcile(undefined, undefined, { ...options, deviceName: 'Front till' });
+      const row = (await ledger()).find((row) => row.key === `session.open:${s.id}`)!;
+      expect(row.version).toBe(1);
+      expect(row.payload).not.toHaveProperty('deviceName');
+      expect(row.payload).toStrictEqual(sessionOpenCommand(s).payload);
+      await closeSession(db.register_sessions, s.id, { counted: { cash: 10000 } });
+    }
+  });
+
+  it('an open already stored is never rewritten when the contract later rises', async () => {
+    await open();
+    await reconcile(undefined, undefined, { registerContract: 1 });
+    const [before] = await ledger();
+    await reconcile(undefined, undefined, { registerContract: 2, deviceName: 'Front till' });
+    const [after] = await ledger();
+    expect(after.version).toBe(1);
+    expect(after.payload).not.toHaveProperty('deviceName');
+    expect(after).toStrictEqual(before);
+  });
 
   it('a session whose status this build does not know is never sent as a transition', async () => {
     await db.register_sessions.insert({

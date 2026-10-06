@@ -38,16 +38,28 @@ export const registerCommandSchema: RxJsonSchema<RegisterCommand> = {
 };
 export const registerCommandCollection = () => ({ schema: registerCommandSchema });
 
-type BuiltCommand = Pick<RegisterCommand, 'key' | 'type' | 'payload'> & { version: 1 };
+type BuiltCommand = Pick<RegisterCommand, 'key' | 'type' | 'payload'> & { version: 1 | 2 };
 
-export function sessionOpenCommand(s: RegisterSession): BuiltCommand {
-  return { key: `session.open:${s.id}`, type: 'register.session.open', version: 1, payload: {
+/** ADR-078: 1 to 64 characters after trim. */
+export function deviceNameOf(name: string | null | undefined): string | undefined {
+  let trimmed = name?.trim();
+  if (trimmed && trimmed.length > 64) {
+    const last = trimmed.charCodeAt(63);
+    trimmed = trimmed.slice(0, last >= 0xd800 && last <= 0xdbff ? 63 : 64).trimEnd();
+  }
+  return trimmed || undefined;
+}
+
+export function sessionOpenCommand(s: RegisterSession, v2?: { deviceName?: string | null }): BuiltCommand {
+  const deviceName = deviceNameOf(v2?.deviceName);
+  return { key: `session.open:${s.id}`, type: 'register.session.open', version: v2 ? 2 : 1, payload: {
     sessionId: s.id, registerId: s.register_id, openedAt: s.opened_at_gmt, countedFloatMinor: s.counted_float_minor,
     ...(s.store_key == null ? {} : { storeKey: s.store_key }),
     ...(s.business_day == null ? {} : { businessDay: s.business_day }),
     ...(s.opened_by == null ? {} : { openedBy: s.opened_by }),
     ...(s.expected_float_minor == null ? {} : { expectedFloatMinor: s.expected_float_minor }),
     ...(s.opening_variance_minor == null ? {} : { openingVarianceMinor: s.opening_variance_minor }),
+    ...(deviceName === undefined ? {} : { deviceName }),
   } satisfies RegisterSessionOpenPayload };
 }
 
@@ -88,9 +100,10 @@ export function closureCommand(c: Closure): BuiltCommand {
 const chains = new WeakMap<RegisterCommandCollection, Map<string, Promise<void>>>();
 
 /** Appends missing facts in dependency order; the bytes of an existing key never change. */
-export function reconcileRegisterCommands({ commands, sessions, movements, closures, host, storeKey, registerId, now, observed }: {
+export function reconcileRegisterCommands({ commands, sessions, movements, closures, host, storeKey, registerId, now, observed, registerContract, deviceName }: {
   commands: RegisterCommandCollection; sessions: RegisterSessionCollection; movements: CashMovementCollection;
   closures: ClosureCollection; host: RegisterHost; storeKey: string; registerId: string; now?: string; observed?: RegisterSession[];
+  registerContract?: number; deviceName?: string | null;
 }): Promise<string[]> {
   // `conflict` and `superseded` are local states derived from the store's answers (ADR-078 decision 9), never sent as a transition.
   const sentStatus = (s: RegisterSession): s is RegisterSession & { status: RegisterSessionTransitionPayload['status'] } => s.status === 'open' || s.status === 'counting' || s.status === 'closed';
@@ -106,8 +119,8 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
     const complete = new Set((await commands.storageInstance.findDocumentsById(rows.flatMap((session) =>
       [`session.open:${session.id}`, ...(session.status === 'closed' && session.closure_id ? [`closure.submit:${session.closure_id}`] : [])]), false)).map(({ key }) => key));
     const facts = await Promise.all(rows.filter((session) =>
-      session.status !== 'closed' || ((session.status_at == null || session.status_at >= since || complete.has(`session.open:${session.id}`))
-        && !complete.has(`closure.submit:${session.closure_id}`)))
+      session.status !== 'abandoned' && (session.status !== 'closed' || ((session.status_at == null || session.status_at >= since || complete.has(`session.open:${session.id}`))
+        && !complete.has(`closure.submit:${session.closure_id}`))))
       .map(async (session) => {
       const [entries, closureRows] = await Promise.all([
         readFresh(movements, { selector: { session_id: session.id } }),
@@ -119,7 +132,7 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
       events.push(...entries.filter((entry) => entry.type !== 'void').map(movementCommand),
         ...entries.filter((entry) => entry.type === 'void').map(movementCommand));
       if (session.status_at != null && sentStatus(session)) events.push(sessionTransitionCommand({ ...session, status_at: session.status_at }));
-      return { session, number: closureRows[0]?.number, built: [sessionOpenCommand(session), ...events,
+      return { session, number: closureRows[0]?.number, built: [(registerContract ?? 0) >= 2 ? sessionOpenCommand(session, { deviceName }) : sessionOpenCommand(session), ...events,
         ...closureRows.map((closure) => closureCommand(closure))] };
     }));
     facts.sort((a, b) => Number(a.session.status !== 'closed') - Number(b.session.status !== 'closed')

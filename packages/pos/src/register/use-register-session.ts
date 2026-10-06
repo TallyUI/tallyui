@@ -17,13 +17,14 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
-import type { ServerCapabilities } from '@tallyui/core';
+import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
 import type { PosOrder } from '../pos-order/types';
 import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval } from './register-count.helpers';
-import { reconcileRegisterCommands, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
+import { abandonSession, adoptRegisterResults, takeOverSession } from './register-adoption';
+import { reconcileRegisterCommands, registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
 import * as store from './session-store';
@@ -84,6 +85,8 @@ export interface UseRegisterSessionOptions {
   /** `register_commands`, created with `registerCommandCollection()`; `null` while it opens. */
   commands?: RegisterCommandCollection | null;
   capabilities?: ServerCapabilities;
+  /** The till's name from the app's settings, sent on a register v2 open; the app supplies its platform fallback. */
+  deviceName?: string | null;
   /** `pos_orders`: a session's sales are those whose `sessionId` is its id. */
   orders: RxCollection<PosOrder> | null;
   /** The register document's host, for the closure number and perpetual totals (`writeClosure`); `null` while it opens. */
@@ -116,6 +119,7 @@ type Reservation = RegisterBucket['closure_reservation'];
 type Snapshot = {
   rows: RegisterSession[]; closureRows: Closure[]; reservation: Reservation;
   entries: CashMovement[]; sales: PosOrder[];
+  open?: RegisterCommand;
 };
 
 const reservationOf = (register: RegisterDocument | null, storeKey: string, registerId: string) =>
@@ -128,12 +132,13 @@ const unwritten = (row: RegisterSession, closureRows: readonly { id: string }[])
 /**
  * The session for this register: first the one an unapplied closure reservation names (its close
  * was interrupted after the number was reserved, perhaps after its row was written), so it can
- * finish; then the open or counting one; then a closed one whose closure row was never written; null if any status is unknown.
+ * finish; then the open or counting one; then a conflict one; then a closed one whose closure row was never written; null if any status is unknown.
  */
 function currentSession(rows: RegisterSession[], closureRows: Closure[], reservation: Reservation) {
   if (rows.some((row) => !store.isKnownSessionStatus(row.status))) return null;
   return (reservation && !reservation.applied ? rows.find((row) => row.id === reservation.row.session_id) : undefined)
-    ?? rows.find((row) => row.status !== 'closed')
+    ?? rows.find((row) => row.status === 'open' || row.status === 'counting')
+    ?? rows.find((row) => row.status === 'conflict')
     ?? rows.find((row) => unwritten(row, closureRows))
     ?? null;
 }
@@ -151,8 +156,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const { commands } = options;
   const commandEnabled = (options.capabilities?.register ?? 0) >= 1;
   const commandTarget = useMemo(() => enabled && commandEnabled && commands && sessions && movements && closures && register && registerId
-    ? { commands, sessions, movements, closures, host: register, storeKey, registerId } : null,
-  [enabled, commandEnabled, commands, sessions, movements, closures, register, storeKey, registerId]);
+    ? { commands, sessions, movements, closures, host: register, storeKey, registerId, registerContract: options.capabilities?.register, deviceName: options.deviceName } : null,
+  [enabled, commandEnabled, commands, sessions, movements, closures, register, storeKey, registerId, options.capabilities?.register, options.deviceName]);
   const commandTargetRef = useRef(commandTarget);
   commandTargetRef.current = commandTarget;
   const reconcile = (row?: RegisterSession) => {
@@ -167,6 +172,13 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     });
   };
   useEffect(reconcile, [commandTarget]);
+  useEffect(() => {
+    if (!commandTarget) return;
+    const subscription = commandTarget.commands.find({ selector: { registerId: commandTarget.registerId } }).$.subscribe(() => {
+      void adoptRegisterResults(commandTarget);
+    });
+    return () => subscription.unsubscribe();
+  }, [commandTarget]);
   const source = useMemo(() => {
     if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register) return null;
     return combineLatest([
@@ -179,9 +191,10 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
       return combineLatest([
         watchFresh(movements, { selector: { session_id: current.id } }),
         watchFresh(orders, { selector: { sessionId: current.id } }),
-      ]).pipe(map(([entries, sales]) => ({ rows, closureRows, reservation, entries, sales })));
+        commandTarget ? watchFresh(commandTarget.commands, { selector: { key: `session.open:${current.id}` } }) : of([]),
+      ]).pipe(map(([entries, sales, opens]) => ({ rows, closureRows, reservation, entries, sales, open: opens[0] })));
     }));
-  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId]);
+  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId, commandTarget]);
   // A latest-value ref: an `actions` object from an earlier render still sees the current flag.
   const tender = useRef(tenderInProgress);
   tender.current = tenderInProgress;
@@ -251,6 +264,12 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     }
   }, [data, source]);
   const session = data ? currentSession(data.rows, data.closureRows, data.reservation) : null;
+  const refusal = data?.open?.error?.data as RegisterSessionAlreadyOpenData | undefined;
+  const conflict = session?.status !== 'conflict' || !commandTarget ? undefined
+    : data?.open?.syncStatus === 'pending' && typeof data.open.payload.supersedes === 'string'
+      ? { sessionId: data.open.payload.supersedes, takingOver: true }
+      : data?.open?.syncStatus === 'rejected' && refusal
+        ? { sessionId: refusal.sessionId, openedAt: refusal.openedAt, openedBy: refusal.openedBy, deviceName: refusal.deviceName, takingOver: false } : undefined;
   const entries = data?.entries ?? [];
   const sales = data?.sales ?? [];
   const expected = session
@@ -282,6 +301,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
 
   return {
     session,
+    /** The other till's live session, or the session this till is waiting to take over. */
+    conflict,
     /** Any unknown session status in the current snapshot means the register needs upgrade. */
     needsUpgrade: data?.rows.some((row) => !store.isKnownSessionStatus(row.status)) ?? false,
     movements: entries,
@@ -297,17 +318,35 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     enabled,
     blind: options.blind ?? false,
     /** Pass straight to useSale's `session` option: `complete()` then stamps through `stampSession`. */
-    saleSession: session && sessions && session.status !== 'closed' ? { id: session.id, sessions } : undefined,
+    saleSession: session && sessions && (session.status === 'open' || session.status === 'counting') ? { id: session.id, sessions } : undefined,
     /** The open session's id, `null` when sessions are off, else `RegisterSessionRequiredError`. Call it when tender starts and before a card terminal captures. */
     requireOpen,
     /** `requireOpen()`, returning `{ id, sessions }`: pass it to useSale's `startTender`, which pins it (the rendered `saleSession` can lag). */
     requireSaleSession,
     actions: {
+      takeOver: async () => {
+        if (!commandTarget) throw new RegisterSessionRequiredError();
+        const row = currentSession(await readFresh(commandTarget.sessions, { selector: { register_id: commandTarget.registerId } }),
+          await readFresh(commandTarget.closures, { selector: { register_id: commandTarget.registerId } }),
+          reservationOf(await readRegister(commandTarget.host), commandTarget.storeKey, commandTarget.registerId));
+        if (row?.status !== 'conflict') throw new RegisterSessionRequiredError();
+        if ((options.capabilities?.register ?? 0) < 2) throw new store.RegisterTakeOverError('REGISTER_TAKEOVER_UNSUPPORTED');
+        await takeOverSession({ ...commandTarget, sessionId: row.id });
+      },
+      chooseAnotherRegister: async () => {
+        if (!commandTarget) throw new RegisterSessionRequiredError();
+        const row = currentSession(await readFresh(commandTarget.sessions, { selector: { register_id: commandTarget.registerId } }),
+          await readFresh(commandTarget.closures, { selector: { register_id: commandTarget.registerId } }),
+          reservationOf(await readRegister(commandTarget.host), commandTarget.storeKey, commandTarget.registerId));
+        if (row?.status !== 'conflict') throw new RegisterSessionRequiredError();
+        await abandonSession({ ...commandTarget, sessionId: row.id });
+      },
       /**
        * Refuses with `RegisterSessionAlreadyOpenError` while the register has a live session or
        * another open is running (in any hook instance), and with `RegisterCloseIncompleteError`
        * while an earlier close hasn't finished: a new session would lock the till behind it.
        * An unknown stored status refuses with `RegisterNeedsUpgradeError`.
+       * A conflict session refuses with `RegisterSessionConflictError`; superseded and abandoned sessions do not block.
        */
       openSession: async (input: { expectedFloatMinor: number | null; countedFloatMinor: number }) => {
         // A double tap: the second call sees the first's promise, set before its first await.
@@ -318,7 +357,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           // The storage, not the rendered snapshot or a cached query, which can lag a new write.
           const rows = await readFresh(sessions, { selector: { register_id: registerId } });
           if (rows.some((row) => !store.isKnownSessionStatus(row.status))) throw new store.RegisterNeedsUpgradeError();
-          if (rows.some((row) => row.status !== 'closed')) throw new RegisterSessionAlreadyOpenError();
+          if (rows.some((row) => row.status === 'conflict')) throw new store.RegisterSessionConflictError();
+          if (rows.some((row) => row.status === 'open' || row.status === 'counting')) throw new RegisterSessionAlreadyOpenError();
           // Closure rows before the reservation: a close reserves, then inserts its row, then applies the
           // reservation, so a close landing between the two reads is still caught by one of them.
           const closureRows = await readFresh(closures, { selector: { register_id: registerId } });

@@ -2,6 +2,7 @@ import type { CommandResult, RegisterCommandEnvelope } from '@tallyui/core';
 import type { RxCollection } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { registerCommandsLogger, type RegisterCommand } from '../register/register-commands';
+import type { RegisterSessionCollection } from '../register/session-store';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
 import { STUCK_AFTER_MS } from './order-outbox';
@@ -12,6 +13,9 @@ export const NON_BLOCKING_REJECTIONS: ReadonlySet<string> = new Set(['register_s
 
 export interface RegisterOutboxOptions {
   collection: RxCollection<RegisterCommand>;
+  /** The till's `register_sessions`. With it, a refused open (`register_session_already_open`) stops blocking its register
+   * once its session is `abandoned` (ADR-078 decision 9). Without it, that refusal always blocks. */
+  sessions?: RegisterSessionCollection;
   transport: CommandTransport<RegisterCommandEnvelope>;
   deviceId: string;
   /** Checked at the start of every run; false sends nothing. */
@@ -42,7 +46,7 @@ function plainCommand({ key, registerId, seq, commandId, type, version, payload,
 }
 
 export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOutbox {
-  const { collection, transport, deviceId } = options;
+  const { collection, sessions, transport, deviceId } = options;
   const size = options.batchSize;
   const batchSize = Math.max(1, Math.min(typeof size === 'number' && Number.isFinite(size) ? Math.floor(size) : 10, 10));
   const initialBackoff = options.initialBackoffMs ?? 1000;
@@ -62,6 +66,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   let running: Promise<void> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let subscription: Subscription | undefined;
+  let sessionsSubscription: Subscription | undefined;
   let stopped = false;
   let insertedDuringRun = false;
   let stoppedDuringRun = false;
@@ -92,7 +97,15 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
     for (const { commandId } of commands) clocks.set(commandId, { ...(clocks.get(commandId) ?? { since: at, firstFailedAt: at }), seq: ++failureSeq, reason });
   }
 
+  function isNonBlocking(command: RegisterCommand, abandoned: ReadonlySet<string>): boolean {
+    return NON_BLOCKING_REJECTIONS.has(command.error?.code ?? '') ||
+      (command.error?.code === 'register_session_already_open' &&
+        typeof command.payload.sessionId === 'string' && abandoned.has(command.payload.sessionId));
+  }
+
   async function updateState(patch: Partial<OutboxState> = {}) {
+    const abandoned = new Set(sessions && clocks.size
+      ? (await readFresh(sessions, { selector: { status: 'abandoned' } })).map((session) => session.id) : []);
     const pending = await countFresh(collection, { syncStatus: 'pending' });
     // Only commands in a register's sendable prefix (pending, before its first rejected command) keep a clock.
     const sendable = new Set<string>();
@@ -100,7 +113,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
     if (clocks.size) for (const command of await readFresh(collection, { selector: { syncStatus: { $in: ['pending', 'rejected'] } },
       sort: [{ seq: 'asc' }, { key: 'asc' }] })) {
       if (command.syncStatus === 'rejected') {
-        if (!NON_BLOCKING_REJECTIONS.has(command.error?.code ?? '')) blocked.add(command.registerId);
+        if (!isNonBlocking(command, abandoned)) blocked.add(command.registerId);
       } else if (!blocked.has(command.registerId)) sendable.add(command.commandId);
     }
     for (const id of clocks.keys()) if (!sendable.has(id)) clocks.delete(id);
@@ -123,6 +136,8 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
       if (options.isEnabled?.() === false) return;
       const pending = await readFresh(collection, { selector: { syncStatus: 'pending' } });
       const registerIds = [...new Set(pending.map((command) => command.registerId))].sort();
+      const abandoned = new Set(sessions
+        ? (await readFresh(sessions, { selector: { status: 'abandoned' } })).map((session) => session.id) : []);
       let sent = false;
       for (const registerId of registerIds) {
         const ledger = await readFresh(collection, {
@@ -131,7 +146,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
         });
         const commands: RegisterCommand[] = [];
         for (const command of ledger) {
-          if (command.syncStatus === 'rejected' && NON_BLOCKING_REJECTIONS.has(command.error?.code ?? '')) continue;
+          if (command.syncStatus === 'rejected' && isNonBlocking(command, abandoned)) continue;
           if (command.syncStatus === 'rejected') break;
           commands.push(command);
           if (command.type === 'register.session.open' || commands.length >= batchSize) break;
@@ -241,6 +256,12 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
           flush().catch(() => {});
         }
       });
+      if (sessions && !sessionsSubscription) sessionsSubscription = sessions.$.subscribe((event) => {
+        if (event.documentData?.status === 'abandoned') {
+          insertedDuringRun = true;
+          flush().catch(() => {});
+        }
+      });
       if (!stopped) flush().catch(() => {});
     },
     stop() {
@@ -249,6 +270,8 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
       timer = undefined;
       subscription?.unsubscribe();
       subscription = undefined;
+      sessionsSubscription?.unsubscribe();
+      sessionsSubscription = undefined;
       missingSubscription?.unsubscribe(); missingSubscription = undefined;
       state$.next({ ...state$.value, nextAttemptAt: undefined });
     },

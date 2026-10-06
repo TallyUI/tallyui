@@ -6,6 +6,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { RegisterCommandEnvelope } from '@tallyui/core';
 import { uuidv7 } from '../pos-order';
 import { registerCommandCollection, type RegisterCommand, type RegisterCommandCollection } from '../register/register-commands';
+import { registerSessionCreator } from '../register/schemas';
 import type { CommandTransport } from './types';
 import { useRegisterOutbox, type UseRegisterOutboxOptions } from './use-register-outbox';
 
@@ -34,6 +35,22 @@ afterEach(async () => {
 });
 
 describe('useRegisterOutbox', () => {
+  it("passes sessions through: an abandoned session's refused open does not block", async () => {
+    const commands = await collection();
+    const { register_sessions: sessions } = await commands.database.addCollections({ register_sessions: registerSessionCreator() });
+    const error = { code: 'register_session_already_open', message: 'already open' };
+    const refused = { ...command(1), syncStatus: 'rejected' as const, error };
+    const pending = command(2);
+    await commands.bulkInsert([refused, pending]);
+    await sessions.insert({ id: 'session-1', register_id: 'register-1', status: 'abandoned',
+      opened_at_gmt: new Date().toISOString(), counted_float_minor: 0 });
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: batch.map(({ id }) => ({ id, status: 'applied' })) }));
+    renderHook(() => useRegisterOutbox({ ...options(commands), sessions }));
+    await waitFor(async () => expect((await commands.findOne(pending.key).exec())?.syncStatus).toBe('applied'));
+    expect(send.mock.calls.map(([batch]) => batch.map(({ id }) => id))).toEqual([[pending.commandId]]);
+    expect((await commands.findOne(refused.key).exec())?.toJSON()).toMatchObject({ syncStatus: 'rejected', error });
+  });
+
   it('resends a refused command when reopened over the same collection', async () => {
     const commands = await collection();
     const pending = command(1);

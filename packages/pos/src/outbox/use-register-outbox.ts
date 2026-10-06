@@ -1,6 +1,7 @@
 import type { RegisterCommandEnvelope } from '@tallyui/core';
 import { useEffect, useRef, useState } from 'react';
 import type { RegisterCommandCollection } from '../register/register-commands';
+import type { RegisterSessionCollection } from '../register/session-store';
 import { createRegisterOutbox, type RegisterOutboxOptions } from './register-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -9,6 +10,8 @@ const idle: OutboxState = { pending: 0, sending: false };
 export interface UseRegisterOutboxOptions {
   /** `register_commands` (see `registerCommandCollection()`); `null` while it opens or when there's no store. A new collection (a store switch) restarts the outbox. */
   commands: RegisterCommandCollection | null;
+  /** The till's `register_sessions`; abandoned sessions unblock refused opens. A new collection restarts the outbox. */
+  sessions?: RegisterSessionCollection | null;
   /** Builds the transport; called when the outbox is created: on each new collection or device id (twice under React StrictMode's double effect, which stops the first outbox). */
   transport(): CommandTransport<RegisterCommandEnvelope>;
   /** The device id sent on every command. A change restarts the outbox. */
@@ -27,7 +30,7 @@ export interface UseRegisterOutboxResult {
 }
 
 export function useRegisterOutbox(options: UseRegisterOutboxOptions): UseRegisterOutboxResult {
-  const { commands, deviceId } = options;
+  const { commands, sessions, deviceId } = options;
   const latest = useRef(options);
   latest.current = options;
   const current = useRef<{ commands: RegisterCommandCollection; deviceId: string; outbox: ReturnType<typeof createRegisterOutbox> } | null>(null);
@@ -37,6 +40,7 @@ export function useRegisterOutbox(options: UseRegisterOutboxOptions): UseRegiste
     setState(idle);
     if (!commands) return;
     const outbox = createRegisterOutbox({ collection: commands, deviceId, transport: latest.current.transport(),
+      sessions: sessions ?? undefined,
       isEnabled: latest.current.isEnabled ? () => latest.current.isEnabled?.() ?? true : undefined,
       onResult: latest.current.onResult ? async (command, result) => { await latest.current.onResult?.(command, result); } : undefined,
       backendNotFound: latest.current.backendNotFound });
@@ -44,7 +48,7 @@ export function useRegisterOutbox(options: UseRegisterOutboxOptions): UseRegiste
     const status = outbox.state$.subscribe(setState);
     outbox.start();
     return () => { outbox.stop(); status.unsubscribe(); current.current = null; setState(idle); };
-  }, [commands, deviceId]);
+  }, [commands, sessions, deviceId]);
 
   const opened = current.current;
   return { state: opened?.commands === commands && opened.deviceId === deviceId ? state : idle,

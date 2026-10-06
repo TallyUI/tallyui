@@ -24,8 +24,8 @@ export interface RegisterSession {
   register_id: string;
   /** The app's neutral store key (see `bindRegister`). */
   store_key?: string | null;
-  /** Stored status is an open string so a later local state costs no migration (ADR-078 decision 9); the union names today's states. */
-  status: 'open' | 'counting' | 'closed' | 'conflict' | 'superseded';
+  /** Stored status is an open string so a later local state costs no migration (ADR-078 decision 9); the union names today's states. `abandoned` is local only and terminal (the cashier chose another register while in conflict). */
+  status: 'open' | 'counting' | 'closed' | 'conflict' | 'superseded' | 'abandoned';
   /** The store session this local id was resumed as (ADR-078 decision 2), never the session that superseded it; null until a resume. */
   server_session_id?: string | null;
   /** The store's day the session opened, `yyyy-MM-dd`. */

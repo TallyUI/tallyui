@@ -50,7 +50,7 @@ import type { LogEntry } from '../logging';
 import { addPosOrderCollection } from '../pos-order/open';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
 import { registerFactsLogger } from './facts';
-import { registerCommandCollection, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
+import { reconcileRegisterCommands, registerCommandCollection, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
 import { readFresh } from '../rxdb';
 import { ensureRegister, readRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
@@ -61,6 +61,8 @@ import {
   recordMovement,
   RegisterSessionRequiredError,
   RegisterNeedsUpgradeError,
+  RegisterSessionConflictError,
+  RegisterTakeOverError,
   RegisterMovementStrandedError,
   stampSession,
   startCounting,
@@ -163,9 +165,254 @@ it('opening a session on a register that needs upgrade refuses with RegisterNeed
   expect(rows.map((row) => row.id)).toEqual([session.id]);
 });
 
+it('a conflict session is current but takes no sale', async () => {
+  const session = await db.register_sessions.insert({
+    id: 'conflict-session', register_id: 'register', status: 'conflict',
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const { result } = render();
+  await waitFor(() => expect(result.current.session?.id).toBe(session.id));
+  expect(result.current.needsUpgrade).toBe(false);
+  expect(result.current.saleSession).toBeUndefined();
+  await expect(result.current.requireOpen()).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+});
+
+it('opening while the register has a conflict session refuses with RegisterSessionConflictError and writes nothing', async () => {
+  const session = await db.register_sessions.insert({
+    id: 'conflict-session', register_id: 'register', status: 'conflict',
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const { result } = render();
+  await act(async () => {
+    await expect(result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 }))
+      .rejects.toBeInstanceOf(RegisterSessionConflictError);
+  });
+  const rows = await readFresh(db.register_sessions, { selector: { register_id: 'register' } });
+  expect(rows.map((row) => row.id)).toEqual([session.id]);
+});
+
+it('superseded and abandoned sessions are neither current nor sellable and do not block opening', async () => {
+  await db.register_sessions.insert({
+    id: 'superseded-session', register_id: 'register', status: 'superseded',
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  await db.register_sessions.insert({
+    id: 'abandoned-session', register_id: 'register', status: 'abandoned',
+    opened_at_gmt: '2026-09-16T09:00:00.000Z', counted_float_minor: 10000,
+  });
+  const { result } = render();
+  const initial = result.current;
+  await waitFor(() => expect(result.current).not.toBe(initial));
+  expect(result.current.session).toBeNull();
+  expect(result.current.saleSession).toBeUndefined();
+  let id = '';
+  await act(async () => {
+    id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id;
+  });
+  await waitFor(() => expect(result.current.session?.id).toBe(id));
+  expect(result.current.session?.status).toBe('open');
+  expect(result.current.saleSession).toBeDefined();
+});
+
+it('an open session is current over a conflict row', async () => {
+  await db.register_sessions.insert({
+    id: 'a-conflict-session', register_id: 'register', status: 'conflict',
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const session = await db.register_sessions.insert({
+    id: 'open-session', register_id: 'register', status: 'open',
+    opened_at_gmt: '2026-09-16T09:00:00.000Z', counted_float_minor: 10000,
+  });
+  const { result } = render();
+  await waitFor(() => expect(result.current.session?.id).toBe(session.id));
+});
+
 describe('register commands', () => {
   const ledger = async () => (await readFresh(db.register_commands, { selector: {} })).sort((a, b) => a.seq - b.seq);
   const keys = async () => (await ledger()).map((row) => row.key);
+  const commandsOn = () => ({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 2 } });
+  const inConflict = async () => {
+    const view = render(commandsOn());
+    let id = '';
+    await act(async () => { id = (await view.result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${id}`]));
+    const open = await db.register_commands.findOne(`session.open:${id}`).exec(true);
+    await act(async () => {
+      await open.incrementalPatch({ syncStatus: 'rejected', error: { code: 'register_session_already_open', message: 'Already open',
+        data: { sessionId: 'other', deviceName: 'Front till' } } });
+    });
+    await waitFor(() => expect(view.result.current.session?.status).toBe('conflict'));
+    return { ...view, id, open };
+  };
+
+  it('a second open while in conflict is refused (the stuck-till case)', async () => {
+    const { result, id } = await inConflict();
+    await act(async () => {
+      await expect(result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 }))
+        .rejects.toBeInstanceOf(RegisterSessionConflictError);
+    });
+    expect((await readFresh(db.register_sessions, { selector: {} })).map((row) => row.id)).toStrictEqual([id]);
+  });
+
+  it("conflict shows the refusal's data, then takingOver after Take over", async () => {
+    const { result, open } = await inConflict();
+    await waitFor(() => expect(result.current.conflict).toMatchObject({ sessionId: 'other', deviceName: 'Front till', takingOver: false }));
+    await act(() => result.current.actions.takeOver());
+    await waitFor(() => expect(result.current.conflict).toStrictEqual({ sessionId: 'other', takingOver: true }));
+    const before = await ledger();
+    await act(async () => {
+      await expect(result.current.actions.chooseAnotherRegister()).rejects.toMatchObject({
+        name: 'RegisterTakeOverError', code: 'REGISTER_TAKEOVER_PENDING', message: 'Taking over this register is still waiting for the store.',
+      });
+    });
+    expect(await ledger()).toStrictEqual(before);
+    await act(async () => {
+      await open.incrementalPatch({ syncStatus: 'rejected', error: { code: 'register_session_already_open', message: 'Already open',
+        data: { sessionId: 'other-2', deviceName: 'Back till', openedAt: '2026-10-06T08:00:00.000Z', openedBy: '8' } } });
+    });
+    await waitFor(() => expect(result.current.conflict).toStrictEqual({ sessionId: 'other-2', deviceName: 'Back till',
+      openedAt: '2026-10-06T08:00:00.000Z', openedBy: '8', takingOver: false }));
+    expect(result.current.session?.status).toBe('conflict');
+  });
+
+  it('Choose another register, then open on another register', async () => {
+    const { result } = await inConflict();
+    await act(() => result.current.actions.chooseAnotherRegister());
+    await waitFor(() => expect(result.current.session).toBeNull());
+    expect(result.current.conflict).toBeUndefined();
+    const before = await readFresh(db.register_sessions, { selector: { register_id: 'register' } });
+    const commands = await ledger();
+    expect(before[0].status).toBe('abandoned');
+    const second = render({ ...commandsOn(), registerId: 'register-2' });
+    await act(async () => {
+      await expect(second.result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 }))
+        .resolves.toMatchObject({ status: 'open', register_id: 'register-2' });
+    });
+    await waitFor(() => expect(second.result.current.session?.status).toBe('open'));
+    expect(await readFresh(db.register_sessions, { selector: { register_id: 'register' } })).toStrictEqual(before);
+    expect((await ledger()).filter((row) => row.registerId === 'register')).toStrictEqual(commands);
+  });
+
+  it('Choose another register, then reopen the same register', async () => {
+    const { result, id } = await inConflict();
+    await act(() => result.current.actions.chooseAnotherRegister());
+    await waitFor(() => expect(result.current.session).toBeNull());
+    const [refused] = await ledger();
+    let next = '';
+    await act(async () => { next = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    expect(next).not.toBe(id);
+    await waitFor(() => expect(result.current.session).toMatchObject({ id: next, status: 'open' }));
+    expect(result.current.saleSession?.id).toBe(next);
+    await expect(result.current.requireOpen()).resolves.toBe(next);
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${id}`, `session.open:${next}`]));
+    const rows = await ledger();
+    expect(rows[0]).toStrictEqual(refused);
+    expect(rows[1]).toMatchObject({ syncStatus: 'pending', payload: { sessionId: next } });
+    expect(rows[1].seq).toBeGreaterThan(refused.seq);
+    expect(rows[1].commandId).not.toBe(refused.commandId);
+  });
+
+  it('restart in conflict', async () => {
+    const first = await inConflict();
+    first.unmount();
+    const { result } = render(commandsOn());
+    await waitFor(() => expect(result.current.session).toMatchObject({ id: first.id, status: 'conflict' }));
+    await waitFor(() => expect(result.current.conflict).toMatchObject({ sessionId: 'other', deviceName: 'Front till', takingOver: false }));
+  });
+
+  it('restart in abandoned', async () => {
+    const first = await inConflict();
+    await act(() => first.result.current.actions.chooseAnotherRegister());
+    await waitFor(() => expect(first.result.current.session).toBeNull());
+    first.unmount();
+    const { result } = render(commandsOn());
+    await act(async () => {
+      await reconcileRegisterCommands({ commands: db.register_commands, sessions: db.register_sessions,
+        movements: db.cash_movements, closures: db.closures, host: db.register_sessions, storeKey: 'store', registerId: 'register' });
+    });
+    expect(result.current.session).toBeNull();
+    expect(result.current.conflict).toBeUndefined();
+    expect((await readFresh(db.register_sessions, { selector: { id: first.id } }))[0].status).toBe('abandoned');
+    await act(async () => {
+      await expect(result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).resolves.toMatchObject({ status: 'open' });
+    });
+    await waitFor(() => expect(result.current.session?.status).toBe('open'));
+    expect((await readFresh(db.register_sessions, { selector: { id: first.id } }))[0].status).toBe('abandoned');
+  });
+
+  it('take over on a register v1 store refuses with REGISTER_TAKEOVER_UNSUPPORTED', async () => {
+    await db.register_sessions.insert({ id: 'v1-conflict', register_id: 'register', status: 'conflict',
+      opened_at_gmt: '2026-10-06T08:00:00.000Z', counted_float_minor: 10000 });
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 1 } });
+    await waitFor(() => expect(result.current.session?.status).toBe('conflict'));
+    await waitFor(async () => expect(await keys()).toStrictEqual(['session.open:v1-conflict']));
+    const before = await ledger();
+    await act(async () => {
+      await expect(result.current.actions.takeOver()).rejects.toBeInstanceOf(RegisterTakeOverError);
+      await expect(result.current.actions.takeOver()).rejects.toMatchObject({ code: 'REGISTER_TAKEOVER_UNSUPPORTED',
+        message: 'This store cannot take over a register. Choose another register.' });
+    });
+    expect(await ledger()).toStrictEqual(before);
+  });
+
+  it('a refused open seen while mounted makes the session conflict: current, not sellable', async () => {
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 2 } });
+    let id = '';
+    await act(async () => { id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${id}`]));
+    await act(async () => {
+      await (await db.register_commands.findOne(`session.open:${id}`).exec(true)).incrementalPatch({
+        syncStatus: 'rejected', error: { code: 'register_session_already_open', message: 'Already open', data: { sessionId: 'other' } },
+      });
+    });
+    await waitFor(() => expect(result.current.session?.status).toBe('conflict'));
+    expect(result.current.session?.id).toBe(id);
+    expect(result.current.saleSession).toBeUndefined();
+  });
+
+  it('a restart over a refused open derives conflict from the stored rows', async () => {
+    const s = await db.register_sessions.insert({ id: 'restart', register_id: 'register', status: 'open',
+      opened_at_gmt: '2026-09-28T08:00:00.000Z', counted_float_minor: 10000 });
+    await reconcileRegisterCommands({ commands: db.register_commands, sessions: db.register_sessions,
+      movements: db.cash_movements, closures: db.closures, host: db.register_sessions, storeKey: 'store', registerId: 'register' });
+    await (await db.register_commands.findOne(`session.open:${s.id}`).exec(true)).incrementalPatch({
+      syncStatus: 'rejected', error: { code: 'register_session_already_open', message: 'Already open' },
+    });
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 2 } });
+    await waitFor(() => expect(result.current.session?.status).toBe('conflict'));
+  });
+
+  it('with register commands disabled, adoption never runs', async () => {
+    const s = await seed();
+    await reconcileRegisterCommands({ commands: db.register_commands, sessions: db.register_sessions,
+      movements: db.cash_movements, closures: db.closures, host: db.register_sessions, storeKey: 'store', registerId: 'register' });
+    await (await db.register_commands.findOne(`session.open:${s.id}`).exec(true)).incrementalPatch({
+      syncStatus: 'rejected', error: { code: 'register_session_already_open', message: 'Already open' },
+    });
+    const read = vi.spyOn(db.register_commands.storageInstance, 'query');
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1 } });
+    await waitFor(() => expect(result.current.session?.status).toBe('open'));
+    expect(read).not.toHaveBeenCalled();
+    expect((await readFresh(db.register_sessions, { selector: { id: s.id } }))[0].status).toBe('open');
+  });
+
+  it("a register v2 store records a version 2 open carrying the app's device name", async () => {
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 2 }, deviceName: 'Front till' });
+    let id = '';
+    await act(async () => { id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${id}`]));
+    expect((await ledger())[0]).toMatchObject({ key: `session.open:${id}`, version: 2, payload: { deviceName: 'Front till' } });
+  });
+
+  it("a register v1 store records a version 1 open without the app's device name", async () => {
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 1 }, deviceName: 'Front till' });
+    let id = '';
+    await act(async () => { id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${id}`]));
+    const [row] = await ledger();
+    expect(row.version).toBe(1);
+    expect(row.payload).not.toHaveProperty('deviceName');
+  });
 
   it.each([undefined, { orderCreate: 3 }, { orderCreate: 3, register: 0 }])(
     'records no register command without the register capability', async (capabilities) => {
