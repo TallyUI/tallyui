@@ -172,7 +172,7 @@ function envelope<R extends Values>(row: R, context: ClosureContext, xreport = f
   return {
     closure: {
       has_sales:
-        row.period_sales_total != null || row.period_refunds_total != null || Number(breakdowns.transaction_count) > 0,
+        Number(breakdowns.transaction_count ?? 0) > 0 || Number(row.period_sales_total || 0) !== 0 || Number(row.period_refunds_total || 0) !== 0,
       has_perpetual: row.perpetual_sales_total != null || row.perpetual_refunds_total != null,
       ...Object.fromEntries(
         ['payment_methods', 'tax_rates', 'movements'].map((key) => [`has_${key}`, Object.keys((breakdowns[key] as Values) ?? {}).length > 0]),

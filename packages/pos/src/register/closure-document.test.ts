@@ -132,6 +132,20 @@ it('maps a local snapshot into the server closure envelope and display companion
   expect(doc.order).toMatchObject({ currency: 'USD', printed: { time: '11:00' } });
   expect(JSON.stringify(row)).toBe(before);
 });
+it.each([
+  [0, 0, { transaction_count: 0 }, false],
+  [0, 0, { transaction_count: 1 }, true],
+  [1250, 1250, {}, true],
+] as const)('sets has_sales for sales %i, refunds %i and breakdowns %j to %s', (sales, refunds, breakdowns, hasSales) => {
+  const doc = buildClosureDocument({
+    ...row,
+    period_sales_total_minor: sales,
+    period_refunds_total_minor: refunds,
+    breakdowns,
+  }, context);
+  expect(doc.closure.has_sales).toBe(hasSales);
+});
+
 // Type-only: no assertion runs, but `pnpm typecheck` fails if a caller needs a cast for these
 // (closure-trio job 2) — `unsynced_count` is on `Closure` itself, and each movement's `id`/
 // `reason` come from `writeClosure`'s own `breakdowns.movements` (session-store.ts).
