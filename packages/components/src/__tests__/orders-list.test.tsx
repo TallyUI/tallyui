@@ -341,8 +341,11 @@ describe('OrdersList', () => {
       warnings: [{ code: 'register_session_unknown', sessionId: 's-1' }] });
     const { container } = render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
     expect(headers()).toEqual(['Recent']);
-    expect(screen.queryByText(/s-1/)).toBeNull();
-    expect(container.querySelector('.border-warning')).toBeNull();
+    const warnedText = container.textContent;
+    cleanup();
+    const unwarned = order('w', { syncStatus: 'applied', warnings: [] });
+    const { container: unwarnedContainer } = render(<OrdersList orders={[unwarned]} onRetry={async () => 0} />);
+    expect(warnedText).toBe(unwarnedContainer.textContent);
   });
 
   it('renders a tax_rate_mismatch with the rate as a percentage and both amounts', () => {
