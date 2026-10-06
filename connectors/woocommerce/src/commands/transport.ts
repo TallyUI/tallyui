@@ -12,6 +12,9 @@ export interface WooCommandTransportOptions {
   getHeaders: () => Record<string, string> | Promise<Record<string, string>>;
   fetch?: typeof fetch;
   timeoutMs?: number;
+  /** True when the store's `/status` lists `order_payments_list` (`ServerCapabilities.multiplePayments`): an order may
+   * then carry several payments, recorded in `_woocommerce_pos_payments`. */
+  acceptsPaymentsList?: boolean | (() => boolean | Promise<boolean>);
 }
 
 export function wooMinorFromDecimal(text: string, currency: string): number | undefined {
@@ -27,13 +30,19 @@ export function wooMinorFromDecimal(text: string, currency: string): number | un
 
 export interface WooLocalOrder { lines: ReadonlyArray<{ id: string; netMicros?: string }> }
 
-export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLocalOrder): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
+export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLocalOrder, options?: { paymentsList?: boolean }): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
   const p = envelope.payload;
   if (envelope.version === 5 && (p.fees?.length || p.shipping?.length || p.lines.some((line) => line.custom))) {
     return { error: { code: 'invalid_payload', message: 'Fees, shipping and custom lines are not supported by this connector yet.' } };
   }
-  if (p.payments.length !== 1) {
+  if (p.payments.length === 0 || (p.payments.length > 1 && !options?.paymentsList)) {
     return { error: { code: 'invalid_payload', message: 'WooCommerce orders take one payment.' } };
+  }
+  if (p.payments.length > 20) {
+    return { error: { code: 'invalid_payload', message: 'WooCommerce records at most 20 payments.' } };
+  }
+  if (p.payments.length > 1 && p.payments.reduce((sum, payment) => sum + payment.amountMinor, 0) !== p.totalMinor) {
+    return { error: { code: 'invalid_payload', message: 'Payments do not add up to the order total.' } };
   }
   for (const line of p.lines) {
     if (!/^[1-9]\d*$/.test(line.variantId ?? '') || !Number.isSafeInteger(Number(line.variantId))) {
@@ -42,7 +51,6 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   }
   const digits = p.display?.exponent ?? minorUnitDigits(p.currency);
   const major = (minor: number) => (minor / 10 ** digits).toFixed(digits);
-  const cash = p.payments[0].method === 'cash';
   const line_items = [];
   for (const line of p.lines) {
     let subtotal = major(line.unitPriceMinor * line.quantity);
@@ -67,11 +75,23 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     }
     line_items.push({ product_id: Number(line.variantId), quantity: line.quantity, subtotal, total });
   }
+  const primary = p.payments.reduce((largest, payment) => payment.amountMinor > largest.amountMinor ? payment : largest);
+  const cash = primary.method === 'cash';
+  const meta_data = [{ key: '_woocommerce_pos_uuid', value: p.clientOrderId }];
+  if (p.payments.length > 1) {
+    meta_data.push({ key: '_woocommerce_pos_payments', value: JSON.stringify(p.payments.map((payment) => ({
+      method: payment.method === 'cash' ? 'pos_cash' : 'pos_card',
+      title: payment.method === 'cash' ? 'Cash' : 'Card', amount: major(payment.amountMinor),
+      ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
+      ...(payment.method === 'cash' && payment.tenderedMinor !== undefined ? { tendered: major(payment.tenderedMinor) } : {}),
+      ...(payment.method === 'cash' && payment.changeMinor !== undefined ? { change: major(payment.changeMinor) } : {}),
+    }))) });
+  }
   return { payload: {
     status: 'completed', set_paid: true, currency: p.currency,
     payment_method: cash ? 'pos_cash' : 'pos_card', payment_method_title: cash ? 'Cash' : 'Card',
     line_items,
-    meta_data: [{ key: '_woocommerce_pos_uuid', value: p.clientOrderId }],
+    meta_data,
     ...(p.customer?.customerId && /^\d+$/.test(p.customer.customerId) ? { customer_id: Number(p.customer.customerId) } : {}),
     ...(p.customer?.email ? { billing: { email: p.customer.email } } : {}),
   } };
@@ -85,9 +105,11 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
   while (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
   return {
     async send(batch, context) {
+      const paymentsList = typeof options.acceptsPaymentsList === 'function'
+        ? await options.acceptsPaymentsList() : options.acceptsPaymentsList ?? false;
       const results: CommandResult[] = [];
       for (const envelope of batch) {
-        const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id));
+        const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id), { paymentsList });
         if ('error' in mapped) {
           results.push({ id: envelope.id, status: 'rejected', error: mapped.error });
           continue;

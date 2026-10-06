@@ -43,6 +43,10 @@ export interface ServerCapabilities {
   register?: number;
   /** How the store rounds tax (#287). Absent: an older server, per_order + half_away_from_zero. */
   taxRounding?: TaxRounding;
+  /** Whether one order may carry several payments. Absent means it may: order.create's `payments` has always been a
+   * list. A WooCommerce store says false until its plugin records the list (`order_payments_list`). The app offers
+   * split tender only when this is not false. */
+  multiplePayments?: boolean;
   /**
    * What the store accepts for a fee's, a shipping charge's or a custom line's tax (order.create 5, ADR-075):
    * `none` is `taxStatus: 'none'`, `classes` is a `taxClass`. Absent means neither; the UI hides what is false.

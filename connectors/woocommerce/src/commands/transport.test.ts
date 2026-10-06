@@ -118,6 +118,102 @@ describe('createWooCommandTransport', () => {
       } });
   });
 
+  it.each([true, () => true, async () => true])('records card and cash with list support %s', async (acceptsPaymentsList) => {
+    const envelope = order();
+    envelope.payload.totalMinor = envelope.payload.subtotalMinor = envelope.payload.lines[0].unitPriceMinor = 4291;
+    envelope.payload.payments = [
+      { clientPaymentId: 'card', method: 'external', amountMinor: 3000 },
+      { clientPaymentId: 'cash', method: 'cash', amountMinor: 1291, tenderedMinor: 2000, changeMinor: 709 },
+    ];
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(201, { document: { id: 115, total: '42.91' } }));
+    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList });
+    expect(await transport.send([envelope])).toMatchObject({ kind: 'results', results: [{ status: 'applied' }] });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const { payload } = JSON.parse(fetch.mock.calls[0][1]!.body as string);
+    expect(payload.payment_method).toBe('pos_card');
+    expect(payload.payment_method_title).toBe('Card');
+    expect(payload.meta_data).toEqual([
+      { key: '_woocommerce_pos_uuid', value: envelope.payload.clientOrderId },
+      { key: '_woocommerce_pos_payments', value: expect.any(String) },
+    ]);
+    expect(JSON.parse(payload.meta_data[1].value)).toEqual([
+      { method: 'pos_card', title: 'Card', amount: '30.00' },
+      { method: 'pos_cash', title: 'Cash', amount: '12.91', tendered: '20.00', change: '7.09' },
+    ]);
+  });
+
+  it.each([[150, 'pos_cash', 'Cash'], [100, 'pos_card', 'Card']] as const)(
+    'picks the largest tender, first on a tie, with cash amount %i', (cashMinor, method, title) => {
+      const envelope = order();
+      envelope.payload.payments = [
+        { clientPaymentId: 'cash', method: 'cash', amountMinor: cashMinor, tenderedMinor: cashMinor, changeMinor: 0 },
+        { clientPaymentId: 'card', method: 'external', amountMinor: 300 - cashMinor, reference: 'receipt-42' },
+      ];
+      const mapped = toWooOrderPayload(envelope, undefined, { paymentsList: true });
+      expect(mapped).toMatchObject({ payload: { payment_method: method, payment_method_title: title } });
+      if (!('payload' in mapped)) throw new Error('Expected an order payload');
+      const meta = mapped.payload.meta_data as Array<{ key: string; value: string }>;
+      expect(JSON.parse(meta[1].value)).toEqual([
+        { method: 'pos_cash', title: 'Cash', amount: (cashMinor / 100).toFixed(2), tendered: (cashMinor / 100).toFixed(2), change: '0.00' },
+        { method: 'pos_card', title: 'Card', amount: ((300 - cashMinor) / 100).toFixed(2), reference: 'receipt-42' },
+      ]);
+    },
+  );
+
+  it.each([undefined, false, () => false, async () => false])('refuses split tender without support %s', async (acceptsPaymentsList) => {
+    const envelope = order();
+    envelope.payload.payments[0].amountMinor = 150;
+    envelope.payload.payments.push({ ...envelope.payload.payments[0], clientPaymentId: 'second' });
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList });
+    expect(await transport.send([envelope])).toEqual({ kind: 'results', results: [{
+      id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', message: 'WooCommerce orders take one payment.' },
+    }] });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('posts byte-identical one-payment bodies with list support on and off', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response());
+    for (const acceptsPaymentsList of [undefined, false, true]) {
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList });
+      await transport.send([order()]);
+    }
+    expect(fetch).toHaveBeenCalledTimes(3);
+    const bodies = fetch.mock.calls.map(([, init]) => init!.body);
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(bodies[2]).toBe(bodies[0]);
+    expect(JSON.parse(bodies[0] as string).payload.meta_data).toEqual([
+      { key: '_woocommerce_pos_uuid', value: order().payload.clientOrderId },
+    ]);
+  });
+
+  it.each([
+    [0, 'WooCommerce orders take one payment.'],
+    [21, 'WooCommerce records at most 20 payments.'],
+    [2, 'Payments do not add up to the order total.'],
+  ] as const)('refuses %i invalid payments with list support and no request', async (count, message) => {
+    const envelope = order();
+    envelope.payload.payments = Array.from({ length: count }, (_, i) => ({
+      ...envelope.payload.payments[0], clientPaymentId: String(i),
+    }));
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList: true });
+    expect(await transport.send([envelope])).toEqual({ kind: 'results', results: [{
+      id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', message },
+    }] });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('resolves list support once per send call', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response());
+    const acceptsPaymentsList = vi.fn(async () => true);
+    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList });
+    await transport.send([order(), order()]);
+    expect(acceptsPaymentsList).toHaveBeenCalledTimes(1);
+    await transport.send([order()]);
+    expect(acceptsPaymentsList).toHaveBeenCalledTimes(2);
+  });
+
   it.each(['fees', 'shipping', 'custom'] as const)('refuses v5 %s as invalid_payload without a request', async (kind) => {
     const envelope = order();
     envelope.version = 5;
