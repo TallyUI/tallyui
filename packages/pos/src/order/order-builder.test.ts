@@ -225,6 +225,65 @@ describe('OrderBuilder', () => {
     expect(order.subtotalMinor).toBe(1350);
   });
 
+  it.each([false, true])('setUnitPrice recomputes net and tax in the line tax mode (inclusive: %s)', (taxInclusive) => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const lineId = builder.addLine({ productId: 'p1', name: 'Espresso', quantity: 2,
+      unitPrice: { amount: 600, currency: 'USD', taxInclusive } });
+    builder.setUnitPrice(lineId, 550);
+    const order = builder.getSnapshot();
+    expect(order.lineItems[0]).toMatchObject({ unitPriceMinor: 550, netMinor: 1100, taxInclusive,
+      taxMicros: taxInclusive ? '100000000' : '110000000' });
+    expect(order.lineItems[0].taxLines[0].taxMicros).toBe(taxInclusive ? '100000000' : '110000000');
+    expect(order).toMatchObject({ taxMinor: taxInclusive ? 100 : 110, totalMinor: taxInclusive ? 1100 : 1210 });
+  });
+
+  it('setUnitPrice recomputes a 10% line discount from the new price', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const lineId = builder.addProduct(productDoc, traits, { quantity: 2 });
+    builder.applyLineDiscount(lineId, { type: 'percentage', value: 10 });
+    builder.setUnitPrice(lineId, 1000);
+    const line = builder.getSnapshot().lineItems[0];
+    expect(line).toMatchObject({ unitPriceMinor: 1000, discountMinor: 200, netMinor: 1800, taxMicros: '180000000' });
+    expect(line.discounts[0].amountMinor).toBe(200);
+  });
+
+  it('setUnitPrice caps a fixed discount at the new gross', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const lineId = builder.addProduct(productDoc, traits, { quantity: 2 });
+    builder.applyLineDiscount(lineId, { type: 'fixed', value: 700 });
+    builder.setUnitPrice(lineId, 300);
+    const line = builder.getSnapshot().lineItems[0];
+    expect(line.discountMinor).toBe(line.unitPriceMinor * line.quantity);
+    expect(line).toMatchObject({ discountMinor: 600, netMinor: 0, taxMicros: '0' });
+    expect(line.discounts[0]).toMatchObject({ value: 700, amountMinor: 600 });
+  });
+
+  it.each([1.5, NaN, Infinity, -1])('setUnitPrice refuses an invalid price: %s', (amountMinor) => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const lineId = builder.addProduct(productDoc, traits);
+    const before = builder.getSnapshot();
+    expect(() => builder.setUnitPrice(lineId, amountMinor))
+      .toThrow(new RangeError(amountMinor === -1 ? 'Price must be >= 0' : 'Price must be integer minor units'));
+    expect(builder.getSnapshot()).toEqual(before);
+  });
+
+  it('setUnitPrice refuses an unknown line', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    expect(() => builder.setUnitPrice('missing', 100)).toThrow(new Error('Unknown line missing'));
+  });
+
+  it('addLine at the catalogue price creates a second line after a price edit', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const input = { productId: 'p1', name: 'Espresso', unitPrice: { amount: 450, currency: 'USD' } };
+    const editedId = builder.addLine(input);
+    builder.setUnitPrice(editedId, 300);
+    const scannedId = builder.addLine(input);
+    expect(scannedId).not.toBe(editedId);
+    expect(builder.getSnapshot().lineItems).toMatchObject([
+      { id: editedId, unitPriceMinor: 300, quantity: 1 }, { id: scannedId, unitPriceMinor: 450, quantity: 1 },
+    ]);
+  });
+
   it('removes a line item', async () => {
     const builder = createOrderBuilder({ currency: 'USD', taxContext });
     const lineId = builder.addProduct(productDoc, traits);
