@@ -4618,6 +4618,21 @@ interface OrderCreatePayload {
   - **Local validation is advisory; the store is authoritative.** Phase (d)'s mapping of a refused order shows the
     store's own coupon rejection code as the reason, alongside `coupon_invalid`. It never folds that code into a
     generic failure.
+- **Amendment 3 (2026-10-07): where the port stops (phase (b), #501).** Amendment 1 had `settle`, `snapshot` and
+  `order-totals` come with the port. Only `order-totals` does.
+  - **Ported:** the coupon engine. It went in parts 1–3 (#503, #505, #506), and part 4 exported it as
+    `woocommerceCoupons` from `@tallyui/core` (#508). Part 5 adds `order-totals` with its upstream cases and the
+    #1548 compound-tax cases.
+  - **Not ported:**
+    - `settle.ts`. It is WCPOS's cart writer over WooCommerce order JSON, and it calls `cart-line.ts`, which the
+      handoff carries only in excerpts. TallyUI's order builder (`packages/pos`, ADR-062/063) is already the cart
+      writer.
+    - `snapshot.ts` and `config.ts`, which only settle uses.
+  - **Phase (d) instead:**
+    - It calls `recalculateCoupons` from the order builder for a WooCommerce order with active coupon lines.
+    - It checks the builder's `discount_total` and `discount_tax` against `calculateOrderTotals`.
+    - It restates the cart-level scenarios of settle's upstream tests as builder tests: the missing-coupon gate,
+      validation of the candidate codes, no partial patch, and money compared by value.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
