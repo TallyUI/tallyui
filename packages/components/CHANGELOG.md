@@ -1,5 +1,16 @@
 # @tallyui/components
 
+## 3.5.2
+
+### Patch Changes
+
+- 1bb2aae: The Receipt prints fee and shipping rows after Subtotal and the discount rows, before tax and Total (they printed above Subtotal). Apps whose receipts carry fees or shipping print them in this new place; receipts without charges are unchanged.
+- 653b4ed: The Orders list shows an `insufficient_stock` warning as "{quantity} sold without stock: {name}" (was "Stock short by {quantity} for {name}"). From medusapos plugin 0.2.0, `quantity` is the units of this sale that stock did not cover.
+  - @tallyui/core@3.5.2
+  - @tallyui/pos@3.5.2
+  - @tallyui/primitives@3.5.2
+  - @tallyui/theme@3.5.2
+
 ## 3.5.1
 
 ### Patch Changes
