@@ -11,9 +11,11 @@ const defaultFormatDate = (iso: string) => new Intl.DateTimeFormat(undefined, { 
 
 /** `store`/`taxLabel`/`topInset`/`formatDate` replace the app's Medusa settings, hard-coded VAT (default matches
  * TV6a's `Cart`), outbox strip and date util, so `Receipt` stays platform-neutral (ADR-052). */
-export function Receipt({ order, posOrder, store, cashier, registerId, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
+export function Receipt({ order, posOrder, store, cashier, registerId, registerName, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
   topInset = 0, formatDate = defaultFormatDate, footerSlot }: {
   order: SentOrder; store: { name: string; address?: string }; cashier: string; registerId: string; newSale: () => void;
+  /** The register's name, printed as `Register: <name>`; the id is never printed. */
+  registerName?: string;
   /** The finalized order (useSale's receipt stage has it). With it the receipt prints its reference and time, the
    * same as Orders; without it (a preview before finalize) the sale id is marked as a draft. */
   posOrder?: PosOrder;
@@ -23,7 +25,7 @@ export function Receipt({ order, posOrder, store, cashier, registerId, newSale, 
 }) {
   useEffect(injectPrintStyle, []);
   const receipt = buildReceiptData(order, {
-    storeName: store.name, storeAddress: store.address, cashier, register: registerId,
+    storeName: store.name, storeAddress: store.address, cashier, register: registerId, registerName,
   });
   const money = (amount: number) => formatMoney({ amount, currency: receipt.currency }) ?? '';
   const row = (label: string, amount: string, bold = false, key?: number) => <View key={key} accessibilityLabel={`${label}: ${amount}`} className="flex-row justify-between gap-4">
@@ -42,6 +44,7 @@ export function Receipt({ order, posOrder, store, cashier, registerId, newSale, 
     <Text testID="receipt-order" className="text-foreground">{posOrder ? `Order ${orderReference(posOrder)}` : `Order ${receipt.header.orderNumber.slice(-8)} (draft)`}</Text>
     <Text className="text-muted-foreground">{formatDate(posOrder?.createdAt ?? receipt.header.date)}</Text>
     <Text className="text-muted-foreground">Cashier: {receipt.header.cashier}</Text>
+    {receipt.register.name ? <Text testID="receipt-register" className="text-muted-foreground">Register: {receipt.register.name}</Text> : null}
     {receipt.header.customer && <Text className="text-muted-foreground">Customer: {receipt.header.customer}</Text>}
     {receipt.lineItems.map((line, index) => <View key={index}>
       <Text className="text-foreground">{line.name}</Text>

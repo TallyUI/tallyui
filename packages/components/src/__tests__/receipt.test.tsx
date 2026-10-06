@@ -12,6 +12,22 @@ const store = { name: 'Shop' };
 afterEach(() => cleanup());
 
 describe('Receipt', () => {
+  it('prints the register name when given, after the cashier', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1"
+      registerName="Front till" newSale={() => {}} />);
+    const register = screen.getByTestId('receipt-register');
+    expect(register.textContent).toBe('Register: Front till');
+    expect(screen.getByText('Cashier: Alex').compareDocumentPosition(register) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('prints no register line without a register name', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    const { container } = render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    expect(screen.queryByTestId('receipt-register')).toBeNull();
+    expect(container.textContent).not.toContain('register-1');
+  });
+
   it.each([false, true])('prints fee and shipping rows after Subtotal and before tax, preserving the rows without charges (%s)', (charges) => {
     render(<SaleHarness capabilities={{ orderCreate: 5 }}>{() => null}</SaleHarness>);
     act(() => {

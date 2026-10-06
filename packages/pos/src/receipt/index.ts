@@ -1,2 +1,3 @@
 export { buildReceiptData } from './build-receipt-data';
-export type { ReceiptData, ReceiptLineItem, ReceiptConfig } from './types';
+export { RECEIPT_SCHEMA_VERSION } from './types';
+export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, ReceiptRegister, ReceiptFiscal } from './types';

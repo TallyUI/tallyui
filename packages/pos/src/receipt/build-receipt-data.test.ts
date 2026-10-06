@@ -4,6 +4,7 @@ import { buildReceiptData } from './build-receipt-data';
 import { roundMicrosToMinor } from '../tax/exact';
 import type { Order } from '../order/types';
 import type { ReceiptConfig, ReceiptData } from './types';
+import { RECEIPT_SCHEMA_VERSION } from './types';
 
 /** The receipt's invariants (ADR-063): the printed lines sum to the subtotal; their discount rows plus the order row
  *  to the discount; subtotal − discount plus tax (when exclusive) is the total, or minus nothing (when inclusive, since
@@ -86,6 +87,39 @@ const config: ReceiptConfig = {
   register: 'POS-1',
   taxLabels: { 100000: 'VAT 10%', 50000: 'Reduced VAT 5%' },
 };
+
+describe('receipt schema 1.4 blocks', () => {
+  it('fills the 1.4 defaults', () => {
+    const receipt = buildReceiptData(baseOrder, config);
+    expect(receipt.schemaVersion).toBe('1.4.0');
+    expect(receipt.schemaVersion).toBe(RECEIPT_SCHEMA_VERSION);
+    expect(receipt.software).toStrictEqual({ name: 'WCPOS', plugin_version: '', app_version: '', app_build: '', platform: '' });
+    expect(receipt.register).toStrictEqual({ id: 'POS-1', name: '' });
+    expect(receipt.fiscal).toStrictEqual({ document_type: 'sale', is_reprint: false, reprint_count: 0, qr_payload: '' });
+  });
+
+  it('has an empty register block without a register', () => {
+    const { register, ...withoutRegister } = config;
+    expect(buildReceiptData(baseOrder, withoutRegister).register).toStrictEqual({ id: '', name: '' });
+  });
+
+  it('takes the register name, software and fiscal inputs', () => {
+    const receipt = buildReceiptData(baseOrder, {
+      ...config, registerName: 'Front till',
+      software: { app_version: '3.5.3', platform: 'web' },
+      fiscal: { is_reprint: true, reprint_count: 2 },
+    });
+    expect(receipt.register.name).toBe('Front till');
+    expect(receipt.software).toStrictEqual({ name: 'WCPOS', plugin_version: '', app_version: '3.5.3', app_build: '', platform: 'web' });
+    expect(receipt.fiscal).toStrictEqual({ document_type: 'sale', is_reprint: true, reprint_count: 2, qr_payload: '' });
+  });
+
+  it('keeps the header unchanged', () => {
+    const { header } = buildReceiptData(baseOrder, { ...config, registerName: 'Front till' });
+    expect(header.register).toBe('POS-1');
+    expect(header).not.toHaveProperty('registerName');
+  });
+});
 
 describe('buildReceiptData', () => {
   it("puts the customer's name, or else email, in the header, and nothing for a guest", () => {

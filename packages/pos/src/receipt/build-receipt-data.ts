@@ -1,6 +1,7 @@
 import type { Discount, SentOrder } from '../order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import type { ReceiptConfig, ReceiptData } from './types';
+import { RECEIPT_SCHEMA_VERSION } from './types';
 
 export function buildReceiptData(order: SentOrder, config: ReceiptConfig): ReceiptData {
   // Drops the shared helper's `netMinor` (the Z report's own use): the receipt's tax summary
@@ -29,6 +30,14 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
   const customer = order.customer?.name || order.customer?.email;
 
   return {
+    schemaVersion: RECEIPT_SCHEMA_VERSION,
+    software: {
+      name: 'WCPOS', plugin_version: '', app_version: '', app_build: '', platform: '', ...config.software,
+    },
+    register: { id: config.register ?? '', name: config.registerName ?? '' },
+    fiscal: {
+      document_type: 'sale', is_reprint: false, reprint_count: 0, qr_payload: '', ...config.fiscal,
+    },
     header: {
       storeName: config.storeName,
       storeAddress: config.storeAddress,
