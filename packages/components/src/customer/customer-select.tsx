@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Select } from '@tallyui/primitives';
 import { useCustomerTraits, type CustomerTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { VStack, type VStackProps } from '../ui';
+import { SearchInput } from '../input/search-input';
 import { CustomerCard } from './customer-card';
 
 export interface CustomerSelectProps<Doc = any> extends Omit<VStackProps, 'children'> {
@@ -17,6 +19,8 @@ export interface CustomerSelectProps<Doc = any> extends Omit<VStackProps, 'child
   onSearch: (query: string) => void;
   /** Placeholder text for the search input */
   placeholder?: string;
+  /** Renders the search input; pass false when the parent renders its own (as CustomerPicker does) */
+  showSearch?: boolean;
   className?: string;
 }
 
@@ -54,10 +58,12 @@ function CustomerSelectView<Doc>({
   onSelect,
   onSearch,
   placeholder = 'Search customers...',
+  showSearch = true,
   className,
   traits,
   ...props
 }: CustomerSelectProps<Doc>) {
+  const [search, setSearch] = useState('');
 
   // Map selected customer to Select primitive's Option format
   const selectedOption = selected && traits
@@ -84,6 +90,16 @@ function CustomerSelectView<Doc>({
       defaultOpen={true}
     >
       <VStack space="sm" className={cn(className)} {...props}>
+        {showSearch && <SearchInput
+          value={search}
+          onChangeText={(text) => {
+            setSearch(text);
+            onSearch(text);
+          }}
+          placeholder={placeholder}
+          testID="customer-select-search"
+          accessibilityLabel="Search customers"
+        />}
         {selected && traits && (
           <Select.Trigger asChild>
             <View className="rounded-lg border border-primary bg-primary/5 px-3 py-2">
