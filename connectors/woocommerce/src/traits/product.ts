@@ -64,8 +64,16 @@ export const wooProductTraits: ProductTraits = {
 
   hasVariants: (doc) => doc.type === 'variable',
 
-  // Variable products' variations aren't synced yet, so they have no entries until they are.
-  getVariants: (doc, context) => doc.type === 'variable' ? [] : [{
+  // Variable products carry their synced variations for synchronous, offline traits.
+  getVariants: (doc, context) => doc.type === 'variable' ? (doc.variation_docs ?? [])
+    .filter((v: any) => v.status === 'publish' && v.purchasable !== false).map((v: any) => ({
+      id: String(v.id),
+      title: (v.attributes ?? []).map((attribute: any) => attribute.option).join(' / ') || undefined,
+      sku: v.sku || undefined,
+      barcode: v.barcode || undefined,
+      prices: wooProductTraits.getPrices(v, context),
+      stock: wooProductTraits.getStock(v),
+    })) : [{
     id: String(doc.id),
     sku: doc.sku || undefined,
     barcode: wooProductBarcode(doc),

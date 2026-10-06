@@ -5,7 +5,7 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { errorKind, type SyncContext, type SyncNotice } from '@tallyui/core';
-import { startReplication } from '@tallyui/database';
+import { connectorCollection, startReplication } from '@tallyui/database';
 
 import { WooTillUpdateRequiredError as ExportedError } from '../index';
 import { wooProductSchema } from '../schemas/products';
@@ -55,7 +55,7 @@ it('a 426 on the mark request pauses the pull with one till notice, and resume()
     name: `woo426${Date.now()}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false,
   });
   cleanup.push(() => db.close());
-  const { products } = await db.addCollections({ products: { schema: wooProductSchema } });
+  const { products } = await db.addCollections({ products: connectorCollection(wooProductSchema) });
   const state = startReplication({ collection: products, adapter: wooProductReplication, context, retryTime: RETRY });
   cleanup.push(() => state.cancel());
   const notices: (SyncNotice | undefined)[] = [];

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { wooProductTraits } from '../traits/product';
+import { toVariationDocument } from '../replication/products';
 import fixtureProducts from './fixtures/wcpos-1.10.20-products.json';
+import fixtureVariations from './fixtures/wcpos-1.10.20-variations.json';
 
 describe('WooCommerce getVariants', () => {
   it.each([
@@ -15,7 +17,7 @@ describe('WooCommerce getVariants', () => {
     }]);
   });
 
-  it('omits variable products until their variations are synced', () => {
+  it('a variable product without variation_docs has no variants', () => {
     const product = {
       id: 102, name: 'T-Shirt', type: 'variable', sku: 'MER-TEE', global_unique_id: '2000000000121',
       price: '25.00', regular_price: '', sale_price: '', on_sale: false, stock_status: 'instock',
@@ -23,6 +25,22 @@ describe('WooCommerce getVariants', () => {
       meta_data: [{ key: '_woocommerce_pos_uuid', value: '72668d25-ca99-45f1-9427-9f4fa3dada85' }],
     };
     expect(wooProductTraits.getVariants!(product, { currency: 'EUR' })).toEqual([]);
+  });
+
+  it('returns published, purchasable embedded variants with attribute titles and EUR prices', () => {
+    const variations = fixtureVariations.documents.map((doc) => toVariationDocument(doc.payload));
+    const product = { id: 102, type: 'variable', variation_docs: [
+      ...variations, { ...variations[0], id: 107, status: 'draft' },
+      { ...variations[0], id: 108, purchasable: false },
+    ] };
+    expect(wooProductTraits.getVariants!(product, { currency: 'EUR' })).toEqual([
+      { id: '104', title: 'S / Black', sku: 'MER-TEE-S-BLK', barcode: '2000000000138' },
+      { id: '105', title: 'S / White', sku: 'MER-TEE-S-WHT', barcode: '2000000000145' },
+      { id: '106', title: 'M / Black', sku: 'MER-TEE-M-BLK', barcode: '2000000000152' },
+    ].map((variant) => ({ ...variant,
+      prices: [{ amount: 2500, currency: 'EUR', kind: 'base' }],
+      stock: { status: 'in_stock', quantity: 10 },
+    })));
   });
 });
 
