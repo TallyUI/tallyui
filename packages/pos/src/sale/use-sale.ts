@@ -72,8 +72,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   const error = saving && saleError ? saleError : configError ?? saleError;
   // The session pinned by startTender for this tender (`undefined` inside: none); null until a tender starts.
   const tenderSession = useRef<{ session: typeof opts.session } | null>(null);
-  // The id, at the tender, of the payment whose terminal reference setTender dropped; null when none was dropped.
-  const droppedReference = useRef<string | null>(null);
+  // The ids, at the tender, of payments whose terminal references were dropped.
+  const droppedReferences = useRef<Set<string>>(new Set());
   // The pending completion isStored confirmed stored after its save failed; `canContinue` mirrors it for
   // rendering. `attempts` counts complete() attempts, so a confirmation that lands after a new one is dropped.
   const confirmed = useRef<{ order: Order; posOrder: PosOrder } | null>(null);
@@ -115,7 +115,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     confirm(null); pending.current = null;
     inFlight.current = null;
     tenderSession.current = null;
-    droppedReference.current = null;
+    droppedReferences.current.clear();
     setSaving(false);
     madeWith.current = { taxContext, currency: settings.currency };
     const next = restored ?? createOrderBuilder({ currency: settings.currency, taxContext });
@@ -149,23 +149,32 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     }
   }, []);
 
-  function setTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string } | null) {
-    if (locked()) return;
+  function addOne(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string }): string {
     // A terminal reference finalize would refuse is dropped as it's entered, never the payment (the money is
     // taken): the tender applies without it, with a message that doesn't block complete() and a
     // localWarnings entry on the stored order naming the payment whose reference was dropped.
-    const reason = referenceReason(tender?.reference);
+    const reason = referenceReason(tender.reference);
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
-    const kept = tender && dropped ? { method: tender.method, amountMinor: tender.amountMinor } : tender;
+    const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor } : tender;
     const builder = builderNow.current;
-    const previous = builder.getSnapshot().payments[0];
-    if (previous) builder.removePayment(previous.id);
-    const paymentId = kept ? builder.addPayment(kept) : null;
-    droppedReference.current = dropped ? paymentId : null;
-    setError(dropped && `The terminal's payment reference couldn't be kept (${dropped}); the payment is recorded without it.`);
+    const paymentId = builder.addPayment(kept);
+    if (dropped) {
+      droppedReferences.current.add(paymentId);
+      setError(`The terminal's payment reference couldn't be kept (${dropped}); the payment is recorded without it.`);
+    }
     try {
-      if (dropped) saleLogger.warn("the terminal's payment reference was dropped", { reason: dropped, method: tender!.method });
+      if (dropped) saleLogger.warn("the terminal's payment reference was dropped", { reason: dropped, method: tender.method });
     } catch { /* a failing sink must never lose the tender */ }
+    return paymentId;
+  }
+
+  function setTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string } | null) {
+    if (locked()) return;
+    const builder = builderNow.current;
+    for (const payment of builder.getSnapshot().payments) builder.removePayment(payment.id);
+    droppedReferences.current.clear();
+    setError(null);
+    if (tender) addOne(tender);
   }
 
   /** Asks `isStored`; Continue is offered only once it confirms, for this attempt, with the completion still pending. */
@@ -212,7 +221,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     if (hungSaveTimer.current === timer) clearHungSaveTimer();
     if (pending.current !== completion) return;
     pending.current = null;
-    droppedReference.current = null;
+    droppedReferences.current.clear();
     confirm(null);
     setSaving(false);
     setError(null);
@@ -315,6 +324,22 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       setStage({ kind: 'tender', method });
     },
     setTender,
+    /** ADR-072: external is capped at the balance due; change comes only from cash. */
+    addTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string }): string | null {
+      if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
+      if (tender.method === 'external') {
+        const due = builderNow.current.getSnapshot().balanceDueMinor;
+        if (due <= 0) return null;
+        return addOne({ ...tender, amountMinor: Math.min(tender.amountMinor, due) });
+      }
+      return addOne(tender);
+    },
+    /** ADR-072: remove one tender and its dropped-reference warning. */
+    removeTender(paymentId: string): void {
+      if (locked()) return;
+      builderNow.current.removePayment(paymentId);
+      droppedReferences.current.delete(paymentId);
+    },
     cancelTender() {
       if (locked()) return;
       setTender(null);
@@ -342,10 +367,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       if (pending.current) return deliver(pending.current);
       setSaving(true);
       const current = builderNow.current.getSnapshot();
+      const localWarnings = current.payments.filter((payment) => droppedReferences.current.has(payment.id))
+        .map((payment) => ({ code: 'payment_reference_dropped' as const, paymentId: payment.id }));
       let posOrder: PosOrder;
       try {
         posOrder = finalizeOrder(current, { registerId: opts.registerId, cashierRef: opts.cashierRef, capabilities: opts.capabilities,
-          ...(droppedReference.current ? { localWarnings: [{ code: 'payment_reference_dropped', paymentId: droppedReference.current }] } : {}) });
+          ...(localWarnings.length ? { localWarnings } : {}) });
       } catch (error) {
         setSaving(false);
         setError((error as Error).message);
