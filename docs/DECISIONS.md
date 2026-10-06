@@ -4439,7 +4439,7 @@ interface OrderCreatePayload {
 
 ## ADR-077 WooCommerce discounts as price overrides, then coupons (G6)
 
-- **Date:** 2026-10-06 · **Status:** Proposed (assignment G6 from the front desk, 2026-10-06; evidence brief by
+- **Date:** 2026-10-06 · **Status:** Accepted (the front desk's rulings on #447, 2026-10-06, below; assignment G6, evidence brief by
   this lane, citations to the WCPOS wiki, WooCommerce 11.1.1 and the WooCommerce lane's M5 survey) · **Relates to:**
   ADR-062 (discounts), ADR-065 amendment v4 (net discounts), ADR-070 (strict payloads), ADR-073 (the WooCommerce
   transport), ADR-075 (charges), ADR-076 (WooCommerce tax and amendment 1's stored net)
@@ -4500,7 +4500,19 @@ interface OrderCreatePayload {
   - (d) The builder and `useSale` coupon API, the push (`coupon_lines`, `_woocommerce_pos_data` intent, the
     `coupon_invalid` mapping) and the order's storage (a `pos_orders` bump, one-way).
   - (e) The Cart's coupon entry and receipt rows.
-- **Open, for a ruling:**
+- **Rulings (front desk, 2026-10-06):**
+  - **Q1, yes.** Price overrides on the WooCommerce push: `subtotal = total =` the discounted net, with the intent in
+    `_woocommerce_pos_data` (WCPOS parity). Phase (a) is transport-only, in 3.4.x. `discount_total` then shows
+    coupons only, as in WCPOS.
+  - **Q2, a port.** WCPOS's order-math coupon module comes through a handoff from the monorepo lane, the same route
+    as the tax engine, with its tests verbatim. It is not built from WooCommerce's PHP.
+  - **Q3, parity.** A coupon refused after payment leaves the order `rejected` with `coupon_invalid`; nothing blocks
+    the sale offline. The till keeps such a sale recoverable: it reopens it as a parked sale with the coupon removed
+    and the reason shown, so the cashier can re-tender. The UI shows a staleness hint when the synced coupon copy is
+    older than the store's sync interval, with no hard stop.
+  - **Q4.** The WooCommerce lane checks `wcpos/v2/coupons` on the dev store (Free or Pro) and reports. If it is
+    Pro-only, the refunds gate rule applies: honour the gate and show it.
+- **Questions as first asked:**
   - Q1. Adopt decision 1 (price overrides), which changes what WooCommerce shows as `discount_total` for manual
     discounts?
   - Q2. The engine source: a port of WCPOS's coupon module through a monorepo-lane handoff (recommended), or an
