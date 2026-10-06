@@ -1,5 +1,12 @@
 # @tallyui/connector-medusa
 
+## 3.0.4
+
+### Patch Changes
+
+- b10c3e2: Faster first catalogue sync: 250-product admin pages and up to 3 concurrent store-API price requests per page (ADR-074).
+  - @tallyui/core@3.0.4
+
 ## 3.0.3
 
 ### Patch Changes

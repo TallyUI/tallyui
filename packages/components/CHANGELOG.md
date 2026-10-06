@@ -1,5 +1,16 @@
 # @tallyui/components
 
+## 3.0.4
+
+### Patch Changes
+
+- 4946325: Catalogue takes an optional `pullError`; while it is set, a catalogue that has never synced shows 'No products yet.' instead of 'Loading products…' (a failed first pull no longer reads as loading).
+- 5a2e037: RegisterPanel lists only cash under 'Expected in the drawer' and other tenders under 'Other tenders'; the `external` tender reads 'Card' in the panel, the count and the closure sheet.
+  - @tallyui/pos@3.0.4
+  - @tallyui/core@3.0.4
+  - @tallyui/primitives@3.0.4
+  - @tallyui/theme@3.0.4
+
 ## 3.0.3
 
 ### Patch Changes
