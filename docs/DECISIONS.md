@@ -4323,8 +4323,8 @@ interface OrderCreatePayload {
 
 ## ADR-076 WooCommerce tax: the WCPOS engine ported into core, several rates per class, Woo rounding
 
-- **Date:** 2026-10-06 · **Status:** Proposed (front desk assignment G5, from the WooCommerce lane's M5 survey; a
-  live risk: a store with `calc_taxes = yes` sells untaxed today and gets `total_mismatch`) · **Relates to:**
+- **Date:** 2026-10-06 · **Status:** Accepted (the front desk's ruling on #429, 2026-10-06, with the address
+  fallback and the float containment below; assignment G5, from the WooCommerce lane's M5 survey; a live risk: a store with `calc_taxes = yes` sells untaxed today and gets `total_mismatch`) · **Relates to:**
   ADR-049 (store settings), ADR-071 (tax rounding is a capability), ADR-073 (the WooCommerce transport), ADR-075
   (fees and shipping)
 - **Context:**
@@ -4355,7 +4355,10 @@ interface OrderCreatePayload {
        - `normalizeTaxClass`;
        - `resolveInheritedShippingTaxClass`.
      - It keeps WooCommerce's float arithmetic and its PHP-style rounding, because parity with WooCommerce is the
-       point. It replaces lodash with local code. **No coupon code** (G6).
+       point. **That float maths is contained:** it lives only in the ported functions and the `woocommerce`
+       rounding strategy. Nothing float-typed crosses into the integer ppm and micro paths that Medusa and Vendure
+       use, and a test asserts that their golden totals are byte-identical before and after the port.
+     - It replaces lodash with local code. **No coupon code** (G6).
      - Its tests are ported and adapted, except the coupon suites: `calculate-taxes`, `precision`, `sum-taxes`,
        `tax-class` and `tax-rates.helpers`.
   2. **A rate list beside the single rate.**
@@ -4373,8 +4376,11 @@ interface OrderCreatePayload {
      - The other strategies are untouched.
      - `TaxProvider` passes the rate list through.
   4. **Decided open points:**
-     - **The tax address is the store's** `tax_address`, because WCPOS hard-codes `tax_based_on = base`. An empty
-       address gives no rates and a store-settings warning; there's no silent fallback.
+     - **A POS sale is taxed at the store's base location.** WCPOS forces `tax_based_on = base` for POS orders, and
+       WooCommerce's own fallback for an unknown customer location is the base address too.
+       - The address is `/stores`'s `tax_address`.
+       - When that is empty, it's the store base (`store_country`, `store_state`, `store_postcode`, `store_city`).
+       - Only when both are missing is there a store-settings warning and no rates.
      - **Zero-rate rows are kept**, as WooCommerce keeps them on #136. order-math drops them.
      - Decimals come from `/stores`'s `price_num_decimals`.
      - A variation's `tax_class` of `parent` (or none) inherits the product's class.
