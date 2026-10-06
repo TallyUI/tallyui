@@ -4,13 +4,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorProvider } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import { Catalogue, formatStockSyncTime } from '../sale/catalogue';
-import type { ProductGrid, ProductStockBadge, ProductTableProps, ViewToggleProps } from '../product';
+import type { CategoryNavProps, ProductGrid, ProductStockBadge, ProductTableProps, ViewToggleProps } from '../product';
 
 // Ported from medusapos/app `563b03c4` `tests/catalogue.test.tsx` (ADR-052, TV6b). Mocks the sibling
 // product/input/ui modules the same way medusapos mocked `@tallyui/components`: the tile is composed
 // directly in catalogue.tsx (ProductCard has no children slot), so only ProductTitle and ProductStockBadge
 // need to render real content for the tests below.
 vi.mock('../product', () => ({
+  CategoryNav: ({ categories, selectedId, onSelect }: CategoryNavProps) => (
+    <div data-testid="category-nav">
+      {categories.map(({ id, name }) => (
+        <button key={id} data-testid={`category-${id}`} aria-pressed={selectedId === id} onClick={() => onSelect(id)}>{name}</button>
+      ))}
+    </div>
+  ),
   ViewToggle: ({ value, onChange }: ViewToggleProps) => (
     <div data-testid="view-toggle">
       {(['grid', 'table'] as const).map((view) => (
@@ -496,9 +503,104 @@ describe('Catalogue', () => {
   });
 });
 
+describe('Catalogue category nav', () => {
+  const hat = { ...products[0], categories: [{ id: 'pcat_hats', name: 'Hats' }] };
+  const shirt = { ...products[1], categories: [{ id: 'pcat_shirts', name: 'Shirts' }] };
+  const props = { products: [hat, shirt], traits, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null };
+  const gridState = { view: 'grid', gridColumns: 'auto', sort: null, categoryId: null } as const;
+
+  it('hides the nav without showCategoryNav', () => {
+    render(<Catalogue {...props} />);
+    expect(screen.queryByTestId('category-nav')).toBeNull();
+  });
+
+  it('ignores a stored category while the nav is hidden', () => {
+    render(<Catalogue {...props} products={[]} categories={[{ id: 'pcat_bags', name: 'Bags' }]}
+      loadViewState={() => ({ categoryId: 'pcat_bags' })} loading={false} />);
+    expect(screen.getByText('No products yet.')).toBeTruthy();
+    expect(screen.queryByText('No products in Bags.')).toBeNull();
+
+    cleanup();
+    render(<Catalogue {...props} loadViewState={() => ({ categoryId: 'pcat_hats' })} />);
+    expect(screen.getByTestId('product-tile-Blue Hat')).toBeTruthy();
+    expect(screen.getByTestId('product-tile-Red Shirt')).toBeTruthy();
+  });
+
+  it('lists All products first and selected, then the product categories', () => {
+    render(<Catalogue {...props} showCategoryNav />);
+    const buttons = within(screen.getByTestId('category-nav')).getAllByRole('button');
+    expect(buttons.map((button) => button.textContent)).toEqual(['All products', 'Hats', 'Shirts']);
+    expect(buttons[0]).toBe(screen.getByTestId('category-'));
+    expect(buttons.map((button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
+  });
+
+  it('filters by category and reports and saves the choice and its clearing', () => {
+    const onStateChange = vi.fn();
+    const saveViewState = vi.fn();
+    render(<Catalogue {...props} showCategoryNav onStateChange={onStateChange} saveViewState={saveViewState} />);
+    fireEvent.click(screen.getByTestId('category-pcat_hats'));
+    expect(within(screen.getByTestId('grid')).getAllByTestId(/^product-tile-/).map((tile) => tile.getAttribute('data-testid')))
+      .toEqual(['product-tile-Blue Hat']);
+    expect(onStateChange.mock.calls).toEqual([[{ ...gridState, categoryId: 'pcat_hats' }]]);
+    expect(saveViewState.mock.calls).toEqual([[{ ...gridState, categoryId: 'pcat_hats' }]]);
+    fireEvent.click(screen.getByTestId('category-'));
+    expect(within(screen.getByTestId('grid')).getAllByTestId(/^product-tile-/).map((tile) => tile.getAttribute('data-testid')))
+      .toEqual(['product-tile-Blue Hat', 'product-tile-Red Shirt']);
+    expect(onStateChange.mock.calls).toEqual([[{ ...gridState, categoryId: 'pcat_hats' }], [gridState]]);
+    expect(saveViewState.mock.calls).toEqual([[{ ...gridState, categoryId: 'pcat_hats' }], [gridState]]);
+  });
+
+  it('searches within Hats and keeps the no-match message', () => {
+    render(<Catalogue {...props} showCategoryNav />);
+    fireEvent.click(screen.getByTestId('category-pcat_hats'));
+    fireEvent.change(screen.getByPlaceholderText('Search or scan barcode / SKU'), { target: { value: 'Shirt' } });
+    expect(screen.queryAllByTestId(/^product-tile-/)).toHaveLength(0);
+    expect(screen.getByText('No products match "Shirt".')).toBeTruthy();
+  });
+
+  it('shows all products for a missing stored category and only reports the load', async () => {
+    const onStateChange = vi.fn();
+    render(<Catalogue {...props} showCategoryNav loadViewState={() => ({ categoryId: 'gone' })} onStateChange={onStateChange} />);
+    expect(screen.getAllByTestId(/^product-tile-/).map((tile) => tile.getAttribute('data-testid')))
+      .toEqual(['product-tile-Blue Hat', 'product-tile-Red Shirt']);
+    expect(screen.getByTestId('category-').getAttribute('aria-pressed')).toBe('true');
+    expect(onStateChange.mock.calls).toEqual([[{ ...gridState, categoryId: 'gone' }]]);
+    await act(async () => {});
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses supplied categories instead of derived ones and names an empty category', () => {
+    render(<Catalogue {...props} showCategoryNav categories={[{ id: 'pcat_bags', name: 'Bags' }]} />);
+    expect(within(screen.getByTestId('category-nav')).getAllByRole('button').map((button) => button.textContent))
+      .toEqual(['All products', 'Bags']);
+    fireEvent.click(screen.getByTestId('category-pcat_bags'));
+    expect(screen.queryAllByTestId(/^product-tile-/)).toHaveLength(0);
+    expect(screen.getByText('No products in Bags.')).toBeTruthy();
+  });
+
+  it('leaves supplied items as given and reports the chosen category', () => {
+    const onStateChange = vi.fn();
+    render(<Catalogue {...props} showCategoryNav items={[shirt]} onStateChange={onStateChange} />);
+    fireEvent.click(screen.getByTestId('category-pcat_hats'));
+    expect(screen.getAllByTestId(/^product-tile-/).map((tile) => tile.getAttribute('data-testid')))
+      .toEqual(['product-tile-Red Shirt']);
+    expect(onStateChange.mock.calls).toEqual([[{ ...gridState, categoryId: 'pcat_hats' }]]);
+  });
+
+  it('scans the shirt Small entry while Hats is active', () => {
+    const onSelect = vi.fn();
+    render(<Catalogue {...props} showCategoryNav onSelect={onSelect} />);
+    fireEvent.click(screen.getByTestId('category-pcat_hats'));
+    const input = screen.getByPlaceholderText('Search or scan barcode / SKU');
+    fireEvent.change(input, { target: { value: '222' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ product: shirt, variant: traits.getVariants!(shirt)[0] });
+  });
+});
+
 describe('Catalogue view state', () => {
   const props = { products, traits, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null };
-  const gridState = { view: 'grid', gridColumns: 'auto', sort: null } as const;
+  const gridState = { view: 'grid', gridColumns: 'auto', sort: null, categoryId: null } as const;
   const tableState = { ...gridState, view: 'table' } as const;
 
   it('keeps the default grid and hides the toggle without new props', () => {

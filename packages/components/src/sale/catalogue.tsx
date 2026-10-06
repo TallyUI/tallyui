@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits } from '@tallyui/core';
+import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
   catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE,
+  listCategories, inCategory,
   type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction } from '@tallyui/pos';
-import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle } from '../product';
+import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle, CategoryNav } from '../product';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
 
@@ -33,7 +34,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
 }
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
-  viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange }: {
+  viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categories }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -73,6 +74,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   onStateChange?: (state: CatalogueViewState) => void;
   /** Show the grid/table toggle in the header. Default false. */
   showViewToggle?: boolean;
+  /** Show the category nav in the header. Default false. */
+  showCategoryNav?: boolean;
+  /** Replaces the categories derived from the listed products. */
+  categories?: ProductCategory[];
   /** App-filtered, sorted list shown as given; products still drives scanning and variant choices. */
   items?: Doc[];
   /** Search text on every input change, for apps that filter items themselves. */
@@ -126,6 +131,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // Idempotent (the adapter's overlay returns just the fields the stock map sets), so an app that already
   // merges the overlay itself keeps working, and can drop its own merge.
   const shown = useStockOverlaid(products) as Doc[];
+  const categoryList = useMemo(() => categories ?? listCategories(shown, traits), [categories, shown, traits]);
+  const activeCategory = showCategoryNav ? categoryList.find((category) => category.id === state.categoryId) : undefined;
   const suppliedItems = useStockOverlaid(items ?? products) as Doc[];
   const overlayAsOf = useStockOverlayAsOf();
   const parsedOverlayAsOf = overlayAsOf ? new Date(overlayAsOf) : undefined;
@@ -140,9 +147,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
   const results = useMemo(() => {
     if (items !== undefined) return suppliedItems;
-    const filtered = searchProducts(shown, query, traits);
+    const filtered = searchProducts(activeCategory
+      ? shown.filter((doc) => inCategory(doc, activeCategory.id, traits)) : shown, query, traits);
     return state.sort ? sortProducts(filtered, state.sort, (doc, field) => productSortValue(doc, field, traits, { currency })) : filtered;
-  }, [items, suppliedItems, shown, query, traits, state.sort, currency]);
+  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
@@ -160,7 +168,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   }
 
   const emptyState = <Text className="mt-10 text-center text-sm text-muted-foreground">
-    {query.trim() ? `No products match "${query.trim()}".` : isLoading ? 'Loading products…' : 'No products yet.'}
+    {query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
+      : isLoading ? 'Loading products…' : 'No products yet.'}
   </Text>;
 
   return (
@@ -181,6 +190,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             {showViewToggle ? <ViewToggle value={state.view} onChange={(view) => changeState({ type: 'setView', view })} /> : null}
           </View>
         ) : null}
+        {showCategoryNav ? <CategoryNav categories={[{ id: '', name: 'All products' }, ...categoryList]}
+          selectedId={activeCategory?.id ?? ''}
+          onSelect={(id) => changeState({ type: 'setCategory', categoryId: id === '' ? null : id })} /> : null}
         {choices.length > 0 ? (
           <View accessibilityLabel="Choose variant" className="gap-2">
             {choices.map((entry) => (

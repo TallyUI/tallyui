@@ -5,7 +5,7 @@ import { catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, 
 const defaults = DEFAULT_CATALOGUE_VIEW_STATE;
 describe('catalogueViewReducer', () => {
   it('has frozen grid, auto and unsorted defaults', () => {
-    expect(defaults).toEqual({ view: 'grid', gridColumns: 'auto', sort: null });
+    expect(defaults).toEqual({ view: 'grid', gridColumns: 'auto', sort: null, categoryId: null });
     expect(Object.isFrozen(defaults)).toBe(true);
   });
   it('changes each field without mutating the input', () => {
@@ -29,13 +29,23 @@ describe('catalogueViewReducer', () => {
     const state = { ...defaults };
     expect(catalogueViewReducer(defaults, { type: 'replace', state })).toBe(state);
   });
+  it('keeps unchanged category ids and creates a new state for changes', () => {
+    expect(catalogueViewReducer(defaults, { type: 'setCategory', categoryId: null })).toBe(defaults);
+    const state = catalogueViewReducer(defaults, { type: 'setCategory', categoryId: 'pcat_01' });
+    expect(state).not.toBe(defaults);
+    expect(state).toEqual({ ...defaults, categoryId: 'pcat_01' });
+    expect(catalogueViewReducer(state, { type: 'setCategory', categoryId: 'pcat_01' })).toBe(state);
+    const cleared = catalogueViewReducer(state, { type: 'setCategory', categoryId: null });
+    expect(cleared).not.toBe(state);
+    expect(cleared).toEqual(defaults);
+  });
 });
 
 describe('normalizeCatalogueViewState', () => {
   it.each([undefined, null, false, 2, 'grid', () => null])('defaults a non-object %s', (raw) => {
     expect(normalizeCatalogueViewState(raw)).toBe(defaults);
   });
-  const valid: CatalogueViewState = { view: 'table', gridColumns: 4, sort: { field: 'name', dir: 'desc' } };
+  const valid: CatalogueViewState = { view: 'table', gridColumns: 4, sort: { field: 'name', dir: 'desc' }, categoryId: null };
   it('defaults only missing or invalid fields and drops extra keys', () => {
     expect(normalizeCatalogueViewState({})).toEqual(defaults);
     expect(normalizeCatalogueViewState({ ...valid, view: 'list' })).toEqual({ ...valid, view: 'grid' });
@@ -59,6 +69,12 @@ describe('normalizeCatalogueViewState', () => {
   });
   it('never throws on inaccessible stored fields', () => {
     expect(normalizeCatalogueViewState({ get view() { throw new Error('unreadable'); } })).toBe(defaults);
+  });
+  it.each(['pcat_01', null])('keeps categoryId %s', (categoryId) => {
+    expect(normalizeCatalogueViewState({ categoryId }, { ...defaults, categoryId: 'x' }).categoryId).toBe(categoryId);
+  });
+  it.each([{ categoryId: '' }, { categoryId: 5 }, { categoryId: {} }, {}])('defaults invalid or missing categoryId %j', (raw) => {
+    expect(normalizeCatalogueViewState(raw, { ...defaults, categoryId: 'x' }).categoryId).toBe('x');
   });
 });
 
