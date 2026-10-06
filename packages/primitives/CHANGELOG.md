@@ -1,5 +1,7 @@
 # @tallyui/primitives
 
+## 3.6.0
+
 ## 3.5.3
 
 ## 3.5.2

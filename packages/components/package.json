@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/components",
-  "version": "3.5.3",
+  "version": "3.6.0",
   "type": "module",
   "description": "Universal POS UI components for Tally UI",
   "main": "./dist/index.js",
