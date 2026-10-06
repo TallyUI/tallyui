@@ -91,7 +91,7 @@ describe('useSale split tender', () => {
     expect(result.current.order.balanceDueMinor).toBe(750);
     const before = result.current.order;
     act(() => result.current.removeTender('unknown'));
-    expect(result.current.order).toEqual(before);
+    expect(result.current.order).toBe(before);
   });
 
   it('setTender replaces every payment and clears dropped-reference warnings', async () => {
