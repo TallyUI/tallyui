@@ -334,9 +334,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       }
       return addOne(tender);
     },
-    /** ADR-072: remove one tender and its dropped-reference warning. */
+    /** ADR-072: remove one tender and its dropped-reference warning. An id not among the payments changes nothing. */
     removeTender(paymentId: string): void {
       if (locked()) return;
+      if (!builderNow.current.getSnapshot().payments.some((payment) => payment.id === paymentId)) return;
       builderNow.current.removePayment(paymentId);
       droppedReferences.current.delete(paymentId);
     },
