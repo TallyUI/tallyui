@@ -1,6 +1,12 @@
 import type { ProductPrice } from '../money';
 import type { StockLevel } from '../stock';
 
+/** A flat product category: `id` is the backend's id as a string (unique per backend), `name` its label. */
+export interface ProductCategory {
+  id: string;
+  name: string;
+}
+
 /** One purchasable variant of a product, in backend-neutral terms. */
 export interface VariantSummary {
   /** Backend variant id; the id sent in order lines. */
@@ -115,6 +121,12 @@ export interface ProductTraits<Doc = any> {
 
   /** Categories as simple label strings */
   getCategoryNames: (doc: Doc) => string[];
+
+  /**
+   * The product's categories as `{ id, name }`, in the document's order, without entries that have no name.
+   * Optional: without it, the pos category helpers use `getCategoryNames` with each name as its id.
+   */
+  getCategories?: (doc: Doc) => ProductCategory[];
 
   /** The connector-specific unique ID (as string for consistency) */
   getId: (doc: Doc) => string;

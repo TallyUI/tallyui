@@ -15,6 +15,7 @@ export type {
   ProductTraits,
   TraitContext,
   VariantSummary,
+  ProductCategory,
   CustomerTraits,
   Money,
   ProductPrice,

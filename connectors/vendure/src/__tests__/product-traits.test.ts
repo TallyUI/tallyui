@@ -352,6 +352,25 @@ describe('Vendure product traits', () => {
       expect(vendureProductTraits.getCategoryNames(simpleProduct)).toEqual([]);
     });
   });
+
+  describe('getCategories', () => {
+    it('returns collection pairs in document order', () => {
+      expect(vendureProductTraits.getCategories!(fullProduct)).toEqual([
+        { id: '5', name: 'Equipment' },
+        { id: '12', name: 'Coffee Machines' },
+      ]);
+    });
+
+    it('returns empty array when no collections', () => {
+      expect(vendureProductTraits.getCategories!(simpleProduct)).toEqual([]);
+    });
+
+    it('drops nameless entries and uses the name for a null id', () => {
+      expect(vendureProductTraits.getCategories!({ collections: [
+        { id: '5', name: '' }, { id: null, name: 'Coffee' },
+      ] })).toEqual([{ id: 'Coffee', name: 'Coffee' }]);
+    });
+  });
 });
 
 describe('product-level getStock', () => {
