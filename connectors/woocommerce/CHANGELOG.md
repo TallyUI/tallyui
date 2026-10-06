@@ -1,5 +1,14 @@
 # @tallyui/connector-woocommerce
 
+## 3.0.3
+
+### Patch Changes
+
+- 1d8cbc0: catalogueEntries accepts a trait context and no longer requires getVariants (a product without it sells as one variant from its own traits); Catalogue passes its currency; connector-woocommerce adds getVariants for non-variable products (variable products need their variations synced, a later release).
+- 843a06b: createWooCommandTransport sends the order outbox's order.create commands to WCPOS 1.10.x's wcpos/v2/push/orders as paid orders (one cash or card payment, tax-exclusive or untaxed stores; ADR-073).
+- 21823a4: Variable products carry their variations, read from WCPOS 1.10.x's flat wcpos/v2/variations route (no per-product route exists there), so getVariants returns them (titled from their attribute options). The products collection schema goes to version 1, so the catalogue resyncs once.
+  - @tallyui/core@3.0.3
+
 ## 3.0.2
 
 ### Patch Changes
