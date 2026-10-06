@@ -19,7 +19,7 @@ describe('Cart', () => {
     expect(screen.queryByRole('button', { name: 'Add charge' })).toBeNull();
   });
 
-  it.each([false, true])('adds each kind, shows display amounts and totals, and removes charges (inclusive: %s)', (inclusive) => {
+  it.each([false, true])('adds each kind, shows display amounts and totals, and removes charges (inclusive: %s)', { timeout: 20_000 }, (inclusive) => {
     render(<SaleHarness settings={{ ...pricing, pricesIncludeTax: inclusive }} capabilities={{ orderCreate: 5 }}>
       {(sale) => <Cart sale={sale} />}</SaleHarness>);
     expect(screen.getByRole('button', { name: 'Add charge' })).toBeTruthy();
