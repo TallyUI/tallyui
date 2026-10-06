@@ -1,5 +1,6 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { Text } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import type { PosOrder } from '@tallyui/pos';
 import { Receipt } from '../sale/receipt';
@@ -67,6 +68,29 @@ describe('Receipt', () => {
     render(<SaleHarness>{() => null}</SaleHarness>);
     render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
     expect(screen.getByTestId('receipt-order').textContent).toBe(`Order ${sale.order.id.slice(-8)} (draft)`);
+  });
+
+  it('prints the footer slot after Change and before the on-screen buttons', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    const { container } = render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1"
+      newSale={() => {}} footerSlot={<Text>Register: Front till</Text>} />);
+    const footer = screen.getByTestId('receipt-footer');
+    const change = screen.getByLabelText(/^Change:/);
+    const print = screen.getByText('Print receipt');
+    expect(footer.textContent).toContain('Register: Front till');
+    expect(change.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(footer.compareDocumentPosition(print) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(print.closest('[data-print="hide"]')).not.toBeNull();
+    for (let element: HTMLElement | null = footer; element; element = element.parentElement) {
+      expect(element.getAttribute('data-print')).not.toBe('hide');
+      if (element === container) break;
+    }
+  });
+
+  it('renders no footer wrapper without a footer slot', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    expect(screen.queryByTestId('receipt-footer')).toBeNull();
   });
 
   it('shows the customer under the cashier when there is one', () => {

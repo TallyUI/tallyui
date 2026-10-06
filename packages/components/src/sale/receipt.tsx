@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import { buildReceiptData, type SentOrder } from '@tallyui/pos';
@@ -12,12 +12,14 @@ const defaultFormatDate = (iso: string) => new Intl.DateTimeFormat(undefined, { 
 /** `store`/`taxLabel`/`topInset`/`formatDate` replace the app's Medusa settings, hard-coded VAT (default matches
  * TV6a's `Cart`), outbox strip and date util, so `Receipt` stays platform-neutral (ADR-052). */
 export function Receipt({ order, posOrder, store, cashier, registerId, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
-  topInset = 0, formatDate = defaultFormatDate }: {
+  topInset = 0, formatDate = defaultFormatDate, footerSlot }: {
   order: SentOrder; store: { name: string; address?: string }; cashier: string; registerId: string; newSale: () => void;
   /** The finalized order (useSale's receipt stage has it). With it the receipt prints its reference and time, the
    * same as Orders; without it (a preview before finalize) the sale id is marked as a draft. */
   posOrder?: PosOrder;
   taxLabel?: (ratePpm: number) => string; topInset?: number; formatDate?: (iso: string) => string;
+  /** Prints after the Change row and above the on-screen buttons (e.g. an app's register/software block). */
+  footerSlot?: ReactNode;
 }) {
   useEffect(injectPrintStyle, []);
   const receipt = buildReceiptData(order, {
@@ -61,6 +63,7 @@ export function Receipt({ order, posOrder, store, cashier, registerId, newSale, 
     {receipt.payments.map((payment, index) => row(payment.method === 'cash' ? 'Cash tendered' : 'Card terminal',
       money(payment.amountMinor) + (payment.reference ? ` · ${payment.reference}` : ''), false, index))}
     {row('Change', money(receipt.changeDueMinor))}
+    {footerSlot ? <View testID="receipt-footer" className="mt-3 items-center border-t border-dashed border-border pt-3">{footerSlot}</View> : null}
     <View dataSet={{ print: 'hide' }} className="flex-row gap-4">
       <Pressable accessibilityRole="button" onPress={() => { if (typeof window !== 'undefined' && typeof window.print === 'function') window.print(); }} className="rounded-md border border-border bg-card px-4 py-3">
         <Text className="text-center text-foreground">Print receipt</Text>
