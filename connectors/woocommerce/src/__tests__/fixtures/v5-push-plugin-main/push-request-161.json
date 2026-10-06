@@ -1,0 +1,57 @@
+{
+  "mutationId": "0ffe8862-474a-4e80-909f-7b699d252520",
+  "operation": "create",
+  "collection": "orders",
+  "recordId": "0643bf8a-04ab-4195-8594-92642a2ec8d6",
+  "baseRevision": null,
+  "payload": {
+    "status": "completed",
+    "set_paid": true,
+    "currency": "USD",
+    "payment_method": "pos_cash",
+    "payment_method_title": "Cash",
+    "line_items": [
+      {
+        "product_id": 80,
+        "quantity": 2,
+        "subtotal": "6.00",
+        "total": "6.00"
+      },
+      {
+        "product_id": 0,
+        "name": "Gift wrap",
+        "quantity": 1,
+        "subtotal": "3.00",
+        "total": "3.00",
+        "tax_class": "",
+        "meta_data": [
+          {
+            "key": "_woocommerce_pos_data",
+            "value": "{\"price\":\"3.00\",\"regular_price\":\"3.00\",\"tax_status\":\"none\"}"
+          }
+        ]
+      }
+    ],
+    "fee_lines": [
+      {
+        "name": "Bag",
+        "total": "0.20",
+        "tax_status": "taxable",
+        "tax_class": ""
+      }
+    ],
+    "shipping_lines": [
+      {
+        "method_id": "pos",
+        "method_title": "Delivery",
+        "total": "5.00"
+      }
+    ],
+    "meta_data": [
+      {
+        "key": "_woocommerce_pos_uuid",
+        "value": "0643bf8a-04ab-4195-8594-92642a2ec8d6"
+      }
+    ]
+  }
+}

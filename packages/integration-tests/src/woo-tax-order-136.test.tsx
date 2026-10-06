@@ -39,7 +39,7 @@ it('matches WooCommerce order #136 through connector settings, product traits an
   const settings = await wooStoreSettings(context);
   const capabilities = await readWooCapabilities(context);
   expect(capabilities).toEqual({
-    orderCreate: 3,
+    orderCreate: 5,
     taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
     multiplePayments: false,
     lineTax: { none: true, classes: true },
