@@ -1,5 +1,29 @@
 # @tallyui/pos
 
+## 3.3.0
+
+### Minor Changes
+
+- f604f87: Orders with fees, shipping or custom lines can be completed and sent as `order.create` version 5 to a store that
+  accepts it (others refuse at completion, naming the plugin upgrade). `pos_orders` moves to version 8, which also
+  records the woocommerce tax rounding (ADR-075, ADR-076). **Version 8 is one-way: a till that opens this release
+  can't go back.**
+- 71be352: A `woocommerce` tax strategy (ADR-076): several rates per class with priority and compound tax, and WooCommerce's per-rate per-line rounding (or at subtotal), through `StoreSettings.taxRates` and `TaxContext.getTaxRates`; other strategies are unchanged.
+
+### Patch Changes
+
+- db9d97a: `buildClosureDocument`'s `has_sales` is true only when the period had a sale or refund (it was true for every closure, because the period totals are always strings such as "0.00").
+- cec1088: The WooCommerce transport pushes tax-inclusive lines with the till's 6dp ex-tax net, as WooCommerce rebuilds a line's tax from it (ADR-076); a discounted tax-inclusive line is still refused. `CommandTransport.send` takes an optional, local-only `OrderTransportContext`.
+- c7aa412: Woo products carry `tax_class` and `tax_status` (schema version 2: a till resyncs its products once) through the `getTaxClass`/`getTaxStatus` traits. Core adds the optional `getTaxStatus` trait, which the cart and `addProduct` pass to the line.
+- Updated dependencies [820b8c2]
+- Updated dependencies [fcace3b]
+- Updated dependencies [9f7cffe]
+- Updated dependencies [c7aa412]
+- Updated dependencies [611ce1c]
+- Updated dependencies [585af9b]
+- Updated dependencies [71be352]
+  - @tallyui/core@3.3.0
+
 ## 3.2.1
 
 ### Patch Changes

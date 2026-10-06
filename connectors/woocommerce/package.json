@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/connector-woocommerce",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "type": "module",
   "description": "WooCommerce connector for Tally UI",
   "main": "./dist/index.js",
