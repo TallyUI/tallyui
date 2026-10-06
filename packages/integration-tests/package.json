@@ -14,6 +14,7 @@
   "devDependencies": {
     "@tallyui/connector-medusa": "workspace:*",
     "@tallyui/connector-vendure": "workspace:*",
+    "@tallyui/connector-woocommerce": "workspace:*",
     "@tallyui/database": "workspace:*",
     "@tallyui/pos": "workspace:*",
     "@tallyui/storage-sqlite": "workspace:*",

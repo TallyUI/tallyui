@@ -381,6 +381,9 @@ importers:
       '@tallyui/connector-vendure':
         specifier: workspace:*
         version: link:../../connectors/vendure
+      '@tallyui/connector-woocommerce':
+        specifier: workspace:*
+        version: link:../../connectors/woocommerce
       '@tallyui/database':
         specifier: workspace:*
         version: link:../database
