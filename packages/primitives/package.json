@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/primitives",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "type": "module",
   "description": "Headless, accessible React Native primitives for Tally UI",
   "main": "./dist/index.js",

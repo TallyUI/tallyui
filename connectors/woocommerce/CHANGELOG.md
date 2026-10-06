@@ -1,5 +1,13 @@
 # @tallyui/connector-woocommerce
 
+## 3.4.0
+
+### Patch Changes
+
+- 268d8a4: WooCommerce orders carry a discounted line as a price override, as WCPOS does: its `subtotal` equals its discounted `total`, so WooCommerce's discount total shows coupons only (ADR-077). A discounted tax-inclusive line is no longer refused: it pushes its stored 6dp net.
+- bf1c33d: The WooCommerce transport maps order.create version 5: fees as `fee_lines`, shipping as `shipping_lines` and custom lines as a WCPOS misc product (`product_id` 0 with `_woocommerce_pos_data`), and the connector now reports `orderCreate: 5`.
+  - @tallyui/core@3.4.0
+
 ## 3.3.0
 
 ### Patch Changes
