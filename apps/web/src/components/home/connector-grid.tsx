@@ -6,6 +6,8 @@ const connectors = [
     pkg: '@tallyui/connector-woocommerce',
     api: 'WooCommerce REST API and the WCPOS API extension.',
     docs: '/docs/connectors#woocommerce',
+    app: { label: 'tallyui-woocommerce on GitHub', href: 'https://github.com/wcpos/tallyui-woocommerce' },
+    demo: 'https://tallyui-woocommerce.vercel.app',
   },
   {
     name: 'Medusa',

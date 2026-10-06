@@ -47,7 +47,7 @@ export default function HomePage() {
         <h2 className="text-2xl font-semibold tracking-tight">Install TallyUI {tallyVersion}</h2>
         <CodeBlock className="mt-4">
           <Pre className="py-3 pl-4 pr-12">{`pnpm add @tallyui/core@${tallyVersion} @tallyui/database@${tallyVersion} \\
-  @tallyui/components@${tallyVersion} @tallyui/theme@${tallyVersion} \\
+  @tallyui/components@${tallyVersion} @tallyui/primitives@${tallyVersion} @tallyui/theme@${tallyVersion} \\
   @tallyui/connector-medusa@${tallyVersion} rxdb@17.5.0 rxjs`}</Pre>
         </CodeBlock>
         <p className="mt-4 text-fd-foreground/80">
