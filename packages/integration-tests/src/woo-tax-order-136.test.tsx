@@ -42,6 +42,7 @@ it('matches WooCommerce order #136 through connector settings, product traits an
     orderCreate: 3,
     taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
     multiplePayments: false,
+    lineTax: { none: true, classes: true },
   });
   const { result } = renderHook(() => useTax(), {
     wrapper: ({ children }: { children: ReactNode }) => (

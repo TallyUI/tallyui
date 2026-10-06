@@ -118,6 +118,8 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       orderCreate: WOO_ORDER_CREATE_VERSION,
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },
       multiplePayments,
+      // WCPOS always takes a fee's, shipping line's and custom line's tax_status and tax_class (orders #146, #161); it has no /tally/v1/info.
+      lineTax: { none: true, classes: true },
     };
   } catch (error) {
     if (error instanceof ConnectorUnauthorizedError) throw error;

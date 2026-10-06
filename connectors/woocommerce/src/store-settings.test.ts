@@ -189,6 +189,7 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
       multiplePayments: false,
+      lineTax: { none: true, classes: true },
     });
     expect(fetchMock.mock.calls).toEqual([
       [`${context.baseUrl}/stores`, { method: 'GET', headers: context.headers, signal: context.signal }],
@@ -201,6 +202,7 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
       multiplePayments: false,
+      lineTax: { none: true, classes: true },
     });
   });
 
@@ -213,6 +215,7 @@ describe('readWooCapabilities', () => {
     fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json(body));
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments,
+      lineTax: { none: true, classes: true },
     });
   });
 
@@ -223,6 +226,7 @@ describe('readWooCapabilities', () => {
       ? new Response(null, { status: 500 }) : new Response('invalid JSON'));
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      lineTax: { none: true, classes: true },
     });
   });
 
