@@ -1,5 +1,18 @@
 # @tallyui/pos
 
+## 3.1.0
+
+### Minor Changes
+
+- 8471546: The stored order keeps the sale's id as `saleId` (`pos_orders` version 7, ADR-072; never sent). Version 7 is one-way: a till that opens 3.1.0 can't go back to 3.0.x.
+- 423bf42: Split tender: `useSale().addTender()` and `removeTender()` take several payments for one sale. Change comes only from cash, and a card tender is capped at the balance due (ADR-072). `setTender` now replaces every payment with the one given.
+
+### Patch Changes
+
+- ae38ef8: New `ParkedSales` sheet (components) and `useParkedSales(drafts)` hook (pos): park the current cart, and resume or discard (with confirmation) parked carts, newest first.
+- 56b24d2: `useSale().removeTender()` with an id not among the payments changes nothing (it no longer emits a new snapshot).
+  - @tallyui/core@3.1.0
+
 ## 3.0.4
 
 ### Patch Changes

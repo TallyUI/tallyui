@@ -1,5 +1,21 @@
 # @tallyui/components
 
+## 3.1.0
+
+### Patch Changes
+
+- 7986abe: Cart can show a Price action on each line (`canEditPrice`) over `useSale().setUnitPrice`, with an optional reason passed to `onPriceChange`; new `PriceForm` and `parsePrice`.
+- 4a93ef6: `CustomerSelect` renders its search input (it took `onSearch` and `placeholder` but showed no input), so apps no longer compose their own.
+- ae38ef8: New `ParkedSales` sheet (components) and `useParkedSales(drafts)` hook (pos): park the current cart, and resume or discard (with confirmation) parked carts, newest first.
+- Updated dependencies [ae38ef8]
+- Updated dependencies [8471546]
+- Updated dependencies [56b24d2]
+- Updated dependencies [423bf42]
+  - @tallyui/pos@3.1.0
+  - @tallyui/core@3.1.0
+  - @tallyui/primitives@3.1.0
+  - @tallyui/theme@3.1.0
+
 ## 3.0.4
 
 ### Patch Changes
