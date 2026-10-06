@@ -4633,6 +4633,50 @@ interface OrderCreatePayload {
     - It checks the builder's `discount_total` and `discount_tax` against `calculateOrderTotals`.
     - It restates the cart-level scenarios of settle's upstream tests as builder tests: the missing-coupon gate,
       validation of the candidate codes, no partial patch, and money compared by value.
+- **Amendment 4 (2026-10-07, proposed): phase (d) in five steps (#501).** Phase (b) is complete with part 5
+  (#510). Each step below is one spec and one PR. Two rulings are open, listed after the steps.
+  - **(d1) The builder computes coupons.** Two-way; `packages/pos` and the WooCommerce connector's store settings.
+    - **Input.** `createOrderBuilder` takes an optional coupon context: a lookup from code to the engine's
+      `CouponDiscountConfig` (built with `toCouponConfigs` from the `coupons` collection), the product categories,
+      and the store's `calc_discounts_sequentially`. The connector reads that setting into its store settings; the
+      WooCommerce lane names the endpoint.
+    - **API.** The builder gets an additive `setCoupons(codes)`. Classified two-way: it is optional, and no caller
+      exists until (d3).
+    - **Calculation.** For a WooCommerce tax context with codes set, the builder replays the coupons with
+      `recalculateCoupons` over the price-overridden lines. Each line goes in as `subtotal = total =` its
+      post-manual-discount net at 6dp, with its per-rate taxes from `woocommerceLine`. Each line then takes the
+      engine's `total` and `taxes` as its `netMicros` and `taxLines`, and `woocommerceTotals` runs over them. The
+      `Order` gains an optional `coupons: [{ code, discountMinor, discountTaxMinor }]`. Other tax contexts ignore
+      codes (decision 3).
+    - **Nothing persists it.** `order-drafts` leaves `coupons` out until (d2), and `useSale` exposes nothing, so no
+      sale can carry a coupon yet.
+    - **Tests.**
+      - Builder results are checked against `calculateOrderTotals`.
+      - The dev store's coupon cases (WooCommerce's own figures, from the WooCommerce lane) are pinned.
+      - Settle's cart-level scenarios are restated (amendment 3).
+      - An inclusive coupon over compound rates with non-default priorities is pinned. Part 5's mutation run
+        found that this path in `recalculate` (the inclusive-discount tax split) has no case yet.
+  - **(d2) Storage: `pos_orders` v9.** One-way, needs-paul.
+    - The order gains `coupons` (`code`, `couponId`, `discountMinor`, `discountTaxMinor`), and the line gains
+      #495's `attributes` (G-V2), in one bump.
+    - The bump goes through the `open.ts` opener with local documents tested (ADR-078 3a: the RxDB 17.5 row-loss
+      bug).
+  - **(d3) The sale API and offline validation.** After (d2).
+    - `useSale().applyCoupon(code) → refusal | null` and `removeCoupon(code)`.
+    - `validateCoupon` runs against the `coupons` collection plus the till's local usage overlay (amendment 2).
+    - The feature is gated on `reconcile.coupons`, and the sale gets the data for Q3's staleness hint.
+  - **(d4) The push.** One-way: the transport payload.
+    - `coupon_lines: [{ code }]` and each line's `_woocommerce_pos_data` intent.
+    - A refusal maps to `coupon_invalid` and keeps the store's own code (amendment 2). The refused sale reopens as a
+      parked sale with the coupon removed (Q3).
+    - Coupons are sent only to a store whose woocommerce-pos has the `get_subtotal()` filter (amendment 1).
+  - **(d5) Same-register reuse.** After (d4). The local usage overlay counts a successful coupon order at once, and
+    the coupon is refetched by id (amendment 2).
+  - **Open rulings:**
+    - **R1.** Does (d2) carry G-V2's line `attributes` in the same v9 bump, as the front desk's earlier ruling on
+      #495 suggests?
+    - **R2.** Which woocommerce-pos version ships the `get_subtotal()` filter? (d4)'s gate needs it, and it is
+      still unrecorded (amendment 1). This is the WooCommerce lane's to answer.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
