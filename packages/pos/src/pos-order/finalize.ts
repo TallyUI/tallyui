@@ -166,6 +166,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(line.taxStatus !== undefined ? { taxStatus: line.taxStatus } : {}),
     name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
     discountMinor: line.discountMinor, netMinor: line.netMinor,
+    ...(order.taxRounding?.granularity === 'woocommerce' ? { netMicros: line.netMicros } : {}),
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
     ...(line.priceTaxModeConverted ? { taxInclusive: line.taxInclusive } : {}),
   }));

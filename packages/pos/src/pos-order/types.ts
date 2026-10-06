@@ -28,6 +28,7 @@ export interface PosOrderLine {
   /** Line discounts plus the allocated order-discount share, in the line's own tax mode (ADR-062). */
   discountMinor: number;
   netMinor: number;
+  netMicros?: string;
   taxLines: Array<{ code?: string; ratePpm: number; taxMicros: string }>;
   /** This line's own tax mode; set only when it was converted from the store's (ADR-038 amendment). */
   taxInclusive?: boolean;

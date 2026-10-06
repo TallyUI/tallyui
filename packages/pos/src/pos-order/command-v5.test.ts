@@ -18,6 +18,64 @@ const make = (pricesIncludeTax = false) => createOrderBuilder({ currency: 'EUR',
   taxContext: { pricesIncludeTax, getTaxRatePpm: () => 200000 } });
 
 describe('order.create v5 through builder and finalize (ADR-075)', () => {
+  it.each([[false, false], [false, true], [true, false], [true, true]])(
+    'stores WooCommerce netMicros without sending it (inclusive: %s, roundAtSubtotal: %s)', async (pricesIncludeTax, roundAtSubtotal) => {
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax, getTaxRatePpm: () => 200000,
+        rounding: { granularity: 'woocommerce', roundAtSubtotal },
+        getTaxRates: () => [{ id: 1, code: 'standard', label: 'Standard', rate: '20', priority: 1, compound: false, shipping: true }] } });
+      builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+      builder.addFee({ name: 'Bag', amountMinor: 20, taxClass: 'standard' });
+      builder.addShipping({ name: 'Delivery', amountMinor: 30, taxClass: 'standard', methodId: 'flat_rate' });
+      builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+      const snapshot = builder.getSnapshot(), order = finalizeOrder(snapshot, options);
+      for (const field of ['lines', 'fees', 'shipping'] as const) {
+        const original = field === 'lines' ? snapshot.lineItems[0] : snapshot[field]![0];
+        expect(original.netMicros).toEqual(expect.any(String));
+        expect(order[field]![0].netMicros).toBe(original.netMicros);
+      }
+      const envelope = toOrderCreateEnvelope(order, 'till');
+      expect(envelope.version).toBe(5);
+      expect(JSON.stringify(envelope)).not.toContain('netMicros');
+      expect(precheckCommand(envelope, supported)).toBeUndefined();
+      const db = await createRxDatabase({ name: `net${uuidv7().replaceAll('-', '')}`,
+        storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+      try {
+        const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+        expect(pos_orders.schema.version).toBe(8);
+        expect((await pos_orders.insert(order)).toJSON()).toStrictEqual(order);
+      } finally { await db.remove(); }
+    });
+
+  it('keeps the per_order finalized form without netMicros', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 200000,
+      rounding: { granularity: 'per_order', mode: 'half_away_from_zero' } } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addFee({ name: 'Bag', amountMinor: 20, taxClass: 'standard' });
+    builder.addShipping({ name: 'Delivery', amountMinor: 30, taxClass: 'standard', methodId: 'flat_rate' });
+    builder.addPayment({ method: 'external', amountMinor: 180 });
+    const snapshot = builder.getSnapshot();
+    let nextId = 0;
+    const order = finalizeOrder(snapshot, { ...options, newId: () => `id-${++nextId}` });
+    expect(order).toStrictEqual({
+      id: 'id-1', saleId: snapshot.id, createdAt: '2026-10-06T10:00:00.000Z', updatedAt: '2026-10-06T10:00:00.000Z',
+      commandId: 'id-6', syncStatus: 'pending', currency: 'EUR', pricesIncludeTax: false, customer: null,
+      lines: [{ id: 'id-2', productId: 'p', name: 'Item', sku: '', quantity: 1, unitPriceMinor: 100,
+        discountMinor: 0, netMinor: 100, taxLines: [{ ratePpm: 200000, taxMicros: '20000000' }] }],
+      fees: [{ id: 'id-3', name: 'Bag', amountMinor: 20, taxClass: 'standard', taxStatus: 'taxable',
+        netMinor: 20, taxMicros: '4000000', taxLines: [{ ratePpm: 200000, taxMicros: '4000000' }] }],
+      shipping: [{ id: 'id-4', name: 'Delivery', amountMinor: 30, taxClass: 'standard', taxStatus: 'taxable', methodId: 'flat_rate',
+        netMinor: 30, taxMicros: '6000000', taxLines: [{ ratePpm: 200000, taxMicros: '6000000' }] }],
+      payments: [{ id: 'id-5', method: 'external', amountMinor: 180 }],
+      subtotalMinor: 100, discountMinor: 0, taxMinor: 30, totalMinor: 180,
+      taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
+      display: { currency: 'EUR', exponent: 2, taxInclusive: false, subtotalMinor: 100, discountMinor: 0,
+        taxMinor: 30, totalMinor: 180, orderDiscountMinor: 0, lines: [{ lineId: 'id-2', amountMinor: 100, discounts: [] }],
+        fees: [{ id: 'id-3', name: 'Bag', amountMinor: 20 }], shipping: [{ id: 'id-4', name: 'Delivery', amountMinor: 30 }] },
+      taxByRate: [{ ratePpm: 200000, netMinor: 150, amountMinor: 30, grossMinor: 180 }],
+    });
+    for (const field of ['lines', 'fees', 'shipping'] as const) expect(order[field]![0]).not.toHaveProperty('netMicros');
+  });
+
   it('omits stored charge display rows from a version-3 envelope', () => {
     const order: PosOrder = {
       id: uuidv7(), commandId: uuidv7(), createdAt: options.now.toISOString(), updatedAt: options.now.toISOString(),

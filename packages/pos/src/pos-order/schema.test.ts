@@ -9,6 +9,24 @@ import { addPosOrderCollection } from './open';
 import { posOrderCollection, posOrderSchema } from './schema';
 import { uuidv7 } from './uuidv7';
 
+it.each(['lines', 'fees', 'shipping'] as const)('refuses invalid netMicros on %s in v8', async (field) => {
+  const db = await createRxDatabase({ name: `net${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 200000 } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addFee({ name: 'Bag', amountMinor: 20, taxClass: 'standard' });
+    builder.addShipping({ name: 'Delivery', amountMinor: 30, taxClass: 'standard', methodId: 'flat_rate' });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+    for (const netMicros of ['1.5', '1'.repeat(26)]) {
+      await expect(pos_orders.insert({ ...order, id: uuidv7(), [field]: [{ ...order[field]![0], netMicros }] }))
+        .rejects.toMatchObject({ code: 'VD2' });
+    }
+  } finally { await db.remove(); }
+});
+
 it('inserts a finalised order into an AJV-validated RxDB memory collection', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });

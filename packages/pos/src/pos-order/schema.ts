@@ -21,6 +21,7 @@ import type { PosOrder } from './types';
  * Version 7 adds `saleId`, the sale order's id (ADR-072; never sent), and changes nothing else. Its migration is the
  * identity: older orders have no `saleId`. It is one-way like version 6.
  * Version 8 adds fees, shipping, custom lines (ADR-075) and the woocommerce tax rounding (ADR-076), and changes nothing else.
+ * It also stores the WooCommerce 6dp net (`netMicros`) under the woocommerce rounding (ADR-076 amendment).
  * Its migration is the identity. It is one-way like version 7.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
@@ -47,6 +48,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
           taxClass: { type: 'string', maxLength: 64 }, taxStatus: { type: 'string', enum: ['taxable', 'none'] },
         }, required: ['name', 'taxStatus'] },
         unitPriceMinor: { type: 'integer' }, discountMinor: { type: 'integer' }, netMinor: { type: 'integer' },
+        netMicros: { type: 'string', pattern: '^-?[0-9]{1,24}$', maxLength: 25 },
         taxLines: { type: 'array', items: {
           type: 'object', properties: { code: { type: 'string' }, ratePpm: { type: 'integer' }, taxMicros: { type: 'string' } },
           required: ['ratePpm', 'taxMicros'],
@@ -58,7 +60,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },
       amountMinor: { type: 'integer', minimum: 0 }, taxClass: { type: 'string', maxLength: 64 },
       taxStatus: { type: 'string', enum: ['taxable', 'none'] }, netMinor: { type: 'integer' }, taxMicros: { type: 'string' },
-      netMicros: { type: 'string' }, totalMinor: { type: 'integer' },
+      netMicros: { type: 'string', pattern: '^-?[0-9]{1,24}$', maxLength: 25 }, totalMinor: { type: 'integer' },
       taxLines: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
         code: { type: 'string', maxLength: 255 }, ratePpm: { type: 'integer' }, taxMicros: { type: 'string' },
         rateId: { type: 'integer' }, compound: { type: 'boolean' },
@@ -68,7 +70,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },
       methodId: { type: 'string', maxLength: 64 }, amountMinor: { type: 'integer', minimum: 0 }, taxClass: { type: 'string', maxLength: 64 },
       taxStatus: { type: 'string', enum: ['taxable', 'none'] }, netMinor: { type: 'integer' }, taxMicros: { type: 'string' },
-      netMicros: { type: 'string' }, totalMinor: { type: 'integer' },
+      netMicros: { type: 'string', pattern: '^-?[0-9]{1,24}$', maxLength: 25 }, totalMinor: { type: 'integer' },
       taxLines: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
         code: { type: 'string', maxLength: 255 }, ratePpm: { type: 'integer' }, taxMicros: { type: 'string' },
         rateId: { type: 'integer' }, compound: { type: 'boolean' },
