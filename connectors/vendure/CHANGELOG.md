@@ -1,5 +1,12 @@
 # @tallyui/connector-vendure
 
+## 3.8.0
+
+### Patch Changes
+
+- Updated dependencies [6158b2a]
+  - @tallyui/core@3.8.0
+
 ## 3.7.1
 
 ### Patch Changes
