@@ -1,5 +1,12 @@
 # @tallyui/connector-vendure
 
+## 3.0.4
+
+### Patch Changes
+
+- 88e36d1: Customer search, creation and lookup (`searchCustomers`, `createCustomer`, `getCustomer`) over the Admin API in the session's channel; needs `ReadCustomer` and `CreateCustomer`.
+  - @tallyui/core@3.0.4
+
 ## 3.0.3
 
 ### Patch Changes

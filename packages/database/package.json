@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/database",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "type": "module",
   "description": "RxDB database factory for Tally UI — accepts pluggable connector schemas",
   "main": "./dist/index.js",

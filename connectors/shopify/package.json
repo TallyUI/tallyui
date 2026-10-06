@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/connector-shopify",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "type": "module",
   "description": "Shopify connector for Tally UI",
   "main": "./dist/index.js",
