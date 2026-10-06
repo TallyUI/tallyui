@@ -2,4 +2,4 @@ export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, co
 export type { TaxLineInput, OrderTaxTotals, RateTaxLine } from './exact';
 export { TaxProvider, useTax, taxLogger } from './tax-provider';
 export type { TaxProviderProps } from './tax-provider';
-export type { TaxRateMap, TaxContext } from './types';
+export type { TaxRateMap, TaxContext, WooRate } from './types';

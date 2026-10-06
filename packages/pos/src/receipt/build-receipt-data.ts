@@ -5,7 +5,8 @@ import type { ReceiptConfig, ReceiptData } from './types';
 export function buildReceiptData(order: SentOrder, config: ReceiptConfig): ReceiptData {
   // Drops the shared helper's `netMinor` (the Z report's own use): the receipt's tax summary
   // never showed it, and an exact-shape test elsewhere in this package pins that.
-  const taxedLines = [...order.lineItems, ...[...(order.fees ?? []), ...(order.shipping ?? [])].map((charge) => ({
+  const taxedLines = [...order.lineItems.map((line) => order.taxRounding?.granularity === 'woocommerce' && line.netMicros !== undefined
+    ? { ...line, taxInclusive: order.pricesIncludeTax } : line), ...[...(order.fees ?? []), ...(order.shipping ?? [])].map((charge) => ({
     ...charge, taxInclusive: order.pricesIncludeTax,
   }))];
   const taxLines = taxLinesByRate(taxedLines, order.taxMinor, config.taxLabels, order.taxRounding).map(
@@ -18,6 +19,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
   let taxSoFar = order.lineItems.reduce(
     (sum, li) => li.taxInclusive || li.priceTaxModeConverted ? sum : sum + BigInt(li.taxMicros), 0n);
   const lineTotals = order.lineItems.map((li) => {
+    if (order.taxRounding?.granularity === 'woocommerce' && li.netMicros !== undefined) return order.pricesIncludeTax ? li.totalMinor! : li.netMinor;
     if (!li.priceTaxModeConverted) return li.netMinor;
     const share = roundMicrosToMinor(taxSoFar + BigInt(li.taxMicros)) - roundMicrosToMinor(taxSoFar);
     taxSoFar += BigInt(li.taxMicros);

@@ -1,4 +1,5 @@
 import type { TaxRounding } from '@tallyui/core';
+import { woocommerceTaxByRate } from '../order/woocommerce-tax';
 
 /** Micro-minor-units per minor unit. */
 export const MICROS_PER_MINOR = 1_000_000n;
@@ -122,7 +123,7 @@ export interface RateTaxLine {
   amountMinor: number;
 }
 
-type TaxedLine = { netMinor: number; discountMinor?: number; taxInclusive: boolean; taxLines: readonly { code?: string; ratePpm: number; taxMicros: string }[] };
+type TaxedLine = { netMinor: number; netMicros?: string; discountMinor?: number; taxInclusive: boolean; taxLines: readonly { code?: string; ratePpm: number; taxMicros: string }[] };
 
 /**
  * A `per_line_items` or `per_rate_group_items` store's figures (#287) as @vendure/core 3.7.3 computes them; undefined
@@ -186,6 +187,7 @@ export function taxLinesByRate(
   taxLabels?: Record<number, string>,
   rounding?: TaxRounding,
 ): RateTaxLine[] {
+  if (rounding?.granularity === 'woocommerce' && lines.every((line) => line.netMicros !== undefined)) return woocommerceTaxByRate(lines, rounding.roundAtSubtotal, taxLabels);
   const label = (ratePpm: number) => taxLabels?.[ratePpm] ?? `Tax ${ratePpm / 10000}%`;
   const rounded = roundedTaxByRate(lines, rounding);
   if (rounded) return rounded.rates.map(({ code, ratePpm, netMinor, amountMinor }) => ({ label: label(ratePpm), code, ratePpm, netMinor, amountMinor }));

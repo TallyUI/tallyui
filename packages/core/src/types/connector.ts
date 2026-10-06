@@ -48,6 +48,7 @@ export interface ServerCapabilities {
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */
 export type TaxRounding =
   | { granularity: 'per_order' | 'per_line_items' | 'per_rate_group_items'; mode: 'half_away_from_zero' | 'half_up' }
+  | { granularity: 'woocommerce'; roundAtSubtotal: boolean }
   | { granularity: 'custom' };
 
 /**

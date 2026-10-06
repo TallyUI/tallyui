@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import type { TaxRounding } from '@tallyui/core';
+import { woocommerceTax, type StoreSettings, type TaxRounding } from '@tallyui/core';
 import type { TaxContext } from './types';
 import { createLogger } from '../logging';
 
@@ -8,7 +8,8 @@ export const taxLogger = createLogger('tax');
 
 const TaxCtx = createContext<TaxContext | null>(null);
 
-export interface TaxProviderProps {
+export interface TaxProviderProps extends Pick<StoreSettings, 'taxRoundAtSubtotal' | 'shippingTaxClass' | 'taxClassSlugs'> {
+  taxRates?: StoreSettings['taxRates'];
   ratesPpm: Record<string, number>;
   pricesIncludeTax: boolean;
   /** `ServerCapabilities.taxRounding` (#287); a change restarts an idle sale under it. */
@@ -18,7 +19,7 @@ export interface TaxProviderProps {
   children: ReactNode;
 }
 
-export function TaxProvider({ ratesPpm, pricesIncludeTax, rounding, rateCodes, children }: TaxProviderProps) {
+export function TaxProvider({ ratesPpm, pricesIncludeTax, rounding, rateCodes, taxRates, children }: TaxProviderProps) {
   const value = useMemo<TaxContext>(
     () => {
       if (Object.values(ratesPpm).some((rate) => !Number.isSafeInteger(rate) || rate < 0)) {
@@ -26,6 +27,8 @@ export function TaxProvider({ ratesPpm, pricesIncludeTax, rounding, rateCodes, c
       }
       const unknown = new Set<string>();
       return {
+        ...(taxRates ? { getTaxRates: (taxClass?: string, options?: { shipping?: boolean }) =>
+          (taxRates[woocommerceTax.normalizeTaxClass(taxClass)] ?? []).filter((rate) => !options?.shipping || rate.shipping) } : {}),
         getTaxRatePpm: (taxClass) => {
           if (taxClass !== undefined && Object.hasOwn(ratesPpm, taxClass)) return ratesPpm[taxClass];
           // A class the store's rates don't key is taxed at the default rate; warn once per class and rate map.
@@ -44,7 +47,7 @@ export function TaxProvider({ ratesPpm, pricesIncludeTax, rounding, rateCodes, c
         ...(rounding ? { rounding } : {}),
       };
     },
-    [ratesPpm, pricesIncludeTax, rounding, rateCodes],
+    [ratesPpm, pricesIncludeTax, rounding, rateCodes, taxRates],
   );
 
   return <TaxCtx.Provider value={value}>{children}</TaxCtx.Provider>;

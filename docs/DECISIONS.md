@@ -4394,6 +4394,12 @@ interface OrderCreatePayload {
        - When that is empty, it's the store base (`store_country`, `store_state`, `store_postcode`, `store_city`).
        - Only when both are missing is there a store-settings warning and no rates.
      - **Zero-rate rows are kept**, as WooCommerce keeps them on #136. order-math drops them.
+     - **Till display parity (2026-10-06):** the order's subtotal, tax, total and per-rate totals are order-math's
+       integer minor-unit figures. Display rows show WooCommerce's per-item amounts rounded to currency decimals,
+       never a product's unit price × quantity: 1.00 inclusive with two non-compound 5% rates is net 0.91,
+       taxes 0.05 + 0.05, and line/order/display total 1.01. Any difference between the display rows plus tax
+       (in the order's mode) and the order total, positive or negative, goes to the last shipping row, else the
+       last fee row, else the last product row. This residue rule applies only to the `woocommerce` strategy.
      - Decimals come from `/stores`'s `price_num_decimals`.
      - A variation's `tax_class` of `parent` (or none) inherits the product's class.
      - `tax_status: shipping` on a product taxes it as none; on shipping it is taxable.
