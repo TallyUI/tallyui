@@ -77,7 +77,7 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-      <footer className="mx-auto max-w-6xl px-6 pb-12 text-sm text-fd-foreground/80">Tally UI is MIT licensed. <Link href="/docs/changelog" className="underline underline-offset-4">Changelog</Link></footer>
+      <footer className="mx-auto max-w-6xl px-6 pb-12 text-sm text-fd-foreground/80">Tally UI is MIT licensed. <Link href="/docs/changelog" className="underline underline-offset-4">Changelog</Link> · <Link href="/docs/status" className="underline underline-offset-4">What works today</Link></footer>
     </div>
   );
 }

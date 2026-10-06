@@ -1,0 +1,37 @@
+---
+title: What works today
+description: Which point-of-sale features each app built on Tally UI has today, with the pull request or test that shows each one.
+---
+
+Three point-of-sale apps are built on Tally UI: [tallyui-woocommerce](https://github.com/wcpos/tallyui-woocommerce) for WooCommerce, [MedusaPOS](https://medusapos.com) for Medusa and [VendurePOS](https://vendurepos.com) for Vendure. Each has a live demo: [WooCommerce](https://tallyui-woocommerce.vercel.app), [Medusa](https://demo.medusapos.com/demo) and [Vendure](https://demo.vendurepos.com/demo).
+
+Each **works** links the merged pull request, or the test, that shows the feature. **Not yet** means the app does not do it today. "Works" means merged into the app's main branch and running in its live demo; it may not be in a tagged release yet. Checked on 2026-10-06.
+
+| Feature | WooCommerce | Medusa | Vendure |
+| --- | --- | --- | --- |
+| Sign in to the store | [works](https://github.com/wcpos/tallyui-woocommerce/pull/15) | [works](https://github.com/medusapos/app/pull/7) | [works](https://github.com/vendurepos/app/pull/3) |
+| Catalogue kept on the device, survives a reload | [works](https://github.com/wcpos/tallyui-woocommerce/pull/22) | [works](https://github.com/medusapos/app/blob/5561f02cdd06b4bd793034d348ff9eec333dff3f/e2e/storage.spec.ts) | [works](https://github.com/vendurepos/app/pull/4) |
+| Search by name, SKU or barcode | [works](https://github.com/wcpos/tallyui-woocommerce/pull/17) | [works](https://github.com/medusapos/app/pull/11) | [works](https://github.com/vendurepos/app/blob/c168700f363a6e255dd2cb7d39b08ee1ac704837/apps/pos/e2e/sign-in.spec.ts) |
+| Choose a variant | [works](https://github.com/wcpos/tallyui-woocommerce/pull/26) | [works](https://github.com/medusapos/app/pull/65) | [works](https://github.com/vendurepos/app/blob/c168700f363a6e255dd2cb7d39b08ee1ac704837/apps/pos/e2e/offline.spec.ts) |
+| Change quantities and remove lines | [works](https://github.com/wcpos/tallyui-woocommerce/pull/18) | [works](https://github.com/medusapos/app/blob/5561f02cdd06b4bd793034d348ff9eec333dff3f/apps/expo/tests/sale.test.tsx) | [works](https://github.com/vendurepos/app/blob/c168700f363a6e255dd2cb7d39b08ee1ac704837/apps/pos/e2e/sign-in.spec.ts) |
+| Edit a line's price | [works](https://github.com/wcpos/tallyui-woocommerce/pull/26) | [works](https://github.com/medusapos/app/pull/211) | [works](https://github.com/vendurepos/app/pull/141) |
+| Line and order discounts | [works](https://github.com/wcpos/tallyui-woocommerce/blob/7edbb044aa760f939460a63868f7bb5a6a643d10/apps/pos/tests/parked-carts.test.ts) | [works](https://github.com/medusapos/app/pull/63) | [works](https://github.com/vendurepos/app/pull/90) |
+| Park a sale and resume it | [works](https://github.com/wcpos/tallyui-woocommerce/pull/23) | [works](https://github.com/medusapos/app/pull/211) | [works](https://github.com/vendurepos/app/pull/143) |
+| Attach a customer to the sale | [works](https://github.com/wcpos/tallyui-woocommerce/pull/28) | [works](https://github.com/medusapos/app/pull/221) | [works](https://github.com/vendurepos/app/pull/133) |
+| Create a customer at the till | [works](https://github.com/wcpos/tallyui-woocommerce/pull/30) | [works](https://github.com/medusapos/app/pull/221) | [works](https://github.com/vendurepos/app/blob/c168700f363a6e255dd2cb7d39b08ee1ac704837/apps/pos/e2e/sign-in.spec.ts) |
+| Register sessions: open with a float, count and close | [works](https://github.com/wcpos/tallyui-woocommerce/pull/39) | [works](https://github.com/medusapos/app/pull/89) | [works](https://github.com/vendurepos/app/pull/81) |
+| Cash payment with change | [works](https://github.com/wcpos/tallyui-woocommerce/pull/24) | [works](https://github.com/medusapos/app/blob/5561f02cdd06b4bd793034d348ff9eec333dff3f/apps/expo/tests/sale.test.tsx) | [works](https://github.com/vendurepos/app/pull/74) |
+| Record a card payment taken on a separate terminal | [works](https://github.com/wcpos/tallyui-woocommerce/blob/7edbb044aa760f939460a63868f7bb5a6a643d10/apps/pos/tests/today-sales.test.ts) | [works](https://github.com/medusapos/app/blob/5561f02cdd06b4bd793034d348ff9eec333dff3f/apps/expo/tests/sale.test.tsx) | [works](https://github.com/vendurepos/app/blob/c168700f363a6e255dd2cb7d39b08ee1ac704837/apps/pos/e2e/sign-in.spec.ts) |
+| Split one sale across several payments | not yet | [works](https://github.com/medusapos/app/pull/218) | [works](https://github.com/vendurepos/app/pull/152) |
+| Sales made offline are sent when the till reconnects | [works](https://github.com/wcpos/tallyui-woocommerce/pull/24) | [works](https://github.com/medusapos/app/pull/14) | [works](https://github.com/vendurepos/app/pull/75) |
+| Printable receipt | [works](https://github.com/wcpos/tallyui-woocommerce/pull/24) | [works](https://github.com/medusapos/app/pull/13) | [works](https://github.com/vendurepos/app/pull/94) |
+| Email the receipt | [works](https://github.com/wcpos/tallyui-woocommerce/pull/30) | not yet | not yet |
+| Taxes | not yet | [works](https://github.com/medusapos/app/blob/5561f02cdd06b4bd793034d348ff9eec333dff3f/apps/expo/tests/sale.test.tsx) | [works](https://github.com/vendurepos/app/pull/70) |
+| Recent orders on this till | not yet | [works](https://github.com/medusapos/app/blob/5561f02cdd06b4bd793034d348ff9eec333dff3f/apps/expo/tests/orders-screen.test.tsx) | [works](https://github.com/vendurepos/app/pull/77) |
+| Sales reports beyond the register close | [works](https://github.com/wcpos/tallyui-woocommerce/pull/41) | not yet | not yet |
+| Fee, shipping or custom lines | not yet | not yet | not yet |
+| Coupons and promotion codes | not yet | not yet | not yet |
+| Refunds and returns | not yet | not yet | not yet |
+| Native iOS, Android or desktop app | not yet | not yet | not yet |
+
+All three apps run in the browser today. What changed in the Tally UI packages themselves is in the [changelog](/docs/changelog), and the connectors are described in [Connectors](/docs/connectors).
