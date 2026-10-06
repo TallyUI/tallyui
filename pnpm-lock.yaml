@@ -381,6 +381,9 @@ importers:
       '@tallyui/connector-vendure':
         specifier: workspace:*
         version: link:../../connectors/vendure
+      '@tallyui/connector-woocommerce':
+        specifier: workspace:*
+        version: link:../../connectors/woocommerce
       '@tallyui/database':
         specifier: workspace:*
         version: link:../database
@@ -390,6 +393,12 @@ importers:
       '@tallyui/storage-sqlite':
         specifier: workspace:*
         version: link:../storage-sqlite
+      '@types/react':
+        specifier: '>=18'
+        version: 19.2.14
+      react:
+        specifier: ^19.2.4
+        version: 19.2.4
       rxdb:
         specifier: 17.5.0
         version: 17.5.0(mongodb@6.21.0)(nats@2.29.3)(react@19.2.4)(rxjs@7.8.2)(supports-color@10.2.2)

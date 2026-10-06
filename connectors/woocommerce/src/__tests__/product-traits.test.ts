@@ -3,6 +3,56 @@ import { wooProductTraits } from '../traits/product';
 import { toVariationDocument } from '../replication/products';
 import fixtureProducts from './fixtures/wcpos-1.10.20-products.json';
 import fixtureVariations from './fixtures/wcpos-1.10.20-variations.json';
+import taxProducts from './fixtures/taxes-1.10.20/products-tax-fields.json';
+
+describe('WooCommerce tax traits', () => {
+  it.each([
+    { id: 80, taxClass: undefined, taxStatus: 'taxable' },
+    { id: 86, taxClass: 'reduced-rate', taxStatus: 'taxable' },
+    { id: 96, taxClass: 'zero-rate', taxStatus: 'taxable' },
+    { id: 90, taxClass: undefined, taxStatus: 'none' },
+  ])('reads fixture product $id tax fields', ({ id, taxClass, taxStatus }) => {
+    const product = taxProducts.find((doc) => doc.id === id)!;
+    expect(wooProductTraits.getTaxClass!(product)).toBe(taxClass);
+    expect(wooProductTraits.getTaxStatus!(product)).toBe(taxStatus);
+  });
+
+  it('does not tax the item for shipping-only status', () => {
+    expect(wooProductTraits.getTaxStatus!({ tax_status: 'shipping' })).toBe('none');
+  });
+
+  it('normalizes the standard class and leaves missing fields undefined', () => {
+    expect(wooProductTraits.getTaxClass!({ tax_class: 'standard' })).toBeUndefined();
+    expect(wooProductTraits.getTaxClass!({})).toBeUndefined();
+    expect(wooProductTraits.getTaxStatus!({})).toBeUndefined();
+    expect(wooProductTraits.getTaxStatus!({ tax_status: 'unknown' })).toBeUndefined();
+  });
+
+  it.each(['parent', undefined, 123])('inherits a variation class of %j and its missing status', (tax_class) => {
+    const product = { tax_class: 'reduced-rate', tax_status: 'taxable',
+      variation_docs: [{ id: 104, tax_class }] };
+    expect(wooProductTraits.getTaxClass!(product, '104')).toBe('reduced-rate');
+    expect(wooProductTraits.getTaxStatus!(product, '104')).toBe('taxable');
+  });
+
+  it('uses the selected variation class and status, and falls back for an unknown id', () => {
+    const product = { tax_class: 'reduced-rate', tax_status: 'taxable',
+      variation_docs: [{ id: 104, tax_class: 'zero-rate', tax_status: 'none' }] };
+    expect(wooProductTraits.getTaxClass!(product, '104')).toBe('zero-rate');
+    expect(wooProductTraits.getTaxStatus!(product, '104')).toBe('none');
+    for (const variantId of [undefined, 'unknown']) {
+      expect(wooProductTraits.getTaxClass!(product, variantId)).toBe('reduced-rate');
+      expect(wooProductTraits.getTaxStatus!(product, variantId)).toBe('taxable');
+    }
+  });
+
+  it('normalizes an empty variation class and does not inherit an unknown string status', () => {
+    const product = { tax_class: 'reduced-rate', tax_status: 'none',
+      variation_docs: [{ id: 104, tax_class: '', tax_status: 'unknown' }] };
+    expect(wooProductTraits.getTaxClass!(product, '104')).toBeUndefined();
+    expect(wooProductTraits.getTaxStatus!(product, '104')).toBeUndefined();
+  });
+});
 
 describe('WooCommerce getVariants', () => {
   it.each([

@@ -1,0 +1,46 @@
+{
+  "mutationId": "b49037c0-7d44-44fc-b8cf-b95031b1ca71",
+  "operation": "create",
+  "collection": "orders",
+  "recordId": "3f7fa644-9d6d-40d5-800f-3eb18eea2203",
+  "baseRevision": null,
+  "payload": {
+    "status": "completed",
+    "set_paid": true,
+    "currency": "USD",
+    "payment_method": "pos_cash",
+    "payment_method_title": "Cash",
+    "line_items": [
+      {
+        "product_id": 80,
+        "quantity": 3,
+        "subtotal": "9.00",
+        "total": "9.00"
+      },
+      {
+        "product_id": 86,
+        "quantity": 1,
+        "subtotal": "3.50",
+        "total": "3.50"
+      },
+      {
+        "product_id": 96,
+        "quantity": 1,
+        "subtotal": "15.00",
+        "total": "15.00"
+      },
+      {
+        "product_id": 90,
+        "quantity": 1,
+        "subtotal": "4.25",
+        "total": "4.25"
+      }
+    ],
+    "meta_data": [
+      {
+        "key": "_woocommerce_pos_uuid",
+        "value": "3f7fa644-9d6d-40d5-800f-3eb18eea2203"
+      }
+    ]
+  }
+}
