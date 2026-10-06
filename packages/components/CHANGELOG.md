@@ -1,5 +1,14 @@
 # @tallyui/components
 
+## 3.5.1
+
+### Patch Changes
+
+- @tallyui/pos@3.5.1
+- @tallyui/core@3.5.1
+- @tallyui/primitives@3.5.1
+- @tallyui/theme@3.5.1
+
 ## 3.5.0
 
 ### Minor Changes
