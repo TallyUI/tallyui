@@ -4658,7 +4658,8 @@ interface OrderCreatePayload {
      accounting.
   5. **An open travels alone.** The till ends a batch after `register.session.open`, so no command naming a session
      is in flight while its open can still be refused.
-  6. **`register_session_already_open` still blocks.** The commands behind the refused open wait for the cashier:
+  6. **`register_session_already_open` blocks while its session is `conflict`** (decision 9). The commands behind
+     the refused open wait for the cashier:
      - **Take over** requeues the refused open's document as `pending` in its ledger place (same `seq`, same
        `sessionId`), under a new `commandId`, with `supersedes` set to the live session id from the refusal's data.
        A new id is needed because the store replays the old one.
@@ -4674,19 +4675,46 @@ interface OrderCreatePayload {
      abandoned) stay on the till with their rejection. The superseded sheet lists them (count and total): "These cash
      movements were not recorded by the store. If the cash moved, record it again on the register now in use." The
      till never replays them on another session by itself.
-  9. **Local session states** gain `conflict` (open refused, waiting for the cashier) and `superseded`. That is a
-     local-only `register_sessions` schema bump (the status field's `maxLength` is 8), migrated in place.
+  9. **Local session states** gain `conflict` (open refused, waiting for the cashier), `superseded` and `abandoned`
+     (the cashier chose another register while in conflict). That is a local-only `register_sessions` schema bump
+     (the status field's `maxLength` is 8), migrated in place.
      - **The stored status is an open string** (no enum, `maxLength` 20, still indexed), so a later local state
        costs no migration. The TypeScript union names today's states.
      - **A stored status this build does not know** (a later build wrote it, then the app was rolled back) makes
        the register "needs upgrade": no session of it is current or sellable, no transition, stamp or cash movement
        runs on it, it is never sent, and opening another session is refused. Each refusal is
        `RegisterNeedsUpgradeError`, which tells the cashier the till's data comes from a newer version.
-     - **In `useRegisterSession`,** a `conflict` session is current, so its sheet shows, but it takes no sale. A
-       `superseded` session is neither current nor sellable. Neither blocks opening another session.
+     - **A conflict session leaves `conflict` only by becoming `open`** (take over applied, or nothing was live any
+       more) **or `abandoned`.** Nothing else may make it non-current.
+     - **In `useRegisterSession`,** a `conflict` session is current, so its sheet shows, but it takes no sale.
+       While a register has a conflict session, opening on that register is refused locally with
+       `RegisterSessionConflictError`; the only exits are Take over and Choose another register. "Current" is per
+       register in `useRegisterSession`, so a conflict session stays current for its register; the app reaches
+       another register from the conflict sheet only through Choose another register, which abandons first (step
+       4). It never leaves a conflict session behind as non-current.
+     - **`superseded` and `abandoned`** are neither current nor sellable, and neither blocks opening another
+       session.
+     - **`abandoned` is terminal:** no transition out, never sent, no stamp or cash movement on it.
+     - **The ledger block follows the session, not the row.** A `register_session_already_open` rejection blocks its
+       register's ledger only while its session is `conflict`. After Choose another register the refused open stays
+       in history with its rejection and no longer blocks, in both places the outbox walks the ledger (decision 4).
+       A later fresh open on that register is an ordinary open and may get the sheet again.
+     - **Choose another register is one change:** the session's status and the `register_session_abandoned`
+       rejections on its unsent commands (decision 6). The till's store has no transaction across collections, so
+       the commands are marked first and the status last, and derivation finishes a half-done abandon (a `conflict`
+       session with any command rejected `register_session_abandoned` becomes `abandoned`, and its remaining pending
+       commands are marked). No crash leaves the two halves apart after start-up. Choose another register is refused
+       while a Take over is in flight (the requeued open is still pending): abandoning then would discard the store's
+       answer. Orders already sold on it offline keep decisions 7 and 8.
      - **Derived from stored rows.** The till derives resume, conflict and superseded state from the stored
-       command rows (an applied row's `result`, a rejected row's `error.data`) when it starts, not only from the
-       outbox's `onResult` callback. The outbox finalizes a command even when `onResult` throws.
+       command rows (an applied row's `result`, a rejected row's `error.data`) when it starts and on every change to
+       its register's command rows, not only from the outbox's `onResult` callback. Take over moves a conflict
+       session to `open` (or back to `counting`) only when its requeued open is applied; refused again, it stays
+       `conflict` with the new refusal's data. The outbox finalizes a command even when `onResult` throws. Derivation never
+       moves a terminal status (`closed`, `superseded`, `abandoned`) back: a stored `abandoned` wins over the
+       refused open's error data.
+     - **Rolling back** past this build reads a stored `abandoned` as "needs upgrade" (above). That is accepted, and
+       the changeset says so as a one-way storage note.
   10. **Sheets.**
       - **Already open:** "Register 1 is already open on another till (since <time>, <device name>). If that till is
         lost or being replaced, take over; sales already recorded there stay on that session." Buttons: Take over ·
