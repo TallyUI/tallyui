@@ -1,7 +1,7 @@
 import type { RxCollection, RxDatabase } from 'rxdb';
 import { createLogger } from '../logging';
 import { openMigratedCollection } from '../rxdb/open-migrated-collection';
-import { registerSessionCollection, type RegisterSession } from './schemas';
+import { registerSessionCreator, type RegisterSession } from './schemas';
 
 /** `addRegisterSessionCollection`'s logger: attach a sink to see dropped status writes during close. */
 export const registerSessionsLogger = createLogger('register-sessions');
@@ -25,6 +25,6 @@ export class RegisterSessionOpenClosedError extends Error {
  * See `openMigratedCollection` for the migration and close mechanism.
  */
 export function addRegisterSessionCollection(db: RxDatabase, closeWaitMs = REGISTER_SESSION_MIGRATION_CLOSE_WAIT_MS): Promise<RxCollection<RegisterSession>> {
-  return openMigratedCollection<RegisterSession>(db, { name: 'register_sessions', creator: registerSessionCollection,
+  return openMigratedCollection<RegisterSession>(db, { name: 'register_sessions', creator: registerSessionCreator,
     label: 'addRegisterSessionCollection', logger: registerSessionsLogger, closedError: (name) => new RegisterSessionOpenClosedError(name) }, closeWaitMs);
 }

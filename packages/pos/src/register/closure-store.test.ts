@@ -22,7 +22,7 @@ import { taxLinesByRate } from '../tax/exact';
 import { finalizeOrder } from '../pos-order/finalize';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
 import { bindRegister, ensureRegister, nextSaleCounter, readRegister } from './register-document';
-import { cashMovementSchema, closureSchema, registerSessionCollection, type CashMovement, type RegisterSession } from './schemas';
+import { cashMovementSchema, closureSchema, registerSessionCreator, type CashMovement, type RegisterSession } from './schemas';
 import {
   backToSelling,
   closeSession,
@@ -52,7 +52,7 @@ beforeEach(async () => {
   });
   await db.addCollections({
     closures: { schema: closureSchema },
-    register_sessions: registerSessionCollection(),
+    register_sessions: registerSessionCreator(),
     cash_movements: { schema: cashMovementSchema },
   });
   await ensureRegister(db.register_sessions, 'web');
@@ -614,7 +614,7 @@ it('counts two registers in one store on their own: sale counters and closure nu
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     multiInstance: false,
   });
-  const { register_sessions: backTill } = await back.addCollections({ register_sessions: registerSessionCollection() });
+  const { register_sessions: backTill } = await back.addCollections({ register_sessions: registerSessionCreator() });
   await ensureRegister(backTill, 'web');
   await bindRegister(db.register_sessions, 'store', { id: 'front', name: 'Front' });
   await bindRegister(backTill, 'store', { id: 'back', name: 'Back' });

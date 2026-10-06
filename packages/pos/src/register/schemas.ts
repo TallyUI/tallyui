@@ -24,9 +24,9 @@ export interface RegisterSession {
   register_id: string;
   /** The app's neutral store key (see `bindRegister`). */
   store_key?: string | null;
-  /** `conflict` is an open the store refused, waiting for the cashier; `superseded` is a session another till took over (ADR-078 decision 9). */
+  /** Stored status is an open string so a later local state costs no migration (ADR-078 decision 9); the union names today's states. */
   status: 'open' | 'counting' | 'closed' | 'conflict' | 'superseded';
-  /** The store's session this one resumed as, kept beside the local id (ADR-078 decision 2). */
+  /** The store session this local id was resumed as (ADR-078 decision 2), never the session that superseded it; null until a resume. */
   server_session_id?: string | null;
   /** The store's day the session opened, `yyyy-MM-dd`. */
   business_day?: string;
@@ -110,7 +110,7 @@ export const registerSessionSchema: RxJsonSchema<RegisterSession> = {
   title: 'Register sessions', version: 1, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id, register_id: id, store_key: nullableText,
-    status: { type: 'string', enum: ['open', 'counting', 'closed', 'conflict', 'superseded'], maxLength: 10 },
+    status: { type: 'string', maxLength: 20 },
     server_session_id: { ...nullableText, default: null },
     business_day: { type: 'string', maxLength: 10 },
     opened_at_gmt: text, opened_by: nullableText,
@@ -131,15 +131,26 @@ export const registerSessionSchema: RxJsonSchema<RegisterSession> = {
 };
 
 /**
- * Create `register_sessions` with `addRegisterSessionCollection`, which migrates older versions safely.
- * Plain `addCollections` is for a database that has never held an older version (tests).
+ * Internal: used by `addRegisterSessionCollection` and tests on a database that never held an older version.
  * The register document (`register-document.ts`) is a local document on this collection.
  */
-export function registerSessionCollection(): RxCollectionCreator<RegisterSession> {
+export function registerSessionCreator(): RxCollectionCreator<RegisterSession> {
   // addRxPlugin ignores a plugin it already has.
   addRxPlugin(RxDBLocalDocumentsPlugin);
   addRxPlugin(RxDBMigrationSchemaPlugin);
-  return { schema: registerSessionSchema, localDocuments: true, migrationStrategies: { 1: (doc) => doc } };
+  return { schema: registerSessionSchema, localDocuments: true, migrationStrategies: { 1: (doc) => {
+    // Every migrated row gets the field, the same shape a new row gets from the schema default.
+    doc.server_session_id ??= null;
+    return doc;
+  } } };
+}
+
+/**
+ * @deprecated Use `addRegisterSessionCollection` to open register_sessions.
+ * Kept so old callers compile but fail at start instead of migrating on RxDB's own path.
+ */
+export function registerSessionCollection(): never {
+  throw new Error('registerSessionCollection() is gone: open register_sessions with await addRegisterSessionCollection(db). Adding it with addCollections would run RxDB\'s own migration of schema version 1, which can lose sessions (ADR-078, #371).');
 }
 
 export const cashMovementSchema: RxJsonSchema<CashMovement> = {

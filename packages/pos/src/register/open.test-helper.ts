@@ -101,17 +101,17 @@ export function addRegisterSessionCollectionTests(makeStorage: () => RxStorage<a
     try {
       const sessions = await addRegisterSessionCollection(db);
       expect(sessions.schema.version).toBe(1);
-      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual(row);
+      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual({ ...row, server_session_id: null });
       expect(await readRegister(sessions)).toStrictEqual(register);
-      expect(await stored()).toStrictEqual({ v0: [], v1: storedRows });
+      expect(await stored()).toStrictEqual({ v0: [], v1: storedRows.map((row) => ({ ...row, server_session_id: null })) });
     } finally { await db.close(); }
   });
 
   it('a genuinely invalid session rejects with DM4 after the migration has stopped, and the fixed one migrates on the next open', async () => {
     const { open, olderApp, stored } = store(makeStorage());
     await olderApp(async (sessions) => {
-      // The older app's storage accepts an invalid status without validation.
-      const bad = { ...counting, status: 'bogus' } as unknown as VersionZeroSession;
+      // The older app's storage accepts a non-integer amount without validation.
+      const bad = { ...counting, counted_float_minor: 1.5 };
       expect((await sessions.bulkInsert([openSession, bad])).error).toEqual([]);
     });
     const db = await open();
@@ -121,14 +121,14 @@ export function addRegisterSessionCollectionTests(makeStorage: () => RxStorage<a
       expect(db.collections.register_sessions).toBeUndefined();
     } finally { await db.close(); }
     await olderApp(async (sessions) => {
-      await (await sessions.findOne(counting.id).exec())!.incrementalPatch({ status: 'counting' });
+      await (await sessions.findOne(counting.id).exec())!.incrementalPatch({ counted_float_minor: 10000 });
     });
     const { v0: storedRows } = await stored();
     const reopened = await open();
     try {
       const sessions = await addRegisterSessionCollection(reopened);
-      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual(row);
-      expect(await stored()).toStrictEqual({ v0: [], v1: storedRows });
+      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual({ ...row, server_session_id: null });
+      expect(await stored()).toStrictEqual({ v0: [], v1: storedRows.map((row) => ({ ...row, server_session_id: null })) });
     } finally { await reopened.close(); }
   });
 
@@ -149,21 +149,25 @@ export function addRegisterSessionCollectionTests(makeStorage: () => RxStorage<a
     const reopened = await open();
     try {
       const sessions = await addRegisterSessionCollection(reopened);
-      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual(row);
-      expect(await stored()).toStrictEqual({ v0: [], v1: storedRows });
+      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual({ ...row, server_session_id: null });
+      expect(await stored()).toStrictEqual({ v0: [], v1: storedRows.map((row) => ({ ...row, server_session_id: null })) });
     } finally { await reopened.close(); }
   });
 
-  it('opens a new database without migrating, and stores conflict and superseded sessions with server_session_id', async () => {
+  it("opens a new database without migrating, and stores a status outside today's set, a superseded session and a resumed session's server_session_id", async () => {
     const db = await store(makeStorage()).open();
     try {
       const sessions = await addRegisterSessionCollection(db);
       expect(await getSingleDocument(db.internalStore, STATUS_ID)).toBeUndefined();
       await sessions.insert({ ...openSession, id: 'conflict-1', status: 'conflict' });
-      const superseded = await sessions.insert({ ...openSession, id: 'superseded-1', status: 'superseded', server_session_id: 'store-session-1' });
-      const found = await sessions.find({ selector: { register_id: openSession.register_id, status: 'superseded' } }).exec();
-      expect(found.map((doc) => doc.toJSON())).toStrictEqual([superseded.toJSON()]);
+      await sessions.insert({ ...openSession, id: 'superseded-1', status: 'superseded' });
+      for (const id of ['conflict-1', 'superseded-1']) expect((await sessions.findOne(id).exec())?.server_session_id).toBeNull();
+      const resumed = await sessions.insert({ ...openSession, id: 'resumed-1', status: 'open', server_session_id: 'store-session-1' });
+      const found = await sessions.find({ selector: { register_id: openSession.register_id, server_session_id: 'store-session-1' } }).exec();
+      expect(found.map((doc) => doc.toJSON())).toStrictEqual([resumed.toJSON()]);
       expect(found[0].server_session_id).toBe('store-session-1');
+      await sessions.insert({ ...openSession, id: 'abandoned-1', status: 'abandoned-by-till' } as unknown as RegisterSession);
+      expect((await sessions.findOne('abandoned-1').exec())?.status).toBe('abandoned-by-till');
       await expect(addRegisterSessionCollection(db)).rejects.toMatchObject({ code: 'DB3' });
     } finally { await db.close(); }
   });

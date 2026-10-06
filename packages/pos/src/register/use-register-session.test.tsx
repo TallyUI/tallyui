@@ -53,7 +53,7 @@ import { registerFactsLogger } from './facts';
 import { registerCommandCollection, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
 import { readFresh } from '../rxdb';
 import { ensureRegister, readRegister } from './register-document';
-import { cashMovementSchema, closureSchema, registerSessionCollection } from './schemas';
+import { cashMovementSchema, closureSchema, registerSessionCreator } from './schemas';
 import { serverClose } from './server-close.test-helper';
 import {
   closeSession,
@@ -93,7 +93,7 @@ beforeEach(async () => {
     multiInstance: false,
   });
   await created.addCollections({
-    register_sessions: registerSessionCollection(),
+    register_sessions: registerSessionCreator(),
     cash_movements: { schema: cashMovementSchema },
     closures: { schema: closureSchema },
     register_commands: registerCommandCollection(),

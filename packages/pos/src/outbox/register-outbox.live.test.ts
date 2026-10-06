@@ -6,7 +6,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { uuidv7 } from '../pos-order';
 import { ensureRegister, readRegister } from '../register/register-document';
 import { reconcileRegisterCommands, registerCommandCollection, type RegisterCommandCollection } from '../register/register-commands';
-import { cashMovementSchema, closureSchema, registerSessionCollection } from '../register/schemas';
+import { cashMovementSchema, closureSchema, registerSessionCreator } from '../register/schemas';
 import { closeSession, openSession, recordMovement, startCounting, writeClosure,
   type CashMovementCollection, type ClosureCollection, type RegisterSessionCollection } from '../register/session-store';
 import { readFresh } from '../rxdb';
@@ -23,7 +23,7 @@ describe.skipIf(!baseUrl || !token)('live register outbox', () => {
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
     let outbox: RegisterOutbox | undefined;
     try {
-      await db.addCollections({ register_sessions: registerSessionCollection(), cash_movements: { schema: cashMovementSchema },
+      await db.addCollections({ register_sessions: registerSessionCreator(), cash_movements: { schema: cashMovementSchema },
         closures: { schema: closureSchema }, register_commands: registerCommandCollection() });
       const device = await ensureRegister(db.register_sessions, 'web');
       const registerId = uuidv7(), storeKey = 'live-check';

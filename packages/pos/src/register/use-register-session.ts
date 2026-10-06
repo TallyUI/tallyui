@@ -75,7 +75,7 @@ const subscribeClosing = (listener: () => void) => {
 const closedFacts = new Set<string>();
 
 export interface UseRegisterSessionOptions {
-  /** `register_sessions`, created with `registerSessionCollection()`; `null` while it opens. */
+  /** `register_sessions`, created with `addRegisterSessionCollection`; `null` while it opens. */
   sessions: RegisterSessionCollection | null;
   /** `cash_movements`; `null` while it opens. */
   movements: CashMovementCollection | null;
