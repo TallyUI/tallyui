@@ -4521,3 +4521,38 @@ interface OrderCreatePayload {
     WooCommerce), or block the sale offline when the synced copy is older than a set age?
   - Q4. Coupon reads: the wiki disagrees on whether `wcpos/v2/coupons` is Pro-only. The WooCommerce lane checks on the
     dev store before phase (c).
+- **Amendment 1 (2026-10-06): the coupon engine handoff.** The front desk had the engine written up from the
+  monorepo (`main` `be44527`): `~/agent/handoff/wcpos-coupon-engine-for-tallyui-2026-10-06.md`. This lane reads its
+  sections 1–4, and the specs cite its appendices by line range.
+  - **What is ported:** `packages/order-math`'s coupon module, which is `discount`, `helpers`, `validate`,
+    `recalculate` and `to-coupon-configs`. It comes with the `settle`, `snapshot` and `order-totals` pieces and the
+    tax helpers it imports, and with its tests: 424 cases in 24 files, ported alongside the code. It is MIT, the
+    same owner, kept with an attribution line. The WooCommerce parity tests restate WooCommerce's scenarios and
+    numbers; they don't copy its PHP.
+  - **Known gaps, not regressions.** These are missing upstream too, and phase (b) lists them:
+    - `free_shipping` is not applied;
+    - a coupon's `status` is not checked;
+    - variation-level product restrictions don't match;
+    - misc lines don't match category restrictions;
+    - only `percent`, `fixed_cart` and `fixed_product` are supported (a cart carrying another type fails with
+      "coupon not found");
+    - usage holds are not modelled.
+  - **Parity unverified.** These are marked so in the port, and the WooCommerce lane checks each on the dev store
+    (the list goes into phase (b)'s spec):
+    - the minimum and maximum spend basis on a store whose prices include tax;
+    - the email restriction (billing email only, not the account email);
+    - individual use (rejects the new coupon rather than replacing the others);
+    - `fixed_cart` spreading over excluded items;
+    - expiry (an instant against the end of day in the site's timezone);
+    - an inclusive coupon line's `discount + discount_tax`.
+  - **Not ported (upstream inconsistencies):**
+    - the second coupon pipeline and its duplicated mapping (the port keeps one);
+    - older lines carrying a regular-price `subtotal` (the port uses decision 1's convention only:
+      `subtotal = total` = the override);
+    - the mixed rounding helpers (the port uses ADR-076's rounding throughout);
+    - the replay ignoring the store's calculate-taxes setting.
+  - **A plugin dependency.** WooCommerce's coupon reset only keeps the override price because a woocommerce-pos PHP
+    filter makes `get_subtotal()` return the POS price during `recalculate_coupons()`. The WooCommerce lane records
+    which woocommerce-pos version ships that filter (1.10.20, or the v5 branch). Phase (d) sends `coupon_lines` only to
+    a store whose plugin has it.
+  - **Priority is unchanged:** 3.4.0 (the charges UI, #446 and phase (a)) comes first, then phase (b).
