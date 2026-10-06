@@ -1,5 +1,11 @@
 # @tallyui/pos
 
+## 3.5.3
+
+### Patch Changes
+
+- @tallyui/core@3.5.3
+
 ## 3.5.2
 
 ### Patch Changes
