@@ -34,6 +34,73 @@ const doc = (id: string, variantIds: string[]): MedusaProductDocument => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('withCalculatedPrices', () => {
+  it('keeps at most three of ten chunk requests in flight and starts one more per release', async () => {
+    const releases: ((response: Response) => void)[] = [];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>((resolve) => releases.push(resolve)));
+    const docs = Array.from({ length: 1000 }, (_, i) => doc(`prod_${i}`, [`v_${i}`]));
+    const result = withCalculatedPrices(docs, context);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    for (let i = 0; i < 10; i++) {
+      releases[i](new Response(JSON.stringify({ products: [], count: 0 })));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(fetchSpy).toHaveBeenCalledTimes(Math.min(4 + i, 10));
+    }
+    expect(await result).toHaveLength(1000);
+    const ids = fetchSpy.mock.calls.map(([input]) => new URL(String(input)).searchParams.getAll('id[]'));
+    expect(ids.map((chunk) => chunk.length)).toEqual(Array(10).fill(100));
+    expect(ids.flat()).toEqual(docs.map((d) => d.id));
+  });
+
+  it('returns identical priced documents when three chunks resolve in reverse order, including duplicate variants', async () => {
+    const docs = Array.from({ length: 250 }, (_, i) => doc(`prod_${i}`, [`v_${i}`, 'shared']));
+    const run = async (order: number[]) => {
+      const releases: (() => void)[] = [];
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => new Promise<Response>((resolve) => {
+        const chunk = releases.length;
+        const products = new URL(String(input)).searchParams.getAll('id[]').map((id) => ({
+          id, variants: [
+            { id: `v_${id.slice(5)}`, calculated_price: calc({ calculated_amount: Number(id.slice(5)) }) },
+            { id: 'shared', calculated_price: calc({ calculated_amount: chunk + 1 }) },
+          ],
+        }));
+        releases.push(() => resolve(new Response(JSON.stringify({ products, count: products.length }))));
+      }));
+      const result = withCalculatedPrices(docs, context);
+      expect(releases).toHaveLength(3);
+      for (const index of order) {
+        releases[index]();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      return result;
+    };
+    const inOrder = await run([0, 1, 2]);
+    expect(await run([2, 1, 0])).toEqual(inOrder);
+    expect(inOrder).toEqual(docs.map((d, i) => ({
+      ...d, variants: d.variants!.map((v) => ({
+        ...v, calculated_price: calc({ calculated_amount: v.id === 'shared' ? 3 : i }),
+      })),
+    })));
+    expect(docs[0].variants![0]).not.toHaveProperty('calculated_price');
+  });
+
+  it('rejects on the second chunk failing and starts no more than the initial three of five requests', async () => {
+    const releases: ((response: Response) => void)[] = [];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>((resolve) => releases.push(resolve)));
+    const docs = Array.from({ length: 500 }, (_, i) => doc(`prod_${i}`, [`v_${i}`]));
+    const result = withCalculatedPrices(docs, context);
+    const rejected = expect(result).rejects.toThrow('Medusa store API error: 500');
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    releases[1](new Response('{}', { status: 500 }));
+    await rejected;
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    releases[0](new Response(JSON.stringify({ products: [], count: 0 })));
+    releases[2](new Response('{}', { status: 503 }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    await expect(result).rejects.toThrow('Medusa store API error: 500');
+    expect(docs.every((d) => d.variants!.every((v) => !('calculated_price' in v)))).toBe(true);
+  });
+
   it('asks the store API in id[] chunks of 100, with region_id, the fields and the key header, and no Authorization', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ products: [], count: 0 })));
     const docs = Array.from({ length: 250 }, (_, i) => doc(`prod_${i}`, [`v_${i}`]));

@@ -60,17 +60,17 @@ async function setup() {
 }
 
 describe('Medusa combined pull page size in the real RxDB replication loop', () => {
-  it('pulls 1,050 products in three 500-product list pages', async () => {
+  it('pulls 1,050 products in five 250-product list pages', async () => {
     const { products, requests } = await setup();
     expect(await products.find().exec()).toHaveLength(1050);
     const pages = requests.filter(url => url.pathname === '/admin/products' && url.searchParams.get('order') === 'id');
-    expect(pages.map(url => url.searchParams.get('limit'))).toEqual(['500', '500', '500']);
-    expect(pages.map(url => url.searchParams.get('offset'))).toEqual(['0', '500', '1000']);
+    expect(pages.map(url => url.searchParams.get('limit'))).toEqual(['250', '250', '250', '250', '250']);
+    expect(pages.map(url => url.searchParams.get('offset'))).toEqual(['0', '250', '500', '750', '1000']);
   });
 
-  it('reads the variant mark once per pull call, plus the fresh-install seed', async () => {
+  it('reads the variant mark once per pull call for five 250-product list pages, plus the fresh-install seed', async () => {
     const { requests } = await setup();
     expect(requests.filter(url => url.pathname === '/admin/product-variants'), requests.map(String).join('\n'))
-      .toHaveLength(4);
+      .toHaveLength(6);
   });
 });

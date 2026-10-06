@@ -4,6 +4,9 @@ import type { MedusaCalculatedPrice, MedusaProductDocument } from '../schemas/pr
 /** Store API list limit used here; also the most ids per enrichment request (as `fetchByIds`). */
 export const STORE_PAGE_SIZE = 100;
 
+/** Most store-API price requests in flight at once (ADR-074): the demo backend serialises heavier work, so more buys little. */
+export const STORE_PRICE_CONCURRENCY = 3;
+
 /** Only what pricing needs: the product id and each variant's calculated price. */
 export const STORE_PRICE_FIELDS = 'id,*variants.calculated_price';
 
@@ -36,18 +39,35 @@ export async function storeGet(path: string, context: SyncContext): Promise<{ pr
  * amendment 8, D2b). A variant the store API does not list (a draft, or a
  * product outside the key's sales channel) gets `null`: priced mode, not
  * sellable here. Without a pricing context the documents come back
- * unchanged (base-only mode, no `calculated_price` key). A failed store
- * request throws, so the pull retries and never delivers a half-priced
- * document.
+ * unchanged (base-only mode, no `calculated_price` key). Store-API chunk
+ * requests run up to `STORE_PRICE_CONCURRENCY` at a time; a failed store request throws,
+ * so the pull retries and never delivers a half-priced document.
  */
 export async function withCalculatedPrices<Doc extends MedusaProductDocument>(docs: Doc[], context: SyncContext): Promise<Doc[]> {
   const pricing = context.pricingContext;
   if (!pricing) return docs;
-  const byVariant = new Map<string, MedusaCalculatedPrice | null>();
+  const urls: string[] = [];
   for (let i = 0; i < docs.length; i += STORE_PAGE_SIZE) {
     const params = new URLSearchParams({ region_id: pricing.region_id ?? '', limit: String(STORE_PAGE_SIZE), fields: STORE_PRICE_FIELDS });
     for (const doc of docs.slice(i, i + STORE_PAGE_SIZE)) params.append('id[]', doc.id);
-    const data = await storeGet(`/store/products?${params}`, context);
+    urls.push(`/store/products?${params}`);
+  }
+  const responses: Awaited<ReturnType<typeof storeGet>>[] = [];
+  let next = 0;
+  let failed = false;
+  await Promise.all(Array.from({ length: Math.min(STORE_PRICE_CONCURRENCY, urls.length) }, async () => {
+    while (!failed && next < urls.length) {
+      const index = next++;
+      try {
+        responses[index] = await storeGet(urls[index], context);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  }));
+  const byVariant = new Map<string, MedusaCalculatedPrice | null>();
+  for (const data of responses) {
     for (const product of data.products ?? []) {
       for (const variant of product.variants ?? []) byVariant.set(variant.id, variant.calculated_price ?? null);
     }
