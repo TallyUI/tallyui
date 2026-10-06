@@ -1,5 +1,12 @@
 # @tallyui/connector-medusa
 
+## 3.6.0
+
+### Patch Changes
+
+- Updated dependencies [2894a59]
+  - @tallyui/core@3.6.0
+
 ## 3.5.3
 
 ### Patch Changes

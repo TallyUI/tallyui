@@ -1,5 +1,25 @@
 # @tallyui/components
 
+## 3.6.0
+
+### Minor Changes
+
+- 6c94486: Add an optional Receipt footerSlot for app content that prints after Change and above the on-screen buttons.
+- 3033b49: `buildReceiptData` returns the WCPOS receipt schema 1.4 version (`RECEIPT_SCHEMA_VERSION`) and its `software`, `register` and `fiscal` blocks with 1.4 defaults; `ReceiptConfig` takes `registerName`, `software` and `fiscal`. `Receipt` takes `registerName` and prints `Register: <name>` when given (#474).
+
+### Patch Changes
+
+- d9a6080: An order the store applied with `register_session_unknown` is neither listed under Needs attention nor given a warning line, because the store counts it once its session arrives.
+- Updated dependencies [3033b49]
+- Updated dependencies [843a08c]
+- Updated dependencies [d9a6080]
+- Updated dependencies [2894a59]
+- Updated dependencies [2faa6c1]
+  - @tallyui/pos@3.6.0
+  - @tallyui/core@3.6.0
+  - @tallyui/primitives@3.6.0
+  - @tallyui/theme@3.6.0
+
 ## 3.5.3
 
 ### Patch Changes

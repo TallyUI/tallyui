@@ -1,5 +1,19 @@
 # @tallyui/pos
 
+## 3.6.0
+
+### Minor Changes
+
+- 3033b49: `buildReceiptData` returns the WCPOS receipt schema 1.4 version (`RECEIPT_SCHEMA_VERSION`) and its `software`, `register` and `fiscal` blocks with 1.4 defaults; `ReceiptConfig` takes `registerName`, `software` and `fiscal`. `Receipt` takes `registerName` and prints `Register: <name>` when given (#474).
+- 843a08c: A register command refused with `register_session_superseded` (or abandoned locally) no longer holds up the commands behind it, and a session open now ends its batch (ADR-078).
+- 2faa6c1: Export `TenderVoid`, `tenderVoidSchema` and `tenderVoidCollection()`: the shape of a voided tender leg for an app's local write-once journal (#479).
+
+### Patch Changes
+
+- d9a6080: An order the store applied with `register_session_unknown` is neither listed under Needs attention nor given a warning line, because the store counts it once its session arrives.
+- Updated dependencies [2894a59]
+  - @tallyui/core@3.6.0
+
 ## 3.5.3
 
 ### Patch Changes
