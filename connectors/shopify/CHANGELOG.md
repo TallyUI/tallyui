@@ -1,5 +1,16 @@
 # @tallyui/connector-shopify
 
+## 3.5.0
+
+### Minor Changes
+
+- a5b432e: Products report flat categories with string ids through the new optional `getCategories` trait (WooCommerce and Medusa categories, Vendure collections, Shopify product type). `@tallyui/pos` adds `productCategories`, `listCategories` and `inCategory`, which fall back to `getCategoryNames` for connectors without the trait.
+
+### Patch Changes
+
+- Updated dependencies [a5b432e]
+  - @tallyui/core@3.5.0
+
 ## 3.4.0
 
 ### Patch Changes
