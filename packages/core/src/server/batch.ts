@@ -87,15 +87,29 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     || (Array.isArray(lines) && lines.some(line => (line as { discountMinor?: unknown } | null)?.discountMinor !== undefined))
   const payload = command.payload as OrderCreatePayloadV3
   const { display, taxByRate, sessionId } = payload
-  // Version 4 carries version 3's fields (#286); only what discountMinor means changes.
+  // Versions 4 and 5 carry version 3's fields, with tax-exclusive discountMinor (#286).
   const v3 = command.version >= 3
-  const versionError = command.version === 2 && discountMinor === undefined ? 'version 2 requires discountMinor'
+  const v5Fields = ['fees', 'shipping'].filter(field => payload[field as 'fees' | 'shipping'] !== undefined)
+  if (Array.isArray(lines)) lines.forEach((line, index) => {
+    if (line?.custom !== undefined) v5Fields.push(`lines[${index}].custom`)
+  })
+  for (const field of ['fees', 'shipping'] as const) if (display?.[field] !== undefined) v5Fields.push(`display.${field}`)
+  let versionError = command.version < 5 && v5Fields.length ? v5Fields.map(field => `${field} requires version 5`).join('; ')
+    : command.version === 2 && discountMinor === undefined ? 'version 2 requires discountMinor'
     : command.version === 1 && discounted ? 'discountMinor requires version 2'
     : !v3 && (display !== undefined || taxByRate !== undefined) ? 'display and taxByRate require version 3'
     : !v3 && sessionId !== undefined ? 'sessionId requires version 3'
     : !v3 && payload.customer?.customerId !== undefined ? 'customerId requires version 3'
     : v3 && (display !== undefined) !== (taxByRate !== undefined) ? 'display and taxByRate must both be present or both absent'
     : undefined
+  if (!versionError && Array.isArray(lines)) for (const [index, line] of lines.entries()) {
+    if (line?.custom === undefined && (typeof line?.variantId !== 'string' || !line.variantId.length)) {
+      versionError = `lines[${index}].variantId is required`
+    } else if (command.version >= 5 && line?.custom !== undefined && line.variantId !== undefined) {
+      versionError = `lines[${index}] has custom and variantId; a custom line has no variantId`
+    }
+    if (versionError) break
+  }
   if (versionError) {
     return { id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: versionError } }
   }
@@ -103,8 +117,9 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   if (bounds.length) {
     return { id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: bounds.slice(0, 10).join('; ') } }
   }
-  const errors = v3 && display !== undefined && taxByRate !== undefined && payloadShapeErrors(payload).length === 0
-    ? fiscalFiguresErrors(payload) : []
+  const shape = payloadShapeErrors(payload)
+  const errors = command.version >= 5 && shape.length ? shape
+    : v3 && display !== undefined && taxByRate !== undefined && shape.length === 0 ? fiscalFiguresErrors(payload) : []
   if (errors.length) {
     return { id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: errors.slice(0, 10).join('; ') } }
   }

@@ -22,7 +22,7 @@ export function fiscalFiguresErrors(payload: OrderCreatePayloadV3): string[] {
     for (const key of keys) check(Number.isSafeInteger(value[key]), `${path}.${key}`, 'a safe integer')
   }
   const { display, taxByRate } = payload
-  if (object(display, 'display', ['currency', 'exponent', 'taxInclusive', 'subtotalMinor', 'discountMinor', 'taxMinor', 'totalMinor', 'orderDiscountMinor', 'lines'])) {
+  if (object(display, 'display', ['currency', 'exponent', 'taxInclusive', 'subtotalMinor', 'discountMinor', 'taxMinor', 'totalMinor', 'orderDiscountMinor', 'lines', 'fees', 'shipping'])) {
     check(typeof display.currency === 'string', 'display.currency', 'a string')
     check(Number.isInteger(display.exponent) && display.exponent >= 0, 'display.exponent', 'an integer >= 0')
     check(typeof display.taxInclusive === 'boolean', 'display.taxInclusive', 'a boolean')
@@ -42,6 +42,27 @@ export function fiscalFiguresErrors(payload: OrderCreatePayloadV3): string[] {
         money(discount, discountPath, ['amountMinor'])
       })
     })
+    if (payload.fees?.length || payload.shipping?.length) check(display.taxInclusive === payload.pricesIncludeTax, 'display.taxInclusive', 'payload.pricesIncludeTax')
+    for (const field of ['fees', 'shipping'] as const) {
+      const id = field === 'fees' ? 'clientFeeId' : 'clientShippingId'
+      const amounts = new Map((payload[field] ?? []).map(entry => [
+        'clientFeeId' in entry ? entry.clientFeeId : entry.clientShippingId, entry.amountMinor,
+      ]))
+      const rows = display[field]
+      if (rows !== undefined) check(Array.isArray(rows), `display.${field}`, 'an array')
+      const seen = new Set<unknown>()
+      if (Array.isArray(rows)) rows.forEach((row, index) => {
+        const path = `display.${field}[${index}]`
+        if (!object(row, path, [id, 'amountMinor'])) return
+        check(typeof row[id] === 'string' && row[id].length > 0, `${path}.${id}`, 'a non-empty string')
+        money(row, path, ['amountMinor'])
+        check(amounts.has(row[id] as string), `${path}.${id}`, `a payload.${field}[].${id}`)
+        check(!seen.has(row[id]), `${path}.${id}`, `no duplicate ${id}`)
+        seen.add(row[id])
+        if (amounts.has(row[id] as string)) check(row.amountMinor === amounts.get(row[id] as string), `${path}.amountMinor`, `the payload.${field} amountMinor`)
+      })
+      for (const key of amounts.keys()) check(seen.has(key), `display.${field}`, `a row for ${id} ${key}`)
+    }
   }
   check(Array.isArray(taxByRate), 'taxByRate', 'an array')
   if (Array.isArray(taxByRate)) taxByRate.forEach((rate, index) => {

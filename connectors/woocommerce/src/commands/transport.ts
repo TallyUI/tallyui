@@ -34,7 +34,7 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope): { payload: Rec
     return { error: { code: 'invalid_payload', message: 'WooCommerce orders take one payment.' } };
   }
   for (const line of p.lines) {
-    if (!/^[1-9]\d*$/.test(line.variantId) || !Number.isSafeInteger(Number(line.variantId))) {
+    if (!/^[1-9]\d*$/.test(line.variantId ?? '') || !Number.isSafeInteger(Number(line.variantId))) {
       return { error: { code: 'invalid_payload', message: `Line ${line.clientLineId} has no WooCommerce product id.` } };
     }
   }
