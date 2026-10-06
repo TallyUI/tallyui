@@ -124,6 +124,24 @@ describe('ADR-076 WooCommerce builder strategy', () => {
     displayIdentity(order);
   });
 
+  it.each([false, true])('matches native WooCommerce on inclusive reference cart 2: 8.02, or 8.01 at subtotal (roundAtSubtotal: %s)', (subtotal) => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: context(rates136, true, subtotal) });
+    const espressoId = add(builder, 300, 'Espresso', 2);
+    builder.applyLineDiscount(espressoId, { type: 'percentage', value: 10 });
+    const croissantId = add(builder, 350, 'Croissant', 1, 'reduced-rate');
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    const order = builder.getSnapshot();
+    expect(order.totalMinor).toBe(subtotal ? 801 : 802);
+    if (!subtotal) {
+      expect(grouped(order).map(({ code, amountMinor }) => [code, amountMinor])).toEqual([
+        ['rate-1', 32], ['rate-2', 6], ['rate-4', 10], ['rate-3', 16],
+      ]);
+      expect(order.lineItems.find((line) => line.id === croissantId)?.netMicros).toBe('298578200');
+    }
+    expect(grouped(order).reduce((sum, { amountMinor }) => sum + amountMinor, 0)).toBe(order.taxMinor);
+    displayIdentity(order);
+  });
+
   it('sums three inclusive 0.01 fees raw and assigns display residue to the last fee', () => {
     const builder = make(undefined, true);
     for (let i = 0; i < 3; i++) builder.addFee({ name: `Fee ${i}`, amountMinor: 1 });
