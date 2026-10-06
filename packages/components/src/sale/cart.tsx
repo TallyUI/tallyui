@@ -4,10 +4,16 @@ import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
 import { CartLine, CartLineActions, CartPanel, CartTotal } from '../cart';
 import { DiscountChips, DiscountForm } from './discount-form';
+import { PriceForm } from './price-form';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%` }:
-  { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string }) {
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange }:
+  { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
+    /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
+    canEditPrice?: boolean;
+    /** Called after a price is applied, for the app's audit log. The reason is kept only here. */
+    onPriceChange?: (change: { lineId: string; fromMinor: number; toMinor: number; reason?: string }) => void;
+  }) {
   const { order } = sale;
   const money = (amount: number) => ({ amount, currency: order.currency });
   // order.display's figures (TallyUI ADR-063), with its tax split by rate; never app arithmetic (medusapos ADR 0008).
@@ -18,14 +24,17 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const display = (lineId: string) => order.display.lines.find((line) => line.lineId === lineId)!;
   const orderAmounts = order.discounts.length === 1
     ? [{ discountId: order.discounts[0].id, amountMinor: order.display.orderDiscountMinor }] : [];
-  // The open discount form: a line's, or the order's (lineId null).
-  const [form, setForm] = useState<{ lineId: string | null } | null>(null);
-  const discountForm = (lineId: string | null, title: string) => form?.lineId === lineId
+  // One open form: a line's discount or price, or the order's discount (lineId null).
+  const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | null>(null);
+  const discountForm = (lineId: string | null, title: string) => form?.type === 'discount' && form.lineId === lineId
     ? <DiscountForm key={lineId ?? 'order'} title={title} currency={order.currency} onClose={() => setForm(null)}
       onApply={(discount) => sale.applyDiscount(lineId, discount)} /> : null;
   const pay = `min-h-12 flex-1 justify-center rounded-md bg-primary px-4 py-3 ${!order.lineItems.length ? 'opacity-50' : ''}`;
   const renderItem = (line: typeof order.lineItems[number]) => <>
-    <CartLineActions actions={[{ id: 'discount', label: 'Discount', color: 'text-primary', onPress: () => setForm({ lineId: line.id }) }]}>
+    <CartLineActions actions={[
+      { id: 'discount', label: 'Discount', color: 'text-primary', onPress: () => setForm({ type: 'discount', lineId: line.id }) },
+      ...(canEditPrice ? [{ id: 'price', label: 'Price', color: 'text-primary', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
+    ]}>
       <CartLine name={line.name} quantity={line.quantity} unitPrice={money(line.unitPriceMinor)}
         lineTotal={money(display(line.id).amountMinor)} />
     </CartLineActions>
@@ -39,6 +48,14 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         onPress={() => sale.remove(line.id)} className="rounded-md border border-border bg-card px-3 py-2 min-h-11 min-w-11 items-center justify-center"><Text className="text-center text-foreground">Remove</Text></Pressable>
     </View>
     {discountForm(line.id, `Discount on ${line.name}`)}
+    {canEditPrice && form?.type === 'price' && form.lineId === line.id ? <PriceForm key={line.id} lineName={line.name}
+      currency={order.currency} currentMinor={line.unitPriceMinor} onClose={() => setForm(null)}
+      onApply={(amount, reason) => {
+        const fromMinor = line.unitPriceMinor;
+        const refused = sale.setUnitPrice(line.id, amount);
+        if (refused === null) onPriceChange?.({ lineId: line.id, fromMinor, toMinor: amount, reason });
+        return refused;
+      }} /> : null}
   </>;
   return <CartPanel dataSet={{ print: 'hide' }} items={order.lineItems} renderItem={renderItem}
     emptyState={<Text testID="cart-empty" className="px-3 py-2 text-muted-foreground">Scan or tap a product to start a sale.</Text>}
@@ -46,7 +63,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       <DiscountChips discounts={order.discounts} amounts={orderAmounts} currency={order.currency} onRemove={sale.removeDiscount}
         prefix="Order discount" />
       {form?.lineId === null ? discountForm(null, 'Order discount') : <Pressable accessibilityRole="button"
-        onPress={() => setForm({ lineId: null })} className="self-start rounded-md border border-border bg-card px-4 py-2 min-h-11 justify-center">
+        onPress={() => setForm({ type: 'discount', lineId: null })} className="self-start rounded-md border border-border bg-card px-4 py-2 min-h-11 justify-center">
         <Text className="text-foreground">Order discount</Text></Pressable>}
     </View> : undefined}
     footer={<View testID="cart-footer" className="gap-3 pb-4">
