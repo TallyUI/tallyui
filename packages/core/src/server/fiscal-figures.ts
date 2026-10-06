@@ -51,7 +51,7 @@ export function fiscalFiguresErrors(payload: OrderCreatePayloadV3): string[] {
       const rows = display[field]
       if (rows !== undefined) check(Array.isArray(rows), `display.${field}`, 'an array')
       const seen = new Set<unknown>()
-      if (Array.isArray(rows)) rows.forEach((row, index) => {
+      if (Array.isArray(rows)) rows.forEach((row: unknown, index) => {
         const path = `display.${field}[${index}]`
         if (!object(row, path, [id, 'amountMinor'])) return
         check(typeof row[id] === 'string' && row[id].length > 0, `${path}.${id}`, 'a non-empty string')
