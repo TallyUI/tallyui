@@ -11,6 +11,8 @@
  * Copy is plain English (no i18n keys, ADR-064's neutral-copy rule).
  */
 
+import type { RegisterSession } from '@tallyui/pos';
+
 export type RegisterBarPill =
   | 'Choose a register'
   | 'Close not finished'
@@ -38,7 +40,8 @@ export function describeRegisterBarPill({
   /** The register this till is bound to, or `null` when it isn't bound yet. */
   registerId: string | null;
   online: boolean;
-  sessionStatus?: 'open' | 'counting' | 'closed' | null;
+  /** `conflict` and `superseded` (ADR-078 decision 9) get no pill of their own yet; step 3b decides theirs. */
+  sessionStatus?: RegisterSession['status'] | null;
   overdue?: boolean;
   approvalRequired?: boolean;
   /** The store uses register sessions at all (`useRegisterSession`'s `enabled`). */

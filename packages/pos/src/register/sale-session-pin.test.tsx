@@ -16,7 +16,7 @@ import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { addPosOrderCollection, type PosOrder } from '../pos-order';
 import { ensureRegister } from './register-document';
-import { cashMovementSchema, closureSchema, registerSessionCollection } from './schemas';
+import { cashMovementSchema, closureSchema, registerSessionCreator } from './schemas';
 import type { CashMovementCollection, ClosureCollection, RegisterSessionCollection } from './session-store';
 import { useRegisterSession, type UseRegisterSessionOptions } from './use-register-session';
 
@@ -42,7 +42,7 @@ beforeEach(async () => {
     multiInstance: false,
   });
   await created.addCollections({
-    register_sessions: registerSessionCollection(),
+    register_sessions: registerSessionCreator(),
     cash_movements: { schema: cashMovementSchema },
     closures: { schema: closureSchema },
   });

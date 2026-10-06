@@ -71,11 +71,14 @@ export class RegisterMovementStrandedError extends Error {
   }
 }
 
-/** Every move a session may make. Nothing leaves `closed`; everything else is refused. */
+/** Every move a session may make. Nothing leaves `closed`; everything else is refused.
+ * No cashier move leaves `conflict` or `superseded`; the store's answers set them (ADR-078). */
 const TRANSITIONS: Record<RegisterSession['status'], readonly RegisterSession['status'][]> = {
   open: ['counting', 'closed'],
   counting: ['open', 'closed'],
   closed: [],
+  conflict: [],
+  superseded: [],
 };
 
 /**

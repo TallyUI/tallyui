@@ -4634,6 +4634,8 @@ interface OrderCreatePayload {
      - **The till never re-keys a command or an order.** An unacknowledged command may already be at the store, and
        a re-keyed resend would put a second fingerprint under its id. The local session row records
        `server_session_id` and keeps its own id.
+     - **`server_session_id` means one thing:** the store session this local id was resumed as. It is never the
+       session that superseded this one, and it is `null` until a resume (the v0→v1 migration writes `null`).
      - **The store's opening float is the session's float.** The cash the till counted at its own open stays on the
        local row as a count. It is never a second float.
      - **The same-device check runs first,** before `supersedes` is considered.
@@ -4674,6 +4676,8 @@ interface OrderCreatePayload {
      till never replays them on another session by itself.
   9. **Local session states** gain `conflict` (open refused, waiting for the cashier) and `superseded`. That is a
      local-only `register_sessions` schema bump (the status field's `maxLength` is 8), migrated in place.
+     - **The stored status is an open string** (no enum, `maxLength` 20, still indexed), so a later local state
+       costs no migration. The TypeScript union names today's states.
      - **In `useRegisterSession`,** a `conflict` session is current, so its sheet shows, but it takes no sale. A
        `superseded` session is neither current nor sellable. Neither blocks opening another session.
      - **Derived from stored rows.** The till derives resume, conflict and superseded state from the stored

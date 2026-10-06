@@ -5,6 +5,7 @@ export type { LedgerRow, Movement } from './expected';
 export { parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, denominationTotal, varianceText } from './register-count.helpers';
 export { denominations } from './register-count.denominations';
 export { registerSessionSchema, registerSessionCollection, cashMovementSchema, closureSchema } from './schemas';
+export { addRegisterSessionCollection, RegisterSessionOpenClosedError, registerSessionsLogger, REGISTER_SESSION_MIGRATION_CLOSE_WAIT_MS } from './open';
 export type { RegisterSession, CashMovement, Closure } from './schemas';
 export {
   mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegisterId, readBoundRegister, bindRegister,

@@ -6,7 +6,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { readFresh } from '../rxdb';
 import { ensureRegister, readRegister, type RegisterDocument } from './register-document';
-import { cashMovementSchema, closureSchema, registerSessionCollection, type CashMovement, type Closure, type RegisterSession } from './schemas';
+import { cashMovementSchema, closureSchema, registerSessionCreator, type CashMovement, type Closure, type RegisterSession } from './schemas';
 import { backToSelling, closeSession, openSession, recordMovement, startCounting, voidMovement, writeClosure,
   type CashMovementCollection, type ClosureCollection, type RegisterSessionCollection } from './session-store';
 import { closureCommand, movementCommand, reconcileRegisterCommands, registerCommandCollection, registerCommandSchema,
@@ -105,7 +105,7 @@ describe('register command ledger', () => {
     vi.setSystemTime(new Date(openedAt));
     db = await createRxDatabase({ name: `commands${Math.random().toString(36).slice(2)}`,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
-    await db.addCollections({ register_sessions: registerSessionCollection(), cash_movements: { schema: cashMovementSchema },
+    await db.addCollections({ register_sessions: registerSessionCreator(), cash_movements: { schema: cashMovementSchema },
       closures: { schema: closureSchema }, register_commands: registerCommandCollection() });
     await ensureRegister(db.register_sessions, 'web');
   });

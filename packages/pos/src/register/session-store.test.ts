@@ -16,7 +16,7 @@ import { toOrderCreateEnvelope } from '../pos-order/command';
 import { finalizeOrder } from '../pos-order/finalize';
 import type { PosOrder } from '../pos-order/types';
 import { ensureRegister } from './register-document';
-import { cashMovementSchema, closureSchema, registerSessionCollection } from './schemas';
+import { cashMovementSchema, closureSchema, registerSessionCreator } from './schemas';
 import { serverClose as closeOnServer } from './server-close.test-helper';
 import {
   backToSelling,
@@ -48,7 +48,7 @@ async function openDatabase(name: string) {
     multiInstance: false,
   });
   await db.addCollections({
-    register_sessions: registerSessionCollection(),
+    register_sessions: registerSessionCreator(),
     cash_movements: { schema: cashMovementSchema },
     closures: { schema: closureSchema },
   });

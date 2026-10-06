@@ -3,7 +3,7 @@
  * (ADR-032 amendment 1): WCPOS `next` `3b5331b5c`.
  *
  * The host is whatever carries local documents: `register_sessions`, created with
- * `registerSessionCollection` (a Tally database has no database-level local documents). WCPOS
+ * `addRegisterSessionCollection` (a Tally database has no database-level local documents). WCPOS
  * keys its buckets by site UUID plus a numeric WooCommerce store id; TallyUI keys them by one
  * neutral `storeKey` the app derives (for example the connector id plus the base URL). WCPOS's
  * module-level snapshots (`getRegisterSnapshot`, `getRegisterId`, `getCurrentBoundRegisterId`)

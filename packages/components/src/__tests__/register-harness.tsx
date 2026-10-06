@@ -9,12 +9,12 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import {
   addPosOrderCollection,
+  addRegisterSessionCollection,
   cashMovementSchema,
   closureSchema,
   ensureRegister,
   openSession,
   recordMovement,
-  registerSessionCollection,
   useRegisterSession,
   type CashMovementCollection,
   type ClosureCollection,
@@ -38,10 +38,10 @@ export async function createRegisterDb(): Promise<RegisterDb> {
     multiInstance: false,
   });
   await db.addCollections({
-    register_sessions: registerSessionCollection(),
     cash_movements: { schema: cashMovementSchema },
     closures: { schema: closureSchema },
   });
+  await addRegisterSessionCollection(db);
   await addPosOrderCollection(db);
   await ensureRegister(db.register_sessions as RegisterSessionCollection, 'web');
   return db as unknown as RegisterDb;

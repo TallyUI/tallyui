@@ -21,9 +21,10 @@ import { addPosOrderCollection, finalizeOrder, type PosOrder } from '../pos-orde
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import {
-  closeSession, closureSchema, ensureRegister, openSession, registerFactsLogger, registerSessionCollection, writeClosure,
+  closeSession, closureSchema, ensureRegister, openSession, registerFactsLogger, writeClosure,
   type ClosureCollection, type RegisterSessionCollection,
 } from '../register';
+import { registerSessionCreator } from '../register/schemas';
 import { catalogueEntries } from './catalogue';
 import { DISCOUNTS_UNSUPPORTED, HUNG_SAVE_CHECK_MS, SALE_SAVING, saleLogger, useSale } from './use-sale';
 
@@ -67,7 +68,7 @@ async function withOpenSession() {
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
     multiInstance: false,
   });
-  await db.addCollections({ register_sessions: registerSessionCollection() });
+  await db.addCollections({ register_sessions: registerSessionCreator() });
   const sessions = db.register_sessions as RegisterSessionCollection;
   const session = await openSession(sessions, {
     registerId, expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: cashierRef,

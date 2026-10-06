@@ -51,7 +51,7 @@ export function sessionOpenCommand(s: RegisterSession): BuiltCommand {
   } satisfies RegisterSessionOpenPayload };
 }
 
-export function sessionTransitionCommand(s: RegisterSession & { status_at: string }): BuiltCommand {
+export function sessionTransitionCommand(s: RegisterSession & { status: RegisterSessionTransitionPayload['status']; status_at: string }): BuiltCommand {
   return { key: `session.transition:${s.id}:${s.status}:${s.status_at}`, type: 'register.session.transition', version: 1, payload: {
     sessionId: s.id, status: s.status, at: s.status_at,
     ...(s.status !== 'closed' || s.counted == null ? {} : { counted: s.counted }),
@@ -92,6 +92,8 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
   commands: RegisterCommandCollection; sessions: RegisterSessionCollection; movements: CashMovementCollection;
   closures: ClosureCollection; host: RegisterHost; storeKey: string; registerId: string; now?: string; observed?: RegisterSession[];
 }): Promise<string[]> {
+  // `conflict` and `superseded` are local states derived from the store's answers (ADR-078 decision 9), never sent as a transition.
+  const sentStatus = (s: RegisterSession): s is RegisterSession & { status: RegisterSessionTransitionPayload['status'] } => s.status !== 'conflict' && s.status !== 'superseded';
   let registers = chains.get(commands);
   if (!registers) chains.set(commands, registers = new Map());
   const run = (registers.get(registerId) ?? Promise.resolve()).then(async () => {
@@ -113,10 +115,10 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
       ]);
       const events = (observed ?? []).filter((row) => row.id === session.id && !transitioned.has(session.id)
         && row.status !== session.status && row.status !== 'closed')
-        .flatMap((row) => row.status_at == null ? [] : [sessionTransitionCommand({ ...row, status_at: row.status_at })]);
+        .flatMap((row) => row.status_at == null || !sentStatus(row) ? [] : [sessionTransitionCommand({ ...row, status_at: row.status_at })]);
       events.push(...entries.filter((entry) => entry.type !== 'void').map(movementCommand),
         ...entries.filter((entry) => entry.type === 'void').map(movementCommand));
-      if (session.status_at != null) events.push(sessionTransitionCommand({ ...session, status_at: session.status_at }));
+      if (session.status_at != null && sentStatus(session)) events.push(sessionTransitionCommand({ ...session, status_at: session.status_at }));
       return { session, number: closureRows[0]?.number, built: [sessionOpenCommand(session), ...events,
         ...closureRows.map((closure) => closureCommand(closure))] };
     }));

@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Ported from WCPOS `next` `3b5331b5c` `register-document.test.ts` (ADR-032 amendment 1). The
-// document lives on `register_sessions` (`registerSessionCollection`), and a site UUID plus a
+// document lives on `register_sessions` (`registerSessionCreator`), and a site UUID plus a
 // numeric store id become one neutral `storeKey`: WCPOS's 'site' is the store key 'site'.
 //
 // Dropped:
@@ -34,7 +34,7 @@ import {
   RegisterIdInvalidError,
   unbindRegister,
 } from './register-document';
-import { registerSessionCollection } from './schemas';
+import { registerSessionCreator } from './schemas';
 import type { RegisterSessionCollection } from './session-store';
 
 let database: RxDatabase<{ register_sessions: RegisterSessionCollection }>;
@@ -46,7 +46,7 @@ beforeEach(async () => {
     storage: getRxStorageMemory(),
     multiInstance: false,
   });
-  ({ register_sessions: db } = await database.addCollections({ register_sessions: registerSessionCollection() }));
+  ({ register_sessions: db } = await database.addCollections({ register_sessions: registerSessionCreator() }));
 });
 afterEach(async () => {
   vi.restoreAllMocks();
