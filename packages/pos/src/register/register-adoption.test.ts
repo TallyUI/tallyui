@@ -33,13 +33,32 @@ describe('adoptRegisterResults', () => {
   const stored = async (id: string) => (await db.register_sessions.storageInstance.findDocumentsById([id], false))[0];
   const refused = { syncStatus: 'rejected' as const, error: { code: 'register_session_already_open', message: 'Already open' } };
   const now = '2026-10-06T12:00:00.000Z';
-  const takeOver = (sessionId: string) => takeOverSession({ commands: db.register_commands, sessions: db.register_sessions, sessionId, now });
+  const takeOver = (sessionId: string) => takeOverSession({ commands: db.register_commands, sessions: db.register_sessions, sessionId, now, registerContract: 2 });
   const abandon = (sessionId: string) => abandonSession({ commands: db.register_commands, sessions: db.register_sessions, sessionId, now });
   const conflict = async (sessionId: string) => {
     await reconcile();
     await (await command(sessionId)).incrementalPatch({ ...refused, error: { ...refused.error, data: { sessionId: 'other' } } });
     await adopt();
   };
+
+  it('take over refuses below register contract 2 and writes nothing', async () => {
+    const session = await open();
+    await conflict(session.id);
+    const beforeCommand = (await command(session.id)).toJSON();
+    const beforeSession = await stored(session.id);
+    for (const contract of [{ registerContract: 1 }, { registerContract: 0 }, {}]) {
+      const attempt = takeOverSession({ commands: db.register_commands, sessions: db.register_sessions,
+        sessionId: session.id, now, ...contract });
+      await expect(attempt).rejects.toBeInstanceOf(RegisterTakeOverError);
+      await expect(attempt).rejects.toMatchObject({ code: 'REGISTER_TAKEOVER_UNSUPPORTED' });
+    }
+    expect((await command(session.id)).toJSON()).toStrictEqual(beforeCommand);
+    expect(beforeCommand).toMatchObject({ syncStatus: 'rejected', error: { code: 'register_session_already_open' } });
+    expect(await stored(session.id)).toStrictEqual(beforeSession);
+    expect(beforeSession.status).toBe('conflict');
+    await takeOver(session.id);
+    expect((await command(session.id)).syncStatus).toBe('pending');
+  });
 
   it('take over requeues the refused open in its ledger place with a new command id, version 2 and supersedes, and keeps the session in conflict', async () => {
     const s = await open();

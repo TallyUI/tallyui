@@ -5,6 +5,7 @@ import type { RegisterSession } from './schemas';
 import { isKnownSessionStatus, RegisterSessionRequiredError, RegisterTakeOverError, type RegisterSessionCollection } from './session-store';
 
 const chains = new WeakMap<RegisterCommandCollection, Promise<void>>();
+type SessionTarget = { commands: RegisterCommandCollection; sessions: RegisterSessionCollection; sessionId: string; now?: string };
 
 /**
  * Applied opens fill a missing resume id; refused opens make open/counting sessions conflict.
@@ -57,9 +58,11 @@ export async function adoptRegisterResults({ commands, sessions, registerId }: {
   return run;
 }
 
-export async function takeOverSession({ commands, sessions, sessionId, now }: {
-  commands: RegisterCommandCollection; sessions: RegisterSessionCollection; sessionId: string; now?: string;
+export async function takeOverSession({ commands, sessions, sessionId, now, registerContract }: SessionTarget & {
+  /** The store's register contract (`capabilities.register`); take over needs 2, and a missing value counts as below 2. */
+  registerContract?: number;
 }): Promise<void> {
+  if ((registerContract ?? 0) < 2) throw new RegisterTakeOverError('REGISTER_TAKEOVER_UNSUPPORTED');
   const run = (chains.get(commands) ?? Promise.resolve()).then(async () => {
     const [session] = await readFresh(sessions, { selector: { id: sessionId } });
     const row = await commands.findOne(`session.open:${sessionId}`).exec();
@@ -76,7 +79,7 @@ export async function takeOverSession({ commands, sessions, sessionId, now }: {
   return run;
 }
 
-async function finishAbandon({ commands, sessions, sessionId, now }: Parameters<typeof takeOverSession>[0]) {
+async function finishAbandon({ commands, sessions, sessionId, now }: SessionTarget) {
   const rows = await readFresh(commands, { selector: { 'payload.sessionId': sessionId, syncStatus: 'pending' } });
   for (const row of rows) {
     await (await commands.findOne(row.key).exec(true)).incrementalModify((doc) => doc.syncStatus !== 'pending' ? doc : ({
@@ -87,7 +90,7 @@ async function finishAbandon({ commands, sessions, sessionId, now }: Parameters<
   await (await sessions.findOne(sessionId).exec(true)).incrementalModify((doc) => doc.status === 'conflict' ? { ...doc, status: 'abandoned' } : doc);
 }
 
-export async function abandonSession(input: Parameters<typeof takeOverSession>[0]): Promise<void> {
+export async function abandonSession(input: SessionTarget): Promise<void> {
   const { commands, sessions, sessionId } = input;
   const run = (chains.get(commands) ?? Promise.resolve()).then(async () => {
     const [session] = await readFresh(sessions, { selector: { id: sessionId } });

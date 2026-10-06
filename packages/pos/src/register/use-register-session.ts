@@ -330,8 +330,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           await readFresh(commandTarget.closures, { selector: { register_id: commandTarget.registerId } }),
           reservationOf(await readRegister(commandTarget.host), commandTarget.storeKey, commandTarget.registerId));
         if (row?.status !== 'conflict') throw new RegisterSessionRequiredError();
-        if ((options.capabilities?.register ?? 0) < 2) throw new store.RegisterTakeOverError('REGISTER_TAKEOVER_UNSUPPORTED');
-        await takeOverSession({ ...commandTarget, sessionId: row.id });
+        await takeOverSession({ ...commandTarget, sessionId: row.id, registerContract: options.capabilities?.register });
       },
       chooseAnotherRegister: async () => {
         if (!commandTarget) throw new RegisterSessionRequiredError();
