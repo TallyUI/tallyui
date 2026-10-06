@@ -86,7 +86,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     try {
       const value = loadViewState();
       if (value instanceof Promise) return { state, pending: value };
-      const loaded = normalizeCatalogueViewState(value);
+      const loaded = normalizeCatalogueViewState(value, state);
       return { state: loaded, loaded };
     } catch (error) {
       return { state, failed: true, error };
@@ -101,7 +101,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     if (initial.failed) onViewStateError?.(initial.error);
     initial.pending?.then((value) => {
       if (!mounted || cashierChanged.current) return;
-      const loaded = normalizeCatalogueViewState(value);
+      const loaded = normalizeCatalogueViewState(value, initial.state);
       setInternalState(loaded);
       onStateChange?.(loaded);
     }, (error) => { if (mounted) onViewStateError?.(error); });

@@ -551,6 +551,26 @@ describe('Catalogue view state', () => {
     expect(saveViewState).not.toHaveBeenCalled();
   });
 
+  it('fills a synchronous load from defaultViewState', () => {
+    const onStateChange = vi.fn();
+    render(<Catalogue {...props} defaultViewState={{ view: 'table' }}
+      loadViewState={() => ({ gridColumns: 4 })} onStateChange={onStateChange} />);
+    expect(screen.getByTestId('table')).toBeTruthy();
+    expect(onStateChange.mock.calls).toEqual([[{ ...tableState, gridColumns: 4 }]]);
+  });
+
+  it('fills an asynchronous load from defaultViewState', async () => {
+    let resolve!: (value: unknown) => void;
+    const pending = new Promise<unknown>((done) => { resolve = done; });
+    const onStateChange = vi.fn();
+    render(<Catalogue {...props} defaultViewState={{ view: 'table' }}
+      loadViewState={() => pending} onStateChange={onStateChange} />);
+    expect(screen.getByTestId('table')).toBeTruthy();
+    await act(async () => { resolve({ gridColumns: 'bad' }); });
+    expect(screen.getByTestId('table')).toBeTruthy();
+    expect(onStateChange.mock.calls).toEqual([[tableState]]);
+  });
+
   it('ignores an asynchronous load after a cashier change', async () => {
     let resolve!: (value: unknown) => void;
     const pending = new Promise<unknown>((done) => { resolve = done; });
