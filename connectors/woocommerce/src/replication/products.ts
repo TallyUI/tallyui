@@ -85,10 +85,11 @@ export function wooProductBarcode(product: any): string | undefined {
 
 export function toVariationDocument(payload: any) {
   const { id, sku, price, regular_price, sale_price, on_sale, stock_status,
-    stock_quantity, manage_stock, status, purchasable } = payload;
+    stock_quantity, manage_stock, status, purchasable, tax_class, tax_status } = payload;
   return Object.fromEntries(Object.entries({
     id, sku, barcode: wooProductBarcode(payload), price, regular_price, sale_price, on_sale,
     stock_status, stock_quantity, manage_stock, status, purchasable,
+    tax_class, tax_status,
     attributes: (payload.attributes ?? []).map(({ name, option }: any) => ({ name, option })),
   }).filter(([, value]) => value !== undefined));
 }

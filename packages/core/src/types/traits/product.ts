@@ -65,6 +65,12 @@ export interface ProductTraits<Doc = any> {
    */
   getTaxClass?: (doc: Doc, variantId?: string) => string | undefined;
 
+  /**
+   * Whether the variant `variantId` (or the product's default variant) is taxed: 'none' means the line carries no
+   * tax. Undefined means taxable. Optional: without it, every line is taxable.
+   */
+  getTaxStatus?: (doc: Doc, variantId?: string) => 'taxable' | 'none' | undefined;
+
   /** @deprecated Use `getPrices` with `resolvePrice`. */
   getPrice: (doc: Doc) => string | undefined;
 

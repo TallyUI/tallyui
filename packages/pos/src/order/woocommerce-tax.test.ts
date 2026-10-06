@@ -45,6 +45,26 @@ function grouped(order: Order) {
 }
 
 describe('ADR-076 WooCommerce builder strategy', () => {
+  it('adds a product with no WooCommerce tax when its trait returns none', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: context(rates136) });
+    const product = { id: 'Banana Bread' };
+    const traits = {
+      getId: (doc: { id: string }) => doc.id, getName: (doc: { id: string }) => doc.id,
+      getSku: () => undefined, getImageUrl: () => undefined, isSellable: () => true,
+      getPrices: () => [{ amount: 425, currency: 'USD', kind: 'base' }], getTaxClass: () => '',
+      getTaxStatus: (doc: typeof product, variantId?: string) => {
+        expect(doc).toBe(product);
+        expect(variantId).toBeUndefined();
+        return 'none';
+      },
+    } as unknown as ProductTraits;
+    builder.addProduct(product, traits);
+    const order = builder.getSnapshot();
+    expect(order.lineItems[0]).toMatchObject({ taxStatus: 'none', taxLines: [], taxMicros: '0' });
+    expect(order).toMatchObject({ subtotalMinor: 425, taxMinor: 0, totalMinor: 425 });
+    displayIdentity(order);
+  });
+
   it('matches WooCommerce order #136, including compound precision, exemption and the zero row', () => {
     const builder = createOrderBuilder({ currency: 'USD', taxContext: context(rates136) });
     const traits = {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import { createOrderBuilder } from '../order';
 import { catalogueEntries } from './catalogue';
@@ -15,6 +15,28 @@ function orderBuilder() {
 }
 
 describe('addEntryToCart', () => {
+  it('passes the selected variant tax exemption to the line', () => {
+    const builder = orderBuilder();
+    const addLine = vi.spyOn(builder, 'addLine');
+    const getTaxStatus = vi.fn(() => 'none' as const);
+    addEntryToCart(builder, entry, { ...traits, getTaxStatus }, 'EUR');
+    expect(getTaxStatus).toHaveBeenCalledWith(product, 'small');
+    expect(addLine.mock.calls[0][0]).toHaveProperty('taxStatus', 'none');
+    expect(builder.getSnapshot().lineItems[0]).toHaveProperty('taxStatus', 'none');
+  });
+
+  it.each([
+    { label: 'absent', getTaxStatus: undefined },
+    { label: 'taxable', getTaxStatus: () => 'taxable' as const },
+    { label: 'undefined', getTaxStatus: () => undefined },
+  ])('omits the taxStatus key when the trait is $label', ({ getTaxStatus }) => {
+    const builder = orderBuilder();
+    const addLine = vi.spyOn(builder, 'addLine');
+    addEntryToCart(builder, entry, { ...traits, ...(getTaxStatus ? { getTaxStatus } : {}) }, 'EUR');
+    expect(addLine.mock.calls[0][0]).not.toHaveProperty('taxStatus');
+    expect(builder.getSnapshot().lineItems[0]).not.toHaveProperty('taxStatus');
+  });
+
   it('adds the selected variant with the product fields and integer minor-unit price', () => {
     const builder = orderBuilder();
     const id = addEntryToCart(builder, entry, traits, 'EUR');
