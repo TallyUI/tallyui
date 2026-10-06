@@ -102,7 +102,7 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
     {!online && <Text className="text-sm text-muted-foreground">Connect to search or add customers.</Text>}
     {noResults && <Text className="text-sm text-muted-foreground">No customers found.</Text>}
     {error && <Text accessibilityRole="alert" className="text-sm text-destructive">{error}</Text>}
-    <CustomerSelect customers={customers} traits={customerTraits} onSearch={setQuery}
+    <CustomerSelect customers={customers} traits={customerTraits} onSearch={setQuery} showSearch={false}
       onSelect={(customer) => { onSelect(customer); setQuery(''); }} />
     {create && <Pressable accessibilityRole="button" disabled={!online || creating} onPress={() => setShowForm(true)}
       className={cn('items-center rounded-lg border border-border px-4 py-3', (!online || creating) && 'opacity-50')}>
