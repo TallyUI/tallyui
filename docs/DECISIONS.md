@@ -4595,3 +4595,120 @@ interface OrderCreatePayload {
     which woocommerce-pos version ships that filter (1.10.20, or the v5 branch). Phase (d) sends `coupon_lines` only to
     a store whose plugin has it.
   - **Priority is unchanged:** 3.4.0 (the charges UI, #446 and phase (a)) comes first, then phase (b).
+
+## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
+
+- **Date:** 2026-10-06 · **Status:** Accepted (TallyUI's ruling on the medusapos proposal, #371; confirmed by
+  medusapos the same day; a Codex second opinion folded in) · **Amends:** ADR-068 (register commands: the ledger
+  rule, the conflict codes and the open payload) · **Relates to:** ADR-032 (local registers), ADR-065 (command
+  fingerprints), ADR-070 (strict payloads)
+- **Context:**
+  - Under ADR-068 one live session per register is enforced by the store. A second till's open is refused
+    `register_session_already_open`, and that rejection blocks every later command of the register on that till
+    (`register-outbox.ts`, the ledger `break`). If the first till is lost, broken or replaced, the register cannot be
+    used again until someone closes its session on the server. On the Medusa demo a visitor can reach this state in
+    a minute.
+  - A till that lost its local storage and opens again on the same device gets the same refusal for its own session.
+  - The till sells offline before the store answers the open, and that money is real, so nothing may make an
+    already-taken sale disappear or count twice.
+  - Order fingerprints cover the payload, including `sessionId` (`pos-order/command.ts`). A resend under the same id
+    with a different session would be a different command.
+  - The store records `register_session_already_open` (ADR-068 decision 5), so a resend of the refused open's id
+    replays the refusal.
+- **Decision:**
+  1. **Register contract version 2.** A store that advertises `contracts.register` including 2 receives the v2 open.
+     A v1 store gets the v1 payload unchanged, and none of the following applies to it.
+     - **`register.session.open` v2** adds optional `deviceName` (1–64 characters, trimmed) and optional
+       `supersedes` (a session id). The envelope does not change: it rides every command, `order.create` included,
+       whose canonical form is fingerprinted.
+     - **The till's name** comes from Settings, else a platform label ("iPad", "Web browser"). A sheet that has no
+       name shows "till …" plus the last 6 characters of `deviceId`.
+     - **The wire session status** gains `superseded`.
+  2. **Same-device resume, by alias.** An open from the live session's own `deviceId` is answered `applied`, with
+     `register.session` set to the existing session and `register.resumed: { fromSessionId }`.
+     - **The result carries the store's figures.** On a resume, `register.session` carries `openedAt`,
+       `openingFloatMinor` (the store session's counted opening float) and `salesCount`. It also carries `expected`
+       unless the store redacts it (blind).
+     - **`fromSessionId` is a permanent alias** of that session. Every command naming it counts on the existing
+       session whenever it arrives, `order.create` included, however often it is replayed.
+     - **The till never re-keys a command or an order.** An unacknowledged command may already be at the store, and
+       a re-keyed resend would put a second fingerprint under its id. The local session row records
+       `server_session_id` and keeps its own id.
+     - **The store's opening float is the session's float.** The cash the till counted at its own open stays on the
+       local row as a count. It is never a second float.
+     - **The same-device check runs first,** before `supersedes` is considered.
+  3. **Take over is a compare-and-set.** A `supersedes: <id>` open is applied in one transaction against the
+     register's live session:
+     - if `<id>` is still live (open or counting), it becomes `superseded`, the new session opens, and the result
+       carries `register.superseded`;
+     - if another session is live, the open is refused `register_session_already_open` with that session's data, and
+       the cashier sees the sheet again;
+     - if nothing is live any more, it is a plain open, applied with no `register.superseded`.
+     A take-back by the first till is a new open with a fresh session id and `supersedes`. A superseded session is
+     never live again. A replayed command id returns its stored result before any of these checks and changes
+     nothing. Anyone who may open the register may take it over; `register_supersede_forbidden` is reserved. A
+     `counting` session may be superseded.
+  4. **`register_session_superseded` is final and does not block the ledger.** Every command naming a superseded
+     session is refused with it. That is the one exception to ADR-068's rule that a rejection stops its register's
+     ledger. The commands behind it are sent and get their own final answers, so the till keeps a record of every
+     movement the store did not take. Facts on a later session never depended on the superseded one, so seq order
+     still holds. The outbox applies the exception in both places it walks the ledger: sending, and the stuck-clock
+     accounting.
+  5. **An open travels alone.** The till ends a batch after `register.session.open`, so no command naming a session
+     is in flight while its open can still be refused.
+  6. **`register_session_already_open` still blocks.** The commands behind the refused open wait for the cashier:
+     - **Take over** requeues the refused open's document as `pending` in its ledger place (same `seq`, same
+       `sessionId`), under a new `commandId`, with `supersedes` set to the live session id from the refusal's data.
+       A new id is needed because the store replays the old one.
+     - **Choose another register** marks the abandoned session's unsent register commands rejected locally with
+       `register_session_abandoned`. That code never goes on the wire, and it does not block the ledger either. The
+       commands are kept and shown.
+  7. **An order naming a session the store does not hold is applied, never refused.** It carries the warning
+     `register_session_unknown`. The store keeps the till's session id on the order, so an open or alias that arrives
+     later (orders and register commands travel on different outboxes) still counts it, with no re-key. An abandoned
+     session's orders stay on an id no session ever gets, and the register read lists them for reconciliation. The
+     till reads the warning as "not known when applied", never as "abandoned".
+  8. **Cash the store did not take stays visible.** Refused paid-in, paid-out and void commands (superseded or
+     abandoned) stay on the till with their rejection. The superseded sheet lists them (count and total): "These cash
+     movements were not recorded by the store. If the cash moved, record it again on the register now in use." The
+     till never replays them on another session by itself.
+  9. **Local session states** gain `conflict` (open refused, waiting for the cashier) and `superseded`. That is a
+     local-only `register_sessions` schema bump (the status field's `maxLength` is 8), migrated in place.
+     - **In `useRegisterSession`,** a `conflict` session is current, so its sheet shows, but it takes no sale. A
+       `superseded` session is neither current nor sellable. Neither blocks opening another session.
+     - **Derived from stored rows.** The till derives resume, conflict and superseded state from the stored
+       command rows (an applied row's `result`, a rejected row's `error.data`) when it starts, not only from the
+       outbox's `onResult` callback. The outbox finalizes a command even when `onResult` throws.
+  10. **Sheets.**
+      - **Already open:** "Register 1 is already open on another till (since <time>, <device name>). If that till is
+        lost or being replaced, take over; sales already recorded there stay on that session." Buttons: Take over ·
+        Choose another register.
+      - **Superseded:** "Register 1 was taken over by <device name> at <time>. Sales already made on this till still
+        sync and stay on its old session." Buttons: Choose another register · Sign out. It shows no closure; its
+        only count is for refused cash movements (decision 8).
+  11. **Error data.**
+      - `register_session_already_open` and `register_session_superseded` carry the proposal's widened data. Every
+        field except `sessionId` is optional to a v2 till, so a store may omit what it does not record.
+      - `register_session_unknown` is a warning on an applied `order.create`, not a rejection.
+- **Rejected:**
+  - **Holding sales until the open is acknowledged.** A till that sells offline cannot wait.
+  - **Re-keying commands and orders to the resumed session.** It changes fingerprints of commands that may already
+    be at the store.
+  - **`supersede: true`.** Two tills taking over at once would both win. The session id makes it a compare-and-set.
+  - **`deviceName` on the envelope.** It would ride every fingerprinted command.
+- **Consequences:**
+  - **Changes to ADR-068:** its ledger rule gains two non-blocking codes, its open gains two fields, and its conflict
+    table gains `register_session_superseded`.
+  - **The store's half is medusapos's** (medusapos#174 item 1, a one-way plugin PR). A WooCommerce or Vendure store
+    gets the same contract when it adds registers.
+  - **TallyUI build order:**
+    1. Core v2 types, payload shapes and fixtures.
+    2. The outbox rules (an open travels alone; two non-blocking codes).
+    3. Adoption, take-over and abandon in `pos`.
+    4. The two sheets in `components`.
+    5. #373, one "Sign in again" strip for both outboxes.
+  - **Evidence:**
+    - ~/agent/handoff/register-takeover-contract-proposal-2026-10-06.md (the proposal);
+    - ~/agent/handoff/register-takeover-ruling-2026-10-06.md (the ruling);
+    - ~/agent/handoff/register-takeover-confirmation-2026-10-06.md (medusapos's confirmation);
+    - #371.
