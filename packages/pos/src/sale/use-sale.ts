@@ -249,6 +249,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
 
   const result = {
     order, stage, error, idle,
+    /** The store's capabilities as passed in: a component offers fees, shipping and custom lines
+     * only when `orderCreate >= 5`, and their tax status and class only as `lineTax` allows. */
+    capabilities: opts.capabilities,
     /** A completion is pending (see `complete()`): the sale is locked, and the UI offers Retry. */
     saving,
     /** The failed save's order is confirmed stored (see `isStored`): the UI also offers Continue (`continueSale()`). */

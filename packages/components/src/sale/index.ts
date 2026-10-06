@@ -4,6 +4,7 @@ export { Tender } from './tender';
 export { SplitTender } from './split-tender';
 export { DiscountForm, DiscountChips, parseDiscount, discountLabel } from './discount-form';
 export { PriceForm, parsePrice } from './price-form';
+export { ChargeForm, type ChargeFormProps } from './charge-form';
 export { Catalogue, formatStockSyncTime } from './catalogue';
 export { Receipt } from './receipt';
 export { orderReference } from './order-reference';
