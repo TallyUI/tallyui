@@ -74,3 +74,4 @@ export {
   useStockOverlayAsOf,
 } from './context/connector-context';
 export type { ConnectorProviderProps } from './context/connector-context';
+export * as woocommerceTax from './tax/woocommerce';

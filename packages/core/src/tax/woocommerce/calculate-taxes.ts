@@ -1,0 +1,183 @@
+// Ported from @wcpos/order-math, MIT, Copyright (c) 2021-2026 WCPOS.
+// WooCommerce tax parity (ADR-076): keep the arithmetic as in the original; see docs/DECISIONS.md.
+import type { CalculateTaxesInput, CalculateTaxesResult } from './types';
+import {
+	addNumberPrecision,
+	getRoundingPrecision,
+	removeNumberPrecision,
+	roundHalfUp,
+} from './precision';
+import { sumTaxes } from './sum-taxes';
+
+/**
+ * Calculate taxes when price includes tax
+ */
+function calcInclusiveTax({
+	amount,
+	rates,
+}: {
+	amount: number;
+	rates: { id: number; rate: string; compound: boolean }[];
+}) {
+	const taxes: { id: number; total: number }[] = [];
+	const compoundRates: { id: number; rate: number }[] = [];
+	const regularRates: { id: number; rate: number }[] = [];
+	let nonCompoundAmount = amount;
+
+	// Index array so taxes are output in correct order and see what compound/regular rates we have to calculate.
+	rates.forEach((_rate) => {
+		const { id, rate, compound } = _rate;
+
+		if (compound) {
+			compoundRates.push({ id, rate: Number(rate) });
+		} else {
+			regularRates.push({ id, rate: Number(rate) });
+		}
+	});
+
+	compoundRates.reverse(); // Working backwards.
+
+	compoundRates.forEach((compoundRate) => {
+		const { id, rate } = compoundRate;
+		const total = nonCompoundAmount - nonCompoundAmount / (1 + rate / 100);
+		taxes.push({ id, total });
+		nonCompoundAmount -= total;
+	});
+
+	// Regular taxes.
+	const regularTaxRate = 1 + regularRates.reduce((sum, regularRate, index) =>
+		index === 0 ? regularRate.rate / 100 : sum + regularRate.rate / 100, 0);
+
+	regularRates.forEach((regularRate) => {
+		const { id, rate } = regularRate;
+		const theRate = rate / 100 / regularTaxRate;
+		const netPrice = amount - theRate * nonCompoundAmount;
+		const total = amount - netPrice;
+		taxes.push({ id, total });
+	});
+
+	return taxes;
+}
+
+/**
+ * Calculate taxes when price excludes tax
+ */
+function calcExclusiveTax({
+	amount,
+	rates,
+}: {
+	amount: number;
+	rates: { id: number; rate: string; compound: boolean }[];
+}) {
+	const taxes: { id: number; total: number }[] = [];
+
+	rates.forEach((_rate) => {
+		const { id, rate, compound } = _rate;
+
+		if (!compound) {
+			const total = amount * (Number(rate) / 100);
+			taxes.push({ id, total });
+		}
+	});
+
+	let preCompoundTotal = sumTaxes({ taxes });
+
+	// Compound taxes.
+	rates.forEach((_rate) => {
+		const { id, rate, compound } = _rate;
+
+		if (compound) {
+			const thePriceIncTax = amount + preCompoundTotal;
+			const total = thePriceIncTax * (Number(rate) / 100);
+			taxes.push({ id, total });
+			preCompoundTotal = sumTaxes({ taxes });
+		}
+	});
+
+	return taxes;
+}
+
+/**
+ * Takes a price and an array of tax rates, eg: [{ id: 1, rate: '4.0000', order: 1 }]
+ * Returns the calculated array of taxes tax, eg: [{ id: 1, total: 1.2345 }]
+ *
+ * @param dp - Price decimal places (wc_get_price_decimals), default 2
+ * @param perRatePrecision - Decimals each rate is rounded to. Defaults to the cart-space
+ *   precision below; order-item callers pass `getRoundingPrecision(dp)` (#2344).
+ */
+export function calculateTaxes({
+	amount,
+	rates,
+	amountIncludesTax,
+	dp = 2,
+	perRatePrecision,
+}: CalculateTaxesInput): CalculateTaxesResult {
+	// Sort rates matching WC_Tax::sort_rates_callback():
+	// 1. tax_rate_priority (ascending) — mapped to `order`
+	// 2. tax_rate_country: non-empty first
+	// 3. tax_rate_state: non-empty first
+	// 4. tax_rate_id (ascending) — mapped to `id`
+	// `priority` is WooCommerce's `tax_rate_priority` — THE key WC_Tax sorts by, and
+	// the one that decides which compound rate is applied outermost. It is read first
+	// because the app passes RxDB tax-rate documents straight through, and those carry
+	// BOTH `priority` and `order` (WC's `tax_rate_order`, a display-only field that is
+	// commonly 0 for every rate). Sorting by `order` therefore tied on real stores and
+	// fell through to id-ascending, inverting the compound sequence: on dev-next's GB
+	// store (VAT prio 1 + Surcharge prio 2, both compound) a discounted line came out
+	// VAT 3.750000 / Surcharge 0.367647 against WooCommerce's 3.676471 / 0.441176 —
+	// same total, wrong split, and the cashier saw a totals-changed banner on a correct
+	// sale (woocommerce-pos#1548). `order` remains the fallback for callers that map
+	// priority onto it (this module's original contract, and its existing tests).
+	const sortKey = (rate: { order: number; priority?: number }): number =>
+		typeof rate.priority === 'number' ? rate.priority : rate.order;
+	const sortedRates = [...rates].sort((a, b) => {
+		if (sortKey(a) !== sortKey(b)) return sortKey(a) - sortKey(b);
+		const aCountry = (a as any).country || '';
+		const bCountry = (b as any).country || '';
+		if ((aCountry !== '') !== (bCountry !== '')) return aCountry !== '' ? -1 : 1;
+		const aState = (a as any).state || '';
+		const bState = (b as any).state || '';
+		if ((aState !== '') !== (bState !== '')) return aState !== '' ? -1 : 1;
+		return a.id - b.id;
+	});
+	const roundingPrecision = perRatePrecision ?? dp + getRoundingPrecision(dp);
+	const normalizedAmount = removeNumberPrecision(addNumberPrecision(amount, dp), dp);
+
+	const taxes = amountIncludesTax
+		? calcInclusiveTax({ amount: normalizedAmount, rates: sortedRates })
+		: calcExclusiveTax({ amount: normalizedAmount, rates: sortedRates });
+
+	/**
+	 * WC_Cart_Totals calculates in cents space, so WC_Tax::round()'s rounding precision
+	 * is effectively dp + wc_get_rounding_precision() decimals in currency space.
+	 *
+	 * An ORDER ITEM is different: `WC_Order_Item::calculate_taxes` calls `calc_tax` on the
+	 * currency-unit total, so WC_Tax::round() rounds once at wc_get_rounding_precision().
+	 * Rounding at dp + 6 first and then at 6 made a `…49x` (x ≥ 5) tail a midpoint and put
+	 * ~0.45% of lines at non-integer rates 1 µ above WooCommerce (#2344). Order-item callers
+	 * therefore pass `perRatePrecision`.
+	 *
+	 * That single round first pre-rounds to 15 significant digits, as PHP's round() does
+	 * (`_php_math_round` through PHP 8.3). Without it a true midpoint whose float product
+	 * lands an ulp low — 11.8885 × 5.5% = 0.6538675 → 0.65386749999… — would round down
+	 * where WooCommerce, and the old 8dp step, round up.
+	 */
+	const roundRate = (value: number) =>
+		perRatePrecision === undefined
+			? roundHalfUp(value, roundingPrecision)
+			: roundHalfUp(Number(value.toPrecision(15)), roundingPrecision);
+	const roundedItemizedTaxes = taxes.map((tax) => ({
+		id: tax.id,
+		total: roundRate(tax.total),
+	}));
+
+	/**
+	 * Sum before downstream code reduces emitted money strings to 6 currency decimals.
+	 */
+	const total = sumTaxes({ taxes: roundedItemizedTaxes });
+
+	return {
+		total: roundHalfUp(total, roundingPrecision),
+		taxes: roundedItemizedTaxes,
+	};
+}
