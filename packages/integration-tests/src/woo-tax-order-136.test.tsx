@@ -28,6 +28,7 @@ it('matches WooCommerce order #136 through connector settings, product traits an
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => {
     const url = new URL(String(input));
     if (url.pathname === '/wp-json/wcpos/v2/stores') return Response.json(stores);
+    if (url.pathname === '/wp-json/wcpos/v2/status') return Response.json({ capabilities: [] });
     if (url.pathname === '/wp-json/wcpos/v2/taxes/classes') return Response.json(classes);
     if (url.pathname === '/wp-json/wcpos/v2/taxes') {
       return Response.json(url.searchParams.get('page') === '1' ? taxes : []);
@@ -40,6 +41,8 @@ it('matches WooCommerce order #136 through connector settings, product traits an
   expect(capabilities).toEqual({
     orderCreate: 3,
     taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+    multiplePayments: false,
+    lineTax: { none: true, classes: true },
   });
   const { result } = renderHook(() => useTax(), {
     wrapper: ({ children }: { children: ReactNode }) => (
