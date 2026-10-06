@@ -8,3 +8,4 @@ export { orderReference } from './order-reference';
 export { injectPrintStyle } from './print-style';
 export { SyncStatus } from './sync-status';
 export { OrdersList } from './orders-list';
+export { ParkedSales, type ParkedSalesProps } from './parked-sales';
