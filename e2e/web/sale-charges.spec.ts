@@ -66,10 +66,13 @@ test.describe('Cart charges (order.create 5)', () => {
       const receipt = page.getByTestId('sale-receipt');
       const delivery = receipt.getByLabel(/^Delivery: /);
       const subtotal = receipt.getByLabel(/^Subtotal: /);
+      const receiptTotal = receipt.getByLabel(/^Total: /);
       await expect(delivery).toHaveAttribute('aria-label', 'Delivery: €5.00');
       await expect(subtotal).toBeVisible();
+      await expect(receiptTotal).toBeVisible();
       await expect(receipt.getByLabel(/^Bag: /)).toHaveCount(0);
-      expect((await delivery.boundingBox())!.y).toBeLessThan((await subtotal.boundingBox())!.y);
+      expect((await delivery.boundingBox())!.y).toBeGreaterThan((await subtotal.boundingBox())!.y);
+      expect((await delivery.boundingBox())!.y).toBeLessThan((await receiptTotal.boundingBox())!.y);
     });
   }
 });
