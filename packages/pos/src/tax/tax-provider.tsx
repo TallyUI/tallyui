@@ -19,7 +19,7 @@ export interface TaxProviderProps extends Pick<StoreSettings, 'taxRoundAtSubtota
   children: ReactNode;
 }
 
-export function TaxProvider({ ratesPpm, pricesIncludeTax, rounding, rateCodes, taxRates, children }: TaxProviderProps) {
+export function TaxProvider({ ratesPpm, pricesIncludeTax, rounding, rateCodes, taxRates, shippingTaxClass, taxClassSlugs, children }: TaxProviderProps) {
   const value = useMemo<TaxContext>(
     () => {
       if (Object.values(ratesPpm).some((rate) => !Number.isSafeInteger(rate) || rate < 0)) {
@@ -45,9 +45,11 @@ export function TaxProvider({ ratesPpm, pricesIncludeTax, rounding, rateCodes, t
         },
         pricesIncludeTax,
         ...(rounding ? { rounding } : {}),
+        ...(shippingTaxClass !== undefined ? { shippingTaxClass } : {}),
+        ...(taxClassSlugs !== undefined ? { taxClassSlugs } : {}),
       };
     },
-    [ratesPpm, pricesIncludeTax, rounding, rateCodes, taxRates],
+    [ratesPpm, pricesIncludeTax, rounding, rateCodes, taxRates, shippingTaxClass, taxClassSlugs],
   );
 
   return <TaxCtx.Provider value={value}>{children}</TaxCtx.Provider>;

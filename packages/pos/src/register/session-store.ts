@@ -484,7 +484,9 @@ export async function writeClosure({
     const rounding = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
     roundings.add(rounding.granularity === 'woocommerce' ? `woocommerce ${rounding.roundAtSubtotal}` : `${rounding.granularity} ${rounding.mode}`);
     const lines = order.lines.map((line) => ({ ...line, taxInclusive: line.taxInclusive ?? order.pricesIncludeTax }));
-    for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(lines, order.taxMinor, undefined, order.taxRounding)) {
+    const taxedLines = [...lines, ...[...(order.fees ?? []), ...(order.shipping ?? [])]
+      .map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
+    for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding)) {
       const existing = taxRates.get(String(ratePpm));
       taxRates.set(String(ratePpm), {
         ratePpm,

@@ -1,5 +1,5 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
-import { resolvePrice, type ProductTraits, type TaxRounding } from '@tallyui/core';
+import { resolvePrice, woocommerceTax, type ProductTraits, type TaxRounding } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
@@ -188,6 +188,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const lines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
 
+    if (woo) shipping = shipping.map((charge) => ({ ...charge, ...recalculateCharge(charge.id, charge, true) }));
     const wooTotals = woo ? woocommerceTotals(lines, fees, shipping, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
     const { subtotalMinor } = wooTotals ?? sumLines(lines, taxContext.rounding);
     const charges = [...fees, ...shipping];
@@ -310,7 +311,16 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (!input.name.trim()) throw new RangeError('Name must not be empty');
     const taxStatus = input.taxStatus ?? 'taxable';
     if (woo) {
-      const line = wooLine(input.amountMinor, input.taxClass, taxContext.pricesIncludeTax, taxStatus === 'none', shipping);
+      const taxClass = shipping
+        ? taxContext.shippingTaxClass === undefined || taxContext.shippingTaxClass === 'inherit'
+          ? woocommerceTax.resolveInheritedShippingTaxClass(lineItems.map((line) => ({
+            tax_class: line.taxClass, taxable: line.taxStatus !== 'none',
+          })), taxContext.taxClassSlugs ?? [])
+          : taxContext.shippingTaxClass
+        : input.taxClass;
+      const untaxed = shipping ? taxClass === woocommerceTax.NO_SHIPPING_TAX : taxStatus === 'none';
+      const line = wooLine(input.amountMinor, taxClass === woocommerceTax.NO_SHIPPING_TAX ? undefined : taxClass,
+        taxContext.pricesIncludeTax, untaxed, shipping);
       return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus,
         ...line };
     }

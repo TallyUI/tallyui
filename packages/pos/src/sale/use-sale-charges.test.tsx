@@ -37,6 +37,18 @@ describe('useSale ADR-075 charges', () => {
       capabilities: { orderCreate: 3 }, drafts: db.pos_drafts, ...overrides }), { wrapper: Wrapper });
   }
 
+  it('returns the supplied capabilities unchanged', () => {
+    const capabilities = { orderCreate: 5, lineTax: { none: true, classes: false } } as const;
+    const { result } = renderSale({ capabilities });
+    expect(result.current.capabilities).toBe(capabilities);
+  });
+
+  it('returns undefined capabilities when none are passed', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
+    const { result } = renderHook(() => useSale(pricing, { registerId: 'register-1', cashierRef: 'cashier@store.test' }), { wrapper });
+    expect(result.current.capabilities).toBeUndefined();
+  });
+
   it('adds, updates and removes fees and shipping, returning their ids', () => {
     const { result } = renderSale();
     let fee!: { id: string } | string, shipping!: { id: string } | string;

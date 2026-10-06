@@ -9,6 +9,8 @@ export type TaxRateMap = {
 };
 
 export interface TaxContext {
+  shippingTaxClass?: string;
+  taxClassSlugs?: readonly string[];
   getTaxRates?(taxClass?: string, options?: { shipping?: boolean }): readonly WooRate[];
   /** Tax rate for a tax class as integer parts per million (19% = 190000); the default class when omitted or unknown. */
   getTaxRatePpm(taxClass?: string): number;

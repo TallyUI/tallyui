@@ -278,6 +278,42 @@ it('freezes a per-rate tax breakdown, summed across orders, that matches each or
   expect(closure.breakdowns).not.toHaveProperty('tax_rounding_mixed');
 });
 
+it.each(([
+  { granularity: 'per_order', mode: 'half_away_from_zero' },
+  { granularity: 'woocommerce', roundAtSubtotal: false },
+  { granularity: 'woocommerce', roundAtSubtotal: true },
+] satisfies TaxRounding[]).flatMap((rounding) => [false, true].map((pricesIncludeTax) => ({ rounding, pricesIncludeTax }))))(
+  'includes taxed fees and shipping in closure rates: %j', async ({ rounding, pricesIncludeTax }) => {
+  const session = await openSession(db.register_sessions, {
+    registerId: 'register', expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: '7',
+    businessDay: { year: 2026, month: 9, day: 16 },
+  });
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax, rounding, getTaxRatePpm: (taxClass) => taxClass === 'reduced-rate' ? 100000 : 200000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'reduced-rate' ? 2 : 1,
+      code: taxClass === 'reduced-rate' ? 'reduced' : 'standard', label: 'Tax',
+      rate: taxClass === 'reduced-rate' ? '10.0000' : '20.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: pricesIncludeTax ? 1200 : 1000, currency: 'EUR' } });
+  builder.addFee({ name: 'Fee', amountMinor: pricesIncludeTax ? 550 : 500, taxClass: 'reduced-rate' });
+  builder.addShipping({ name: 'Post', amountMinor: pricesIncludeTax ? 240 : 200 });
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const orders = [{ ...finalizeOrder(builder.getSnapshot(), { registerId: 'register', cashierRef: '7', capabilities: { orderCreate: 5 } }),
+    sessionId: session.id }];
+  const paidMinor = orders.reduce((sum, order) => sum + order.totalMinor, 0);
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: paidMinor }, closedBy: '7' });
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: paidMinor,
+    otherTenders: {}, movements: [], orders, softwareVersion: '1.0.0', timezone: 'UTC',
+  });
+  const rows = closure.breakdowns.tax_rates as Record<string, { net_minor: number; tax_minor: number; gross_minor: number }>;
+  expect(rows).toEqual({
+    '200000': { name: 'Tax 20%', net_minor: 1200, tax_minor: 240, gross_minor: 1440 },
+    '100000': { name: 'Tax 10%', net_minor: 500, tax_minor: 50, gross_minor: 550 },
+  });
+  expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(orders.reduce((sum, order) => sum + order.taxMinor, 0));
+});
+
 // TallyUI-only (#134 second review): a tax-inclusive line's netMinor already contains its tax, so
 // the tax-free base is netMinor minus that tax, not netMinor itself — the same two orders as
 // above, priced inclusive, must freeze the same net/tax/gross, with gross equal to what was paid.
