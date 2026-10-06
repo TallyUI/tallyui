@@ -7,7 +7,7 @@ import type { RxJsonSchema } from 'rxdb';
  */
 export const wooProductSchema: RxJsonSchema<any> = {
   title: 'WooCommerce Product',
-  version: 0,
+  version: 1,
   type: 'object',
   primaryKey: 'uuid',
   properties: {
@@ -130,6 +130,14 @@ export const wooProductSchema: RxJsonSchema<any> = {
       type: 'array',
       items: { type: 'integer' },
     },
+    // Embedded from wcpos/v2/variations; WCPOS 1.10.x has no per-product route.
+    variation_docs: { type: 'array', items: { type: 'object', properties: {
+      id: { type: 'integer' }, sku: { type: 'string' }, barcode: { type: 'string' },
+      price: { type: 'string' }, regular_price: { type: 'string' }, sale_price: { type: 'string' },
+      on_sale: { type: 'boolean' }, stock_status: { type: 'string' }, stock_quantity: { type: ['number', 'null'] },
+      manage_stock: { type: 'boolean' }, status: { type: 'string' }, purchasable: { type: 'boolean' },
+      attributes: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, option: { type: 'string' } } } },
+    } } },
     meta_data: {
       type: 'array',
       items: {

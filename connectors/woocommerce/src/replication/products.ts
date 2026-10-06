@@ -13,7 +13,7 @@ export type WooProductCheckpoint = {
 };
 
 // RxDB drops the checkpoint of an empty result, so the handler moves on to the next useful request
-// in the same call instead; every fetch in one call, mark requests included, counts against this.
+// in the same call instead; product and mark requests in one call count against this.
 const MAX_REQUESTS_PER_CALL = 4;
 
 /** The most of a foreign 426's message kept in the error, so a store's long page never floods the log; longer is cut with "…". */
@@ -81,6 +81,16 @@ export function wooProductBarcode(product: any): string | undefined {
   if (typeof product.barcode === 'string' && product.barcode.length > 0) return product.barcode;
   if (typeof product.global_unique_id === 'string' && product.global_unique_id.length > 0) return product.global_unique_id;
   return undefined;
+}
+
+export function toVariationDocument(payload: any) {
+  const { id, sku, price, regular_price, sale_price, on_sale, stock_status,
+    stock_quantity, manage_stock, status, purchasable } = payload;
+  return Object.fromEntries(Object.entries({
+    id, sku, barcode: wooProductBarcode(payload), price, regular_price, sale_price, on_sale,
+    stock_status, stock_quantity, manage_stock, status, purchasable,
+    attributes: (payload.attributes ?? []).map(({ name, option }: any) => ({ name, option })),
+  }).filter(([, value]) => value !== undefined));
 }
 
 /**
@@ -204,6 +214,29 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
         }
         return document;
       });
+
+      const variableProducts = documents.filter((doc) => doc.type === 'variable' && !doc._deleted);
+      const variationIds = variableProducts.flatMap((doc) => doc.variations ?? []);
+      const variations = new Map<number, ReturnType<typeof toVariationDocument>[]>();
+      // Hydration requests complete the page already fetched, outside MAX_REQUESTS_PER_CALL.
+      for (let i = 0; i < variationIds.length; i += 100) {
+        const chunk = variationIds.slice(i, i + 100);
+        const variationParams = new URLSearchParams({ include: chunk.join(','), per_page: String(chunk.length), orderby: 'id', order: 'asc' });
+        const response = await fetch(`${context.baseUrl}/variations?${variationParams}`, {
+          headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal,
+        });
+        await checkResponse(response);
+        const body = await response.json();
+        for (const doc of body.documents) {
+          const parentId = doc.parent_id ?? doc.payload.parent_id;
+          const group = variations.get(parentId) ?? [];
+          group.push(toVariationDocument(doc.payload));
+          variations.set(parentId, group);
+        }
+      }
+      for (const doc of variableProducts) {
+        doc.variation_docs = (variations.get(doc.id) ?? []).sort((a, b) => a.id - b.id);
+      }
 
       // RxDB merges checkpoints, so clear pass state explicitly at completion.
       const complete = count === undefined ? products.length < batchSize : offset + products.length >= count;
