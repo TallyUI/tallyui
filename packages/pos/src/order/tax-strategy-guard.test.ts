@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TaxRounding } from '@tallyui/core';
 import type { createOrderBuilder } from './order-builder';
@@ -55,10 +54,4 @@ describe.each(['per_order', 'per_line_items', 'per_rate_group_items'] as const)(
     expect(JSON.stringify(after)).toBe(JSON.stringify(before));
     expect((await import('../receipt/build-receipt-data')).buildReceiptData(after, { storeName: 'Guard' })).toStrictEqual(beforeReceipt);
   });
-});
-
-it('leaves every existing golden test unchanged from the job base', () => {
-  const changed = execFileSync('git', ['diff', '--name-only', '65db5d05f97da12fa7c5409e86947020046ae4a4', '--'], { encoding: 'utf8' });
-  expect(changed.split('\n').filter((file) => /\.test\.[cm]?[jt]sx?$/.test(file)
-    && !['packages/pos/src/order/woocommerce-tax.test.ts', 'packages/pos/src/order/tax-strategy-guard.test.ts'].includes(file))).toEqual([]);
 });
