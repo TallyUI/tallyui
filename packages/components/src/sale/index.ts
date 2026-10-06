@@ -1,6 +1,7 @@
 export { Cart } from './cart';
 export { CartBar } from './cart-bar';
 export { Tender } from './tender';
+export { SplitTender } from './split-tender';
 export { DiscountForm, DiscountChips, parseDiscount, discountLabel } from './discount-form';
 export { PriceForm, parsePrice } from './price-form';
 export { Catalogue, formatStockSyncTime } from './catalogue';
