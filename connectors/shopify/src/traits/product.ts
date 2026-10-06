@@ -125,4 +125,8 @@ export const shopifyProductTraits: ProductTraits = {
     if (doc.product_type) names.push(doc.product_type);
     return names;
   },
+
+  // Shopify has no category id, so the product type is its own id.
+  getCategories: (doc) =>
+    doc.product_type ? [{ id: doc.product_type, name: doc.product_type }] : [],
 };

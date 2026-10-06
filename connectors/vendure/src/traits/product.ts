@@ -184,6 +184,10 @@ const traits: ProductTraits = {
 
   getCategoryNames: (doc) =>
     (doc.collections ?? []).map((c: any) => c.name).filter(Boolean),
+
+  getCategories: (doc) =>
+    (doc.collections ?? []).filter((c: any) => c.name)
+      .map((c: any) => ({ id: c.id != null ? String(c.id) : c.name, name: c.name })),
 };
 return traits;
 }

@@ -376,6 +376,25 @@ describe('Medusa product traits', () => {
       expect(medusaProductTraits.getCategoryNames(minimalProduct)).toEqual([]);
     });
   });
+
+  describe('getCategories', () => {
+    it('returns category pairs in document order', () => {
+      expect(medusaProductTraits.getCategories!(fullProduct)).toEqual([
+        { id: 'pcat_01', name: 'Equipment' },
+        { id: 'pcat_02', name: 'Café Gear' },
+      ]);
+    });
+
+    it('returns empty array when no categories', () => {
+      expect(medusaProductTraits.getCategories!(minimalProduct)).toEqual([]);
+    });
+
+    it('drops nameless entries and uses the name for a null id', () => {
+      expect(medusaProductTraits.getCategories!({ categories: [
+        { id: 'pcat_01', name: '' }, { id: null, name: 'Coffee' },
+      ] })).toEqual([{ id: 'Coffee', name: 'Coffee' }]);
+    });
+  });
 });
 
 describe('product-level getStock', () => {

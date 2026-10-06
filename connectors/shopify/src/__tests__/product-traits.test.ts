@@ -299,6 +299,18 @@ describe('Shopify product traits', () => {
       expect(shopifyProductTraits.getCategoryNames(simpleProduct)).toEqual([]);
     });
   });
+
+  describe('getCategories', () => {
+    it('uses product_type as both id and name', () => {
+      expect(shopifyProductTraits.getCategories!(fullProduct)).toEqual([
+        { id: 'Equipment', name: 'Equipment' },
+      ]);
+    });
+
+    it('returns empty array when product_type is empty', () => {
+      expect(shopifyProductTraits.getCategories!(simpleProduct)).toEqual([]);
+    });
+  });
 });
 
 describe('product-level getStock', () => {

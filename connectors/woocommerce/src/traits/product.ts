@@ -107,4 +107,8 @@ export const wooProductTraits: ProductTraits = {
 
   getCategoryNames: (doc) =>
     (doc.categories ?? []).map((cat: any) => cat.name).filter(Boolean),
+
+  getCategories: (doc) =>
+    (doc.categories ?? []).filter((cat: any) => cat.name)
+      .map((cat: any) => ({ id: cat.id != null ? String(cat.id) : cat.name, name: cat.name })),
 };

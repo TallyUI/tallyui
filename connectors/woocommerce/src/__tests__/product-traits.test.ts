@@ -310,6 +310,25 @@ describe('WooCommerce product traits', () => {
       expect(wooProductTraits.getCategoryNames(minimalProduct)).toEqual([]);
     });
   });
+
+  describe('getCategories', () => {
+    it('returns category pairs with string ids in document order', () => {
+      expect(wooProductTraits.getCategories!(fullProduct)).toEqual([
+        { id: '1', name: 'Equipment' },
+        { id: '2', name: 'Coffee' },
+      ]);
+    });
+
+    it('returns empty array when no categories', () => {
+      expect(wooProductTraits.getCategories!(minimalProduct)).toEqual([]);
+    });
+
+    it('drops nameless entries and uses the name for a null id', () => {
+      expect(wooProductTraits.getCategories!({ categories: [
+        { id: 1, name: '' }, { id: null, name: 'Coffee' },
+      ] })).toEqual([{ id: 'Coffee', name: 'Coffee' }]);
+    });
+  });
 });
 
 describe('WooCommerce neutral price and stock', () => {
