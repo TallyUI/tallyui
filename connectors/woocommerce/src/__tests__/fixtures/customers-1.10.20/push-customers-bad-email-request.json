@@ -1,0 +1,1 @@
+{"mutationId":"5031a10a-9317-42e0-8b60-547ab0797762","operation":"create","collection":"customers","recordId":"9df95e55-54b8-4596-b662-f07bbc7ac7ed","baseRevision":null,"payload":{"email":"not-an-email","first_name":"Bad","last_name":"Email"}}

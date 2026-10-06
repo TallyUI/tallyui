@@ -35,6 +35,15 @@ The incremental pull can miss an edit: a `modified_after` that over-excludes (in
 - When `wcpos/v2/status` lists `products_id_fast_path` in `capabilities`, the whole catalogue is listed in one request (`per_page=-1` with `_fields=id,date_modified_gmt,stock_quantity,stock_status`) instead of pages of 100; a store that refuses it (a 400) is listed page by page in the same pass.
 - Both listings key on the numeric product id, never the till-local uuid; the adapter's `matchKey` is how the runner finds the till's copy.
 
+## Customers
+
+On WCPOS 1.10.x, `searchCustomers` uses `GET wcpos/v2/customers` with `role=customer`.
+`getCustomer` uses the same route with `include=<id>&per_page=1&role=all`; there is no per-id route.
+`createCustomer` uses `POST wcpos/v2/push/customers`. Create is idempotent per call through the WCPOS mutation id;
+a repeat call after a lost answer uses new ids and gives `invalid` (email exists). There is no automatic retry.
+`emailReceipt` uses `POST wcpos/v2/orders/<id>/email`, optionally saving the email to billing.
+It is not idempotent: each call sends a mail, so don't auto-retry. The cashier needs `access_woocommerce_pos`.
+
 ## Errors
 
 - `ConnectorUnauthorizedError`, from `@tallyui/core` and re-exported here: the store refused the request (401: the token is missing, expired or revoked; 403: signed in but not allowed), or `WooMissingTokenError` (a subclass) was thrown for a missing token. `error.status` is `401` (`code: 'unauthorized'`, sign in again) or `403` (`code: 'forbidden'`, signed in but not allowed: the pull retries on the store schedule; don't sign out).

@@ -264,4 +264,13 @@ export interface TallyConnector {
   createCustomer?: (context: SyncContext, input: CustomerInput) => Promise<Customer>;
   /** Customer lookup: online only; `undefined` when the connector has no customer support. */
   getCustomer?: (context: SyncContext, id: string) => Promise<Customer | null>;
+  /**
+   * Emails the receipt of an order the store already has: online only, and **not idempotent** (each call sends one
+   * email, so an app never retries it on its own after a timeout). `orderId` is the store's id from the order-create
+   * result (`serverRefs.orderId`). `options.saveToBilling` also stores the address on the order's billing email where
+   * the platform supports it. Rejects with `ConnectorUnauthorizedError` for credentials and `CustomerServiceError`
+   * (`invalid` for a refused order or address, `server` or `network` otherwise). `undefined` when the connector can't
+   * email receipts.
+   */
+  emailReceipt?: (context: SyncContext, orderId: string, email: string, options?: { saveToBilling?: boolean }) => Promise<void>;
 }
