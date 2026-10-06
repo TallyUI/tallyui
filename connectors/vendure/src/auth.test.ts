@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SignInError } from '@tallyui/core';
-import { vendureAuth, vendureConnector } from './index';
+import { vendureAuth, vendureAuthFieldSets, vendureConnector } from './index';
+import { readVendureCapabilities } from './capabilities';
 
 const loginResponse = (login: unknown, headers: Record<string, string> = {}, status = 200) =>
   new Response(JSON.stringify({ data: { login } }), { status, headers: { 'Content-Type': 'application/json', ...headers } });
@@ -88,6 +89,41 @@ describe('Vendure sign-in', () => {
 });
 
 describe('Vendure getHeaders', () => {
+  it('uses only the device key when kind is api-key, including the channel', () => {
+    expect(vendureAuth.getHeaders({ kind: 'api-key', api_key: 'key_1', token: 'stale', channel_token: 'ch_1' }))
+      .toEqual({ 'vendure-api-key': 'key_1', 'vendure-token': 'ch_1' });
+    expect(vendureAuth.getHeaders({ kind: 'api-key', token: 'stale', auth_token: 'old_1', channel_token: 'ch_1' }))
+      .toEqual({ 'vendure-token': 'ch_1' });
+  });
+
+  it('uses only the session token when kind is password, including the channel', () => {
+    expect(vendureAuth.getHeaders({ kind: 'password', token: 'tok_123', api_key: 'key_1', channel_token: 'ch_1' }))
+      .toEqual({ Authorization: 'Bearer tok_123', 'vendure-token': 'ch_1' });
+    expect(vendureAuth.getHeaders({ kind: 'password', api_key: 'key_1', channel_token: 'ch_1' }))
+      .toEqual({ 'vendure-token': 'ch_1' });
+  });
+
+  it('accepts the deprecated auth_token alias when kind is password', () => {
+    expect(vendureAuth.getHeaders({ kind: 'password', auth_token: 'old_1' })).toEqual({ Authorization: 'Bearer old_1' });
+  });
+
+  it('exposes device-key fields and keeps the password fields as the default', () => {
+    expect(vendureAuth.fieldSets).toBe(vendureAuthFieldSets);
+    expect(vendureAuth.fieldSets['api-key'].map((f) => f.key)).toEqual(['url', 'api_key', 'channel_token']);
+    expect(vendureAuth.fieldSets['api-key'][1]).toMatchObject({ key: 'api_key', type: 'password', required: true });
+    expect(vendureAuth.fieldSets.password).toEqual(vendureAuth.fields);
+  });
+
+  it('reads capabilities with only the chosen device key and channel, without signing in', async () => {
+    const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      new Response(JSON.stringify({ contracts: { 'order.create': [1, 2, 3] } }), { status: 200 }));
+    const headers = vendureAuth.getHeaders({ kind: 'api-key', api_key: 'key_1', channel_token: 'ch_1', token: 'stale' });
+    await expect(readVendureCapabilities('https://vendure.test', headers, { fetch })).resolves.toStrictEqual({ orderCreate: 3 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0]![0]).toBe('https://vendure.test/tally/v1/info');
+    expect(fetch.mock.calls[0]![1]!.headers).toStrictEqual({ 'vendure-api-key': 'key_1', 'vendure-token': 'ch_1' });
+  });
+
   it('sends a signed-in token as Bearer auth', () => {
     expect(vendureAuth.getHeaders({ url: 'https://vendure.test', token: 'tok_123' })).toEqual({ Authorization: 'Bearer tok_123' });
   });
