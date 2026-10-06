@@ -1,5 +1,11 @@
 # @tallyui/connector-vendure
 
+## 3.1.0
+
+### Patch Changes
+
+- @tallyui/core@3.1.0
+
 ## 3.0.4
 
 ### Patch Changes

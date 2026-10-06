@@ -1,5 +1,17 @@
 # @tallyui/components
 
+## 3.1.0
+
+### Patch Changes
+
+- 7986abe: Cart can show a Price action on each line (`canEditPrice`) over `useSale().setUnitPrice`, with an optional reason passed to `onPriceChange`; new `PriceForm` and `parsePrice`.
+- Updated dependencies [8471546]
+- Updated dependencies [423bf42]
+  - @tallyui/pos@3.1.0
+  - @tallyui/core@3.1.0
+  - @tallyui/primitives@3.1.0
+  - @tallyui/theme@3.1.0
+
 ## 3.0.4
 
 ### Patch Changes
