@@ -156,6 +156,44 @@ describe('useSale park and resume', () => {
     expect(await db.pos_drafts.find().exec()).toHaveLength(0);
   });
 
+  it('re-prices from the current catalogue on resume and reports the changed line', async () => {
+    const prices = new Map([['blue', 1250], ['red', 1000]]);
+    const { result } = renderSale({ currentPrice: (id) => prices.get(id) });
+    addSaleLines(result);
+    const draftId = result.current.order.id;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    prices.set('blue', 1500);
+    await act(async () => { expect(await result.current.resume(draftId)).toBeNull(); });
+    expect(result.current.order.lineItems).toMatchObject([
+      { variantId: 'blue', unitPriceMinor: 1500, quantity: 2, netMinor: 3000 },
+      { variantId: 'red', unitPriceMinor: 1000, quantity: 1, netMinor: 1000 },
+    ]);
+    expect(result.current.order.totalMinor).toBe(5000);
+    expect(result.current.error).toBe("Prices changed since this sale was parked: 1 line updated to today's price.");
+    expect(await db.pos_drafts.findOne(draftId).exec()).toBeNull();
+  });
+
+  it.each(['keepParkedPrices', 'without currentPrice', 'unknown variant'])(
+    'keeps the parked prices without a message: %s', async (mode) => {
+      const prices = new Map([['blue', 1250], ['red', 1000]]);
+      const { result } = renderSale({ currentPrice: mode === 'without currentPrice' ? undefined : (id) => prices.get(id) });
+      addSaleLines(result);
+      const before = result.current.order;
+      await act(async () => { expect(await result.current.park()).toBeNull(); });
+      prices.set('blue', 1500);
+      if (mode === 'unknown variant') prices.delete('blue');
+      await act(async () => {
+        expect(await result.current.resume(before.id, mode === 'keepParkedPrices' ? { keepParkedPrices: true } : undefined)).toBeNull();
+      });
+      expect(result.current.order.lineItems).toMatchObject([
+        { variantId: 'blue', unitPriceMinor: 1250, quantity: 2 },
+        { variantId: 'red', unitPriceMinor: 1000, quantity: 1 },
+      ]);
+      expect(result.current.order.totalMinor).toBe(before.totalMinor);
+      expect(result.current.error).toBeNull();
+    },
+  );
+
   it('refuses to park an empty cart or a sale during tender', async () => {
     const { result } = renderSale();
     await act(async () => { expect(await result.current.park()).toBe('There is nothing to park'); });

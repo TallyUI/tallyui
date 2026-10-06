@@ -34,6 +34,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   /** Where `park()` keeps parked carts; create it with `orderDraftSchema` */
   drafts?: RxCollection;
   /**
+   * The current unit price (integer minor units) of a variant in the till's catalogue, or undefined when unknown.
+   * When set, `resume()` re-prices the restored lines from it unless asked to keep the parked prices.
+   */
+  currentPrice?: (variantId: string) => number | undefined;
+  /**
    * When set, `complete()` stamps the finalized order with this session before `onSaleCompleted`.
    * `complete()` runs after the money is taken, so a refused stamp (the session closed or went
    * missing) never stops the sale: it goes on to `onSaleCompleted` and the receipt with
@@ -437,7 +442,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       return null;
     },
     /** Resumes a draft into an empty cart; resolves to a refusal message, or null once resumed. */
-    async resume(draftId: string): Promise<string | null> {
+    async resume(draftId: string, options?: { keepParkedPrices?: boolean }): Promise<string | null> {
       if (locked()) return SALE_SAVING;
       if (!opts.drafts) throw new Error('useSale: resume() needs the drafts option');
       const live = builderNow.current;
@@ -448,12 +453,24 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       const saved: Order = JSON.parse(doc.toJSON().data);
       if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
       const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext });
+      let n = 0;
+      if (opts.currentPrice && !options?.keepParkedPrices) {
+        for (const line of builder.getSnapshot().lineItems) {
+          if (!line.variantId) continue;
+          const price = opts.currentPrice(line.variantId);
+          if (price !== undefined && Number.isInteger(price) && price >= 0 && price !== line.unitPriceMinor) {
+            builder.setUnitPrice(line.id, price);
+            n++;
+          }
+        }
+      }
       await doc.remove();
       if (builderNow.current !== live || live.getSnapshot() !== liveSnapshot) {
         await writeOrderDraft(opts.drafts, saved);
         return 'The sale changed while it was being resumed; resume it again';
       }
       resetSale(null, builder);
+      if (n > 0) setError(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
       return null;
     },
     /**

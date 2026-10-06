@@ -9,18 +9,20 @@ import { XIcon } from '../ui/icon/x-icon';
 import { Text } from '../ui/text';
 import { formatStockSyncTime } from './catalogue';
 
-/** Pass `useParkedSales(drafts)`'s `parked` and `discard`. */
+/** Pass `useParkedSales(drafts)`'s `parked` and `discard`, or your own parked store's list and handlers (`onPark`, `onResume`, `onDiscard`) with the same results. */
 export interface ParkedSalesProps {
   sale: ReturnType<typeof useSale>;
   parked: ParkedOrderSummary[];
   onDiscard: (id: string) => Promise<void>;
+  onPark?: () => Promise<string | null>;
+  onResume?: (id: string) => Promise<string | null>;
   currency: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   hour12?: boolean;
 }
 
-export function ParkedSales({ sale, parked, onDiscard, currency, open, onOpenChange, hour12 }: ParkedSalesProps): JSX.Element {
+export function ParkedSales({ sale, parked, onDiscard, onPark, onResume, currency, open, onOpenChange, hour12 }: ParkedSalesProps): JSX.Element {
   const { height: windowHeight } = useWindowDimensions();
   const maxHeight = Math.max(280, windowHeight - 64);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export function ParkedSales({ sale, parked, onDiscard, currency, open, onOpenCha
         <ScrollView className="flex-1" contentContainerClassName="gap-3">
           <Button testID="parked-sales-park" accessibilityLabel="Park this sale"
             disabled={sale.order.lineItems.length === 0}
-            onPress={() => attempt(async () => setError((await sale.park()) ?? ''))}>
+            onPress={() => attempt(async () => setError((await (onPark ?? sale.park)()) ?? ''))}>
             <Text>Park this sale</Text>
           </Button>
           {!!error && <Text testID="parked-sales-error" className="text-destructive">{error}</Text>}
@@ -81,7 +83,7 @@ export function ParkedSales({ sale, parked, onDiscard, currency, open, onOpenCha
                   <View className="flex-row gap-2">
                     <Button testID={`parked-resume-${row.id}`} accessibilityLabel="Resume parked sale"
                       onPress={() => attempt(async () => {
-                        const refusal = await sale.resume(row.id);
+                        const refusal = await (onResume ?? ((id) => sale.resume(id)))(row.id);
                         if (refusal === null) onOpenChange(false);
                         else setError(refusal);
                       })}>
