@@ -1,5 +1,19 @@
 # @tallyui/components
 
+## 3.0.2
+
+### Patch Changes
+
+- ccdaaf8: The empty cart's line is padded like the cart rows instead of sitting against the panel edge.
+- 16b5627: Catalogue shows 'Loading products…' on an empty grid until the first sync completes (new optional `loading` prop, defaulting to `lastSyncedAt === null`).
+- f6c511d: The receipt prints the finalized order's reference (its id's last 8 characters, plus the store's #number once synced) and time when given `posOrder`, and Orders shows the same reference, so a receipt matches its row. A receipt rendered without `posOrder` is marked '(draft)'. Apps pass useSale's receipt-stage `posOrder` to `<Receipt>`.
+- a862823: OrdersList rows expand on tap to show the sale's items and payments, and an empty list says 'No sales yet. Completed sales appear here.'
+- 7a0db5e: The receipt shows each discount once: the order discount appears only in the totals, and line discounts are summed once as 'Line discounts' instead of a combined 'Discount' row.
+  - @tallyui/core@3.0.2
+  - @tallyui/pos@3.0.2
+  - @tallyui/primitives@3.0.2
+  - @tallyui/theme@3.0.2
+
 ## 3.0.1
 
 ### Patch Changes
