@@ -52,8 +52,11 @@ function tileLabel(value: number, currency: string): string {
   return formatter.format(value / 10 ** minorUnitDigits(currency));
 }
 
-/** Title-cases a tender method key ('card' -> 'Card') for a plain-English label. Shared with `ClosureSheet`. */
-export const tenderLabel = (method: string) => method.charAt(0).toUpperCase() + method.slice(1);
+/** Plain-English label for a tender method key: `external` is the till's card tender ('Card');
+ * other keys are title-cased. Shared with `ClosureSheet` and `RegisterPanel`. */
+export const tenderLabel = (method: string) =>
+  new Map([['cash', 'Cash'], ['external', 'Card']]).get(method) ??
+  method.charAt(0).toUpperCase() + method.slice(1);
 
 interface DenominationTileProps {
   value: number;

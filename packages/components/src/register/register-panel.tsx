@@ -9,6 +9,7 @@ import { IconButton } from '../ui/icon-button';
 import { XIcon } from '../ui/icon/x-icon';
 import { Text } from '../ui/text';
 import { MovementSheet } from './movement-sheet';
+import { tenderLabel } from './register-count';
 
 /** Margin kept clear above and below the dialog (LEDGER-free layout fix, 2026-09-28 review):
  * a phone-height viewport must never let the panel's top go under the page header. */
@@ -37,6 +38,7 @@ export interface RegisterPanelProps {
  */
 export function RegisterPanel({ register, currency, registerName, open, onOpenChange, className }: RegisterPanelProps) {
   const { session, expected, salesCount, blind, movements, lastClosure, actions } = register;
+  const otherTenders = Object.entries(expected).filter(([method, amount]) => method !== 'cash' && amount !== 0);
   const { height: windowHeight } = useWindowDimensions();
   const maxHeight = Math.max(280, windowHeight - DIALOG_VERTICAL_MARGIN);
   const [movementType, setMovementType] = useState<MovementType | null>(null);
@@ -93,9 +95,20 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
           {!blind && (
             <View testID="register-panel-expected" className="gap-1">
               <Text className="text-muted-foreground text-sm font-semibold">Expected in the drawer</Text>
-              {Object.entries(expected).map(([method, amount]) => (
+              {Object.entries(expected).filter(([method]) => method === 'cash').map(([method, amount]) => (
                 <View key={method} className="min-h-11 flex-row items-center justify-between">
-                  <Text className="capitalize">{method === 'cash' ? 'Cash' : method}</Text>
+                  <Text>{tenderLabel('cash')}</Text>
+                  <Text className="tabular-nums">{formatMoney({ amount, currency })}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {!blind && otherTenders.length > 0 && (
+            <View testID="register-panel-other-tenders" className="gap-1">
+              <Text className="text-muted-foreground text-sm font-semibold">Other tenders</Text>
+              {otherTenders.map(([method, amount]) => (
+                <View key={method} className="min-h-11 flex-row items-center justify-between">
+                  <Text>{tenderLabel(method)}</Text>
                   <Text className="tabular-nums">{formatMoney({ amount, currency })}</Text>
                 </View>
               ))}
