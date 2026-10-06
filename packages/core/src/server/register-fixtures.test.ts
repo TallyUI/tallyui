@@ -10,8 +10,8 @@ import { registerPayloadErrors } from './register-payload-shape'
 // typed by the payload interfaces core exports, with their optional fields set.
 const sessionId = '01926f3a-7c00-7000-8000-000000000001'
 const registerId = 'register_01JC2Y8Q4Z'
-const envelope = <P>(type: RegisterCommandEnvelope['type'], id: string, payload: P): RegisterCommandEnvelope<P> => ({
-  id, type, version: 1, payload, createdAt: '2026-09-11T17:00:00.000Z', deviceId: 'device_1', attempt: 1,
+const envelope = <P>(type: RegisterCommandEnvelope['type'], id: string, payload: P, version = 1): RegisterCommandEnvelope<P> => ({
+  id, type, version, payload, createdAt: '2026-09-11T17:00:00.000Z', deviceId: 'device_1', attempt: 1,
 })
 
 const envelopes = [
@@ -19,6 +19,10 @@ const envelopes = [
     sessionId, registerId, storeKey: '1', businessDay: '2026-09-11', openedAt: '2026-09-11T08:00:00.000Z',
     openedBy: '1', expectedFloatMinor: 10000, countedFloatMinor: 9950, openingVarianceMinor: -50,
   } satisfies RegisterSessionOpenPayload),
+  envelope('register.session.open', '01926f3a-7c00-7000-8000-000000000018', {
+    sessionId, registerId, openedAt: '2026-09-11T08:00:00.000Z', countedFloatMinor: 9950,
+    deviceName: 'Front till', supersedes: '01926f3a-7c00-7000-8000-000000000002',
+  } satisfies RegisterSessionOpenPayload, 2),
   envelope('register.movement.record', '01926f3a-7c00-7000-8000-000000000012', {
     movementId: '01926f3a-7c00-7000-8000-000000000021', sessionId, type: 'paid_out', amountMinor: 1250,
     reason: 'Milk for the coffee machine', createdAt: '2026-09-11T10:15:00.000Z', createdBy: '1',

@@ -74,6 +74,12 @@ export type CommandWarning =
    */
   | { code: 'customer_ignored'; customerId: string }
   /**
+   * The order named a session the store did not hold when it applied the order (register v2).
+   * The store keeps the id on the order, and an open or alias that arrives later counts it.
+   * It does not mean the session was abandoned.
+   */
+  | { code: 'register_session_unknown'; sessionId: string }
+  /**
    * One warning per sale, never a refusal: each of the till's figures that differs from the
    * server's own computation, once, with both values (#257). `total_mismatch` stays separate.
    * `parseCommandResult` refuses a `field` it doesn't know; `knownWarnings` keeps it (a newer
@@ -105,7 +111,17 @@ export interface CommandResult {
 /** A register command's server figures (registers c2b applies them). */
 export interface RegisterCommandResult {
   /** The session's server state after this command. `expected` is absent when the server redacts it (blind). */
-  session?: { id: string; status: 'open' | 'counting' | 'closed'; expected?: Record<string, number>; salesCount?: number };
+  session?: {
+    id: string; status: 'open' | 'counting' | 'closed' | 'superseded'; expected?: Record<string, number>; salesCount?: number;
+    /** Sent on a resume (register v2): the store session's opening time. */
+    openedAt?: string;
+    /** Sent on a resume (register v2): the store session's counted opening float. */
+    openingFloatMinor?: number;
+  };
+  /** The open was this device's own live session (register v2); the store keeps fromSessionId as a permanent alias of session.id. */
+  resumed?: { fromSessionId: string };
+  /** The session this open took over (register v2). */
+  superseded?: { sessionId: string; openedAt?: string; deviceId?: string; deviceName?: string };
   /** The register's counters: a floor for the till's own, never lowered. */
   counters?: { lastClosureNumber: number; perpetualSalesTotalMinor: number; perpetualRefundsTotalMinor: number };
   /** `register.closure.submit` only. */
@@ -115,6 +131,20 @@ export interface RegisterCommandResult {
 export interface RegisterSessionOpenPayload {
   sessionId: string; registerId: string; storeKey?: string; businessDay?: string; openedAt: string; openedBy?: string;
   expectedFloatMinor?: number; countedFloatMinor: number; openingVarianceMinor?: number;
+  /** Register v2 only (ADR-078): the till's name on another till's take-over sheet, 1 to 64 characters after trim. */
+  deviceName?: string;
+  /** Register v2 only (ADR-078): the live session this open takes over, a compare-and-set. */
+  supersedes?: string;
+}
+/** error.data for register_session_already_open. */
+export interface RegisterSessionAlreadyOpenData {
+  sessionId: string; registerId?: string; openedAt?: string; openedBy?: string;
+  deviceId?: string; deviceName?: string; status?: 'open' | 'counting';
+}
+/** error.data for register_session_superseded. */
+export interface RegisterSessionSupersededData {
+  sessionId: string; supersededAt?: string; supersededBy?: string;
+  deviceId?: string; deviceName?: string; newSessionId?: string;
 }
 export interface RegisterSessionTransitionPayload {
   sessionId: string; status: 'open' | 'counting' | 'closed'; at: string;

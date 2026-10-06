@@ -13,6 +13,47 @@ const closure = {
   unsyncedCount: 0, unsyncedTotalMinor: 0, tillExpected: { cash: 150 }, counted: { cash: 150 }, orderIds: ['o'], movementIds: ['m'],
 }
 
+it('accepts an open with a trimmed device name and a superseded session id', () => {
+  expect(registerPayloadErrors('register.session.open', {
+    ...open, deviceName: '  Front till  ', supersedes: '01926f3a-7c00-7000-8000-000000000001',
+  })).toEqual([])
+})
+
+it('rejects a deviceName that is empty after trim', () => {
+  expect(registerPayloadErrors('register.session.open', { ...open, deviceName: '   ' }))
+    .toEqual(['deviceName: expected a string of 1 to 64 characters after trim'])
+})
+
+it('rejects a deviceName of 65 characters', () => {
+  expect(registerPayloadErrors('register.session.open', { ...open, deviceName: 'd'.repeat(65) }))
+    .toEqual(['deviceName: expected a string of 1 to 64 characters after trim'])
+})
+
+it('rejects a numeric deviceName', () => {
+  expect(registerPayloadErrors('register.session.open', { ...open, deviceName: 5 }))
+    .toEqual(['deviceName: expected a string of 1 to 64 characters after trim'])
+})
+
+it('rejects an empty supersedes', () => {
+  expect(registerPayloadErrors('register.session.open', { ...open, supersedes: '' }))
+    .toEqual(['supersedes: expected a non-empty string of at most 64 characters'])
+})
+
+it('rejects a supersedes of 65 characters', () => {
+  expect(registerPayloadErrors('register.session.open', { ...open, supersedes: 's'.repeat(65) }))
+    .toEqual(['supersedes: expected a non-empty string of at most 64 characters'])
+})
+
+it('rejects a null supersedes', () => {
+  expect(registerPayloadErrors('register.session.open', { ...open, supersedes: null }))
+    .toEqual(['supersedes: expected a non-empty string of at most 64 characters'])
+})
+
+it('rejects a deviceName containing a NUL', () => {
+  expect(registerPayloadErrors('register.session.open', { ...open, deviceName: 'Front\u0000 till' }))
+    .toEqual(['deviceName: expected no NUL character'])
+})
+
 it.each<[string, Record<string, unknown>]>([
   ['register.session.open', open],
   ['register.session.transition', transition],

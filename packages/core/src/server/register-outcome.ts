@@ -2,6 +2,8 @@ import type { RegisterCommandResult } from '../types'
 
 export type RegisterConflictCode =
   | 'register_session_already_open'
+  | 'register_session_superseded'
+  | 'register_supersede_forbidden'
   | 'register_session_closed'
   | 'register_closure_exists'
   | 'register_closure_number_invalid'

@@ -126,6 +126,17 @@ it('accepts a customer_ignored (64 characters at most) and drops an extra reason
   expect(parseCommandResult(value).warnings).toEqual([{ code: 'customer_ignored', customerId: 'c'.repeat(64) }])
 })
 
+it('accepts a register_session_unknown and drops extra keys', () => {
+  const warning = { code: 'register_session_unknown', sessionId: 's'.repeat(64) }
+  expect(parseCommandResult({ ...applied, warnings: [{ ...warning, extra: true }] }).warnings).toEqual([warning])
+})
+
+it('rejects a register_session_unknown with an empty sessionId', () => {
+  const error = thrown({ ...applied, warnings: [{ code: 'register_session_unknown', sessionId: '' }] })
+  expect(error).toBeInstanceOf(CommandResultError)
+  expect((error as Error).message).toBe('Invalid warnings[0].sessionId')
+})
+
 const subtotal = { field: 'subtotalMinor', tillMinor: 1050, serverMinor: 1000 }
 const tax = { field: 'taxMinor', tillMinor: 210, serverMinor: 200 }
 const figures = (fields: unknown) => ({ ...applied, warnings: [warnings[0], { code: 'figures_mismatch', fields }] })
