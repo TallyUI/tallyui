@@ -34,6 +34,7 @@ export function payloadShapeErrors(payload: unknown): string[] {
       check(object(item), path, 'an object')
       if (!object(item)) continue
       for (const key of isLines ? ['clientLineId', 'variantId'] : ['clientPaymentId', 'method']) {
+        if (key === 'variantId' && item.custom !== undefined && item.variantId === undefined) continue
         check(typeof item[key] === 'string', `${path}.${key}`, 'a string')
       }
       const optionalString = isLines ? 'title' : 'reference'
@@ -73,6 +74,36 @@ export function payloadShapeErrors(payload: unknown): string[] {
   for (const field of ['registerId', 'cashierRef', 'locationId']) {
     if (payload[field] !== undefined) check(typeof payload[field] === 'string', field, 'a string')
   }
+  for (const field of ['fees', 'shipping', 'lines']) {
+    const items = payload[field]
+    if (items === undefined || field === 'lines' && !Array.isArray(items)) continue
+    check(Array.isArray(items), field, 'an array')
+    if (!Array.isArray(items)) continue
+    const id = field === 'fees' ? 'clientFeeId' : 'clientShippingId'
+    const seen = new Set<unknown>()
+    items.forEach((entry, index) => {
+      const custom = field === 'lines'
+      const item = custom && object(entry) ? entry.custom : entry
+      const path = `${field}[${index}]${custom ? '.custom' : ''}`
+      if (custom && (!object(entry) || item === undefined)) return
+      check(object(item), path, 'an object')
+      if (!object(item)) return
+      const keys = custom ? ['name', 'sku', 'taxClass', 'taxStatus']
+        : [id, 'name', 'amountMinor', 'taxMinor', 'taxStatus', 'taxClass', ...(field === 'shipping' ? ['methodId'] : [])]
+      for (const key of Object.keys(item)) check(keys.includes(key), `${path}.${key}`, 'no unknown key')
+      check(typeof item.name === 'string' && item.name.length > 0, `${path}.name`, 'a non-empty string')
+      check(item.taxStatus === 'taxable' || item.taxStatus === 'none', `${path}.taxStatus`, 'taxable or none')
+      for (const key of keys.filter(key => ['sku', 'taxClass', 'methodId'].includes(key))) {
+        if (item[key] !== undefined) check(typeof item[key] === 'string', `${path}.${key}`, 'a string')
+      }
+      if (!custom) {
+        check(typeof item[id] === 'string' && item[id].length > 0, `${path}.${id}`, 'a non-empty string')
+        check(!seen.has(item[id]), `${path}.${id}`, `no duplicate ${id}`)
+        seen.add(item[id])
+        for (const key of ['amountMinor', 'taxMinor']) check(Number.isSafeInteger(item[key]) && (item[key] as number) >= 0, `${path}.${key}`, 'a safe integer >= 0')
+      }
+    })
+  }
   // NUL, only on strings (the checks above name any other type): Postgres text can't hold it, and the lookup keys must be clean.
   for (const [value, path] of payloadStrings(payload)) check(!value.includes('\u0000'), path, 'no NUL character')
   return errors
@@ -80,7 +111,7 @@ export function payloadShapeErrors(payload: unknown): string[] {
 
 /** Length-bound errors of an order.create payload, e.g. ['lines[0].title: expected at most 255
  * characters']; [] when every string is within its bound, at most ten. Bounds in UTF-16 code units:
- * `customer.email` 254, every other string 255 (`customerId` and `sessionId` keep theirs in
+ * `customer.email` 254, v5 ids 36 and class/sku/method 64, other strings 255 (`customerId` and `sessionId` keep theirs in
  * payloadShapeErrors); only strings are checked. A plugin calls it through precheckCommand, after
  * its replay lookup, so a bound tightened later never turns an applied command's resend into
  * `invalid_payload`. */
@@ -103,6 +134,21 @@ function payloadStrings(payload: Record<string, unknown>): Array<[string, string
     if (Array.isArray(items)) items.forEach((item, index) => {
       if (object(item)) for (const key of field === 'lines' ? ['clientLineId', 'variantId', 'title'] : ['clientPaymentId', 'method', 'reference']) {
         found.push([item[key], `${field}[${index}].${key}`, 255])
+      }
+    })
+  }
+  if (Array.isArray(payload.lines)) payload.lines.forEach((line, index) => {
+    if (object(line) && object(line.custom)) for (const key of ['name', 'sku', 'taxClass', 'taxStatus']) {
+      found.push([line.custom[key], `lines[${index}].custom.${key}`, key === 'name' ? 255 : 64])
+    }
+  })
+  for (const field of ['fees', 'shipping']) for (const prefix of ['', 'display.']) {
+    const parent = prefix ? payload.display : payload
+    const items = object(parent) ? parent[field] : undefined
+    if (Array.isArray(items)) items.forEach((item, index) => {
+      if (object(item)) for (const key of prefix ? [field === 'fees' ? 'clientFeeId' : 'clientShippingId']
+        : [field === 'fees' ? 'clientFeeId' : 'clientShippingId', 'name', 'taxClass', 'taxStatus', ...(field === 'shipping' ? ['methodId'] : [])]) {
+        found.push([item[key], `${prefix}${field}[${index}].${key}`, key.startsWith('client') ? 36 : key === 'name' ? 255 : 64])
       }
     })
   }

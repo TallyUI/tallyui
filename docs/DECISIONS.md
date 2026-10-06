@@ -4419,3 +4419,20 @@ interface OrderCreatePayload {
   - (d) the transport's inclusive push.
 - **Proof:** order #136 is a golden test end to end (connector settings to builder totals to per-rate tax lines),
   next to order-math's oracle (3 × 9.99, GB VAT + compound, round-at-subtotal on: tax 6.71, total 36.68).
+- **Amendment 1 (front desk ruling, 2026-10-06): where the inclusive push gets its net.** WooCommerce rebuilds
+  every line from the ex-tax `total` the POS pushes, at 6 decimals (wiki order-math-tax-parity, "Inclusive-price
+  line tax comes from the pushed net"). The builder has that net (`netMicros`); the order.create envelope does not,
+  and ADR-070's strict fields keep it out of the server payload.
+  - **Storage:** `pos_orders` version 8 stores `netMicros` on lines, fees and shipping when the rounding is
+    `woocommerce`, in the same one-way bump as ADR-075's charges. Orders under any other rounding are unchanged.
+  - **Transport:** `send` takes a typed, local-only second argument with the stored order (for example
+    `send(batch, { local: { orders } })`). It is never serialised and never part of any payload. The WooCommerce
+    transport maps `total`/`subtotal` from `netMicros`, and other transports ignore it. A test proves that the
+    envelope bytes are identical with and without the local context.
+  - **Rejected:** the transport recomputing the net from rates that the app supplies (duplicate maths and a
+    product-class lookup inside the transport).
+- **Amendment 2 (2026-10-06): the per-rate breakdown under round-at-subtotal.** WooCommerce rounds the order tax
+  once from the unrounded per-rate sums. Each rate rounded on its own can therefore differ from the order tax by a
+  cent (1.00 inclusive with two 5% rates: rows 5 + 5, order tax 9). By this ADR's rule that order-math totals win,
+  the last rate row takes the residue, bounded by ⌊rows / 2⌋ + 1 (`woocommerceTaxByRate`); anything beyond the bound
+  throws.

@@ -47,6 +47,11 @@ export interface ServerCapabilities {
    * list. A WooCommerce store says false until its plugin records the list (`order_payments_list`). The app offers
    * split tender only when this is not false. */
   multiplePayments?: boolean;
+  /**
+   * What the store accepts for a fee's, a shipping charge's or a custom line's tax (order.create 5, ADR-075):
+   * `none` is `taxStatus: 'none'`, `classes` is a `taxClass`. Absent means neither; the UI hides what is false.
+   */
+  lineTax?: { none: boolean; classes: boolean };
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */
@@ -92,6 +97,16 @@ export function parseTaxRounding(value: unknown, warn?: (reason: string) => void
   return undefined;
 }
 
+export function parseLineTax(value: unknown, warn?: (reason: string) => void): { none: boolean; classes: boolean } | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const { none, classes } = value as { none?: unknown; classes?: unknown };
+    if (typeof none === 'boolean' && typeof classes === 'boolean') return { none, classes };
+  }
+  warn?.('ignoring a malformed lineTax');
+  return undefined;
+}
+
 const maxVersion = (list: unknown): number | undefined => {
   const valid = Array.isArray(list) ? list.filter((v): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0) : [];
   return valid.length > 0 ? Math.max(...valid) : undefined;
@@ -100,7 +115,7 @@ const maxVersion = (list: unknown): number | undefined => {
 /**
  * Reads a 2xx body of `GET /tally/v1/info` (ADR-062): `orderCreate` is the max of
  * `contracts["order.create"]`, or 1 when it's missing or malformed; `register` is the max of
- * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287).
+ * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287); malformed `lineTax` is ignored.
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
  * A non-object body is also unknown, not a statement of the store's defaults.
  */
@@ -109,15 +124,17 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     warn?.('non-object info body: capabilities unknown');
     return undefined;
   }
-  const { contracts, taxRounding } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown };
+  const { contracts, taxRounding, lineTax } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown };
   const register = maxVersion(contracts?.register);
   const rounding = parseTaxRounding(taxRounding);
   if (taxRounding !== undefined && rounding === undefined) {
     warn?.(`malformed taxRounding: rounding is unknown, so settings wait: ${JSON.stringify(taxRounding)}`);
     return undefined;
   }
+  const parsedLineTax = parseLineTax(lineTax, warn);
   return { orderCreate: maxVersion(contracts?.['order.create']) ?? 1,
-    ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}) };
+    ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}),
+    ...(parsedLineTax ? { lineTax: parsedLineTax } : {}) };
 }
 
 export interface AuthField {

@@ -136,6 +136,21 @@ describe('createWooCommandTransport', () => {
     expect(acceptsPaymentsList).toHaveBeenCalledTimes(2);
   });
 
+  it.each(['fees', 'shipping', 'custom'] as const)('refuses v5 %s as invalid_payload without a request', async (kind) => {
+    const envelope = order();
+    envelope.version = 5;
+    if (kind === 'fees') envelope.payload.fees = [{ clientFeeId: envelope.id, name: 'Bag', amountMinor: 20, taxStatus: 'taxable', taxMinor: 4 }];
+    if (kind === 'shipping') envelope.payload.shipping = [{ clientShippingId: envelope.id, name: 'Delivery', amountMinor: 500, taxStatus: 'taxable', taxMinor: 100 }];
+    if (kind === 'custom') {
+      delete envelope.payload.lines[0].variantId;
+      envelope.payload.lines[0].custom = { name: 'Gift wrap', taxStatus: 'none' };
+    }
+    const { transport, fetch } = setup();
+    expect(await transport.send([envelope])).toEqual({ kind: 'results', results: [{ id: envelope.id, status: 'rejected',
+      error: { code: 'invalid_payload', message: 'Fees, shipping and custom lines are not supported by this connector yet.' } }] });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('removes every trailing slash from the base URL', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response());
     const transport = createWooCommandTransport({

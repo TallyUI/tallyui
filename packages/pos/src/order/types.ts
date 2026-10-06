@@ -89,7 +89,7 @@ export interface ChargeLine {
   taxStatus: 'taxable' | 'none';
   taxLines: LineItem['taxLines'];
   netMinor: number;
-  taxMicros: number;
+  taxMicros: string;
 }
 export interface FeeLine extends ChargeLine {}
 export interface ShippingLine extends ChargeLine { methodId?: string }
