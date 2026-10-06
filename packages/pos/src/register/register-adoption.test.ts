@@ -68,7 +68,7 @@ describe('adoptRegisterResults', () => {
       data: { sessionId: 'other-2', deviceName: 'Back till' } } });
     await adopt();
     expect((await stored(s.id)).status).toBe('conflict');
-    expect((await command(s.id)).error?.data).toStrictEqual({ sessionId: 'other-2', deviceName: 'Back till' });
+    expect((await command(s.id)).toJSON().error?.data).toStrictEqual({ sessionId: 'other-2', deviceName: 'Back till' });
     await takeOver(s.id);
     expect((await command(s.id)).payload.supersedes).toBe('other-2');
     expect([firstId, secondId]).not.toContain((await command(s.id)).commandId);
