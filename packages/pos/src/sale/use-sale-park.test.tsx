@@ -74,6 +74,31 @@ describe('useSale park and resume', () => {
     expect(result.current.stage).toEqual({ kind: 'cart' });
   });
 
+  it('refuses to clear a cart that changed while parking', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const upsert = db.pos_drafts.upsert.bind(db.pos_drafts);
+    vi.spyOn(db.pos_drafts, 'upsert').mockImplementation(async (draft) => {
+      await gate;
+      return upsert(draft);
+    });
+    const { result } = renderSale();
+    act(() => result.current.add(entries[0], traits));
+    const before = result.current.order;
+    let parking!: Promise<string | null>;
+    act(() => { parking = result.current.park(); });
+    act(() => result.current.add(entries[1], traits));
+    await act(async () => {
+      release();
+      expect(await parking).toBe('The sale changed while it was being parked; park it again');
+    });
+    expect(result.current.order.id).toBe(before.id);
+    expect(result.current.order.lineItems.map((line) => line.variantId)).toEqual(['blue', 'red']);
+    const drafts = await db.pos_drafts.find().exec();
+    expect(drafts).toHaveLength(1);
+    expect(JSON.parse(drafts[0].toJSON().data)).toEqual(JSON.parse(JSON.stringify(before)));
+  });
+
   it('restores the order id, lines, quantities, prices and discounts, and removes the draft', async () => {
     const { result } = renderSale();
     addSaleLines(result);

@@ -399,9 +399,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     async park(): Promise<string | null> {
       if (locked()) return SALE_SAVING;
       if (!opts.drafts) throw new Error('useSale: park() needs the drafts option');
-      if (stage.kind !== 'cart') return 'Finish or cancel the payment before parking the sale';
-      if (!builderNow.current.getSnapshot().lineItems.length) return 'There is nothing to park';
-      await writeOrderDraft(opts.drafts, builderNow.current.getSnapshot());
+      if (stageNow.current.kind !== 'cart') return 'Finish or cancel the payment before parking the sale';
+      const builder = builderNow.current;
+      const snapshot = builder.getSnapshot();
+      if (!snapshot.lineItems.length) return 'There is nothing to park';
+      await writeOrderDraft(opts.drafts, snapshot);
+      if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       resetSale(null);
       return null;
     },
@@ -409,7 +412,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     async resume(draftId: string): Promise<string | null> {
       if (locked()) return SALE_SAVING;
       if (!opts.drafts) throw new Error('useSale: park() needs the drafts option');
-      if (stage.kind !== 'cart' || builderNow.current.getSnapshot().lineItems.length) return 'Park or clear the current sale first';
+      if (stageNow.current.kind !== 'cart' || builderNow.current.getSnapshot().lineItems.length) return 'Park or clear the current sale first';
       const doc = await opts.drafts.findOne(draftId).exec();
       if (!doc) return 'That parked sale is no longer there';
       const saved: Order = JSON.parse(doc.toJSON().data);
