@@ -37,6 +37,15 @@ describe('listCategories', () => {
     ]);
   });
 
+  it('treats names that differ only by case as equal and orders them by id', () => {
+    const docs = [{ id: 1, name: 'Product', categories: [
+      { id: 2, name: 'coffee' }, { id: 1, name: 'Coffee' },
+    ] }];
+    expect(listCategories(docs, wooProductTraits)).toEqual([
+      { id: '1', name: 'Coffee' }, { id: '2', name: 'coffee' },
+    ]);
+  });
+
   it('returns an empty array for no docs', () => {
     expect(listCategories([], wooProductTraits)).toEqual([]);
   });
