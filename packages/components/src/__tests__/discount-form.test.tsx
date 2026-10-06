@@ -1,7 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { AppliedDiscount } from '@tallyui/pos';
-import { DiscountChips, DiscountForm, discountLabel } from '../sale/discount-form';
+import { DiscountChips, DiscountForm, discountLabel, parseDiscount } from '../sale/discount-form';
+
+describe('parseDiscount', () => {
+  it.each([
+    ['0.125', 'KWD', { type: 'fixed', value: 125 }],
+    ['0.125', 'EUR', 'Use at most 2 decimal places.'],
+    ['5', 'JPY', { type: 'fixed', value: 5 }],
+  ] as const)('parses fixed %s in %s', (text, currency, expected) => {
+    expect(parseDiscount('fixed', text, currency)).toEqual(expected);
+  });
+
+  it.each([
+    ['12.5', { type: 'percentage', value: 12.5 }],
+    ['12.555', 'Use at most 2 decimal places.'],
+  ] as const)('parses percentage %s with at most 2 decimals', (text, expected) => {
+    expect(parseDiscount('percentage', text, 'KWD')).toEqual(expected);
+  });
+});
 
 describe('discountLabel', () => {
   it('shows amountMinor (the #129 caps), not the requested amount', () => {

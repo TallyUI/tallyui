@@ -9,7 +9,7 @@ export function parsePrice(text: string, currency: string): number | string {
   if (!trimmed) return 'Enter a price.';
   if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return 'Enter a number.';
   if (Number(trimmed) < 0) return 'Enter a price of 0 or more.';
-  const digits = Math.min(2, minorUnitDigits(currency));
+  const digits = minorUnitDigits(currency);
   if ((trimmed.split('.')[1]?.length ?? 0) > digits) return digits ? `Use at most ${digits} decimal places.` : 'Use a whole amount.';
   return moneyFromDecimalString(trimmed, currency)?.amount ?? 'Enter a number.';
 }

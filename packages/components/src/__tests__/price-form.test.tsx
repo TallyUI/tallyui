@@ -12,6 +12,9 @@ describe('parsePrice', () => {
     ['-1', 'EUR', 'Enter a price of 0 or more.'],
     ['1.234', 'EUR', 'Use at most 2 decimal places.'],
     ['12.5', 'JPY', 'Use a whole amount.'], ['12', 'JPY', 12],
+    ['1.234', 'KWD', 1234],
+    ['1.2345', 'KWD', 'Use at most 3 decimal places.'],
+    ['0.005', 'BHD', 5],
   ])('parses %s in %s', (text, currency, expected) => {
     expect(parsePrice(text as string, currency as string)).toBe(expected);
   });
