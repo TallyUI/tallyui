@@ -1,5 +1,11 @@
 # @tallyui/core
 
+## 3.1.1
+
+### Patch Changes
+
+- 63a7431: `TallyConnector` gains an optional `emailReceipt(context, orderId, email, { saveToBilling? })` for connectors that can email a store order's receipt (online only, not idempotent).
+
 ## 3.1.0
 
 ## 3.0.4
