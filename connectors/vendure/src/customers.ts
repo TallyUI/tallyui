@@ -40,13 +40,7 @@ export async function searchVendureCustomers(context: SyncContext, query: string
   const q = query.trim();
   if (!q) return [];
   const take = Math.max(1, Math.min(50, options?.limit ?? 20));
-  let body;
-  try {
-    body = await gql(context, SEARCH_QUERY, { q, take });
-  } catch (error) {
-    if (error instanceof ConnectorUnauthorizedError) throw error;
-    throw new CustomerServiceError(error instanceof Error && error.message.startsWith('Vendure ') ? 'server' : 'network', error instanceof Error ? error.message : String(error));
-  }
+  const body = await customerGql(context, SEARCH_QUERY, { q, take });
   const items = body?.data?.customers?.items;
   if (!Array.isArray(items)) throw new CustomerServiceError('server', 'unexpected response');
   return items.filter((raw) => raw.emailAddress !== WALK_IN_EMAIL).map(toVendureCustomer);
@@ -57,26 +51,26 @@ export async function createVendureCustomer(context: SyncContext, input: Custome
     emailAddress: input.email, firstName: input.firstName ?? '', lastName: input.lastName ?? '',
     ...(input.phone ? { phoneNumber: input.phone } : {}),
   } };
-  let body;
-  try {
-    body = await gql(context, CREATE_QUERY, variables);
-  } catch (error) {
-    if (error instanceof ConnectorUnauthorizedError) throw error;
-    throw new CustomerServiceError(error instanceof Error && error.message.startsWith('Vendure ') ? 'server' : 'network', error instanceof Error ? error.message : String(error));
-  }
+  const body = await customerGql(context, CREATE_QUERY, variables);
   const result = body?.data?.createCustomer;
   if (result?.__typename === 'Customer') return toVendureCustomer(result);
   if (result?.__typename && result.message) throw new CustomerServiceError('invalid', result.message);
   throw new CustomerServiceError('server', 'unexpected response');
 }
 
-export async function getVendureCustomer(context: SyncContext, id: string): Promise<Customer | null> {
-  let body;
+async function customerGql(context: SyncContext, query: string, variables: Record<string, unknown>): Promise<any> {
   try {
-    body = await gql(context, GET_QUERY, { id });
+    return await gql(context, query, variables);
   } catch (error) {
     if (error instanceof ConnectorUnauthorizedError) throw error;
     throw new CustomerServiceError(error instanceof Error && error.message.startsWith('Vendure ') ? 'server' : 'network', error instanceof Error ? error.message : String(error));
   }
-  return body.data.customer === null ? null : toVendureCustomer(body.data.customer);
+}
+
+export async function getVendureCustomer(context: SyncContext, id: string): Promise<Customer | null> {
+  const body = await customerGql(context, GET_QUERY, { id });
+  const raw = body?.data?.customer;
+  if (raw === null) return null;
+  if (typeof raw?.id !== 'string') throw new CustomerServiceError('server', 'unexpected response');
+  return toVendureCustomer(raw);
 }

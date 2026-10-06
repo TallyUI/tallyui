@@ -90,6 +90,13 @@ describe('Vendure customers', () => {
     await expect(getVendureCustomer(context, 'missing')).resolves.toBeNull();
   });
 
+  it.each([{ data: {} }, {}])('rejects a malformed lookup response (%j)', async (body) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(body, { status: 200 }));
+    const result = getVendureCustomer(context, '2');
+    await expect(result).rejects.toBeInstanceOf(CustomerServiceError);
+    await expect(result).rejects.toMatchObject({ code: 'server', message: 'unexpected response' });
+  });
+
   it('omits empty fields and falls back to email, then id for the name', () => {
     expect(toVendureCustomer({ id: '2', firstName: '', lastName: null, emailAddress: input.email, phoneNumber: '' }))
       .toStrictEqual({ id: '2', name: input.email, email: input.email });
