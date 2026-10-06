@@ -1,8 +1,7 @@
-import { useEffect, useState, type JSX } from 'react';
+import { useState, type JSX } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
-import type { RxCollection } from 'rxdb';
 import { formatMoney } from '@tallyui/core';
-import { parkedOrderSummaries$, type ParkedOrderSummary, type useSale } from '@tallyui/pos';
+import type { ParkedOrderSummary, useSale } from '@tallyui/pos';
 import { Button } from '../ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog';
 import { IconButton } from '../ui/icon-button';
@@ -10,28 +9,22 @@ import { XIcon } from '../ui/icon/x-icon';
 import { Text } from '../ui/text';
 import { formatStockSyncTime } from './catalogue';
 
+/** Pass `useParkedSales(drafts)`'s `parked` and `discard`. */
 export interface ParkedSalesProps {
   sale: ReturnType<typeof useSale>;
-  drafts: RxCollection;
+  parked: ParkedOrderSummary[];
+  onDiscard: (id: string) => Promise<void>;
   currency: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   hour12?: boolean;
 }
 
-export function ParkedSales({ sale, drafts, currency, open, onOpenChange, hour12 }: ParkedSalesProps): JSX.Element {
+export function ParkedSales({ sale, parked, onDiscard, currency, open, onOpenChange, hour12 }: ParkedSalesProps): JSX.Element {
   const { height: windowHeight } = useWindowDimensions();
   const maxHeight = Math.max(280, windowHeight - 64);
-  const [rows, setRows] = useState<ParkedOrderSummary[]>([]);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    const subscription = parkedOrderSummaries$(drafts).subscribe((summaries) => {
-      setRows([...summaries].sort((a, b) => b.parkedAt.localeCompare(a.parkedAt)));
-    });
-    return () => subscription.unsubscribe();
-  }, [drafts]);
 
   const attempt = async (action: () => Promise<unknown>) => {
     setError('');
@@ -60,8 +53,8 @@ export function ParkedSales({ sale, drafts, currency, open, onOpenChange, hour12
             <Text>Park this sale</Text>
           </Button>
           {!!error && <Text testID="parked-sales-error" className="text-destructive">{error}</Text>}
-          {rows.length === 0 && <Text testID="parked-sales-empty">No parked sales.</Text>}
-          {rows.map((row) => (
+          {parked.length === 0 && <Text testID="parked-sales-empty">No parked sales.</Text>}
+          {parked.map((row) => (
             <View key={row.id} testID={`parked-row-${row.id}`} className="gap-2 rounded-md border border-border p-3">
               {confirming === row.id ? (
                 <>
@@ -69,7 +62,7 @@ export function ParkedSales({ sale, drafts, currency, open, onOpenChange, hour12
                   <View className="flex-row gap-2">
                     <Button testID={`parked-discard-confirm-${row.id}`} variant="destructive"
                       onPress={() => attempt(async () => {
-                        await (await drafts.findOne(row.id).exec())?.remove();
+                        await onDiscard(row.id);
                         setConfirming(null);
                       })}>
                       <Text>Discard</Text>

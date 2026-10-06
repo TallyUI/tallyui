@@ -7,7 +7,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, type StoreSettings } from '@tallyui/core';
 import { PortalHost } from '@tallyui/primitives';
 import { medusaConnector } from '@tallyui/connector-medusa';
-import { catalogueEntries, orderDraftSchema, TaxProvider, taxProviderProps, useSale } from '@tallyui/pos';
+import { catalogueEntries, orderDraftSchema, TaxProvider, taxProviderProps, useParkedSales, useSale } from '@tallyui/pos';
 import { ParkedSales } from '../sale/parked-sales';
 import { formatStockSyncTime } from '../sale/catalogue';
 
@@ -43,7 +43,8 @@ function renderSheet() {
       registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 2 },
       drafts: db.pos_drafts,
     });
-    return <ParkedSales sale={sale} drafts={db.pos_drafts} currency="EUR" open={open} hour12={false}
+    const parkedSales = useParkedSales(db.pos_drafts);
+    return <ParkedSales sale={sale} parked={parkedSales.parked} onDiscard={parkedSales.discard} currency="EUR" open={open} hour12={false}
       onOpenChange={(value) => { onOpenChange(value); setOpen(value); }} />;
   }
   render(<TaxProvider {...taxProviderProps(pricing)}><Harness /><PortalHost /></TaxProvider>);
