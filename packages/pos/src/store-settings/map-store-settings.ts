@@ -14,5 +14,9 @@ export function withPricingContext(context: SyncContext, settings: StoreSettings
  */
 export function taxProviderProps(settings: StoreSettings): Omit<TaxProviderProps, 'children'> {
   const rounding = settings.taxRounding?.granularity === 'custom' ? undefined : settings.taxRounding;
-  return { ratesPpm: settings.taxRatesPpm, pricesIncludeTax: settings.pricesIncludeTax, ...(rounding && { rounding }), ...(settings.taxRateCodes && { rateCodes: settings.taxRateCodes }) };
+  return { ratesPpm: settings.taxRatesPpm, pricesIncludeTax: settings.pricesIncludeTax, ...(rounding && { rounding }), ...(settings.taxRateCodes && { rateCodes: settings.taxRateCodes }),
+    ...(settings.taxRates && { taxRates: settings.taxRates }),
+    ...(settings.taxRoundAtSubtotal !== undefined && { taxRoundAtSubtotal: settings.taxRoundAtSubtotal }),
+    ...(settings.shippingTaxClass !== undefined && { shippingTaxClass: settings.shippingTaxClass }),
+    ...(settings.taxClassSlugs && { taxClassSlugs: settings.taxClassSlugs }) };
 }

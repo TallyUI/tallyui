@@ -94,6 +94,9 @@ export function referenceReason(value: string | undefined): 'long' | 'nul' | nul
  * customer email or id the shape check would refuse is left out, so `toOrderCreateEnvelope` sends it unchanged.
  */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
+  if (order.taxRounding?.granularity === 'woocommerce') {
+    throw new Error('finalize: the woocommerce tax strategy needs pos_orders version 8, which this release does not store yet');
+  }
   if (order.fees?.length || order.shipping?.length || order.lineItems.some((line) => line.custom)) {
     throw new Error('finalize: fees, shipping and custom lines need order.create version 5, which this release does not send yet');
   }

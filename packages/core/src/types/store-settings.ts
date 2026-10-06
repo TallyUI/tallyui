@@ -10,6 +10,11 @@ export interface StoreSettings {
   taxRatesPpm: { default: number; [taxClass: string]: number };
   /** The backend's tax rate name per tax class (same keys as `taxRatesPpm`, including `default`), for `per_rate_group_items`' grouping (#324). Set by a connector whose rounding groups by rate name; absent otherwise. */
   taxRateCodes?: Record<string, string>;
+  /** WooCommerce rates already filtered to the store's tax address; the empty class uses `standard`. */
+  taxRates?: Record<string, { id: number; code: string; label: string; rate: string; priority: number; compound: boolean; shipping: boolean }[]>;
+  taxRoundAtSubtotal?: boolean;
+  shippingTaxClass?: string;
+  taxClassSlugs?: string[];
   /** Connector-specific and opaque to the app: what the connector needs to price documents. The app passes it back to the connector unchanged, and never logs it. */
   pricingContext?: Record<string, string>;
   /** Derived, never read by `storeSettings`: the store's `ServerCapabilities.taxRounding`, which `useStoreSettings` fills in (#324). */

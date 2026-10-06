@@ -67,6 +67,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       productId: line.productId,
       custom: line.custom,
       taxStatus: line.taxStatus,
+      ...(taxContext.rounding?.granularity === 'woocommerce' ? { taxClass: line.taxClass } : {}),
       variantId: line.variantId,
       name: line.name,
       sku: line.sku,

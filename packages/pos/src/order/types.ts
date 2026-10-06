@@ -49,12 +49,16 @@ export interface DisplayTotals {
 /** One line in the display mode (ADR-063): before any discount, with its own discounts as sub-rows. */
 export interface DisplayLine {
   lineId: string;
-  amountMinor: number;        // quantity × unit price in the display mode; the last converted line also carries the rounding residue
+  amountMinor: number;        // quantity × unit price, or WooCommerce's line figure; a residue recipient may adjust it
   discounts: { discountId: string; label?: string; amountMinor: number }[]; // this line's own discounts, each converted on its own
 }
 
 export interface LineItem {
   id: string;
+  taxClass?: string;
+  /** WooCommerce's stored net at rounding precision, in integer micro-minor units, and its rounded gross. */
+  netMicros?: string;
+  totalMinor?: number;
   custom?: true;
   taxStatus?: 'none';
   productId: string;
@@ -68,7 +72,7 @@ export interface LineItem {
   discounts: AppliedDiscount[];
   discountMinor: number;      // line discounts + orderDiscountMinor, in the line's own mode
   orderDiscountMinor: number; // this line's allocated share of the order discounts (ADR-062)
-  netMinor: number;           // unitPriceMinor × quantity − discountMinor; the taxed base
+  netMinor: number;           // unitPriceMinor × quantity − discountMinor; under WooCommerce, the rounded exclusive net
   taxMicros: string;          // Σ taxLines[].taxMicros, decimal string of a bigint
   taxInclusive: boolean;      // the price's own tax mode; the order's when the price has none
   /** Set only when the price's tax mode differs from the order's; named price mode → order mode. */
@@ -77,6 +81,8 @@ export interface LineItem {
 
 export interface ChargeLine {
   id: string;
+  netMicros?: string;
+  totalMinor?: number;
   name: string;
   amountMinor: number; // integer >= 0, in the order's tax mode (ADR-075)
   taxClass?: string;
@@ -91,6 +97,8 @@ export interface ChargeInput { name: string; amountMinor: number; taxClass?: str
 
 export interface LineTaxLine {
   code?: string;
+  rateId?: number;
+  compound?: boolean;
   ratePpm: number;
   taxMicros: string;          // exact, decimal string of a bigint
 }

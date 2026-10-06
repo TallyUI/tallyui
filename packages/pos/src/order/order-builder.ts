@@ -4,6 +4,7 @@ import type { TaxContext } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
 import { allocateOrderDiscount } from './allocate-order-discount';
+import { woocommerceLine, woocommerceTotals } from './woocommerce-tax';
 import type {
   Order,
   LineItem,
@@ -96,6 +97,14 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const { taxContext } = options;
   const currency = options.currency.toUpperCase();
   const orderId = options.id ?? uid();
+  const woo = taxContext.rounding?.granularity === 'woocommerce' && taxContext.getTaxRates ? taxContext.rounding : undefined;
+  const wooLine = (amount: number, taxClass: string | undefined, inclusive: boolean, untaxed = false, shipping = false) =>
+    woocommerceLine(amount, untaxed ? [] : taxContext.getTaxRates!(taxClass, { shipping }), inclusive, currency, woo!.roundAtSubtotal, taxContext.pricesIncludeTax);
+  const displayAmount = (line: LineItem, amount: number) => {
+    if (!woo || line.taxInclusive === taxContext.pricesIncludeTax) return toDisplayMode(line, amount, taxContext.pricesIncludeTax);
+    const item = wooLine(amount, line.taxClass, line.taxInclusive, line.taxStatus === 'none');
+    return taxContext.pricesIncludeTax ? item.totalMinor : item.netMinor;
+  };
 
   let lineItems: LineItem[] = [];
   let fees: FeeLine[] = [];
@@ -124,6 +133,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const lineDiscountMinor = Math.min(grossMinor, recalcedDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const discountMinor = lineDiscountMinor + orderDiscountMinor;
     const netMinor = grossMinor - discountMinor;
+    if (woo) return { ...line, discounts: recalcedDiscounts, discountMinor, orderDiscountMinor,
+      ...wooLine(netMinor, line.taxClass, line.taxInclusive, line.taxStatus === 'none') };
     const combinedRate = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
     // Tax in the line's own mode, from its own unit price × quantity: never re-tax a rounded base.
     const inclusiveTax = line.taxInclusive ? taxMicros(netMinor, combinedRate, true) : 0n;
@@ -166,7 +177,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // parity). A fixed discount is computed on what remains, as before. Every discount is then capped at what
     // remains, which decreases as each is applied, and the total is allocated to the lines, which are then
     // taxed on what is left.
-    const lineAmounts = lineItems.map((li) => li.netMinor);
+    const lineAmounts = lineItems.map((li) => woo ? li.unitPriceMinor * li.quantity - li.discountMinor : li.netMinor);
     const base = lineAmounts.reduce((sum, amount) => sum + Math.max(0, amount), 0);
     let remaining = base;
     const recalcedOrderDiscounts = orderDiscounts.map((d) => {
@@ -177,11 +188,12 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const lines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
 
-    const { subtotalMinor } = sumLines(lines, taxContext.rounding);
+    const wooTotals = woo ? woocommerceTotals(lines, fees, shipping, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
+    const { subtotalMinor } = wooTotals ?? sumLines(lines, taxContext.rounding);
     const charges = [...fees, ...shipping];
     const taxedLines = [...lines, ...charges.map((charge) => ({ ...charge, taxInclusive: taxContext.pricesIncludeTax,
       taxMicros: charge.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n).toString() }))];
-    const { taxMinor, totalMinor } = sumLines(taxedLines, taxContext.rounding);
+    const { taxMinor, totalMinor } = wooTotals ?? sumLines(taxedLines, taxContext.rounding);
     if (taxContext.rounding?.granularity === 'per_rate_group_items' && taxedLines.some((li) => li.taxInclusive) && !perRateGroupWarned.has(taxContext)) {
       perRateGroupWarned.add(taxContext);
       taxLogger.warn('per_rate_group_items with inclusive lines: using per_order figures until the display has a rounding row (#287, #310)');
@@ -198,11 +210,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       // with no rows: its capped "discounts" are the negative gross cancelled, not money off.
       const returned = li.unitPriceMinor < 0;
       const discounts = returned ? [] : li.discounts.map((d) => ({
-        discountId: d.id, ...(d.label !== undefined ? { label: d.label } : {}), amountMinor: toDisplayMode(li, d.amountMinor, taxInclusive),
+        discountId: d.id, ...(d.label !== undefined ? { label: d.label } : {}), amountMinor: displayAmount(li, d.amountMinor),
       }));
-      const shareMinor = toDisplayMode(li, li.orderDiscountMinor, taxInclusive);
-      const remainingMinor = toDisplayMode(li, li.netMinor, taxInclusive);
-      const amountMinor = li.taxInclusive === taxInclusive && !returned ? li.unitPriceMinor * li.quantity
+      const shareMinor = displayAmount(li, li.orderDiscountMinor);
+      const remainingMinor = woo ? taxInclusive ? li.totalMinor! : li.netMinor : toDisplayMode(li, li.netMinor, taxInclusive);
+      const amountMinor = !woo && li.taxInclusive === taxInclusive && !returned ? li.unitPriceMinor * li.quantity
         : discounts.reduce((sum, d) => sum + d.amountMinor, remainingMinor + shareMinor);
       return { line: { lineId: li.id, amountMinor, discounts }, shareMinor, remainingMinor, returned };
     });
@@ -210,9 +222,20 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const orderDiscountDisplay = figures.reduce((sum, f) => sum + f.shareMinor, 0);
     const displayDiscount = displayLines.reduce(
       (sum, line) => line.discounts.reduce((lineSum, d) => lineSum + d.amountMinor, sum), orderDiscountDisplay);
-    const displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount
-      - charges.reduce((sum, charge) => sum + charge.amountMinor, 0);
-    const residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
+    const chargeRows = (items: ChargeLine[]) => items.map(({ id, name, amountMinor, netMinor, totalMinor }) =>
+      ({ id, name, amountMinor: woo ? taxInclusive ? totalMinor! : netMinor : amountMinor }));
+    const displayFees = chargeRows(fees), displayShipping = chargeRows(shipping);
+    let displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount
+      - [...displayFees, ...displayShipping].reduce((sum, charge) => sum + charge.amountMinor, 0);
+    let residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
+    if (woo) {
+      // ADR-076: the last shipping row, else fee, else product takes either sign of residue.
+      const charge = displayShipping.at(-1) ?? displayFees.at(-1);
+      const last = charge ?? displayLines.at(-1);
+      if (last) last.amountMinor += residue;
+      if (charge) displaySubtotal -= residue;
+      residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
+    }
     const converted = lines.flatMap((li, index) => li.taxInclusive === taxInclusive ? [] : [index]);
     const conversions = converted.reduce((count, index) => count + [lines[index].netMinor, lines[index].orderDiscountMinor,
       ...lines[index].discounts.map((d) => d.amountMinor)].filter((x) => x !== 0).length, 0);
@@ -235,7 +258,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (displayDiscount < 0) throw new Error(`Display discount ${displayDiscount} is negative (ADR-063)`);
     for (const { line, shareMinor, returned } of figures) {
       if (returned && line.discounts.length > 0) throw new Error(`Return line ${line.lineId} shows discount rows (ADR-063)`);
-      if (returned) continue;
+      if (returned || woo) continue;
       const rows = line.discounts.reduce((sum, d) => sum + d.amountMinor, 0);
       if (shareMinor < 0 || line.discounts.some((d) => d.amountMinor < 0) || line.amountMinor < rows + shareMinor) {
         throw new Error(`Display line ${line.lineId} shows ${line.amountMinor}, less than its rows ${rows} and share ${shareMinor} (ADR-063)`);
@@ -244,8 +267,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const display = {
       taxInclusive, subtotalMinor: displaySubtotal, discountMinor: displayDiscount, taxMinor, totalMinor,
       lines: displayLines, orderDiscountMinor: orderDiscountDisplay,
-      ...(fees.length ? { fees: fees.map(({ id, name, amountMinor }) => ({ id, name, amountMinor })) } : {}),
-      ...(shipping.length ? { shipping: shipping.map(({ id, name, amountMinor }) => ({ id, name, amountMinor })) } : {}),
+      ...(fees.length ? { fees: displayFees } : {}),
+      ...(shipping.length ? { shipping: displayShipping } : {}),
     };
     const paidMinor = payments.reduce((sum, p) => sum + p.amountMinor, 0);
     const balanceDueMinor = Math.max(0, totalMinor - paidMinor);
@@ -281,11 +304,16 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     subject.next(buildOrder());
   }
 
-  function recalculateCharge(id: string, input: ChargeInput): ChargeLine {
+  function recalculateCharge(id: string, input: ChargeInput, shipping = false): ChargeLine {
     if (!Number.isInteger(input.amountMinor)) throw new RangeError('Amount must be integer minor units');
     if (input.amountMinor < 0) throw new RangeError('Amount must be >= 0');
     if (!input.name.trim()) throw new RangeError('Name must not be empty');
     const taxStatus = input.taxStatus ?? 'taxable';
+    if (woo) {
+      const line = wooLine(input.amountMinor, input.taxClass, taxContext.pricesIncludeTax, taxStatus === 'none', shipping);
+      return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus,
+        ...line, taxMicros: Number(line.taxMicros) };
+    }
     const code = taxContext.getTaxRateCode?.(input.taxClass);
     const line = recalculateLine({
       id, productId: id, name: input.name, sku: '', unitPriceMinor: input.amountMinor, quantity: 1,
@@ -305,13 +333,15 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (!Number.isInteger(unitPrice.amount)) throw new RangeError('Price must be integer minor units');
     if (!Number.isInteger(quantity) || quantity < 1) throw new RangeError('Quantity must be an integer >= 1');
     // A rate from the tax class carries the backend's name for it when one is mapped (#287, #288).
-    const code = input.taxRates ? undefined : taxContext.getTaxRateCode?.(input.taxClass);
-    const taxRates = input.taxStatus === 'none' ? [{ ...(code !== undefined ? { code } : {}), ratePpm: 0 }]
+    const code = woo || input.taxRates ? undefined : taxContext.getTaxRateCode?.(input.taxClass);
+    const taxRates = woo ? wooLine(unitPrice.amount * quantity, input.taxClass, unitPrice.taxInclusive ?? taxContext.pricesIncludeTax, input.taxStatus === 'none').taxLines
+      : input.taxStatus === 'none' ? [{ ...(code !== undefined ? { code } : {}), ratePpm: 0 }]
       : input.taxRates ?? [{ ...(code !== undefined ? { code } : {}), ratePpm: taxContext.getTaxRatePpm(input.taxClass) }];
     const taxInclusive = unitPrice.taxInclusive ?? taxContext.pricesIncludeTax;
 
     const existing = lineItems.find(
       (li) => !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
+        && (!woo || li.taxClass === input.taxClass && (li.taxStatus === 'none') === (input.taxStatus === 'none'))
         && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length
         && li.taxLines.every((tax, index) => tax.code === taxRates[index].code && tax.ratePpm === taxRates[index].ratePpm),
     );
@@ -327,6 +357,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const lineId = uid();
     const line: LineItem = {
       id: lineId,
+      ...(woo ? { taxClass: input.taxClass } : {}),
       productId,
       ...(input.custom ? { custom: true as const } : {}),
       ...(input.taxStatus === 'none' ? { taxStatus: 'none' as const } : {}),
@@ -377,14 +408,14 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       fees = fees.filter((entry) => entry.id !== id); emit();
     },
     addShipping(input) {
-      const charge = { ...recalculateCharge(uid(), input), methodId: input.methodId };
+      const charge = { ...recalculateCharge(uid(), input, true), methodId: input.methodId };
       shipping = [...shipping, charge]; emit(); return charge.id;
     },
     updateShipping(id, patch) {
       const charge = shipping.find((entry) => entry.id === id);
       if (!charge) throw new Error(`Unknown shipping ${id}`);
       const input = { ...charge, ...patch };
-      const updated = { ...recalculateCharge(id, input), methodId: input.methodId };
+      const updated = { ...recalculateCharge(id, input, true), methodId: input.methodId };
       shipping = shipping.map((entry) => entry.id === id ? updated : entry); emit();
     },
     removeShipping(id) {

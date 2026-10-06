@@ -481,8 +481,8 @@ export async function writeClosure({
   for (const order of bound) {
     // Grouped by the rule applied: a `custom` sale used the default figures, so it joins the default's group.
     const recorded = order.taxRounding ?? DEFAULT_TAX_ROUNDING;
-    const { granularity, mode } = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
-    roundings.add(`${granularity} ${mode}`);
+    const rounding = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
+    roundings.add(rounding.granularity === 'woocommerce' ? `woocommerce ${rounding.roundAtSubtotal}` : `${rounding.granularity} ${rounding.mode}`);
     const lines = order.lines.map((line) => ({ ...line, taxInclusive: line.taxInclusive ?? order.pricesIncludeTax }));
     for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(lines, order.taxMinor, undefined, order.taxRounding)) {
       const existing = taxRates.get(String(ratePpm));
