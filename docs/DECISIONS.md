@@ -4669,17 +4669,30 @@ interface OrderCreatePayload {
     - `coupon_lines: [{ code }]` and each line's `_woocommerce_pos_data` intent.
     - A refusal maps to `coupon_invalid` and keeps the store's own code (amendment 2). The refused sale reopens as a
       parked sale with the coupon removed (Q3).
-    - Coupons are sent only to a store whose woocommerce-pos has the `get_subtotal()` filter (amendment 1, R2).
+    - On an order with coupons, each line's `subtotal` is its POS price (R2). Coupons are sent only to a store whose
+      woocommerce-pos is 1.9.0 or later (R2).
   - **(d5) Same-register reuse.** After (d4). The local usage overlay counts a successful coupon order at once, and
     the coupon is refetched by id (amendment 2).
   - **Rulings (front desk, 2026-10-07):**
     - **R1, one bump.** (d2) is a single `pos_orders` v9 that carries the order's coupons and #495's line
       `attributes`. It gets one needs-paul write-up naming both, with the migration path and what older builds see.
       There is no second bump this minor.
-    - **R2, fail closed behind a capability.**
-      - Which woocommerce-pos version ships the `get_subtotal()` filter is the WooCommerce lane's to answer.
-      - Until then, coupons sit behind a capability check (ADR 0006). With no filter known, the store gets no
-        `coupon_lines`.
+    - **R2, gate on woocommerce-pos 1.9.0, fail closed below it.** The WooCommerce lane answered, and the front desk
+      confirmed it. Amendment 1's plugin dependency is corrected:
+      - **The filter is gone.** woocommerce-pos removed the `get_subtotal()` filter in 8f5f0368 (2026-03-25). The
+        client now sends line `subtotal` = the POS price, and WooCommerce's own `recalculate_coupons()` reset
+        (`total = subtotal`) keeps the POS price. The engine's step 1 comment in `recalculate.ts`, ported verbatim
+        from WCPOS, still describes the filter; it is stale, and the code is unchanged because the arithmetic is the
+        same.
+      - **The gate.** woocommerce-pos 1.9.0 (2026-05-15) is the first release on that model, and it has the
+        `coupon_get_items_to_validate` POS hook. Before it:
+        - 1.8.8 to 1.8.11 relied on the fragile filter;
+        - below 1.8.8, a coupon resets POS-discounted lines to the regular price.
+      - **No change to woocommerce-pos,** neither on main nor in a fork.
+      - **Sources:** woocommerce-pos tags v1.9.0 and v1.8.11, `includes/Orders.php` and
+        `tests/includes/Test_Orders_Coupon_Discount.php`.
+      - **Below 1.9.0, or with the version unknown, coupons fail closed** behind a capability check (ADR 0006), and
+        the store gets no `coupon_lines`.
       - This lane's choice, between creating the order without the coupon and refusing: **refuse, with a clear
         reason.** An order created without `coupon_lines` would record full price on the store while the customer
         paid the discounted total. So:
