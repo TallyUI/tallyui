@@ -151,6 +151,17 @@ describe('register command ledger', () => {
   const write = (closed: RegisterSession) => writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store',
     session: closed, counted: 8600, otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0' });
 
+  it('reconcile appends nothing for an abandoned session', async () => {
+    const s = await open();
+    await reconcile();
+    const before = await ledger();
+    const movement = await record(s.id);
+    await s.incrementalPatch({ status: 'abandoned' });
+    expect(await reconcile()).toStrictEqual([]);
+    expect(await ledger()).toStrictEqual(before);
+    expect(await db.register_commands.findOne(`movement.record:${movement.id}`).exec()).toBeNull();
+  });
+
   it('a register v2 store gets a version 2 open with the device name; every other command stays version 1', async () => {
     const s = await open();
     const movement = await record(s.id);

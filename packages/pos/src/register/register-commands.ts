@@ -119,8 +119,8 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
     const complete = new Set((await commands.storageInstance.findDocumentsById(rows.flatMap((session) =>
       [`session.open:${session.id}`, ...(session.status === 'closed' && session.closure_id ? [`closure.submit:${session.closure_id}`] : [])]), false)).map(({ key }) => key));
     const facts = await Promise.all(rows.filter((session) =>
-      session.status !== 'closed' || ((session.status_at == null || session.status_at >= since || complete.has(`session.open:${session.id}`))
-        && !complete.has(`closure.submit:${session.closure_id}`)))
+      session.status !== 'abandoned' && (session.status !== 'closed' || ((session.status_at == null || session.status_at >= since || complete.has(`session.open:${session.id}`))
+        && !complete.has(`closure.submit:${session.closure_id}`))))
       .map(async (session) => {
       const [entries, closureRows] = await Promise.all([
         readFresh(movements, { selector: { session_id: session.id } }),

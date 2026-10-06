@@ -17,14 +17,14 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
-import type { ServerCapabilities } from '@tallyui/core';
+import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
 import type { PosOrder } from '../pos-order/types';
 import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval } from './register-count.helpers';
-import { adoptRegisterResults } from './register-adoption';
-import { reconcileRegisterCommands, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
+import { abandonSession, adoptRegisterResults, takeOverSession } from './register-adoption';
+import { reconcileRegisterCommands, registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
 import * as store from './session-store';
@@ -119,6 +119,7 @@ type Reservation = RegisterBucket['closure_reservation'];
 type Snapshot = {
   rows: RegisterSession[]; closureRows: Closure[]; reservation: Reservation;
   entries: CashMovement[]; sales: PosOrder[];
+  open?: RegisterCommand;
 };
 
 const reservationOf = (register: RegisterDocument | null, storeKey: string, registerId: string) =>
@@ -190,9 +191,10 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
       return combineLatest([
         watchFresh(movements, { selector: { session_id: current.id } }),
         watchFresh(orders, { selector: { sessionId: current.id } }),
-      ]).pipe(map(([entries, sales]) => ({ rows, closureRows, reservation, entries, sales })));
+        commandTarget ? watchFresh(commandTarget.commands, { selector: { key: `session.open:${current.id}` } }) : of([]),
+      ]).pipe(map(([entries, sales, opens]) => ({ rows, closureRows, reservation, entries, sales, open: opens[0] })));
     }));
-  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId]);
+  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId, commandTarget]);
   // A latest-value ref: an `actions` object from an earlier render still sees the current flag.
   const tender = useRef(tenderInProgress);
   tender.current = tenderInProgress;
@@ -262,6 +264,12 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     }
   }, [data, source]);
   const session = data ? currentSession(data.rows, data.closureRows, data.reservation) : null;
+  const refusal = data?.open?.error?.data as RegisterSessionAlreadyOpenData | undefined;
+  const conflict = session?.status !== 'conflict' || !commandTarget ? undefined
+    : data?.open?.syncStatus === 'pending' && typeof data.open.payload.supersedes === 'string'
+      ? { sessionId: data.open.payload.supersedes, takingOver: true }
+      : data?.open?.syncStatus === 'rejected' && refusal
+        ? { sessionId: refusal.sessionId, openedAt: refusal.openedAt, openedBy: refusal.openedBy, deviceName: refusal.deviceName, takingOver: false } : undefined;
   const entries = data?.entries ?? [];
   const sales = data?.sales ?? [];
   const expected = session
@@ -293,6 +301,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
 
   return {
     session,
+    /** The other till's live session, or the session this till is waiting to take over. */
+    conflict,
     /** Any unknown session status in the current snapshot means the register needs upgrade. */
     needsUpgrade: data?.rows.some((row) => !store.isKnownSessionStatus(row.status)) ?? false,
     movements: entries,
@@ -314,6 +324,23 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     /** `requireOpen()`, returning `{ id, sessions }`: pass it to useSale's `startTender`, which pins it (the rendered `saleSession` can lag). */
     requireSaleSession,
     actions: {
+      takeOver: async () => {
+        if (!commandTarget) throw new RegisterSessionRequiredError();
+        const row = currentSession(await readFresh(commandTarget.sessions, { selector: { register_id: commandTarget.registerId } }),
+          await readFresh(commandTarget.closures, { selector: { register_id: commandTarget.registerId } }),
+          reservationOf(await readRegister(commandTarget.host), commandTarget.storeKey, commandTarget.registerId));
+        if (row?.status !== 'conflict') throw new RegisterSessionRequiredError();
+        if ((options.capabilities?.register ?? 0) < 2) throw new store.RegisterTakeOverError('REGISTER_TAKEOVER_UNSUPPORTED');
+        await takeOverSession({ ...commandTarget, sessionId: row.id });
+      },
+      chooseAnotherRegister: async () => {
+        if (!commandTarget) throw new RegisterSessionRequiredError();
+        const row = currentSession(await readFresh(commandTarget.sessions, { selector: { register_id: commandTarget.registerId } }),
+          await readFresh(commandTarget.closures, { selector: { register_id: commandTarget.registerId } }),
+          reservationOf(await readRegister(commandTarget.host), commandTarget.storeKey, commandTarget.registerId));
+        if (row?.status !== 'conflict') throw new RegisterSessionRequiredError();
+        await abandonSession({ ...commandTarget, sessionId: row.id });
+      },
       /**
        * Refuses with `RegisterSessionAlreadyOpenError` while the register has a live session or
        * another open is running (in any hook instance), and with `RegisterCloseIncompleteError`

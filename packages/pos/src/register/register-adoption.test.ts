@@ -4,11 +4,11 @@ import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { readFresh } from '../rxdb';
-import { adoptRegisterResults } from './register-adoption';
+import { abandonSession, adoptRegisterResults, takeOverSession } from './register-adoption';
 import { reconcileRegisterCommands, registerCommandCollection, type RegisterCommandCollection } from './register-commands';
 import { ensureRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
-import { closeSession, openSession, recordMovement, startCounting,
+import { closeSession, openSession, recordMovement, startCounting, RegisterSessionRequiredError, RegisterTakeOverError,
   type CashMovementCollection, type ClosureCollection, type RegisterSessionCollection } from './session-store';
 
 describe('adoptRegisterResults', () => {
@@ -32,6 +32,132 @@ describe('adoptRegisterResults', () => {
   const command = (id: string) => db.register_commands.findOne(`session.open:${id}`).exec(true);
   const stored = async (id: string) => (await db.register_sessions.storageInstance.findDocumentsById([id], false))[0];
   const refused = { syncStatus: 'rejected' as const, error: { code: 'register_session_already_open', message: 'Already open' } };
+  const now = '2026-10-06T12:00:00.000Z';
+  const takeOver = (sessionId: string) => takeOverSession({ commands: db.register_commands, sessions: db.register_sessions, sessionId, now });
+  const abandon = (sessionId: string) => abandonSession({ commands: db.register_commands, sessions: db.register_sessions, sessionId, now });
+  const conflict = async (sessionId: string) => {
+    await reconcile();
+    await (await command(sessionId)).incrementalPatch({ ...refused, error: { ...refused.error, data: { sessionId: 'other' } } });
+    await adopt();
+  };
+
+  it('take over requeues the refused open in its ledger place with a new command id, version 2 and supersedes, and keeps the session in conflict', async () => {
+    const s = await open();
+    await conflict(s.id);
+    const before = (await command(s.id)).toJSON();
+    const session = await stored(s.id);
+    await takeOver(s.id);
+    const after = (await command(s.id)).toJSON();
+    expect(after).toMatchObject({ key: before.key, seq: before.seq, version: 2, syncStatus: 'pending', updatedAt: now,
+      payload: { ...before.payload, sessionId: s.id, supersedes: 'other' } });
+    expect(after.commandId).not.toBe(before.commandId);
+    expect(after).not.toHaveProperty('error');
+    expect(await stored(s.id)).toStrictEqual(session);
+    expect(session.status).toBe('conflict');
+    await expect(takeOver(s.id)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+    expect((await command(s.id)).toJSON()).toStrictEqual(after);
+  });
+
+  it('take over refused a second time stays in conflict with the new data', async () => {
+    const s = await open();
+    await conflict(s.id);
+    const firstId = (await command(s.id)).commandId;
+    await takeOver(s.id);
+    const secondId = (await command(s.id)).commandId;
+    await (await command(s.id)).incrementalPatch({ ...refused, error: { ...refused.error,
+      data: { sessionId: 'other-2', deviceName: 'Back till' } } });
+    await adopt();
+    expect((await stored(s.id)).status).toBe('conflict');
+    expect((await command(s.id)).error?.data).toStrictEqual({ sessionId: 'other-2', deviceName: 'Back till' });
+    await takeOver(s.id);
+    expect((await command(s.id)).payload.supersedes).toBe('other-2');
+    expect([firstId, secondId]).not.toContain((await command(s.id)).commandId);
+  });
+
+  it('an applied take-over moves the session out of conflict', async () => {
+    const s = await open();
+    await conflict(s.id);
+    await takeOver(s.id);
+    await (await command(s.id)).incrementalPatch({ syncStatus: 'applied' });
+    await adopt();
+    expect((await stored(s.id)).status).toBe('open');
+    const before = (await command(s.id)).toJSON();
+    await expect(takeOver(s.id)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+    await expect(abandon(s.id)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+    expect((await command(s.id)).toJSON()).toStrictEqual(before);
+  });
+
+  it('abandon marks every pending command of the session register_session_abandoned, then the session abandoned', async () => {
+    const s = await open();
+    const movement = await recordMovement(db.register_sessions, db.cash_movements, db.closures,
+      { sessionId: s.id, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7' });
+    const other = await open();
+    await conflict(s.id);
+    const before = await stored(s.id);
+    const otherOpen = (await command(other.id)).toJSON();
+    const refusedOpen = (await command(s.id)).toJSON();
+    await abandon(s.id);
+    expect((await db.register_commands.findOne(`movement.record:${movement.id}`).exec(true)).toJSON()).toMatchObject({
+      syncStatus: 'rejected', error: { code: 'register_session_abandoned', message: 'The cashier chose another register.' }, updatedAt: now,
+    });
+    expect((await command(s.id)).toJSON()).toStrictEqual(refusedOpen);
+    expect((await command(other.id)).toJSON()).toStrictEqual(otherOpen);
+    const after = await stored(s.id);
+    expect({ ...after, _rev: before._rev, _meta: before._meta }).toStrictEqual({ ...before, status: 'abandoned' });
+  });
+
+  it('abandon while a take-over is pending refuses and writes nothing', async () => {
+    const s = await open();
+    await conflict(s.id);
+    await takeOver(s.id);
+    const session = await stored(s.id);
+    const rows = await readFresh(db.register_commands, { selector: {} });
+    await expect(abandon(s.id)).rejects.toEqual(new RegisterTakeOverError('REGISTER_TAKEOVER_PENDING'));
+    expect(await stored(s.id)).toStrictEqual(session);
+    expect(await readFresh(db.register_commands, { selector: {} })).toStrictEqual(rows);
+  });
+
+  it('a half-done abandon is finished by adoption', async () => {
+    const s = await open();
+    const movement = await recordMovement(db.register_sessions, db.cash_movements, db.closures,
+      { sessionId: s.id, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7' });
+    await startCounting(db.register_sessions, s.id);
+    await conflict(s.id);
+    await (await db.register_commands.findOne(`movement.record:${movement.id}`).exec(true)).incrementalPatch({
+      syncStatus: 'rejected', error: { code: 'register_session_abandoned', message: 'The cashier chose another register.' },
+    });
+    expect((await stored(s.id)).status).toBe('conflict');
+    await adopt();
+    expect((await stored(s.id)).status).toBe('abandoned');
+    const [transition] = await readFresh(db.register_commands, { selector: { type: 'register.session.transition' } });
+    expect(transition).toMatchObject({ syncStatus: 'rejected', error: { code: 'register_session_abandoned' } });
+  });
+
+  it('an abandoned session stays abandoned over its refused open', async () => {
+    const s = await open();
+    await conflict(s.id);
+    await abandon(s.id);
+    const before = await stored(s.id);
+    await abandon(s.id);
+    await adopt();
+    expect(await stored(s.id)).toStrictEqual(before);
+    expect(before.status).toBe('abandoned');
+  });
+
+  it('terminal and unknown statuses ignore a superseded rejection too', async () => {
+    for (const status of ['abandoned', 'later-state'] as const) {
+      const s = await db.register_sessions.insert({ id: status, register_id: 'register',
+        status: (status === 'abandoned' ? 'conflict' : status) as unknown as RegisterSession['status'],
+        opened_at_gmt: '2026-09-28T08:00:00.000Z', counted_float_minor: 10000 });
+      await reconcile();
+      if (status === 'abandoned') await s.incrementalPatch({ status: 'abandoned' });
+      const before = await stored(s.id);
+      await (await command(s.id)).incrementalPatch({ syncStatus: 'rejected', error: { code: 'register_session_superseded', message: 'Superseded' } });
+      await adopt();
+      expect(await stored(s.id)).toStrictEqual(before);
+      expect((await stored(s.id)).status).toBe(status);
+    }
+  });
 
   it('a refused open moves an open session to conflict, and running again writes nothing', async () => {
     const s = await open();
@@ -130,9 +256,10 @@ describe('adoptRegisterResults', () => {
   it('terminal statuses are never moved', async () => {
     const closed = await open();
     const superseded = await open();
-    const abandoned = await db.register_sessions.insert({ id: 'abandoned', register_id: 'register', status: 'abandoned',
+    const abandoned = await db.register_sessions.insert({ id: 'abandoned', register_id: 'register', status: 'conflict',
       opened_at_gmt: '2026-09-28T08:00:00.000Z', counted_float_minor: 10000 });
     await reconcile();
+    await abandoned.incrementalPatch({ status: 'abandoned' });
     await closeSession(db.register_sessions, closed.id, { counted: { cash: 10000 } });
     await (await command(superseded.id)).incrementalPatch({ syncStatus: 'rejected', error: { code: 'register_session_superseded', message: 'Superseded' } });
     await adopt();

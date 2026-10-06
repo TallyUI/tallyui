@@ -13,7 +13,7 @@ export {
 } from './register-document';
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register-document';
 export {
-  RegisterSessionRequiredError, RegisterSessionClosedError, RegisterNeedsUpgradeError, RegisterSessionConflictError, isKnownSessionStatus, RegisterMovementAmountError, RegisterMovementReasonError, RegisterMovementStrandedError, openSessionSelector,
+  RegisterSessionRequiredError, RegisterSessionClosedError, RegisterNeedsUpgradeError, RegisterSessionConflictError, RegisterTakeOverError, isKnownSessionStatus, RegisterMovementAmountError, RegisterMovementReasonError, RegisterMovementStrandedError, openSessionSelector,
   requireOpenSession, stampSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure,
 } from './session-store';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './session-store';
@@ -30,5 +30,5 @@ export { registerFactsLogger, recordRegisterFact, type Actor, type RegisterFact 
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError } from './use-register-session';
 export type { UseRegisterSessionOptions } from './use-register-session';
 export { registerCommandSchema, registerCommandCollection, registerCommandsLogger, sessionOpenCommand, sessionTransitionCommand, movementCommand, closureCommand, reconcileRegisterCommands } from './register-commands';
-export { adoptRegisterResults } from './register-adoption';
+export { adoptRegisterResults, takeOverSession, abandonSession } from './register-adoption';
 export type { RegisterCommand, RegisterCommandCollection } from './register-commands';

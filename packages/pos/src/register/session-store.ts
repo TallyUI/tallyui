@@ -58,6 +58,15 @@ export class RegisterSessionConflictError extends Error {
   }
 }
 
+export class RegisterTakeOverError extends Error {
+  constructor(readonly code: 'REGISTER_TAKEOVER_UNSUPPORTED' | 'REGISTER_TAKEOVER_PENDING') {
+    super(code === 'REGISTER_TAKEOVER_UNSUPPORTED'
+      ? 'This store cannot take over a register. Choose another register.'
+      : 'Taking over this register is still waiting for the store.');
+    this.name = 'RegisterTakeOverError';
+  }
+}
+
 /** ADR-068 6a: movement amounts must be safe integers, positive for paid_in/paid_out and zero for no_sale. */
 export class RegisterMovementAmountError extends Error {
   constructor(type: 'paid_in' | 'paid_out' | 'no_sale', amountMinor: number) {
