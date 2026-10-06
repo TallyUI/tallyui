@@ -1,11 +1,13 @@
 import { combinePullAdapters, ConnectorUnauthorizedError, type TallyConnector } from '@tallyui/core';
 
 import { wooProductSchema } from './schemas/products';
+import { wooCouponSchema } from './schemas/coupons';
 import { wooProductTraits } from './traits/product';
 import { wooProductSync } from './sync/products';
 import { wooProductReplication } from './replication/products';
 import { wooCatalogueReconcile } from './reconcile/catalogue';
 import { createWooReconcileFeed, MAX_IDS_PER_REQUEST } from './reconcile/feed';
+import { createWooCouponFeed, wooCouponReconcile } from './reconcile/coupons';
 import { createWooCustomers } from './customers';
 import { wooStoreSettings, readWooCapabilities } from './store-settings';
 import { version } from '../package.json';
@@ -43,6 +45,7 @@ export class WooMissingTokenError extends ConnectorUnauthorizedError {
 export function createWooCommerceConnector(): TallyConnector {
   // The catalogue reconcile's corrections reach `products` only through this pull adapter (#248).
   const catalogueFeed = createWooReconcileFeed();
+  const couponFeed = createWooCouponFeed();
   const customers = createWooCustomers();
   return {
     ...wooConnectorParts,
@@ -53,10 +56,12 @@ export function createWooCommerceConnector(): TallyConnector {
       // duplicates are matched by uuid, the primary key, not the store id (#331). legacyKey
       // reads an existing install's plain pull checkpoint as the product feed's, so it does not resync.
       products: combinePullAdapters({ products: wooProductReplication, reconcile: catalogueFeed.adapter }, { legacyKey: 'products', key: (doc: any) => doc.uuid }),
+      coupons: couponFeed.adapter,
     },
     reconcile: {
       // The feed's fetchByIds asks for at most this many ids per request; the runner budgets by requests.
       catalogue: { ...wooCatalogueReconcile(catalogueFeed), refetchBatchSize: MAX_IDS_PER_REQUEST },
+      coupons: { ...wooCouponReconcile(couponFeed), refetchBatchSize: MAX_IDS_PER_REQUEST },
     },
   };
 }
@@ -104,6 +109,7 @@ const wooConnectorParts = {
 
   schemas: {
     products: wooProductSchema,
+    coupons: wooCouponSchema,
   },
 
   traits: {
@@ -127,6 +133,9 @@ export { createWooCustomers, toWooCustomer } from './customers';
 export { createWooCommandTransport, toWooOrderPayload, type WooCommandTransportOptions } from './commands/transport';
 export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { wooProductSchema } from './schemas/products';
+export { wooCouponSchema } from './schemas/coupons';
+export { toCouponDocument } from './replication/coupons';
+export { wooCouponReconcile, wooCouponFingerprint, createWooCouponFeed } from './reconcile/coupons';
 export { wooProductTraits } from './traits/product';
 export { wooProductSync } from './sync/products';
 export { wooProductReplication, WooDateFilterError, WooTokenRefusedError, WooMissingUuidError, WooTillUpdateRequiredError } from './replication/products';
