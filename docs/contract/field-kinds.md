@@ -160,6 +160,11 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
 
 ## `order.create`
 
+Version 5 (ADR-075) adds fees, shipping and custom lines. “Recorded” fields use
+the existing instruction (honoured by recording) kind. Charge identities are
+stable per order and link each display row to its payload entry. Display mode
+must equal the order's tax mode when charges are present; subtotal excludes charges.
+
 | Field | Kind | Since |
 |---|---|---|
 | `payload.clientOrderId` | instruction | 1 |
@@ -174,6 +179,22 @@ The same seven fields in `CommandEnvelope` (`order.create`) and
 | `payload.lines[].unitPriceMinor` | instruction | 1 |
 | `payload.lines[].taxInclusive` | instruction | 1 (ADR-038 amendment 2, without a version bump) |
 | `payload.lines[].discountMinor` | instruction | 2 (net from 4, see Amounts) |
+| `payload.lines[].custom` | instruction (non-catalogue line, no variantId; takes discounts) | 5 |
+| `payload.lines[].custom.name` | instruction (honoured by recording), 1–255 characters | 5 |
+| `payload.lines[].custom.sku` | instruction (honoured by recording), optional, ≤ 64 characters | 5 |
+| `payload.lines[].custom.taxStatus` | instruction (`taxable` or `none`) | 5 |
+| `payload.lines[].custom.taxClass` | instruction (absent means standard), ≤ 64 characters | 5 |
+| `payload.fees`, `payload.shipping` | instruction (omitted when none; never discounted) | 5 |
+| `payload.fees[].clientFeeId`, `payload.shipping[].clientShippingId` | identity (UUID, stable per order, ≤ 36 characters) | 5 |
+| `payload.fees[].name`, `payload.shipping[].name` | instruction (honoured by recording), 1–255 characters | 5 |
+| `payload.fees[].amountMinor`, `payload.shipping[].amountMinor` | instruction (integer ≥ 0 in the order's tax mode) | 5 |
+| `payload.fees[].taxStatus`, `payload.shipping[].taxStatus` | instruction (`taxable` or `none`) | 5 |
+| `payload.fees[].taxClass`, `payload.shipping[].taxClass` | instruction (absent means standard), ≤ 64 characters | 5 |
+| `payload.fees[].taxMinor`, `payload.shipping[].taxMinor` | informational (integer ≥ 0; server differences give total_mismatch) | 5 |
+| `payload.shipping[].methodId` | instruction (honoured by recording), ≤ 64 characters; absent means POS-entered | 5 |
+| `payload.display.fees`, `payload.display.shipping` | instruction (honoured by recording), one row per payload charge | 5 |
+| `payload.display.fees[].clientFeeId`, `payload.display.shipping[].clientShippingId` | identity (matches the payload charge) | 5 |
+| `payload.display.fees[].amountMinor`, `payload.display.shipping[].amountMinor` | instruction (honoured by recording), integer in display mode, equal to payload charge | 5 |
 | `payload.subtotalMinor` | informational | 1 |
 | `payload.discountMinor` | instruction | 2 (net from 4, see Amounts) |
 | `payload.taxMinor` | informational | 1 |
