@@ -411,14 +411,20 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     /** Resumes a draft into an empty cart; resolves to a refusal message, or null once resumed. */
     async resume(draftId: string): Promise<string | null> {
       if (locked()) return SALE_SAVING;
-      if (!opts.drafts) throw new Error('useSale: park() needs the drafts option');
-      if (stageNow.current.kind !== 'cart' || builderNow.current.getSnapshot().lineItems.length) return 'Park or clear the current sale first';
+      if (!opts.drafts) throw new Error('useSale: resume() needs the drafts option');
+      const live = builderNow.current;
+      const liveSnapshot = live.getSnapshot();
+      if (stageNow.current.kind !== 'cart' || liveSnapshot.lineItems.length) return 'Park or clear the current sale first';
       const doc = await opts.drafts.findOne(draftId).exec();
       if (!doc) return 'That parked sale is no longer there';
       const saved: Order = JSON.parse(doc.toJSON().data);
       if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
       const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext });
       await doc.remove();
+      if (builderNow.current !== live || live.getSnapshot() !== liveSnapshot) {
+        await writeOrderDraft(opts.drafts, saved);
+        return 'The sale changed while it was being resumed; resume it again';
+      }
       resetSale(null, builder);
       return null;
     },

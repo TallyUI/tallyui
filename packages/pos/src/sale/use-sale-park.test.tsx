@@ -99,6 +99,37 @@ describe('useSale park and resume', () => {
     expect(JSON.parse(drafts[0].toJSON().data)).toEqual(JSON.parse(JSON.stringify(before)));
   });
 
+  it('refuses to replace a cart that changed while resuming', async () => {
+    const { result } = renderSale();
+    act(() => result.current.add(entries[0], traits));
+    const before = result.current.order;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const findOne = db.pos_drafts.findOne.bind(db.pos_drafts);
+    vi.spyOn(db.pos_drafts, 'findOne').mockImplementation(((id: string) => {
+      const query = findOne(id);
+      const exec = query.exec.bind(query);
+      query.exec = (async () => {
+        await gate;
+        return exec();
+      }) as typeof query.exec;
+      return query;
+    }) as typeof findOne);
+    let resuming!: Promise<string | null>;
+    act(() => { resuming = result.current.resume(before.id); });
+    act(() => result.current.add(entries[1], traits));
+    await act(async () => {
+      release();
+      expect(await resuming).toBe('The sale changed while it was being resumed; resume it again');
+    });
+    expect(result.current.order.lineItems.map((line) => line.variantId)).toEqual(['red']);
+    const draft = await db.pos_drafts.findOne(before.id).exec();
+    expect(draft).not.toBeNull();
+    expect(draft!.toJSON().id).toBe(before.id);
+    expect(JSON.parse(draft!.toJSON().data)).toEqual(JSON.parse(JSON.stringify(before)));
+  });
+
   it('restores the order id, lines, quantities, prices and discounts, and removes the draft', async () => {
     const { result } = renderSale();
     addSaleLines(result);
