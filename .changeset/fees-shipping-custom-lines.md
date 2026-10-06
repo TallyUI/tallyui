@@ -1,5 +1,5 @@
 ---
-'@tallyui/pos': minor
+'@tallyui/pos': patch
 ---
 
 Fees, shipping and custom lines on the order (ADR-075 phase a):
