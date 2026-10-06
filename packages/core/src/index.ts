@@ -78,3 +78,4 @@ export {
 } from './context/connector-context';
 export type { ConnectorProviderProps } from './context/connector-context';
 export * as woocommerceTax from './tax/woocommerce';
+export * as woocommerceCoupons from './coupons/woocommerce';
