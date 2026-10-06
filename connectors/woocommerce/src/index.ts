@@ -6,6 +6,7 @@ import { wooProductSync } from './sync/products';
 import { wooProductReplication } from './replication/products';
 import { wooCatalogueReconcile } from './reconcile/catalogue';
 import { createWooReconcileFeed, MAX_IDS_PER_REQUEST } from './reconcile/feed';
+import { createWooCustomers } from './customers';
 import { version } from '../package.json';
 
 /** One part of X-WCPOS-Client as WCPOS keeps it: lowercase [a-z0-9._-], at most 32 characters. */
@@ -41,8 +42,11 @@ export class WooMissingTokenError extends ConnectorUnauthorizedError {
 export function createWooCommerceConnector(): TallyConnector {
   // The catalogue reconcile's corrections reach `products` only through this pull adapter (#248).
   const catalogueFeed = createWooReconcileFeed();
+  const customers = createWooCustomers();
   return {
     ...wooConnectorParts,
+    // WCPOS wcpos/v2/customers, push/customers and orders/<id>/email.
+    ...customers,
     replication: {
       // One replication per collection; the reconcile feed is last, so its fetch wins duplicates;
       // duplicates are matched by uuid, the primary key, not the store id (#331). legacyKey
@@ -115,6 +119,7 @@ const wooConnectorParts = {
 export const woocommerceConnector: TallyConnector = createWooCommerceConnector();
 
 // Re-export pieces for advanced usage
+export { createWooCustomers, toWooCustomer } from './customers';
 export { createWooCommandTransport, toWooOrderPayload, type WooCommandTransportOptions } from './commands/transport';
 export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { wooProductSchema } from './schemas/products';
