@@ -50,7 +50,7 @@ import type { LogEntry } from '../logging';
 import { addPosOrderCollection } from '../pos-order/open';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
 import { registerFactsLogger } from './facts';
-import { registerCommandCollection, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
+import { reconcileRegisterCommands, registerCommandCollection, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
 import { readFresh } from '../rxdb';
 import { ensureRegister, readRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
@@ -229,6 +229,47 @@ it('an open session is current over a conflict row', async () => {
 describe('register commands', () => {
   const ledger = async () => (await readFresh(db.register_commands, { selector: {} })).sort((a, b) => a.seq - b.seq);
   const keys = async () => (await ledger()).map((row) => row.key);
+
+  it('a refused open seen while mounted makes the session conflict: current, not sellable', async () => {
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 2 } });
+    let id = '';
+    await act(async () => { id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${id}`]));
+    await act(async () => {
+      await (await db.register_commands.findOne(`session.open:${id}`).exec(true)).incrementalPatch({
+        syncStatus: 'rejected', error: { code: 'register_session_already_open', message: 'Already open', data: { sessionId: 'other' } },
+      });
+    });
+    await waitFor(() => expect(result.current.session?.status).toBe('conflict'));
+    expect(result.current.session?.id).toBe(id);
+    expect(result.current.saleSession).toBeUndefined();
+  });
+
+  it('a restart over a refused open derives conflict from the stored rows', async () => {
+    const s = await db.register_sessions.insert({ id: 'restart', register_id: 'register', status: 'open',
+      opened_at_gmt: '2026-09-28T08:00:00.000Z', counted_float_minor: 10000 });
+    await reconcileRegisterCommands({ commands: db.register_commands, sessions: db.register_sessions,
+      movements: db.cash_movements, closures: db.closures, host: db.register_sessions, storeKey: 'store', registerId: 'register' });
+    await (await db.register_commands.findOne(`session.open:${s.id}`).exec(true)).incrementalPatch({
+      syncStatus: 'rejected', error: { code: 'register_session_already_open', message: 'Already open' },
+    });
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 2 } });
+    await waitFor(() => expect(result.current.session?.status).toBe('conflict'));
+  });
+
+  it('with register commands disabled, adoption never runs', async () => {
+    const s = await seed();
+    await reconcileRegisterCommands({ commands: db.register_commands, sessions: db.register_sessions,
+      movements: db.cash_movements, closures: db.closures, host: db.register_sessions, storeKey: 'store', registerId: 'register' });
+    await (await db.register_commands.findOne(`session.open:${s.id}`).exec(true)).incrementalPatch({
+      syncStatus: 'rejected', error: { code: 'register_session_already_open', message: 'Already open' },
+    });
+    const read = vi.spyOn(db.register_commands.storageInstance, 'query');
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1 } });
+    await waitFor(() => expect(result.current.session?.status).toBe('open'));
+    expect(read).not.toHaveBeenCalled();
+    expect((await readFresh(db.register_sessions, { selector: { id: s.id } }))[0].status).toBe('open');
+  });
 
   it("a register v2 store records a version 2 open carrying the app's device name", async () => {
     const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 2 }, deviceName: 'Front till' });

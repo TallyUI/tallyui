@@ -23,6 +23,7 @@ import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval } from './register-count.helpers';
+import { adoptRegisterResults } from './register-adoption';
 import { reconcileRegisterCommands, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
@@ -170,6 +171,13 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     });
   };
   useEffect(reconcile, [commandTarget]);
+  useEffect(() => {
+    if (!commandTarget) return;
+    const subscription = commandTarget.commands.find({ selector: { registerId: commandTarget.registerId } }).$.subscribe(() => {
+      void adoptRegisterResults(commandTarget);
+    });
+    return () => subscription.unsubscribe();
+  }, [commandTarget]);
   const source = useMemo(() => {
     if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register) return null;
     return combineLatest([

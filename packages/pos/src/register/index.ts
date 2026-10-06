@@ -30,4 +30,5 @@ export { registerFactsLogger, recordRegisterFact, type Actor, type RegisterFact 
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError } from './use-register-session';
 export type { UseRegisterSessionOptions } from './use-register-session';
 export { registerCommandSchema, registerCommandCollection, registerCommandsLogger, sessionOpenCommand, sessionTransitionCommand, movementCommand, closureCommand, reconcileRegisterCommands } from './register-commands';
+export { adoptRegisterResults } from './register-adoption';
 export type { RegisterCommand, RegisterCommandCollection } from './register-commands';
