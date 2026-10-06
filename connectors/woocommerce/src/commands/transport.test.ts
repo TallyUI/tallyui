@@ -74,24 +74,43 @@ describe('createWooCommandTransport', () => {
     }]]) } });
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(JSON.parse(fetch.mock.calls[0][1]!.body as string).payload.line_items).toEqual([
-      { product_id: 80, quantity: 1, subtotal: '3.00', total: '2.00' },
+      { product_id: 80, quantity: 1, subtotal: '2.00', total: '2.00' },
       { product_id: 80, quantity: 1, subtotal: '2.727273', total: '2.727273' },
     ]);
   });
 
-  it.each(['discounted', 'missing order', 'missing line', 'missing net', 'too fine', 'negative'] as const)(
+  it.each(['stored', 'missing'] as const)('pushes a discounted inclusive line only with %s net', async (kind) => {
+    const envelope = order();
+    envelope.payload.pricesIncludeTax = true;
+    envelope.payload.lines[0].discountMinor = 100;
+    const local: WooLocalOrder = { lines: [{ id: envelope.payload.lines[0].clientLineId,
+      netMicros: kind === 'stored' ? '181818200' : undefined }] };
+    const { transport, fetch } = setup(response());
+    const result = await transport.send([envelope], { local: { orders: new Map([[envelope.id, local]]) } });
+    if (kind === 'stored') {
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(fetch.mock.calls[0][1]!.body as string).payload.line_items).toEqual([
+        { product_id: 80, quantity: 1, subtotal: '1.818182', total: '1.818182' },
+      ]);
+    } else {
+      expect(result).toEqual({ kind: 'results', results: [{ id: envelope.id, status: 'rejected', error: {
+        code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till.",
+      } }] });
+      expect(fetch).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(['missing order', 'missing line', 'missing net', 'too fine', 'negative'] as const)(
     'refuses an inclusive line with %s without a request', async (kind) => {
       const envelope = order();
       envelope.payload.pricesIncludeTax = true;
       const id = envelope.payload.lines[0].clientLineId;
-      if (kind === 'discounted') envelope.payload.lines[0].discountMinor = 1;
       const local: WooLocalOrder = { lines: [{ id: kind === 'missing line' ? 'other' : id,
         netMicros: kind === 'missing net' ? undefined : kind === 'too fine' ? '2727272701'
           : kind === 'negative' ? '-100' : '2727272700' }] };
       const context = kind === 'missing order' ? undefined : { local: { orders: new Map([[envelope.id, local]]) } };
       const code = kind === 'too fine' || kind === 'negative' ? 'invalid_payload' : 'unsupported_tax_mode';
-      const message = kind === 'discounted' ? 'Discounted tax-inclusive lines are not supported for WooCommerce yet.'
-        : kind === 'too fine' ? `Line ${id} has a net finer than 6 decimals.`
+      const message = kind === 'too fine' ? `Line ${id} has a net finer than 6 decimals.`
           : kind === 'negative' ? `Line ${id} has a negative net.`
             : "Tax-inclusive prices need the till's WooCommerce tax figures; update the till.";
       const { transport, fetch } = setup();
@@ -288,7 +307,7 @@ describe('createWooCommandTransport', () => {
     envelope.payload.lines = [{ clientLineId: 'custom', quantity: 2, unitPriceMinor: 500, discountMinor: 100,
       custom: { name: 'Gift wrap', sku: 'WRAP', taxStatus: 'taxable', taxClass: 'reduced-rate' } }];
     expect(toWooOrderPayload(envelope)).toMatchObject({ payload: { line_items: [{
-      product_id: 0, name: 'Gift wrap', sku: 'WRAP', quantity: 2, subtotal: '10.00', total: '9.00', tax_class: 'reduced-rate',
+      product_id: 0, name: 'Gift wrap', sku: 'WRAP', quantity: 2, subtotal: '9.00', total: '9.00', tax_class: 'reduced-rate',
       meta_data: [{ key: '_woocommerce_pos_data', value: '{"price":"5.00","regular_price":"5.00","tax_status":"taxable"}' }],
     }] } });
   });
@@ -302,7 +321,7 @@ describe('createWooCommandTransport', () => {
     const local: WooLocalOrder = { lines: [{ id: 'custom', netMicros: '272727300' }] };
     const { transport, fetch } = setup(response());
     const result = await transport.send([envelope], kind === 'missing' ? undefined : { local: { orders: new Map([[envelope.id, local]]) } });
-    if (kind === 'stored') {
+    if (kind !== 'missing') {
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(JSON.parse(fetch.mock.calls[0][1]!.body as string).payload.line_items).toEqual([{
         product_id: 0, name: 'Gift wrap', quantity: 1, subtotal: '2.727273', total: '2.727273', tax_class: '',
@@ -310,8 +329,7 @@ describe('createWooCommandTransport', () => {
       }]);
     } else {
       expect(result).toMatchObject({ kind: 'results', results: [{ status: 'rejected', error: { code: 'unsupported_tax_mode',
-        message: kind === 'discounted' ? 'Discounted tax-inclusive lines are not supported for WooCommerce yet.'
-          : "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } }] });
+        message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } }] });
       expect(fetch).not.toHaveBeenCalled();
     }
   });
@@ -370,7 +388,15 @@ describe('createWooCommandTransport', () => {
     const envelope = order();
     Object.assign(envelope.payload.lines[0], { unitPriceMinor: 500, quantity: 2, discountMinor: 100 });
     expect(toWooOrderPayload(envelope)).toMatchObject({ payload: {
-      line_items: [{ product_id: 80, quantity: 2, subtotal: '10.00', total: '9.00' }],
+      line_items: [{ product_id: 80, quantity: 2, subtotal: '9.00', total: '9.00' }],
+    } });
+  });
+
+  it('pushes an exclusive discount as a price override for multiple units', () => {
+    const envelope = order();
+    Object.assign(envelope.payload.lines[0], { unitPriceMinor: 100, quantity: 3, discountMinor: 100 });
+    expect(toWooOrderPayload(envelope)).toMatchObject({ payload: {
+      line_items: [{ product_id: 80, quantity: 3, subtotal: '2.00', total: '2.00' }],
     } });
   });
 

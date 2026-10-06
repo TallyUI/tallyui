@@ -68,12 +68,9 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   };
   const line_items = [];
   for (const line of p.lines) {
-    let subtotal = major(line.unitPriceMinor * line.quantity);
     let total = major(line.unitPriceMinor * line.quantity - (line.discountMinor ?? 0));
+    let subtotal = total;
     if (line.taxInclusive ?? p.pricesIncludeTax) {
-      if ((line.discountMinor ?? 0) > 0) {
-        return { error: { code: 'unsupported_tax_mode', message: 'Discounted tax-inclusive lines are not supported for WooCommerce yet.' } };
-      }
       const net = inclusiveNet(local?.lines.find((stored) => stored.id === line.clientLineId)?.netMicros, line.clientLineId);
       if (typeof net !== 'string') return net;
       subtotal = total = net;
