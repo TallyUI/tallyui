@@ -75,6 +75,11 @@ describe('tenderVoidSchema', () => {
     await expect(collection.insert({ ...full, type: 'sale' } as unknown as TenderVoid)).rejects.toThrow();
   });
 
+  it('stores a method outside today\'s payment-method kinds', async () => {
+    await expect(collection.insert({ ...full, method: 'card_present' } as unknown as TenderVoid)).resolves.toBeDefined();
+    expect((await collection.findOne(full.paymentId).exec())!.toJSON().method).toBe('card_present');
+  });
+
   it('rejects a record without deviceTz', async () => {
     const invalid: Partial<TenderVoid> = { ...full };
     delete invalid.deviceTz;

@@ -41,7 +41,8 @@ export const tenderVoidSchema: RxJsonSchema<TenderVoid> = {
     paymentId: { type: 'string', maxLength: 64 },
     saleId: { type: 'string', maxLength: 64 },
     type: { type: 'string', enum: ['void'], maxLength: 4 },
-    method: { type: 'string', enum: ['cash', 'external'] },
+    // Not an enum: PaymentMethodKind grows, and a stored enum would need a schema migration per new kind.
+    method: { type: 'string', maxLength: 32 },
     amountMinor: { type: 'integer' },
     tenderedMinor: { type: 'integer' },
     reference: { type: 'string' },
