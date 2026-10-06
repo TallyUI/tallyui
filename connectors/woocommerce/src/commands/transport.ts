@@ -57,7 +57,8 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope): { payload: Rec
 
 export function createWooCommandTransport(options: WooCommandTransportOptions): { send(batch: OrderCreateEnvelope[]): Promise<WooTransportOutcome> } {
   const fetch = options.fetch ?? globalThis.fetch;
-  const baseUrl = options.baseUrl.replace(/\/+$/, '');
+  let baseUrl = options.baseUrl;
+  while (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
   return {
     async send(batch) {
       const results: CommandResult[] = [];

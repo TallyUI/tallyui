@@ -40,6 +40,17 @@ describe('wooMinorFromDecimal', () => {
 });
 
 describe('createWooCommandTransport', () => {
+  it('removes every trailing slash from the base URL', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response());
+    const transport = createWooCommandTransport({
+      baseUrl: 'https://shop.test/wp-json/wcpos/v2//', getHeaders: () => ({}), fetch,
+    });
+    await transport.send([order()]);
+    expect(fetch).toHaveBeenCalledWith(
+      'https://shop.test/wp-json/wcpos/v2/push/orders', expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   it('posts the paid cash spike envelope and returns the authoritative order without warnings', async () => {
     const envelope = order();
     const { transport, fetch } = setup(response());
