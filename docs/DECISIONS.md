@@ -4462,6 +4462,19 @@ interface OrderCreatePayload {
   cent (1.00 inclusive with two 5% rates: rows 5 + 5, order tax 9). By this ADR's rule that order-math totals win,
   the last rate row takes the residue, bounded by ⌊rows / 2⌋ + 1 (`woocommerceTaxByRate`); anything beyond the bound
   throws.
+- **Evidence note (front desk ruling, 2026-10-06): the inclusive cent is WooCommerce's own, so nothing changes.**
+  WooCommerce 11.1.1 was run on the dev store with prices including tax and round-at-subtotal off. On two carts it
+  charged the same cent as the till:
+  - Cart 1 is 1.00 with two 5% rates: 1.01.
+  - Cart 2 is 2 × 3.00 standard less 10% with 3.50 reduced, then 10% on the order: 8.02.
+  - Woo gave those totals at storefront checkout and again after the wp-admin Recalculate code path.
+  - The till stored the same cent (orders 201 and 208).
+  - With round-at-subtotal on, Woo gives 1.00 and 8.01.
+
+  So this ADR stands: no inclusive-discount gate, no search for a net that totals the shelf price, and no server
+  hook. Evidence files, both outside this repo:
+  - `~/agent/handoff/inclusive-cent-2026-10-06/reference-orders.md` (the orders and how each was taken);
+  - `~/agent/handoff/inclusive-cent-2026-10-06/woocommerce-pos-facts.md` (Woo's code path, cited by file and line).
 
 ## ADR-077 WooCommerce discounts as price overrides, then coupons (G6)
 
