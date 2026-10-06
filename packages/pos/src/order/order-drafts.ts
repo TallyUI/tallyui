@@ -65,6 +65,8 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   for (const line of saved.lineItems) {
     const lineId = builder.addLine({
       productId: line.productId,
+      custom: line.custom,
+      taxStatus: line.taxStatus,
       variantId: line.variantId,
       name: line.name,
       sku: line.sku,
@@ -82,6 +84,9 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       });
     }
   }
+
+  for (const fee of saved.fees ?? []) builder.addFee(fee);
+  for (const charge of saved.shipping ?? []) builder.addShipping(charge);
 
   // Restore order-level discounts
   for (const discount of saved.discounts) {

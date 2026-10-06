@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
-import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
-import { finalizeOrder, type PosOrder } from '../pos-order';
+import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
+import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
 import { useTax } from '../tax';
@@ -137,12 +137,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   }, [rendered]);
   // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
   // a sale in progress (lines, tender or receipt) finishes on the settings it started with (a money rule).
-  const idle = stage.kind === 'cart' && !order.lineItems.length;
+  const idle = stage.kind === 'cart' && !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
   // A layout effect, on live idleness (#301): it runs inside the settings' commit, before any tap can be handled, and
   // the rendered `idle` would miss a line added since this render (it would then be dropped with the old builder).
   useLayoutEffect(() => {
     const live = builderNow.current.getSnapshot();
-    const liveIdle = stageNow.current.kind === 'cart' && !live.lineItems.length && !inFlight.current && !pending.current;
+    const liveIdle = stageNow.current.kind === 'cart' && !live.lineItems.length && !live.fees?.length && !live.shipping?.length && !inFlight.current && !pending.current;
     if (liveIdle && (madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency)) resetSale(live.customer ?? null);
   });
   // A screen that unmounts (medusapos: Sign out) mid-save must still leave a trace of the loss.
@@ -275,6 +275,50 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       }
     },
     setQuantity(lineId: string, quantity: number) { if (!locked()) builderNow.current.updateQuantity(lineId, quantity); },
+    /** ADR-075: adds a fee; returns its id or the builder's refusal. */
+    addFee(input: ChargeInput): { id: string } | string {
+      if (locked()) return SALE_SAVING;
+      try { return { id: builderNow.current.addFee(input) }; }
+      catch (error) { if (error instanceof Error) return error.message; throw error; }
+    },
+    /** ADR-075: updates a fee; returns a refusal or null. */
+    updateFee(id: string, patch: Partial<ChargeInput>): string | null {
+      if (locked()) return SALE_SAVING;
+      try { builderNow.current.updateFee(id, patch); return null; }
+      catch (error) { if (error instanceof Error) return error.message; throw error; }
+    },
+    /** ADR-075: removes a fee; returns a refusal or null. */
+    removeFee(id: string): string | null {
+      if (locked()) return SALE_SAVING;
+      try { builderNow.current.removeFee(id); return null; }
+      catch (error) { if (error instanceof Error) return error.message; throw error; }
+    },
+    /** ADR-075: adds shipping; returns its id or the builder's refusal. */
+    addShipping(input: ChargeInput & { methodId?: string }): { id: string } | string {
+      if (locked()) return SALE_SAVING;
+      try { return { id: builderNow.current.addShipping(input) }; }
+      catch (error) { if (error instanceof Error) return error.message; throw error; }
+    },
+    /** ADR-075: updates shipping; returns a refusal or null. */
+    updateShipping(id: string, patch: Partial<ChargeInput & { methodId?: string }>): string | null {
+      if (locked()) return SALE_SAVING;
+      try { builderNow.current.updateShipping(id, patch); return null; }
+      catch (error) { if (error instanceof Error) return error.message; throw error; }
+    },
+    /** ADR-075: removes shipping; returns a refusal or null. */
+    removeShipping(id: string): string | null {
+      if (locked()) return SALE_SAVING;
+      try { builderNow.current.removeShipping(id); return null; }
+      catch (error) { if (error instanceof Error) return error.message; throw error; }
+    },
+    /** ADR-075: adds a distinct custom product line; returns its id or the builder's refusal. */
+    addCustomLine(input: { name: string; priceMinor: number; quantity?: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; sku?: string }): { id: string } | string {
+      if (locked()) return SALE_SAVING;
+      try {
+        return { id: builderNow.current.addLine({ ...input, custom: true, productId: `custom:${uuidv7()}`,
+          unitPrice: { amount: input.priceMinor, currency: madeWith.current.currency.toUpperCase() } }) };
+      } catch (error) { if (error instanceof Error) return error.message; throw error; }
+    },
     /** Sets a line's unit price in minor units of its own tax mode, recomputing discounts and tax; returns a refusal or null. */
     setUnitPrice(lineId: string, amountMinor: number): string | null {
       if (locked()) return SALE_SAVING;
@@ -435,7 +479,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       if (stageNow.current.kind !== 'cart') return 'Finish or cancel the payment before parking the sale';
       const builder = builderNow.current;
       const snapshot = builder.getSnapshot();
-      if (!snapshot.lineItems.length) return 'There is nothing to park';
+      if (!snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length) return 'There is nothing to park';
       await writeOrderDraft(opts.drafts, snapshot);
       if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       resetSale(null);
@@ -447,7 +491,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       if (!opts.drafts) throw new Error('useSale: resume() needs the drafts option');
       const live = builderNow.current;
       const liveSnapshot = live.getSnapshot();
-      if (stageNow.current.kind !== 'cart' || liveSnapshot.lineItems.length) return 'Park or clear the current sale first';
+      if (stageNow.current.kind !== 'cart' || liveSnapshot.lineItems.length || liveSnapshot.fees?.length || liveSnapshot.shipping?.length) return 'Park or clear the current sale first';
       const doc = await opts.drafts.findOne(draftId).exec();
       if (!doc) return 'That parked sale is no longer there';
       const saved: Order = JSON.parse(doc.toJSON().data);
