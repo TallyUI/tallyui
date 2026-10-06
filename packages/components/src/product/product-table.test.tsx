@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Text } from 'react-native';
 import { ConnectorProvider } from '@tallyui/core';
+import { medusaConnector } from '@tallyui/connector-medusa';
 import { ProductTable, type ProductTableProps } from './product-table';
 import { createTestConnector, wooDoc } from '../__tests__/helpers';
 
@@ -56,6 +57,28 @@ describe('ProductTable', () => {
     render(table());
     fireEvent.click(screen.getByTestId('product-table-sort-price'));
     expect(rowIds()).toEqual(['product-row-2', 'product-row-3', 'product-row-1']);
+  });
+
+  it('sorts Stock by the provider stock overlay, not the raw document', () => {
+    const docA = { id: 'a', title: 'Alpha', status: 'published', variants: [
+      { id: 'variant-a', title: 'Alpha', sku: 'ALPHA', prices: [{ amount: 20, currency_code: 'eur' }],
+        manage_inventory: true, inventory_items: [{ inventory_item_id: 'inv-a', required_quantity: 1,
+          inventory: { location_levels: [{ stocked_quantity: 5, reserved_quantity: 0 }] } }] },
+    ] };
+    const docB = { id: 'b', title: 'Beta', status: 'published', variants: [
+      { id: 'variant-b', title: 'Beta', sku: 'BETA', prices: [{ amount: 20, currency_code: 'eur' }],
+        manage_inventory: true, inventory_items: [{ inventory_item_id: 'inv-b', required_quantity: 1,
+          inventory: { location_levels: [{ stocked_quantity: 9, reserved_quantity: 0 }] } }] },
+    ] };
+    expect(medusaConnector.traits.product.getStock(docA).quantity).toBe(5);
+    const overlay = new Map([['inv-a', [{ stocked_quantity: 20, reserved_quantity: 0 }]]]);
+    render(
+      <ConnectorProvider connector={medusaConnector} traitContext={{ currency: 'EUR' }} stockOverlay={overlay}>
+        <ProductTable items={[docA, docB]} />
+      </ConnectorProvider>,
+    );
+    fireEvent.click(screen.getByTestId('product-table-sort-stock'));
+    expect(rowIds()).toEqual(['product-row-b', 'product-row-a']);
   });
 
   it('reports controlled sort presses but follows only the sort prop', () => {
