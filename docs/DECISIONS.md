@@ -4633,8 +4633,8 @@ interface OrderCreatePayload {
     - It checks the builder's `discount_total` and `discount_tax` against `calculateOrderTotals`.
     - It restates the cart-level scenarios of settle's upstream tests as builder tests: the missing-coupon gate,
       validation of the candidate codes, no partial patch, and money compared by value.
-- **Amendment 4 (2026-10-07, proposed): phase (d) in five steps (#501).** Phase (b) is complete with part 5
-  (#510). Each step below is one spec and one PR. Two rulings are open, listed after the steps.
+- **Amendment 4 (2026-10-07): phase (d) in five steps (#501).** Phase (b) is complete with part 5 (#510). Each step
+  below is one spec and one PR. The front desk ruled on R1 and R2 the same day; the rulings follow the steps.
   - **(d1) The builder computes coupons.** Two-way; `packages/pos` and the WooCommerce connector's store settings.
     - **Input.** `createOrderBuilder` takes an optional coupon context: a lookup from code to the engine's
       `CouponDiscountConfig` (built with `toCouponConfigs` from the `coupons` collection), the product categories,
@@ -4669,14 +4669,24 @@ interface OrderCreatePayload {
     - `coupon_lines: [{ code }]` and each line's `_woocommerce_pos_data` intent.
     - A refusal maps to `coupon_invalid` and keeps the store's own code (amendment 2). The refused sale reopens as a
       parked sale with the coupon removed (Q3).
-    - Coupons are sent only to a store whose woocommerce-pos has the `get_subtotal()` filter (amendment 1).
+    - Coupons are sent only to a store whose woocommerce-pos has the `get_subtotal()` filter (amendment 1, R2).
   - **(d5) Same-register reuse.** After (d4). The local usage overlay counts a successful coupon order at once, and
     the coupon is refetched by id (amendment 2).
-  - **Open rulings:**
-    - **R1.** Does (d2) carry G-V2's line `attributes` in the same v9 bump, as the front desk's earlier ruling on
-      #495 suggests?
-    - **R2.** Which woocommerce-pos version ships the `get_subtotal()` filter? (d4)'s gate needs it, and it is
-      still unrecorded (amendment 1). This is the WooCommerce lane's to answer.
+  - **Rulings (front desk, 2026-10-07):**
+    - **R1, one bump.** (d2) is a single `pos_orders` v9 that carries the order's coupons and #495's line
+      `attributes`. It gets one needs-paul write-up naming both, with the migration path and what older builds see.
+      There is no second bump this minor.
+    - **R2, fail closed behind a capability.**
+      - Which woocommerce-pos version ships the `get_subtotal()` filter is the WooCommerce lane's to answer.
+      - Until then, coupons sit behind a capability check (ADR 0006). With no filter known, the store gets no
+        `coupon_lines`.
+      - This lane's choice, between creating the order without the coupon and refusing: **refuse, with a clear
+        reason.** An order created without `coupon_lines` would record full price on the store while the customer
+        paid the discounted total. So:
+        - (d3) refuses `applyCoupon` with a "this store's plugin does not support coupons yet" reason when the
+          capability is absent;
+        - (d4) refuses a sale that still carries a coupon if the capability is gone by push time, and it takes Q3's
+          path: the order is reopened as a parked sale with the coupon removed and the reason shown.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
