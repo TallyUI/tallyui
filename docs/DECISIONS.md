@@ -4317,6 +4317,18 @@ interface OrderCreatePayload {
   - **vendurepos plugin:** the same.
   - Until a store advertises 5, its tills refuse only fees, shipping and custom lines at finalize, naming the
     upgrade. Every other sale is unaffected.
+- **Amendment 1, several payments for WooCommerce** (the front desk's ruling, 2026-10-06; split tender, ADR-072):
+  - `order.create` has always carried `payments[]`, so the `/tally/v1` plugins need no change beyond confirming
+    they apply several.
+  - The WooCommerce transport (ADR-073) refused more than one payment because WCPOS records one `payment_method`.
+    Multi-payment for WooCommerce joins the v5 contract:
+    - **The primary tender** (the largest payment, the first on a tie) is `payment_method`.
+    - **The full list** is order meta recorded by woocommerce-pos. The proposed key is `_woocommerce_pos_payments`;
+      the plugin decides.
+  - **Negotiated, like v5:** the plugin advertises support, and the connector reads it. A store that doesn't
+    advertise keeps the one-payment refusal, and the app doesn't offer `SplitTender` there.
+  - **Proof:** a two-payment push against the dev store.
+  - The contract is in the plugin handoff (`tallyui-order-create-v5-2026-10-06.md` §6).
 - **Not decided here:** coupons (G6); several rates per class, compound tax, and WooCommerce's shipping tax class
   from store settings (G5). Fees and shipping use the single rate per class that `TaxContext` has today, and G5
   replaces that for every line kind alike.
