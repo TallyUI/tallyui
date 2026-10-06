@@ -4188,3 +4188,49 @@ interface OrderCreatePayload {
     - **404, 409, 5xx, network or timeout:** `retry` (honouring `Retry-After`).
 - **Not decided here:** inclusive-tax stores (they need per-line rates in the payload), split tender, and the
   register commands (WooCommerce has no register endpoint in 1.10.x).
+
+## ADR-074 Medusa catalogue pull: 250 per page, price calls in parallel, stock stays on the document
+
+- **Date:** 2026-10-06 · **Status:** Accepted (front desk assignment, option 2b of the medusapos sizing) ·
+  **Amends:** ADR-035 (page size) · **Relates to:** ADR-060 (stock reconcile, D2b calculated prices)
+- **Context:**
+  - The medusapos lane measured the live demo's first sync (`medusapos-sync-perf-2026-10-06.md`; 1,956 products,
+    `@tallyui/*` 3.0.0, medians of three fresh-browser runs): the first tile at **5.15 s** and "Up to date" at **14.74 s**.
+    - Admin product pages are 68% of that, at 2.2–2.9 s per 500-product page; the server serialises them.
+    - The 21 sequential store-API price calls are 21%.
+    - The browser main thread is 95% idle.
+  - ADR-035 kept pages at 100 on a local dev store. Commit `2ecaa36` (2026-09-28) moved to 500 without an ADR.
+  - **Whole catalogue on the demo, by page size:** 100 → 8.37 s, **250 → 8.05 s**, 500 → 9.67 s. A single 250-page
+    answers in about 1 s, against 2.4–2.9 s at 500.
+  - **Price calls:** a page's 5 price calls took 0.64–0.69 s sequentially and 0.32–0.33 s in parallel. They didn't
+    slow a concurrent admin page.
+- **Decision:**
+  1. **`MEDUSA_PULL_BATCH_SIZE` is 250.** This supersedes ADR-035's 100 and records the 500 interim.
+  2. **`withCalculatedPrices` runs its chunk requests up to 3 at a time** (`STORE_PRICE_CONCURRENCY`).
+     - The result is unchanged: responses are applied in chunk order.
+     - It is still all-or-nothing: one failed request fails the call, so no half-priced document is delivered.
+     - This applies to the pull, the variant feed and `fetchByIds` alike.
+  3. **No prefetch of the next admin page.** A pull call returns one page, and `combinePullAdapters` runs the product,
+     variant and reconcile feeds strictly in turn, so that a fetch made before another feed's newer write can't land
+     after it (ADR-060). A page fetched during the previous call's pricing would cross that line. Parallel price calls
+     take most of the same time off the critical path without it.
+  4. **The inventory fields stay in `MEDUSA_PRODUCT_FIELDS`.** They cost about 0.33 s of server time per 500 products,
+     but they carry the stock:
+     - The stock overlay can only update `inventory_items` that the replicated document already has, matched by
+       `inventory_item_id` (`reconcile/stock.ts`).
+     - Without the fields, every managed variant reads `unknown` until a stock pass.
+     - Apps that don't run `startStockReconcile` (the demo app among them) would lose stock badges entirely.
+     - Revisit this only together with an overlay that can add levels to a document that has none.
+- **Stock freshness (the "5-minute" overlay):**
+  - Medusa inventory changes never bump a product's `updated_at` (ADR-060), so stock reaches the till only through
+    stock passes: every `intervalMs` (default 5 minutes), plus whenever the app calls `reconcileStock()`.
+  - The library already folds such calls into a running pass.
+  - So the fix for a stale badge belongs in the app's wiring, not in this connector. Call `reconcileStock()`:
+    - after first paint;
+    - when a sale's order is applied or refused for stock;
+    - on foreground;
+    - optionally with a shorter `intervalMs` for a busy demo.
+  - The integration docs already say so.
+- **Expected effect** (inferred, to be re-measured on the demo with the same script after the apps take this release):
+  - about 1.4 s off "Up to date" from the page size, and about 2 s off the first tile;
+  - about 1.3 s more from the parallel price calls.
