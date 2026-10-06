@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
 import { Cart } from '../sale/cart';
 import { blue, click, discount, pricing, SaleHarness, sale, totals, traits } from './sale-harness';
@@ -12,6 +12,32 @@ const money = (amount: number) => formatMoney({ amount, currency: 'EUR' })!;
 afterEach(() => cleanup());
 
 describe('Cart', () => {
+  it.each([undefined, false])('hides Price without permission (%s)', (canEditPrice) => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice={canEditPrice} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.queryByText('Price')).toBeNull();
+    expect(screen.queryByTestId('price-form')).toBeNull();
+  });
+
+  it('edits a line price with permission and reports the applied change for audit', () => {
+    const onPriceChange = vi.fn();
+    render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice onPriceChange={onPriceChange} />}</SaleHarness>);
+    act(() => { sale.add(blue, traits); sale.add(blue, traits); });
+    const lineId = sale.order.lineItems[0].id;
+    fireEvent.click(screen.getByText('Discount'));
+    fireEvent.click(screen.getByText('Price'));
+    expect(screen.queryByRole('group', { name: 'Discount on Shirt' })).toBeNull();
+    expect(screen.getAllByRole('group')).toHaveLength(1);
+    fireEvent.change(screen.getByTestId('price-input'), { target: { value: '10.00' } });
+    fireEvent.change(screen.getByTestId('price-reason'), { target: { value: ' Damaged ' } });
+    fireEvent.click(screen.getByTestId('price-apply'));
+    expect(sale.order.lineItems[0].unitPriceMinor).toBe(1000);
+    expect(screen.getByText(`${money(1000)} × 2`)).toBeTruthy();
+    expect(screen.getAllByText(money(2000))).toHaveLength(2);
+    expect(onPriceChange).toHaveBeenCalledExactlyOnceWith({ lineId, fromMinor: 1250, toMinor: 1000, reason: 'Damaged' });
+    expect(screen.queryByTestId('price-form')).toBeNull();
+  });
+
   it('renders lines with their display amount, each discount chip with its own display amount, and the order chip with orderDiscountMinor', () => {
     render(<SaleHarness capabilities={{ orderCreate: 2 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     act(() => { sale.add(blue, traits); sale.add(blue, traits); });

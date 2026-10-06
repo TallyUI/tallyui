@@ -155,6 +155,7 @@ export {
 // Sale components
 export {
   Cart, CartBar, Tender, DiscountForm, DiscountChips, parseDiscount, discountLabel,
+  PriceForm, parsePrice,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, orderReference,
 } from './sale';
 
