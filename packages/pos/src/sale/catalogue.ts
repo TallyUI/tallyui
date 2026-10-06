@@ -1,11 +1,19 @@
 import { findVariantByCode, formatMoney, resolvePrice } from '@tallyui/core';
-import type { ProductTraits, VariantSummary } from '@tallyui/core';
+import type { ProductTraits, TraitContext, VariantSummary } from '@tallyui/core';
 
 export type CatalogueEntry<Doc> = { product: Doc; variant: VariantSummary };
 
-/** Every variant of every product, in product order then variant order. */
-export function catalogueEntries<Doc>(products: Doc[], traits: ProductTraits<Doc>): CatalogueEntry<Doc>[] {
-  return products.flatMap((product) => traits.getVariants!(product).map((variant) => ({ product, variant })));
+/** Variants in product/variant order, passing context through; without getVariants,
+ * simple products use their own traits and products with variants contribute no entries. */
+export function catalogueEntries<Doc>(products: Doc[], traits: ProductTraits<Doc>, context?: TraitContext): CatalogueEntry<Doc>[] {
+  return products.flatMap((product) => {
+    const variants = traits.getVariants ? traits.getVariants(product, context)
+      : traits.hasVariants(product) ? [] : [{
+        id: traits.getId(product), sku: traits.getSku(product), barcode: traits.getBarcode(product),
+        prices: traits.getPrices(product, context), stock: traits.getStock(product),
+      }];
+    return variants.map((variant) => ({ product, variant }));
+  });
 }
 
 /** Barcode-then-SKU lookup across all products. */

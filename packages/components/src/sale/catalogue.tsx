@@ -71,7 +71,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const [width, setWidth] = useState(0);
   // ProductGrid has 4 px padding on each side of the content and each cell.
   const columns = Math.max(2, Math.min(6, Math.floor((width - 8) / (MIN_TILE_WIDTH + 8))));
-  const entries = useMemo(() => catalogueEntries(shown, traits), [shown, traits]);
+  const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
   const results = useMemo(() => searchProducts(shown, query, traits), [shown, query, traits]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);

@@ -64,6 +64,15 @@ export const wooProductTraits: ProductTraits = {
 
   hasVariants: (doc) => doc.type === 'variable',
 
+  // Variable products' variations aren't synced yet, so they have no entries until they are.
+  getVariants: (doc, context) => doc.type === 'variable' ? [] : [{
+    id: String(doc.id),
+    sku: doc.sku || undefined,
+    barcode: wooProductBarcode(doc),
+    prices: wooProductTraits.getPrices(doc, context),
+    stock: wooProductTraits.getStock(doc),
+  }],
+
   isSellable: (doc) => doc.status === undefined || doc.status === 'publish',
 
   getVariantCount: (doc) => doc.type === 'variable' ? doc.variations?.length ?? 0 : 1,

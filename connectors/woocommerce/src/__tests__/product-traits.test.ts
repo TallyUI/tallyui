@@ -1,5 +1,30 @@
 import { describe, it, expect } from 'vitest';
 import { wooProductTraits } from '../traits/product';
+import fixtureProducts from './fixtures/wcpos-1.10.20-products.json';
+
+describe('WooCommerce getVariants', () => {
+  it.each([
+    { id: 80, sku: 'COF-ESP', barcode: '2000000000015', amount: 300 },
+    { id: 84, sku: 'COF-CLD', barcode: '2000000000039', amount: 400 },
+  ])('returns one variant for fixture product $id in the context currency', ({ id, sku, barcode, amount }) => {
+    const product = fixtureProducts.find((doc) => doc.id === id)!;
+    expect(wooProductTraits.getVariants!(product, { currency: 'EUR' })).toEqual([{
+      id: String(id), sku, barcode,
+      prices: [{ amount, currency: 'EUR', kind: 'base' }],
+      stock: { status: 'in_stock', quantity: undefined },
+    }]);
+  });
+
+  it('omits variable products until their variations are synced', () => {
+    const product = {
+      id: 102, name: 'T-Shirt', type: 'variable', sku: 'MER-TEE', global_unique_id: '2000000000121',
+      price: '25.00', regular_price: '', sale_price: '', on_sale: false, stock_status: 'instock',
+      stock_quantity: null, manage_stock: false, variations: [104, 105, 106, 107, 108, 109],
+      meta_data: [{ key: '_woocommerce_pos_uuid', value: '72668d25-ca99-45f1-9427-9f4fa3dada85' }],
+    };
+    expect(wooProductTraits.getVariants!(product, { currency: 'EUR' })).toEqual([]);
+  });
+});
 
 describe('WooCommerce isSellable / getVariantCount', () => {
   it('allows published products', () => {
