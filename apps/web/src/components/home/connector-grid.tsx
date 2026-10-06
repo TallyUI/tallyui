@@ -32,7 +32,19 @@ export function ConnectorGrid() {
     <section className="mx-auto max-w-6xl px-6 pb-16">
       <h2 className="text-2xl font-semibold tracking-tight">Works with your store</h2>
       <p className="mt-2 text-fd-foreground/80">
-        Each backend has its own connector package. Medusa and Vendure each have a full POS app built on TallyUI.
+        Each backend has its own connector package, and three full POS apps are built on TallyUI:{' '}
+        <a href="https://demo.medusapos.com/demo" className="underline underline-offset-4">
+          Medusa
+        </a>
+        ,{' '}
+        <a href="https://demo.vendurepos.com/demo" className="underline underline-offset-4">
+          Vendure
+        </a>{' '}
+        and{' '}
+        <a href="https://tallyui-woocommerce.vercel.app" className="underline underline-offset-4">
+          WooCommerce
+        </a>
+        .
       </p>
       <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
         {connectors.map(({ name, pkg, api, docs, app, demo }) => (
