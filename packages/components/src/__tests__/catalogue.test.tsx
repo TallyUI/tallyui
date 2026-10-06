@@ -514,6 +514,18 @@ describe('Catalogue category nav', () => {
     expect(screen.queryByTestId('category-nav')).toBeNull();
   });
 
+  it('ignores a stored category while the nav is hidden', () => {
+    render(<Catalogue {...props} products={[]} categories={[{ id: 'pcat_bags', name: 'Bags' }]}
+      loadViewState={() => ({ categoryId: 'pcat_bags' })} loading={false} />);
+    expect(screen.getByText('No products yet.')).toBeTruthy();
+    expect(screen.queryByText('No products in Bags.')).toBeNull();
+
+    cleanup();
+    render(<Catalogue {...props} loadViewState={() => ({ categoryId: 'pcat_hats' })} />);
+    expect(screen.getByTestId('product-tile-Blue Hat')).toBeTruthy();
+    expect(screen.getByTestId('product-tile-Red Shirt')).toBeTruthy();
+  });
+
   it('lists All products first and selected, then the product categories', () => {
     render(<Catalogue {...props} showCategoryNav />);
     const buttons = within(screen.getByTestId('category-nav')).getAllByRole('button');

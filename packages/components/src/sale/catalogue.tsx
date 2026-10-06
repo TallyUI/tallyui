@@ -132,7 +132,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // merges the overlay itself keeps working, and can drop its own merge.
   const shown = useStockOverlaid(products) as Doc[];
   const categoryList = useMemo(() => categories ?? listCategories(shown, traits), [categories, shown, traits]);
-  const activeCategory = categoryList.find((category) => category.id === state.categoryId);
+  const activeCategory = showCategoryNav ? categoryList.find((category) => category.id === state.categoryId) : undefined;
   const suppliedItems = useStockOverlaid(items ?? products) as Doc[];
   const overlayAsOf = useStockOverlayAsOf();
   const parsedOverlayAsOf = overlayAsOf ? new Date(overlayAsOf) : undefined;
@@ -147,7 +147,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
   const results = useMemo(() => {
     if (items !== undefined) return suppliedItems;
-    const filtered = searchProducts(showCategoryNav && activeCategory
+    const filtered = searchProducts(activeCategory
       ? shown.filter((doc) => inCategory(doc, activeCategory.id, traits)) : shown, query, traits);
     return state.sort ? sortProducts(filtered, state.sort, (doc, field) => productSortValue(doc, field, traits, { currency })) : filtered;
   }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory]);
