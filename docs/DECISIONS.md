@@ -2218,6 +2218,32 @@ interface OrderCreatePayload {
     same screens.
   - TallyUI takes on UI that was app-local, so it must stay neutral: no
     `'$'`, no Medusa field names, currency only from the trait context.
+- **Amendment (2026-10-06, Catalogue views, the Front desk):** the shared
+  catalogue for 3.5.0 (table view, view toggle, persisted view state,
+  categories, display options) extends this ADR's `Catalogue` rather than
+  adding a second catalogue component.
+  - The UI pieces are separate exports from `@tallyui/components`:
+    `ProductTable`, `ViewToggle`, `CategoryNav` and later `DisplayOptions`.
+    An app can use them without `Catalogue`.
+  - The pure state lives in `@tallyui/pos`:
+    - the sort (`sortProducts`, `productSortValue`);
+    - the view-state reducer (`catalogueViewReducer`,
+      `normalizeCatalogueViewState`, `resolveGridColumns`);
+    - the filter (`searchProducts`);
+    - the category helpers.
+
+    pos holds no UI and never imports components, so the dependency still
+    runs one way, components → pos. Each pos value components imports is
+    named in `COMPONENTS_POS_ALLOWLIST` (`scripts/check-workspace-deps.mjs`).
+  - Every new `Catalogue` prop is optional. With none of them, an app sees
+    the Catalogue as before (grid, search, scan, variant chooser, stock
+    as-of).
+  - TallyUI stores nothing. The app does, through
+    `loadViewState`/`saveViewState`, or by owning `viewState` and watching
+    `onStateChange`.
+  - An app with more products than it keeps in memory passes its own
+    filtered and sorted `items`; `products` still drives scanning and the
+    variant chooser.
 
 ## ADR-053 The Vendure MVP starts before the conformance gate (plan V-D1)
 

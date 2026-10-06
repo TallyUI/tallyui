@@ -1,0 +1,39 @@
+---
+title: ViewToggle
+description: Controlled grid and table view selector
+---
+
+## Import
+
+```tsx
+import { ViewToggle, type ViewToggleProps } from '@tallyui/components';
+import type { CatalogueView } from '@tallyui/pos';
+```
+
+## Usage
+
+```tsx
+const [view, setView] = useState<CatalogueView>('grid');
+<ViewToggle value={view} onChange={setView} />
+```
+
+Two adjacent radio buttons select Grid or Table. Pressing the selected option does nothing. The group is labelled “View”; each radio's accessible label matches its visible text.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `'grid' \| 'table'` | required | Selected view |
+| `onChange` | `(view: CatalogueView) => void` | required | Called when the other view is pressed |
+| `labels` | `{ grid?: string; table?: string }` | `{ grid: 'Grid', table: 'Table' }` | Visible and accessible labels |
+| `className` | `string` | — | Override container styles |
+
+Other `ViewProps` are forwarded to the container.
+
+## Catalogue
+
+Set `showViewToggle` on `Catalogue` to show this selector in its header. `defaultViewState` sets an uncontrolled starting view, grid column count (`'auto'` or 2–8) and sort. Alternatively, control the complete state with `viewState` and `onStateChange`.
+
+For uncontrolled persistence, supply `loadViewState` and `saveViewState`. The app owns storage: a synchronous load supplies the first rendered state; an asynchronous load applies unless the cashier changes state first. Loads notify `onStateChange` but are never saved. `onViewStateError` receives load/save errors; without it, errors are swallowed.
+
+Pass `items` to supply your own filtered and sorted list, and `onQueryChange` to observe search text. `products` still drives scanning and variant choices. Without any new props, Catalogue keeps its existing grid and automatic column count.

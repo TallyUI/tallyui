@@ -13,6 +13,8 @@ export {
   ProductCard,
   ProductGrid,
   ProductTable,
+  ViewToggle,
+  type ViewToggleProps,
   defaultProductColumns,
   useDefaultProductColumns,
   type ProductTableProps,

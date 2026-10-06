@@ -4,13 +4,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorProvider } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import { Catalogue, formatStockSyncTime } from '../sale/catalogue';
-import type { ProductGrid, ProductStockBadge } from '../product';
+import type { ProductGrid, ProductStockBadge, ProductTableProps, ViewToggleProps } from '../product';
 
 // Ported from medusapos/app `563b03c4` `tests/catalogue.test.tsx` (ADR-052, TV6b). Mocks the sibling
 // product/input/ui modules the same way medusapos mocked `@tallyui/components`: the tile is composed
 // directly in catalogue.tsx (ProductCard has no children slot), so only ProductTitle and ProductStockBadge
 // need to render real content for the tests below.
 vi.mock('../product', () => ({
+  ViewToggle: ({ value, onChange }: ViewToggleProps) => (
+    <div data-testid="view-toggle">
+      {(['grid', 'table'] as const).map((view) => (
+        <button key={view} data-testid={`view-toggle-${view}`} aria-pressed={value === view} onClick={() => onChange(view)}>{view}</button>
+      ))}
+    </div>
+  ),
+  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState }: ProductTableProps) => (
+    <div data-testid="table" data-sort-items={String(sortItems)}>
+      <button data-testid="table-sort" onClick={() => onSortChange?.({ field: 'name', dir: sort?.dir === 'asc' ? 'desc' : 'asc' })}>Sort</button>
+      {items.length ? items.map((item) => <button key={item.id} data-testid={`table-row-${item.id}`} onClick={() => onSelect?.(item)}>{item.title}</button>) : emptyState}
+    </div>
+  ),
   ProductGrid: ({ items, renderItem, emptyState, numColumns }: ComponentProps<typeof ProductGrid>) => (
     <div data-testid="grid" data-columns={numColumns}>
       {items.length ? items.map((item: { id: string }, index: number) => <div key={item.id}>{renderItem(item, index)}</div>) : emptyState}
@@ -480,5 +493,199 @@ describe('Catalogue', () => {
     fireEvent.click(screen.getByTestId('product-tile-Red Shirt'));
     const chooser = within(screen.getByLabelText('Choose variant'));
     expect(chooser.getByText('In Stock · not yet synced')).toBeTruthy();
+  });
+});
+
+describe('Catalogue view state', () => {
+  const props = { products, traits, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null };
+  const gridState = { view: 'grid', gridColumns: 'auto', sort: null } as const;
+  const tableState = { ...gridState, view: 'table' } as const;
+
+  it('keeps the default grid and hides the toggle without new props', () => {
+    render(<Catalogue {...props} />);
+    expect(screen.queryByTestId('view-toggle')).toBeNull();
+    expect(screen.queryByTestId('table')).toBeNull();
+    expect(screen.getByTestId('grid').getAttribute('data-columns')).toBe('2');
+    expect(screen.getAllByTestId(/^product-tile-/).map((tile) => tile.textContent)).toEqual(['Blue Hatin_stock', 'Red Shirtin_stock']);
+  });
+
+  it('toggles, reports and saves, but ignores unchanged actions', () => {
+    const onStateChange = vi.fn();
+    const saveViewState = vi.fn();
+    render(<Catalogue {...props} showViewToggle statusText="Synced" onStateChange={onStateChange} saveViewState={saveViewState} />);
+    expect(within(screen.getByTestId('catalogue-status-row')).getByTestId('view-toggle')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('view-toggle-grid'));
+    expect(onStateChange).not.toHaveBeenCalled();
+    expect(saveViewState).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('view-toggle-table'));
+    expect(screen.getByTestId('table')).toBeTruthy();
+    expect(screen.queryByTestId('grid')).toBeNull();
+    expect(onStateChange.mock.calls).toEqual([[tableState]]);
+    expect(saveViewState.mock.calls).toEqual([[tableState]]);
+  });
+
+  it('uses a synchronous load on the first render and reports without saving', () => {
+    const loadViewState = vi.fn(() => ({ view: 'table', gridColumns: 4 }));
+    const saveViewState = vi.fn();
+    const onStateChange = vi.fn(() => {
+      expect(screen.getByTestId('table')).toBeTruthy();
+      expect(screen.queryByTestId('grid')).toBeNull();
+    });
+    const { rerender } = render(<Catalogue {...props} loadViewState={loadViewState} saveViewState={saveViewState} onStateChange={onStateChange} />);
+    expect(onStateChange.mock.calls).toEqual([[{ ...tableState, gridColumns: 4 }]]);
+    expect(saveViewState).not.toHaveBeenCalled();
+    rerender(<Catalogue {...props} loadViewState={loadViewState} />);
+    expect(loadViewState).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies an asynchronous load and reports without saving', async () => {
+    let resolve!: (value: unknown) => void;
+    const pending = new Promise<unknown>((done) => { resolve = done; });
+    const onStateChange = vi.fn();
+    const saveViewState = vi.fn();
+    render(<Catalogue {...props} loadViewState={() => pending} onStateChange={onStateChange} saveViewState={saveViewState} />);
+    expect(screen.getByTestId('grid')).toBeTruthy();
+    await act(async () => { resolve({ view: 'table' }); });
+    expect(screen.getByTestId('table')).toBeTruthy();
+    expect(onStateChange.mock.calls).toEqual([[tableState]]);
+    expect(saveViewState).not.toHaveBeenCalled();
+  });
+
+  it('fills a synchronous load from defaultViewState', () => {
+    const onStateChange = vi.fn();
+    render(<Catalogue {...props} defaultViewState={{ view: 'table' }}
+      loadViewState={() => ({ gridColumns: 4 })} onStateChange={onStateChange} />);
+    expect(screen.getByTestId('table')).toBeTruthy();
+    expect(onStateChange.mock.calls).toEqual([[{ ...tableState, gridColumns: 4 }]]);
+  });
+
+  it('fills an asynchronous load from defaultViewState', async () => {
+    let resolve!: (value: unknown) => void;
+    const pending = new Promise<unknown>((done) => { resolve = done; });
+    const onStateChange = vi.fn();
+    render(<Catalogue {...props} defaultViewState={{ view: 'table' }}
+      loadViewState={() => pending} onStateChange={onStateChange} />);
+    expect(screen.getByTestId('table')).toBeTruthy();
+    await act(async () => { resolve({ gridColumns: 'bad' }); });
+    expect(screen.getByTestId('table')).toBeTruthy();
+    expect(onStateChange.mock.calls).toEqual([[tableState]]);
+  });
+
+  it('ignores an asynchronous load after a cashier change', async () => {
+    let resolve!: (value: unknown) => void;
+    const pending = new Promise<unknown>((done) => { resolve = done; });
+    const onStateChange = vi.fn();
+    render(<Catalogue {...props} showViewToggle loadViewState={() => pending} onStateChange={onStateChange} />);
+    fireEvent.click(screen.getByTestId('view-toggle-table'));
+    await act(async () => { resolve(gridState); });
+    expect(screen.getByTestId('table')).toBeTruthy();
+    expect(onStateChange.mock.calls).toEqual([[tableState]]);
+  });
+
+  it('ignores an asynchronous load after unmount', async () => {
+    let resolve!: (value: unknown) => void;
+    const pending = new Promise<unknown>((done) => { resolve = done; });
+    const onStateChange = vi.fn();
+    const { unmount } = render(<Catalogue {...props} loadViewState={() => pending} onStateChange={onStateChange} />);
+    unmount();
+    await act(async () => { resolve(tableState); });
+    expect(onStateChange).not.toHaveBeenCalled();
+  });
+
+  it.each(['throw', 'reject'] as const)('reports a load %s and keeps the current state', async (mode) => {
+    const error = new Error('load failed');
+    const onViewStateError = vi.fn();
+    render(<Catalogue {...props} onViewStateError={onViewStateError} loadViewState={() => {
+      if (mode === 'throw') throw error;
+      return Promise.reject(error);
+    }} />);
+    await act(async () => {});
+    expect(onViewStateError).toHaveBeenCalledWith(error);
+    expect(screen.getByTestId('grid')).toBeTruthy();
+  });
+
+  it.each(['throw', 'reject'] as const)('reports a save %s while keeping the changed state', async (mode) => {
+    const error = new Error('save failed');
+    const onViewStateError = vi.fn();
+    render(<Catalogue {...props} showViewToggle onViewStateError={onViewStateError} saveViewState={() => {
+      if (mode === 'throw') throw error;
+      return Promise.reject(error);
+    }} />);
+    await act(async () => { fireEvent.click(screen.getByTestId('view-toggle-table')); });
+    expect(onViewStateError).toHaveBeenCalledWith(error);
+    expect(screen.getByTestId('table')).toBeTruthy();
+  });
+
+  it('swallows persistence failures without an error callback', async () => {
+    render(<Catalogue {...props} showViewToggle loadViewState={() => Promise.reject(new Error('load'))}
+      saveViewState={() => Promise.reject(new Error('save'))} />);
+    await act(async () => {});
+    await act(async () => { fireEvent.click(screen.getByTestId('view-toggle-table')); });
+    expect(screen.getByTestId('table')).toBeTruthy();
+  });
+
+  it('reports controlled requests, neither loading nor saving, and waits for the prop', () => {
+    const onStateChange = vi.fn();
+    const loadViewState = vi.fn();
+    const saveViewState = vi.fn();
+    const { rerender } = render(<Catalogue {...props} showViewToggle viewState={gridState}
+      onStateChange={onStateChange} loadViewState={loadViewState} saveViewState={saveViewState} />);
+    fireEvent.click(screen.getByTestId('view-toggle-table'));
+    expect(onStateChange.mock.calls).toEqual([[tableState]]);
+    expect(screen.getByTestId('grid')).toBeTruthy();
+    expect(screen.queryByTestId('table')).toBeNull();
+    expect(loadViewState).not.toHaveBeenCalled();
+    expect(saveViewState).not.toHaveBeenCalled();
+    rerender(<Catalogue {...props} viewState={tableState} />);
+    expect(screen.getByTestId('table')).toBeTruthy();
+  });
+
+  it('merges a fixed column count into the default view state', () => {
+    render(<Catalogue {...props} defaultViewState={{ gridColumns: 3 }} />);
+    expect(screen.getByTestId('grid').getAttribute('data-columns')).toBe('3');
+  });
+
+  it('shows supplied items in their order despite query and sort, and reports query text', () => {
+    const onQueryChange = vi.fn();
+    const items = [products[1], products[0]];
+    const { rerender } = render(<Catalogue {...props} items={items} onQueryChange={onQueryChange}
+      defaultViewState={{ sort: { field: 'name', dir: 'asc' } }} />);
+    fireEvent.change(screen.getByPlaceholderText('Search or scan barcode / SKU'), { target: { value: 'hat' } });
+    expect(onQueryChange.mock.calls).toEqual([['hat']]);
+    expect(screen.getAllByTestId(/^product-tile-/).map((tile) => tile.getAttribute('data-testid')))
+      .toEqual(['product-tile-Red Shirt', 'product-tile-Blue Hat']);
+    rerender(<Catalogue {...props} items={[]} />);
+    expect(screen.queryAllByTestId(/^product-tile-/)).toHaveLength(0);
+  });
+
+  it('shares table header sort with the grid after toggling back', () => {
+    const onStateChange = vi.fn();
+    const saveViewState = vi.fn();
+    render(<Catalogue {...props} showViewToggle defaultViewState={{ view: 'table' }} onStateChange={onStateChange} saveViewState={saveViewState} />);
+    expect(screen.getByTestId('table').getAttribute('data-sort-items')).toBe('false');
+    fireEvent.click(screen.getByTestId('table-sort'));
+    fireEvent.click(screen.getByTestId('table-sort'));
+    const sorted = { ...tableState, sort: { field: 'name', dir: 'desc' } };
+    expect(onStateChange).toHaveBeenLastCalledWith(sorted);
+    expect(saveViewState).toHaveBeenLastCalledWith(sorted);
+    expect(screen.getAllByTestId(/^table-row-/).map((row) => row.textContent)).toEqual(['Red Shirt', 'Blue Hat']);
+    fireEvent.click(screen.getByTestId('view-toggle-grid'));
+    expect(screen.getAllByTestId(/^product-tile-/).map((tile) => tile.getAttribute('data-testid')))
+      .toEqual(['product-tile-Red Shirt', 'product-tile-Blue Hat']);
+  });
+
+  it('uses products for table selection, variant choices and scanning with supplied copies', () => {
+    const onSelect = vi.fn();
+    render(<Catalogue {...props} onSelect={onSelect} items={products.map((product) => ({ ...product }))}
+      defaultViewState={{ view: 'table' }} />);
+    fireEvent.click(screen.getByTestId('table-row-hat'));
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ product: products[0], variant: expect.objectContaining({ id: 'hat-one' }) }));
+    fireEvent.click(screen.getByTestId('table-row-shirt'));
+    fireEvent.click(within(screen.getByLabelText('Choose variant')).getByText('Small'));
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ variant: expect.objectContaining({ id: 'small' }) }));
+    const input = screen.getByPlaceholderText('Search or scan barcode / SKU');
+    fireEvent.change(input, { target: { value: '111' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ variant: expect.objectContaining({ id: 'hat-one' }) }));
   });
 });
