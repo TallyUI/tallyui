@@ -336,6 +336,15 @@ describe('OrdersList', () => {
     expect(headers()).toEqual(['Recent']);
   });
 
+  it('renders no Needs attention section or warning line for register_session_unknown', () => {
+    const warned = order('w', { syncStatus: 'applied',
+      warnings: [{ code: 'register_session_unknown', sessionId: 's-1' }] });
+    const { container } = render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
+    expect(headers()).toEqual(['Recent']);
+    expect(screen.queryByText(/s-1/)).toBeNull();
+    expect(container.querySelector('.border-warning')).toBeNull();
+  });
+
   it('renders a tax_rate_mismatch with the rate as a percentage and both amounts', () => {
     const warned = order('w', { syncStatus: 'applied',
       warnings: [{ code: 'tax_rate_mismatch', ratePpm: 55000, expectedMinor: 120, serverMinor: 100 }] });

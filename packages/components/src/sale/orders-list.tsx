@@ -105,7 +105,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               }} className="rounded-md bg-primary px-4 py-2">
                 <Text className="text-center font-semibold text-primary-foreground">Retry</Text>
               </Pressable> : null}
-            {knownWarnings(order.warnings).map((warning, index) => <View key={index} className="border-l-4 border-warning pl-2"><Text className="text-foreground">
+            {knownWarnings(order.warnings).filter((warning) => warning.code !== 'register_session_unknown').map((warning, index) => <View key={index} className="border-l-4 border-warning pl-2"><Text className="text-foreground">
               {warning.code === 'insufficient_stock'
                 ? `${warning.quantity} sold without stock: ${order.lines.find((line) => line.variantId === warning.variantId)?.name}`
                 : warning.code === 'tax_rate_mismatch'

@@ -39,6 +39,16 @@ describe('needsAttention', () => {
     expect(needsAttention([unknown, taxed])).toEqual([taxed]);
   });
 
+  it('does not flag register_session_unknown alone, but flags it with insufficient_stock', () => {
+    const base = sale();
+    const waiting: PosOrder = { ...base, id: 'waiting', syncStatus: 'applied',
+      warnings: [{ code: 'register_session_unknown', sessionId: 's-1' }] };
+    const warned: PosOrder = { ...base, id: 'warned', syncStatus: 'applied',
+      warnings: [{ code: 'register_session_unknown', sessionId: 's-1' },
+        { code: 'insufficient_stock', variantId: 'blue', quantity: 1 }] };
+    expect(needsAttention([waiting, warned])).toEqual([warned]);
+  });
+
   // Registers c1a (ADR-032, late sale). Revert: drop the lateSessionId case from needsAttention.
   it('selects a late sale whatever its sync status, newest first, without changing the input', () => {
     const base = sale();
