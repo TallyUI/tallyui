@@ -190,12 +190,11 @@ describe('ADR-076 WooCommerce builder strategy', () => {
     expect(result.current.getTaxRatePpm()).toBe(86250);
   });
 
-  it('refuses finalization until pos_orders version 8 can store the strategy', () => {
+  it('stores the woocommerce strategy at finalization', () => {
     const builder = make();
     add(builder, 100);
     builder.addPayment({ method: 'cash', amountMinor: 120 });
-    expect(() => finalizeOrder(builder.getSnapshot())).toThrow(
-      'finalize: the woocommerce tax strategy needs pos_orders version 8, which this release does not store yet');
+    expect(finalizeOrder(builder.getSnapshot()).taxRounding).toEqual({ granularity: 'woocommerce', roundAtSubtotal: false });
   });
 
   it('requires getTaxRates to activate the WooCommerce arithmetic', () => {

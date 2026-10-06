@@ -175,7 +175,7 @@ describe('useSale ADR-075 charges', () => {
     });
     const before = result.current.order;
     await act(async () => { await result.current.complete(); });
-    expect(result.current.error).toBe('finalize: fees, shipping and custom lines need order.create version 5, which this release does not send yet');
+    expect(result.current.error).toBe("finalize: fees, shipping and custom lines need the store to accept order.create version 5; update the store's TallyUI plugin");
     expect(result.current.stage).toEqual({ kind: 'tender', method: 'cash' });
     expect(result.current.saving).toBe(false);
     expect(result.current.order).toEqual(before);

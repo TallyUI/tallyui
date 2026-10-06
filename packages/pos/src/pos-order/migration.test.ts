@@ -135,28 +135,42 @@ async function neverDropsInvalidOrder(from: Origin) {
 it('keeps a pending, unsynced version-0 order byte for byte through the migration to the current version', () => keepsPendingOrder(0));
 
 describe('from version 6', () => {
-  it('keeps a pending order with taxRounding and without saleId unchanged through the migration to version 7', async () => {
+  it('keeps a pending order with taxRounding and without saleId unchanged through the migration to the current version', async () => {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
     const order: PosOrder = { ...pendingOrder(3), taxRounding: { granularity: 'per_line_items', mode: 'half_up' } };
     const original = structuredClone(order);
     expect(order.syncStatus).toBe('pending');
     expect(order).not.toHaveProperty('saleId');
-    const { saleId: _saleId, ...v6Properties } = structuredClone(posOrderSchema).properties;
-    const schema = { ...structuredClone(posOrderSchema), version: 6, properties: v6Properties };
-    const { 7: _v7, ...migrationStrategies } = posOrderCollection().migrationStrategies;
     const name = `posmigrate${uuidv7().replaceAll('-', '')}`;
-    const before = await open(name, storage, { schema, migrationStrategies });
+    const before = await open(name, storage, olderCollection(6));
     await (await before.added).pos_orders.insert(order);
     await before.db.close();
     const after = await open(name, storage, posOrderCollection());
     try {
       const { pos_orders } = await after.added;
-      expect(pos_orders.schema.version).toBe(7);
+      expect(pos_orders.schema.version).toBe(8);
       expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(original);
     } finally {
       await after.db.remove();
     }
   });
+});
+
+it('keeps a pending version-7 order byte for byte through the identity migration to version 8', async () => {
+  const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
+  const order: PosOrder = { ...pendingOrder(3), saleId: uuidv7(), taxRounding: { granularity: 'per_line_items', mode: 'half_up' },
+    sentVersion: 4, serverFailures: { since: 1000, reason: 'network', isolated: true } };
+  const original = structuredClone(order);
+  const name = `posmigrate${uuidv7().replaceAll('-', '')}`;
+  const before = await open(name, storage, olderCollection(7));
+  await (await before.added).pos_orders.insert(order);
+  await before.db.close();
+  const after = await open(name, storage, posOrderCollection());
+  try {
+    const { pos_orders } = await after.added;
+    expect(pos_orders.schema.version).toBe(8);
+    expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(original);
+  } finally { await after.db.remove(); }
 });
 
 it('refuses the current version without its migration strategies, and keeps the order', () => refusedWithoutStrategies(0));

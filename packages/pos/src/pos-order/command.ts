@@ -55,9 +55,10 @@ function netDiscountMinor(line: PosOrderLine, pricesIncludeTax: boolean): number
 
 /**
  * The order.create version an order's stored content makes: 3 with ADR-065's figures, else 2 when its lines are
- * discounted (ADR-062), else 1. The builder's, and pos_orders v5's migration's for a row with no `sentVersion`.
+ * discounted (ADR-062), else 1; fees, shipping or custom lines need 5. Also used by pos_orders v5's migration.
  */
-export function contentVersion(order: Pick<PosOrder, 'display' | 'taxByRate' | 'lines'>): 1 | 2 | 3 {
+export function contentVersion(order: Pick<PosOrder, 'display' | 'taxByRate' | 'lines' | 'fees' | 'shipping'>): 1 | 2 | 3 | 5 {
+  if (order.fees?.length || order.shipping?.length || order.lines.some((line) => line.custom)) return 5;
   return order.display && order.taxByRate ? 3 : order.lines.reduce((sum, line) => sum + line.discountMinor, 0) > 0 ? 2 : 1;
 }
 
@@ -73,11 +74,12 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   const grossMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
   const content = contentVersion(order);
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
+  if (content === 5 && cap !== undefined && cap < 5) throw new UnsupportedOrderVersionError(5, cap);
   if (grossMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
   // Version 4 only when the cap allows it (the server advertises 4, and no sentVersion holds the order lower).
   const version = (content === 3 && cap !== undefined && cap >= 4 ? 4
     : Math.min(content, cap ?? content)) as OrderCreateEnvelope['version'];
-  const lineDiscounts = order.lines.map((line) => version === 4 ? netDiscountMinor(line, order.pricesIncludeTax) : line.discountMinor);
+  const lineDiscounts = order.lines.map((line) => version >= 4 ? netDiscountMinor(line, order.pricesIncludeTax) : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
   const email = order.customer?.email;
@@ -85,16 +87,26 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   // These are the pre-#222 customerId and sessionId checks, kept byte-exact so stored orders resend older tills' bytes; don't replace with sendable.
   const customerId = typeof id === 'string' && id.length > 0 && id.length <= 64 ? id : undefined;
   const sessionId = order.sessionId ?? order.lateSessionId;
+  const { fees: _fees, shipping: _shipping, ...storedDisplay } = { ...order.display! };
   return {
     id: order.commandId, type: 'order.create', version, createdAt: order.createdAt, deviceId, attempt,
     payload: {
       clientOrderId: order.id, createdAt: order.createdAt, currency: order.currency, pricesIncludeTax: order.pricesIncludeTax,
       lines: order.lines.map((line, i) => ({
-        clientLineId: line.id, variantId: line.variantId ?? line.productId, title: line.name,
+        clientLineId: line.id, ...(line.custom ? { custom: { ...line.custom } } : { variantId: line.variantId ?? line.productId }), title: line.name,
         quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
         ...(line.taxInclusive !== undefined ? { taxInclusive: line.taxInclusive } : {}),
         ...(lineDiscounts[i] > 0 ? { discountMinor: lineDiscounts[i] } : {}),
       })),
+      ...(version === 5 && order.fees?.length ? { fees: order.fees.map((fee) => ({
+        clientFeeId: fee.id, name: fee.name, amountMinor: fee.amountMinor, taxStatus: fee.taxStatus,
+        ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(fee.taxMicros)),
+      })) } : {}),
+      ...(version === 5 && order.shipping?.length ? { shipping: order.shipping.map((charge) => ({
+        clientShippingId: charge.id, name: charge.name, ...(charge.methodId !== undefined ? { methodId: charge.methodId } : {}),
+        amountMinor: charge.amountMinor, taxStatus: charge.taxStatus,
+        ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(charge.taxMicros)),
+      })) } : {}),
       payments: order.payments.map((payment) => ({
         clientPaymentId: payment.id, method: payment.method, amountMinor: payment.amountMinor,
         ...(payment.tenderedMinor !== undefined ? { tenderedMinor: payment.tenderedMinor } : {}),
@@ -105,9 +117,12 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       ...(discountMinor > 0 ? { discountMinor } : {}),
       taxMinor: order.taxMinor, totalMinor: order.totalMinor,
       ...(version >= 3 ? {
-        display: { ...order.display!, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
+        display: { ...storedDisplay, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
           clientLineId: lineId, amountMinor, discounts,
-        })) },
+        })),
+        ...(version === 5 && order.display!.fees ? { fees: order.display!.fees.map(({ id, amountMinor }) => ({ clientFeeId: id, amountMinor })) } : {}),
+        ...(version === 5 && order.display!.shipping ? { shipping: order.display!.shipping.map(({ id, amountMinor }) => ({ clientShippingId: id, amountMinor })) } : {}),
+        },
         taxByRate: order.taxByRate!.map(({ ratePpm, code, netMinor, amountMinor, grossMinor }) => ({
           ratePpm, ...(code !== undefined ? { code } : {}), netMinor, taxMinor: amountMinor, grossMinor,
         })),

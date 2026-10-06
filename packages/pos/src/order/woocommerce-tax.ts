@@ -43,9 +43,9 @@ export function woocommerceTotals(lines: readonly LineItem[], fees: readonly Cha
     totalMinor: Math.round(woocommerceTax.roundHalfUp(woocommerceTax.roundHalfUp(amount + tax, 6), dp) * factor) };
 }
 
-/** Order-math's rate buckets, including zero rows; never distribute the order's tax residue. */
+/** Order-math's rate buckets, including zero rows; the last row takes the bounded order tax residue. */
 export function woocommerceTaxByRate(lines: readonly { netMinor: number; taxInclusive: boolean; taxLines: readonly LineTaxLine[] }[],
-  roundAtSubtotal: boolean, taxLabels?: Record<number, string>): RateTaxLine[] {
+  roundAtSubtotal: boolean, taxLabels?: Record<number, string>, orderTaxMinor?: number): RateTaxLine[] {
   const groups = new Map<string, RateTaxLine & { amount: number; inclusive: boolean }>();
   for (const line of lines) for (const tax of line.taxLines) {
     const key = JSON.stringify([tax.rateId, tax.code, tax.ratePpm]);
@@ -56,6 +56,13 @@ export function woocommerceTaxByRate(lines: readonly { netMinor: number; taxIncl
     row.netMinor += line.netMinor;
     groups.set(key, row);
   }
-  return [...groups.values()].map(({ amount, inclusive, ...row }) => ({ ...row,
+  const rows = [...groups.values()].map(({ amount, inclusive, ...row }) => ({ ...row,
     amountMinor: woocommerceTax.roundTaxTotal(woocommerceTax.roundHalfUp(amount, 6), 0, inclusive) }));
+  if (orderTaxMinor !== undefined && rows.length) {
+    const residue = orderTaxMinor - rows.reduce((sum, row) => sum + row.amountMinor, 0);
+    const bound = Math.floor(rows.length / 2) + 1;
+    if (Math.abs(residue) > bound) throw new Error(`woocommerce tax by rate: residue ${residue} exceeds its bound ${bound} (ADR-076)`);
+    rows[rows.length - 1].amountMinor += residue;
+  }
+  return rows;
 }

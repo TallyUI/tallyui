@@ -312,7 +312,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (woo) {
       const line = wooLine(input.amountMinor, input.taxClass, taxContext.pricesIncludeTax, taxStatus === 'none', shipping);
       return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus,
-        ...line, taxMicros: Number(line.taxMicros) };
+        ...line };
     }
     const code = taxContext.getTaxRateCode?.(input.taxClass);
     const line = recalculateLine({
@@ -323,7 +323,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       taxInclusive: taxContext.pricesIncludeTax,
     });
     return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus,
-      taxLines: line.taxLines, netMinor: line.netMinor, taxMicros: Number(line.taxMicros) };
+      taxLines: line.taxLines, netMinor: line.netMinor, taxMicros: line.taxMicros };
   }
 
   function addLine(input: AddLineInput): string {
@@ -357,7 +357,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const lineId = uid();
     const line: LineItem = {
       id: lineId,
-      ...(woo ? { taxClass: input.taxClass } : {}),
+      ...((input.custom ? input.taxClass !== undefined : woo) ? { taxClass: input.taxClass } : {}),
       productId,
       ...(input.custom ? { custom: true as const } : {}),
       ...(input.taxStatus === 'none' ? { taxStatus: 'none' as const } : {}),

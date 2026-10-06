@@ -1,5 +1,5 @@
-import type { CommandError, CommandServerRefs, CommandWarning, PaymentMethodKind, TaxRounding } from '@tallyui/core';
-import type { DisplayTotals } from '../order/types';
+import type { CommandError, CommandServerRefs, CommandWarning, OrderCreateLine, PaymentMethodKind, TaxRounding } from '@tallyui/core';
+import type { DisplayTotals, FeeLine, ShippingLine } from '../order/types';
 
 export type PosOrderSyncStatus = 'pending' | 'applied' | 'rejected';
 
@@ -19,6 +19,8 @@ export interface PosOrderLine {
   id: string;
   productId: string;
   variantId?: string;
+  custom?: OrderCreateLine['custom'];
+  taxStatus?: 'taxable' | 'none';
   name: string;
   sku: string;
   quantity: number;
@@ -48,6 +50,8 @@ export interface PosOrder {
   currency: string;
   pricesIncludeTax: boolean;
   lines: PosOrderLine[];
+  fees?: FeeLine[];
+  shipping?: ShippingLine[];
   subtotalMinor: number;
   discountMinor: number;
   taxMinor: number;
@@ -71,9 +75,9 @@ export interface PosOrder {
    * The order.create version every attempt under this `commandId` goes out at: the outbox records it before the first
    * send, and lowers it only on a downgrade (ADR-065 amendment). Absent means not sent yet (or requeued).
    */
-  sentVersion?: 1 | 2 | 3 | 4;
+  sentVersion?: 1 | 2 | 3 | 4 | 5;
   /** The version first tried, before the downgrade (the order's audit). */
-  downgradedFrom?: 1 | 2 | 3 | 4;
+  downgradedFrom?: 1 | 2 | 3 | 4 | 5;
   /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. */
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */

@@ -20,9 +20,11 @@ import type { PosOrder } from './types';
  * nothing else. Its migration sets it on every older row. It is one-way like version 5.
  * Version 7 adds `saleId`, the sale order's id (ADR-072; never sent), and changes nothing else. Its migration is the
  * identity: older orders have no `saleId`. It is one-way like version 6.
+ * Version 8 adds fees, shipping, custom lines (ADR-075) and the woocommerce tax rounding (ADR-076), and changes nothing else.
+ * Its migration is the identity. It is one-way like version 7.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 7, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 8, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -39,6 +41,11 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       type: 'object', properties: {
         id: { type: 'string', maxLength: 36 }, productId: { type: 'string' }, variantId: { type: 'string' },
         name: { type: 'string' }, sku: { type: 'string' }, quantity: { type: 'integer' },
+        taxStatus: { type: 'string', enum: ['taxable', 'none'] },
+        custom: { type: 'object', additionalProperties: false, properties: {
+          name: { type: 'string', minLength: 1, maxLength: 255 }, sku: { type: 'string', maxLength: 64 },
+          taxClass: { type: 'string', maxLength: 64 }, taxStatus: { type: 'string', enum: ['taxable', 'none'] },
+        }, required: ['name', 'taxStatus'] },
         unitPriceMinor: { type: 'integer' }, discountMinor: { type: 'integer' }, netMinor: { type: 'integer' },
         taxLines: { type: 'array', items: {
           type: 'object', properties: { code: { type: 'string' }, ratePpm: { type: 'integer' }, taxMicros: { type: 'string' } },
@@ -47,6 +54,26 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       },
       required: ['id', 'productId', 'name', 'sku', 'quantity', 'unitPriceMinor', 'discountMinor', 'netMinor', 'taxLines'],
     } },
+    fees: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },
+      amountMinor: { type: 'integer', minimum: 0 }, taxClass: { type: 'string', maxLength: 64 },
+      taxStatus: { type: 'string', enum: ['taxable', 'none'] }, netMinor: { type: 'integer' }, taxMicros: { type: 'string' },
+      netMicros: { type: 'string' }, totalMinor: { type: 'integer' },
+      taxLines: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        code: { type: 'string', maxLength: 255 }, ratePpm: { type: 'integer' }, taxMicros: { type: 'string' },
+        rateId: { type: 'integer' }, compound: { type: 'boolean' },
+      }, required: ['ratePpm', 'taxMicros'] } },
+    }, required: ['id', 'name', 'amountMinor', 'taxStatus', 'taxLines', 'netMinor', 'taxMicros'] } },
+    shipping: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },
+      methodId: { type: 'string', maxLength: 64 }, amountMinor: { type: 'integer', minimum: 0 }, taxClass: { type: 'string', maxLength: 64 },
+      taxStatus: { type: 'string', enum: ['taxable', 'none'] }, netMinor: { type: 'integer' }, taxMicros: { type: 'string' },
+      netMicros: { type: 'string' }, totalMinor: { type: 'integer' },
+      taxLines: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        code: { type: 'string', maxLength: 255 }, ratePpm: { type: 'integer' }, taxMicros: { type: 'string' },
+        rateId: { type: 'integer' }, compound: { type: 'boolean' },
+      }, required: ['ratePpm', 'taxMicros'] } },
+    }, required: ['id', 'name', 'amountMinor', 'taxStatus', 'taxLines', 'netMinor', 'taxMicros'] } },
     payments: { type: 'array', items: {
       type: 'object', properties: {
         id: { type: 'string', maxLength: 36 }, method: { type: 'string', enum: ['cash', 'external'] },
@@ -70,16 +97,23 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     }, required: ['since', 'reason', 'isolated'] },
     lateSessionId: { type: 'string' },
     taxRounding: { type: 'object', additionalProperties: false, properties: {
-      granularity: { type: 'string', enum: ['per_order', 'per_line_items', 'per_rate_group_items', 'custom'] },
+      granularity: { type: 'string', enum: ['per_order', 'per_line_items', 'per_rate_group_items', 'custom', 'woocommerce'] },
+      roundAtSubtotal: { type: 'boolean' },
       mode: { type: 'string', enum: ['half_away_from_zero', 'half_up'] },
     }, required: ['granularity'] },
-    sentVersion: { type: 'integer', minimum: 1, maximum: 4 },
-    downgradedFrom: { type: 'integer', minimum: 1, maximum: 4 },
+    sentVersion: { type: 'integer', minimum: 1, maximum: 5 },
+    downgradedFrom: { type: 'integer', minimum: 1, maximum: 5 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
     display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
       subtotalMinor: { type: 'integer' }, discountMinor: { type: 'integer' }, taxMinor: { type: 'integer' },
       totalMinor: { type: 'integer' }, orderDiscountMinor: { type: 'integer' },
+      fees: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 }, amountMinor: { type: 'integer' },
+      }, required: ['id', 'name', 'amountMinor'] } },
+      shipping: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 }, amountMinor: { type: 'integer' },
+      }, required: ['id', 'name', 'amountMinor'] } },
       lines: { type: 'array', items: {
         type: 'object', additionalProperties: false, properties: {
           lineId: { type: 'string' }, amountMinor: { type: 'integer' },
@@ -129,5 +163,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity } };
 }

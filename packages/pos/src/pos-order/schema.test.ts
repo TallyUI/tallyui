@@ -61,7 +61,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(7);
+  expect(posOrderSchema.version).toBe(8);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -79,7 +79,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   }
 });
 
-it('stores sentVersion and downgradedFrom, and refuses values outside 1–4', async () => {
+it('stores sentVersion and downgradedFrom, and refuses values outside 1–5', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -93,8 +93,8 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–4', as
     const v4 = { ...order, id: uuidv7(), sentVersion: 4 as const, downgradedFrom: 4 as const };
     await pos_orders.insert(v4);
     expect((await pos_orders.findOne(v4.id).exec())?.toJSON()).toStrictEqual(v4);
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 5 as 4 })).rejects.toThrow();
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 5 as 4 })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 6 as 5 })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 6 as 5 })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 0 as 1 })).rejects.toThrow();
   } finally {
     await db.remove();
