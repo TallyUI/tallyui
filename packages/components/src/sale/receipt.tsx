@@ -50,11 +50,12 @@ export function Receipt({ order, posOrder, store, cashier, registerId, newSale, 
     </View>)}
     {/* Each discount appears once in the totals: line discounts are itemised under their lines and summed once here;
         the order discount appears once. order.display's figures (ADR-063; medusapos ADR 0008). */}
-    {receipt.fees.map((charge, index) => row(charge.name, money(charge.amountMinor), false, index))}
-    {receipt.shipping.map((charge, index) => row(charge.name, money(charge.amountMinor), false, index))}
     {row('Subtotal', money(totals.subtotalMinor))}
     {lineDiscountMinor > 0 ? row('Line discounts', `−${money(lineDiscountMinor)}`) : null}
     {receipt.orderDiscountMinor > 0 ? row('Order discount', `−${money(receipt.orderDiscountMinor)}`) : null}
+    {/* Charges are not in the subtotal (order.display): they follow it and its discounts, before tax. */}
+    {receipt.fees.map((charge, index) => row(charge.name, money(charge.amountMinor), false, index))}
+    {receipt.shipping.map((charge, index) => row(charge.name, money(charge.amountMinor), false, index))}
     {taxRows}
     {row('Total', money(totals.totalMinor), true)}
     {receipt.payments.map((payment, index) => row(payment.method === 'cash' ? 'Cash tendered' : 'Card terminal',
