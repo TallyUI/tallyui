@@ -30,6 +30,8 @@ interface RootContext {
   step: number;
   disabled: boolean;
   onValueChange: (value: number) => void;
+  /** Position of the value between min and max, 0–100 (0 when max <= min). */
+  percent: number;
 }
 
 export type { RootProps, TrackProps, RangeProps, ThumbProps, RootContext };
