@@ -104,7 +104,7 @@ export const createVendureConnector = (options: {
 export const vendureConnector = createVendureConnector();
 
 // Re-export pieces for advanced usage
-export { vendureAuth, vendureSignIn } from './auth';
+export { vendureAuth, vendureAuthFieldSets, vendureSignIn, type VendureCredentialKind, type VendureCredentials } from './auth';
 export { vendureProductSchema } from './schemas/products';
 export { vendureProductTraits } from './traits/product';
 export { vendureProductSync } from './sync/products';

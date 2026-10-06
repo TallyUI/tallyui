@@ -6,6 +6,14 @@ Requests with expired or rejected credentials reject with `ConnectorUnauthorized
 
 Sign-in itself rejects with `SignInError`.
 
+## Signing in
+
+Vendure supports two credential kinds: email and password (`kind: 'password'`), which `signIn` exchanges for a bearer session `token`, and a device key (`kind: 'api-key'`, stored as `api_key`), a Vendure API key available in Vendure 3.6+.
+
+Render `vendureAuth.fieldSets.password` or `vendureAuth.fieldSets['api-key']` (also exported as `vendureAuthFieldSets`) and store `kind` with the credentials. `vendureAuth.fields` remains the email and password form. Each kind sends only its chosen credential; when `kind` is absent, `api_key` wins over a session token as before.
+
+`capabilities()` works with a device key and no sign-in. Signing out a device-key till forgets the key on the device; it does not revoke the key on the server. The store owner revokes the key in Vendure.
+
 ## Customers
 
 `searchCustomers`, `createCustomer` and `getCustomer` are online only and run in the session's channel, selected by the `vendure-token` header.

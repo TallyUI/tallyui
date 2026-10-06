@@ -1,4 +1,4 @@
-import { SignInError, type ConnectorAuth } from '@tallyui/core';
+import { SignInError, type AuthField, type ConnectorAuth } from '@tallyui/core';
 
 import { readVendureCapabilities } from './capabilities';
 
@@ -54,24 +54,46 @@ export const vendureSignIn: NonNullable<ConnectorAuth['signIn']> = async (baseUr
 // Warns once per module lifetime when a caller still relies on the deprecated auth_token alias.
 let warnedAuthToken = false;
 
-export const vendureAuth: ConnectorAuth = {
-  type: 'Vendure Admin API',
-  fields: [
+export type VendureCredentialKind = 'password' | 'api-key';
+/** What a Vendure till stores: `kind` says which credential it chose (absent on credentials saved before 3.2.0). */
+export interface VendureCredentials {
+  kind?: VendureCredentialKind;
+  url: string;
+  email?: string; password?: string; // sign-in form only, never sent as headers
+  token?: string; // from signIn, for kind 'password'
+  api_key?: string; // the device key, for kind 'api-key'
+  channel_token?: string;
+}
+
+export const vendureAuthFieldSets: Record<VendureCredentialKind, AuthField[]> = {
+  password: [
     { key: 'url', label: 'Backend URL', type: 'url', placeholder: 'https://my-vendure-server.com', required: true },
     { key: 'email', label: 'Email', type: 'text', required: true },
     { key: 'password', label: 'Password', type: 'password', required: true },
     { key: 'channel_token', label: 'Channel token (optional)', type: 'text' },
   ],
-  // An API key (Vendure 3.6+) wins over a signed-in session token; channel_token selects a non-default channel.
+  'api-key': [
+    { key: 'url', label: 'Backend URL', type: 'url', placeholder: 'https://my-vendure-server.com', required: true },
+    { key: 'api_key', label: 'Device key', type: 'password', required: true },
+    { key: 'channel_token', label: 'Channel token (optional)', type: 'text' },
+  ],
+};
+
+export const vendureAuth: ConnectorAuth & { fieldSets: Record<VendureCredentialKind, AuthField[]> } = {
+  type: 'Vendure Admin API',
+  fields: vendureAuthFieldSets.password,
+  fieldSets: vendureAuthFieldSets,
+  // Without kind, an API key (Vendure 3.6+) wins over a session token; channel_token selects a non-default channel.
   // auth_token is the deprecated name for token, kept so existing apps keep working.
   getHeaders: (credentials): Record<string, string> => {
     if (credentials.token === undefined && credentials.auth_token !== undefined && !warnedAuthToken) {
       warnedAuthToken = true;
       console.warn("@tallyui/connector-vendure: the 'auth_token' credential is deprecated; store the credential as 'token' instead.");
     }
-    const token = credentials.token ?? credentials.auth_token;
+    const token = credentials.kind === 'api-key' ? undefined : credentials.token ?? credentials.auth_token;
+    const apiKey = credentials.kind === 'password' ? undefined : credentials.api_key;
     return {
-      ...(credentials.api_key ? { 'vendure-api-key': credentials.api_key } : token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(apiKey ? { 'vendure-api-key': apiKey } : token ? { Authorization: `Bearer ${token}` } : {}),
       ...(credentials.channel_token ? { 'vendure-token': credentials.channel_token } : {}),
     };
   },
