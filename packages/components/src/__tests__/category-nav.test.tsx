@@ -26,10 +26,18 @@ describe('CategoryNav', () => {
   it('exposes the selected chip and uses rectangular corners', () => {
     render(<CategoryNav categories={categories} selectedId="clothing" onSelect={() => {}} />);
     const selected = screen.getByTestId('category-nav-clothing');
-    expect(selected.getAttribute('role')).toBe('button');
-    expect(selected.getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByTestId('category-nav-all').getAttribute('aria-selected')).toBe('false');
+    expect(selected.getAttribute('role')).toBe('radio');
+    expect(selected.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('category-nav-all').getAttribute('aria-checked')).toBe('false');
     expect(selected.className).toContain('rounded-md');
     expect(selected.className).not.toContain('rounded-full');
+  });
+
+  it('labels the chip group as Categories', () => {
+    const { unmount } = render(<CategoryNav categories={categories} selectedId="all" onSelect={() => {}} orientation="vertical" />);
+    expect(screen.getByRole('radiogroup', { name: 'Categories' })).toBeDefined();
+    unmount();
+    render(<CategoryNav categories={categories} selectedId="all" onSelect={() => {}} />);
+    expect(screen.getByRole('radiogroup', { name: 'Categories' })).toBeDefined();
   });
 });

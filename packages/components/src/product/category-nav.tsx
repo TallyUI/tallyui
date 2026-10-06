@@ -31,8 +31,8 @@ export function CategoryNav({
       <Pressable
         key={cat.id}
         testID={`category-nav-${cat.id}`}
-        accessibilityRole="button"
-        accessibilityState={{ selected: active }}
+        role="radio"
+        aria-checked={active}
         onPress={() => onSelect(cat.id)}
         className={cn(
           'rounded-md px-3 py-1.5',
@@ -58,6 +58,8 @@ export function CategoryNav({
         showsHorizontalScrollIndicator={false}
         contentContainerClassName="flex-row gap-2 px-3 py-2"
         className={className}
+        role="radiogroup"
+        accessibilityLabel="Categories"
         {...viewProps}
       >
         {content}
@@ -66,7 +68,7 @@ export function CategoryNav({
   }
 
   return (
-    <View className={cn('gap-1 p-2', className)} {...viewProps}>
+    <View className={cn('gap-1 p-2', className)} role="radiogroup" accessibilityLabel="Categories" {...viewProps}>
       {content}
     </View>
   );
