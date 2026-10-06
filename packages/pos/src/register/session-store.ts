@@ -49,6 +49,15 @@ export class RegisterNeedsUpgradeError extends Error {
   }
 }
 
+/** Opening is refused while the register has a `conflict` session (ADR-078); its message can be shown to a cashier as it is. */
+export class RegisterSessionConflictError extends Error {
+  readonly code = 'REGISTER_SESSION_CONFLICT';
+  constructor() {
+    super('This register is open on another till. Take it over or choose another register.');
+    this.name = 'RegisterSessionConflictError';
+  }
+}
+
 /** ADR-068 6a: movement amounts must be safe integers, positive for paid_in/paid_out and zero for no_sale. */
 export class RegisterMovementAmountError extends Error {
   constructor(type: 'paid_in' | 'paid_out' | 'no_sale', amountMinor: number) {
@@ -80,7 +89,7 @@ export class RegisterMovementStrandedError extends Error {
   }
 }
 
-/** Every move a session may make. Nothing leaves `closed`; everything else is refused.
+/** Every move a session may make. `closed` and `abandoned` are terminal: nothing leaves them; everything else is refused.
  * No cashier move leaves `conflict` or `superseded`; the store's answers set them (ADR-078). */
 const TRANSITIONS: Record<RegisterSession['status'], readonly RegisterSession['status'][]> = {
   open: ['counting', 'closed'],
@@ -88,6 +97,7 @@ const TRANSITIONS: Record<RegisterSession['status'], readonly RegisterSession['s
   closed: [],
   conflict: [],
   superseded: [],
+  abandoned: [],
 };
 
 /** Whether this build knows the stored session status. */
@@ -116,6 +126,7 @@ async function requireLiveSession(sessions: RegisterSessionCollection, id: strin
   if (!session) throw new RegisterSessionRequiredError();
   if (!isKnownSessionStatus(session.status)) throw new RegisterNeedsUpgradeError();
   if (session.status === 'closed') throw new RegisterSessionClosedError();
+  if (session.status === 'abandoned') throw new RegisterSessionClosedError();
   return session;
 }
 

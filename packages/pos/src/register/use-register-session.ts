@@ -130,12 +130,13 @@ const unwritten = (row: RegisterSession, closureRows: readonly { id: string }[])
 /**
  * The session for this register: first the one an unapplied closure reservation names (its close
  * was interrupted after the number was reserved, perhaps after its row was written), so it can
- * finish; then the open or counting one; then a closed one whose closure row was never written; null if any status is unknown.
+ * finish; then the open or counting one; then a conflict one; then a closed one whose closure row was never written; null if any status is unknown.
  */
 function currentSession(rows: RegisterSession[], closureRows: Closure[], reservation: Reservation) {
   if (rows.some((row) => !store.isKnownSessionStatus(row.status))) return null;
   return (reservation && !reservation.applied ? rows.find((row) => row.id === reservation.row.session_id) : undefined)
-    ?? rows.find((row) => row.status !== 'closed')
+    ?? rows.find((row) => row.status === 'open' || row.status === 'counting')
+    ?? rows.find((row) => row.status === 'conflict')
     ?? rows.find((row) => unwritten(row, closureRows))
     ?? null;
 }
@@ -299,7 +300,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     enabled,
     blind: options.blind ?? false,
     /** Pass straight to useSale's `session` option: `complete()` then stamps through `stampSession`. */
-    saleSession: session && sessions && session.status !== 'closed' ? { id: session.id, sessions } : undefined,
+    saleSession: session && sessions && (session.status === 'open' || session.status === 'counting') ? { id: session.id, sessions } : undefined,
     /** The open session's id, `null` when sessions are off, else `RegisterSessionRequiredError`. Call it when tender starts and before a card terminal captures. */
     requireOpen,
     /** `requireOpen()`, returning `{ id, sessions }`: pass it to useSale's `startTender`, which pins it (the rendered `saleSession` can lag). */
@@ -310,6 +311,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
        * another open is running (in any hook instance), and with `RegisterCloseIncompleteError`
        * while an earlier close hasn't finished: a new session would lock the till behind it.
        * An unknown stored status refuses with `RegisterNeedsUpgradeError`.
+       * A conflict session refuses with `RegisterSessionConflictError`; superseded and abandoned sessions do not block.
        */
       openSession: async (input: { expectedFloatMinor: number | null; countedFloatMinor: number }) => {
         // A double tap: the second call sees the first's promise, set before its first await.
@@ -320,7 +322,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           // The storage, not the rendered snapshot or a cached query, which can lag a new write.
           const rows = await readFresh(sessions, { selector: { register_id: registerId } });
           if (rows.some((row) => !store.isKnownSessionStatus(row.status))) throw new store.RegisterNeedsUpgradeError();
-          if (rows.some((row) => row.status !== 'closed')) throw new RegisterSessionAlreadyOpenError();
+          if (rows.some((row) => row.status === 'conflict')) throw new store.RegisterSessionConflictError();
+          if (rows.some((row) => row.status === 'open' || row.status === 'counting')) throw new RegisterSessionAlreadyOpenError();
           // Closure rows before the reservation: a close reserves, then inserts its row, then applies the
           // reservation, so a close landing between the two reads is still caught by one of them.
           const closureRows = await readFresh(closures, { selector: { register_id: registerId } });

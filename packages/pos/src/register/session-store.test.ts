@@ -21,6 +21,7 @@ import { serverClose as closeOnServer } from './server-close.test-helper';
 import {
   backToSelling,
   closeSession,
+  isKnownSessionStatus,
   openSession,
   recordMovement,
   RegisterMovementAmountError,
@@ -90,6 +91,29 @@ it('stamping or recording cash on a session whose status this build does not kno
     sessionId: session.id, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7',
   })).rejects.toBeInstanceOf(RegisterNeedsUpgradeError);
   expect(await db.cash_movements.find().exec()).toHaveLength(0);
+});
+
+it('an abandoned session is terminal: no transition, stamp or cash movement', async () => {
+  const session = await db.register_sessions.insert({
+    id: 'abandoned-session', register_id: 'register', status: 'abandoned',
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const before = await db.register_sessions.storageInstance.findDocumentsById([session.id], false);
+  await expect(startCounting(db.register_sessions, session.id)).rejects.toThrow('invalid_session_transition:abandoned->counting');
+  await expect(closeSession(db.register_sessions, session.id, { counted: { cash: 10000 } }))
+    .rejects.toThrow('invalid_session_transition:abandoned->closed');
+  await expect(stampSession({ id: 'order' } as PosOrder, session.id, db.register_sessions)).rejects.toBeInstanceOf(RegisterSessionClosedError);
+  await expect(recordMovement(db.register_sessions, db.cash_movements, db.closures, {
+    sessionId: session.id, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7',
+  })).rejects.toBeInstanceOf(RegisterSessionClosedError);
+  const after = await db.register_sessions.storageInstance.findDocumentsById([session.id], false);
+  const withoutRevisionMetadata = ({ _rev, _meta, ...data }: (typeof before)[number]) => data;
+  expect(after.map(withoutRevisionMetadata)).toEqual(before.map(withoutRevisionMetadata));
+  expect(await db.cash_movements.find().exec()).toHaveLength(0);
+});
+
+it('isKnownSessionStatus knows abandoned', () => {
+  expect(isKnownSessionStatus('abandoned')).toBe(true);
 });
 
 it('opens pending and retains the pending transition through each local state', async () => {

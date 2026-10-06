@@ -61,6 +61,7 @@ import {
   recordMovement,
   RegisterSessionRequiredError,
   RegisterNeedsUpgradeError,
+  RegisterSessionConflictError,
   RegisterMovementStrandedError,
   stampSession,
   startCounting,
@@ -161,6 +162,68 @@ it('opening a session on a register that needs upgrade refuses with RegisterNeed
   });
   const rows = await readFresh(db.register_sessions, { selector: { register_id: 'register' } });
   expect(rows.map((row) => row.id)).toEqual([session.id]);
+});
+
+it('a conflict session is current but takes no sale', async () => {
+  const session = await db.register_sessions.insert({
+    id: 'conflict-session', register_id: 'register', status: 'conflict',
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const { result } = render();
+  await waitFor(() => expect(result.current.session?.id).toBe(session.id));
+  expect(result.current.needsUpgrade).toBe(false);
+  expect(result.current.saleSession).toBeUndefined();
+  await expect(result.current.requireOpen()).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+});
+
+it('opening while the register has a conflict session refuses with RegisterSessionConflictError and writes nothing', async () => {
+  const session = await db.register_sessions.insert({
+    id: 'conflict-session', register_id: 'register', status: 'conflict',
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const { result } = render();
+  await act(async () => {
+    await expect(result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 }))
+      .rejects.toBeInstanceOf(RegisterSessionConflictError);
+  });
+  const rows = await readFresh(db.register_sessions, { selector: { register_id: 'register' } });
+  expect(rows.map((row) => row.id)).toEqual([session.id]);
+});
+
+it('superseded and abandoned sessions are neither current nor sellable and do not block opening', async () => {
+  await db.register_sessions.insert({
+    id: 'superseded-session', register_id: 'register', status: 'superseded',
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  await db.register_sessions.insert({
+    id: 'abandoned-session', register_id: 'register', status: 'abandoned',
+    opened_at_gmt: '2026-09-16T09:00:00.000Z', counted_float_minor: 10000,
+  });
+  const { result } = render();
+  const initial = result.current;
+  await waitFor(() => expect(result.current).not.toBe(initial));
+  expect(result.current.session).toBeNull();
+  expect(result.current.saleSession).toBeUndefined();
+  let id = '';
+  await act(async () => {
+    id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id;
+  });
+  await waitFor(() => expect(result.current.session?.id).toBe(id));
+  expect(result.current.session?.status).toBe('open');
+  expect(result.current.saleSession).toBeDefined();
+});
+
+it('an open session is current over a conflict row', async () => {
+  await db.register_sessions.insert({
+    id: 'a-conflict-session', register_id: 'register', status: 'conflict',
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const session = await db.register_sessions.insert({
+    id: 'open-session', register_id: 'register', status: 'open',
+    opened_at_gmt: '2026-09-16T09:00:00.000Z', counted_float_minor: 10000,
+  });
+  const { result } = render();
+  await waitFor(() => expect(result.current.session?.id).toBe(session.id));
 });
 
 describe('register commands', () => {
