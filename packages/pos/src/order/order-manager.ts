@@ -1,18 +1,11 @@
-import { BehaviorSubject, map, type Observable } from 'rxjs';
+import { BehaviorSubject, type Observable } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { TaxContext } from '../tax/types';
-import { customerRefusal } from '../pos-order/command';
 import { createOrderBuilder, type OrderBuilder } from './order-builder';
 import type { Order } from './types';
+import { writeOrderDraft, restoreOrderDraft, parkedOrderSummaries$, type ParkedOrderSummary } from './order-drafts';
 
-export interface ParkedOrderSummary {
-  id: string;
-  customerName?: string;
-  itemCount: number;
-  totalMinor: number;
-  parkedAt: string;
-  source: 'local' | 'server';
-}
+export type { ParkedOrderSummary } from './order-drafts';
 
 export interface OrderManagerOptions {
   currency: string;
@@ -36,21 +29,7 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
   let activeBuilder = createOrderBuilder({ currency, taxContext });
   const activeSubject = new BehaviorSubject<OrderBuilder>(activeBuilder);
 
-  const parkedOrders$: Observable<ParkedOrderSummary[]> = draftsCollection.find().$.pipe(
-    map((docs) =>
-      docs.map((doc) => {
-        const json = doc.toJSON() as any;
-        return {
-          id: json.id,
-          customerName: json.customerName || undefined,
-          itemCount: json.itemCount ?? 0,
-          totalMinor: json.total ?? 0,
-          parkedAt: json.parkedAt ?? '',
-          source: 'local' as const,
-        };
-      }),
-    ),
-  );
+  const parkedOrders$ = parkedOrderSummaries$(draftsCollection);
 
   return {
     activeOrder$: activeSubject.asObservable(),
@@ -64,14 +43,7 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
 
     async parkCurrentOrder() {
       const snapshot = activeBuilder.getSnapshot();
-      await draftsCollection.upsert({
-        id: snapshot.id,
-        data: JSON.stringify(snapshot),
-        customerName: snapshot.customer?.name ?? '',
-        itemCount: snapshot.lineItems.length,
-        total: snapshot.totalMinor,
-        parkedAt: new Date().toISOString(),
-      });
+      await writeOrderDraft(draftsCollection, snapshot);
 
       activeBuilder = createOrderBuilder({ currency, taxContext });
       activeSubject.next(activeBuilder);
@@ -85,63 +57,7 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
       const json = doc.toJSON() as any;
       const savedOrder: Order = JSON.parse(json.data);
 
-      const builder = createOrderBuilder({
-        currency,
-        taxContext,
-        id: savedOrder.id,
-      });
-
-      // Restore state from saved order
-      // A customer whose email or id order.create would refuse (see useSale's setCustomer) isn't restored.
-      if (savedOrder.customer && !customerRefusal(savedOrder.customer)) {
-        builder.setCustomer(savedOrder.customer);
-      }
-      if (savedOrder.note) {
-        builder.setNote(savedOrder.note);
-      }
-
-      // Restore line items and their discounts
-      for (const line of savedOrder.lineItems) {
-        const lineId = builder.addLine({
-          productId: line.productId,
-          variantId: line.variantId,
-          name: line.name,
-          sku: line.sku,
-          imageUrl: line.imageUrl,
-          unitPrice: { amount: line.unitPriceMinor, currency, taxInclusive: line.taxInclusive },
-          quantity: line.quantity,
-          taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })),
-        });
-        for (const discount of line.discounts) {
-          builder.applyLineDiscount(lineId, {
-            type: discount.type,
-            value: discount.value,
-            label: discount.label,
-            couponCode: discount.couponCode,
-          });
-        }
-      }
-
-      // Restore order-level discounts
-      for (const discount of savedOrder.discounts) {
-        builder.applyOrderDiscount({
-          type: discount.type,
-          value: discount.value,
-          label: discount.label,
-          couponCode: discount.couponCode,
-        });
-      }
-
-      // Restore payments
-      for (const payment of savedOrder.payments) {
-        builder.addPayment({
-          method: payment.method,
-          amountMinor: payment.amountMinor,
-          tenderedMinor: payment.tenderedMinor,
-          changeMinor: payment.changeMinor,
-          reference: payment.reference,
-        });
-      }
+      const builder = restoreOrderDraft(savedOrder, { currency, taxContext });
 
       await doc.remove();
 

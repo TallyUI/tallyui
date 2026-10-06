@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { RxCollection } from 'rxdb';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
-import { createOrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
+import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { finalizeOrder, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
@@ -30,6 +31,8 @@ export const HUNG_SAVE_CHECK_MS = 5000;
 /** Call under a `TaxProvider`: its tax context and the settings' currency price every sale. */
 export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   registerId: string; cashierRef: string; capabilities?: ServerCapabilities;
+  /** Where `park()` keeps parked carts; create it with `orderDraftSchema` */
+  drafts?: RxCollection;
   /**
    * When set, `complete()` stamps the finalized order with this session before `onSaleCompleted`.
    * `complete()` runs after the money is taken, so a refused stamp (the session closed or went
@@ -103,7 +106,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     return active;
   }
   // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale(null)`.
-  function resetSale(customer: CustomerSummary | null) {
+  function resetSale(customer: CustomerSummary | null, restored?: OrderBuilder) {
     if (inFlight.current && !pending.current) return setError(SALE_SAVING);
     if (pending.current && confirmed.current !== pending.current) {
       if (inFlight.current) checkStored(pending.current);
@@ -115,7 +118,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     droppedReference.current = null;
     setSaving(false);
     madeWith.current = { taxContext, currency: settings.currency };
-    const next = createOrderBuilder({ currency: settings.currency, taxContext });
+    const next = restored ?? createOrderBuilder({ currency: settings.currency, taxContext });
     if (customer !== null) next.setCustomer(customer);
     builderNow.current = next;
     setBuilder(next);
@@ -392,6 +395,30 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
      * updates or requeues `pos_orders` itself.
      */
     newSale() { resetSale(null); },
+    /** Parks the cart in `drafts`; resolves to a refusal message, or null once parked. */
+    async park(): Promise<string | null> {
+      if (locked()) return SALE_SAVING;
+      if (!opts.drafts) throw new Error('useSale: park() needs the drafts option');
+      if (stage.kind !== 'cart') return 'Finish or cancel the payment before parking the sale';
+      if (!builderNow.current.getSnapshot().lineItems.length) return 'There is nothing to park';
+      await writeOrderDraft(opts.drafts, builderNow.current.getSnapshot());
+      resetSale(null);
+      return null;
+    },
+    /** Resumes a draft into an empty cart; resolves to a refusal message, or null once resumed. */
+    async resume(draftId: string): Promise<string | null> {
+      if (locked()) return SALE_SAVING;
+      if (!opts.drafts) throw new Error('useSale: park() needs the drafts option');
+      if (stage.kind !== 'cart' || builderNow.current.getSnapshot().lineItems.length) return 'Park or clear the current sale first';
+      const doc = await opts.drafts.findOne(draftId).exec();
+      if (!doc) return 'That parked sale is no longer there';
+      const saved: Order = JSON.parse(doc.toJSON().data);
+      if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
+      const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext });
+      await doc.remove();
+      resetSale(null, builder);
+      return null;
+    },
     /**
      * Continue after a failed save whose order is confirmed stored (`canContinue`): exactly `newSale()`.
      * The order stays pending in the outbox, which will send it; it isn't handed to `onSaleCompleted` again, and
