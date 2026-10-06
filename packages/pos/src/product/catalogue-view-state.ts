@@ -6,21 +6,24 @@ export interface CatalogueViewState {
   view: CatalogueView;
   gridColumns: CatalogueGridColumns;
   sort: ProductSort | null;
+  categoryId: string | null;
 }
 export const DEFAULT_CATALOGUE_VIEW_STATE: CatalogueViewState = Object.freeze({
-  view: 'grid', gridColumns: 'auto', sort: null,
+  view: 'grid', gridColumns: 'auto', sort: null, categoryId: null,
 });
 
 export type CatalogueViewAction =
   | { type: 'setView'; view: CatalogueView }
   | { type: 'setGridColumns'; gridColumns: CatalogueGridColumns }
   | { type: 'setSort'; sort: ProductSort | null }
+  | { type: 'setCategory'; categoryId: string | null }
   | { type: 'replace'; state: CatalogueViewState };
 
 export function catalogueViewReducer(state: CatalogueViewState, action: CatalogueViewAction): CatalogueViewState {
   switch (action.type) {
     case 'setView': return state.view === action.view ? state : { ...state, view: action.view };
     case 'setGridColumns': return state.gridColumns === action.gridColumns ? state : { ...state, gridColumns: action.gridColumns };
+    case 'setCategory': return state.categoryId === action.categoryId ? state : { ...state, categoryId: action.categoryId };
     case 'setSort': return state.sort?.field === action.sort?.field && state.sort?.dir === action.sort?.dir
       ? state : { ...state, sort: action.sort };
     case 'replace': return action.state;
@@ -30,9 +33,11 @@ export function catalogueViewReducer(state: CatalogueViewState, action: Catalogu
 export function normalizeCatalogueViewState(raw: unknown, defaults: CatalogueViewState = DEFAULT_CATALOGUE_VIEW_STATE): CatalogueViewState {
   if (typeof raw !== 'object' || raw === null) return defaults;
   try {
-    const { view, gridColumns, sort } = raw as Record<string, unknown>;
+    const { view, gridColumns, sort, categoryId } = raw as Record<string, unknown>;
     const candidate = sort as Partial<ProductSort> | null;
     return {
+      categoryId: categoryId === null || (typeof categoryId === 'string' && categoryId.length > 0)
+        ? categoryId : defaults.categoryId,
       view: view === 'grid' || view === 'table' ? view : defaults.view,
       gridColumns: gridColumns === 'auto' || (typeof gridColumns === 'number' && Number.isInteger(gridColumns)
         && gridColumns >= 2 && gridColumns <= 8) ? gridColumns as CatalogueGridColumns : defaults.gridColumns,

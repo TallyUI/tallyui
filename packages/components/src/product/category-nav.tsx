@@ -30,9 +30,12 @@ export function CategoryNav({
     return (
       <Pressable
         key={cat.id}
+        testID={`category-nav-${cat.id}`}
+        accessibilityRole="button"
+        accessibilityState={{ selected: active }}
         onPress={() => onSelect(cat.id)}
         className={cn(
-          'rounded-full px-3 py-1.5',
+          'rounded-md px-3 py-1.5',
           active ? 'bg-primary' : 'bg-muted',
         )}
       >

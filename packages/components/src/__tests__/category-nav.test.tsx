@@ -22,4 +22,14 @@ describe('CategoryNav', () => {
     fireEvent.click(screen.getByText('Clothing'));
     expect(onSelect).toHaveBeenCalledWith('clothing');
   });
+
+  it('exposes the selected chip and uses rectangular corners', () => {
+    render(<CategoryNav categories={categories} selectedId="clothing" onSelect={() => {}} />);
+    const selected = screen.getByTestId('category-nav-clothing');
+    expect(selected.getAttribute('role')).toBe('button');
+    expect(selected.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('category-nav-all').getAttribute('aria-selected')).toBe('false');
+    expect(selected.className).toContain('rounded-md');
+    expect(selected.className).not.toContain('rounded-full');
+  });
 });
