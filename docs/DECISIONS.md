@@ -4237,8 +4237,8 @@ interface OrderCreatePayload {
 
 ## ADR-075 Fee, shipping and custom lines; `order.create` version 5; `pos_orders` version 8
 
-- **Date:** 2026-10-06 · **Status:** Proposed (front desk assignment G5b, from the WooCommerce lane's M5
-  survey) · **Relates to:** ADR-062 (order discounts allocated per line), ADR-063 and ADR-065 (display figures, v3),
+- **Date:** 2026-10-06 · **Status:** Accepted (the front desk's ruling on #428, 2026-10-06; assignment G5b, from
+  the WooCommerce lane's M5 survey) · **Relates to:** ADR-062 (order discounts allocated per line), ADR-063 and ADR-065 (display figures, v3),
   ADR-069 (`pos_orders` one-way), ADR-070 (strict payloads: every new field is a version bump), ADR-073 (the
   WooCommerce transport)
 - **Context:**
@@ -4282,10 +4282,16 @@ interface OrderCreatePayload {
      - `display` gains the fee and shipping rows.
      - Field kinds (ADR-070 Decision 3): `amountMinor`, `taxStatus` and `custom` are **instructions** (honoured or
        refused); `taxMinor`, `name` and `methodId` are informational.
-     - `contentVersion` is 5 when an order has a fee, shipping or a custom line.
-     - **No downgrade.** Below 5, money would be lost, so `finalizeOrder` refuses such an order when the store's
-       `capabilities.orderCreate < 5`, with a clear message, before the money is taken. A stored v5 order sent to a
-       server that later drops to 4 is rejected `unsupported_version`, as v2 discounts are today.
+     - `contentVersion` is 5 only when an order has a fee, shipping or a custom line. Any other order keeps
+       today's version and its negotiation, so every existing store keeps selling through the upgrade window.
+     - **Negotiated, as versions 2–4 are.** The till learns the store's versions from `/tally/v1/info`
+       (`capabilities.orderCreate`, the outbox's `maxVersion`).
+       - An order v4 can express goes out at the store's highest version, up to 5.
+       - An order that **needs** 5 (a fee, shipping or a custom line) can't be expressed below it without losing
+         money, so `finalizeOrder` refuses it when the store's `capabilities.orderCreate < 5`, before the money is
+         taken, with a message naming the plugin upgrade the store needs.
+       - A stored v5 order sent to a server that later drops below 5 is rejected `unsupported_version`, as v2
+         discounts are today.
      - `precheckCommand` (`@tallyui/core/server`) refuses v5 fields below version 5.
   4. **`pos_orders` version 8** adds the optional `fees`, `shipping` and the line's `custom`.
      - Migration 8 is the identity.
@@ -4303,8 +4309,14 @@ interface OrderCreatePayload {
   - (b) `PosOrder` v8, finalize and the v5 envelope and precheck: **one-way**;
   - (c) the WooCommerce transport;
   - (d) components (Cart entry).
-- **Outside this repo:** medusapos and vendurepos accept version 5 in their command endpoints (their lanes). Until a
-  store advertises 5, its tills refuse fees, shipping and custom lines at finalize.
+- **Consequences outside this repo** (relayed to the lanes by the front desk when phase (a) ships):
+  - **woocommerce-pos (1.10.x push):** take the v5 fields through `push/orders`. That means `fee_lines`,
+    `shipping_lines`, and the misc product (`product_id: 0`) as the transport maps them, confirmed against a live
+    store.
+  - **medusapos plugin:** accept and apply `order.create` version 5 and advertise it in `/tally/v1/info`.
+  - **vendurepos plugin:** the same.
+  - Until a store advertises 5, its tills refuse only fees, shipping and custom lines at finalize, naming the
+    upgrade. Every other sale is unaffected.
 - **Not decided here:** coupons (G6); several rates per class, compound tax, and WooCommerce's shipping tax class
   from store settings (G5). Fees and shipping use the single rate per class that `TaxContext` has today, and G5
   replaces that for every line kind alike.
