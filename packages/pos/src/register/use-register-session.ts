@@ -84,6 +84,8 @@ export interface UseRegisterSessionOptions {
   /** `register_commands`, created with `registerCommandCollection()`; `null` while it opens. */
   commands?: RegisterCommandCollection | null;
   capabilities?: ServerCapabilities;
+  /** The till's name from the app's settings, sent on a register v2 open; the app supplies its platform fallback. */
+  deviceName?: string | null;
   /** `pos_orders`: a session's sales are those whose `sessionId` is its id. */
   orders: RxCollection<PosOrder> | null;
   /** The register document's host, for the closure number and perpetual totals (`writeClosure`); `null` while it opens. */
@@ -151,8 +153,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const { commands } = options;
   const commandEnabled = (options.capabilities?.register ?? 0) >= 1;
   const commandTarget = useMemo(() => enabled && commandEnabled && commands && sessions && movements && closures && register && registerId
-    ? { commands, sessions, movements, closures, host: register, storeKey, registerId } : null,
-  [enabled, commandEnabled, commands, sessions, movements, closures, register, storeKey, registerId]);
+    ? { commands, sessions, movements, closures, host: register, storeKey, registerId, registerContract: options.capabilities?.register, deviceName: options.deviceName } : null,
+  [enabled, commandEnabled, commands, sessions, movements, closures, register, storeKey, registerId, options.capabilities?.register, options.deviceName]);
   const commandTargetRef = useRef(commandTarget);
   commandTargetRef.current = commandTarget;
   const reconcile = (row?: RegisterSession) => {

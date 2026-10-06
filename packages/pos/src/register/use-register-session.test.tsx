@@ -167,6 +167,24 @@ describe('register commands', () => {
   const ledger = async () => (await readFresh(db.register_commands, { selector: {} })).sort((a, b) => a.seq - b.seq);
   const keys = async () => (await ledger()).map((row) => row.key);
 
+  it("a register v2 store records a version 2 open carrying the app's device name", async () => {
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 2 }, deviceName: 'Front till' });
+    let id = '';
+    await act(async () => { id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${id}`]));
+    expect((await ledger())[0]).toMatchObject({ key: `session.open:${id}`, version: 2, payload: { deviceName: 'Front till' } });
+  });
+
+  it("a register v1 store records a version 1 open without the app's device name", async () => {
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 1 }, deviceName: 'Front till' });
+    let id = '';
+    await act(async () => { id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${id}`]));
+    const [row] = await ledger();
+    expect(row.version).toBe(1);
+    expect(row.payload).not.toHaveProperty('deviceName');
+  });
+
   it.each([undefined, { orderCreate: 3 }, { orderCreate: 3, register: 0 }])(
     'records no register command without the register capability', async (capabilities) => {
       const read = vi.spyOn(db.register_commands.storageInstance, 'findDocumentsById');
