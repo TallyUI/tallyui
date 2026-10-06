@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/core",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "type": "module",
   "description": "Core interfaces, traits, and context providers for Tally UI",
   "main": "./dist/index.js",

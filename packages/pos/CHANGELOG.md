@@ -1,5 +1,15 @@
 # @tallyui/pos
 
+## 3.4.0
+
+### Minor Changes
+
+- c3acce9: Include fees and shipping in Z report tax rates, expose store capabilities from useSale, and tax WooCommerce shipping using the store's shipping tax class as the cart changes.
+
+### Patch Changes
+
+- @tallyui/core@3.4.0
+
 ## 3.3.0
 
 ### Minor Changes

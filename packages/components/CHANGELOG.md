@@ -1,5 +1,19 @@
 # @tallyui/components
 
+## 3.4.0
+
+### Minor Changes
+
+- 4ddcc43: The Cart adds, shows and removes fees, shipping and custom lines when the store accepts order.create 5 (`ChargeForm`, gated on the store's `lineTax` for tax status and class), and the receipt prints fees and shipping.
+
+### Patch Changes
+
+- Updated dependencies [c3acce9]
+  - @tallyui/pos@3.4.0
+  - @tallyui/core@3.4.0
+  - @tallyui/primitives@3.4.0
+  - @tallyui/theme@3.4.0
+
 ## 3.3.0
 
 ### Patch Changes
