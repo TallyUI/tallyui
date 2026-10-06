@@ -36,6 +36,9 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // the Z report's approved mixed-rounding line (#287): one pure string constant ClosureSheet
   // shares with buildClosureDocument, never a hook or the store.
   'TAX_ROUNDING_MIXED_NOTE',
+  // the catalogue (Catalogue 3.5.0 slice a, placement ruling 2026-10-06): the pure product
+  // sort ProductTable orders rows with, never a hook or the store.
+  'sortProducts', 'productSortValue',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
