@@ -4320,3 +4320,78 @@ interface OrderCreatePayload {
 - **Not decided here:** coupons (G6); several rates per class, compound tax, and WooCommerce's shipping tax class
   from store settings (G5). Fees and shipping use the single rate per class that `TaxContext` has today, and G5
   replaces that for every line kind alike.
+
+## ADR-076 WooCommerce tax: the WCPOS engine ported into core, several rates per class, Woo rounding
+
+- **Date:** 2026-10-06 · **Status:** Proposed (front desk assignment G5, from the WooCommerce lane's M5 survey; a
+  live risk: a store with `calc_taxes = yes` sells untaxed today and gets `total_mismatch`) · **Relates to:**
+  ADR-049 (store settings), ADR-071 (tax rounding is a capability), ADR-073 (the WooCommerce transport), ADR-075
+  (fees and shipping)
+- **Context:**
+  - `TaxContext` gives one rate per class (`getTaxRatePpm`).
+    - `recalculateLine` taxes each rate independently on the line's net, with no compound tax.
+    - The rounding strategies are `per_order`, `per_line_items` (combined, Vendure-style) and
+      `per_rate_group_items`, with no HALF_DOWN.
+  - WooCommerce (1.10.20 captures, `taxes-1.10.20/`) differs on several counts:
+    - It has several rates per class, picked by address with **one rate per priority**.
+    - **Compound** rates apply on the price plus the earlier rates.
+    - It has a per-rate `shipping` flag and a store `shipping_tax_class` (which may be `inherit`).
+    - Each rate is rounded to 6 decimals per line and then, with `tax_round_at_subtotal = no` (the default), **each
+      line's tax per rate** is rounded to the currency's decimals: HALF_UP when prices exclude tax, HALF_DOWN when
+      they include it. With round-at-subtotal on, the 6dp sums are rounded once.
+    - Products carry `tax_class` (`''` is standard) and `tax_status` (`taxable`, `shipping` or `none`).
+    - Golden case: order #136 charged 1.16 on 31.75 pre-tax, with per-rate lines and a compound rate on the
+      **unrounded** base (0.195525).
+  - The WCPOS app already implements exactly this (`@wcpos/order-math` and `filterTaxRates`; MIT, © WCPOS, same
+    owner), with 219 test cases (handoff `wcpos-tax-engine-for-tallyui-2026-10-06.md`).
+- **Decision:**
+  1. **Port, don't redesign.**
+     - `@tallyui/core` gains `tax/woocommerce/`, a port of order-math's tax parts with an attribution header
+       (`Ported from @wcpos/order-math (MIT, © 2021-2026 WCPOS)`). It contains:
+       - `calculateTaxes`;
+       - the precision helpers (`roundHalfUp` and `roundHalfDown` with the midpoint fix, `getRoundingPrecision`,
+         `roundTaxTotal`);
+       - `filterTaxRates` (address matching with postcode ranges and wildcards, cities, priority and specificity);
+       - `normalizeTaxClass`;
+       - `resolveInheritedShippingTaxClass`.
+     - It keeps WooCommerce's float arithmetic and its PHP-style rounding, because parity with WooCommerce is the
+       point. It replaces lodash with local code. **No coupon code** (G6).
+     - Its tests are ported and adapted, except the coupon suites: `calculate-taxes`, `precision`, `sum-taxes`,
+       `tax-class` and `tax-rates.helpers`.
+  2. **A rate list beside the single rate.**
+     - `TaxContext` gains an optional `getTaxRates(taxClass?, { shipping? })` returning
+       `{ id, code, label, ratePpm, priority, compound, shipping }[]`, already filtered to the tax address.
+     - `StoreSettings` gains the optional `taxRates` (by class), `taxRoundAtSubtotal`, `shippingTaxClass` and
+       `taxClassSlugs`.
+     - `getTaxRatePpm` stays: it's the sum of the non-compound rates, for every existing caller.
+     - Medusa and Vendure are unchanged: they keep giving one rate per class.
+  3. **A WooCommerce rounding strategy.** `TaxRounding` gains `{ granularity: 'woocommerce', roundAtSubtotal: boolean }`.
+     - The mode follows the price mode: HALF_UP exclusive, HALF_DOWN inclusive.
+     - Under it, a line's, fee's or shipping charge's tax comes from the ported `calculateTaxes`: compound in priority
+       order, per-rate 6dp, the inclusive re-derive (#2333 B). Then it's rounded per rate per line, or once at
+       subtotal, exactly as order-math's `calculateOrderTotals` does.
+     - The other strategies are untouched.
+     - `TaxProvider` passes the rate list through.
+  4. **Decided open points:**
+     - **The tax address is the store's** `tax_address`, because WCPOS hard-codes `tax_based_on = base`. An empty
+       address gives no rates and a store-settings warning; there's no silent fallback.
+     - **Zero-rate rows are kept**, as WooCommerce keeps them on #136. order-math drops them.
+     - Decimals come from `/stores`'s `price_num_decimals`.
+     - A variation's `tax_class` of `parent` (or none) inherits the product's class.
+     - `tax_status: shipping` on a product taxes it as none; on shipping it is taxable.
+     - **The coupon reset path's** different rounding is G6's to settle, not ported here.
+  5. **The WooCommerce connector:**
+     - **`storeSettings`:** from `/stores[0]` and every page of `/taxes`. When `calc_taxes = no`, there are no rates.
+     - **`capabilities`:** `{ orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal } }`.
+     - **Schema:** `tax_class` and `tax_status` on products and `variation_docs`, a product schema bump, so a one-time
+       catalogue resync.
+     - **Traits:** `getTaxClass`, plus a `getTaxStatus` on `ProductTraits` (optional; core's `addProduct` honours it).
+     - **The transport:** stops refusing inclusive prices (`unsupported_tax_mode`) and sends the 6dp ex-tax net as
+       `subtotal`/`total`.
+- **Phasing** (one spec and one PR each):
+  - (a) the core port and its tests (pure, two-way);
+  - (b) `TaxContext`/`StoreSettings`/`TaxRounding` and the builder using it (two-way, opt-in by strategy);
+  - (c) the WooCommerce connector: settings, capabilities, schema and traits (resync);
+  - (d) the transport's inclusive push.
+- **Proof:** order #136 is a golden test end to end (connector settings to builder totals to per-rate tax lines),
+  next to order-math's oracle (3 × 9.99, GB VAT + compound, round-at-subtotal on: tax 6.71, total 36.68).
