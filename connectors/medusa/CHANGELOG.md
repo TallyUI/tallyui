@@ -1,5 +1,11 @@
 # @tallyui/connector-medusa
 
+## 3.2.1
+
+### Patch Changes
+
+- @tallyui/core@3.2.1
+
 ## 3.2.0
 
 ### Patch Changes
