@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { parseInfoCapabilities, parseTaxRounding, resolveCapabilities } from './connector';
+import { parseInfoCapabilities, parseTaxRounding, parseLineTax, resolveCapabilities } from './connector';
 
 describe('resolveCapabilities (ADR-062)', () => {
   it('gives the fresh value when there is no stored value', () => {
@@ -75,7 +75,64 @@ describe('parseTaxRounding (#287)', () => {
   });
 });
 
+describe('parseLineTax (ADR-075)', () => {
+  it.each([
+    { none: false, classes: false },
+    { none: true, classes: true },
+    { none: false, classes: true },
+    { none: true, classes: false },
+  ])('keeps boolean capabilities %j', (value) => {
+    const warn = vi.fn();
+    expect(parseLineTax(value, warn)).toStrictEqual(value);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('strips extra keys', () => {
+    expect(parseLineTax({ none: true, classes: true, extra: 1 })).toStrictEqual({ none: true, classes: true });
+  });
+
+  it('gives undefined without warning when absent', () => {
+    const warn = vi.fn();
+    expect(parseLineTax(undefined, warn)).toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([{ none: 'yes', classes: true }, null, [], true])('rejects malformed lineTax %j with one warning', (value) => {
+    const warn = vi.fn();
+    expect(parseLineTax(value, warn)).toBeUndefined();
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^ignoring a malformed lineTax/));
+  });
+});
+
 describe('parseInfoCapabilities (ADR-062, #287)', () => {
+  it.each([
+    { none: false, classes: false },
+    { none: true, classes: true },
+  ])('reads top-level lineTax %j beside contracts', (lineTax) => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1, 2, 3, 4, 5] }, lineTax }, warn))
+      .toStrictEqual({ orderCreate: 5, lineTax });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('strips extra keys from lineTax', () => {
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1, 2, 3, 4, 5] }, lineTax: { none: true, classes: true, extra: 1 } }))
+      .toStrictEqual({ orderCreate: 5, lineTax: { none: true, classes: true } });
+  });
+
+  it('omits absent lineTax without warning', () => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1, 2, 3, 4, 5] } }, warn)).toStrictEqual({ orderCreate: 5 });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([{ none: 'yes', classes: true }, null, [], true])('keeps other capabilities for malformed lineTax %j', (lineTax) => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1, 2, 3, 4, 5], register: [1] }, taxRounding: { granularity: 'custom' }, lineTax }, warn))
+      .toStrictEqual({ orderCreate: 5, register: 1, taxRounding: { granularity: 'custom' } });
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('malformed lineTax'));
+  });
+
   it('reads contracts without taxRounding', () => {
     expect(parseInfoCapabilities({ contracts: { 'order.create': [1, 2, 3], register: [1] } })).toStrictEqual({ orderCreate: 3, register: 1 });
   });
