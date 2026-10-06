@@ -85,6 +85,14 @@ export const wooProductTraits: ProductTraits = {
     .filter((v: any) => v.status === 'publish' && v.purchasable !== false).map((v: any) => ({
       id: String(v.id),
       title: (v.attributes ?? []).map((attribute: any) => attribute.option).join(' / ') || undefined,
+      options: (v.attributes ?? []).reduce((options: Record<string, string>, attribute: any) => {
+        if (typeof attribute.name === 'string' && attribute.name.length > 0
+          && typeof attribute.option === 'string' && attribute.option.length > 0
+          && !Object.prototype.hasOwnProperty.call(options, attribute.name)) {
+          return { ...options, [attribute.name]: attribute.option };
+        }
+        return options;
+      }, {}),
       sku: v.sku || undefined,
       barcode: v.barcode || undefined,
       prices: wooProductTraits.getPrices(v, context),
@@ -96,6 +104,17 @@ export const wooProductTraits: ProductTraits = {
     prices: wooProductTraits.getPrices(doc, context),
     stock: wooProductTraits.getStock(doc),
   }],
+
+  getVariantOptions: (doc) => doc.type !== 'variable' ? [] : (doc.attributes ?? [])
+    .filter((attribute: any) => attribute.variation === true
+      && typeof attribute.name === 'string' && attribute.name.length > 0)
+    .sort((a: any, b: any) => (typeof a.position === 'number' ? a.position : Infinity)
+      - (typeof b.position === 'number' ? b.position : Infinity))
+    .map((attribute: any) => ({
+      ...(Number.isInteger(attribute.id) && attribute.id > 0 ? { id: String(attribute.id) } : {}),
+      name: attribute.name,
+      values: (attribute.options ?? []).filter((value: any) => typeof value === 'string' && value.length > 0),
+    })),
 
   isSellable: (doc) => doc.status === undefined || doc.status === 'publish',
 
