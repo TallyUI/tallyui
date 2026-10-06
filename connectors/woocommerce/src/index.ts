@@ -7,6 +7,7 @@ import { wooProductReplication } from './replication/products';
 import { wooCatalogueReconcile } from './reconcile/catalogue';
 import { createWooReconcileFeed, MAX_IDS_PER_REQUEST } from './reconcile/feed';
 import { createWooCustomers } from './customers';
+import { wooStoreSettings, readWooCapabilities } from './store-settings';
 import { version } from '../package.json';
 
 /** One part of X-WCPOS-Client as WCPOS keeps it: lowercase [a-z0-9._-], at most 32 characters. */
@@ -66,6 +67,8 @@ const wooConnectorParts = {
   name: 'WooCommerce',
   description: 'Connect to WooCommerce stores via the REST API',
   icon: undefined, // TODO: WooCommerce logo
+  storeSettings: wooStoreSettings,
+  capabilities: readWooCapabilities,
 
   auth: {
     type: 'WCPOS token',
@@ -119,6 +122,7 @@ const wooConnectorParts = {
 export const woocommerceConnector: TallyConnector = createWooCommerceConnector();
 
 // Re-export pieces for advanced usage
+export { wooStoreSettings, readWooCapabilities, WOO_ORDER_CREATE_VERSION } from './store-settings';
 export { createWooCustomers, toWooCustomer } from './customers';
 export { createWooCommandTransport, toWooOrderPayload, type WooCommandTransportOptions } from './commands/transport';
 export { ConnectorUnauthorizedError } from '@tallyui/core';
