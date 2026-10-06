@@ -1,0 +1,30 @@
+[
+  {
+    "id": 90,
+    "sku": "BAK-BAN",
+    "tax_class": "",
+    "tax_status": "none",
+    "price": "4.25"
+  },
+  {
+    "id": 86,
+    "sku": "BAK-CRO",
+    "tax_class": "reduced-rate",
+    "tax_status": "taxable",
+    "price": "3.50"
+  },
+  {
+    "id": 80,
+    "sku": "COF-ESP",
+    "tax_class": "",
+    "tax_status": "taxable",
+    "price": "3.00"
+  },
+  {
+    "id": 96,
+    "sku": "MER-TOT",
+    "tax_class": "zero-rate",
+    "tax_status": "taxable",
+    "price": "15.00"
+  }
+]
