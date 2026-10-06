@@ -13,3 +13,5 @@ Sign-in itself rejects with `SignInError`.
 The till's administrator needs `ReadCustomer` to search and look up customers, and `CreateCustomer` to create them. Without these permissions, the calls reject with `ConnectorUnauthorizedError` status `403`.
 
 A duplicate email rejects with `CustomerServiceError` code `invalid`. The vendurepos walk-in customer is left out of search results.
+
+Vendure's `CreateCustomerInput` requires `firstName` and `lastName`; leaving them out fails GraphQL input validation (recorded on Vendure 3.7.3). So `createCustomer` with only an email sends both as `''`. Whether Vendure's own customer validation accepts empty names hasn't been recorded yet; if it refuses them, the call rejects with `CustomerServiceError` code `server` and creates nothing.
