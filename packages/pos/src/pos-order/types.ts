@@ -42,6 +42,8 @@ export interface PosOrderPayment {
 
 export interface PosOrder {
   id: string;
+  /** The sale order's id (the builder's), set by finalizeOrder (pos_orders v7, ADR-072): support traceability from a draft or preview to this stored order. Never sent, never printed. */
+  saleId?: string;
   createdAt: string;
   currency: string;
   pricesIncludeTax: boolean;

@@ -31,7 +31,7 @@ function pendingOrder(from: Origin = 0): OlderPosOrder {
   builder.setCustomer({ id: 'c1', name: 'Customer', email: 'buyer@example.com' });
   builder.setNote('Sale note');
   // No older till recorded its tax rounding.
-  const { taxRounding: _rounding, ...order } = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
+  const { taxRounding: _rounding, saleId: _saleId, ...order } = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
     ...(from >= 2 ? { capabilities: { orderCreate: 3 } } : {}) });
   return { ...order, lines: [{ ...order.lines[0], taxInclusive: true }, order.lines[1]],
     warnings: [{ code: 'total_mismatch', expectedMinor: 3451, serverMinor: 3452 }],
@@ -133,6 +133,31 @@ async function neverDropsInvalidOrder(from: Origin) {
 }
 
 it('keeps a pending, unsynced version-0 order byte for byte through the migration to the current version', () => keepsPendingOrder(0));
+
+describe('from version 6', () => {
+  it('keeps a pending order with taxRounding and without saleId unchanged through the migration to version 7', async () => {
+    const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
+    const order: PosOrder = { ...pendingOrder(3), taxRounding: { granularity: 'per_line_items', mode: 'half_up' } };
+    const original = structuredClone(order);
+    expect(order.syncStatus).toBe('pending');
+    expect(order).not.toHaveProperty('saleId');
+    const schema = { ...structuredClone(posOrderSchema), version: 6 };
+    delete schema.properties.saleId;
+    const { 7: _v7, ...migrationStrategies } = posOrderCollection().migrationStrategies;
+    const name = `posmigrate${uuidv7().replaceAll('-', '')}`;
+    const before = await open(name, storage, { schema, migrationStrategies });
+    await (await before.added).pos_orders.insert(order);
+    await before.db.close();
+    const after = await open(name, storage, posOrderCollection());
+    try {
+      const { pos_orders } = await after.added;
+      expect(pos_orders.schema.version).toBe(7);
+      expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(original);
+    } finally {
+      await after.db.remove();
+    }
+  });
+});
 
 it('refuses the current version without its migration strategies, and keeps the order', () => refusedWithoutStrategies(0));
 

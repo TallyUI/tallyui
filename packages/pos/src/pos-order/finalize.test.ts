@@ -88,6 +88,8 @@ describe('finalizeOrder', () => {
     const before = structuredClone(input);
     const now = new Date('2026-09-23T12:00:00.000Z');
     const order = finalizeOrder(input, { now, registerId: 'r1', cashierRef: 'staff1' });
+    expect(order.saleId).toBe(input.id);
+    expect(order.id).not.toBe(input.id);
     expect(input).toStrictEqual(before);
     expect(order).toMatchObject({
       currency: 'EUR', pricesIncludeTax: false, subtotalMinor: 2900, discountMinor: 0,
@@ -480,6 +482,7 @@ describe('finalizeOrder version 3 (ADR-065)', () => {
       const result = finalizeOrder(builder.getSnapshot(), { now, newId: () => `id-${++n}`, capabilities });
       expect(result).toStrictEqual({
         id: 'id-1', createdAt: now.toISOString(), updatedAt: now.toISOString(), commandId: 'id-5', syncStatus: 'pending',
+        saleId: builder.getSnapshot().id,
         currency: 'EUR', pricesIncludeTax: false,
         lines: [
           { id: 'id-2', productId: 'p1', variantId: 'v1', name: 'Item 1', sku: 'SKU1', quantity: 2,

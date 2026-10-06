@@ -51,6 +51,19 @@ function goldenV3(): PosOrder {
 }
 
 describe('toOrderCreateEnvelope', () => {
+  it('never sends saleId, and keeps payload bytes unchanged at every version (ADR-072)', () => {
+    const finalized = goldenV3();
+    expect(finalized.saleId).toEqual(expect.any(String));
+    const { saleId: _saleId, ...withoutSaleId } = finalized;
+    for (const maxVersion of [1, 2, 3, 4]) {
+      const { payload } = toOrderCreateEnvelope(finalized, 'device1', 1, { maxVersion });
+      const expected = toOrderCreateEnvelope(withoutSaleId, 'device1', 1, { maxVersion }).payload;
+      expect(JSON.stringify(payload)).not.toMatch(/"saleId"\s*:/);
+      expect(payload).toStrictEqual(expected);
+      expect(JSON.stringify(payload)).toBe(JSON.stringify(expected));
+    }
+  });
+
   it('omits a malformed sessionId at version 3, and never refuses the sale for it', () => {
     for (const key of ['sessionId', 'lateSessionId'] as const) {
       for (const sessionId of ['', 's'.repeat(37), 's'.repeat(36), 'session-1', 123] as const) {

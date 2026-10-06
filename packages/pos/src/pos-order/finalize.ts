@@ -204,7 +204,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     : { granularity: rounding.granularity, mode: rounding.mode };
   const now = (options.now ?? new Date()).toISOString();
   return freezeSentForm({
-    id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
+    id, saleId: order.id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
     currency: order.currency, pricesIncludeTax: order.pricesIncludeTax, lines, payments,
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor, taxRounding,
