@@ -14,4 +14,4 @@ The till's administrator needs `ReadCustomer` to search and look up customers, a
 
 A duplicate email rejects with `CustomerServiceError` code `invalid`. The vendurepos walk-in customer is left out of search results.
 
-Vendure's `CreateCustomerInput` requires `firstName` and `lastName`; leaving them out fails GraphQL input validation (recorded on Vendure 3.7.3). So `createCustomer` with only an email sends both as `''`. Whether Vendure's own customer validation accepts empty names hasn't been recorded yet; if it refuses them, the call rejects with `CustomerServiceError` code `server` and creates nothing.
+Vendure's `CreateCustomerInput` requires `firstName` and `lastName`; leaving them out fails GraphQL input validation (recorded on Vendure 3.7.3). So `createCustomer` with only an email sends both as `''`, which Vendure 3.7.3 accepts: it creates the customer with empty names, and the till shows its email as the name.
