@@ -82,6 +82,17 @@ describe('knownWarnings', () => {
     expect(knownWarnings([warning])).toEqual([warning]);
   });
 
+  it('keeps a register_session_unknown and drops extra keys', () => {
+    const warning = { code: 'register_session_unknown', sessionId: 's'.repeat(64) };
+    expect(knownWarnings([{ ...warning, extra: true }])).toEqual([warning]);
+  });
+
+  it.each([{ sessionId: '' }, { sessionId: 's'.repeat(65) }, {}])(
+    'drops a register_session_unknown with invalid sessionId: %j', (fields) => {
+      expect(knownWarnings([{ code: 'register_session_unknown', ...fields }])).toEqual([]);
+    },
+  );
+
   const subtotal = { field: 'subtotalMinor', tillMinor: 1050, serverMinor: 1000 };
   const tax = { field: 'taxMinor', tillMinor: 210, serverMinor: 200 };
   const discount = { field: 'discountMinor', tillMinor: 0, serverMinor: 50 };

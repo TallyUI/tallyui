@@ -25,6 +25,7 @@ function figuresMismatchFields(fields: unknown): FiguresMismatchField[] | null {
  * absent, `null`, not a safe integer, zero, or not equal to `expectedMinor - serverMinor`.
  * A `tax_rate_mismatch` with a negative `ratePpm` is dropped entirely; zero stays valid.
  * A `customer_ignored` is dropped unless its `customerId` is a string of 1 to 64 characters.
+ * A `register_session_unknown` is dropped unless its `sessionId` is a string of 1 to 64 characters.
  * A `figures_mismatch` is dropped entirely unless `fields` is non-empty and each entry names a
  * different figure with two differing safe integers; each entry is rebuilt from its known keys.
  * A figure name it doesn't know (any non-empty string) is kept, since a newer store may send one.
@@ -62,6 +63,12 @@ export function knownWarnings(warnings: unknown): CommandWarning[] {
         const { customerId } = warning;
         if (typeof customerId !== 'string' || customerId === '' || customerId.length > 64) continue;
         kept.push({ code: 'customer_ignored', customerId });
+        break;
+      }
+      case 'register_session_unknown': {
+        const { sessionId } = warning;
+        if (typeof sessionId !== 'string' || sessionId === '' || sessionId.length > 64) continue;
+        kept.push({ code: 'register_session_unknown', sessionId });
         break;
       }
       case 'figures_mismatch': {

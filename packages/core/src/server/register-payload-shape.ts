@@ -35,6 +35,16 @@ export function registerPayloadErrors(type: string, payload: unknown): string[] 
     case 'register.session.open':
       for (const field of ['registerId', 'openedAt']) string(field)
       for (const field of ['storeKey', 'businessDay', 'openedBy']) string(field, true)
+      if (payload.deviceName !== undefined) {
+        check(typeof payload.deviceName === 'string' && payload.deviceName.trim().length >= 1 && payload.deviceName.trim().length <= 64,
+          'deviceName', 'a string of 1 to 64 characters after trim')
+        noNul(payload.deviceName, 'deviceName')
+      }
+      if (payload.supersedes !== undefined) {
+        check(typeof payload.supersedes === 'string' && payload.supersedes.length > 0 && payload.supersedes.length <= 64,
+          'supersedes', 'a non-empty string of at most 64 characters')
+        noNul(payload.supersedes, 'supersedes')
+      }
       integer('countedFloatMinor', 0)
       for (const field of ['expectedFloatMinor', 'openingVarianceMinor']) if (payload[field] !== undefined) integer(field)
       break

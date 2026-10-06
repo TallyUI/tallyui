@@ -33,6 +33,7 @@ export type {
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
   CommandBatchRequest, CommandBatchResponse, BatchTooLargeBody,
-  RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionTransitionPayload,
+  RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionAlreadyOpenData, RegisterSessionSupersededData,
+  RegisterSessionTransitionPayload,
   RegisterMovementRecordPayload, RegisterMovementVoidPayload, RegisterClosureSubmitPayload,
 } from './commands';

@@ -95,6 +95,12 @@ export function parseCommandResult(value: unknown): CommandResult {
         }
         return { code: item.code, customerId: item.customerId }
       }
+      if (item.code === 'register_session_unknown') {
+        if (typeof item.sessionId !== 'string' || item.sessionId.length === 0 || item.sessionId.length > 64) {
+          throw new CommandResultError(`Invalid ${field}.sessionId`)
+        }
+        return { code: item.code, sessionId: item.sessionId }
+      }
       if (item.code === 'figures_mismatch') {
         if (!Array.isArray(item.fields) || item.fields.length === 0) throw new CommandResultError(`Invalid ${field}.fields`)
         const seen: string[] = []
