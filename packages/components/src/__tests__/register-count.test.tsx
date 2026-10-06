@@ -29,6 +29,7 @@ beforeEach(async () => {
   db = await createRegisterDb();
 });
 afterEach(async () => {
+  vi.useRealTimers();
   cleanup();
   await db.remove();
 });
