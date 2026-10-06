@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fixture from '../__tests__/fixtures/wcpos-1.10.20-variations.json';
 import { closeTills, context, createFakeStore, startTill } from '../__tests__/fake-store';
 import { toVariationDocument, wooProductReplication } from './products';
+import { wooProductSchema } from '../schemas/products';
 
 afterEach(closeTills);
 
@@ -16,6 +17,7 @@ describe('WCPOS 1.10.20 variation documents', () => {
     expect(toVariationDocument(payload)).toEqual({
       id, sku, barcode, price: '25.00', regular_price: '25.00', sale_price: '', on_sale: false,
       stock_status: 'instock', stock_quantity: 10, manage_stock: true, status: 'publish', purchasable: true,
+      tax_class: '', tax_status: 'taxable',
       attributes: [{ name: 'Size', option: size }, { name: 'Colour', option: colour }],
     });
   });
@@ -27,6 +29,22 @@ describe('WCPOS 1.10.20 variation documents', () => {
 });
 
 describe('WCPOS 1.10.20 variations pull', () => {
+  it('uses product schema version 2 and retains replicated variation tax fields', async () => {
+    expect(wooProductSchema.version).toBe(2);
+    const store = createFakeStore(1);
+    Object.assign(store.rows[0], { id: 102, type: 'variable', variations: [104, 105, 106] });
+    store.respond = (url) => url.pathname === '/wp-json/wcpos/v2/variations'
+      ? Response.json(fixture) : undefined;
+    const till = await startTill(store, { adapter: wooProductReplication, batchSize: 10 });
+    await till.sync();
+    const product = (await till.local()).get('u1');
+    expect(product.variation_docs).toHaveLength(fixture.documents.length);
+    for (const { payload } of fixture.documents) {
+      expect(product.variation_docs.find((variation: { id: number }) => variation.id === payload.id))
+        .toMatchObject({ tax_class: payload.tax_class, tax_status: payload.tax_status });
+    }
+  });
+
   it('stores sorted variations with attributes after one flat-route request', async () => {
     const store = createFakeStore(1);
     Object.assign(store.rows[0], { id: 102, type: 'variable', variations: [104, 105, 106] });

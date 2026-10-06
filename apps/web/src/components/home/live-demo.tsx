@@ -12,7 +12,7 @@ export function LiveDemo() {
     <div className="rounded-lg border border-fd-border bg-fd-card p-6">
       <p className="font-semibold">Try it live</p>
       <p className="mt-2 text-fd-foreground/80">
-        TallyUI's CartPanel running in Expo Snack. Switch between the WooCommerce and Medusa connectors inside the demo.
+        TallyUI&apos;s CartPanel running in Expo Snack. Switch between the WooCommerce and Medusa connectors inside the demo.
       </p>
       <button
         type="button"

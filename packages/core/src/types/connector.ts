@@ -76,9 +76,10 @@ const MODES = ['half_away_from_zero', 'half_up'];
  */
 export function parseTaxRounding(value: unknown, warn?: (reason: string) => void): TaxRounding | undefined {
   if (value === undefined) return undefined;
-  const { granularity, mode } = (value ?? {}) as { granularity?: unknown; mode?: unknown };
+  const { granularity, mode, roundAtSubtotal } = (value ?? {}) as { granularity?: unknown; mode?: unknown; roundAtSubtotal?: unknown };
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     if (granularity === 'custom') return { granularity };
+    if (granularity === 'woocommerce' && typeof roundAtSubtotal === 'boolean') return { granularity, roundAtSubtotal };
     if (GRANULARITIES.includes(granularity as string) && MODES.includes(mode as string)) {
       return { granularity, mode } as TaxRounding;
     }

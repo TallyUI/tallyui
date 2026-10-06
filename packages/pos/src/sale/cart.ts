@@ -19,5 +19,6 @@ export function addEntryToCart<Doc>(builder: OrderBuilder, entry: CatalogueEntry
     productId: traits.getId(product), variantId: variant.id, name,
     sku: variant.sku ?? '', imageUrl: traits.getImageUrl?.(product), unitPrice,
     taxClass: traits.getTaxClass?.(product, variant.id),
+    ...(traits.getTaxStatus?.(product, variant.id) === 'none' ? { taxStatus: 'none' as const } : {}),
   });
 }

@@ -22,6 +22,22 @@ export const wooProductTraits: ProductTraits = {
 
   getSku: (doc) => doc.sku || undefined,
 
+  getTaxClass: (doc, variantId) => {
+    const variation = variantId === undefined ? undefined
+      : doc.variation_docs?.find((v: any) => String(v.id) === variantId);
+    const taxClass = typeof variation?.tax_class === 'string' && variation.tax_class !== 'parent'
+      ? variation.tax_class : doc.tax_class;
+    return taxClass === undefined || taxClass === '' || taxClass === 'standard' ? undefined : taxClass;
+  },
+
+  getTaxStatus: (doc, variantId) => {
+    const variation = variantId === undefined ? undefined
+      : doc.variation_docs?.find((v: any) => String(v.id) === variantId);
+    const taxStatus = typeof variation?.tax_status === 'string' ? variation.tax_status : doc.tax_status;
+    if (taxStatus === 'none' || taxStatus === 'shipping') return 'none';
+    return taxStatus === 'taxable' ? 'taxable' : undefined;
+  },
+
   getPrices: (doc, context) => {
     // Woo prices are decimal strings with no currency; the store supplies it.
     const currency = context?.currency ?? 'XXX';

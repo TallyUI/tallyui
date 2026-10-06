@@ -441,6 +441,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         unitPrice,
         quantity: opts?.quantity,
         taxClass: traits.getTaxClass?.(doc, opts?.variantId),
+        ...(traits.getTaxStatus?.(doc, opts?.variantId) === 'none' ? { taxStatus: 'none' as const } : {}),
       });
     },
 

@@ -20,6 +20,19 @@ describe('resolveCapabilities (ADR-062)', () => {
 });
 
 describe('parseTaxRounding (#287)', () => {
+  it.each([true, false])('keeps WooCommerce roundAtSubtotal %s and strips extra keys', (roundAtSubtotal) => {
+    const warn = vi.fn();
+    expect(parseTaxRounding({ granularity: 'woocommerce', roundAtSubtotal, x: 1 }, warn))
+      .toStrictEqual({ granularity: 'woocommerce', roundAtSubtotal });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('rejects a string WooCommerce roundAtSubtotal with a warning', () => {
+    const warn = vi.fn();
+    expect(parseTaxRounding({ granularity: 'woocommerce', roundAtSubtotal: 'true' }, warn)).toBeUndefined();
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('malformed taxRounding'));
+  });
+
   it.each(['per_order', 'per_line_items', 'per_rate_group_items'] as const)('keeps %s with each mode', (granularity) => {
     for (const mode of ['half_away_from_zero', 'half_up'] as const) {
       const warn = vi.fn();

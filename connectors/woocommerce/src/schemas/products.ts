@@ -7,7 +7,7 @@ import type { RxJsonSchema } from 'rxdb';
  */
 export const wooProductSchema: RxJsonSchema<any> = {
   title: 'WooCommerce Product',
-  version: 1,
+  version: 2,
   type: 'object',
   primaryKey: 'uuid',
   properties: {
@@ -51,6 +51,12 @@ export const wooProductSchema: RxJsonSchema<any> = {
       type: 'string',
     },
     sale_price: {
+      type: 'string',
+    },
+    tax_class: {
+      type: 'string',
+    },
+    tax_status: {
       type: 'string',
     },
     on_sale: {
@@ -134,6 +140,7 @@ export const wooProductSchema: RxJsonSchema<any> = {
     variation_docs: { type: 'array', items: { type: 'object', properties: {
       id: { type: 'integer' }, sku: { type: 'string' }, barcode: { type: 'string' },
       price: { type: 'string' }, regular_price: { type: 'string' }, sale_price: { type: 'string' },
+      tax_class: { type: 'string' }, tax_status: { type: 'string' },
       on_sale: { type: 'boolean' }, stock_status: { type: 'string' }, stock_quantity: { type: ['number', 'null'] },
       manage_stock: { type: 'boolean' }, status: { type: 'string' }, purchasable: { type: 'boolean' },
       attributes: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, option: { type: 'string' } } } },
