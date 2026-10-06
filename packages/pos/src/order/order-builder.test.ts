@@ -247,6 +247,28 @@ describe('OrderBuilder', () => {
     expect(line.discounts[0].amountMinor).toBe(200);
   });
 
+  it('an order discount after a price edit is computed on the new price', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const lineId = builder.addLine({ productId: 'p1', name: 'Espresso', quantity: 1,
+      unitPrice: { amount: 1000, currency: 'USD', taxInclusive: false } });
+    builder.setUnitPrice(lineId, 2000);
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    const order = builder.getSnapshot();
+    expect(order.lineItems[0].orderDiscountMinor).toBe(200);
+    expect(order).toMatchObject({ subtotalMinor: 1800, taxMinor: 180, totalMinor: 1980, discountMinor: 200 });
+  });
+
+  it('an order discount before a price edit is recomputed on the new price', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const lineId = builder.addLine({ productId: 'p1', name: 'Espresso', quantity: 1,
+      unitPrice: { amount: 1000, currency: 'USD', taxInclusive: false } });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+    builder.setUnitPrice(lineId, 2000);
+    const order = builder.getSnapshot();
+    expect(order.lineItems[0].orderDiscountMinor).toBe(200);
+    expect(order).toMatchObject({ subtotalMinor: 1800, taxMinor: 180, totalMinor: 1980, discountMinor: 200 });
+  });
+
   it('setUnitPrice caps a fixed discount at the new gross', () => {
     const builder = createOrderBuilder({ currency: 'USD', taxContext });
     const lineId = builder.addProduct(productDoc, traits, { quantity: 2 });
