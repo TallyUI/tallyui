@@ -3,15 +3,8 @@ import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/co
 
 /** The highest order.create version the WooCommerce transport maps: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). */
 export const WOO_ORDER_CREATE_VERSION = 5;
-// The order.create version a store gets without proof of v5.
+// The order.create version a store gets unless /status lists order_create_v5, which only the TallyUI fork of the plugin advertises.
 const WOO_BASE_ORDER_CREATE_VERSION = 3;
-// The oldest WCPOS release with a proven v5 push (orders #146, #147).
-const WOO_V5_MIN_PLUGIN_VERSION = [1, 10, 20] as const;
-
-function atLeastVersion(value: unknown, min: readonly [number, number, number]): boolean {
-  const parts = typeof value === 'string' ? /^(\d+)\.(\d+)\.(\d+)/.exec(value)?.slice(1).map(Number) : undefined;
-  return !!parts && (parts[0] > min[0] || (parts[0] === min[0] && (parts[1] > min[1] || (parts[1] === min[1] && parts[2] >= min[2]))));
-}
 
 export async function wooStoreSettings(context: SyncContext): Promise<StoreSettings> {
   try {
@@ -125,13 +118,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
     } catch (error) {
       if (error instanceof ConnectorUnauthorizedError) throw error;
     }
-    let orderCreate = capabilities.includes('order_create_v5') || capabilities.includes('order_payments_list') ? WOO_ORDER_CREATE_VERSION : WOO_BASE_ORDER_CREATE_VERSION;
-    if (orderCreate === WOO_BASE_ORDER_CREATE_VERSION) {
-      try {
-        const response = await fetch(`${context.baseUrl}/site`, { method: 'GET', headers: context.headers, signal: context.signal });
-        if (response.ok && atLeastVersion((await response.json())?.wcpos_version, WOO_V5_MIN_PLUGIN_VERSION)) orderCreate = WOO_ORDER_CREATE_VERSION;
-      } catch {}
-    }
+    const orderCreate = capabilities.includes('order_create_v5') ? WOO_ORDER_CREATE_VERSION : WOO_BASE_ORDER_CREATE_VERSION;
     return {
       orderCreate,
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },
