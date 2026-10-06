@@ -25,13 +25,12 @@ export function wooMinorFromDecimal(text: string, currency: string): number | un
   return moneyFromDecimalString(end ? `${whole}.${fraction.slice(0, end)}` : whole, currency)?.amount;
 }
 
-export function toWooOrderPayload(envelope: OrderCreateEnvelope): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
+export interface WooLocalOrder { lines: ReadonlyArray<{ id: string; netMicros?: string }> }
+
+export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLocalOrder): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
   const p = envelope.payload;
   if (envelope.version === 5 && (p.fees?.length || p.shipping?.length || p.lines.some((line) => line.custom))) {
     return { error: { code: 'invalid_payload', message: 'Fees, shipping and custom lines are not supported by this connector yet.' } };
-  }
-  if (p.pricesIncludeTax || p.lines.some((line) => line.taxInclusive === true)) {
-    return { error: { code: 'unsupported_tax_mode', message: 'Prices that include tax are not supported for WooCommerce yet.' } };
   }
   if (p.payments.length !== 1) {
     return { error: { code: 'invalid_payload', message: 'WooCommerce orders take one payment.' } };
@@ -44,29 +43,51 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope): { payload: Rec
   const digits = p.display?.exponent ?? minorUnitDigits(p.currency);
   const major = (minor: number) => (minor / 10 ** digits).toFixed(digits);
   const cash = p.payments[0].method === 'cash';
+  const line_items = [];
+  for (const line of p.lines) {
+    let subtotal = major(line.unitPriceMinor * line.quantity);
+    let total = major(line.unitPriceMinor * line.quantity - (line.discountMinor ?? 0));
+    if (line.taxInclusive ?? p.pricesIncludeTax) {
+      if ((line.discountMinor ?? 0) > 0) {
+        return { error: { code: 'unsupported_tax_mode', message: 'Discounted tax-inclusive lines are not supported for WooCommerce yet.' } };
+      }
+      const netMicros = local?.lines.find((stored) => stored.id === line.clientLineId)?.netMicros;
+      if (netMicros === undefined) {
+        return { error: { code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } };
+      }
+      const net = BigInt(netMicros), divisor = 10n ** BigInt(digits);
+      if (net < 0n) {
+        return { error: { code: 'invalid_payload', message: `Line ${line.clientLineId} has a negative net.` } };
+      }
+      if (net % divisor !== 0n) {
+        return { error: { code: 'invalid_payload', message: `Line ${line.clientLineId} has a net finer than 6 decimals.` } };
+      }
+      const micros = net / divisor;
+      subtotal = total = `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;
+    }
+    line_items.push({ product_id: Number(line.variantId), quantity: line.quantity, subtotal, total });
+  }
   return { payload: {
     status: 'completed', set_paid: true, currency: p.currency,
     payment_method: cash ? 'pos_cash' : 'pos_card', payment_method_title: cash ? 'Cash' : 'Card',
-    line_items: p.lines.map((line) => ({
-      product_id: Number(line.variantId), quantity: line.quantity,
-      subtotal: major(line.unitPriceMinor * line.quantity),
-      total: major(line.unitPriceMinor * line.quantity - (line.discountMinor ?? 0)),
-    })),
+    line_items,
     meta_data: [{ key: '_woocommerce_pos_uuid', value: p.clientOrderId }],
     ...(p.customer?.customerId && /^\d+$/.test(p.customer.customerId) ? { customer_id: Number(p.customer.customerId) } : {}),
     ...(p.customer?.email ? { billing: { email: p.customer.email } } : {}),
   } };
 }
 
-export function createWooCommandTransport(options: WooCommandTransportOptions): { send(batch: OrderCreateEnvelope[]): Promise<WooTransportOutcome> } {
+export function createWooCommandTransport(options: WooCommandTransportOptions): {
+  send(batch: OrderCreateEnvelope[], context?: { local?: { orders?: ReadonlyMap<string, WooLocalOrder> } }): Promise<WooTransportOutcome>;
+} {
   const fetch = options.fetch ?? globalThis.fetch;
   let baseUrl = options.baseUrl;
   while (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
   return {
-    async send(batch) {
+    async send(batch, context) {
       const results: CommandResult[] = [];
       for (const envelope of batch) {
-        const mapped = toWooOrderPayload(envelope);
+        const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id));
         if ('error' in mapped) {
           results.push({ id: envelope.id, status: 'rejected', error: mapped.error });
           continue;

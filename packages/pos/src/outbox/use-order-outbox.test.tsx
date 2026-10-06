@@ -290,7 +290,8 @@ describe('useOrderOutbox options', () => {
     const order = sale();
     await act(async () => { await outbox.record(order); });
     await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(true));
-    expect(send).toHaveBeenCalledWith([expect.objectContaining({ id: order.commandId, deviceId: 'device-7' })]);
+    expect(send).toHaveBeenCalledWith([expect.objectContaining({ id: order.commandId, deviceId: 'device-7' })],
+      expect.objectContaining({ local: expect.objectContaining({ orders: expect.any(Map) }) }));
     await act(async () => { sending.resolve(); });
     await waitFor(() => expect(outbox.recent[0]?.syncStatus).toBe('applied'));
     await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(false));
@@ -330,7 +331,8 @@ describe('useOrderOutbox options', () => {
     expect(outbox.orders).not.toBe(collection);
     expect(collection.database.closed).toBe(true);
     await act(async () => { await outbox.record(sale()); });
-    await waitFor(() => expect(send).toHaveBeenCalledWith([expect.objectContaining({ deviceId: 'device-b' })]));
+    await waitFor(() => expect(send).toHaveBeenCalledWith([expect.objectContaining({ deviceId: 'device-b' })],
+      expect.objectContaining({ local: expect.objectContaining({ orders: expect.any(Map) }) })));
   });
 
   it('closes and ignores a store that finishes opening after its key has changed', async () => {

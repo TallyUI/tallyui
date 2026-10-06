@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { OrderCreateEnvelope } from '@tallyui/core';
 import { createWooCommandTransport, toWooOrderPayload } from '../index';
-import { wooMinorFromDecimal } from './transport';
+import { wooMinorFromDecimal, type WooLocalOrder } from './transport';
 
 const baseUrl = 'https://shop.example/wp-json/wcpos/v2';
 function order(): OrderCreateEnvelope {
@@ -40,6 +40,84 @@ describe('wooMinorFromDecimal', () => {
 });
 
 describe('createWooCommandTransport', () => {
+  it.each([
+    ['USD', undefined, ['2727272700', '909090900'], ['27.272727', '9.090909']],
+    ['JPY', undefined, ['1234000000'], ['1234.000000']],
+    ['USD', 3, ['1234000000'], ['1.234000']],
+    ['USD', undefined, ['0', '100', '900719925474099300'], ['0.000000', '0.000001', '9007199254.740993']],
+  ] as const)('pushes stored inclusive nets in %s with exponent %s', async (currency, exponent, nets, expected) => {
+    const envelope = order();
+    Object.assign(envelope.payload, { currency, pricesIncludeTax: true });
+    envelope.payload.lines = nets.map((_, i) => ({ ...envelope.payload.lines[0], clientLineId: `line-${i}` }));
+    if (exponent !== undefined) envelope.payload.display = { currency, exponent, taxInclusive: true, subtotalMinor: 300,
+      discountMinor: 0, taxMinor: 0, totalMinor: 300, orderDiscountMinor: 0, lines: [] };
+    const local = { lines: nets.map((netMicros, i) => ({ id: `line-${i}`, netMicros })).reverse() };
+    const { transport, fetch } = setup(response());
+    await transport.send([envelope], { local: { orders: new Map([[envelope.id, local]]) } });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string).payload.line_items).toEqual(expected.map((net) => ({
+      product_id: 80, quantity: 1, subtotal: net, total: net,
+    })));
+  });
+
+  it.each([true, false])('uses line tax mode overrides with order pricesIncludeTax=%s', async (pricesIncludeTax) => {
+    const envelope = order();
+    envelope.payload.pricesIncludeTax = pricesIncludeTax;
+    envelope.payload.lines = [
+      { ...envelope.payload.lines[0], taxInclusive: false, discountMinor: 100 },
+      { ...envelope.payload.lines[0], clientLineId: 'inclusive', taxInclusive: true },
+    ];
+    const { transport, fetch } = setup(response());
+    await transport.send([envelope], { local: { orders: new Map([[envelope.id, {
+      lines: [{ id: 'inclusive', netMicros: '272727300' }],
+    }]]) } });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string).payload.line_items).toEqual([
+      { product_id: 80, quantity: 1, subtotal: '3.00', total: '2.00' },
+      { product_id: 80, quantity: 1, subtotal: '2.727273', total: '2.727273' },
+    ]);
+  });
+
+  it.each(['discounted', 'missing order', 'missing line', 'missing net', 'too fine', 'negative'] as const)(
+    'refuses an inclusive line with %s without a request', async (kind) => {
+      const envelope = order();
+      envelope.payload.pricesIncludeTax = true;
+      const id = envelope.payload.lines[0].clientLineId;
+      if (kind === 'discounted') envelope.payload.lines[0].discountMinor = 1;
+      const local: WooLocalOrder = { lines: [{ id: kind === 'missing line' ? 'other' : id,
+        netMicros: kind === 'missing net' ? undefined : kind === 'too fine' ? '2727272701'
+          : kind === 'negative' ? '-100' : '2727272700' }] };
+      const context = kind === 'missing order' ? undefined : { local: { orders: new Map([[envelope.id, local]]) } };
+      const code = kind === 'too fine' || kind === 'negative' ? 'invalid_payload' : 'unsupported_tax_mode';
+      const message = kind === 'discounted' ? 'Discounted tax-inclusive lines are not supported for WooCommerce yet.'
+        : kind === 'too fine' ? `Line ${id} has a net finer than 6 decimals.`
+          : kind === 'negative' ? `Line ${id} has a negative net.`
+            : "Tax-inclusive prices need the till's WooCommerce tax figures; update the till.";
+      const { transport, fetch } = setup();
+      expect(await transport.send([envelope], context)).toEqual({ kind: 'results', results: [{
+        id: envelope.id, status: 'rejected', error: { code, message },
+      }] });
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps exclusive request bytes identical with and without local context', async () => {
+    const envelope = order();
+    const { transport, fetch } = setup(response(), response());
+    await transport.send([envelope]);
+    await transport.send([envelope], { local: { orders: new Map([[envelope.id, {
+      lines: [{ id: envelope.payload.lines[0].clientLineId, netMicros: '2727272700' }],
+    }]]) } });
+    const bodies = fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string));
+    expect(JSON.stringify(bodies[1])).toBe(JSON.stringify(bodies[0]));
+    expect(bodies[1]).toEqual({ mutationId: envelope.id, operation: 'create', collection: 'orders',
+      recordId: envelope.payload.clientOrderId, baseRevision: null, payload: {
+        status: 'completed', set_paid: true, currency: 'EUR', payment_method: 'pos_cash', payment_method_title: 'Cash',
+        line_items: [{ product_id: 80, quantity: 1, subtotal: '3.00', total: '3.00' }],
+        meta_data: [{ key: '_woocommerce_pos_uuid', value: envelope.payload.clientOrderId }],
+      } });
+  });
+
   it.each(['fees', 'shipping', 'custom'] as const)('refuses v5 %s as invalid_payload without a request', async (kind) => {
     const envelope = order();
     envelope.version = 5;
@@ -139,7 +217,7 @@ describe('createWooCommandTransport', () => {
       expect(await transport.send([envelope, next])).toMatchObject({ kind: 'results', results: [
         { id: envelope.id, status: 'rejected', error: {
           code: invalid.includes('tax') ? 'unsupported_tax_mode' : 'invalid_payload',
-          message: invalid.includes('tax') ? 'Prices that include tax are not supported for WooCommerce yet.'
+          message: invalid.includes('tax') ? "Tax-inclusive prices need the till's WooCommerce tax figures; update the till."
             : invalid === 'bad product' ? `Line ${envelope.payload.lines[0].clientLineId} has no WooCommerce product id.`
               : 'WooCommerce orders take one payment.',
         } },
