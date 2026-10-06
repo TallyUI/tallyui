@@ -84,13 +84,56 @@ describe('WooCommerce getVariants', () => {
       { ...variations[0], id: 108, purchasable: false },
     ] };
     expect(wooProductTraits.getVariants!(product, { currency: 'EUR' })).toEqual([
-      { id: '104', title: 'S / Black', sku: 'MER-TEE-S-BLK', barcode: '2000000000138' },
-      { id: '105', title: 'S / White', sku: 'MER-TEE-S-WHT', barcode: '2000000000145' },
-      { id: '106', title: 'M / Black', sku: 'MER-TEE-M-BLK', barcode: '2000000000152' },
+      { id: '104', title: 'S / Black', sku: 'MER-TEE-S-BLK', barcode: '2000000000138',
+        options: { Size: 'S', Colour: 'Black' } },
+      { id: '105', title: 'S / White', sku: 'MER-TEE-S-WHT', barcode: '2000000000145',
+        options: { Size: 'S', Colour: 'White' } },
+      { id: '106', title: 'M / Black', sku: 'MER-TEE-M-BLK', barcode: '2000000000152',
+        options: { Size: 'M', Colour: 'Black' } },
     ].map((variant) => ({ ...variant,
       prices: [{ amount: 2500, currency: 'EUR', kind: 'base' }],
       stock: { status: 'in_stock', quantity: 10 },
     })));
+  });
+
+  it('a variant with no value for an attribute (Any) has no key for it, and the first of two same-named attributes wins', () => {
+    const product = { type: 'variable', variation_docs: [
+      { id: 201, status: 'publish', attributes: [{ name: 'Size', option: 'S' }] },
+      { id: 202, status: 'publish', attributes: [
+        { name: 'Size', option: '' }, { name: 'Colour', option: 'Red' }, { name: 'Colour', option: 'Blue' },
+      ] },
+    ] };
+    expect(wooProductTraits.getVariants!(product).map((variant) => variant.options))
+      .toEqual([{ Size: 'S' }, { Colour: 'Red' }]);
+  });
+});
+
+describe('WooCommerce getVariantOptions', () => {
+  it('lists variation attributes by position, with ids only for global attributes', () => {
+    const product = { type: 'variable', attributes: [
+      { id: 0, name: 'Colour', position: 1, visible: true, variation: true, options: ['Black', 'White'] },
+      { id: 3, name: 'Size', position: 0, visible: true, variation: true, options: ['S', 'M', ''] },
+      { id: 0, name: 'Material', position: 2, visible: true, variation: false, options: ['Cotton'] },
+      { id: 0, name: '', position: 3, variation: true, options: ['X'] },
+    ] };
+    expect(wooProductTraits.getVariantOptions!(product)).toEqual([
+      { id: '3', name: 'Size', values: ['S', 'M'] },
+      { name: 'Colour', values: ['Black', 'White'] },
+    ]);
+  });
+
+  it('puts attributes without a position last, in stored order', () => {
+    const product = { type: 'variable', attributes: [
+      { name: 'B', variation: true, options: ['1'] },
+      { name: 'A', position: 5, variation: true, options: ['2'] },
+      { name: 'C', variation: true, options: ['3'] },
+    ] };
+    expect(wooProductTraits.getVariantOptions!(product).map((group) => group.name)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('returns [] for a simple product and for a variable product without attributes', () => {
+    expect(wooProductTraits.getVariantOptions!({ type: 'simple' })).toEqual([]);
+    expect(wooProductTraits.getVariantOptions!({ type: 'variable' })).toEqual([]);
   });
 });
 

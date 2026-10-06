@@ -18,7 +18,7 @@ export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAda
 export type { StoreSettings, StoreSettingsChoice } from './store-settings';
 export { customerTraits, CustomerServiceError, type Customer, type CustomerInput } from './customers';
 
-export type { ProductTraits, TraitContext, VariantSummary, ProductCategory } from './traits/product';
+export type { ProductTraits, TraitContext, VariantSummary, VariantOptionGroup, ProductCategory } from './traits/product';
 
 export type { Money, ProductPrice, ResolvedPrice } from './money';
 

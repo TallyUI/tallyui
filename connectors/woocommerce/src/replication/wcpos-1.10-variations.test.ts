@@ -18,8 +18,18 @@ describe('WCPOS 1.10.20 variation documents', () => {
       id, sku, barcode, price: '25.00', regular_price: '25.00', sale_price: '', on_sale: false,
       stock_status: 'instock', stock_quantity: 10, manage_stock: true, status: 'publish', purchasable: true,
       tax_class: '', tax_status: 'taxable',
-      attributes: [{ name: 'Size', option: size }, { name: 'Colour', option: colour }],
+      attributes: [{ id: 0, name: 'Size', option: size }, { id: 0, name: 'Colour', option: colour }],
     });
+  });
+
+  it('keeps a global attribute id and drops a non-numeric one', () => {
+    expect(toVariationDocument({ id: 1, attributes: [
+      { id: 7, name: 'Size', slug: 'pa_size', option: 'L' },
+      { id: '7', name: 'Colour', option: 'Red' },
+    ] }).attributes).toEqual([
+      { id: 7, name: 'Size', option: 'L' },
+      { name: 'Colour', option: 'Red' },
+    ]);
   });
 
   it('omits undefined fields and defaults missing attributes to an empty array', () => {

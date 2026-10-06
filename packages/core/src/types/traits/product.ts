@@ -13,11 +13,25 @@ export interface VariantSummary {
   id: string;
   /** Variant label, e.g. 'S / White'; undefined when the backend has none. */
   title?: string;
+  /**
+   * The variant's value in each option group, keyed by group name. A group the variant accepts any value of
+   * (WooCommerce "Any …") has no key. Undefined when the backend gives the variant no option groups.
+   */
+  options?: Record<string, string>;
   sku?: string;
   /** First non-empty of the backend's barcode fields. */
   barcode?: string;
   prices: ProductPrice[];
   stock: StockLevel;
+}
+
+/** One option group a product's variants are chosen by, e.g. Size with S, M and L. */
+export interface VariantOptionGroup {
+  /** The backend's id for the group, when it has one that tells apart groups with the same name. */
+  id?: string;
+  name: string;
+  /** The group's values in the backend's order. */
+  values: string[];
 }
 
 /**
@@ -63,6 +77,12 @@ export interface ProductTraits<Doc = any> {
 
   /** All purchasable variants, in id order (connectors store variants sorted by id). Optional: connectors without variant support omit it. */
   getVariants?: (doc: Doc, context?: TraitContext) => VariantSummary[];
+
+  /**
+   * The option groups the product's variants are chosen by, in the backend's display order; [] when the product has
+   * none. Optional: connectors without it leave pickers to `getVariants` titles.
+   */
+  getVariantOptions?: (doc: Doc) => VariantOptionGroup[];
 
   /**
    * The backend's tax class id for the variant `variantId`, or for the product (its default variant) when omitted.

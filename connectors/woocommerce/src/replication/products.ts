@@ -90,7 +90,9 @@ export function toVariationDocument(payload: any) {
     id, sku, barcode: wooProductBarcode(payload), price, regular_price, sale_price, on_sale,
     stock_status, stock_quantity, manage_stock, status, purchasable,
     tax_class, tax_status,
-    attributes: (payload.attributes ?? []).map(({ name, option }: any) => ({ name, option })),
+    attributes: (payload.attributes ?? []).map(({ id, name, option }: any) => ({
+      ...(typeof id === 'number' ? { id } : {}), name, option,
+    })),
   }).filter(([, value]) => value !== undefined));
 }
 
