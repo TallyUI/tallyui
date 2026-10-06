@@ -6,13 +6,16 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { AnyCommandEnvelope, CommandError, CommandResult, OrderCreateEnvelope, RegisterCommandEnvelope } from '@tallyui/core';
 import { posOrderCollection, uuidv7, type PosOrder } from '../pos-order';
 import { registerCommandCollection, registerCommandsLogger, type RegisterCommand } from '../register/register-commands';
+import { registerSessionCreator } from '../register/schemas';
+import type { RegisterSessionCollection } from '../register/session-store';
 import { readFresh } from '../rxdb';
 import { createBackendNotFound } from './backend-not-found';
 import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS, STUCK_AFTER_MS } from './order-outbox';
 import { createRegisterOutbox, type RegisterOutbox, type RegisterOutboxOptions } from './register-outbox';
 import type { CommandTransport, OutboxState, TransportOutcome } from './types';
 
-let db: RxDatabase<{ register_commands: RxCollection<RegisterCommand>; pos_orders: RxCollection<PosOrder> }>;
+let db: RxDatabase<{ register_commands: RxCollection<RegisterCommand>; pos_orders: RxCollection<PosOrder>;
+  register_sessions: RegisterSessionCollection }>;
 let collection: RxCollection<RegisterCommand>;
 let outboxes: RegisterOutbox[];
 const epoch = Date.parse('2026-09-28T12:00:00.000Z');
@@ -38,7 +41,8 @@ beforeEach(async () => {
   outboxes = [];
   db = await createRxDatabase({ name: `registeroutbox${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
-  ({ register_commands: collection } = await db.addCollections({ register_commands: registerCommandCollection(), pos_orders: posOrderCollection() }));
+  ({ register_commands: collection } = await db.addCollections({ register_commands: registerCommandCollection(), pos_orders: posOrderCollection(),
+    register_sessions: registerSessionCreator() }));
 });
 afterEach(async () => {
   outboxes.forEach((outbox) => outbox.stop());
@@ -231,6 +235,67 @@ describe('register outbox', () => {
     expect(send.mock.calls.flatMap(([batch]) => batch.map(({ id }) => id))).toEqual([inputs[0].commandId]);
     expect(await stored(inputs[0].key)).toMatchObject({ syncStatus: 'rejected', error });
     for (const input of inputs.slice(1)) expect(await stored(input.key)).toMatchObject({ syncStatus: 'pending' });
+  });
+
+  it('an already-open rejection whose session is abandoned no longer blocks; the refused open stays rejected and unsent', async () => {
+    const error = { code: 'register_session_already_open', message: 'already open' };
+    const inputs = [command(1, 'a', { type: 'register.session.open', key: 'session.open:s1',
+      payload: { sessionId: 's1', registerId: 'a' }, syncStatus: 'rejected', error }),
+      command(2, 'a', { type: 'register.session.open', key: 'session.open:s2', payload: { sessionId: 's2', registerId: 'a' } })];
+    await collection.bulkInsert(inputs);
+    await db.register_sessions.insert({ id: 's1', register_id: 'a', status: 'abandoned',
+      opened_at_gmt: new Date(epoch).toISOString(), counted_float_minor: 0 });
+    const { outbox, send } = setup({ sessions: db.register_sessions });
+    await outbox.flush();
+    expect(send.mock.calls.map(([batch]) => batch.map(({ id }) => id))).toEqual([[inputs[1].commandId]]);
+    expect(await stored(inputs[0].key)).toStrictEqual(inputs[0]);
+    expect(await stored(inputs[1].key)).toMatchObject({ syncStatus: 'applied' });
+  });
+
+  it('an already-open rejection whose session is still conflict keeps blocking', async () => {
+    const error = { code: 'register_session_already_open', message: 'already open' };
+    const inputs = [command(1, 'a', { type: 'register.session.open', key: 'session.open:s1',
+      payload: { sessionId: 's1', registerId: 'a' }, syncStatus: 'rejected', error }),
+      command(2, 'a', { type: 'register.session.open', key: 'session.open:s2', payload: { sessionId: 's2', registerId: 'a' } })];
+    await collection.bulkInsert(inputs);
+    await db.register_sessions.insert({ id: 's1', register_id: 'a', status: 'conflict',
+      opened_at_gmt: new Date(epoch).toISOString(), counted_float_minor: 0 });
+    const { outbox, send } = setup({ sessions: db.register_sessions });
+    await outbox.flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(await stored(inputs[1].key)).toMatchObject({ syncStatus: 'pending' });
+  });
+
+  it('without sessions, an already-open rejection blocks even when its session is abandoned', async () => {
+    const error = { code: 'register_session_already_open', message: 'already open' };
+    const inputs = [command(1, 'a', { type: 'register.session.open', key: 'session.open:s1',
+      payload: { sessionId: 's1', registerId: 'a' }, syncStatus: 'rejected', error }),
+      command(2, 'a', { type: 'register.session.open', key: 'session.open:s2', payload: { sessionId: 's2', registerId: 'a' } })];
+    await collection.bulkInsert(inputs);
+    await db.register_sessions.insert({ id: 's1', register_id: 'a', status: 'abandoned',
+      opened_at_gmt: new Date(epoch).toISOString(), counted_float_minor: 0 });
+    const { outbox, send } = setup();
+    await outbox.flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(await stored(inputs[1].key)).toMatchObject({ syncStatus: 'pending' });
+  });
+
+  it('abandoning the session sends the command waiting behind the refused open without another command change', async () => {
+    const error = { code: 'register_session_already_open', message: 'already open' };
+    const inputs = [command(1, 'a', { type: 'register.session.open', key: 'session.open:s1',
+      payload: { sessionId: 's1', registerId: 'a' }, syncStatus: 'rejected', error }),
+      command(2, 'a', { type: 'register.session.open', key: 'session.open:s2', payload: { sessionId: 's2', registerId: 'a' } })];
+    await collection.bulkInsert(inputs);
+    const session = await db.register_sessions.insert({ id: 's1', register_id: 'a', status: 'conflict',
+      opened_at_gmt: new Date(epoch).toISOString(), counted_float_minor: 0 });
+    const { outbox, send } = setup({ sessions: db.register_sessions });
+    outbox.start();
+    await outbox.flush();
+    expect(send).not.toHaveBeenCalled();
+    await session.incrementalPatch({ status: 'abandoned' });
+    await vi.waitFor(async () => expect(await stored(inputs[1].key)).toMatchObject({ syncStatus: 'applied' }));
+    expect(send.mock.calls.map(([batch]) => batch.map(({ id }) => id))).toEqual([[inputs[1].commandId]]);
+    expect(await stored(inputs[0].key)).toStrictEqual(inputs[0]);
   });
 
   it('an open ends its batch', async () => {
@@ -605,6 +670,32 @@ describe('register outbox stuck clock (answered time only, in memory)', () => {
     expect(states.at(-1)?.stuck?.commandIds).toContain(inputs[1].commandId);
     expect(states.at(-1)?.stuck?.orders).toContainEqual({ commandId: inputs[1].commandId,
       since: epoch, firstFailedAt: epoch, reason: 'status_503' });
+  });
+
+  it("a command behind an abandoned session's refused open keeps its clock and becomes stuck", async () => {
+    const inputs = [command(2, 'a'), command(2, 'b')];
+    await db.register_sessions.bulkInsert([
+      { id: 'a-1', register_id: 'a', status: 'abandoned', opened_at_gmt: new Date(epoch).toISOString(), counted_float_minor: 0 },
+      { id: 'b-1', register_id: 'b', status: 'conflict', opened_at_gmt: new Date(epoch).toISOString(), counted_float_minor: 0 },
+    ]);
+    await collection.insert(inputs[1]);
+    const { outbox, send, states } = setup({ sessions: db.register_sessions });
+    send.mockResolvedValue(fail('status_503'));
+    await at(outbox, 0);
+    await collection.insert(inputs[0]);
+    await at(outbox, 0);
+    const error = { code: 'register_session_already_open', message: 'already open' };
+    const heads = ['a', 'b'].map((registerId) => command(1, registerId, { type: 'register.session.open',
+      key: `session.open:${registerId}-1`, syncStatus: 'rejected', error }));
+    await collection.bulkInsert(heads);
+    await at(outbox, 60_000);
+    for (const head of heads) expect(await stored(head.key)).toMatchObject({ syncStatus: 'rejected', error });
+    for (const input of inputs) expect(await stored(input.key)).toMatchObject({ syncStatus: 'pending' });
+    await at(outbox, 2 * STUCK_AFTER_MS);
+    expect(states.at(-1)?.stuck?.commandIds).toEqual([inputs[0].commandId]);
+    expect(states.at(-1)?.stuck?.orders).toContainEqual({ commandId: inputs[0].commandId,
+      since: epoch, firstFailedAt: epoch, reason: 'status_503' });
+    expect(states.some((state) => state.stuck?.commandIds.includes(inputs[1].commandId))).toBe(false);
   });
 
   it('a restart forgets the clock: a new outbox has no stuck, and its first answered failure starts it afresh', async () => {
