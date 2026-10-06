@@ -71,6 +71,8 @@ export interface OrderBuilder {
   addProduct(doc: any, traits: ProductTraits, options?: { variantId?: string; quantity?: number }): string;
   addLine(input: AddLineInput): string;
   updateQuantity(lineId: string, quantity: number): void;
+  /** Sets a line's unit price (a till price edit), in minor units of the order's currency and the line's own tax mode; its discounts and tax are recomputed. */
+  setUnitPrice(lineId: string, amountMinor: number): void;
   removeItem(lineId: string): void;
   applyLineDiscount(lineId: string, discount: Discount): void;
   applyOrderDiscount(discount: Discount): void;
@@ -352,6 +354,16 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
           li.id === lineId ? recalculateLine({ ...li, quantity }) : li,
         );
       }
+      emit();
+    },
+
+    setUnitPrice(lineId, amountMinor) {
+      if (!Number.isInteger(amountMinor)) throw new RangeError('Price must be integer minor units');
+      if (amountMinor < 0) throw new RangeError('Price must be >= 0');
+      if (!lineItems.some((li) => li.id === lineId)) throw new Error(`Unknown line ${lineId}`);
+      lineItems = lineItems.map((li) =>
+        li.id === lineId ? recalculateLine({ ...li, unitPriceMinor: amountMinor }) : li,
+      );
       emit();
     },
 

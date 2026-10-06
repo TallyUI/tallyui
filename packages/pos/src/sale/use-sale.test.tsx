@@ -77,6 +77,37 @@ async function withOpenSession() {
 }
 
 describe('sale', () => {
+  it('setUnitPrice changes the order total', () => {
+    const { result } = renderSale(pricing);
+    addSaleLines(result);
+    expect(result.current.order.totalMinor).toBe(4375);
+    act(() => { expect(result.current.setUnitPrice(result.current.order.lineItems[0].id, 800)).toBeNull(); });
+    expect(result.current.order.lineItems[0].unitPriceMinor).toBe(800);
+    expect(result.current.order.totalMinor).toBe(3250);
+  });
+
+  it('setUnitPrice returns the error message for a negative price', () => {
+    const { result } = renderSale(pricing);
+    addSaleLines(result);
+    const before = result.current.order;
+    act(() => { expect(result.current.setUnitPrice(before.lineItems[0].id, -1)).toBe('Price must be >= 0'); });
+    expect(result.current.order).toEqual(before);
+  });
+
+  it('setUnitPrice returns SALE_SAVING while a completion is pending', async () => {
+    let saved!: () => void;
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: () => new Promise<void>((resolve) => { saved = resolve; }) }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    const before = result.current.order;
+    let completion!: Promise<void>;
+    act(() => { completion = result.current.complete(); });
+    expect(result.current.saving).toBe(true);
+    act(() => { expect(result.current.setUnitPrice(before.lineItems[0].id, 800)).toBe(SALE_SAVING); });
+    expect(result.current.order).toEqual(before);
+    await act(async () => { saved(); await completion; });
+  });
+
   it('setCustomer is refused while the sale is locked', async () => {
     let saved!: () => void;
     const customer = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };

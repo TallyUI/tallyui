@@ -258,6 +258,17 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       }
     },
     setQuantity(lineId: string, quantity: number) { if (!locked()) builderNow.current.updateQuantity(lineId, quantity); },
+    /** Sets a line's unit price in minor units of its own tax mode, recomputing discounts and tax; returns a refusal or null. */
+    setUnitPrice(lineId: string, amountMinor: number): string | null {
+      if (locked()) return SALE_SAVING;
+      try {
+        builderNow.current.setUnitPrice(lineId, amountMinor);
+        return null;
+      } catch (error) {
+        if (error instanceof RangeError || (error instanceof Error && error.message === `Unknown line ${lineId}`)) return error.message;
+        throw error;
+      }
+    },
     remove(lineId: string) { if (!locked()) builderNow.current.removeItem(lineId); },
     /** A line's discount, or the order's without a line; returns the refusal to show, or null once applied. */
     applyDiscount(lineId: string | null, discount: Discount): string | null {
