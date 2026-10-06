@@ -4077,3 +4077,62 @@ interface OrderCreatePayload {
   algorithm. Until the contract carries a display rounding row (#310),
   those stores see `figures_mismatch` on such baskets, as a warning,
   never a refusal.
+
+## ADR-072 One order reference; the sale id on the stored order; split tender
+
+- **Date:** 2026-10-06 · **Status:** Accepted (the Front desk's ruling on the
+  Medusa POS demo walkthrough, 2026-10-06; split tender at vendurepos's
+  request, vendurepos/app#122) · **Relates to:** ADR-052 (useSale and
+  Receipt), ADR-039 (tenders above the total), ADR-069 (`pos_orders` is
+  one-way)
+- **Context:**
+  - **No visitor could match a receipt to its Orders row** (demo walkthrough, bug 4):
+    - The receipt printed the **sale** order's id ("Order 340537-1") and the sale's start time.
+    - Orders printed the backend's display id ("#303") and the stored order's time.
+    - `finalizeOrder` gives the stored `PosOrder` a fresh id and keeps no link to the sale's id.
+  - **A sale takes one payment.** `useSale`'s `setTender` replaces `payments[0]`, so a till can't take part by card
+    and the rest in cash. The order builder already sums any number of payments (`balanceDueMinor`,
+    `changeDueMinor`). The `order.create` payload already carries `payments[]`, and `finalizeOrder` already copies
+    every payment.
+- **Decision 1, in 3.0.2: one reference, and it's the stored order's** (TallyUI #398).
+  - **The receipt is the finalized order's record.** Given `posOrder` (useSale's receipt stage holds it),
+    `Receipt` prints `orderReference(posOrder)` and the `PosOrder`'s `createdAt`. `orderReference` is the id's last
+    8 characters, then ` · #<displayId>` once the store has one.
+  - **Orders prints the same reference** on every row, local or synced.
+  - **A receipt rendered without `posOrder`** (a preview before finalize) prints the sale id marked "(draft)". The
+    printed or shared receipt after finalize never shows the sale id alone.
+  - **Apps pass `posOrder`** at the 3.0.2 bump. No schema change.
+- **Decision 2, in 3.1.0: the stored order keeps the sale's id** (`pos_orders` v7).
+  - `PosOrder` gains an optional `saleId`, the sale order's id, set by `finalizeOrder`. It's for support
+    traceability, from a draft or preview back to the stored order. It is never sent to the server and never printed.
+  - Migration 7 is the identity: older orders have no `saleId`.
+  - Like v5 and v6 (ADR-069), **v7 is one-way**. A till that opens 3.1.0 can't go back to 3.0.x. The 3.1.0 release
+    notes say so, and the apps bump once for both changes in this ADR.
+- **Decision 3, in 3.1.0: split tender** (additive, `useSale`).
+  - **The API:**
+
+    ```ts
+    addTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string }): string | null; // payment id; null when refused
+    removeTender(paymentId: string): void;
+    ```
+
+    The snapshot already has `order.payments` (each with `id`, `method`, `amountMinor`), `balanceDueMinor` and
+    `changeDueMinor`.
+  - **Change comes only from cash** (the Medusa and WCPOS convention):
+    - An `external` tender is capped at the balance due when it's added. When nothing is due, it's refused
+      (`null`).
+    - A cash tender may exceed the balance due, and the excess is the change (ADR-039 lets the server accept a
+      tender above the total).
+    - So `changeDueMinor` only ever comes from cash.
+  - **The same per-payment rules as `setTender`:**
+    - Refused while locked (saving), and `amountMinor` must be a positive integer.
+    - A terminal reference that finalize would refuse is dropped and the payment kept, with the warning and a
+      `payment_reference_dropped` local warning naming **that** payment. `useSale` tracks the dropped references
+      as a set, not one id.
+  - **`setTender` keeps its single-payment meaning for existing apps.** It replaces **all** payments with the one
+    given (or none). `startTender('external')` still sets one card payment of the total.
+  - **`complete()` stays gated on `balanceDueMinor === 0`.**
+  - **No schema change for split tender itself:** `PosOrder.payments[]` and the payload already carry several. The
+    receipt already lists each payment and the change.
+- **Versioning:** 3.0.2 is a patch (Decision 1 and the other demo fixes). 3.1.0 is a minor: an additive API and an
+  optional stored field, with v7's one-way storage noted.
