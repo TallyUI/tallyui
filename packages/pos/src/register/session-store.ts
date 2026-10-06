@@ -40,6 +40,15 @@ export class RegisterSessionClosedError extends Error {
   }
 }
 
+/** A stored session status outside the known set (written by a later build); its message can be shown to a cashier as it is. */
+export class RegisterNeedsUpgradeError extends Error {
+  readonly code = 'REGISTER_NEEDS_UPGRADE';
+  constructor() {
+    super('This till has register data from a newer version of the app. Update the app to continue.');
+    this.name = 'RegisterNeedsUpgradeError';
+  }
+}
+
 /** ADR-068 6a: movement amounts must be safe integers, positive for paid_in/paid_out and zero for no_sale. */
 export class RegisterMovementAmountError extends Error {
   constructor(type: 'paid_in' | 'paid_out' | 'no_sale', amountMinor: number) {
@@ -81,6 +90,11 @@ const TRANSITIONS: Record<RegisterSession['status'], readonly RegisterSession['s
   superseded: [],
 };
 
+/** Whether this build knows the stored session status. */
+export function isKnownSessionStatus(status: string): boolean {
+  return Object.hasOwn(TRANSITIONS, status);
+}
+
 /**
  * The session as stored, by primary key, not a cached `findOne(id)`: a status write that skips that
  * query (a server sync) can't leave a live-session check stale (docs/rxdb/query-cache-reads.md). A
@@ -100,6 +114,7 @@ async function readClosure(closures: ClosureCollection | undefined, id: string) 
 async function requireLiveSession(sessions: RegisterSessionCollection, id: string) {
   const session = await readSession(sessions, id);
   if (!session) throw new RegisterSessionRequiredError();
+  if (!isKnownSessionStatus(session.status)) throw new RegisterNeedsUpgradeError();
   if (session.status === 'closed') throw new RegisterSessionClosedError();
   return session;
 }
@@ -250,6 +265,7 @@ async function transition(
   const at = new Date().toISOString();
   // The guard runs again on the latest document, so a racing write can't slip past it.
   return row.incrementalModify((doc) => {
+    if (!isKnownSessionStatus(doc.status)) throw new RegisterNeedsUpgradeError();
     if (doc.status === 'closed' && status === 'closed') return doc;
     if (doc.status === 'closed') throw new RegisterSessionClosedError();
     if (!TRANSITIONS[doc.status].includes(status)) throw new Error(`invalid_session_transition:${doc.status}->${status}`);

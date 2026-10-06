@@ -121,6 +121,14 @@ describe('register command ledger', () => {
   const write = (closed: RegisterSession) => writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store',
     session: closed, counted: 8600, otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0' });
 
+  it('a session whose status this build does not know is never sent as a transition', async () => {
+    await db.register_sessions.insert({
+      ...session, status: 'abandoned-by-till' as unknown as RegisterSession['status'], status_at: openedAt,
+    });
+    await reconcile();
+    expect((await ledger()).filter((row) => row.type === 'register.session.transition' && row.payload.sessionId === session.id)).toEqual([]);
+  });
+
   it("appends the register's facts in fact order", async () => {
     const s = await open();
     await reconcile();

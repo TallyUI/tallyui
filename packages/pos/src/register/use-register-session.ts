@@ -128,9 +128,10 @@ const unwritten = (row: RegisterSession, closureRows: readonly { id: string }[])
 /**
  * The session for this register: first the one an unapplied closure reservation names (its close
  * was interrupted after the number was reserved, perhaps after its row was written), so it can
- * finish; then the open or counting one; then a closed one whose closure row was never written.
+ * finish; then the open or counting one; then a closed one whose closure row was never written; null if any status is unknown.
  */
 function currentSession(rows: RegisterSession[], closureRows: Closure[], reservation: Reservation) {
+  if (rows.some((row) => !store.isKnownSessionStatus(row.status))) return null;
   return (reservation && !reservation.applied ? rows.find((row) => row.id === reservation.row.session_id) : undefined)
     ?? rows.find((row) => row.status !== 'closed')
     ?? rows.find((row) => unwritten(row, closureRows))
@@ -281,6 +282,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
 
   return {
     session,
+    /** Any unknown session status in the current snapshot means the register needs upgrade. */
+    needsUpgrade: data?.rows.some((row) => !store.isKnownSessionStatus(row.status)) ?? false,
     movements: entries,
     expected,
     salesCount: sales.length,
@@ -304,6 +307,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
        * Refuses with `RegisterSessionAlreadyOpenError` while the register has a live session or
        * another open is running (in any hook instance), and with `RegisterCloseIncompleteError`
        * while an earlier close hasn't finished: a new session would lock the till behind it.
+       * An unknown stored status refuses with `RegisterNeedsUpgradeError`.
        */
       openSession: async (input: { expectedFloatMinor: number | null; countedFloatMinor: number }) => {
         // A double tap: the second call sees the first's promise, set before its first await.
@@ -313,6 +317,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           const { sessions, closures, registerId, register } = live();
           // The storage, not the rendered snapshot or a cached query, which can lag a new write.
           const rows = await readFresh(sessions, { selector: { register_id: registerId } });
+          if (rows.some((row) => !store.isKnownSessionStatus(row.status))) throw new store.RegisterNeedsUpgradeError();
           if (rows.some((row) => row.status !== 'closed')) throw new RegisterSessionAlreadyOpenError();
           // Closure rows before the reservation: a close reserves, then inserts its row, then applies the
           // reservation, so a close landing between the two reads is still caught by one of them.

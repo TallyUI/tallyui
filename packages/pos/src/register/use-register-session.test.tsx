@@ -53,13 +53,14 @@ import { registerFactsLogger } from './facts';
 import { registerCommandCollection, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
 import { readFresh } from '../rxdb';
 import { ensureRegister, readRegister } from './register-document';
-import { cashMovementSchema, closureSchema, registerSessionCreator } from './schemas';
+import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
 import { serverClose } from './server-close.test-helper';
 import {
   closeSession,
   openSession,
   recordMovement,
   RegisterSessionRequiredError,
+  RegisterNeedsUpgradeError,
   RegisterMovementStrandedError,
   stampSession,
   startCounting,
@@ -129,6 +130,38 @@ function seed(openedBy = '7', registerId = 'register') {
     registerId, expectedFloatMinor: 10000, countedFloatMinor: 10000, openedBy, businessDay: { year: 2026, month: 9, day: 16 },
   });
 }
+
+it('a register holding a session whose status this build does not know needs upgrade: no current or sellable session', async () => {
+  await db.register_sessions.insert({
+    id: 'unknown-status', register_id: 'register', status: 'abandoned-by-till' as unknown as RegisterSession['status'],
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const view = render();
+  expect(view.result.current.needsUpgrade).toBe(false);
+  await waitFor(() => expect(view.result.current.needsUpgrade).toBe(true));
+  expect(view.result.current.session).toBeNull();
+  expect(view.result.current.saleSession).toBeUndefined();
+  view.unmount();
+  await seed();
+  const mixed = render();
+  await waitFor(() => expect(mixed.result.current.needsUpgrade).toBe(true));
+  expect(mixed.result.current.session).toBeNull();
+  expect(mixed.result.current.saleSession).toBeUndefined();
+});
+
+it('opening a session on a register that needs upgrade refuses with RegisterNeedsUpgradeError and writes nothing', async () => {
+  const session = await db.register_sessions.insert({
+    id: 'unknown-status', register_id: 'register', status: 'abandoned-by-till' as unknown as RegisterSession['status'],
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const { result } = render();
+  await act(async () => {
+    await expect(result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 }))
+      .rejects.toBeInstanceOf(RegisterNeedsUpgradeError);
+  });
+  const rows = await readFresh(db.register_sessions, { selector: { register_id: 'register' } });
+  expect(rows.map((row) => row.id)).toEqual([session.id]);
+});
 
 describe('register commands', () => {
   const ledger = async () => (await readFresh(db.register_commands, { selector: {} })).sort((a, b) => a.seq - b.seq);
@@ -487,6 +520,7 @@ describe('the session', () => {
     await waitFor(() => expect(result.current.saleSession).toBeUndefined());
     const session = await seed();
     await waitFor(() => expect(result.current.saleSession).toEqual({ id: session.id, sessions: db.register_sessions }));
+    expect(result.current.needsUpgrade).toBe(false);
     await startCounting(db.register_sessions, session.id);
     await waitFor(() => expect(result.current.session?.status).toBe('counting'));
     expect(result.current.saleSession?.id).toBe(session.id);

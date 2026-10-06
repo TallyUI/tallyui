@@ -4678,6 +4678,10 @@ interface OrderCreatePayload {
      local-only `register_sessions` schema bump (the status field's `maxLength` is 8), migrated in place.
      - **The stored status is an open string** (no enum, `maxLength` 20, still indexed), so a later local state
        costs no migration. The TypeScript union names today's states.
+     - **A stored status this build does not know** (a later build wrote it, then the app was rolled back) makes
+       the register "needs upgrade": no session of it is current or sellable, no transition, stamp or cash movement
+       runs on it, it is never sent, and opening another session is refused. Each refusal is
+       `RegisterNeedsUpgradeError`, which tells the cashier the till's data comes from a newer version.
      - **In `useRegisterSession`,** a `conflict` session is current, so its sheet shows, but it takes no sale. A
        `superseded` session is neither current nor sellable. Neither blocks opening another session.
      - **Derived from stored rows.** The till derives resume, conflict and superseded state from the stored

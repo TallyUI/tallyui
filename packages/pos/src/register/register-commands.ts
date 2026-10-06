@@ -93,7 +93,7 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
   closures: ClosureCollection; host: RegisterHost; storeKey: string; registerId: string; now?: string; observed?: RegisterSession[];
 }): Promise<string[]> {
   // `conflict` and `superseded` are local states derived from the store's answers (ADR-078 decision 9), never sent as a transition.
-  const sentStatus = (s: RegisterSession): s is RegisterSession & { status: RegisterSessionTransitionPayload['status'] } => s.status !== 'conflict' && s.status !== 'superseded';
+  const sentStatus = (s: RegisterSession): s is RegisterSession & { status: RegisterSessionTransitionPayload['status'] } => s.status === 'open' || s.status === 'counting' || s.status === 'closed';
   let registers = chains.get(commands);
   if (!registers) chains.set(commands, registers = new Map());
   const run = (registers.get(registerId) ?? Promise.resolve()).then(async () => {

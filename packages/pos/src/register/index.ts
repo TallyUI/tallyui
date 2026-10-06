@@ -13,7 +13,7 @@ export {
 } from './register-document';
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register-document';
 export {
-  RegisterSessionRequiredError, RegisterSessionClosedError, RegisterMovementAmountError, RegisterMovementReasonError, RegisterMovementStrandedError, openSessionSelector,
+  RegisterSessionRequiredError, RegisterSessionClosedError, RegisterNeedsUpgradeError, isKnownSessionStatus, RegisterMovementAmountError, RegisterMovementReasonError, RegisterMovementStrandedError, openSessionSelector,
   requireOpenSession, stampSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure,
 } from './session-store';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './session-store';
