@@ -55,7 +55,7 @@ export { buildReceiptData } from './receipt';
 export type { ReceiptData, ReceiptLineItem, ReceiptConfig } from './receipt';
 
 // Product
-export { searchProducts, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$ } from './product';
+export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$ } from './product';
 
 // Sale
 export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel } from './sale';

@@ -1,0 +1,67 @@
+---
+title: ProductTable
+description: Virtualised product table with default trait columns and header sort
+---
+
+## Import
+
+```tsx
+import { ProductTable, defaultProductColumns, useDefaultProductColumns } from '@tallyui/components';
+import type { ProductTableProps, ProductTableColumn } from '@tallyui/components';
+import type { ProductSort } from '@tallyui/pos';
+```
+
+## Usage
+
+```tsx
+<ProductTable
+  items={products}
+  onSelect={handleSelect}
+  searchSlot={<SearchInput value={query} onChangeText={setQuery} />}
+  emptyState={<Text>No products</Text>}
+/>
+```
+
+Under a `ConnectorProvider`, the default columns are Name, SKU, Barcode, Price, Stock and Category. Prices use the resolved sale price or the lowest variant price. Stock uses the provider's reconciled overlay. Unsellable products are hidden by default.
+
+Press a sortable header to cycle through ascending, descending and no sort. The header stays above the virtualised rows. Supply `sort` and `onSortChange` to control sorting; `sort={null}` means no sort. With `sortItems={false}`, the header reports sort changes while rows retain the supplied order.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `items` | `any[]` | required | Product documents |
+| `columns` | `ProductTableColumn[]` | trait columns | Custom columns; defaults to none without a provider |
+| `sort` | `ProductSort \| null` | uncontrolled | Controlled sort field and direction |
+| `defaultSort` | `ProductSort \| null` | `null` | Initial uncontrolled sort |
+| `onSortChange` | `(sort: ProductSort \| null) => void` | — | Called on each sortable header press |
+| `sortItems` | `boolean` | `true` | Sort rows locally; false leaves ordering to the app |
+| `onSelect` | `(doc: any) => void` | — | Makes rows pressable |
+| `searchSlot` | `ReactNode` | — | Content above the filter slot |
+| `filterSlot` | `ReactNode` | — | Content above the table |
+| `emptyState` | `ReactNode` | — | Replaces the entire table when no visible items remain |
+| `showUnsellable` | `boolean` | `false` | Include products the channel does not sell |
+| `currencySymbol` | `string` | — | Passed to the default price column |
+| `className` | `string` | — | Override container styles |
+
+Other `ViewProps` are forwarded to the container.
+
+## Columns
+
+Each column has a stable `id`, a `header` label and a `render(doc)` function. Optional `flex` controls its width weight (default 1); `sortValue(doc)` enables header sorting. Missing values sort last in either direction.
+
+`defaultProductColumns(traits, context?, { currencySymbol }?)` builds the six default columns. `useDefaultProductColumns({ currencySymbol }?)` memoises them from the provider and requires a `ConnectorProvider`.
+
+Custom columns can render without a provider:
+
+```tsx
+<ProductTable
+  items={products}
+  columns={[{
+    id: 'name',
+    header: 'Name',
+    render: (doc) => <Text>{doc.name}</Text>,
+    sortValue: (doc) => doc.name,
+  }]}
+/>
+```
