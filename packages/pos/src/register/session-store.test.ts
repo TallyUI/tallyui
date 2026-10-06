@@ -16,7 +16,7 @@ import { toOrderCreateEnvelope } from '../pos-order/command';
 import { finalizeOrder } from '../pos-order/finalize';
 import type { PosOrder } from '../pos-order/types';
 import { ensureRegister } from './register-document';
-import { cashMovementSchema, closureSchema, registerSessionCreator } from './schemas';
+import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
 import { serverClose as closeOnServer } from './server-close.test-helper';
 import {
   backToSelling,
@@ -26,6 +26,7 @@ import {
   RegisterMovementAmountError,
   RegisterMovementReasonError,
   RegisterMovementStrandedError,
+  RegisterNeedsUpgradeError,
   RegisterSessionClosedError,
   RegisterSessionRequiredError,
   requireOpenSession,
@@ -64,6 +65,33 @@ const input = {
   openedBy: '7',
   businessDay: { year: 2026, month: 9, day: 16 },
 };
+it('a cashier move on a session whose status this build does not know refuses with RegisterNeedsUpgradeError and leaves the row unchanged', async () => {
+  const session = await db.register_sessions.insert({
+    id: 'unknown-status', register_id: 'register', status: 'abandoned-by-till' as unknown as RegisterSession['status'],
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  const before = await db.register_sessions.storageInstance.findDocumentsById([session.id], false);
+  await expect(startCounting(db.register_sessions, session.id)).rejects.toBeInstanceOf(RegisterNeedsUpgradeError);
+  await expect(backToSelling(db.register_sessions, session.id)).rejects.toBeInstanceOf(RegisterNeedsUpgradeError);
+  await expect(closeSession(db.register_sessions, session.id, { counted: { cash: 10000 } })).rejects.toBeInstanceOf(RegisterNeedsUpgradeError);
+  const after = await db.register_sessions.storageInstance.findDocumentsById([session.id], false);
+  const withoutRevisionMetadata = ({ _rev, _meta, ...data }: (typeof before)[number]) => data;
+  expect(after.map(withoutRevisionMetadata)).toEqual(before.map(withoutRevisionMetadata));
+  expect(after[0]?.status).toBe('abandoned-by-till');
+});
+
+it('stamping or recording cash on a session whose status this build does not know refuses with RegisterNeedsUpgradeError', async () => {
+  const session = await db.register_sessions.insert({
+    id: 'unknown-status', register_id: 'register', status: 'abandoned-by-till' as unknown as RegisterSession['status'],
+    opened_at_gmt: '2026-09-16T08:00:00.000Z', counted_float_minor: 10000,
+  });
+  await expect(stampSession({ id: 'order' } as PosOrder, session.id, db.register_sessions)).rejects.toBeInstanceOf(RegisterNeedsUpgradeError);
+  await expect(recordMovement(db.register_sessions, db.cash_movements, db.closures, {
+    sessionId: session.id, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7',
+  })).rejects.toBeInstanceOf(RegisterNeedsUpgradeError);
+  expect(await db.cash_movements.find().exec()).toHaveLength(0);
+});
+
 it('opens pending and retains the pending transition through each local state', async () => {
   const doc = await openSession(db.register_sessions, input);
   expect(doc.toJSON()).toMatchObject({ status: 'open', counted_float_minor: 10000, opening_variance_minor: 0 });
