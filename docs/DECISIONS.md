@@ -4234,3 +4234,89 @@ interface OrderCreatePayload {
 - **Expected effect** (inferred, to be re-measured on the demo with the same script after the apps take this release):
   - about 1.4 s off "Up to date" from the page size, and about 2 s off the first tile;
   - about 1.3 s more from the parallel price calls.
+
+## ADR-075 Fee, shipping and custom lines; `order.create` version 5; `pos_orders` version 8
+
+- **Date:** 2026-10-06 · **Status:** Accepted (the front desk's ruling on #428, 2026-10-06; assignment G5b, from
+  the WooCommerce lane's M5 survey) · **Relates to:** ADR-062 (order discounts allocated per line), ADR-063 and ADR-065 (display figures, v3),
+  ADR-069 (`pos_orders` one-way), ADR-070 (strict payloads: every new field is a version bump), ADR-073 (the
+  WooCommerce transport)
+- **Context:**
+  - A till must add a **fee** (bag charge, service charge), a **shipping** charge (a phone order delivered later),
+    and a **custom line** (an item not in the catalogue, sold at a typed price).
+  - Today an order has only catalogue product lines. `addLine` needs a `productId` and merges equal lines. Every
+    `LineItem` takes a share of the order discounts and has a display row, and `order.create` lines need a
+    `variantId`.
+  - WCPOS 1.10.x takes:
+    - `fee_lines {name, total, tax_class, tax_status}`;
+    - `shipping_lines {method_id, method_title, total}`, with tax computed by WooCommerce at the store's shipping
+      tax class;
+    - a misc product as `product_id: 0` with `_woocommerce_pos_data` item meta.
+  - Medusa and Vendure have shipping methods and custom (non-variant) line items. Vendure also has surcharges.
+- **Decision:**
+  1. **Fees and shipping are their own arrays on the order, not `LineItem`s.**
+     - `Order.fees: FeeLine[]` and `Order.shipping: ShippingLine[]`, each:
+       `{ id, name, amountMinor (integer >= 0, in the order's tax mode), taxClass?, taxStatus: 'taxable' | 'none', taxLines, netMinor, taxMicros }`.
+       A shipping line also has an optional `methodId`.
+     - **Order discounts never apply to them.** ADR-062's allocation stays over product lines only, as WooCommerce's
+       manual discounts and coupons do.
+     - Their tax uses the same `TaxContext.getTaxRatePpm(taxClass)` and rounding as a product line. `taxStatus: 'none'`
+       taxes them at 0.
+     - **Totals:** `subtotalMinor` stays the product lines'. `totalMinor` adds the fees' and shipping's net and
+       (exclusive) tax. `taxMinor` includes their tax.
+     - **Display:** `display.fees[]` and `display.shipping[]` rows (`{ id, name, amountMinor }`), with the same
+       residue rules. The receipt shows them below the subtotal, before tax.
+     - **Builder methods** (and the same on `useSale`, returning a refusal or `null`): `addFee`, `updateFee`,
+       `removeFee`, `addShipping`, `updateShipping`, `removeShipping`.
+     - A negative fee is refused; a discount or a coupon is the way to lower a total.
+  2. **A custom line is a product line marked custom.**
+     - `useSale().addCustomLine({ name, priceMinor, quantity?, taxClass?, taxStatus?, sku? })` adds a `LineItem` with
+       `custom: true`, a synthetic `productId` of `custom:<uuidv7>` (so it never merges with another line) and no
+       `variantId`.
+     - It takes discounts and its order-discount share like any line. `taxStatus: 'none'` taxes it at 0.
+  3. **`order.create` version 5** carries them.
+     - The payload gains `fees?: { clientFeeId, name, amountMinor, taxClass?, taxStatus, taxMinor }[]` and
+       `shipping?: { clientShippingId, name, methodId?, amountMinor, taxClass?, taxStatus, taxMinor }[]`.
+     - A line gains `custom?: { name, sku?, taxClass?, taxStatus }`. A custom line has no `variantId`; every other
+       line still requires one.
+     - `display` gains the fee and shipping rows.
+     - Field kinds (ADR-070 Decision 3): `amountMinor`, `taxStatus` and `custom` are **instructions** (honoured or
+       refused); `taxMinor`, `name` and `methodId` are informational.
+     - `contentVersion` is 5 only when an order has a fee, shipping or a custom line. Any other order keeps
+       today's version and its negotiation, so every existing store keeps selling through the upgrade window.
+     - **Negotiated, as versions 2–4 are.** The till learns the store's versions from `/tally/v1/info`
+       (`capabilities.orderCreate`, the outbox's `maxVersion`).
+       - An order v4 can express goes out at the store's highest version, up to 5.
+       - An order that **needs** 5 (a fee, shipping or a custom line) can't be expressed below it without losing
+         money, so `finalizeOrder` refuses it when the store's `capabilities.orderCreate < 5`, before the money is
+         taken, with a message naming the plugin upgrade the store needs.
+       - A stored v5 order sent to a server that later drops below 5 is rejected `unsupported_version`, as v2
+         discounts are today.
+     - `precheckCommand` (`@tallyui/core/server`) refuses v5 fields below version 5.
+  4. **`pos_orders` version 8** adds the optional `fees`, `shipping` and the line's `custom`.
+     - Migration 8 is the identity.
+     - **It is one-way**, like 5 to 7.
+  5. **The WooCommerce transport** (ADR-073) maps them:
+     - fees to `fee_lines` (`total` is the net at the currency's exponent; `tax_status` and `tax_class` as given);
+     - shipping to `shipping_lines` (`method_id` defaulting to `'pos'`, `method_title`, `total` net);
+     - a custom line to `product_id: 0` with `name`, `sku` and the `_woocommerce_pos_data` meta (price,
+       `tax_status`, `tax_class`).
+
+     WooCommerce computes the tax, and a different total is the existing `total_mismatch` warning. The connector's
+     capabilities report `orderCreate: 5` once this ships.
+- **Phasing** (one spec and one PR each):
+  - (a) pos builder, totals, display and receipt, plus `useSale` (finalize refuses them until (b));
+  - (b) `PosOrder` v8, finalize and the v5 envelope and precheck: **one-way**;
+  - (c) the WooCommerce transport;
+  - (d) components (Cart entry).
+- **Consequences outside this repo** (relayed to the lanes by the front desk when phase (a) ships):
+  - **woocommerce-pos (1.10.x push):** take the v5 fields through `push/orders`. That means `fee_lines`,
+    `shipping_lines`, and the misc product (`product_id: 0`) as the transport maps them, confirmed against a live
+    store.
+  - **medusapos plugin:** accept and apply `order.create` version 5 and advertise it in `/tally/v1/info`.
+  - **vendurepos plugin:** the same.
+  - Until a store advertises 5, its tills refuse only fees, shipping and custom lines at finalize, naming the
+    upgrade. Every other sale is unaffected.
+- **Not decided here:** coupons (G6); several rates per class, compound tax, and WooCommerce's shipping tax class
+  from store settings (G5). Fees and shipping use the single rate per class that `TaxContext` has today, and G5
+  replaces that for every line kind alike.
