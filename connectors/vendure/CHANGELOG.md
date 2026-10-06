@@ -1,5 +1,15 @@
 # @tallyui/connector-vendure
 
+## 3.2.0
+
+### Minor Changes
+
+- 5f588a6: `vendureAuth` gains `fieldSets` (email and password, or a device key) and honours an optional credential `kind: 'password' | 'api-key'`, so a SignIn screen can offer a device key without its own form; credentials without `kind` behave as before.
+
+### Patch Changes
+
+- @tallyui/core@3.2.0
+
 ## 3.1.1
 
 ### Patch Changes

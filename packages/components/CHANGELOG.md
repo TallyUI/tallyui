@@ -1,5 +1,20 @@
 # @tallyui/components
 
+## 3.2.0
+
+### Minor Changes
+
+- 2a3a3f0: `useSale` takes an optional `currentPrice(variantId)` and `resume()` then re-prices a parked sale's lines to today's prices (with a non-blocking 'Prices changed' message; `resume(id, { keepParkedPrices: true })` keeps them); `ParkedSales` takes optional `onPark`/`onResume`, so an app can drive it from its own parked store.
+
+### Patch Changes
+
+- d870060: Price and fixed-discount entry accept up to the currency's own decimal places, so 3-decimal currencies (KWD, BHD, OMR) can be entered to the minor unit; percentages stay at 2.
+- Updated dependencies [2a3a3f0]
+  - @tallyui/pos@3.2.0
+  - @tallyui/core@3.2.0
+  - @tallyui/primitives@3.2.0
+  - @tallyui/theme@3.2.0
+
 ## 3.1.1
 
 ### Patch Changes
