@@ -8,7 +8,7 @@ import { formatMoney, type StoreSettings } from '@tallyui/core';
 import { PortalHost } from '@tallyui/primitives';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import { catalogueEntries, orderDraftSchema, TaxProvider, taxProviderProps, useParkedSales, useSale } from '@tallyui/pos';
-import { ParkedSales } from '../sale/parked-sales';
+import { ParkedSales, type ParkedSalesProps } from '../sale/parked-sales';
 import { formatStockSyncTime } from '../sale/catalogue';
 
 const traits = medusaConnector.traits.product;
@@ -35,7 +35,7 @@ afterEach(async () => {
   await db.remove();
 });
 
-function renderSheet() {
+function renderSheet(overrides: Partial<Pick<ParkedSalesProps, 'parked' | 'onPark' | 'onResume'>> = {}) {
   const onOpenChange = vi.fn();
   function Harness() {
     const [open, setOpen] = useState(true);
@@ -45,7 +45,7 @@ function renderSheet() {
     });
     const parkedSales = useParkedSales(db.pos_drafts);
     return <ParkedSales sale={sale} parked={parkedSales.parked} onDiscard={parkedSales.discard} currency="EUR" open={open} hour12={false}
-      onOpenChange={(value) => { onOpenChange(value); setOpen(value); }} />;
+      onOpenChange={(value) => { onOpenChange(value); setOpen(value); }} {...overrides} />;
   }
   render(<TaxProvider {...taxProviderProps(pricing)}><Harness /><PortalHost /></TaxProvider>);
   return onOpenChange;
@@ -121,6 +121,39 @@ it('resumes the lines into the cart and closes the sheet', async () => {
   await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   expect(sale.order.lineItems.map(({ variantId, quantity }) => ({ variantId, quantity }))).toEqual(lines);
   expect(await db.pos_drafts.findOne(id).exec()).toBeNull();
+  expect(screen.queryByTestId('parked-sales')).toBeNull();
+});
+
+it('uses an app\'s park and resume handlers, showing refusals and closing on resume success', async () => {
+  const onPark = vi.fn().mockResolvedValueOnce('Cannot park yet').mockResolvedValue(null);
+  const onResume = vi.fn().mockResolvedValueOnce('Cannot resume yet').mockResolvedValue(null);
+  const onOpenChange = renderSheet({
+    onPark, onResume,
+    parked: [{ id: 'app-draft', parkedAt: '2026-09-20T12:00:00.000Z', itemCount: 1, totalMinor: 1250, source: 'local' }],
+  });
+  addLines();
+  const park = vi.spyOn(sale, 'park');
+  const resume = vi.spyOn(sale, 'resume');
+  fireEvent.click(screen.getByTestId('parked-sales-park'));
+  await waitFor(() => expect(screen.getByTestId('parked-sales-error').textContent).toBe('Cannot park yet'));
+  expect(onPark).toHaveBeenCalledExactlyOnceWith();
+  expect(park).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByTestId('parked-sales-park'));
+  await waitFor(() => expect(screen.queryByTestId('parked-sales-error')).toBeNull());
+  expect(onPark).toHaveBeenCalledTimes(2);
+  expect(park).not.toHaveBeenCalled();
+  expect(onOpenChange).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByTestId('parked-resume-app-draft'));
+  await waitFor(() => expect(screen.getByTestId('parked-sales-error').textContent).toBe('Cannot resume yet'));
+  expect(onResume).toHaveBeenCalledExactlyOnceWith('app-draft');
+  expect(resume).not.toHaveBeenCalled();
+  expect(onOpenChange).not.toHaveBeenCalled();
+  expect(screen.getByTestId('parked-sales')).toBeTruthy();
+  fireEvent.click(screen.getByTestId('parked-resume-app-draft'));
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  expect(onResume).toHaveBeenCalledTimes(2);
+  expect(onResume).toHaveBeenLastCalledWith('app-draft');
+  expect(resume).not.toHaveBeenCalled();
   expect(screen.queryByTestId('parked-sales')).toBeNull();
 });
 
