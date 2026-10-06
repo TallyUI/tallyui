@@ -12,6 +12,7 @@ import { createFetchByIds, fetchPages, variantIds } from './reconcile/ids';
 import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from './reconcile/prices';
 import { vendureStoreSettings } from './store-settings';
 import { vendureGlobalStockSettings } from './global-settings';
+import { searchVendureCustomers, createVendureCustomer, getVendureCustomer } from './customers';
 
 /** Ids per fetchByIds request: it sends the reconcile feed's whole chunk (at most 1,000 ids, ADR-060) in one query. */
 const VENDURE_IDS_PER_REQUEST = 1000;
@@ -86,6 +87,11 @@ export const createVendureConnector = (options: {
 
     storeSettings: vendureStoreSettings,
 
+    // Needs the administrator's ReadCustomer permission (and CreateCustomer to create).
+    searchCustomers: searchVendureCustomers,
+    createCustomer: createVendureCustomer,
+    getCustomer: getVendureCustomer,
+
     // Re-reads a restored session's capabilities; with an API key and no sign-in, the only reader.
     capabilities: (context) => readVendureCapabilities(context.baseUrl, context.headers, { signal: context.signal }),
   };
@@ -107,6 +113,7 @@ export { createVendureVariantFeedReplication } from './replication/variant-feed'
 export { vendureStockReconcile } from './reconcile/stock';
 export { vendureStoreSettings } from './store-settings';
 export { vendureGlobalStockSettings } from './global-settings';
+export { searchVendureCustomers, createVendureCustomer, getVendureCustomer, toVendureCustomer } from './customers';
 
 export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { VendureTimezoneConfigError } from './replication/products';

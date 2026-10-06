@@ -1,0 +1,43 @@
+{
+  "query": "query Search($q: String!, $take: Int!) {\n  customers(options: {\n    filter: { emailAddress: { contains: $q }, firstName: { contains: $q }, lastName: { contains: $q } },\n    filterOperator: OR, take: $take, sort: { lastName: ASC }\n  }) {\n    totalItems\n    items { id createdAt updatedAt title firstName lastName emailAddress phoneNumber customFields }\n  }\n}",
+  "variables": {
+    "q": "ada",
+    "take": 20
+  },
+  "httpStatus": 200,
+  "response": {
+    "data": {
+      "customers": {
+        "totalItems": 2,
+        "items": [
+          {
+            "id": "3",
+            "createdAt": "2026-10-06T01:13:57.519Z",
+            "updatedAt": "2026-10-06T01:13:57.519Z",
+            "title": null,
+            "firstName": "Adam",
+            "lastName": "Fixture",
+            "emailAddress": "adam.fixture@example.com",
+            "phoneNumber": null,
+            "customFields": {
+              "__entityId__": 3
+            }
+          },
+          {
+            "id": "2",
+            "createdAt": "2026-10-06T01:13:57.496Z",
+            "updatedAt": "2026-10-06T01:13:57.496Z",
+            "title": null,
+            "firstName": "Ada",
+            "lastName": "Lovelace",
+            "emailAddress": "ada.fixture@example.com",
+            "phoneNumber": "+44 20 7946 0001",
+            "customFields": {
+              "__entityId__": 2
+            }
+          }
+        ]
+      }
+    }
+  }
+}

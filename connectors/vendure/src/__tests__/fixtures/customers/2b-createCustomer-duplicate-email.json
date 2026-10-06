@@ -1,0 +1,20 @@
+{
+  "query": "mutation Create($input: CreateCustomerInput!) {\n  createCustomer(input: $input) {\n    __typename\n    ... on Customer { id createdAt updatedAt title firstName lastName emailAddress phoneNumber customFields }\n    ... on ErrorResult { errorCode message }\n  }\n}",
+  "variables": {
+    "input": {
+      "firstName": "Ada",
+      "lastName": "Again",
+      "emailAddress": "ada.fixture@example.com"
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "data": {
+      "createCustomer": {
+        "__typename": "EmailAddressConflictError",
+        "errorCode": "EMAIL_ADDRESS_CONFLICT_ERROR",
+        "message": "The email address is not available."
+      }
+    }
+  }
+}
