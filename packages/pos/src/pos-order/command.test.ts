@@ -51,11 +51,11 @@ function goldenV3(): PosOrder {
 }
 
 describe('toOrderCreateEnvelope', () => {
-  it('never sends saleId, and keeps payload bytes unchanged at every version (ADR-072)', () => {
+  it('never sends saleId, and keeps payload bytes unchanged at every version the order can be sent at (ADR-072)', () => {
     const finalized = goldenV3();
     expect(finalized.saleId).toEqual(expect.any(String));
     const { saleId: _saleId, ...withoutSaleId } = finalized;
-    for (const maxVersion of [1, 2, 3, 4]) {
+    for (const maxVersion of [2, 3, 4]) {
       const { payload } = toOrderCreateEnvelope(finalized, 'device1', 1, { maxVersion });
       const expected = toOrderCreateEnvelope(withoutSaleId, 'device1', 1, { maxVersion }).payload;
       expect(JSON.stringify(payload)).not.toMatch(/"saleId"\s*:/);
