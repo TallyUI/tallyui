@@ -107,7 +107,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               </Pressable> : null}
             {knownWarnings(order.warnings).map((warning, index) => <View key={index} className="border-l-4 border-warning pl-2"><Text className="text-foreground">
               {warning.code === 'insufficient_stock'
-                ? `Stock short by ${warning.quantity} for ${order.lines.find((line) => line.variantId === warning.variantId)?.name}`
+                ? `${warning.quantity} sold without stock: ${order.lines.find((line) => line.variantId === warning.variantId)?.name}`
                 : warning.code === 'tax_rate_mismatch'
                 ? `Tax at ${(warning.ratePpm / 10000).toLocaleString(undefined, { maximumFractionDigits: 4 })}%: store ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
                 : warning.code === 'customer_ignored'

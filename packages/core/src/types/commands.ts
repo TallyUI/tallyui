@@ -52,7 +52,14 @@ export type CommandWarning =
        */
       bridgeMinor?: number;
     }
-  | { code: 'insufficient_stock'; variantId: string; quantity: number }
+  | {
+      /**
+       * One per variant this sale took below zero stock. `quantity` is the units of this sale that
+       * stock did not cover (medusapos plugin 0.2.0 and later); older servers sent the variant's
+       * whole shortfall under the same field.
+       */
+      code: 'insufficient_stock'; variantId: string; quantity: number;
+    }
   | {
       /**
        * One warning per tax rate whose tax differs by more than the server's rounding tolerance
