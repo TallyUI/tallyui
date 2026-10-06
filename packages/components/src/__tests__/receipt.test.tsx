@@ -11,7 +11,7 @@ const store = { name: 'Shop' };
 afterEach(() => cleanup());
 
 describe('Receipt', () => {
-  it.each([false, true])('prints fee and shipping rows before Subtotal, preserving the rows without charges (%s)', (charges) => {
+  it.each([false, true])('prints fee and shipping rows after Subtotal and before tax, preserving the rows without charges (%s)', (charges) => {
     render(<SaleHarness capabilities={{ orderCreate: 5 }}>{() => null}</SaleHarness>);
     act(() => {
       sale.add(blue, traits);
@@ -25,10 +25,28 @@ describe('Receipt', () => {
     const labels = Array.from(container.querySelectorAll('[aria-label]'), (element) => element.getAttribute('aria-label'));
     expect(labels).toEqual([
       `1 × ${money(1250)}: ${money(display.lines[0].amountMinor)}`,
+      `Subtotal: ${money(display.subtotalMinor)}`,
       ...(charges ? [`Bag: ${money(display.fees![0].amountMinor)}`, `Delivery: ${money(display.shipping![0].amountMinor)}`] : []),
-      `Subtotal: ${money(display.subtotalMinor)}`, `Tax 25%: ${money(display.taxMinor)}`,
+      `Tax 25%: ${money(display.taxMinor)}`,
       `Total: ${money(display.totalMinor)}`, `Change: ${money(sale.order.changeDueMinor)}`,
     ]);
+  });
+
+  it('prints charges after the order discount and before tax', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{() => null}</SaleHarness>);
+    act(() => { sale.add(blue, traits); });
+    act(() => { sale.add(blue, traits); });
+    act(() => { sale.addFee({ name: 'Bag', amountMinor: 120 }); });
+    act(() => { sale.addShipping({ name: 'Delivery', amountMinor: 240 }); });
+    act(() => { sale.applyDiscount(null, { type: 'percentage', value: 10 }); });
+    const { container } = render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    const labels = Array.from(container.querySelectorAll('[aria-label]'), (element) => element.getAttribute('aria-label'));
+    const indices = ['Subtotal:', 'Order discount:', 'Bag:', 'Delivery:', 'Tax 25%:', 'Total:']
+      .map((prefix) => labels.indexOf(labels.find((label) => label?.startsWith(prefix))!));
+    indices.forEach((index, position) => {
+      expect(index).toBeGreaterThanOrEqual(0);
+      if (position > 0) expect(index).toBeGreaterThan(indices[position - 1]);
+    });
   });
 
   it('prints the finalized order reference and time when given the PosOrder', () => {
