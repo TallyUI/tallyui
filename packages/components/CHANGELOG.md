@@ -1,5 +1,16 @@
 # @tallyui/components
 
+## 3.7.0
+
+### Patch Changes
+
+- Updated dependencies [f18cc1e]
+- Updated dependencies [0a90e64]
+  - @tallyui/pos@3.7.0
+  - @tallyui/core@3.7.0
+  - @tallyui/primitives@3.7.0
+  - @tallyui/theme@3.7.0
+
 ## 3.6.0
 
 ### Minor Changes
