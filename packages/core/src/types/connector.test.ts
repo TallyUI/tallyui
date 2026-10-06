@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { parseInfoCapabilities, parseTaxRounding, resolveCapabilities } from './connector';
 
 describe('resolveCapabilities (ADR-062)', () => {
+  it.each([true, false])('accepts multiplePayments %s', (multiplePayments) => {
+    expect(resolveCapabilities({ orderCreate: 3, multiplePayments }, undefined))
+      .toEqual({ orderCreate: 3, multiplePayments });
+  });
+
   it('gives the fresh value when there is no stored value', () => {
     expect(resolveCapabilities({ orderCreate: 2 }, undefined)).toEqual({ orderCreate: 2 });
   });

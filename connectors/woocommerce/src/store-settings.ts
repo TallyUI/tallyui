@@ -99,9 +99,25 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
     if (!response.ok) return undefined;
     const stores = await response.json();
     if (!Array.isArray(stores) || !stores[0] || typeof stores[0] !== 'object' || Array.isArray(stores[0])) return undefined;
+    let multiplePayments = false;
+    try {
+      const status = await fetch(`${context.baseUrl}/status`, {
+        method: 'GET', headers: context.headers, signal: context.signal,
+      });
+      if (status.status === 401 || status.status === 403) {
+        throw new ConnectorUnauthorizedError(`WooCommerce status: HTTP ${status.status}`, status.status);
+      }
+      if (status.ok) {
+        const body = await status.json();
+        multiplePayments = Array.isArray(body?.capabilities) && body.capabilities.includes('order_payments_list');
+      }
+    } catch (error) {
+      if (error instanceof ConnectorUnauthorizedError) throw error;
+    }
     return {
       orderCreate: WOO_ORDER_CREATE_VERSION,
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },
+      multiplePayments,
     };
   } catch (error) {
     if (error instanceof ConnectorUnauthorizedError) throw error;

@@ -184,21 +184,53 @@ describe('wooStoreSettings', () => {
 });
 
 describe('readWooCapabilities', () => {
-  it('reads the captured rounding flag and the supported order version with one context request', async () => {
+  it('reads the captured rounding flag and the supported order version with context requests', async () => {
     expect(WOO_ORDER_CREATE_VERSION).toBe(3);
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+      multiplePayments: false,
     });
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(`${context.baseUrl}/stores`, {
-      method: 'GET', headers: context.headers, signal: context.signal,
-    });
+    expect(fetchMock.mock.calls).toEqual([
+      [`${context.baseUrl}/stores`, { method: 'GET', headers: context.headers, signal: context.signal }],
+      [`${context.baseUrl}/status`, { method: 'GET', headers: context.headers, signal: context.signal }],
+    ]);
   });
 
   it('reads subtotal rounding enabled', async () => {
     storesBody = [{ ...stores[0], tax_round_at_subtotal: 'yes' }];
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
+      multiplePayments: false,
     });
+  });
+
+  it.each([
+    [{ capabilities: ['order_payments_list'] }, true],
+    [{}, false],
+    [{ capabilities: ['products_id_fast_path'] }, false],
+    [{ capabilities: 'order_payments_list' }, false],
+  ])('reads the payment list advertisement from %j', async (body, multiplePayments) => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json(body));
+    expect(await readWooCapabilities(context)).toStrictEqual({
+      orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments,
+    });
+  });
+
+  it.each(['HTTP 500', 'network', 'bad JSON'])('keeps capabilities without payment lists on status %s', async (failure) => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores));
+    if (failure === 'network') fetchMock.mockRejectedValueOnce(new TypeError('Network unavailable'));
+    else fetchMock.mockResolvedValueOnce(failure === 'HTTP 500'
+      ? new Response(null, { status: 500 }) : new Response('invalid JSON'));
+    expect(await readWooCapabilities(context)).toStrictEqual({
+      orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+    });
+  });
+
+  it.each([401, 403])('propagates status HTTP %i as an auth error', async (status) => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(new Response(null, { status }));
+    const result = readWooCapabilities(context);
+    await expect(result).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+    await expect(result).rejects.toMatchObject({ status });
   });
 
   it.each([401, 403])('propagates HTTP %i as an auth error', async (status) => {
