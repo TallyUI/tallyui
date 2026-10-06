@@ -224,7 +224,7 @@ describe('adoptRegisterResults', () => {
     }
   });
 
-  it('a superseded rejection on any command moves open, counting or conflict to superseded', async () => {
+  it('a superseded rejection on any command moves open or counting to superseded, and leaves a conflict session in conflict', async () => {
     for (const status of ['open', 'counting', 'conflict'] as const) {
       const s = await open();
       let key = `session.open:${s.id}`;
@@ -244,13 +244,33 @@ describe('adoptRegisterResults', () => {
       await (await db.register_commands.findOne(key).exec(true)).incrementalPatch({
         syncStatus: 'rejected', error: { code: 'register_session_superseded', message: 'Superseded' },
       });
+      const before = await stored(s.id);
       await adopt();
-      expect((await stored(s.id)).status).toBe('superseded');
+      if (status === 'conflict') {
+        expect((await stored(s.id)).status).toBe('conflict');
+        expect((await stored(s.id))._rev).toBe(before._rev);
+      } else expect((await stored(s.id)).status).toBe('superseded');
       if (status === 'counting') expect((await stored(s.id)).server_session_id).toBe('server-1');
       const revision = (await stored(s.id))._rev;
       await adopt();
       expect((await stored(s.id))._rev).toBe(revision);
     }
+  });
+
+  it('an applied take-over then a superseded answer in one walk ends superseded', async () => {
+    const s = await open();
+    await reconcile();
+    await (await command(s.id)).incrementalPatch({ ...refused, error: { ...refused.error, data: { sessionId: 'other-1' } } });
+    await adopt();
+    expect((await stored(s.id)).status).toBe('conflict');
+    await takeOver(s.id);
+    await (await command(s.id)).incrementalPatch({ syncStatus: 'applied' });
+    const openRow = (await command(s.id)).toJSON();
+    const later = await db.register_commands.insert({ ...openRow, key: `session.transition:${s.id}:open`,
+      commandId: 'later-answer', seq: openRow.seq + 1, type: 'register.session.transition' });
+    await later.incrementalPatch({ syncStatus: 'rejected', error: { code: 'register_session_superseded', message: 'Superseded' } });
+    await adopt();
+    expect((await stored(s.id)).status).toBe('superseded');
   });
 
   it('terminal statuses are never moved', async () => {

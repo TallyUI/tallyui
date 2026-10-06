@@ -8,7 +8,7 @@ const chains = new WeakMap<RegisterCommandCollection, Promise<void>>();
 
 /**
  * Applied opens fill a missing resume id; refused opens make open/counting sessions conflict.
- * Superseded rejections make open/counting/conflict sessions terminal; terminal/unknown states stay untouched.
+ * Superseded rejections make open/counting sessions terminal; a conflict session leaves only by an applied open or abandon (ADR-078 decision 9); terminal/unknown states stay untouched.
  * Applied conflict opens restore the latest transition's counting state, otherwise open; pending rows do nothing.
  * Answers are walked in seq/key order; adoption is idempotent and safe to run at any time.
  */
@@ -34,7 +34,8 @@ export async function adoptRegisterResults({ commands, sessions, registerId }: {
           if (!isKnownSessionStatus(next.status) || next.status === 'closed' || next.status === 'superseded' || next.status === 'abandoned') break;
           if (answer.payload.sessionId !== doc.id) continue;
           if (answer.syncStatus === 'rejected') {
-            if (answer.error?.code === 'register_session_superseded') next = { ...next, status: 'superseded' };
+            if (answer.error?.code === 'register_session_superseded'
+              && (next.status === 'open' || next.status === 'counting')) next = { ...next, status: 'superseded' };
             else if (answer.type === 'register.session.open' && answer.error?.code === 'register_session_already_open'
               && (next.status === 'open' || next.status === 'counting')) next = { ...next, status: 'conflict' };
           } else if (answer.type === 'register.session.open') {
