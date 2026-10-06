@@ -1,7 +1,7 @@
 /**
  * The register's local collections (ADR-032): sessions, cash movements and closures. Port
  * provenance (ADR-032 amendment 1): WCPOS `next` `3b5331b5c`, where they are at versions 1, 0
- * and 1; each starts at version 0 here.
+ * and 1; sessions are at version 1 here (ADR-078), movements and closures at version 0.
  *
  * All three are local only, like `pos_orders`: the app creates them and never replicates them
  * (a replicated collection must never take local writes, #53). WCPOS's outbox fields
@@ -13,8 +13,9 @@
  * by method) holds integers. People (`opened_by`, `created_by`, ...) are the backend's user id
  * as a string, since not every backend's is a number.
  */
-import { addRxPlugin, type JsonSchema, type RxJsonSchema } from 'rxdb';
+import { addRxPlugin, type JsonSchema, type RxCollectionCreator, type RxJsonSchema } from 'rxdb';
 import { RxDBLocalDocumentsPlugin } from 'rxdb/plugins/local-documents';
+import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 
 type TenderMap = Record<string, number>;
 
@@ -23,7 +24,10 @@ export interface RegisterSession {
   register_id: string;
   /** The app's neutral store key (see `bindRegister`). */
   store_key?: string | null;
-  status: 'open' | 'counting' | 'closed';
+  /** `conflict` is an open the store refused, waiting for the cashier; `superseded` is a session another till took over (ADR-078 decision 9). */
+  status: 'open' | 'counting' | 'closed' | 'conflict' | 'superseded';
+  /** The store's session this one resumed as, kept beside the local id (ADR-078 decision 2). */
+  server_session_id?: string | null;
   /** The store's day the session opened, `yyyy-MM-dd`. */
   business_day?: string;
   opened_at_gmt: string;
@@ -103,10 +107,11 @@ const nullableMinor: JsonSchema = { type: ['integer', 'null'] };
 const tenders: JsonSchema = { type: 'object', additionalProperties: minor };
 
 export const registerSessionSchema: RxJsonSchema<RegisterSession> = {
-  title: 'Register sessions', version: 0, primaryKey: 'id', type: 'object', additionalProperties: false,
+  title: 'Register sessions', version: 1, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id, register_id: id, store_key: nullableText,
-    status: { type: 'string', enum: ['open', 'counting', 'closed'], maxLength: 8 },
+    status: { type: 'string', enum: ['open', 'counting', 'closed', 'conflict', 'superseded'], maxLength: 10 },
+    server_session_id: { ...nullableText, default: null },
     business_day: { type: 'string', maxLength: 10 },
     opened_at_gmt: text, opened_by: nullableText,
     expected_float_minor: nullableMinor, counted_float_minor: minor, opening_variance_minor: nullableMinor,
@@ -126,13 +131,15 @@ export const registerSessionSchema: RxJsonSchema<RegisterSession> = {
 };
 
 /**
- * Create `register_sessions` with this: the register document (`register-document.ts`) is a
- * local document on this collection, since a Tally database has no database-level ones.
+ * Create `register_sessions` with `addRegisterSessionCollection`, which migrates older versions safely.
+ * Plain `addCollections` is for a database that has never held an older version (tests).
+ * The register document (`register-document.ts`) is a local document on this collection.
  */
-export function registerSessionCollection() {
+export function registerSessionCollection(): RxCollectionCreator<RegisterSession> {
   // addRxPlugin ignores a plugin it already has.
   addRxPlugin(RxDBLocalDocumentsPlugin);
-  return { schema: registerSessionSchema, localDocuments: true } as const;
+  addRxPlugin(RxDBMigrationSchemaPlugin);
+  return { schema: registerSessionSchema, localDocuments: true, migrationStrategies: { 1: (doc) => doc } };
 }
 
 export const cashMovementSchema: RxJsonSchema<CashMovement> = {
