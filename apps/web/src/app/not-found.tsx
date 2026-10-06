@@ -7,7 +7,7 @@ export default function NotFound() {
     <HomeLayout {...baseOptions()}>
       <div className="mx-auto flex max-w-2xl flex-1 flex-col justify-center px-6 py-24">
         <h1 className="text-2xl font-semibold tracking-tight">Page not found</h1>
-        <p className="mt-4 text-fd-foreground/80">There's no page at this address. It may have moved, or the link may be wrong.</p>
+        <p className="mt-4 text-fd-foreground/80">There&apos;s no page at this address. It may have moved, or the link may be wrong.</p>
         <div className="mt-8 flex flex-wrap gap-4">
           <Link
             href="/"

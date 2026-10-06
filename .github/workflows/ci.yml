@@ -55,6 +55,9 @@ jobs:
       - name: Pack and install smoke test
         run: pnpm smoke:pack
 
+      - name: Lint docs site
+        run: pnpm --filter @tallyui/web lint
+
       - name: Build docs site
         run: cd apps/web && npx next build
 
