@@ -51,8 +51,8 @@ export type {
 } from './order';
 
 // Receipt
-export { buildReceiptData } from './receipt';
-export type { ReceiptData, ReceiptLineItem, ReceiptConfig } from './receipt';
+export { buildReceiptData, RECEIPT_SCHEMA_VERSION } from './receipt';
+export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, ReceiptRegister, ReceiptFiscal } from './receipt';
 
 // Product
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';

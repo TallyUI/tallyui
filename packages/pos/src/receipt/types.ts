@@ -1,3 +1,18 @@
+/** WCPOS receipt data schema version these blocks follow (wiki: fiscal groundwork, receipt identity and QR §2). */
+export const RECEIPT_SCHEMA_VERSION = '1.4.0';
+
+/** 1.4 `software`: which software produced the receipt. */
+export interface ReceiptSoftware { name: string; plugin_version: string; app_version: string; app_build: string; platform: string }
+/** 1.4 `register`: `{ id: '', name: '' }` when there is none. */
+export interface ReceiptRegister { id: string; name: string }
+/** 1.4 `fiscal` identity fields a till can know. Sale time, zone and counter come with the per-register sale counter (#475). */
+export interface ReceiptFiscal {
+  document_type: 'sale' | 'refund' | 'void' | 'cancellation' | 'closure' | 'x_report';
+  is_reprint: boolean;
+  reprint_count: number;
+  qr_payload: string;
+}
+
 export interface ReceiptLineItem {
   name: string;
   sku: string;
@@ -11,6 +26,10 @@ export interface ReceiptLineItem {
 }
 
 export interface ReceiptData {
+  schemaVersion: string;
+  software: ReceiptSoftware;
+  register: ReceiptRegister;
+  fiscal: ReceiptFiscal;
   header: {
     storeName: string;
     storeAddress?: string;
@@ -47,5 +66,8 @@ export interface ReceiptConfig {
   storeAddress?: string;
   cashier?: string;
   register?: string;
+  registerName?: string;
+  software?: Partial<ReceiptSoftware>;
+  fiscal?: Partial<ReceiptFiscal>;
   taxLabels?: Record<number, string>;
 }
