@@ -157,6 +157,7 @@ export {
   Cart, CartBar, Tender, DiscountForm, DiscountChips, parseDiscount, discountLabel,
   PriceForm, parsePrice,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, orderReference,
+  ParkedSales, type ParkedSalesProps,
 } from './sale';
 
 // Layout components

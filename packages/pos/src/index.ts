@@ -27,6 +27,7 @@ export type { Repository } from './repository';
 // Order
 export { createOrderBuilder, createOrderManager, allocateOrderDiscount, taxFiguresForBasket } from './order';
 export { orderDraftSchema, writeOrderDraft, restoreOrderDraft, parkedOrderSummaries$ } from './order';
+export { useParkedSales } from './order';
 export type { BasketLine } from './order';
 export type { OrderBuilder, OrderBuilderOptions } from './order';
 export type { OrderManager, OrderManagerOptions, ParkedOrderSummary } from './order';
