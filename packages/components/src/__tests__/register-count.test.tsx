@@ -126,7 +126,7 @@ it('keeps an entered other tender, and closes with both counted in minor units',
   const session = await renderCounting();
   await sale('order-1', session.id, [{ method: 'external', amountMinor: 2200 }]);
   await waitFor(() => expect(screen.getByTestId('count-tender-external')).toBeTruthy());
-  expect(screen.getByTestId('count-tender-external-label').textContent).toBe('External counted (€)');
+  expect(screen.getByTestId('count-tender-external-label').textContent).toBe('Card counted (€)');
   enter('100.00');
   fireEvent.change(screen.getByTestId('count-tender-external'), { target: { value: '22' } });
   expect(closeButton().disabled).toBe(false);

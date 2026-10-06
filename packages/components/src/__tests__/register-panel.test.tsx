@@ -71,11 +71,46 @@ async function renderPanel(
 const confirmButton = () => screen.getByTestId('movement-confirm') as HTMLButtonElement;
 
 it('blind mode hides every amount', async () => {
+  await db.pos_orders.insert({
+    id: 'card-sale', commandId: 'command-card-sale', createdAt: '2026-09-20T10:00:00.000Z', updatedAt: '2026-09-20T10:00:00.000Z',
+    currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: 952, discountMinor: 0, taxMinor: 0,
+    totalMinor: 952, customer: null, syncStatus: 'pending', sessionId, cashierRef: '7',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
+    payments: [{ id: 'card-payment-0', method: 'external', amountMinor: 952 }],
+  });
   await renderPanel({ blind: true });
+  await waitFor(() => expect(screen.getByTestId('register-panel-sales-count').textContent).toBe('1 sale this session'));
   await waitFor(() => expect(screen.getByTestId('register-panel-amount').textContent).toBe('Front'));
   fireEvent.click(screen.getByTestId('register-panel-movements'));
   expect(screen.getByTestId('register-panel').textContent).not.toContain('€');
   expect(screen.queryByTestId('register-panel-expected')).toBeNull();
+  expect(screen.queryByTestId('register-panel-other-tenders')).toBeNull();
+});
+
+it('splits card takings out of Expected in the drawer into Other tenders', async () => {
+  await db.pos_orders.insert({
+    id: 'card-sale', commandId: 'command-card-sale', createdAt: '2026-09-20T10:00:00.000Z', updatedAt: '2026-09-20T10:00:00.000Z',
+    currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: 952, discountMinor: 0, taxMinor: 0,
+    totalMinor: 952, customer: null, syncStatus: 'pending', sessionId, cashierRef: '7',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
+    payments: [{ id: 'card-payment-0', method: 'external', amountMinor: 952 }],
+  });
+  await renderPanel();
+  await waitFor(() => expect(screen.getByTestId('register-panel-other-tenders').textContent).toContain('€9.52'));
+  const expectedSection = screen.getByTestId('register-panel-expected');
+  expect(expectedSection.textContent).toContain('Cash');
+  expect(expectedSection.textContent).not.toContain('Card');
+  expect(expectedSection.textContent).not.toContain('External');
+  expect(expectedSection.textContent).not.toContain('€9.52');
+  const otherTenders = screen.getByTestId('register-panel-other-tenders');
+  expect(otherTenders.textContent).toContain('Other tenders');
+  expect(otherTenders.textContent).toContain('Card');
+  expect(otherTenders.textContent).toContain('€9.52');
+});
+
+it('omits Other tenders without a non-cash sale', async () => {
+  await renderPanel();
+  expect(screen.queryByTestId('register-panel-other-tenders')).toBeNull();
 });
 
 // The Front desk review (2026-09-28): a bare, unlabelled headline amount duplicated the Cash
