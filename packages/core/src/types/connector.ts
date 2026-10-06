@@ -258,6 +258,12 @@ export interface TallyConnector {
     calculatedPrices?: FingerprintReconcileAdapter;
     /** The daily catalogue check (#248): refetches what differs, deletes only with proof. */
     catalogue?: CatalogueReconcileAdapter;
+    /**
+     * The coupons' only source (ADR-077 amendment 2): a catalogue reconcile over the coupon listing, whose
+     * fingerprint carries the usage that never moves the modified time. Optional: a connector without it has no
+     * coupons, and the coupons feature is gated on it.
+     */
+    coupons?: CatalogueReconcileAdapter;
   };
 
   /**
