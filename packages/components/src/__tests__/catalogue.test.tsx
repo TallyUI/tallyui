@@ -282,6 +282,21 @@ describe('Catalogue', () => {
     render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} loading={false} />);
     expect(screen.getByText('No products yet.')).toBeTruthy();
   });
+  it('shows No products yet. after a failed first pull', () => {
+    render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} pullError={new Error('offline')} />);
+    expect(screen.getByText('No products yet.')).toBeTruthy();
+    expect(screen.queryByText('Loading products…')).toBeNull();
+  });
+  it('still says Loading products… before the first sync with a null pullError', () => {
+    render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} pullError={null} />);
+    expect(screen.getByText('Loading products…')).toBeTruthy();
+    expect(screen.queryByText('No products yet.')).toBeNull();
+  });
+  it('a loading={true} override says Loading products… even with a pullError', () => {
+    render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} loading={true} pullError={new Error('offline')} />);
+    expect(screen.getByText('Loading products…')).toBeTruthy();
+    expect(screen.queryByText('No products yet.')).toBeNull();
+  });
   it('still shows the no-match message while loading', () => {
     const { input } = mount([]);
     fireEvent.change(input, { target: { value: 'missing' } });
