@@ -1,5 +1,25 @@
 # @tallyui/components
 
+## 3.5.0
+
+### Minor Changes
+
+- f93720a: `Catalogue` gains an opt-in category nav (`showCategoryNav`, optional `categories`). "All products" comes first, then the categories of the listed products. The choice is kept in the view state as `categoryId` (new in `CatalogueViewState`, with the `setCategory` action). Visual change: `CategoryNav` chips are now rectangular (`rounded-md`) instead of pill-shaped (`rounded-full`), in every app that renders it.
+  `CategoryNav` chips are also exposed as radios (`role="radio"`, `aria-checked`) in a radiogroup labelled "Categories".
+- 4579599: `Catalogue` can switch between grid and table (`showViewToggle`), take a grid column count, and keep a view state the app controls or persists (`viewState`, `defaultViewState`, `loadViewState`, `saveViewState`, `onStateChange`, `items`, `onQueryChange`); new `ViewToggle` primitive and pure `catalogueViewReducer` / `normalizeCatalogueViewState` / `resolveGridColumns`. Without the new props the Catalogue is unchanged.
+- 6b2277c: Add `ProductTable` (a virtualised product table with default trait columns and header sort) and the pure `sortProducts` / `productSortValue` helpers.
+
+### Patch Changes
+
+- Updated dependencies [f93720a]
+- Updated dependencies [4579599]
+- Updated dependencies [a5b432e]
+- Updated dependencies [6b2277c]
+  - @tallyui/pos@3.5.0
+  - @tallyui/core@3.5.0
+  - @tallyui/primitives@3.5.0
+  - @tallyui/theme@3.5.0
+
 ## 3.4.0
 
 ### Minor Changes
