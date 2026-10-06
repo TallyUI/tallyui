@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits } from '@tallyui/core';
-import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, type CatalogueEntry } from '@tallyui/pos';
-import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle } from '../product';
+import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
+  catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE,
+  type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction } from '@tallyui/pos';
+import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle } from '../product';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
 
-// Keep product names readable and touch targets at least 160 px wide where two columns fit.
-const MIN_TILE_WIDTH = 160;
 const STOCK_LABEL = {
   in_stock: 'In Stock', out_of_stock: 'Out of Stock', backorder: 'On Backorder', unknown: 'Unknown',
 };
@@ -32,7 +32,8 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
   return a.getTime() >= b.getTime() ? a : b;
 }
 
-export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength }: {
+export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
+  viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -58,11 +59,74 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
    * search instead of doing a code lookup. A scanner's timing threshold is the app's own concern,
    * in its unfocused wedge listener — not this prop's job. */
   minCodeLength?: number;
+  /** Controlled view state; changes are reported through onStateChange. */
+  viewState?: CatalogueViewState;
+  /** Uncontrolled initial state, merged over DEFAULT_CATALOGUE_VIEW_STATE. */
+  defaultViewState?: Partial<CatalogueViewState>;
+  /** App-owned stored state, read once on mount in uncontrolled mode. */
+  loadViewState?: () => unknown | Promise<unknown>;
+  /** Saves cashier changes, never loads; uncontrolled only. */
+  saveViewState?: (state: CatalogueViewState) => void | Promise<void>;
+  /** Load/save errors; swallowed when omitted. */
+  onViewStateError?: (error: unknown) => void;
+  /** Loaded state or a cashier's next state (requested state when controlled). */
+  onStateChange?: (state: CatalogueViewState) => void;
+  /** Show the grid/table toggle in the header. Default false. */
+  showViewToggle?: boolean;
+  /** App-filtered, sorted list shown as given; products still drives scanning and variant choices. */
+  items?: Doc[];
+  /** Search text on every input change, for apps that filter items themselves. */
+  onQueryChange?: (query: string) => void;
 }) {
+  const [initial] = useState<{
+    state: CatalogueViewState; loaded?: CatalogueViewState; pending?: Promise<unknown>; failed?: boolean; error?: unknown;
+  }>(() => {
+    const state = normalizeCatalogueViewState({ ...DEFAULT_CATALOGUE_VIEW_STATE, ...defaultViewState });
+    if (viewState !== undefined || !loadViewState) return { state };
+    try {
+      const value = loadViewState();
+      if (value instanceof Promise) return { state, pending: value };
+      const loaded = normalizeCatalogueViewState(value);
+      return { state: loaded, loaded };
+    } catch (error) {
+      return { state, failed: true, error };
+    }
+  });
+  const [internalState, setInternalState] = useState(initial.state);
+  const state = viewState ?? internalState;
+  const cashierChanged = useRef(false);
+  useEffect(() => {
+    let mounted = true;
+    if (initial.loaded) onStateChange?.(initial.loaded);
+    if (initial.failed) onViewStateError?.(initial.error);
+    initial.pending?.then((value) => {
+      if (!mounted || cashierChanged.current) return;
+      const loaded = normalizeCatalogueViewState(value);
+      setInternalState(loaded);
+      onStateChange?.(loaded);
+    }, (error) => { if (mounted) onViewStateError?.(error); });
+    return () => { mounted = false; };
+  }, [initial]);
+
+  function changeState(action: CatalogueViewAction) {
+    const next = catalogueViewReducer(state, action);
+    if (next === state) return;
+    cashierChanged.current = true;
+    if (viewState !== undefined) { onStateChange?.(next); return; }
+    setInternalState(next);
+    onStateChange?.(next);
+    try {
+      Promise.resolve(saveViewState?.(next)).catch((error) => onViewStateError?.(error));
+    } catch (error) {
+      onViewStateError?.(error);
+    }
+  }
+
   const isLoading = loading ?? (lastSyncedAt === null && pullError == null);
   // Idempotent (the adapter's overlay returns just the fields the stock map sets), so an app that already
   // merges the overlay itself keeps working, and can drop its own merge.
   const shown = useStockOverlaid(products) as Doc[];
+  const suppliedItems = useStockOverlaid(items ?? products) as Doc[];
   const overlayAsOf = useStockOverlayAsOf();
   const parsedOverlayAsOf = overlayAsOf ? new Date(overlayAsOf) : undefined;
   const validOverlayAsOf = parsedOverlayAsOf && !isNaN(parsedOverlayAsOf.getTime()) ? parsedOverlayAsOf : undefined;
@@ -72,10 +136,13 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.
   const [chooserId, setChooserId] = useState<string | null>(null);
   const [width, setWidth] = useState(0);
-  // ProductGrid has 4 px padding on each side of the content and each cell.
-  const columns = Math.max(2, Math.min(6, Math.floor((width - 8) / (MIN_TILE_WIDTH + 8))));
+  const columns = resolveGridColumns(state.gridColumns, width);
   const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
-  const results = useMemo(() => searchProducts(shown, query, traits), [shown, query, traits]);
+  const results = useMemo(() => {
+    if (items !== undefined) return suppliedItems;
+    const filtered = searchProducts(shown, query, traits);
+    return state.sort ? sortProducts(filtered, state.sort, (doc, field) => productSortValue(doc, field, traits, { currency })) : filtered;
+  }, [items, suppliedItems, shown, query, traits, state.sort, currency]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
@@ -86,21 +153,32 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     setChooserId(null);
   }
 
+  function selectProduct(product: Doc) {
+    const variants = entries.filter((entry) => traits.getId(entry.product) === traits.getId(product));
+    if (variants.length === 1) select(variants[0]);
+    else setChooserId(traits.getId(product));
+  }
+
+  const emptyState = <Text className="mt-10 text-center text-sm text-muted-foreground">
+    {query.trim() ? `No products match "${query.trim()}".` : isLoading ? 'Loading products…' : 'No products yet.'}
+  </Text>;
+
   return (
     <View className="flex-1" onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       <View className="gap-2 border-b border-border bg-card px-4 pb-3 pt-3">
-        <SearchInput value={query} onChangeText={setQuery} placeholder="Search or scan barcode / SKU" autoFocus
+        <SearchInput value={query} onChangeText={(text) => { setQuery(text); onQueryChange?.(text); }} placeholder="Search or scan barcode / SKU" autoFocus
           onSubmitEditing={() => {
             if (minCodeLength && query.trim().length < minCodeLength) return;
             const entry = findEntryByCode(entries, query);
             if (entry) { select(entry); setQuery(''); }
           }} />
-        {(statusText || statusAccessory) ? (
+        {(statusText || statusAccessory || showViewToggle) ? (
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">
             {statusText ? <Text className="flex-1 text-xs text-muted-foreground" numberOfLines={statusAccessory ? 1 : undefined}>
               {statusText}{query.trim() ? ` · ${results.length.toLocaleString()} matching` : ''}
             </Text> : null}
             {statusAccessory}
+            {showViewToggle ? <ViewToggle value={state.view} onChange={(view) => changeState({ type: 'setView', view })} /> : null}
           </View>
         ) : null}
         {choices.length > 0 ? (
@@ -120,16 +198,15 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           </View>
         ) : null}
       </View>
-      <ProductGrid items={results} numColumns={columns}
+      {state.view === 'table' ? (
+        <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
+          sortItems={false} onSelect={selectProduct} emptyState={emptyState} />
+      ) : <ProductGrid items={results} numColumns={columns}
         renderItem={(product: Doc) => (
           // TallyUI's ProductCard has no children slot, so the tile is composed directly here
           // (same structure/classes as ProductCard) to add the stock badge as a fourth child,
           // inside the card and centred with the rest, rather than adding a slot to ProductCard (out of scope for TV6b).
-          <Pressable accessibilityRole="button" testID={`product-tile-${traits.getName(product)}`} onPress={() => {
-            const variants = entries.filter((entry) => entry.product === product);
-            if (variants.length === 1) select(variants[0]);
-            else setChooserId(traits.getId(product));
-          }}>
+          <Pressable accessibilityRole="button" testID={`product-tile-${traits.getName(product)}`} onPress={() => selectProduct(product)}>
             <VStack space="sm" className="items-center rounded-lg border border-border bg-card p-3">
               <ProductImage doc={product} size={80} className="rounded-md" />
               <ProductTitle doc={product} className="text-sm" numberOfLines={2} />
@@ -138,9 +215,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             </VStack>
           </Pressable>
         )}
-        emptyState={<Text className="mt-10 text-center text-sm text-muted-foreground">
-          {query.trim() ? `No products match "${query.trim()}".` : isLoading ? 'Loading products…' : 'No products yet.'}
-        </Text>} />
+        emptyState={emptyState} />}
     </View>
   );
 }

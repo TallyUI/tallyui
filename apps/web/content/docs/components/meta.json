@@ -16,6 +16,7 @@
     "filter-chip-group",
     "product-grid",
     "product-table",
+    "view-toggle",
     "---Cart---",
     "cart-line",
     "cart-total",
