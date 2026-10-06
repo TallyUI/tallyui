@@ -18,11 +18,14 @@ import type { PosOrder } from './types';
  * Like version 4 (ADR-069), it is one-way: an older build shows no orders.
  * Version 6 adds `taxRounding`, the strategy the sale's figures were computed with (#287; never sent), and changes
  * nothing else. Its migration sets it on every older row. It is one-way like version 5.
+ * Version 7 adds `saleId`, the sale order's id (ADR-072; never sent), and changes nothing else. Its migration is the
+ * identity: older orders have no `saleId`. It is one-way like version 6.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 6, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 7, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
+    saleId: { type: 'string', maxLength: 36 },
     commandId: { type: 'string', maxLength: 36 },
     createdAt: { type: 'string', maxLength: 40 },
     updatedAt: { type: 'string' },
@@ -126,5 +129,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity } };
 }

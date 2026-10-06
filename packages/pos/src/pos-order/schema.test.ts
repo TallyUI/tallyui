@@ -25,6 +25,12 @@ it('inserts a finalised order into an AJV-validated RxDB memory collection', asy
     const order = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1' });
     const doc = await pos_orders.insert(order);
     expect(doc.toJSON()).toStrictEqual(order);
+    expect(order.saleId).toBe(builder.getSnapshot().id);
+    const { saleId: _saleId, ...withoutSaleId } = { ...order, id: uuidv7() };
+    expect((await pos_orders.insert(withoutSaleId)).toJSON()).toStrictEqual(withoutSaleId);
+    const maxSaleId = { ...order, id: uuidv7(), saleId: 's'.repeat(36) };
+    expect((await pos_orders.insert(maxSaleId)).toJSON()).toStrictEqual(maxSaleId);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), saleId: 's'.repeat(37) })).rejects.toMatchObject({ code: 'VD2' });
     await pos_orders.insert({ ...order, id: uuidv7(), syncStatus: 'applied', customer: null,
       serverRefs: { orderId: 'server1', displayId: '301', totalMinor: 3451 },
       warnings: [{ code: 'total_mismatch', expectedMinor: 3451, serverMinor: 3452 }, { code: 'insufficient_stock', variantId: 'v1', quantity: 2 }],
@@ -55,7 +61,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(6);
+  expect(posOrderSchema.version).toBe(7);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
