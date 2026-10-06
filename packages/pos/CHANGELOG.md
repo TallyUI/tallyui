@@ -1,5 +1,14 @@
 # @tallyui/pos
 
+## 3.0.3
+
+### Patch Changes
+
+- e7b980a: OrderBuilder.setUnitPrice and useSale.setUnitPrice edit a line's unit price at the till (discounts and tax recomputed; integer, >= 0); no stored-order change.
+- c05e216: useSale parks and resumes carts through a drafts collection (new `drafts` option, `park()` and `resume(id)`), using OrderManager's draft format; new exports `orderDraftSchema`, `writeOrderDraft`, `restoreOrderDraft` and `parkedOrderSummaries$`.
+- 1d8cbc0: catalogueEntries accepts a trait context and no longer requires getVariants (a product without it sells as one variant from its own traits); Catalogue passes its currency; connector-woocommerce adds getVariants for non-variable products (variable products need their variations synced, a later release).
+  - @tallyui/core@3.0.3
+
 ## 3.0.2
 
 ### Patch Changes

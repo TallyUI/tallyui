@@ -1,5 +1,19 @@
 # @tallyui/components
 
+## 3.0.3
+
+### Patch Changes
+
+- 2215eae: `orderReference` is exported from the package root, so an app's own receipt can print the same order reference as `OrdersList` and `Receipt`.
+- 1d8cbc0: catalogueEntries accepts a trait context and no longer requires getVariants (a product without it sells as one variant from its own traits); Catalogue passes its currency; connector-woocommerce adds getVariants for non-variable products (variable products need their variations synced, a later release).
+- Updated dependencies [e7b980a]
+- Updated dependencies [c05e216]
+- Updated dependencies [1d8cbc0]
+  - @tallyui/pos@3.0.3
+  - @tallyui/core@3.0.3
+  - @tallyui/primitives@3.0.3
+  - @tallyui/theme@3.0.3
+
 ## 3.0.2
 
 ### Patch Changes
