@@ -18,9 +18,16 @@ import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
+/** The version-6 schema: before `saleId`. */
+export function versionSix(): RxJsonSchema<PosOrder> {
+  const schema = structuredClone(posOrderSchema);
+  delete (schema.properties as Record<string, unknown>).saleId;
+  return { ...schema, version: 6 };
+}
+
 /** The version-5 schema: before `taxRounding`. */
 export function versionFive(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
+  const schema = versionSix();
   delete (schema.properties as Record<string, unknown>).taxRounding;
   return { ...schema, required: schema.required!.filter((key) => key !== 'taxRounding'), version: 5 };
 }
@@ -64,12 +71,13 @@ export function versionZero(): RxJsonSchema<PosOrder> {
 }
 
 /** A stored older `pos_orders` version, which `addPosOrderCollection` migrates to the current one. */
-export type Origin = 0 | 1 | 2 | 3 | 4 | 5;
+export type Origin = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 /** `pos_orders` as the shipped app at `from` added it: version 1 came with its identity strategy. */
 export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
   addRxPlugin(RxDBMigrationSchemaPlugin);
   const identity = (doc: PosOrder) => doc;
+  if (from === 6) return { schema: versionSix(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity } };
   if (from === 5) return { schema: versionFive(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity } };
   if (from === 4) return { schema: versionFour(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity } };
   if (from === 3) return { schema: versionThree(), migrationStrategies: { 1: (doc: PosOrder) => doc, 2: (doc: PosOrder) => doc, 3: (doc: PosOrder) => doc } };
@@ -78,8 +86,8 @@ export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
 }
 
 /** A pending sale; `syncStatus: 'queued'` makes one no version's validator accepts. */
-/** A sale stored before version 6, which recorded no tax rounding. */
-export type OlderPosOrder = Omit<PosOrder, 'taxRounding'>;
+/** A sale stored before version 6/7, which recorded no tax rounding or sale id. */
+export type OlderPosOrder = Omit<PosOrder, 'taxRounding' | 'saleId'>;
 
 function sale(n: number, syncStatus = 'pending'): OlderPosOrder {
   const at = new Date(Date.UTC(2026, 8, 25, 0, 0, n)).toISOString();
@@ -162,7 +170,7 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
       builder.setCustomer({ id: 'c1', name: 'Customer', email: 'buyer@example.com' });
       builder.setNote('Sale note');
       // A version-2 till recorded no tax rounding.
-      const { taxRounding: _rounding, ...finalized } = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
+      const { taxRounding: _rounding, saleId: _saleId, ...finalized } = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
         capabilities: { orderCreate: 3 } });
       const original = { ...finalized, lines: [{ ...finalized.lines[0], taxInclusive: true }, finalized.lines[1]],
         sessionId: mintUuid(), lateSessionId: mintUuid(), warnings: [{ code: 'total_mismatch', expectedMinor: 3451, serverMinor: 3452 }],

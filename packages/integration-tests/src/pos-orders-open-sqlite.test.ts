@@ -48,7 +48,7 @@ function versionThreeOrder(): OlderPosOrder {
   builder.setCustomer({ id: 'c1', name: 'Customer', email: 'buyer@example.com' });
   builder.setNote('Sale note');
   // A version-3 till recorded no tax rounding (#287).
-  const { taxRounding: _rounding, ...order } = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
+  const { taxRounding: _rounding, saleId: _saleId, ...order } = finalizeOrder(builder.getSnapshot(), { registerId: 'r1', cashierRef: 'staff1',
     capabilities: { orderCreate: 3 } });
   return { ...order, lines: [{ ...order.lines[0], taxInclusive: true }, order.lines[1]],
     sessionId: mintUuid(), lateSessionId: mintUuid(), sentVersion: 2, downgradedFrom: 3,
@@ -106,7 +106,7 @@ function versionThreeOrder(): OlderPosOrder {
   builder.applyLineDiscount(builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 500, currency: 'EUR' } }),
     { type: 'fixed', value: 100 });
   builder.addPayment({ method: 'cash', amountMinor: 400 });
-  const { taxRounding: _rounding, ...discounted } = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 2 } });
+  const { taxRounding: _rounding, saleId: _saleId, ...discounted } = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 2 } });
   const downgraded = versionThreeOrder();
   expect(figures.display && figures.taxByRate && !discounted.display && discounted.lines[0].discountMinor > 0).toBeTruthy();
   const older = await createRxDatabase({ name, storage, multiInstance: false });
@@ -115,7 +115,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(6);
+    expect(orders.schema.version).toBe(7);
     const byId = async (id: string) => (await orders.findOne(id).exec())?.toJSON();
     // Version 6 then records each one's default tax rounding.
     const taxRounding = DEFAULT_TAX_ROUNDING;
@@ -141,9 +141,34 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(6);
+    expect(orders.schema.version).toBe(7);
     for (const order of [pending, applied]) {
       expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual({ ...order, taxRounding: DEFAULT_TAX_ROUNDING });
+    }
+  } finally {
+    await db.close();
+    handle.raw.close();
+  }
+});
+
+(getRxStorageSQLite ? it : it.skip)('version 6 to 7 keeps every sale unchanged, without saleId', async () => {
+  const handle = openNodeSQLite();
+  const storage = getRxStorageSQLite!(handle.database);
+  const name = `posorder${uuidv7().replaceAll('-', '')}`;
+  const pending = { ...versionThreeOrder(), taxRounding: DEFAULT_TAX_ROUNDING, serverFailures: { since: 1000, reason: 'network', isolated: true } };
+  const applied = { ...versionThreeOrder(), taxRounding: DEFAULT_TAX_ROUNDING, syncStatus: 'applied' as const,
+    localWarnings: [{ code: 'customer_omitted' as const, field: 'email' as const }] };
+  const older = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
+  await (await older.addCollections({ pos_orders: olderCollection(6) })).pos_orders.bulkInsert(structuredClone([pending, applied]));
+  await older.close();
+  const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
+  try {
+    const orders = await addPosOrderCollection(db);
+    expect(orders.schema.version).toBe(7);
+    for (const order of [pending, applied]) {
+      const migrated = (await orders.findOne(order.id).exec())?.toJSON();
+      expect(migrated).toStrictEqual(order);
+      expect(migrated).not.toHaveProperty('saleId');
     }
   } finally {
     await db.close();
