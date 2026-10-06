@@ -185,9 +185,9 @@ describe('wooStoreSettings', () => {
 
 describe('readWooCapabilities', () => {
   it('reads the captured rounding flag and the supported order version with context requests', async () => {
-    expect(WOO_ORDER_CREATE_VERSION).toBe(3);
+    expect(WOO_ORDER_CREATE_VERSION).toBe(5);
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+      orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
       multiplePayments: false,
       lineTax: { none: true, classes: true },
     });
@@ -200,7 +200,7 @@ describe('readWooCapabilities', () => {
   it('reads subtotal rounding enabled', async () => {
     storesBody = [{ ...stores[0], tax_round_at_subtotal: 'yes' }];
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
+      orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
       multiplePayments: false,
       lineTax: { none: true, classes: true },
     });
@@ -214,7 +214,7 @@ describe('readWooCapabilities', () => {
   ])('reads the payment list advertisement from %j', async (body, multiplePayments) => {
     fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json(body));
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments,
+      orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments,
       lineTax: { none: true, classes: true },
     });
   });
@@ -225,7 +225,7 @@ describe('readWooCapabilities', () => {
     else fetchMock.mockResolvedValueOnce(failure === 'HTTP 500'
       ? new Response(null, { status: 500 }) : new Response('invalid JSON'));
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
       lineTax: { none: true, classes: true },
     });
   });

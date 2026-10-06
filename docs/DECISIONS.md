@@ -4436,3 +4436,123 @@ interface OrderCreatePayload {
   cent (1.00 inclusive with two 5% rates: rows 5 + 5, order tax 9). By this ADR's rule that order-math totals win,
   the last rate row takes the residue, bounded by ⌊rows / 2⌋ + 1 (`woocommerceTaxByRate`); anything beyond the bound
   throws.
+
+## ADR-077 WooCommerce discounts as price overrides, then coupons (G6)
+
+- **Date:** 2026-10-06 · **Status:** Accepted (the front desk's rulings on #447, 2026-10-06, below; assignment G6, evidence brief by
+  this lane, citations to the WCPOS wiki, WooCommerce 11.1.1 and the WooCommerce lane's M5 survey) · **Relates to:**
+  ADR-062 (discounts), ADR-065 amendment v4 (net discounts), ADR-070 (strict payloads), ADR-073 (the WooCommerce
+  transport), ADR-075 (charges), ADR-076 (WooCommerce tax and amendment 1's stored net)
+- **Context:**
+  - **Today a discount reaches WooCommerce as `subtotal − total`** (`toWooOrderPayload`: `subtotal = unit × qty`,
+    `total = unit × qty − discountMinor`). A tax-inclusive discounted line is refused, because WooCommerce needs the
+    ex-tax 6dp figures and the till stores only the post-discount net (`netMicros`).
+  - **WooCommerce wipes that form when coupons are present.** Applying or removing any coupon resets every line's
+    `total` to its `subtotal` (`recalculate_coupons`), including on a REST create that carries `coupon_lines`
+    (the coupons apply after the first `calculate_totals`). So a discount sent as `subtotal − total` cannot coexist
+    with coupons.
+  - **WCPOS sends a manual discount as a price override** (its v1.9.0 "subtotal parity" decision): the line's
+    `subtotal` and `total` are both the POS price × quantity, the cashier's intent is kept in the line's
+    `_woocommerce_pos_data` (`price`, `regular_price`), and WooCommerce's `discount_total` holds coupons only. Coupons
+    then discount the override price. (Wiki: `architecture/decisions/2026-04-08-subtotal-parity.md`,
+    `plugin-free/pos-line-item-data.md`, `plugin-free/v2-order-update-transformations.md`.)
+  - **Coupon money is WooCommerce's.** `coupon_lines[].discount`, `discount_total` and `discount_tax` are read-only
+    and recomputed. Validity (`WC_Discounts::is_coupon_valid`) is checked only inside the push, so a refused coupon
+    is a 400 that arrives after the payment. WooCommerce's allocation is its own: `fixed_cart` is equal per unit with
+    single-cent remainders in price order, and `percent` floors per item and then adds remainders, on the original
+    price unless `calc_discounts_sequentially`. On an inclusive store the discount comes off the gross and is split
+    per rate (compound first) at 6dp. TallyUI's order discount is pro rata by value, so it can never be pushed as a
+    coupon and still match.
+  - The WCPOS 2.0 quick-discount coupon (`pos-discount` with `_wcpos_quick_discount`) exists only on woocommerce-pos
+    `next`, not on 1.10.20.
+- **Decision (proposed):**
+  1. **Manual discounts go to WooCommerce as price overrides** (WCPOS parity). A discounted line pushes
+     `subtotal = total =` its post-discount ex-tax amount: for an exclusive line `unit × qty − discountMinor` (as
+     `total` is today), for an inclusive line the stored `netMicros` at 6dp (ADR-076 amendment 1). This **lifts the
+     refusal of discounted tax-inclusive lines** with no new storage. Order discounts keep TallyUI's pro-rata
+     allocation (ADR-062): the shares are already in each line's `discountMinor`, so the pushed lines carry them and
+     WooCommerce charges what the till charged.
+     - Consequence: WooCommerce's `discount_total` no longer shows manual discounts, which matches WCPOS. TallyUI's
+       receipts and Z reports are unaffected, since they read the stored order.
+     - The line's `_woocommerce_pos_data` (`price`, `regular_price`) records the intent once coupons arrive (phase d).
+       Its exact value shape for a catalogue line is the woocommerce-pos lane's to confirm.
+  2. **Coupons are WooCommerce coupons, computed on the till with WooCommerce's own allocation** under the woocommerce
+     tax strategy, then pushed as `coupon_lines: [{ code }]`. WooCommerce recomputes them, and the till must match to
+     the cent or the push warns `total_mismatch`.
+     - **The engine is a port**, like ADR-076's tax engine: WCPOS's coupon module from `@wcpos/order-math`, handed to
+       this lane by the monorepo lane (this lane does not read that repo), confined beside `tax/woocommerce`.
+     - **Validation runs offline** against a replicated `coupons` collection (`GET /wcpos/v2/coupons`), mirroring
+       WCPOS's client checks (its nine, `individual_use` included). The server re-checks inside the push. A coupon
+       refused there leaves the paid order `rejected` with a dedicated code (`coupon_invalid`, not `invalid_payload`)
+       and a cashier-facing message; the cashier settles it in WooCommerce.
+     - The coupon lives on the order as its own entity (`useSale().applyCoupon(code) → refusal | null`,
+       `removeCoupon`), not as a `Discount` label.
+  3. **Only WooCommerce gets coupons in G6.** Medusa and Vendure promotions are server-computed; a neutral
+     `coupons` field in `order.create` (a version 6) waits until a plugin lane asks for it.
+  4. The quick-discount coupon is not used: TallyUI's order discount stays a price override (decision 1) until a
+     store advertises the quick-discount capability and the front desk rules on switching.
+- **Phasing** (one small spec and PR each):
+  - (a) Price overrides on the WooCommerce push, lifting the discounted-inclusive refusal (transport only; two-way;
+    3.4.x).
+  - (b) The coupon engine port and offline validation, pure, with parity cases from the dev store (the WooCommerce
+    lane captures WooCommerce's own figures for each coupon type, inclusive and exclusive, sequential on and off).
+  - (c) The `coupons` collection and its replication in the WooCommerce connector.
+  - (d) The builder and `useSale` coupon API, the push (`coupon_lines`, `_woocommerce_pos_data` intent, the
+    `coupon_invalid` mapping) and the order's storage (a `pos_orders` bump, one-way).
+  - (e) The Cart's coupon entry and receipt rows.
+- **Rulings (front desk, 2026-10-06):**
+  - **Q1, yes.** Price overrides on the WooCommerce push: `subtotal = total =` the discounted net, with the intent in
+    `_woocommerce_pos_data` (WCPOS parity). Phase (a) is transport-only, in 3.4.x. `discount_total` then shows
+    coupons only, as in WCPOS.
+  - **Q2, a port.** WCPOS's order-math coupon module comes through a handoff from the monorepo lane, the same route
+    as the tax engine, with its tests verbatim. It is not built from WooCommerce's PHP.
+  - **Q3, parity.** A coupon refused after payment leaves the order `rejected` with `coupon_invalid`; nothing blocks
+    the sale offline. The till keeps such a sale recoverable: it reopens it as a parked sale with the coupon removed
+    and the reason shown, so the cashier can re-tender. The UI shows a staleness hint when the synced coupon copy is
+    older than the store's sync interval, with no hard stop.
+  - **Q4.** The WooCommerce lane checks `wcpos/v2/coupons` on the dev store (Free or Pro) and reports. If it is
+    Pro-only, the refunds gate rule applies: honour the gate and show it.
+- **Questions as first asked:**
+  - Q1. Adopt decision 1 (price overrides), which changes what WooCommerce shows as `discount_total` for manual
+    discounts?
+  - Q2. The engine source: a port of WCPOS's coupon module through a monorepo-lane handoff (recommended), or an
+    implementation from WooCommerce's code?
+  - Q3. A coupon refused after payment: keep WCPOS's behaviour (`rejected` with `coupon_invalid`, settled in
+    WooCommerce), or block the sale offline when the synced copy is older than a set age?
+  - Q4. Coupon reads: the wiki disagrees on whether `wcpos/v2/coupons` is Pro-only. The WooCommerce lane checks on the
+    dev store before phase (c).
+- **Amendment 1 (2026-10-06): the coupon engine handoff.** The front desk had the engine written up from the
+  monorepo (`main` `be44527`): `~/agent/handoff/wcpos-coupon-engine-for-tallyui-2026-10-06.md`. This lane reads its
+  sections 1–4, and the specs cite its appendices by line range.
+  - **What is ported:** `packages/order-math`'s coupon module, which is `discount`, `helpers`, `validate`,
+    `recalculate` and `to-coupon-configs`. It comes with the `settle`, `snapshot` and `order-totals` pieces and the
+    tax helpers it imports, and with its tests: 424 cases in 24 files, ported alongside the code. It is MIT, the
+    same owner, kept with an attribution line. The WooCommerce parity tests restate WooCommerce's scenarios and
+    numbers; they don't copy its PHP.
+  - **Known gaps, not regressions.** These are missing upstream too, and phase (b) lists them:
+    - `free_shipping` is not applied;
+    - a coupon's `status` is not checked;
+    - variation-level product restrictions don't match;
+    - misc lines don't match category restrictions;
+    - only `percent`, `fixed_cart` and `fixed_product` are supported (a cart carrying another type fails with
+      "coupon not found");
+    - usage holds are not modelled.
+  - **Parity unverified.** These are marked so in the port, and the WooCommerce lane checks each on the dev store
+    (the list goes into phase (b)'s spec):
+    - the minimum and maximum spend basis on a store whose prices include tax;
+    - the email restriction (billing email only, not the account email);
+    - individual use (rejects the new coupon rather than replacing the others);
+    - `fixed_cart` spreading over excluded items;
+    - expiry (an instant against the end of day in the site's timezone);
+    - an inclusive coupon line's `discount + discount_tax`.
+  - **Not ported (upstream inconsistencies):**
+    - the second coupon pipeline and its duplicated mapping (the port keeps one);
+    - older lines carrying a regular-price `subtotal` (the port uses decision 1's convention only:
+      `subtotal = total` = the override);
+    - the mixed rounding helpers (the port uses ADR-076's rounding throughout);
+    - the replay ignoring the store's calculate-taxes setting.
+  - **A plugin dependency.** WooCommerce's coupon reset only keeps the override price because a woocommerce-pos PHP
+    filter makes `get_subtotal()` return the POS price during `recalculate_coupons()`. The WooCommerce lane records
+    which woocommerce-pos version ships that filter (1.10.20, or the v5 branch). Phase (d) sends `coupon_lines` only to
+    a store whose plugin has it.
+  - **Priority is unchanged:** 3.4.0 (the charges UI, #446 and phase (a)) comes first, then phase (b).

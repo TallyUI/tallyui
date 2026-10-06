@@ -1,8 +1,8 @@
 import { ConnectorUnauthorizedError, StoreSettingsError, minorUnitDigits, woocommerceTax } from '@tallyui/core';
 import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/core';
 
-/** The highest order.create version the WooCommerce transport maps: discounts and the customer (v3). It rises when the transport maps split payments (v4) and fees, shipping and custom lines (v5). */
-export const WOO_ORDER_CREATE_VERSION = 3;
+/** The highest order.create version the WooCommerce transport maps: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). */
+export const WOO_ORDER_CREATE_VERSION = 5;
 
 export async function wooStoreSettings(context: SyncContext): Promise<StoreSettings> {
   try {
