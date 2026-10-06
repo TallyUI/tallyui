@@ -4595,6 +4595,29 @@ interface OrderCreatePayload {
     which woocommerce-pos version ships that filter (1.10.20, or the v5 branch). Phase (d) sends `coupon_lines` only to
     a store whose plugin has it.
   - **Priority is unchanged:** 3.4.0 (the charges UI, #446 and phase (a)) comes first, then phase (b).
+- **Amendment 2 (2026-10-07): how coupons sync (phase (c), #500).** The WooCommerce lane captured WCPOS 1.10.20
+  (`coupons-1.10.20/`, Usage capture). Using a coupon and then cancelling the order moved `usage_count` 0 → 1 → 0 and
+  changed `used_by`, but `date_modified_gmt` never moved. So a `modified_after` pull cannot keep coupons fresh.
+  Front desk ruling:
+  - **The catalogue reconcile is the coupons' only source.** It uses #248's runner. `reconcile.coupons` is a
+    `CatalogueReconcileAdapter` that lists the published coupons and compares `date_modified_gmt|usage_count|used_by`,
+    every 5 minutes as in WCPOS v2. The listing uses `_fields=id,date_modified_gmt,usage_count,used_by` (captured:
+    exactly those fields, with `X-WP-Total`). `confirmGone` re-reads the candidates' ids from the published listing
+    (`include=`, no status). An id that does not come back is gone (draft, trash or deleted), and it is removed under
+    the brake. `replication.coupons` is the reconcile feed alone, and the `coupons` collection is version 0. A
+    time-gated full-relist pull was considered and not adopted: it is a second mechanism, and it cannot see a
+    permanent delete.
+  - **Optional and capability-gated.** `reconcile.coupons` is optional per connector. The coupons feature is gated on
+    it, as in ADR 0006, so a connector without it has no coupons rather than a broken pull.
+  - **Same-register reuse is blocked at once.** When a local order with `coupon_lines` succeeds, the till counts that
+    use at once and refetches the coupon by id. That way one register cannot apply a limit-1 coupon twice inside the
+    5-minute window. The synced documents are never written locally: a local write to a replicated collection makes
+    the downstream skip the next pulled version (#53). So the till's own uses live in a local-only overlay, in their
+    own collection or derived from `pos_orders`. Validation adds them to the synced `usage_count` and `used_by` until
+    a refetch shows them.
+  - **Local validation is advisory; the store is authoritative.** Phase (d)'s mapping of a refused order shows the
+    store's own coupon rejection code as the reason, alongside `coupon_invalid`. It never folds that code into a
+    generic failure.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
