@@ -141,8 +141,8 @@ describe('from version 6', () => {
     const original = structuredClone(order);
     expect(order.syncStatus).toBe('pending');
     expect(order).not.toHaveProperty('saleId');
-    const schema = { ...structuredClone(posOrderSchema), version: 6 };
-    delete schema.properties.saleId;
+    const { saleId: _saleId, ...v6Properties } = structuredClone(posOrderSchema).properties;
+    const schema = { ...structuredClone(posOrderSchema), version: 6, properties: v6Properties };
     const { 7: _v7, ...migrationStrategies } = posOrderCollection().migrationStrategies;
     const name = `posmigrate${uuidv7().replaceAll('-', '')}`;
     const before = await open(name, storage, { schema, migrationStrategies });
