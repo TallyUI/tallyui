@@ -3,6 +3,15 @@ import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/co
 
 /** The highest order.create version the WooCommerce transport maps: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). */
 export const WOO_ORDER_CREATE_VERSION = 5;
+// The order.create version a store gets without proof of v5.
+const WOO_BASE_ORDER_CREATE_VERSION = 3;
+// The oldest WCPOS release with a proven v5 push (orders #146, #147).
+const WOO_V5_MIN_PLUGIN_VERSION = [1, 10, 20] as const;
+
+function atLeastVersion(value: unknown, min: readonly [number, number, number]): boolean {
+  const parts = typeof value === 'string' ? /^(\d+)\.(\d+)\.(\d+)/.exec(value)?.slice(1).map(Number) : undefined;
+  return !!parts && (parts[0] > min[0] || (parts[0] === min[0] && (parts[1] > min[1] || (parts[1] === min[1] && parts[2] >= min[2]))));
+}
 
 export async function wooStoreSettings(context: SyncContext): Promise<StoreSettings> {
   try {
@@ -100,6 +109,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
     const stores = await response.json();
     if (!Array.isArray(stores) || !stores[0] || typeof stores[0] !== 'object' || Array.isArray(stores[0])) return undefined;
     let multiplePayments = false;
+    let capabilities: unknown[] = [];
     try {
       const status = await fetch(`${context.baseUrl}/status`, {
         method: 'GET', headers: context.headers, signal: context.signal,
@@ -109,16 +119,24 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       }
       if (status.ok) {
         const body = await status.json();
-        multiplePayments = Array.isArray(body?.capabilities) && body.capabilities.includes('order_payments_list');
+        capabilities = Array.isArray(body?.capabilities) ? body.capabilities : [];
+        multiplePayments = capabilities.includes('order_payments_list');
       }
     } catch (error) {
       if (error instanceof ConnectorUnauthorizedError) throw error;
     }
+    let orderCreate = capabilities.includes('order_create_v5') || capabilities.includes('order_payments_list') ? WOO_ORDER_CREATE_VERSION : WOO_BASE_ORDER_CREATE_VERSION;
+    if (orderCreate === WOO_BASE_ORDER_CREATE_VERSION) {
+      try {
+        const response = await fetch(`${context.baseUrl}/site`, { method: 'GET', headers: context.headers, signal: context.signal });
+        if (response.ok && atLeastVersion((await response.json())?.wcpos_version, WOO_V5_MIN_PLUGIN_VERSION)) orderCreate = WOO_ORDER_CREATE_VERSION;
+      } catch {}
+    }
     return {
-      orderCreate: WOO_ORDER_CREATE_VERSION,
+      orderCreate,
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },
       multiplePayments,
-      // WCPOS always takes a fee's, shipping line's and custom line's tax_status and tax_class (orders #146, #161); it has no /tally/v1/info.
+      // WCPOS v5 takes a fee's, shipping line's and custom line's tax_status and tax_class (orders #146, #161); it has no /tally/v1/info.
       lineTax: { none: true, classes: true },
     };
   } catch (error) {
