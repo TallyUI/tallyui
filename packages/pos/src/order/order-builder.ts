@@ -12,6 +12,7 @@ import type {
   Payment,
   CustomerSummary,
   AddLineInput,
+  ChargeInput, ChargeLine, FeeLine, ShippingLine,
 } from './types';
 
 /** Tax contexts already warned that per_rate_group_items fell back to per_order for inclusive lines (#287). */
@@ -27,7 +28,7 @@ function roundHalfAway(n: number): number {
 }
 
 /** The settlement totals of recalculated lines; the display figures derive from them (ADR-063). */
-function sumLines(lines: LineItem[], rounding?: TaxRounding): { subtotalMinor: number; taxMinor: number; totalMinor: number } {
+function sumLines(lines: Pick<LineItem, 'netMinor' | 'taxMicros' | 'taxInclusive' | 'taxLines'>[], rounding?: TaxRounding): { subtotalMinor: number; taxMinor: number; totalMinor: number } {
   // per_line_items, per_rate_group_items (#287): total = Σ rounded nets + tax (order-level-tax-calculation-strategy.js:44-49, order.entity.js:88-89).
   const rounded = roundedTaxByRate(lines, rounding);
   if (rounded) return { subtotalMinor: rounded.baseMinor, taxMinor: rounded.taxMinor, totalMinor: Math.max(0, rounded.baseMinor + rounded.taxMinor) };
@@ -70,6 +71,12 @@ export interface OrderBuilder {
   order$: Observable<Order>;
   addProduct(doc: any, traits: ProductTraits, options?: { variantId?: string; quantity?: number }): string;
   addLine(input: AddLineInput): string;
+  addFee(input: ChargeInput): string;
+  updateFee(id: string, patch: Partial<ChargeInput>): void;
+  removeFee(id: string): void;
+  addShipping(input: ChargeInput & { methodId?: string }): string;
+  updateShipping(id: string, patch: Partial<ChargeInput & { methodId?: string }>): void;
+  removeShipping(id: string): void;
   updateQuantity(lineId: string, quantity: number): void;
   /** Sets a line's unit price (a till price edit), in minor units of the order's currency and the line's own tax mode; its discounts and tax are recomputed. */
   setUnitPrice(lineId: string, amountMinor: number): void;
@@ -91,6 +98,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const orderId = options.id ?? uid();
 
   let lineItems: LineItem[] = [];
+  let fees: FeeLine[] = [];
+  let shipping: ShippingLine[] = [];
   let orderDiscounts: AppliedDiscount[] = [];
   let payments: Payment[] = [];
   let customer: CustomerSummary | null = null;
@@ -168,8 +177,12 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const lines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
 
-    const { subtotalMinor, taxMinor, totalMinor } = sumLines(lines, taxContext.rounding);
-    if (taxContext.rounding?.granularity === 'per_rate_group_items' && lines.some((li) => li.taxInclusive) && !perRateGroupWarned.has(taxContext)) {
+    const { subtotalMinor } = sumLines(lines, taxContext.rounding);
+    const charges = [...fees, ...shipping];
+    const taxedLines = [...lines, ...charges.map((charge) => ({ ...charge, taxInclusive: taxContext.pricesIncludeTax,
+      taxMicros: charge.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n).toString() }))];
+    const { taxMinor, totalMinor } = sumLines(taxedLines, taxContext.rounding);
+    if (taxContext.rounding?.granularity === 'per_rate_group_items' && taxedLines.some((li) => li.taxInclusive) && !perRateGroupWarned.has(taxContext)) {
       perRateGroupWarned.add(taxContext);
       taxLogger.warn('per_rate_group_items with inclusive lines: using per_order figures until the display has a rounding row (#287, #310)');
     }
@@ -197,7 +210,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const orderDiscountDisplay = figures.reduce((sum, f) => sum + f.shareMinor, 0);
     const displayDiscount = displayLines.reduce(
       (sum, line) => line.discounts.reduce((lineSum, d) => lineSum + d.amountMinor, sum), orderDiscountDisplay);
-    const displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount;
+    const displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount
+      - charges.reduce((sum, charge) => sum + charge.amountMinor, 0);
     const residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
     const converted = lines.flatMap((li, index) => li.taxInclusive === taxInclusive ? [] : [index]);
     const conversions = converted.reduce((count, index) => count + [lines[index].netMinor, lines[index].orderDiscountMinor,
@@ -230,6 +244,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const display = {
       taxInclusive, subtotalMinor: displaySubtotal, discountMinor: displayDiscount, taxMinor, totalMinor,
       lines: displayLines, orderDiscountMinor: orderDiscountDisplay,
+      ...(fees.length ? { fees: fees.map(({ id, name, amountMinor }) => ({ id, name, amountMinor })) } : {}),
+      ...(shipping.length ? { shipping: shipping.map(({ id, name, amountMinor }) => ({ id, name, amountMinor })) } : {}),
     };
     const paidMinor = payments.reduce((sum, p) => sum + p.amountMinor, 0);
     const balanceDueMinor = Math.max(0, totalMinor - paidMinor);
@@ -239,6 +255,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       id: orderId,
       status: 'draft',
       lineItems: lines,
+      ...(fees.length ? { fees: [...fees] } : {}),
+      ...(shipping.length ? { shipping: [...shipping] } : {}),
       discounts: recalcedOrderDiscounts,
       payments: [...payments],
       customer,
@@ -263,6 +281,23 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     subject.next(buildOrder());
   }
 
+  function recalculateCharge(id: string, input: ChargeInput): ChargeLine {
+    if (!Number.isInteger(input.amountMinor)) throw new RangeError('Amount must be integer minor units');
+    if (input.amountMinor < 0) throw new RangeError('Amount must be >= 0');
+    if (!input.name.trim()) throw new RangeError('Name must not be empty');
+    const taxStatus = input.taxStatus ?? 'taxable';
+    const code = taxContext.getTaxRateCode?.(input.taxClass);
+    const line = recalculateLine({
+      id, productId: id, name: input.name, sku: '', unitPriceMinor: input.amountMinor, quantity: 1,
+      taxLines: [{ ...(code !== undefined ? { code } : {}),
+        ratePpm: taxStatus === 'none' ? 0 : taxContext.getTaxRatePpm(input.taxClass), taxMicros: '0' }],
+      discounts: [], discountMinor: 0, orderDiscountMinor: 0, netMinor: 0, taxMicros: '0',
+      taxInclusive: taxContext.pricesIncludeTax,
+    });
+    return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus,
+      taxLines: line.taxLines, netMinor: line.netMinor, taxMicros: Number(line.taxMicros) };
+  }
+
   function addLine(input: AddLineInput): string {
     const { productId, variantId, unitPrice } = input;
     const quantity = input.quantity ?? 1;
@@ -271,11 +306,12 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (!Number.isInteger(quantity) || quantity < 1) throw new RangeError('Quantity must be an integer >= 1');
     // A rate from the tax class carries the backend's name for it when one is mapped (#287, #288).
     const code = input.taxRates ? undefined : taxContext.getTaxRateCode?.(input.taxClass);
-    const taxRates = input.taxRates ?? [{ ...(code !== undefined ? { code } : {}), ratePpm: taxContext.getTaxRatePpm(input.taxClass) }];
+    const taxRates = input.taxStatus === 'none' ? [{ ...(code !== undefined ? { code } : {}), ratePpm: 0 }]
+      : input.taxRates ?? [{ ...(code !== undefined ? { code } : {}), ratePpm: taxContext.getTaxRatePpm(input.taxClass) }];
     const taxInclusive = unitPrice.taxInclusive ?? taxContext.pricesIncludeTax;
 
     const existing = lineItems.find(
-      (li) => li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
+      (li) => !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
         && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length
         && li.taxLines.every((tax, index) => tax.code === taxRates[index].code && tax.ratePpm === taxRates[index].ratePpm),
     );
@@ -292,6 +328,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const line: LineItem = {
       id: lineId,
       productId,
+      ...(input.custom ? { custom: true as const } : {}),
+      ...(input.taxStatus === 'none' ? { taxStatus: 'none' as const } : {}),
       variantId,
       name: input.name,
       sku: input.sku ?? '',
@@ -323,6 +361,36 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   return {
     order$: subject.asObservable(),
     addLine,
+
+    addFee(input) {
+      const fee = recalculateCharge(uid(), input);
+      fees = [...fees, fee]; emit(); return fee.id;
+    },
+    updateFee(id, patch) {
+      const fee = fees.find((entry) => entry.id === id);
+      if (!fee) throw new Error(`Unknown fee ${id}`);
+      const updated = recalculateCharge(id, { ...fee, ...patch });
+      fees = fees.map((entry) => entry.id === id ? updated : entry); emit();
+    },
+    removeFee(id) {
+      if (!fees.some((entry) => entry.id === id)) throw new Error(`Unknown fee ${id}`);
+      fees = fees.filter((entry) => entry.id !== id); emit();
+    },
+    addShipping(input) {
+      const charge = { ...recalculateCharge(uid(), input), methodId: input.methodId };
+      shipping = [...shipping, charge]; emit(); return charge.id;
+    },
+    updateShipping(id, patch) {
+      const charge = shipping.find((entry) => entry.id === id);
+      if (!charge) throw new Error(`Unknown shipping ${id}`);
+      const input = { ...charge, ...patch };
+      const updated = { ...recalculateCharge(id, input), methodId: input.methodId };
+      shipping = shipping.map((entry) => entry.id === id ? updated : entry); emit();
+    },
+    removeShipping(id) {
+      if (!shipping.some((entry) => entry.id === id)) throw new Error(`Unknown shipping ${id}`);
+      shipping = shipping.filter((entry) => entry.id !== id); emit();
+    },
 
     addProduct(doc, traits, opts) {
       const productId = traits.getId(doc);
@@ -432,6 +500,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     clear() {
       lineItems = [];
+      fees = [];
+      shipping = [];
       orderDiscounts = [];
       payments = [];
       customer = null;

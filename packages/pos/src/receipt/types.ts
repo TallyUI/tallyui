@@ -21,6 +21,8 @@ export interface ReceiptData {
     register?: string;
   };
   lineItems: ReceiptLineItem[];
+  fees: Array<{ name: string; amountMinor: number }>;
+  shipping: Array<{ name: string; amountMinor: number }>;
   discounts: { label: string; amountMinor: number }[];
   orderDiscountMinor: number;   // the order discounts as one row, in the display mode; + Σ displayDiscounts = totals.discountMinor
   totals: {

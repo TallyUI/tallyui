@@ -4,6 +4,8 @@ export interface Order {
   id: string;
   status: 'draft' | 'parked' | 'saved' | 'completed';
   lineItems: LineItem[];
+  fees?: FeeLine[];
+  shipping?: ShippingLine[];
   discounts: AppliedDiscount[];
   payments: Payment[];
   customer: CustomerSummary | null;
@@ -34,11 +36,13 @@ export type SentOrder = Omit<Order, 'customer'> & { customer: (Omit<CustomerSumm
  */
 export interface DisplayTotals {
   taxInclusive: boolean;      // = order.pricesIncludeTax
-  subtotalMinor: number;      // before discounts: total − tax + discount when exclusive, total + discount when inclusive
+  subtotalMinor: number;      // product lines before discounts, excluding fees and shipping (ADR-075)
   discountMinor: number;      // Σ lines' discount rows + orderDiscountMinor, in the display mode; >= 0
   taxMinor: number;           // = order.taxMinor (added when exclusive, included when inclusive)
   totalMinor: number;         // = order.totalMinor
   lines: DisplayLine[];       // in lineItems order; Σ amountMinor = subtotalMinor
+  fees?: Array<{ id: string; name: string; amountMinor: number }>;
+  shipping?: Array<{ id: string; name: string; amountMinor: number }>;
   orderDiscountMinor: number; // the order discounts as one row, not allocated: Σ each line's share, converted on its own
 }
 
@@ -51,6 +55,8 @@ export interface DisplayLine {
 
 export interface LineItem {
   id: string;
+  custom?: true;
+  taxStatus?: 'none';
   productId: string;
   variantId?: string;
   name: string;
@@ -68,6 +74,20 @@ export interface LineItem {
   /** Set only when the price's tax mode differs from the order's; named price mode → order mode. */
   priceTaxModeConverted?: 'inclusive-to-exclusive' | 'exclusive-to-inclusive';
 }
+
+export interface ChargeLine {
+  id: string;
+  name: string;
+  amountMinor: number; // integer >= 0, in the order's tax mode (ADR-075)
+  taxClass?: string;
+  taxStatus: 'taxable' | 'none';
+  taxLines: LineItem['taxLines'];
+  netMinor: number;
+  taxMicros: number;
+}
+export interface FeeLine extends ChargeLine {}
+export interface ShippingLine extends ChargeLine { methodId?: string }
+export interface ChargeInput { name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none' }
 
 export interface LineTaxLine {
   code?: string;
@@ -113,6 +133,8 @@ export interface PaymentMethod {
 
 export interface AddLineInput {
   productId: string;
+  custom?: true;
+  taxStatus?: 'taxable' | 'none';
   variantId?: string;
   name: string;
   sku?: string;
