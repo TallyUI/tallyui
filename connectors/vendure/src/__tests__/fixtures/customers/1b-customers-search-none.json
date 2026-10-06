@@ -1,0 +1,16 @@
+{
+  "query": "query Search($q: String!, $take: Int!) {\n  customers(options: {\n    filter: { emailAddress: { contains: $q }, firstName: { contains: $q }, lastName: { contains: $q } },\n    filterOperator: OR, take: $take, sort: { lastName: ASC }\n  }) {\n    totalItems\n    items { id createdAt updatedAt title firstName lastName emailAddress phoneNumber customFields }\n  }\n}",
+  "variables": {
+    "q": "zzqqxx",
+    "take": 20
+  },
+  "httpStatus": 200,
+  "response": {
+    "data": {
+      "customers": {
+        "totalItems": 0,
+        "items": []
+      }
+    }
+  }
+}

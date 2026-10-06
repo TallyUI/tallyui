@@ -1,0 +1,49 @@
+{
+  "query": "query One($id: ID!) {\n  customer(id: $id) {\n    id createdAt updatedAt title firstName lastName emailAddress phoneNumber customFields\n    addresses { id fullName company streetLine1 streetLine2 city province postalCode country { code name } phoneNumber defaultShippingAddress defaultBillingAddress }\n    user { id identifier verified }\n    groups { id name }\n  }\n}",
+  "variables": {
+    "id": "2"
+  },
+  "httpStatus": 200,
+  "response": {
+    "data": {
+      "customer": {
+        "id": "2",
+        "createdAt": "2026-10-06T01:13:57.496Z",
+        "updatedAt": "2026-10-06T01:13:57.496Z",
+        "title": null,
+        "firstName": "Ada",
+        "lastName": "Lovelace",
+        "emailAddress": "ada.fixture@example.com",
+        "phoneNumber": "+44 20 7946 0001",
+        "customFields": {
+          "__entityId__": 2
+        },
+        "addresses": [
+          {
+            "id": "1",
+            "fullName": "Ada Lovelace",
+            "company": "",
+            "streetLine1": "12 Fixture Street",
+            "streetLine2": "",
+            "city": "London",
+            "province": "",
+            "postalCode": "N1 1AA",
+            "country": {
+              "code": "DE",
+              "name": "Germany"
+            },
+            "phoneNumber": "",
+            "defaultShippingAddress": true,
+            "defaultBillingAddress": true
+          }
+        ],
+        "user": {
+          "id": "2",
+          "identifier": "ada.fixture@example.com",
+          "verified": false
+        },
+        "groups": []
+      }
+    }
+  }
+}

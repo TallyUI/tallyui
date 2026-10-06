@@ -1,0 +1,30 @@
+{
+  "query": "mutation Create($input: CreateCustomerInput!) {\n  createCustomer(input: $input) {\n    __typename\n    ... on Customer { id createdAt updatedAt title firstName lastName emailAddress phoneNumber customFields }\n    ... on ErrorResult { errorCode message }\n  }\n}",
+  "variables": {
+    "input": {
+      "firstName": "Ada",
+      "lastName": "Lovelace",
+      "emailAddress": "ada.fixture@example.com",
+      "phoneNumber": "+44 20 7946 0001"
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "data": {
+      "createCustomer": {
+        "__typename": "Customer",
+        "id": "2",
+        "createdAt": "2026-10-06T01:13:57.496Z",
+        "updatedAt": "2026-10-06T01:13:57.496Z",
+        "title": null,
+        "firstName": "Ada",
+        "lastName": "Lovelace",
+        "emailAddress": "ada.fixture@example.com",
+        "phoneNumber": "+44 20 7946 0001",
+        "customFields": {
+          "__entityId__": 2
+        }
+      }
+    }
+  }
+}
