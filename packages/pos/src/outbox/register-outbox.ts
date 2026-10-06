@@ -7,6 +7,9 @@ import { createBackendNotFound, type BackendNotFound } from './backend-not-found
 import { STUCK_AFTER_MS } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
+/** Final rejections that do not stop their register's ledger (ADR-078): the commands behind them are still sent. */
+export const NON_BLOCKING_REJECTIONS: ReadonlySet<string> = new Set(['register_session_superseded', 'register_session_abandoned']);
+
 export interface RegisterOutboxOptions {
   collection: RxCollection<RegisterCommand>;
   transport: CommandTransport<RegisterCommandEnvelope>;
@@ -68,7 +71,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   // like a 503, or `no_progress`); a running clock keeps its `since` and takes the latest reason. A `network` failure
   // pauses every clock (`pausedAt`), and the next answer of any kind resumes them, moving `since` on by the offline
   // gap, so `since` is now minus the answered time. A clock clears when its command is no longer pending under its
-  // commandId (applied or rejected), or when a rejected command comes ahead of it in its ledger (it is not being
+  // commandId (applied or rejected), or when a blocking rejected command comes ahead of it in its ledger (it is not being
   // sent: Front desk, 2026-09-30); commands never sent have none. Nothing is isolated: a stuck command at the head
   // of a register's ledger holds up the commands behind it, by design, since register facts apply in `seq` order.
   // In memory only: a restart starts with no clocks, and the first answered failure after it starts them afresh
@@ -96,8 +99,9 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
     const blocked = new Set<string>();
     if (clocks.size) for (const command of await readFresh(collection, { selector: { syncStatus: { $in: ['pending', 'rejected'] } },
       sort: [{ seq: 'asc' }, { key: 'asc' }] })) {
-      if (command.syncStatus === 'rejected') blocked.add(command.registerId);
-      else if (!blocked.has(command.registerId)) sendable.add(command.commandId);
+      if (command.syncStatus === 'rejected') {
+        if (!NON_BLOCKING_REJECTIONS.has(command.error?.code ?? '')) blocked.add(command.registerId);
+      } else if (!blocked.has(command.registerId)) sendable.add(command.commandId);
     }
     for (const id of clocks.keys()) if (!sendable.has(id)) clocks.delete(id);
     state$.next({ ...state$.value, ...patch, pending, stuck: stuckState() });
@@ -127,9 +131,10 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
         });
         const commands: RegisterCommand[] = [];
         for (const command of ledger) {
+          if (command.syncStatus === 'rejected' && NON_BLOCKING_REJECTIONS.has(command.error?.code ?? '')) continue;
           if (command.syncStatus === 'rejected') break;
           commands.push(command);
-          if (commands.length >= batchSize) break;
+          if (command.type === 'register.session.open' || commands.length >= batchSize) break;
         }
         if (stopped) { stoppedDuringRun = true; return; }
         if (!commands.length) continue;

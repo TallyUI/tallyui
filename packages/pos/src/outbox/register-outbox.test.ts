@@ -18,8 +18,8 @@ let outboxes: RegisterOutbox[];
 const epoch = Date.parse('2026-09-28T12:00:00.000Z');
 const error = { code: 'unsupported_version', message: 'Unsupported register version', data: { register: 1 } };
 function command(seq: number, registerId = 'a', patch: Partial<RegisterCommand> = {}): RegisterCommand {
-  return { key: `session.open:${registerId}-${String(seq).padStart(3, '0')}`, registerId, seq, commandId: uuidv7(),
-    type: 'register.session.open', version: 1, payload: { sessionId: `${registerId}-${seq}`, registerId, countedFloatMinor: 0 },
+  return { key: `session.transition:${registerId}-${String(seq).padStart(3, '0')}`, registerId, seq, commandId: uuidv7(),
+    type: 'register.session.transition', version: 1, payload: { sessionId: `${registerId}-${seq}`, registerId, countedFloatMinor: 0 },
     createdAt: new Date(epoch - seq * 1000).toISOString(), updatedAt: new Date(epoch).toISOString(),
     syncStatus: 'pending', ...patch };
 }
@@ -194,6 +194,53 @@ describe('register outbox', () => {
     for (const input of inputs.slice(1, 3)) expect(await stored(input.key)).toMatchObject({ syncStatus: 'pending' });
     expect(await stored(inputs[3].key)).toMatchObject({ syncStatus: 'applied' });
     expect(states.at(-1)).toMatchObject({ pending: 2, nextAttemptAt: undefined });
+  });
+
+  it('a superseded rejection does not block the commands behind it', async () => {
+    const inputs = [command(1), command(2, 'a', { type: 'register.movement.record', key: 'movement.record:2' }),
+      command(3, 'a', { type: 'register.movement.record', key: 'movement.record:3' })];
+    await collection.bulkInsert(inputs);
+    const error = { code: 'register_session_superseded', message: 'superseded', data: { sessionId: 'a-1' } };
+    const { outbox, send } = setup({ batchSize: 1 });
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: inputs[0].commandId, status: 'rejected', error }] });
+    await outbox.flush();
+    expect(send.mock.calls.flatMap(([batch]) => batch.map(({ id }) => id))).toEqual(inputs.map(({ commandId }) => commandId));
+    expect(await stored(inputs[0].key)).toMatchObject({ syncStatus: 'rejected', error });
+    for (const input of inputs.slice(1)) expect(await stored(input.key)).toMatchObject({ syncStatus: 'applied' });
+  });
+
+  it('an abandoned rejection does not block the commands behind it', async () => {
+    const inputs = [command(1, 'a', { syncStatus: 'rejected', error: { code: 'register_session_abandoned', message: 'abandoned' } }),
+      command(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send } = setup();
+    await outbox.flush();
+    expect(send.mock.calls.map(([batch]) => batch.map(({ id }) => id))).toEqual([[inputs[1].commandId]]);
+    expect(await stored(inputs[1].key)).toMatchObject({ syncStatus: 'applied' });
+  });
+
+  it('an already-open rejection still blocks the commands behind it', async () => {
+    const inputs = [command(1), command(2, 'a', { type: 'register.movement.record', key: 'movement.record:2' }),
+      command(3, 'a', { type: 'register.movement.record', key: 'movement.record:3' })];
+    await collection.bulkInsert(inputs);
+    const error = { code: 'register_session_already_open', message: 'already open', data: { sessionId: 'a-1' } };
+    const { outbox, send } = setup({ batchSize: 1 });
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: inputs[0].commandId, status: 'rejected', error }] });
+    await outbox.flush();
+    await outbox.flush();
+    expect(send.mock.calls.flatMap(([batch]) => batch.map(({ id }) => id))).toEqual([inputs[0].commandId]);
+    expect(await stored(inputs[0].key)).toMatchObject({ syncStatus: 'rejected', error });
+    for (const input of inputs.slice(1)) expect(await stored(input.key)).toMatchObject({ syncStatus: 'pending' });
+  });
+
+  it('an open ends its batch', async () => {
+    const inputs = [command(1), command(2, 'a', { type: 'register.session.open', key: 'session.open:a-002' }), command(3), command(4)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send } = setup();
+    await outbox.flush();
+    expect(send.mock.calls.map(([batch]) => batch.map(({ id }) => id))).toEqual([
+      inputs.slice(0, 2).map(({ commandId }) => commandId), inputs.slice(2).map(({ commandId }) => commandId),
+    ]);
   });
 
   it('a rejected movement blocks its register too', async () => {
@@ -540,6 +587,24 @@ describe('register outbox stuck clock (answered time only, in memory)', () => {
     await at(outbox, 2 * STUCK_AFTER_MS);
     expect(states.at(-1)?.stuck?.commandIds).toEqual([inputs[2].commandId]);
     expect(states.some((state) => state.stuck?.commandIds.includes(inputs[1].commandId))).toBe(false);
+  });
+
+  it('a command behind a superseded rejection keeps its clock and becomes stuck', async () => {
+    const inputs = [command(1), command(2), command(1, 'b')];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue(fail('status_503'));
+    await at(outbox, 0);
+    const error = { code: 'register_session_superseded', message: 'superseded', data: { sessionId: 'a-1' } };
+    send.mockImplementation(async (batch) => batch[0].id === inputs[0].commandId
+      ? { kind: 'results', results: [{ id: inputs[0].commandId, status: 'rejected', error }] } : fail('status_503'));
+    await at(outbox, 60_000);
+    expect((await stored(inputs[0].key)).syncStatus).toBe('rejected');
+    expect((await stored(inputs[1].key)).syncStatus).toBe('pending');
+    await at(outbox, 2 * STUCK_AFTER_MS);
+    expect(states.at(-1)?.stuck?.commandIds).toContain(inputs[1].commandId);
+    expect(states.at(-1)?.stuck?.orders).toContainEqual({ commandId: inputs[1].commandId,
+      since: epoch, firstFailedAt: epoch, reason: 'status_503' });
   });
 
   it('a restart forgets the clock: a new outbox has no stuck, and its first answered failure starts it afresh', async () => {
