@@ -2,5 +2,6 @@
   "framework": "nextjs",
   "installCommand": "pnpm install --frozen-lockfile --filter \"@tallyui/web...\"",
   "buildCommand": "pnpm --filter \"@tallyui/web...\" build",
-  "outputDirectory": "apps/web/.next"
+  "outputDirectory": "apps/web/.next",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- apps/web packages connectors pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.json vercel.json"
 }
