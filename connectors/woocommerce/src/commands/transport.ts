@@ -27,6 +27,9 @@ export function wooMinorFromDecimal(text: string, currency: string): number | un
 
 export function toWooOrderPayload(envelope: OrderCreateEnvelope): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
   const p = envelope.payload;
+  if (envelope.version === 5 && (p.fees?.length || p.shipping?.length || p.lines.some((line) => line.custom))) {
+    return { error: { code: 'invalid_payload', message: 'Fees, shipping and custom lines are not supported by this connector yet.' } };
+  }
   if (p.pricesIncludeTax || p.lines.some((line) => line.taxInclusive === true)) {
     return { error: { code: 'unsupported_tax_mode', message: 'Prices that include tax are not supported for WooCommerce yet.' } };
   }
@@ -34,7 +37,7 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope): { payload: Rec
     return { error: { code: 'invalid_payload', message: 'WooCommerce orders take one payment.' } };
   }
   for (const line of p.lines) {
-    if (!/^[1-9]\d*$/.test(line.variantId) || !Number.isSafeInteger(Number(line.variantId))) {
+    if (!/^[1-9]\d*$/.test(line.variantId ?? '') || !Number.isSafeInteger(Number(line.variantId))) {
       return { error: { code: 'invalid_payload', message: `Line ${line.clientLineId} has no WooCommerce product id.` } };
     }
   }

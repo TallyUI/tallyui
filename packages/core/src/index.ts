@@ -26,7 +26,7 @@ export type {
 } from './types';
 export type { SignInResult, ServerCapabilities, TaxRounding } from './types/connector';
 export type { CatalogueReconcileAdapter, CatalogueReconcileEntry } from './types/reconcile';
-export { parseInfoCapabilities, parseTaxRounding, resolveCapabilities } from './types/connector';
+export { parseInfoCapabilities, parseTaxRounding, parseLineTax, resolveCapabilities } from './types/connector';
 export { SignInError } from './sign-in';
 export { ConnectorUnauthorizedError } from './unauthorized';
 export { isRxdbRemoteVersionMismatch } from './rxdb-remote-version-mismatch';

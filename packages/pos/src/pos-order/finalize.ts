@@ -29,7 +29,11 @@ export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
   if (customer && posOrder.customer?.id === undefined) delete customer.id;
   return { ...order, customer,
     lineItems: order.lineItems.map((line, i) => ({ ...line, name: posOrder.lines[i].name })),
+    ...(order.fees ? { fees: order.fees.map((fee, i) => ({ ...fee, name: posOrder.fees![i].name })) } : {}),
+    ...(order.shipping ? { shipping: order.shipping.map((charge, i) => ({ ...charge, name: posOrder.shipping![i].name })) } : {}),
     display: posOrder.display ? { ...order.display,
+      ...(order.display.fees ? { fees: order.display.fees.map((row, i) => ({ ...row, name: posOrder.display!.fees![i].name })) } : {}),
+      ...(order.display.shipping ? { shipping: order.display.shipping.map((row, i) => ({ ...row, name: posOrder.display!.shipping![i].name })) } : {}),
       lines: order.display.lines.map((line, i) => ({ ...line,
         discounts: line.discounts.map((discount, j) => ({ ...discount, label: posOrder.display!.lines[i].discounts[j].label })),
       })),
@@ -43,7 +47,15 @@ export function freezeSentForm(order: PosOrder): PosOrder {
   const lines = order.lines.map((line) => {
     const name = cutText(line.name, PAYLOAD_STRING_MAX);
     changed ||= name !== line.name;
-    return { ...line, name };
+    const custom = line.custom && { ...line.custom, name: cutText(line.custom.name, PAYLOAD_STRING_MAX) };
+    changed ||= custom !== undefined && custom.name !== line.custom!.name;
+    return { ...line, name, ...(custom ? { custom } : {}) };
+  });
+  const charges = { fees: order.fees, shipping: order.shipping };
+  for (const field of ['fees', 'shipping'] as const) if (charges[field]) charges[field] = charges[field]!.map((charge) => {
+    const name = cutText(charge.name, PAYLOAD_STRING_MAX);
+    changed ||= name !== charge.name;
+    return { ...charge, name };
   });
   const display = order.display && { ...order.display, lines: order.display.lines.map((line) => ({ ...line,
     discounts: line.discounts.map((discount) => {
@@ -53,6 +65,11 @@ export function freezeSentForm(order: PosOrder): PosOrder {
       return { ...discount, label };
     }),
   })) };
+  for (const field of ['fees', 'shipping'] as const) if (display?.[field]) display[field] = display[field]!.map((row) => {
+    const name = cutText(row.name, PAYLOAD_STRING_MAX);
+    changed ||= name !== row.name;
+    return { ...row, name };
+  });
   const payments = order.payments.map((payment) => {
     if (payment.reference === undefined) return payment;
     const reference = cutText(payment.reference, PAYLOAD_STRING_MAX);
@@ -67,7 +84,8 @@ export function freezeSentForm(order: PosOrder): PosOrder {
       if (!localWarnings.some((warning) => warning.code === 'customer_omitted' && warning.field === field)) localWarnings.push({ code: 'customer_omitted', field });
     }
   }
-  return changed ? { ...order, lines, payments, customer, ...(display ? { display } : {}), ...(localWarnings.length ? { localWarnings } : {}) } : order;
+  return changed ? { ...order, lines, payments, customer, ...(charges.fees ? { fees: charges.fees } : {}),
+    ...(charges.shipping ? { shipping: charges.shipping } : {}), ...(display ? { display } : {}), ...(localWarnings.length ? { localWarnings } : {}) } : order;
 }
 
 /**
@@ -94,11 +112,9 @@ export function referenceReason(value: string | undefined): 'long' | 'nul' | nul
  * customer email or id the shape check would refuse is left out, so `toOrderCreateEnvelope` sends it unchanged.
  */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
-  if (order.taxRounding?.granularity === 'woocommerce') {
-    throw new Error('finalize: the woocommerce tax strategy needs pos_orders version 8, which this release does not store yet');
-  }
-  if (order.fees?.length || order.shipping?.length || order.lineItems.some((line) => line.custom)) {
-    throw new Error('finalize: fees, shipping and custom lines need order.create version 5, which this release does not send yet');
+  if ((order.fees?.length || order.shipping?.length || order.lineItems.some((line) => line.custom))
+    && (options.capabilities?.orderCreate ?? 1) < 5) {
+    throw new Error("finalize: fees, shipping and custom lines need the store to accept order.create version 5; update the store's TallyUI plugin");
   }
   if (!order.lineItems.length) throw new Error('finalize: no lines');
   // Defence in depth: the builder already clamps every discount to >= 0, so this should never fire.
@@ -142,14 +158,20 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   }
   const newId = options.newId ?? uuidv7;
   const id = newId();
-  const lines = order.lineItems.map((line) => ({
+  const lines: PosOrder['lines'] = order.lineItems.map((line) => ({
     id: newId(), productId: line.productId,
     ...(line.variantId !== undefined ? { variantId: line.variantId } : {}),
+    ...(line.custom ? { custom: { name: line.name, ...(line.sku ? { sku: line.sku } : {}),
+      ...(line.taxClass !== undefined ? { taxClass: line.taxClass } : {}), taxStatus: line.taxStatus ?? 'taxable' } } : {}),
+    ...(line.taxStatus !== undefined ? { taxStatus: line.taxStatus } : {}),
     name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
     discountMinor: line.discountMinor, netMinor: line.netMinor,
+    ...(order.taxRounding?.granularity === 'woocommerce' ? { netMicros: line.netMicros } : {}),
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
     ...(line.priceTaxModeConverted ? { taxInclusive: line.taxInclusive } : {}),
   }));
+  const fees = order.fees?.map((charge) => ({ ...charge, id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
+  const shipping = order.shipping?.map((charge) => ({ ...charge, id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
   const payments: PosOrderPayment[] = order.payments.map((payment) => ({
     id: newId(), method: payment.method as PosOrderPayment['method'], amountMinor: payment.amountMinor,
     ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
@@ -185,6 +207,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       throw new Error('finalize: display lines do not match the order lines');
     }
     display = { currency: order.currency, exponent: minorUnitDigits(order.currency), ...order.display,
+      ...(fees?.length ? { fees: order.display.fees!.map((row, i) => ({ ...row, id: fees[i].id })) } : {}),
+      ...(shipping?.length ? { shipping: order.display.shipping!.map((row, i) => ({ ...row, id: shipping[i].id })) } : {}),
       lines: order.display.lines.map((line, i) => ({
         lineId: lines[i].id, amountMinor: line.amountMinor,
         discounts: line.discounts.map(({ discountId, label, amountMinor }) => ({
@@ -192,7 +216,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
         })),
       })),
     };
-    taxByRate = taxLinesByRate(order.lineItems, order.taxMinor, undefined, order.taxRounding).map(({ ratePpm, code, netMinor, amountMinor }) => ({
+    const taxedLines = [...order.lineItems, ...[...(order.fees ?? []), ...(order.shipping ?? [])]
+      .map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
+    taxByRate = taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding).map(({ ratePpm, code, netMinor, amountMinor }) => ({
       ratePpm, ...(code !== undefined ? { code } : {}), netMinor, amountMinor, grossMinor: netMinor + amountMinor,
     }));
     if (display.totalMinor !== order.totalMinor || display.taxMinor !== order.taxMinor
@@ -207,11 +233,13 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   // absent on the snapshot is the default the figures used; `custom` computes as the default but records itself.
   const rounding = order.taxRounding ?? DEFAULT_TAX_ROUNDING;
   const taxRounding: TaxRounding = rounding.granularity === 'custom' ? { granularity: 'custom' }
+    : rounding.granularity === 'woocommerce' ? { granularity: 'woocommerce', roundAtSubtotal: rounding.roundAtSubtotal }
     : { granularity: rounding.granularity, mode: rounding.mode };
   const now = (options.now ?? new Date()).toISOString();
   return freezeSentForm({
     id, saleId: order.id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
     currency: order.currency, pricesIncludeTax: order.pricesIncludeTax, lines, payments,
+    ...(fees?.length ? { fees } : {}), ...(shipping?.length ? { shipping } : {}),
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor, taxRounding,
     ...(display && taxByRate ? { display, taxByRate } : {}),

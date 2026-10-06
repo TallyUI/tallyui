@@ -187,7 +187,7 @@ export function taxLinesByRate(
   taxLabels?: Record<number, string>,
   rounding?: TaxRounding,
 ): RateTaxLine[] {
-  if (rounding?.granularity === 'woocommerce' && lines.every((line) => line.netMicros !== undefined)) return woocommerceTaxByRate(lines, rounding.roundAtSubtotal, taxLabels);
+  if (rounding?.granularity === 'woocommerce' && lines.every((line) => line.netMicros !== undefined)) return woocommerceTaxByRate(lines, rounding.roundAtSubtotal, taxLabels, orderTaxMinor);
   const label = (ratePpm: number) => taxLabels?.[ratePpm] ?? `Tax ${ratePpm / 10000}%`;
   const rounded = roundedTaxByRate(lines, rounding);
   if (rounded) return rounded.rates.map(({ code, ratePpm, netMinor, amountMinor }) => ({ label: label(ratePpm), code, ratePpm, netMinor, amountMinor }));

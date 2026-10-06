@@ -18,9 +18,23 @@ import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
+/** The version-7 schema: before charges, custom lines and WooCommerce rounding. */
+export function versionSeven(): RxJsonSchema<PosOrder> {
+  const schema = structuredClone(posOrderSchema);
+  for (const field of ['fees', 'shipping']) {
+    delete (schema.properties as Record<string, unknown>)[field];
+    delete (schema.properties.display.properties as Record<string, unknown>)[field];
+  }
+  for (const field of ['custom', 'taxStatus']) delete ((schema.properties.lines.items as any).properties as Record<string, unknown>)[field];
+  (schema.properties.taxRounding as any).properties.granularity.enum = ['per_order', 'per_line_items', 'per_rate_group_items', 'custom'];
+  delete (schema.properties.taxRounding.properties as Record<string, unknown>).roundAtSubtotal;
+  schema.properties.sentVersion.maximum = schema.properties.downgradedFrom.maximum = 4;
+  return { ...schema, version: 7 };
+}
+
 /** The version-6 schema: before `saleId`. */
 export function versionSix(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
+  const schema = versionSeven();
   delete (schema.properties as Record<string, unknown>).saleId;
   return { ...schema, version: 6 };
 }
@@ -71,12 +85,13 @@ export function versionZero(): RxJsonSchema<PosOrder> {
 }
 
 /** A stored older `pos_orders` version, which `addPosOrderCollection` migrates to the current one. */
-export type Origin = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type Origin = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 /** `pos_orders` as the shipped app at `from` added it: version 1 came with its identity strategy. */
 export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
   addRxPlugin(RxDBMigrationSchemaPlugin);
   const identity = (doc: PosOrder) => doc;
+  if (from === 7) return { schema: versionSeven(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity } };
   if (from === 6) return { schema: versionSix(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity } };
   if (from === 5) return { schema: versionFive(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity } };
   if (from === 4) return { schema: versionFour(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity } };

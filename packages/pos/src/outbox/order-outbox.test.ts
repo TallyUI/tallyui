@@ -351,6 +351,26 @@ describe('order outbox', () => {
     expect(send.mock.calls[1][0].every((command) => command.version === 1 && command.id !== inputs[0].commandId)).toBe(true);
   });
 
+  it.each([undefined, 5] as const)('rejects a v5 sale when the store drops to 4, without dropping charges (sentVersion: %s)', async (sentVersion) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 200000 } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addFee({ name: 'Bag', amountMinor: 20 });
+    builder.addPayment({ method: 'cash', amountMinor: 144 });
+    const input = { ...finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } }),
+      ...(sentVersion ? { sentVersion } : {}) };
+    await collection.insert(input);
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 4 });
+    send.mockResolvedValueOnce({ kind: 'results', results: [unsupported(input, 4)] });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0][0]).toMatchObject({ version: 5, payload: { fees: [{ clientFeeId: input.fees![0].id, amountMinor: 20 }] } });
+    const rejected = (await collection.findOne(input.id).exec())!.toJSON();
+    expect(rejected).toMatchObject({ syncStatus: 'rejected', sentVersion: 5,
+      error: { code: 'unsupported_version', message: 'This sale needs order.create version 5; the server supports up to 4.' } });
+    expect(rejected.downgradedFrom).toBeUndefined();
+    expect(rejected.fees).toEqual(input.fees);
+  });
+
   it('requeue clears sentVersion and downgradedFrom: the new command chooses afresh, at v4 when the server advertises 4', async () => {
     const input: PosOrder = { ...v3Order(), sentVersion: 2, downgradedFrom: 3, syncStatus: 'rejected',
       error: { code: 'unsupported_version', message: 'not supported' } };

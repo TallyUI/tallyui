@@ -6,8 +6,9 @@ export interface CommandEnvelope<P = unknown> {
   id: string; // UUIDv7, the idempotency key; never reused
   type: CommandType;
   /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1;
-   *  4 is 3 with every `discountMinor` tax-exclusive, built only when capped at 4 or more (#286). */
-  version: 1 | 2 | 3 | 4;
+   *  4 is 3 with every `discountMinor` tax-exclusive, built only when capped at 4 or more (#286).
+   *  5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one. */
+  version: 1 | 2 | 3 | 4 | 5;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -23,8 +24,8 @@ export type RegisterCommandEnvelope<P = Record<string, unknown>> =
 /** Any command a transport can carry. */
 export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown>;
 
-/** An order.create envelope: its version is 1 | 2 | 3 | 4 (ADR-062, ADR-065, #286). */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 };
+/** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one. */
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -132,7 +133,19 @@ export interface RegisterClosureSubmitPayload {
 /** Order line with client identity and price in minor units. */
 export interface OrderCreateLine {
   clientLineId: string;
-  variantId: string;
+  /** Required unless `custom` is set (version 5). */
+  variantId?: string;
+  /** Version 5 instruction: a non-catalogue line, without variantId; takes line and order discounts. */
+  custom?: {
+    /** Recorded title, 1–255 characters. */
+    name: string;
+    /** Recorded SKU, at most 64 characters when present. */
+    sku?: string;
+    /** Instruction, at most 64 characters; absent means the standard class. */
+    taxClass?: string;
+    /** Instruction: `none` means no tax on this line. */
+    taxStatus: 'taxable' | 'none';
+  };
   title?: string;
   quantity: number;
   unitPriceMinor: number;
@@ -146,9 +159,33 @@ export interface OrderCreateLine {
    * Version 2 (ADR-062): this line's total discount, its own line discounts plus its allocated share of
    * the order discount, in the line's own tax mode and integer minor units. The line is taxed on
    * `unitPriceMinor × quantity − discountMinor`. Present only when above 0.
-   * Version 4 (#286): tax-exclusive (net) in every mode; an inclusive line's is `net(A) − net(A − D)`.
+   * Version 4+ (#286): tax-exclusive (net) in every mode; an inclusive line's is `net(A) − net(A − D)`.
    */
   discountMinor?: number;
+}
+
+/** Version 5: a fee, never discounted (ADR-075). */
+export interface OrderCreateFee {
+  /** Identity: UUID, stable for the order's life, at most 36 characters. */
+  clientFeeId: string;
+  /** Recorded fee title, 1–255 characters. */
+  name: string;
+  /** Instruction: integer >= 0, gross when pricesIncludeTax, net otherwise; never discounted. */
+  amountMinor: number;
+  /** Instruction: `none` means no tax on this fee. */
+  taxStatus: 'taxable' | 'none';
+  /** Instruction, at most 64 characters; absent means the standard class. */
+  taxClass?: string;
+  /** Informational till tax, integer >= 0; a server difference is total_mismatch, not a refusal. */
+  taxMinor: number;
+}
+
+/** Version 5: the same instructions and recorded/informational fields as a fee, never discounted. */
+export interface OrderCreateShipping extends Omit<OrderCreateFee, 'clientFeeId'> {
+  /** Identity: UUID, stable for the order's life, at most 36 characters. */
+  clientShippingId: string;
+  /** Recorded shipping method id, at most 64 characters; absent means a POS-entered charge. */
+  methodId?: string;
 }
 
 /** Supported order payment method. */
@@ -179,6 +216,20 @@ export interface OrderCreateDisplay {
     amountMinor: number;
     discounts: Array<{ discountId: string; label?: string; amountMinor: number }>;
   }>;
+  /** Version 5 recorded figures: one row per payload fee, in the display tax mode. */
+  fees?: Array<{
+    /** Identity: the payload fee's clientFeeId. */
+    clientFeeId: string;
+    /** Recorded integer minor units, equal to the payload fee amount. */
+    amountMinor: number;
+  }>;
+  /** Version 5 recorded figures: one row per payload shipping charge, in the display tax mode. */
+  shipping?: Array<{
+    /** Identity: the payload shipping charge's clientShippingId. */
+    clientShippingId: string;
+    /** Recorded integer minor units, equal to the payload shipping amount. */
+    amountMinor: number;
+  }>;
 }
 
 /** Version 3 (ADR-065): one tax rate's net, tax and gross, as the receipt's tax summary splits them. */
@@ -197,28 +248,32 @@ export interface OrderCreatePayload {
   currency: string;
   pricesIncludeTax: boolean;
   lines: OrderCreateLine[];
+  /** Version 5 instructions: fees in the order's tax mode; omitted when none. */
+  fees?: OrderCreateFee[];
+  /** Version 5 instructions: shipping in the order's tax mode; omitted when none. */
+  shipping?: OrderCreateShipping[];
   subtotalMinor: number;
   /**
    * Version 2 (ADR-062): the order's total discount, equal to Σ `lines[].discountMinor`. Present only when above 0.
-   * Version 4 (#286) means every `discountMinor`, this and each line's, is tax-exclusive, so the sum still holds.
+   * Version 4+ (#286) means every `discountMinor`, this and each line's, is tax-exclusive, so the sum still holds.
    */
   discountMinor?: number;
   taxMinor: number;
   totalMinor: number;
   payments: OrderCreatePayment[];
-  /** version 3 only; both or neither. */
+  /** Version 3+; both or neither. */
   display?: OrderCreateDisplay;
-  /** version 3 only; both or neither. */
+  /** Version 3+; both or neither. */
   taxByRate?: OrderCreateTaxRate[];
   customer?: {
     email?: string;
-    /** Version 3 only: the platform's id for the customer picked at the till, a soft reference of at most 64 characters. Absent for a guest sale, or when no customer was picked. */
+    /** Version 3+: the platform's id for the customer picked at the till, a soft reference of at most 64 characters. Absent for a guest sale, or when no customer was picked. */
     customerId?: string;
   } | null;
   registerId?: string;
   cashierRef?: string;
   locationId?: string;
-  /** Version 3 only: the register session the sale was taken for, stamped or late (ADR-032). A late sale names the session that refused its stamp; the server tells the two apart by the session's closure `orderIds`. Absent when the sale had no session. */
+  /** Version 3+: the register session the sale was taken for, stamped or late (ADR-032). A late sale names the session that refused its stamp; the server tells the two apart by the session's closure `orderIds`. Absent when the sale had no session. */
   sessionId?: string;
 }
 

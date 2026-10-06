@@ -27,7 +27,7 @@ describe.each([false, true])('ADR-075 charges (inclusive: %s)', (inclusive) => {
     expect([...(order.fees ?? []), ...(order.shipping ?? [])]).toEqual([{
       id, name: 'Charge', amountMinor: 120, taxClass: undefined, taxStatus: 'taxable',
       ...(add === 'addShipping' ? { methodId: undefined } : {}),
-      netMinor: 120, taxMicros: inclusive ? 20000000 : 24000000,
+      netMinor: 120, taxMicros: inclusive ? '20000000' : '24000000',
       taxLines: [{ code: 'VAT', ratePpm: 200000, taxMicros: inclusive ? '20000000' : '24000000' }],
     }]);
     builder.addPayment({ method: 'cash', amountMinor: 100 });
@@ -198,5 +198,5 @@ it.each(['fee', 'shipping', 'custom'])('refuses to finalize a %s before any othe
   if (kind === 'shipping') builder.addShipping({ name: 'Delivery', amountMinor: 0 });
   if (kind === 'custom') builder.addLine({ ...product, custom: true });
   expect(() => finalizeOrder(builder.getSnapshot())).toThrow(
-    'finalize: fees, shipping and custom lines need order.create version 5, which this release does not send yet');
+    "finalize: fees, shipping and custom lines need the store to accept order.create version 5; update the store's TallyUI plugin");
 });
