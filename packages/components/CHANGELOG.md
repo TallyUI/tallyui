@@ -1,5 +1,16 @@
 # @tallyui/components
 
+## 3.2.1
+
+### Patch Changes
+
+- 50ae7de: New `SplitTender` view: take several payments for one sale (cash and card), with remaining due and change, over `useSale().addTender`/`removeTender`; `Tender` is unchanged.
+- Updated dependencies [a187b61]
+  - @tallyui/pos@3.2.1
+  - @tallyui/core@3.2.1
+  - @tallyui/primitives@3.2.1
+  - @tallyui/theme@3.2.1
+
 ## 3.2.0
 
 ### Minor Changes

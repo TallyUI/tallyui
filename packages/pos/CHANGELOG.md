@@ -1,5 +1,14 @@
 # @tallyui/pos
 
+## 3.2.1
+
+### Patch Changes
+
+- a187b61: Fees, shipping and custom lines on the order (ADR-075 phase a):
+  `useSale` `addFee`, `addShipping`, `addCustomLine` and their update/remove, with tax, totals, display and receipt
+  rows. Orders carrying them can't be completed until a later release sends `order.create` version 5.
+  - @tallyui/core@3.2.1
+
 ## 3.2.0
 
 ### Minor Changes
