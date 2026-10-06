@@ -1,5 +1,13 @@
 # @tallyui/connector-woocommerce
 
+## 3.1.1
+
+### Patch Changes
+
+- f2a1a0f: Customers on WCPOS 1.10.x (`searchCustomers`, `getCustomer`, `createCustomer` over `wcpos/v2/customers` and `push/customers`) and `emailReceipt` over `wcpos/v2/orders/<id>/email`, with the same contract as the Vendure connector.
+- Updated dependencies [63a7431]
+  - @tallyui/core@3.1.1
+
 ## 3.1.0
 
 ### Patch Changes
