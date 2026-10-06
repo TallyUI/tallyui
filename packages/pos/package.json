@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/pos",
-  "version": "3.5.0",
+  "version": "3.5.1",
   "type": "module",
   "description": "Shared POS business logic for Tally UI — tax, orders, payments, discounts, receipts",
   "main": "./dist/index.js",

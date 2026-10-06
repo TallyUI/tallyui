@@ -1,5 +1,11 @@
 # @tallyui/connector-shopify
 
+## 3.5.1
+
+### Patch Changes
+
+- @tallyui/core@3.5.1
+
 ## 3.5.0
 
 ### Minor Changes
