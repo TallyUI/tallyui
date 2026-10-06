@@ -4,6 +4,16 @@ import { describe, expect, it } from 'vitest';
 import { sumItemizedTaxes, sumTaxes } from './sum-taxes';
 
 describe('Calculate Taxes', () => {
+	it('should skip undefined totals when summing taxes', () => {
+		const taxes = [{ total: undefined }, { total: 2 }] as unknown as { total: number }[];
+		expect(sumTaxes({ taxes })).toBe(2);
+	});
+
+	it('should return undefined when every tax total is undefined', () => {
+		const taxes = [{ total: undefined }] as unknown as { total: number }[];
+		expect(sumTaxes({ taxes })).toBeUndefined();
+	});
+
 	it('should sum taxes', () => {
 		const taxes = [
 			{ id: 1, total: 1.665 },

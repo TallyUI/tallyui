@@ -101,6 +101,26 @@ describe('tax-rates.helpers', () => {
 		});
 
 		describe('postcode matching', () => {
+			it('should treat a null postcode like an empty string', () => {
+				const rates = [
+					createTaxRate({ id: 1, postcodes: ['94105'] }),
+					createTaxRate({ id: 2, postcodes: [] }),
+				];
+				const result = filterTaxRates(rates, '', '', null as unknown as string);
+				expect(result).toEqual(filterTaxRates(rates, '', '', ''));
+				expect(result).toEqual([rates[1]]);
+			});
+
+			it('should treat a numeric postcode like its string representation', () => {
+				const rates = [
+					createTaxRate({ id: 1, postcodes: ['94105'] }),
+					createTaxRate({ id: 2, postcodes: ['90210'] }),
+				];
+				const result = filterTaxRates(rates, '', '', 94105 as unknown as string);
+				expect(result).toEqual(filterTaxRates(rates, '', '', '94105'));
+				expect(result).toEqual([rates[0]]);
+			});
+
 			it('should match exact postcode', () => {
 				const rates = [
 					createTaxRate({ id: 1, postcodes: ['90210'] }),

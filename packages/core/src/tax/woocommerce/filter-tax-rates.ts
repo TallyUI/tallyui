@@ -2,10 +2,16 @@
 // WooCommerce tax parity (ADR-076): keep the arithmetic as in the original; see docs/DECISIONS.md.
 import type { WooTaxRate } from './types';
 
+/**
+ * Normalize a given postcode by removing spaces and converting it to uppercase.
+ */
 function normalizePostcode(postcode: string): string {
-	return postcode.replace(/\s+/g, '').toUpperCase();
+	return String(postcode ?? '').replace(/\s+/g, '').toUpperCase();
 }
 
+/**
+ * Generate an array of possible postcodes based on a given wildcard or range pattern.
+ */
 function getMatchingPostcodes(pattern: string): string[] {
 	if (pattern.includes('...')) {
 		const [start, end] = pattern.split('...').map(normalizePostcode);
@@ -20,8 +26,10 @@ function getMatchingPostcodes(pattern: string): string[] {
 
 		return matches;
 	} else if (pattern.endsWith('*')) {
+		// For wildcard patterns, return the pattern for comparison in `includes` check.
 		return [pattern.slice(0, -1)];
 	} else {
+		// Handle exact match
 		return [normalizePostcode(pattern)];
 	}
 }
@@ -33,15 +41,23 @@ function postcodePatternMatches(normalizedPostcode: string, pattern: string): bo
 	);
 }
 
+/**
+ * Check if a given postcode matches any of the patterns in the provided list.
+ */
 function postcodeMatcher(postcode: string, patterns: string[]): boolean {
 	const normalizedPostcode = normalizePostcode(postcode);
 
 	return patterns.some((pattern) => postcodePatternMatches(normalizedPostcode, pattern));
 }
 
-// Specificity counts matching location rows, not the number of listed locations.
+/**
+ * WooCommerce compares specificity by the number of location rows that MATCHED the
+ * customer's address (`COUNT(locations.location_id)` under the query criteria in
+ * `WC_Tax::get_matched_tax_rates`), not by how many postcodes/cities a rate lists.
+ */
 type MatchedLocationCounts = { postcodes: number; cities: number };
 
+/** Mirrors `WC_Tax::sort_rates_callback`: priority, then location specificity, then id. */
 function compareTaxRates(
 	rate1: WooTaxRate,
 	rate2: WooTaxRate,
@@ -99,6 +115,9 @@ function compareTaxRates(
 	return id1 < id2 ? -1 : 1;
 }
 
+/**
+ * Filter tax rates based on the provided country, state, postcode, and city.
+ */
 export function filterTaxRates(
 	taxRates: WooTaxRate[],
 	country: string = '',
