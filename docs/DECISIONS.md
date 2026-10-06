@@ -4136,3 +4136,55 @@ interface OrderCreatePayload {
     receipt already lists each payment and the change.
 - **Versioning:** 3.0.2 is a patch (Decision 1 and the other demo fixes). 3.1.0 is a minor: an additive API and an
   optional stored field, with v7's one-way storage noted.
+
+## ADR-073 The WooCommerce order transport pushes paid orders to WCPOS 1.10.x
+
+- **Date:** 2026-10-06 · **Status:** Accepted (front desk assignment G3, for the
+  WooCommerce app's M3, a cash sale) · **Relates to:** ADR-052 (the order outbox),
+  ADR-038 (command results), ADR-072
+- **Context:**
+  - The order outbox sends `order.create` commands through a `CommandTransport`. Medusa and Vendure have
+    TallyUI's command endpoint in their plugins. WooCommerce stores run the released WCPOS plugin (1.10.x), which
+    has no command endpoint.
+  - **The WooCommerce lane's spike** (`M3-spike-paid-push.md`, 2026-10-06, against 1.10.20) proved that
+    `POST wcpos/v2/push/orders` accepts an already-paid cash order:
+    - the envelope is `{ mutationId, operation: 'create', collection: 'orders', recordId, baseRevision: null, payload }`;
+    - the answer is 201 `{ document, currentRevision }`;
+    - the order is created `completed` and paid, with stock decremented once;
+    - a replay with the same `mutationId` returns the same order.
+  - `Pos_Uuid::is_uuid` checks only the uuid **format**, so TallyUI's UUIDv7 ids qualify.
+  - On a line, WooCommerce resolves the product from `variation_id`, then `product_id`. The plugin drops `sku` from
+    product lines.
+- **Decision:** `@tallyui/connector-woocommerce` exports `createWooCommandTransport(options)`, a `CommandTransport` for
+  `order.create`.
+  - **One request per command, in batch order.**
+    - `mutationId` is the command id, `recordId` is the payload's `clientOrderId`, and the order's
+      `_woocommerce_pos_uuid` meta equals `recordId` (the plugin refuses a disagreement with 422).
+    - After some commands have answered, a 401, network failure or 5xx returns the results so far. The outbox
+      leaves the rest pending, because it matches results by command id.
+  - **The order payload:**
+    - `status: 'completed'`, `set_paid: true`, `currency`.
+    - One `line_items` entry per line:
+      - `product_id` is the line's `variantId`, which for a simple product is its product id; WooCommerce also
+        resolves a variation from its own id. Verify on the dev store before variation lines are demoed.
+      - `quantity`.
+      - `subtotal` is `unitPriceMinor × quantity` and `total` is that minus `discountMinor`, both as major-unit
+        strings at the currency's exponent. The till's price is what WooCommerce records.
+    - `customer_id` from `customer.customerId`, and `billing.email` from `customer.email`, when present.
+  - **Payments:** one payment, `cash` → `pos_cash` "Cash". The `external` mapping (`pos_card`) is written but not
+    proven, so it's verified on the dev store before it's relied on. **More than one payment is rejected**
+    (`invalid_payload`) until split tender (ADR-072, 3.1.0) defines how WooCommerce records it.
+  - **Tax:** WooCommerce computes an order's tax itself from net line totals. `OrderCreateLine` carries no per-line
+    rate, so the transport can't derive net totals for tax-inclusive lines. An order with `pricesIncludeTax`, or
+    any `taxInclusive` line, is rejected with `unsupported_tax_mode` (the existing refusal sentence). Tax-exclusive
+    and untaxed stores are supported. When WooCommerce's total differs from the till's, the result carries
+    `total_mismatch` (a warning, never a refusal).
+  - **Results:**
+    - **201 or 200:** `applied`, with `serverRefs` `{ orderId: String(document.id), displayId: String(document.number ?? document.id), totalMinor }`.
+    - **`wcpos_insufficient_stock`:** `rejected` `insufficient_stock`.
+    - **Other 400 or 422:** `rejected` `invalid_payload`.
+    - **401:** `unauthorized`.
+    - **403, 413 or 415:** `refused`.
+    - **404, 409, 5xx, network or timeout:** `retry` (honouring `Retry-After`).
+- **Not decided here:** inclusive-tax stores (they need per-line rates in the payload), split tender, and the
+  register commands (WooCommerce has no register endpoint in 1.10.x).
