@@ -268,6 +268,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       const firstSend = orders.some((order) => order.sentVersion === undefined);
       const serverMax = (firstSend && validMax(await Promise.resolve().then(() => options.getMaxOrderCreateVersion?.())
         .catch((cause) => { outboxLogger.warn('Failed to read capabilities', { cause }); }))) || 3;
+      const localOrders = new Map<string, PosOrder>();
       const batch = await Promise.all(orders.map(async (order) => {
         const frozen = freezeSentForm(order);
         const attempt = (attempts.get(order.commandId) ?? 0) + 1;
@@ -286,9 +287,10 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           await (await collection.findOne(order.id).exec())?.incrementalModify((data) =>
             ({ ...freezeSentForm(data), sentVersion: data.sentVersion ?? envelope.version }));
         }
+        localOrders.set(envelope.id, frozen);
         return envelope;
       }));
-      let outcome = await transport.send(batch);
+      let outcome = await transport.send(batch, { local: { orders: localOrders } });
       // A 404 answers the whole batch (the route is missing); any other answer resets the count. Offline changes nothing.
       backendNotFound.record(outcome, now());
       if (outcome.kind !== 'retry' || outcome.reason !== 'network') {

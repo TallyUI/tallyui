@@ -8,6 +8,7 @@ import type { CommandEnvelope, CommandResult, OrderCreateEnvelope, OrderCreatePa
 import { commandFingerprint } from '@tallyui/core/server';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder, posOrderCollection, toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
+import { freezeSentForm } from '../pos-order/finalize';
 import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS, STUCK_AFTER_MS, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
 import { outboxLogger } from './index';
 import type { CommandTransport, OutboxState, TransportOutcome } from './types';
@@ -79,6 +80,32 @@ afterEach(async () => {
 });
 
 describe('order outbox', () => {
+  it('passes frozen WooCommerce orders by envelope id only in the local context', async () => {
+    const inputs = [0, 1].map((i) => {
+      const builder = createOrderBuilder({ currency: 'USD', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 100000,
+        rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+        getTaxRates: () => [{ id: 1, code: 'standard', label: 'Standard', rate: '10', priority: 1, compound: false, shipping: true }] } });
+      builder.addLine({ productId: '80', variantId: '80', name: 'Item', unitPrice: { amount: 1000, currency: 'USD' } });
+      builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+      const input = finalizeOrder(builder.getSnapshot(), { now: new Date(epoch + i * 1000), capabilities: { orderCreate: 5 } });
+      input.lines[0].name = 'N'.repeat(300);
+      return input;
+    });
+    await collection.bulkInsert(inputs);
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 5 });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    const [batch, context] = send.mock.calls[0];
+    expect(context!.local.orders.size).toBe(inputs.length);
+    for (const [i, envelope] of batch.entries()) {
+      const frozen = freezeSentForm(inputs[i]);
+      expect(context!.local.orders.get(envelope.id)).toStrictEqual(frozen);
+      expect(context!.local.orders.get(envelope.id)!.lines[0]).toMatchObject({ name: `${'N'.repeat(254)}…`, netMicros: '909090900' });
+      expect(JSON.stringify(envelope)).toBe(JSON.stringify(toOrderCreateEnvelope(frozen, 'device-1', 1, { maxVersion: 5 })));
+      expect(JSON.stringify(envelope)).not.toContain('netMicros');
+    }
+  });
+
   it('freezes an older pending order before sending and retries the same bytes without a second write', async () => {
     vi.useFakeTimers();
     const input = order(0);

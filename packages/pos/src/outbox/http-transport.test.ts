@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, type CommandEnvelope, type OrderCreatePayload } from '@tallyui/core';
 import { createHttpCommandTransport } from './http-transport';
+import type { PosOrder } from '../pos-order';
 
 const commands: CommandEnvelope<OrderCreatePayload>[] = [{
   id: 'command-1', type: 'order.create', version: 1, deviceId: 'device-1', attempt: 1,
@@ -13,6 +14,23 @@ const commands: CommandEnvelope<OrderCreatePayload>[] = [{
 afterEach(() => vi.useRealTimers());
 
 describe('HTTP command transport', () => {
+  it('keeps the request body byte-identical when local orders are supplied', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({ results: [] }));
+    const transport = createHttpCommandTransport({ baseUrl: 'https://shop.example', getHeaders: () => ({}), fetch });
+    const local: PosOrder = {
+      id: 'order-1', commandId: 'command-1', createdAt: commands[0].createdAt, updatedAt: commands[0].createdAt,
+      currency: 'EUR', pricesIncludeTax: true, subtotalMinor: 300, discountMinor: 0, taxMinor: 27, totalMinor: 300,
+      lines: [{ id: 'line-1', productId: '80', name: 'Item', sku: '', quantity: 1, unitPriceMinor: 300,
+        discountMinor: 0, netMinor: 273, netMicros: '272727300', taxLines: [] }],
+      payments: [], customer: null, syncStatus: 'pending', taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+    };
+    await transport.send(commands);
+    await transport.send(commands, { local: { orders: new Map([[commands[0].id, local]]) } });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][1]!.body).toBe(fetch.mock.calls[0][1]!.body);
+    expect(fetch.mock.calls[1][1]!.body).toBe(JSON.stringify({ commands }));
+  });
+
   it('posts commands with protocol and fresh asynchronous authentication headers', async () => {
     const results = [{ id: 'command-1', status: 'applied', serverRefs: { orderId: 'server-1', totalMinor: 0 } }];
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({ results }));

@@ -1,4 +1,11 @@
 import type { AnyCommandEnvelope, CommandEnvelope, CommandResult, OrderCreatePayload } from '@tallyui/core';
+import type { PosOrder } from '../pos-order';
+
+/** Local-only context for a transport (ADR-076 amendment 1): never serialised, never part of a payload. */
+export interface OrderTransportContext {
+  /** The stored (frozen) order of each envelope in the batch, keyed by the envelope's `id` (its commandId). */
+  local: { orders: ReadonlyMap<string, PosOrder> };
+}
 
 export type TransportOutcome =
   | { kind: 'results'; results: CommandResult[] }
@@ -9,7 +16,7 @@ export type TransportOutcome =
   | { kind: 'retry'; reason: string; retryAfterMs?: number };
 
 export interface CommandTransport<E extends AnyCommandEnvelope = CommandEnvelope<OrderCreatePayload>> {
-  send(batch: E[]): Promise<TransportOutcome>;
+  send(batch: E[], context?: OrderTransportContext): Promise<TransportOutcome>;
 }
 
 export interface OutboxState {

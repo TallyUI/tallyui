@@ -68,7 +68,7 @@ export { createRegisterOutbox, useRegisterOutbox } from './outbox';
 export type { RegisterOutboxOptions, RegisterOutbox, UseRegisterOutboxOptions, UseRegisterOutboxResult } from './outbox';
 export { createBackendNotFound } from './outbox/backend-not-found';
 export type { BackendNotFound } from './outbox/backend-not-found';
-export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
+export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OrderTransportContext, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
 export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR } from './tender';
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg } from './tender';
 
