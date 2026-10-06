@@ -28,13 +28,14 @@ export function wooMinorFromDecimal(text: string, currency: string): number | un
   return moneyFromDecimalString(end ? `${whole}.${fraction.slice(0, end)}` : whole, currency)?.amount;
 }
 
-export interface WooLocalOrder { lines: ReadonlyArray<{ id: string; netMicros?: string }> }
+export interface WooLocalOrder {
+  lines: ReadonlyArray<{ id: string; netMicros?: string }>;
+  fees?: ReadonlyArray<{ id: string; netMicros?: string }>;
+  shipping?: ReadonlyArray<{ id: string; netMicros?: string }>;
+}
 
 export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLocalOrder, options?: { paymentsList?: boolean }): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
   const p = envelope.payload;
-  if (envelope.version === 5 && (p.fees?.length || p.shipping?.length || p.lines.some((line) => line.custom))) {
-    return { error: { code: 'invalid_payload', message: 'Fees, shipping and custom lines are not supported by this connector yet.' } };
-  }
   if (p.payments.length === 0 || (p.payments.length > 1 && !options?.paymentsList)) {
     return { error: { code: 'invalid_payload', message: 'WooCommerce orders take one payment.' } };
   }
@@ -45,12 +46,26 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     return { error: { code: 'invalid_payload', message: 'Payments do not add up to the order total.' } };
   }
   for (const line of p.lines) {
-    if (!/^[1-9]\d*$/.test(line.variantId ?? '') || !Number.isSafeInteger(Number(line.variantId))) {
+    if (!line.custom && (!/^[1-9]\d*$/.test(line.variantId ?? '') || !Number.isSafeInteger(Number(line.variantId)))) {
       return { error: { code: 'invalid_payload', message: `Line ${line.clientLineId} has no WooCommerce product id.` } };
     }
   }
   const digits = p.display?.exponent ?? minorUnitDigits(p.currency);
   const major = (minor: number) => (minor / 10 ** digits).toFixed(digits);
+  const inclusiveNet = (netMicros: string | undefined, id: string) => {
+    if (netMicros === undefined) {
+      return { error: { code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } };
+    }
+    const net = BigInt(netMicros), divisor = 10n ** BigInt(digits);
+    if (net < 0n) {
+      return { error: { code: 'invalid_payload', message: `Line ${id} has a negative net.` } };
+    }
+    if (net % divisor !== 0n) {
+      return { error: { code: 'invalid_payload', message: `Line ${id} has a net finer than 6 decimals.` } };
+    }
+    const micros = net / divisor;
+    return `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;
+  };
   const line_items = [];
   for (const line of p.lines) {
     let subtotal = major(line.unitPriceMinor * line.quantity);
@@ -59,21 +74,30 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
       if ((line.discountMinor ?? 0) > 0) {
         return { error: { code: 'unsupported_tax_mode', message: 'Discounted tax-inclusive lines are not supported for WooCommerce yet.' } };
       }
-      const netMicros = local?.lines.find((stored) => stored.id === line.clientLineId)?.netMicros;
-      if (netMicros === undefined) {
-        return { error: { code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } };
-      }
-      const net = BigInt(netMicros), divisor = 10n ** BigInt(digits);
-      if (net < 0n) {
-        return { error: { code: 'invalid_payload', message: `Line ${line.clientLineId} has a negative net.` } };
-      }
-      if (net % divisor !== 0n) {
-        return { error: { code: 'invalid_payload', message: `Line ${line.clientLineId} has a net finer than 6 decimals.` } };
-      }
-      const micros = net / divisor;
-      subtotal = total = `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;
+      const net = inclusiveNet(local?.lines.find((stored) => stored.id === line.clientLineId)?.netMicros, line.clientLineId);
+      if (typeof net !== 'string') return net;
+      subtotal = total = net;
     }
-    line_items.push({ product_id: Number(line.variantId), quantity: line.quantity, subtotal, total });
+    const custom = line.custom;
+    const price = major(line.unitPriceMinor);
+    line_items.push(custom ? {
+      product_id: 0, name: custom.name, ...(custom.sku ? { sku: custom.sku } : {}), quantity: line.quantity, subtotal, total,
+      tax_class: custom.taxClass ?? '', meta_data: [{ key: '_woocommerce_pos_data',
+        value: JSON.stringify({ price, regular_price: price, tax_status: custom.taxStatus }) }],
+    } : { product_id: Number(line.variantId), quantity: line.quantity, subtotal, total });
+  }
+  const fee_lines = [], shipping_lines = [];
+  for (const fee of p.fees ?? []) {
+    const total = p.pricesIncludeTax
+      ? inclusiveNet(local?.fees?.find((stored) => stored.id === fee.clientFeeId)?.netMicros, fee.clientFeeId) : major(fee.amountMinor);
+    if (typeof total !== 'string') return total;
+    fee_lines.push({ name: fee.name, total, tax_status: fee.taxStatus, tax_class: fee.taxClass ?? '' });
+  }
+  for (const shipping of p.shipping ?? []) {
+    const total = p.pricesIncludeTax
+      ? inclusiveNet(local?.shipping?.find((stored) => stored.id === shipping.clientShippingId)?.netMicros, shipping.clientShippingId) : major(shipping.amountMinor);
+    if (typeof total !== 'string') return total;
+    shipping_lines.push({ method_id: shipping.methodId ?? 'pos', method_title: shipping.name, total });
   }
   const primary = p.payments.reduce((largest, payment) => payment.amountMinor > largest.amountMinor ? payment : largest);
   const cash = primary.method === 'cash';
@@ -91,6 +115,8 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     status: 'completed', set_paid: true, currency: p.currency,
     payment_method: cash ? 'pos_cash' : 'pos_card', payment_method_title: cash ? 'Cash' : 'Card',
     line_items,
+    ...(fee_lines.length ? { fee_lines } : {}),
+    ...(shipping_lines.length ? { shipping_lines } : {}),
     meta_data,
     ...(p.customer?.customerId && /^\d+$/.test(p.customer.customerId) ? { customer_id: Number(p.customer.customerId) } : {}),
     ...(p.customer?.email ? { billing: { email: p.customer.email } } : {}),
