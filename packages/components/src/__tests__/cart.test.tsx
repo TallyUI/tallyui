@@ -12,6 +12,95 @@ const money = (amount: number) => formatMoney({ amount, currency: 'EUR' })!;
 afterEach(() => cleanup());
 
 describe('Cart', () => {
+  it.each([undefined, 1, 2, 3, 4])('hides Add charge below orderCreate 5 (%s)', (orderCreate) => {
+    render(<SaleHarness capabilities={orderCreate === undefined ? undefined : { orderCreate }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    expect(screen.queryByRole('button', { name: 'Add charge' })).toBeNull();
+    act(() => sale.add(blue, traits));
+    expect(screen.queryByRole('button', { name: 'Add charge' })).toBeNull();
+  });
+
+  it.each([false, true])('adds each kind, shows display amounts and totals, and removes charges (inclusive: %s)', (inclusive) => {
+    render(<SaleHarness settings={{ ...pricing, pricesIncludeTax: inclusive }} capabilities={{ orderCreate: 5 }}>
+      {(sale) => <Cart sale={sale} />}</SaleHarness>);
+    expect(screen.getByRole('button', { name: 'Add charge' })).toBeTruthy();
+    act(() => sale.add(blue, traits));
+    const before = totals(sale.order);
+    for (const [kind, name, amount] of [['Fee', 'Bag', '1.20'], ['Shipping', 'Delivery', '2.40'], ['Custom item', 'Alteration', '3.60']]) {
+      click('Add charge');
+      click(kind);
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
+      click('Apply');
+      expect(screen.queryByTestId('charge-form')).toBeNull();
+    }
+    expect(sale.order.fees).toMatchObject([{ name: 'Bag', amountMinor: 120 }]);
+    expect(sale.order.shipping).toMatchObject([{ name: 'Delivery', amountMinor: 240 }]);
+    expect(sale.order.lineItems[1]).toMatchObject({ name: 'Alteration', unitPriceMinor: 360, quantity: 1, custom: true });
+    const fee = screen.getByTestId('cart-fee-0');
+    const shipping = screen.getByTestId('cart-shipping-0');
+    expect(within(fee).getByText('Bag')).toBeTruthy();
+    expect(within(fee).getByText(money(sale.order.display.fees![0].amountMinor))).toBeTruthy();
+    expect(within(shipping).getByText('Delivery')).toBeTruthy();
+    expect(within(shipping).getByText(money(sale.order.display.shipping![0].amountMinor))).toBeTruthy();
+    expect(screen.getByText(`${money(360)} × 1`)).toBeTruthy();
+    expect(screen.getByText('Alteration').compareDocumentPosition(fee) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(fee.compareDocumentPosition(shipping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const footer = within(screen.getByTestId('cart-footer'));
+    expect(within(footer.getByText('Subtotal').parentElement!).getByText(money(sale.order.display.subtotalMinor))).toBeTruthy();
+    expect(within(footer.getByText(inclusive ? 'incl. Tax 25%' : 'Tax 25%').parentElement!).getByText(money(sale.order.display.taxMinor))).toBeTruthy();
+    expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();
+    click('Remove Bag');
+    expect(screen.queryByTestId('cart-fee-0')).toBeNull();
+    expect(sale.order.fees ?? []).toEqual([]);
+    click('Remove Delivery');
+    expect(screen.queryByTestId('cart-shipping-0')).toBeNull();
+    expect(sale.order.shipping ?? []).toEqual([]);
+    click('Remove Alteration');
+    expect(totals(sale.order)).toEqual(before);
+    expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();
+  });
+
+  it('keeps only one charge, discount or price form open', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} canEditPrice />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    click('Order discount');
+    click('Add charge');
+    expect(screen.queryByRole('group', { name: 'Order discount' })).toBeNull();
+    fireEvent.click(screen.getByText('Price'));
+    expect(screen.queryByTestId('charge-form')).toBeNull();
+    click('Add charge');
+    expect(screen.queryByTestId('price-form')).toBeNull();
+    fireEvent.click(screen.getByText('Discount'));
+    expect(screen.queryByTestId('charge-form')).toBeNull();
+    expect(screen.getAllByRole('group')).toHaveLength(1);
+  });
+
+  it.each(['Fee', 'Shipping', 'Custom item'])('passes tax choices through to %s', (kind) => {
+    render(<SaleHarness capabilities={{ orderCreate: 5, lineTax: { none: true, classes: true } }}>
+      {(sale) => <Cart sale={sale} taxClasses={[{ id: 'reduced', label: 'Reduced' }]} />}</SaleHarness>);
+    click('Add charge');
+    click(kind);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Extra' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '1' } });
+    click('Reduced');
+    fireEvent.click(screen.getByRole('switch', { name: 'No tax' }));
+    click('Apply');
+    const charge = kind === 'Fee' ? sale.order.fees![0] : kind === 'Shipping' ? sale.order.shipping![0] : sale.order.lineItems[0];
+    expect(charge).toMatchObject({ name: 'Extra', taxStatus: 'none', taxClass: 'reduced' });
+    expect(sale.order.totalMinor).toBe(100);
+  });
+
+  it('uses the WooCommerce shipping-tax note and hides tax overrides', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5, lineTax: { none: true, classes: true },
+      taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false } }}>
+      {(sale) => <Cart sale={sale} taxClasses={[{ id: 'reduced', label: 'Reduced' }]} />}</SaleHarness>);
+    click('Add charge');
+    click('Shipping');
+    expect(screen.getByText("Shipping is taxed at the store's shipping tax class.")).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: 'No tax' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Tax class' })).toBeNull();
+  });
+
   it.each([undefined, false])('hides Price without permission (%s)', (canEditPrice) => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice={canEditPrice} />}</SaleHarness>);
     act(() => sale.add(blue, traits));

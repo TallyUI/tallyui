@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import { formatMoney } from '@tallyui/core';
 import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
 import { CartLine, CartLineActions, CartPanel, CartTotal } from '../cart';
 import { DiscountChips, DiscountForm } from './discount-form';
 import { PriceForm } from './price-form';
+import { ChargeForm } from './charge-form';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange }:
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, taxClasses }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
+    taxClasses?: ReadonlyArray<{ id: string; label: string }>;
     /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
     canEditPrice?: boolean;
     /** Called after a price is applied, for the app's audit log. The reason is kept only here. */
@@ -24,8 +27,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const display = (lineId: string) => order.display.lines.find((line) => line.lineId === lineId)!;
   const orderAmounts = order.discounts.length === 1
     ? [{ discountId: order.discounts[0].id, amountMinor: order.display.orderDiscountMinor }] : [];
-  // One open form: a line's discount or price, or the order's discount (lineId null).
-  const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | null>(null);
+  // One open form: a line's discount or price, the order's discount (lineId null), or a charge.
+  const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' } | null>(null);
+  const chargesOffered = (sale.capabilities?.orderCreate ?? 0) >= 5;
   const discountForm = (lineId: string | null, title: string) => form?.type === 'discount' && form.lineId === lineId
     ? <DiscountForm key={lineId ?? 'order'} title={title} currency={order.currency} onClose={() => setForm(null)}
       onApply={(discount) => sale.applyDiscount(lineId, discount)} /> : null;
@@ -59,13 +63,35 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   </>;
   return <CartPanel dataSet={{ print: 'hide' }} items={order.lineItems} renderItem={renderItem}
     emptyState={<Text testID="cart-empty" className="px-3 py-2 text-muted-foreground">Scan or tap a product to start a sale.</Text>}
-    afterItems={order.lineItems.length ? <View className="gap-3 px-3 py-2">
+    afterItems={<>
+      {(['fees', 'shipping'] as const).map((kind) => order[kind]?.map((charge, index) =>
+        <View key={charge.id} testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`} className="flex-row items-center gap-3 px-3 py-2">
+          <Text className="flex-1 text-foreground">{charge.name}</Text>
+          <Text className="text-foreground">{formatMoney(money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor))}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${charge.name}`}
+            onPress={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}
+            className="rounded-md border border-border bg-card px-3 py-2 min-h-11 items-center justify-center">
+            <Text className="text-foreground">Remove</Text></Pressable>
+        </View>))}
+      {order.lineItems.length || chargesOffered ? <View className="gap-3 px-3 py-2">
+      {order.lineItems.length ? <>
       <DiscountChips discounts={order.discounts} amounts={orderAmounts} currency={order.currency} onRemove={sale.removeDiscount}
         prefix="Order discount" />
-      {form?.lineId === null ? discountForm(null, 'Order discount') : <Pressable accessibilityRole="button"
+      {form?.type === 'discount' && form.lineId === null ? discountForm(null, 'Order discount') : <Pressable accessibilityRole="button"
         onPress={() => setForm({ type: 'discount', lineId: null })} className="self-start rounded-md border border-border bg-card px-4 py-2 min-h-11 justify-center">
         <Text className="text-foreground">Order discount</Text></Pressable>}
-    </View> : undefined}
+      </> : null}
+      {chargesOffered ? form?.type === 'charge' ? <ChargeForm currency={order.currency} lineTax={sale.capabilities?.lineTax}
+        taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
+        onClose={() => setForm(null)} onApply={({ kind, name, amountMinor, taxStatus, taxClass }) => {
+          const result = kind === 'custom' ? sale.addCustomLine({ name, priceMinor: amountMinor, taxStatus, taxClass })
+            : kind === 'fee' ? sale.addFee({ name, amountMinor, taxStatus, taxClass })
+              : sale.addShipping({ name, amountMinor, taxStatus, taxClass });
+          return typeof result === 'string' ? result : null;
+        }} /> : <Pressable accessibilityRole="button" onPress={() => setForm({ type: 'charge' })}
+        className="self-start rounded-md border border-border bg-card px-4 py-2 min-h-11 justify-center">
+        <Text className="text-foreground">Add charge</Text></Pressable> : null}
+    </View> : null}</>}
     footer={<View testID="cart-footer" className="gap-3 pb-4">
       {/* Exclusive: subtotal − discount + tax = total. Inclusive: subtotal − discount = total, the tax "incl.", not added. */}
       <CartTotal subtotal={money(totals.subtotalMinor)} discount={money(totals.discountMinor)} total={money(totals.totalMinor)}

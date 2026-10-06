@@ -11,6 +11,26 @@ const store = { name: 'Shop' };
 afterEach(() => cleanup());
 
 describe('Receipt', () => {
+  it.each([false, true])('prints fee and shipping rows before Subtotal, preserving the rows without charges (%s)', (charges) => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{() => null}</SaleHarness>);
+    act(() => {
+      sale.add(blue, traits);
+      if (charges) {
+        sale.addFee({ name: 'Bag', amountMinor: 120 });
+        sale.addShipping({ name: 'Delivery', amountMinor: 240 });
+      }
+    });
+    const { display } = sale.order;
+    const { container } = render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    const labels = Array.from(container.querySelectorAll('[aria-label]'), (element) => element.getAttribute('aria-label'));
+    expect(labels).toEqual([
+      `1 × ${money(1250)}: ${money(display.lines[0].amountMinor)}`,
+      ...(charges ? [`Bag: ${money(display.fees![0].amountMinor)}`, `Delivery: ${money(display.shipping![0].amountMinor)}`] : []),
+      `Subtotal: ${money(display.subtotalMinor)}`, `Tax 25%: ${money(display.taxMinor)}`,
+      `Total: ${money(display.totalMinor)}`, `Change: ${money(sale.order.changeDueMinor)}`,
+    ]);
+  });
+
   it('prints the finalized order reference and time when given the PosOrder', () => {
     render(<SaleHarness>{() => null}</SaleHarness>);
     const posOrder = { id: '0192aaaa-bbbb-7ccc-8ddd-eeee12345678', createdAt: '2026-10-06T12:12:46.000Z' } as PosOrder;
