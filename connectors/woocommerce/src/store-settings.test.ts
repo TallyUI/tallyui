@@ -331,6 +331,13 @@ describe('readWooCapabilities', () => {
     });
   });
 
+  it.each([404, 500, 503])('rejects coupons when site answers HTTP %i even with a supported version', async (status) => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores))
+      .mockResolvedValueOnce(Response.json(statusBody))
+      .mockResolvedValueOnce(Response.json({ wcpos_version: '1.10.20' }, { status }));
+    expect(await readWooCapabilities(context)).toMatchObject({ coupons: false });
+  });
+
   it.each([401, 403])('resolves with coupons rejected when site answers HTTP %i', async (status) => {
     fetchMock.mockResolvedValueOnce(Response.json(stores))
       .mockResolvedValueOnce(Response.json(statusBody))
@@ -398,7 +405,7 @@ describe('wooPluginSupportsCoupons', () => {
   it.each([
     ['1.9.0', true], ['1.9.0-beta.1', false], ['1.8.99', false],
     ['10.0.0', true], [undefined, false], [190, false],
-  ])('returns %s for %s', (version, supported) => {
+  ])('%s gives %s', (version, supported) => {
     expect(wooPluginSupportsCoupons(version)).toBe(supported);
   });
 });
