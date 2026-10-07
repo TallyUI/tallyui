@@ -4718,6 +4718,36 @@ interface OrderCreatePayload {
       coupon lines' figures, which are what WooCommerce stores on each coupon line.
     - **Not in d1:** the dev store's own coupon figures and settle's restated scenarios. They come with (d3)'s
       tests.
+  - **(d2) as built (2026-10-07).**
+    - **Version 9 declares four optional fields and writes none of them.** Nothing writes them yet, as with
+      version 2 and version 3, so a till migrates once for the whole coupons phase. The migration from 8 to 9 is
+      the identity.
+      - The order's `coupons`: `code`, `couponId`, `discountMinor` and `discountTaxMinor`, closed and all
+        required, with the discounts non-negative integers. They are written by (d3) and sent by (d4).
+      - The receipt's `display.coupons`: `code` and `amountMinor`, closed. (d1) already builds these rows.
+      - A line's `attributes`: name to value, strings only (#495, G-V2).
+      - A line's `regularUnitPriceMinor`: the catalogue's regular unit price, in the line's own tax mode. A price
+        edit overwrites `unitPriceMinor`, so the stored order needs its own copy. (d3) uses it to lift the
+        `exclude_sale_items` refusal, and (d4) sends it as the line's regular price.
+    - **The line fields did not need a bump.** `lines.items` is open, so they would have been stored anyway; v9
+      declares their types. The bump is needed for the order's `coupons` and for `display.coupons`, because both
+      the top level and `display` are closed.
+    - **No local documents.** `pos_orders` keeps none (pinned by a test), so ADR-078 3a's row-loss bug has nothing
+      to lose here. The bump goes through the `addPosOrderCollection` opener.
+    - **What an older build sees.** ADR-069 applies unchanged. If a till that ran this release goes back to a
+      version-8 build, the older build cannot open a version-9 collection:
+      - it shows no orders;
+      - it sends none of its pending ones.
+      Nothing is deleted. Upgrading again reopens the collection with every order. A loud refusal of a newer
+      stored version is still #243.
+    - **Tests.**
+      - Pending and applied version-8 orders survive byte for byte on memory and on SQLite. The memory test covers
+        fees, shipping, a custom line and the WooCommerce rounding, and checks `_meta`.
+      - The opener's shared set now also runs from version 8.
+      - The new fields round-trip, and malformed ones are refused.
+    - **Drafts move to (d3).** A parked sale's draft is a JSON string, not a `pos_orders` field, so saving its
+      coupon codes needs no bump. Nothing can set a code before (d3)'s `applyCoupon`, so (d3) saves and restores
+      them.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
