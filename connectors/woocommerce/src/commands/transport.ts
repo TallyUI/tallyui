@@ -34,6 +34,15 @@ export interface WooLocalOrder {
   shipping?: ReadonlyArray<{ id: string; netMicros?: string }>;
 }
 
+function decodeCouponMessage(message: unknown): string {
+  const entities: Record<string, string> = { quot: '"', amp: '&', lt: '<', gt: '>', apos: "'" };
+  return (typeof message === 'string' ? message : '').replace(/<[^>]*>/g, '')
+    .replace(/&(quot|amp|lt|gt|apos|#\d+|#x[\da-f]+);/gi, (_, entity: string) => entities[entity.toLowerCase()]
+      ?? ((value: number) => value > 0x10FFFF ? _ : String.fromCodePoint(value))(
+        parseInt(entity.slice(entity[1].toLowerCase() === 'x' ? 2 : 1), entity[1].toLowerCase() === 'x' ? 16 : 10)))
+    .replace(/\s+/g, ' ').trim() || 'status_400';
+}
+
 export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLocalOrder, options?: { paymentsList?: boolean }): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
   const p = envelope.payload;
   if (p.payments.length === 0 || (p.payments.length > 1 && !options?.paymentsList)) {
@@ -76,12 +85,20 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
       subtotal = total = net;
     }
     const custom = line.custom;
-    const price = major(line.unitPriceMinor);
+    let price = major(line.unitPriceMinor);
+    if (p.coupons?.length) {
+      const quantity = BigInt(line.quantity), minor = BigInt(line.unitPriceMinor) * quantity - BigInt(line.discountMinor ?? 0);
+      const divisor = quantity * 10n ** BigInt(digits), micros = (minor * 1000000n * 2n + divisor) / (divisor * 2n);
+      price = minor % quantity === 0n ? major(Number(minor / quantity))
+        : `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;
+    }
+    const regular_price = p.coupons?.length && line.regularUnitPriceMinor !== undefined ? major(line.regularUnitPriceMinor) : price;
     line_items.push(custom ? {
       product_id: 0, name: custom.name, ...(custom.sku ? { sku: custom.sku } : {}), quantity: line.quantity, subtotal, total,
       tax_class: custom.taxClass ?? '', meta_data: [{ key: '_woocommerce_pos_data',
-        value: JSON.stringify({ price, regular_price: price, tax_status: custom.taxStatus }) }],
-    } : { product_id: Number(line.variantId), quantity: line.quantity, subtotal, total });
+        value: JSON.stringify({ price, regular_price, tax_status: custom.taxStatus }) }],
+    } : { product_id: Number(line.variantId), quantity: line.quantity, subtotal, total,
+      ...(p.coupons?.length ? { meta_data: [{ key: '_woocommerce_pos_data', value: JSON.stringify({ price, regular_price }) }] } : {}) });
   }
   const fee_lines = [], shipping_lines = [];
   for (const fee of p.fees ?? []) {
@@ -114,6 +131,7 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     line_items,
     ...(fee_lines.length ? { fee_lines } : {}),
     ...(shipping_lines.length ? { shipping_lines } : {}),
+    ...(p.coupons?.length ? { coupon_lines: p.coupons.map(({ code }) => ({ code })) } : {}),
     meta_data,
     ...(p.customer?.customerId && /^\d+$/.test(p.customer.customerId) ? { customer_id: Number(p.customer.customerId) } : {}),
     ...(p.customer?.email ? { billing: { email: p.customer.email } } : {}),
@@ -172,6 +190,12 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
                 }] } : {}) });
                 continue;
               }
+            } else if (status === 400 && body?.code === 'woocommerce_rest_invalid_coupon') {
+              const message = decodeCouponMessage(body?.message), quoted = /"([^"]*)"/.exec(message)?.[1];
+              const couponCode = envelope.payload.coupons?.find(({ code }) => code.toLowerCase() === quoted?.toLowerCase())?.code;
+              results.push({ id: envelope.id, status: 'rejected', error: { code: 'coupon_invalid', message,
+                data: { storeCode: body.code, ...(couponCode ? { couponCode } : {}) } } });
+              continue;
             } else if (status === 400 || status === 422) {
               results.push({ id: envelope.id, status: 'rejected', error: {
                 code: status === 400 && body?.code === 'wcpos_insufficient_stock' ? 'insufficient_stock' : 'invalid_payload',
