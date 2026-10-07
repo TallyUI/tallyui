@@ -5078,9 +5078,8 @@ interface OrderCreatePayload {
      bounds the form; the plugin is authoritative and refuses with `quantity_exceeds` or `amount_mismatch`.
 - **Not in this decision:**
   - **The till's local record of applied refunds**, which its own `tillExpected` and `periodRefundsTotalMinor` at
-    close need. It is a new local-only collection, an on-device schema change, and waits for Paul's word. Until it
-    lands, a session with a cash refund closes at the till with a variance equal to the refund, so vendurepos must
-    not ship the refund action before it.
+    close need. Settled by amendment 1. Until it lands, a session with a cash refund closes at the till with a
+    variance equal to the refund, so vendurepos must not ship the refund action before it.
   - The refund screen and receipt (vendurepos's app), and the plugin's handler, `createRefund` and restocking
     (vendurepos's repo).
   - Refunds for WooCommerce and Medusa: each will be its platform's own way, on this same contract.
@@ -5088,3 +5087,53 @@ interface OrderCreatePayload {
   - Vendure Admin API reference (docs.vendure.io): `Refund`, `RefundLine`, `Payment`, `OrderLine`
     (`orderPlacedQuantity`, `proratedUnitPriceWithTax`); `RefundState = 'Pending' | 'Settled' | 'Failed'`.
   - The handoff ~/agent/handoff/vendurepos-refunds-item4-2026-10-07.md and the front desk's rulings.
+- **Amendment 1 (front desk ruling, 2026-10-07): the till's refund record, `pos_refunds`.**
+  - **A new local-only collection at version 0, never replicated.** Its primary key is the payload's
+    `clientRefundId`. It is a new collection and migrates no existing data, so it is not a schema bump of an existing
+    collection. `@tallyui/pos` exports `posRefundSchema` and `posRefundCollection()`; the app adds it with
+    `addCollections`, as it adds `cash_movements`.
+  - **A record holds one refund's current attempt:**
+    - the identity fields: `id` (the `clientRefundId`), `commandId` (the attempt's envelope id), `orderId`,
+      `sessionId` and `registerId`;
+    - `envelope`: the envelope as sent, so an unknown answer is resent byte for byte;
+    - `status`: `pending`, `applied`, `rejected` or `unsent`;
+    - the store's answer: `result` (applied), `duplicate`, or `error`;
+    - `createdAt` and `updatedAt`.
+  - **`submitOrderRefund({ refunds, transport, envelope })` is the record flow around `sendOrderRefund`.** It writes
+    the record as `pending` before the send, then stores the answer:
+
+    | `sendOrderRefund` outcome | Record |
+    |---|---|
+    | `applied` (or `duplicate`) | `applied`, with `result` and `duplicate` |
+    | `rejected` | `rejected`, with the store's `error` |
+    | `refused` or `unauthorized` | `unsent`: the store did not take the batch |
+    | `unknown` | stays `pending` |
+
+    - An `applied` record is final. Submitting it again returns its stored result and sends nothing.
+    - A `pending` record is resent only with its own envelope. Any other attempt at that refund is refused with
+      `RefundAnswerPendingError`, which carries the record so the app can resend it.
+    - A `rejected` record replays its rejection for the same envelope id. An `unsent` record may be sent again with
+      the same envelope. Either one may take a new attempt with a new envelope id (decision 2), which replaces the
+      record's attempt.
+    - The answer is written only while the record is still that attempt's `pending`, so a late answer never
+      overwrites a newer attempt or an applied record.
+  - **Register figures at the till count the session's applied records**, by the record's `sessionId`, the same way
+    `deriveSessionFigures` counts them on the server (decision 6):
+    - `deriveExpected` takes optional refunds and lowers expected per method by each applied record's
+      `result.byMethod`.
+    - `writeClosure` takes optional `refunds`:
+      - `till_expected` falls by their `byMethod`, unless `tillExpected` is given, which still wins.
+      - `period_refunds_total_minor` is the sum of their `byMethod` amounts, and `advancePerpetual` carries it into
+        the perpetual total.
+      - `breakdowns.payment_methods[method].refunds_minor` holds each method's refunds.
+      - `breakdowns.refund_count` is their number.
+      - `breakdowns.refund_ids` and `breakdowns.pending_refund_ids` are added only when `refunds` is passed, so a
+        caller that passes none gets the same closure as before.
+    - `useRegisterSession` takes an optional `refunds` collection. `undefined` means the app takes no refunds;
+      `null` means it is still opening, like the other collections. With it, the live expected figures, the close's
+      approval gate and the Z all count the session's applied refunds.
+  - **A refund still `pending` at close does not count**, and the Z lists it in `pending_refund_ids`. The cashier
+    hands over money only on an `applied` answer (decision 2), so the drawer holds the money of a refund whose
+    answer never came, and the till's figures follow the drawer. Closing is not blocked, so a till that has lost
+    the network can still close. If the store did apply such a refund, the store's figures differ from the till's
+    by that refund, and the Z shows which one.
