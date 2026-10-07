@@ -4738,6 +4738,12 @@ interface OrderCreatePayload {
       - A line's `regularUnitPriceMinor`: the catalogue's regular unit price, in the line's own tax mode. A price
         edit overwrites `unitPriceMinor`, so the stored order needs its own copy. (d3) uses it to lift the
         `exclude_sale_items` refusal, and (d4) sends it as the line's regular price.
+    - **Two later additions, inside the same version 9** (front desk rulings of 2026-10-07; no version 10):
+      - `sentVersion` and `downgradedFrom` may be 6, the order.create version (d4) sends a coupon sale at. Values
+        outside 1–6 are still refused.
+      - The order's optional `reopenedAt`: when the till reopened a refused order as a parked sale (d4b, Q-d4b-1).
+        Needs attention hides such an order, and it stays as the record of the refusal. A string of at most 40
+        characters, not indexed.
     - **The line fields did not need a bump.** `lines.items` is open, so they would have been stored anyway; v9
       declares their types. The bump is needed for the order's `coupons` and for `display.coupons`, because both
       the top level and `display` are closed.
