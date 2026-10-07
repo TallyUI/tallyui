@@ -4834,6 +4834,47 @@ interface OrderCreatePayload {
     - **Not in d3c.** Applied coupons are not checked again when lines, the customer or the tender change. The
       store checks them again at push, and a refusal there takes (d4)'s path.
     - **Tests.** 16 mutations of the new code were each killed by the sale tests (listed in the PR).
+  - **Rulings on (d4) (front desk, 2026-10-07):**
+    - **Q-d4-1, version 6 is the carrier.** A coupon sale goes as `order.create` version 6. The WooCommerce coupon
+      lane is the plugin lane asking for it: its mapping needs the coupons, the regular prices and the attributes in
+      the envelope.
+    - **Q-d4-2, one version for everything v9 stores.** Version 6 carries the order's coupons, each line's
+      `regularUnitPriceMinor` and #495's `attributes`, and the receipt's coupon rows, for the same reason as R1.
+    - **Q-d4-3, the refusal.** A store that refuses a coupon answers `coupon_invalid`, with the store's own code in
+      `error.data.storeCode` and the coupon in `error.data.couponCode` when known (`OrderCreateCouponInvalidData`).
+      The WooCommerce lane confirms the store's codes.
+    - **R4, a different store total is never accepted silently.** A store that checks the envelope's grand total
+      before it creates the order, and computes a different one (coupon rules or rounding drift), refuses with
+      `total_mismatch` and its totals (`OrderCreateTotalMismatchData`). The reopen then offers the sale back without
+      coupons, as for `coupon_invalid`. A minor-unit tolerance needs evidence from the store lane first.
+    - **The R4 exception, a store that creates before it can compare.** WooCommerce creates the order, completed
+      and paid, before the till sees its total. There the result stays `applied`, with `serverRefs` and the v5
+      `total_mismatch` warning, and the order shows in needs-attention. There is no reopen, because the store already
+      holds the sale and a resubmit would charge it twice. The result carries the POS total (`expectedMinor`), the
+      store total (`serverMinor`) and the store order (`serverRefs.orderId`, `displayId`), so the merchant can fix the
+      order in WooCommerce. A rejected `total_mismatch` stays for stores that check first.
+    - **Order of work.** (d4a) the envelope in `@tallyui/core` and `@tallyui/pos`; (d4a-woo) the WooCommerce mapping
+      in `connectors/woocommerce` (`createWooCommandTransport`), this lane's PR; the WooCommerce app then only wires
+      it and proves it in a browser; then (d4b) the reopen, then (d5).
+  - **(d4a) as built (2026-10-07): the envelope.** One-way; `@tallyui/core` and `@tallyui/pos`.
+    - **Version 6.** Version 5 plus `payload.coupons` (`code`, `couponId`, `discountMinor`, `discountTaxMinor`, in
+      the order applied), each line's `regularUnitPriceMinor` and `attributes` when stored, and `display.coupons`.
+      The shared shape check validates the new fields and bounds their strings (code and display code 255, coupon
+      id 64, attribute names and values 255); a duplicate code is refused. `CommandRejectionCode` gains
+      `coupon_invalid` and `total_mismatch`.
+    - **The precheck.** `precheckCommand` accepts version 6, refuses each version-6 field below 6 (`<field> requires
+      version 6`, after the version-5 refusal), and checks that each `display.coupons` row names a code in
+      `payload.coupons`, once, as it checks fee and shipping rows.
+    - **Only a coupon sale goes as 6.** A sale without coupons is sent as before, byte for byte, whatever the store
+      advertises; its stored regular prices and attributes stay on the till. Attributes therefore do not ride on the
+      coupon gate.
+    - **A coupon sale never goes below 6.** The sale offers coupons only when the store also accepts version 6;
+      finalize refuses a coupon sale to a store below 6; the outbox sends a coupon sale at 6 even after an
+      `unsupported_version` answer, so an older store refuses it rather than receiving it without its coupons.
+    - **The cap guard.** `ORDER_CREATE_MAX_VERSION` (6) is the till's highest version. A test pins `pos_orders`'
+      `sentVersion` and `downgradedFrom` maxima to it, so a version 7 fails a test instead of shipping behind the
+      schema.
+    - **Tests.** 17 mutations of the new code in `@tallyui/core` and `@tallyui/pos` were each killed (listed in the PR).
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
