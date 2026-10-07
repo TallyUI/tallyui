@@ -19,6 +19,7 @@ import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
 import type { PosOrder } from '../pos-order/types';
+import { isReopened } from '../pos-order/reopened';
 import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
@@ -145,7 +146,7 @@ function currentSession(rows: RegisterSession[], closureRows: Closure[], reserva
 
 /** A session's ledger rows, built from its orders' payments the way `writeClosure` builds them. */
 function ledgerRows(orders: readonly PosOrder[]): LedgerRow[] {
-  return orders.flatMap((order) => order.payments.map((payment) => ({
+  return orders.filter((order) => !isReopened(order)).flatMap((order) => order.payments.map((payment) => ({
     session_id: order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
     status: 'captured', amountMinor: payment.amountMinor,
   })));
@@ -307,7 +308,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     needsUpgrade: data?.rows.some((row) => !store.isKnownSessionStatus(row.status)) ?? false,
     movements: entries,
     expected,
-    salesCount: sales.length,
+    salesCount: sales.filter((order) => !isReopened(order)).length,
     overdue,
     /** A `closeSession` for this register is in flight, in any hook instance: the session can already be stored `closed` while its closure isn't written yet. */
     closing,

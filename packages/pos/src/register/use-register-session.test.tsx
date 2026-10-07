@@ -599,6 +599,24 @@ it('derives expected locally while a movement is still on its way to the server'
   await waitFor(() => expect(result.current.expected.cash).toBe(12000));
 });
 
+it('excludes reopened rejections from expected cash, salesCount and the close approval check', async () => {
+  const session = await seed();
+  await sale('applied', session.id, [{ method: 'cash', amountMinor: 100 }], { syncStatus: 'applied' });
+  await sale('rejected', session.id, [{ method: 'cash', amountMinor: 200 }], { syncStatus: 'rejected' });
+  await sale('reopened', session.id, [{ method: 'cash', amountMinor: 400 }], {
+    syncStatus: 'rejected', reopenedAt: '2026-09-16T12:00:00.000Z',
+  });
+  const result = await settled({ varianceThreshold: 0 });
+  await waitFor(() => expect(result.current.expected.cash).toBe(10300));
+  expect(result.current.salesCount).toBe(2);
+  await act(() => result.current.actions.startCounting());
+  await waitFor(() => expect(result.current.session?.status).toBe('counting'));
+  await act(async () => {
+    const closure = await result.current.actions.closeSession({ counted: { cash: 10300 } });
+    expect(closure.expected).toEqual({ cash: 10300 });
+  });
+});
+
 // Removing any of the action's log calls must lose its typed, cashier-attributed row.
 it.each([
   ['openSession', 'Register session opened', 'register.session-opened'],

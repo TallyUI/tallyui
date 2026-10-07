@@ -252,6 +252,27 @@ it('writes approvedBy in the close, and the Z carries it as breakdowns.approved_
   expect(closure.breakdowns.approved_by).toBe('mgr-1');
 });
 
+it('excludes reopened rejections from the closure but still counts other rejected cash sales', async () => {
+  await ensureRegister(db.register_sessions, 'web');
+  const session = await openSession(db.register_sessions, input);
+  const orders: PosOrder[] = [100, 200, 400].map((amountMinor, i) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
+    builder.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: amountMinor, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor });
+    return { ...finalizeOrder(builder.getSnapshot()), sessionId: session.id,
+      syncStatus: i === 0 ? 'applied' : 'rejected', ...(i === 2 ? { reopenedAt: '2026-09-16T12:00:00.000Z' } : {}) };
+  });
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 10300 } });
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10300,
+    otherTenders: {}, movements: [], orders, softwareVersion: '1.0.0',
+  });
+  expect(closure.expected).toEqual({ cash: 10300 });
+  expect(closure.breakdowns.payment_methods).toEqual({ cash: { sales_minor: 300, refunds_minor: 0 } });
+  expect(closure.period_sales_total_minor).toBe(300);
+  expect(closure.order_ids).toEqual(orders.slice(0, 2).map((order) => order.id));
+});
+
 // Without an approver the session's `approved_by` stays unset (the schema has no default), and
 // the Z's is null.
 it('leaves approved_by unset on a close without approvedBy', async () => {

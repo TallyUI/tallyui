@@ -62,7 +62,7 @@ export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, ty
 export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel } from './sale';
 export type { SaleStage, CatalogueEntry } from './sale';
 
-export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, sameSale, OrderContentMismatchError } from './pos-order';
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, sameSale, OrderContentMismatchError } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions } from './pos-order';
 export { createHttpCommandTransport, createOrderOutbox, useOrderOutbox, outboxLogger } from './outbox';
 export { createRegisterOutbox, useRegisterOutbox } from './outbox';
