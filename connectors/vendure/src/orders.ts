@@ -41,6 +41,8 @@ export interface VendureOrderSummary {
     tallyRegisterId: string | null;
     tallySessionId: string | null;
     tallyCashierRef: string | null;
+    tallyRejected: boolean | null;
+    tallyRejectedClientOrderId: string | null;
   };
 }
 
@@ -89,6 +91,7 @@ export interface VendureOrder extends VendureOrderSummary {
   customFields?: VendureOrderSummary['customFields'] & {
     tallyPayments: string | null;
     tallySnapshot: string | null;
+    tallyShipping: string | null;
   };
 }
 
@@ -96,12 +99,13 @@ const ORDER_ROW_FIELDS = `
   id code state orderPlacedAt updatedAt currencyCode totalQuantity total totalWithTax
   customer { id firstName lastName emailAddress }
 `;
-const ORDER_CUSTOM_FIELDS = 'tallyClientOrderId tallySaleAt tallyRegisterId tallySessionId tallyCashierRef';
+const ORDER_CUSTOM_FIELDS = 'tallyClientOrderId tallySaleAt tallyRegisterId tallySessionId tallyCashierRef tallyRejected tallyRejectedClientOrderId';
 const TALLY_ORDER_ROW_FIELDS = `${ORDER_ROW_FIELDS} customFields { ${ORDER_CUSTOM_FIELDS} }`;
-const ORDER_DETAIL_FIELDS = `
+const ORDER_DETAIL_FIELDS_START = `
   id code state active orderPlacedAt updatedAt currencyCode totalQuantity
   customer { id firstName lastName emailAddress }
-  lines {
+  lines {`;
+const ORDER_DETAIL_FIELDS_END = `
     id quantity taxRate productVariant { id name sku }
     unitPrice unitPriceWithTax linePrice linePriceWithTax discountedLinePrice discountedLinePriceWithTax
     discounts { description amount amountWithTax }
@@ -115,9 +119,10 @@ const ORDER_DETAIL_FIELDS = `
   payments { id method amount state transactionId createdAt metadata refunds { id total state reason lines { orderLineId quantity } } }
   fulfillments { id state method trackingCode }
 `;
-const TALLY_ORDER_DETAIL_FIELDS = `${ORDER_DETAIL_FIELDS.replace('lines {', `lines {
+const ORDER_DETAIL_FIELDS = `${ORDER_DETAIL_FIELDS_START}${ORDER_DETAIL_FIELDS_END}`;
+const TALLY_ORDER_DETAIL_FIELDS = `${ORDER_DETAIL_FIELDS_START}
   customFields { tallyCustomName tallyCustomSku tallyUnitPrice tallyPriceIncludesTax tallyClientLineId }
-`)} customFields { ${ORDER_CUSTOM_FIELDS} tallyPayments tallySnapshot }`;
+${ORDER_DETAIL_FIELDS_END} customFields { ${ORDER_CUSTOM_FIELDS} tallyPayments tallySnapshot tallyShipping }`;
 
 const LIST_QUERY = `query Orders($options: OrderListOptions) {
   orders(options: $options) { items { ${ORDER_ROW_FIELDS} } totalItems }
@@ -130,11 +135,13 @@ const TALLY_CUSTOMER_LIST_QUERY = CUSTOMER_LIST_QUERY.replace(ORDER_ROW_FIELDS, 
 const DETAIL_QUERY = `query Order($id: ID!) {
   order(id: $id) { ${ORDER_DETAIL_FIELDS} }
 }`;
-const TALLY_DETAIL_QUERY = DETAIL_QUERY.replace(ORDER_DETAIL_FIELDS, TALLY_ORDER_DETAIL_FIELDS);
+const TALLY_DETAIL_QUERY = `query Order($id: ID!) {
+  order(id: $id) { ${TALLY_ORDER_DETAIL_FIELDS} }
+}`;
 
 export async function listVendureOrders(context: SyncContext, options: VendureOrderListOptions = {}): Promise<VendureOrderList<VendureOrderSummary>> {
-  const skip = Math.max(0, Math.trunc(options.skip ?? 0));
-  const take = Math.max(1, Math.min(100, options.take ?? 25));
+  const skip = Math.max(0, Math.trunc(Number.isFinite(options.skip) ? options.skip! : 0));
+  const take = Math.max(1, Math.min(100, Math.trunc(Number.isFinite(options.take) ? options.take! : 25)));
   const date = options.orderPlacedAt;
   const orderPlacedAt = {
     ...(date?.after !== undefined ? { after: date.after } : {}),

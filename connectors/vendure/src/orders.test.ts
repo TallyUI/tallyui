@@ -15,6 +15,7 @@ const summary: VendureOrderSummary = {
   customFields: {
     tallyClientOrderId: 'client-12', tallySaleAt: '2026-01-02T10:00:00.000Z',
     tallyRegisterId: 'register-1', tallySessionId: 'session-1', tallyCashierRef: null,
+    tallyRejected: false, tallyRejectedClientOrderId: null,
   },
 };
 const orders = { items: [summary], totalItems: 10 };
@@ -41,7 +42,7 @@ const detail: VendureOrder = {
     refunds: [{ id: 'refund-1', total: 600, state: 'Settled', reason: 'Return', lines: [{ orderLineId: 'line-1', quantity: 1 }] }],
   }],
   fulfillments: [{ id: 'fulfillment-1', state: 'Delivered', method: 'collection', trackingCode: '' }],
-  customFields: { ...summary.customFields!, tallyPayments: '[{"method":"cash"}]', tallySnapshot: '{"version":1}' },
+  customFields: { ...summary.customFields!, tallyPayments: '[{"method":"cash"}]', tallySnapshot: '{"version":1}', tallyShipping: null },
 };
 
 afterEach(() => vi.restoreAllMocks());
@@ -59,7 +60,7 @@ describe('Vendure orders', () => {
     } });
     expect(Object.keys(sent.variables.options.sort)).toEqual(['orderPlacedAt', 'id']);
     expect(sent.query.replace(/\s+/g, ' ').trim()).toBe(
-      'query Orders($options: OrderListOptions) { orders(options: $options) { items { id code state orderPlacedAt updatedAt currencyCode totalQuantity total totalWithTax customer { id firstName lastName emailAddress } customFields { tallyClientOrderId tallySaleAt tallyRegisterId tallySessionId tallyCashierRef } } totalItems } }',
+      'query Orders($options: OrderListOptions) { orders(options: $options) { items { id code state orderPlacedAt updatedAt currencyCode totalQuantity total totalWithTax customer { id firstName lastName emailAddress } customFields { tallyClientOrderId tallySaleAt tallyRegisterId tallySessionId tallyCashierRef tallyRejected tallyRejectedClientOrderId } } totalItems } }',
     );
   });
 
@@ -104,7 +105,10 @@ describe('Vendure orders', () => {
 
   it('clamps page sizes and truncates and floors the offset', async () => {
     const spy = vi.spyOn(globalThis, 'fetch');
-    for (const [take, skip, expectedTake, expectedSkip] of [[500, -5, 100, 0], [0, 2.9, 1, 2], [25, -0.5, 25, 0]]) {
+    for (const [take, skip, expectedTake, expectedSkip] of [
+      [500, -5, 100, 0], [0, 2.9, 1, 2], [25, -0.5, 25, 0],
+      [2.7, 0, 2, 0], [NaN, 0, 25, 0], [25, Infinity, 25, 0],
+    ]) {
       spy.mockResolvedValueOnce(Response.json({ data: { orders } }));
       await listVendureOrders(context, { take, skip });
       expect(JSON.parse(spy.mock.calls.at(-1)![1]!.body as string).variables.options)
@@ -191,7 +195,7 @@ describe('Vendure orders', () => {
     expect(sent.query).toContain('refunds');
     expect(sent.query).toContain('orderLineId');
     expect(sent.query).toMatch(/lines\s*{\s*customFields\s*{ tallyCustomName tallyCustomSku tallyUnitPrice tallyPriceIncludesTax tallyClientLineId }/);
-    expect(sent.query).toContain('customFields { tallyClientOrderId tallySaleAt tallyRegisterId tallySessionId tallyCashierRef tallyPayments tallySnapshot }');
+    expect(sent.query).toContain('customFields { tallyClientOrderId tallySaleAt tallyRegisterId tallySessionId tallyCashierRef tallyRejected tallyRejectedClientOrderId tallyPayments tallySnapshot tallyShipping }');
   });
 
   it('returns detail results unchanged or null and rejects malformed orders', async () => {
