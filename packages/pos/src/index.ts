@@ -59,7 +59,7 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, Rece
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
 
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, createSaleCouponSource, COUPONS_UNSUPPORTED, couponRefusal } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, createSaleCouponSource, startCouponUsageRefetch, COUPONS_UNSUPPORTED, couponRefusal } from './sale';
 export type { SaleStage, CatalogueEntry, SaleCoupon, SaleCouponSource } from './sale';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, sameSale, OrderContentMismatchError } from './pos-order';
