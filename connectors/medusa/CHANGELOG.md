@@ -1,5 +1,18 @@
 # @tallyui/connector-medusa
 
+## 3.9.0
+
+### Patch Changes
+
+- c1bf800: Every exports entry gains a `default` condition so CommonJS and `require`-condition resolvers (Node `require`, webpack, Snack's bundler) resolve the packages; `smoke:pack` checks `require.resolve` for every entry.
+- Updated dependencies [39a4583]
+- Updated dependencies [c1bf800]
+- Updated dependencies [3e2245a]
+- Updated dependencies [a3dc028]
+- Updated dependencies [006cfb2]
+- Updated dependencies [19093c2]
+  - @tallyui/core@3.9.0
+
 ## 3.8.0
 
 ### Patch Changes
