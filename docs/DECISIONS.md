@@ -4803,6 +4803,43 @@ interface OrderCreatePayload {
       apart without that reset; until then a coupon that excludes sale items is refused with its reason. The
       regular price is still stored, because (d4) sends it.
     - **Tests.** 14 mutations of the new code were each killed by the pos tests (listed in the PR).
+  - **(d3c) as built (2026-10-07): the sale applies coupons.** `@tallyui/pos`; the sale API only.
+    - **`applyCoupon(code)` and `removeCoupon(code)`.** `useSale` returns both. `applyCoupon` resolves to the
+      refusal to show, or null once applied. `removeCoupon` ignores the gate, so a coupon can always come off; it
+      refuses only while a failed save is pending, as every mutator does, and a code that is not applied changes
+      nothing. Codes are trimmed and lower-cased.
+    - **The gate (R3).** `applyCoupon` refuses with "This store's plugin does not support coupons yet" when any of
+      these holds:
+      - the store's capabilities do not say `coupons: true`;
+      - the app passed no coupon source;
+      - the tax context is not WooCommerce's, where the builder would hold the code but compute no discount.
+
+      It refuses before it looks the coupon up.
+    - **The source.** The app passes `coupons: SaleCouponSource`:
+      - `find(code)` gives the published coupon with its id, its usage already counting the till's own unsent
+        orders (amendment 2);
+      - `productCategories(ids)` gives category ids for lines restored from a parked sale.
+
+      Building that source over the till's `coupons` collection and `pos_orders` is a later step. Until then no
+      app can apply a coupon, so a visitor sees no change.
+    - **Validation.** `validateCoupon` runs before the builder, against:
+      - the sale's product lines in major units;
+      - the codes already applied, and which of them are individual use;
+      - the display subtotal as the spend basis;
+      - the customer's email and numeric id;
+      - the clock.
+
+      Each refusal code has its own cashier-facing sentence (`couponRefusal`). The spend basis is parity-unverified,
+      as `validate.ts` already lists.
+    - **Categories.** `add()` records each product's category ids as the line is added, in one live map that every
+      coupon context passes to the replay. A line added after a coupon therefore gets the coupon's category rules.
+    - **Resume re-applies.** A parked sale's codes are looked up and validated again on resume, one by one, against
+      the restored lines and the codes kept so far. Any code that is missing, invalid, or behind a closed gate is
+      dropped, and the message says why ("Coupon x was removed: …"). The draft is removed only after this, so a
+      source that fails leaves the parked sale in place.
+    - **Not in d3c.** Applied coupons are not checked again when lines, the customer or the tender change. The
+      store checks them again at push, and a refusal there takes (d4)'s path.
+    - **Tests.** 16 mutations of the new code were each killed by the sale tests (listed in the PR).
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
