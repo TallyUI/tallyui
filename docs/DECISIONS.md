@@ -4938,10 +4938,13 @@ interface OrderCreatePayload {
      - Search: `_or` of `code` and `customerLastName` with `contains`.
      - Customer: the `customer(id) { orders }` route.
      - Sort: `{ orderPlacedAt: DESC, id: DESC }`, so pages are stable.
-     - Paging: `take` defaults to 25 and is clamped to 1..100.
+     - Paging: `take` defaults to 25 and is truncated and clamped to 1..100.
   5. **Plugin fields are optional.** `tallyFields` (default true) selects the vendurepos plugin's order and line
      custom fields. Without them, selecting `customFields { … }` is a query error, so a server without the plugin
      passes `tallyFields: false`.
+     - **Rejected orders are listed, not filtered.** The plugin marks an order its store refused with `tallyRejected`
+       (with `tallyRejectedClientOrderId`); such an order counts as never placed, and the app labels it. A server
+       filter `tallyRejected: { eq: false }` would also drop storefront orders, whose value is null.
   6. **Permissions.** Reads need `ReadOrder`, and the customer route also needs `ReadCustomer`. A till role with
      only `TallyPosSell` gets the connector's 403 `ConnectorUnauthorizedError` naming the paths; vendurepos grants
      both to its till role. Errors pass through `gql` unchanged.
