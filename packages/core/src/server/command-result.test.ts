@@ -9,6 +9,10 @@ const warnings = [
 ]
 const applied = { id: 'command_123', status: 'applied', serverRefs, warnings }
 const rejected = { id: 'command_123', status: 'rejected', error: { code: 'invalid', message: '' } }
+const refundEntry = { id: 'refund-1', paymentId: 'payment-1', totalMinor: 700, state: 'Settled' }
+const refund = { totalMinor: 1200, byMethod: { cash: 700, external: 500 }, refunds: [
+  refundEntry, { ...refundEntry, id: 'refund-2', paymentId: 'payment-2', totalMinor: 500 },
+] }
 
 const thrown = (value: unknown): unknown => {
   try {
@@ -88,6 +92,62 @@ it('parses a register applied result without serverRefs and keeps register', () 
   const value = { id: 'c', status: 'applied', register }
   expect(parseCommandResult(value)).toEqual(value)
   expect(parseCommandResult(value)).toHaveProperty('register', register)
+})
+
+it('parses an applied refund without serverRefs and drops undeclared refund fields (ADR-080)', () => {
+  const value = { id: 'c', status: 'applied', refund }
+  expect(parseCommandResult(value)).toStrictEqual(value)
+  expect(parseCommandResult({ ...value, refund: { ...refund, extra: true,
+    refunds: refund.refunds.map(entry => ({ ...entry, extra: true })),
+  } })).toStrictEqual(value)
+  const parsed = parseCommandResult(value).refund!
+  expect(parsed).not.toBe(refund)
+  expect(parsed.byMethod).not.toBe(refund.byMethod)
+  expect(parsed.refunds[0]).not.toBe(refundEntry)
+})
+
+it('accepts a zero refund total and zero amounts', () => {
+  const value = { id: 'c', status: 'applied', refund: {
+    totalMinor: 0, byMethod: {}, refunds: [{ ...refundEntry, totalMinor: 0 }],
+  } }
+  expect(parseCommandResult(value)).toStrictEqual(value)
+})
+
+it.each([
+  ['refund', null], ['refund', []], ['refund', new Date()],
+  ['refund.totalMinor', { ...refund, totalMinor: 1.5 }],
+  ['refund.totalMinor', { ...refund, totalMinor: -1 }],
+  ['refund.totalMinor', { ...refund, totalMinor: Number.MAX_SAFE_INTEGER + 1 }],
+  ['refund.totalMinor', { ...refund, totalMinor: undefined }],
+  ['refund.byMethod', { ...refund, byMethod: null }],
+  ['refund.byMethod', { ...refund, byMethod: [] }],
+  ['refund.byMethod', { ...refund, byMethod: new Date() }],
+  ['refund.byMethod', { ...refund, byMethod: { '': 1200 } }],
+  ['refund.byMethod.cash', { ...refund, byMethod: { cash: -1 } }],
+  ['refund.byMethod.cash', { ...refund, byMethod: { cash: 1.5 } }],
+  ['refund.byMethod.cash', { ...refund, byMethod: { cash: Number.MAX_SAFE_INTEGER + 1 } }],
+  ['refund.byMethod.cash', { ...refund, byMethod: { cash: '1200' } }],
+  ['refund.byMethod', { ...refund, byMethod: { cash: 1201 } }],
+  ['refund.refunds', { ...refund, refunds: [] }],
+  ['refund.refunds', { ...refund, refunds: {} }],
+  ['refund.refunds[0]', { ...refund, refunds: [null] }],
+  ['refund.refunds[0]', { ...refund, refunds: [[]] }],
+  ['refund.refunds[0]', { ...refund, refunds: [new Date()] }],
+  ['refund.refunds[0].id', { ...refund, refunds: [{ ...refundEntry, id: '' }] }],
+  ['refund.refunds[0].id', { ...refund, refunds: [{ ...refundEntry, id: 1 }] }],
+  ['refund.refunds[0].paymentId', { ...refund, refunds: [{ ...refundEntry, paymentId: undefined }] }],
+  ['refund.refunds[0].paymentId', { ...refund, refunds: [{ ...refundEntry, paymentId: '' }] }],
+  ['refund.refunds[1].paymentId', { ...refund, refunds: [refundEntry, { ...refundEntry, paymentId: 1 }] }],
+  ['refund.refunds[0].totalMinor', { ...refund, refunds: [{ ...refundEntry, totalMinor: 1.5 }] }],
+  ['refund.refunds[0].totalMinor', { ...refund, refunds: [{ ...refundEntry, totalMinor: -1 }] }],
+  ['refund.refunds[0].totalMinor', { ...refund, refunds: [{ ...refundEntry, totalMinor: Number.MAX_SAFE_INTEGER + 1 }] }],
+  ['refund.refunds[0].state', { ...refund, refunds: [{ ...refundEntry, state: '' }] }],
+  ['refund.refunds[0].state', { ...refund, refunds: [{ ...refundEntry, state: 1 }] }],
+  ['refund.refunds', { ...refund, refunds: [{ ...refundEntry, totalMinor: 1201 }] }],
+])('rejects an invalid %s with its first bad path', (field, value) => {
+  const error = thrown({ ...applied, refund: value })
+  expect(error).toBeInstanceOf(CommandResultError)
+  expect((error as Error).message).toBe(`Invalid ${field}`)
 })
 
 it('keeps error.data on a rejected result', () => {
