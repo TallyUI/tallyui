@@ -1,6 +1,6 @@
 ---
 title: Replication
-description: Offline-first bidirectional sync between local RxDB and remote APIs
+description: Pull-based product replication from backend APIs into local RxDB, with checkpoint adapters, platform storage setup, and sync error handling.
 ---
 
 Tally UI uses RxDB's replication protocol to keep local data in sync with your backend. Each connector ships with replication adapters that handle the specifics of its API -- pagination, checkpoints, and conflict resolution are all built in.
