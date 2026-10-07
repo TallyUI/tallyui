@@ -8,7 +8,9 @@ import { wooProductTraits as traits } from '@tallyui/connector-woocommerce';
 import { orderDraftSchema } from '../order';
 import { TaxProvider } from '../tax';
 import { catalogueEntries } from './catalogue';
-import { COUPONS_UNSUPPORTED, type SaleCoupon, type SaleCouponSource } from './coupons';
+import type { SaleCoupon, SaleCouponSource } from './woocommerce/coupons';
+import { createDiscountCodes } from './woocommerce/discount-codes';
+import { COUPONS_UNSUPPORTED } from './discount-codes';
 import { SALE_SAVING, useSale } from './use-sale';
 
 const entries = catalogueEntries([
@@ -46,7 +48,7 @@ describe('useSale coupons', () => {
       return <TaxProvider {...taxProps} rounding={woo ? rounding : undefined}>{children}</TaxProvider>;
     }
     const options: SaleOptions = { registerId: 'register-1', cashierRef: 'cashier@store.test',
-      capabilities: { orderCreate: 6, coupons: true }, drafts: db.pos_drafts, coupons, ...overrides };
+      capabilities: { orderCreate: 6, coupons: true }, drafts: db.pos_drafts, discountCodes: coupons && createDiscountCodes(coupons), ...overrides };
     return { ...renderHook((opts: SaleOptions) => useSale({ currency: 'GBP' }, opts), { wrapper: Wrapper, initialProps: options }), options };
   }
   function add(result: { current: ReturnType<typeof useSale> }, index = 0) {

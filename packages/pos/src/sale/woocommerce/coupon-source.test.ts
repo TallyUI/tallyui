@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wooCouponSchema, wooProductSchema } from '@tallyui/connector-woocommerce';
-import { posOrderCollection } from '../pos-order/schema';
-import { uuidv7 } from '../pos-order';
-import type { PosOrder } from '../pos-order/types';
+import { posOrderCollection } from '../../pos-order/schema';
+import { uuidv7 } from '../../pos-order';
+import type { PosOrder } from '../../pos-order/types';
 import type { SaleCouponSource } from './coupons';
 import { createSaleCouponSource } from './coupon-source';
 

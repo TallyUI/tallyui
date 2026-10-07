@@ -1,8 +1,6 @@
 import { minorUnitDigits, woocommerceCoupons } from '@tallyui/core';
-import type { LineItem } from '../order';
+import type { LineItem } from '../../order';
 
-/** applyCoupon's refusal when the store cannot take coupons (ADR-077 R2, R3). */
-export const COUPONS_UNSUPPORTED = "This store's plugin does not support coupons yet";
 /** A WooCommerce coupon as the sale needs it: the engine's input and the connector's numeric id. */
 export type SaleCoupon = woocommerceCoupons.CouponInput & { id: number };
 /** Where the sale finds coupons (ADR-077 amendment 2); the app builds it over the till's coupons collection. */

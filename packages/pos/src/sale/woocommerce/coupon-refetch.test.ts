@@ -4,12 +4,12 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wooCouponSchema } from '@tallyui/connector-woocommerce';
 import type { ReconcileFeedEntry } from '@tallyui/core';
-import { posOrderCollection } from '../pos-order/schema';
-import { uuidv7 } from '../pos-order';
-import type { PosOrder } from '../pos-order/types';
+import { posOrderCollection } from '../../pos-order/schema';
+import { uuidv7 } from '../../pos-order';
+import type { PosOrder } from '../../pos-order/types';
 import { APPLIED_USE_GRACE_MS } from './coupon-source';
 import { startCouponUsageRefetch } from './coupon-refetch';
-import { saleLogger } from './use-sale';
+import { saleLogger } from '../use-sale';
 
 let db: RxDatabase<{ coupons: RxCollection; pos_orders: RxCollection<PosOrder> }>;
 let runners: Array<{ stop(): void }>;

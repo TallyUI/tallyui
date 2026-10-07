@@ -1,8 +1,8 @@
 import type { ReconcileFeedEntry } from '@tallyui/core';
 import type { RxCollection } from 'rxdb';
-import type { PosOrder } from '../pos-order/types';
+import type { PosOrder } from '../../pos-order/types';
 import { APPLIED_USE_GRACE_MS } from './coupon-source';
-import { saleLogger } from './use-sale';
+import { saleLogger } from '../use-sale';
 
 export function startCouponUsageRefetch(deps: {
   orders: RxCollection<PosOrder>;

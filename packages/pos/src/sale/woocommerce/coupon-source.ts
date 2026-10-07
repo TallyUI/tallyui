@@ -1,5 +1,5 @@
 import type { RxCollection } from 'rxdb';
-import type { PosOrder } from '../pos-order/types';
+import type { PosOrder } from '../../pos-order/types';
 import type { SaleCoupon, SaleCouponSource } from './coupons';
 
 /** How long an applied order still counts when no pull has rewritten its coupon: a refetch that finds the coupon unchanged writes nothing, and the store is authoritative (ADR-077 amendment 2). */
