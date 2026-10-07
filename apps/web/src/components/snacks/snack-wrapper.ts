@@ -1,4 +1,4 @@
-import { tallyVersion } from '@/lib/site';
+import { tallyVersion } from '../../lib/site';
 import componentsPackage from '../../../../../packages/components/package.json';
 
 /**
@@ -104,6 +104,8 @@ export const snackDependencies = [
   'react-native-svg',
   `rxdb@${componentsPackage.devDependencies.rxdb}`,
   `rxjs@${componentsPackage.devDependencies.rxjs}`,
+  // rxdb lists vue as an optional peer ('*'); Snack reports it missing unless it is listed.
+  'vue@3.5.13',
 ].join(',');
 
 /**
@@ -144,4 +146,6 @@ export const propsSnackDependencies = [
   'react-native-svg',
   `rxdb@${componentsPackage.devDependencies.rxdb}`,
   `rxjs@${componentsPackage.devDependencies.rxjs}`,
+  // rxdb lists vue as an optional peer ('*'); Snack reports it missing unless it is listed.
+  'vue@3.5.13',
 ].join(',');
