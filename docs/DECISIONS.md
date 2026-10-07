@@ -4997,6 +4997,39 @@ interface OrderCreatePayload {
       - Other registers see the use only on their own next pull of that coupon.
     - **Tests.** The reviewer applied 21 source mutations and 17 refetch mutations. All were killed except two refetch
       mutations, which are equivalent. They are listed in the PR.
+  - **Amendment 3 (front desk, 2026-10-07): the sale takes the platform's discount codes.** One-way; `@tallyui/pos`.
+    This follows Paul's ruling of 2026-10-07: each platform keeps its own model, and the POS is not normalised to WCPOS
+    v2's shape. The (d3c) sale API put WooCommerce's coupon rules inside `useSale`. (d6) moves them behind a contract
+    that the connector's app supplies. No behaviour changes, and #513 to #522 are not reworked.
+    - **The contract, `SaleDiscountCodes`.** `useSale({ discountCodes })` replaces the `coupons` option. It has five
+      parts:
+      - `supports({ capabilities, rounding })` says whether this sale can carry codes at all;
+      - `find(code, state)` gives the platform's own record of the code, or a refusal in the platform's own words;
+      - `check(code, found, state)` gives a refusal, or null, against the sale as it stands (its lines, the codes
+        already accepted, the customer, the categories);
+      - `apply(builder, state)` puts every accepted code into the order builder;
+      - `beforeResume(state)`, optional, loads what a parked sale needs before its codes are checked again.
+
+      `useSale` keeps the steps and messages around it: trimming and lower-casing, the gate (capabilities say
+      `coupons: true`, the store accepts `order.create` 6, and `supports`), a stale answer after `newSale`,
+      re-applying on resume, and `removeCoupon` through the implementation that accepted the codes, even after the gate
+      closes. A refusal is shown to the cashier as given. A thrown `apply` leaves the code off the sale. Refusing a
+      code already on the sale is the platform's: WooCommerce's `find` does it before any lookup, as (d3c) did.
+    - **The WooCommerce implementation.** `woocommerceDiscountCodes.createDiscountCodes(source)` is (d3c)'s rules over
+      (d5)'s source, unchanged: `supports` means the WooCommerce tax strategy, `check` is `validateCoupon` with
+      `couponRefusal`'s sentences, and `apply` is `setCoupons`. `createSaleCouponSource`, `startCouponUsageRefetch`,
+      `couponRefusal` and the `SaleCoupon` types move with it, under `woocommerceDiscountCodes` and
+      `packages/pos/src/sale/woocommerce/`.
+    - **What stays WooCommerce-shaped, on purpose.** The order builder's coupon replay (`OrderCouponContext`,
+      `woocommerceCouponReplay`), `pos_orders` v9's coupon fields and the `order.create` 6 envelope are as (d1) to
+      (d4a) built them. They are the WooCommerce implementation's output, and they stay until a second platform needs
+      a different one.
+    - **What another platform supplies.** A Medusa promotions row supplies its own `SaleDiscountCodes`: `find` over
+      its promotions, `check` with Medusa's own rules, budgets and wording, and `apply` with Medusa's adjustments,
+      which needs its own builder replay and its own fields in the envelope. Those are that row's design, under this
+      contract.
+    - **Tests.** 7 new tests use a non-WooCommerce fake. The reviewer applied 23 mutations: 21 were killed and 2 are
+      equivalent. They are listed in the PR.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 

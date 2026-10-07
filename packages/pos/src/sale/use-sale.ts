@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
-import { minorUnitDigits, woocommerceCoupons } from '@tallyui/core';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
@@ -12,7 +11,7 @@ import { createLogger } from '../logging';
 import type { CatalogueEntry } from './catalogue';
 import { addEntryToCart, CartError } from './cart';
 import { productCategories } from '../product/categories';
-import { COUPONS_UNSUPPORTED, couponLineItems, couponRefusal, type SaleCoupon, type SaleCouponSource } from './coupons';
+import { COUPONS_UNSUPPORTED, type SaleDiscountCodes, type SaleDiscountState } from './discount-codes';
 
 /** Logs a throw from onSaleCompleted for a confirmed pending completion newSale() has abandoned (Continue): nothing else would ever surface it. */
 export const saleLogger = createLogger('sale');
@@ -34,8 +33,8 @@ export const HUNG_SAVE_CHECK_MS = 5000;
 /** Call under a `TaxProvider`: its tax context and the settings' currency price every sale. */
 export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscountsSequentially'>, opts: {
   registerId: string; cashierRef: string; capabilities?: ServerCapabilities;
-  /** Where applyCoupon finds coupons (ADR-077); without it, applyCoupon refuses with COUPONS_UNSUPPORTED. */
-  coupons?: SaleCouponSource;
+  /** The platform's discount codes (ADR-077 amendment 3), e.g. woocommerceDiscountCodes.createDiscountCodes(source); without them, applyCoupon refuses with COUPONS_UNSUPPORTED. */
+  discountCodes?: SaleDiscountCodes<any>;
   /** Where `park()` keeps parked carts; create it with `orderDraftSchema` */
   drafts?: RxCollection;
   /**
@@ -68,12 +67,15 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   // The live builder, which every mutator reads (#301): newSale() sets it before setBuilder(next) renders, so a
   // call from an older render never reaches a discarded builder. The state only moves the `order` subscription.
   const builderNow = useRef(rendered);
-  const applied = useRef(new Map<string, SaleCoupon>());
+  const applied = useRef(new Map<string, unknown>());
+  const appliedWith = useRef<SaleDiscountCodes<any> | null>(null);
   const categories = useRef(new Map<number, { id: number }[]>());
-  function couponContext(coupons = applied.current) {
-    return { configs: woocommerceCoupons.toCouponConfigs([...coupons.keys()], coupons),
-      couponIds: new Map([...coupons].map(([code, coupon]) => [code, String(coupon.id)])),
-      productCategories: categories.current, calcDiscountsSequentially: settings.calcDiscountsSequentially ?? false };
+  function discountState(order: Order, accepted: ReadonlyMap<string, unknown>): SaleDiscountState<unknown> {
+    return { order, accepted, categories: categories.current, settings: { calcDiscountsSequentially: settings.calcDiscountsSequentially } };
+  }
+  function codesFor(): SaleDiscountCodes<any> | null {
+    return opts.capabilities?.coupons === true && (opts.capabilities?.orderCreate ?? 1) >= 6 && opts.discountCodes
+      && opts.discountCodes.supports({ capabilities: opts.capabilities, rounding: taxContext.rounding }) ? opts.discountCodes : null;
   }
   const [order, setOrder] = useState(() => rendered.getSnapshot());
   const [stage, setStage] = useState<SaleStage>({ kind: 'cart' });
@@ -139,6 +141,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (customer !== null) next.setCustomer(customer);
     builderNow.current = next;
     applied.current.clear();
+    appliedWith.current = null;
     setBuilder(next);
     setOrder(next.getSnapshot());
     setStage({ kind: 'cart' });
@@ -371,27 +374,23 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       return null;
     },
     removeDiscount(id: string) { if (!locked()) builderNow.current.removeDiscount(id); },
-    /** ADR-077 (d3): validates and applies a WooCommerce coupon; resolves to the refusal to show, or null once applied. */
+    /** ADR-077: looks up, checks and applies a discount code through the platform's discount codes; resolves to the refusal to show, or null once applied. */
     async applyCoupon(code: string): Promise<string | null> {
       if (locked()) return SALE_SAVING;
-      if (opts.capabilities?.coupons !== true || (opts.capabilities?.orderCreate ?? 1) < 6 || !opts.coupons || taxContext.rounding?.granularity !== 'woocommerce') return COUPONS_UNSUPPORTED;
+      const codes = codesFor();
+      if (!codes) return COUPONS_UNSUPPORTED;
       const builder = builderNow.current, normalized = code.trim().toLowerCase();
       if (!normalized) return 'Enter a coupon code';
-      if (applied.current.has(normalized)) return couponRefusal(normalized, { code: 'already_applied' });
-      const coupon = await opts.coupons.find(normalized);
-      if (!coupon) return `Coupon ${normalized} does not exist`;
+      const result = await codes.find(normalized, discountState(builder.getSnapshot(), applied.current));
+      if ('refusal' in result) return result.refusal;
       if (locked() || builderNow.current !== builder) return 'The sale changed while the coupon was being checked; apply it again';
-      const snapshot = builder.getSnapshot(), customerId = snapshot.customer && Number(snapshot.customer.id);
-      const validation = woocommerceCoupons.validateCoupon(coupon, {
-        lineItems: couponLineItems(snapshot.lineItems, snapshot.currency, categories.current), appliedCoupons: [...applied.current.keys()],
-        appliedCouponsWithIndividualUse: [...applied.current].filter(([, value]) => value.individual_use).map(([key]) => key),
-        cartSubtotal: snapshot.display.subtotalMinor / 10 ** minorUnitDigits(snapshot.currency),
-        customerEmail: snapshot.customer?.email ?? '', customerId: Number.isSafeInteger(customerId) ? customerId : null, now: Date.now(),
-      });
-      if (!validation.valid) return couponRefusal(normalized, validation.rejection);
-      try { builder.setCoupons([...applied.current.keys(), normalized], couponContext(new Map([...applied.current, [normalized, coupon]]))); }
+      const refusal = codes.check(normalized, result.found, discountState(builder.getSnapshot(), applied.current));
+      if (refusal !== null) return refusal;
+      const next = new Map([...applied.current, [normalized, result.found]]);
+      try { codes.apply(builder, discountState(builder.getSnapshot(), next)); }
       catch (error) { if (error instanceof Error) return error.message; throw error; }
-      applied.current.set(normalized, coupon);
+      applied.current.set(normalized, result.found);
+      appliedWith.current = codes;
       setError(null);
       return null;
     },
@@ -401,7 +400,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const normalized = code.trim().toLowerCase();
       if (!applied.current.has(normalized)) return null;
       const remaining = new Map(applied.current); remaining.delete(normalized);
-      builderNow.current.setCoupons([...remaining.keys()], couponContext(remaining));
+      appliedWith.current!.apply(builderNow.current, discountState(builderNow.current.getSnapshot(), remaining));
       applied.current.delete(normalized);
       return null;
     },
@@ -563,29 +562,20 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
           }
         }
       }
-      const kept = new Map<string, SaleCoupon>(), messages: string[] = [];
+      const kept = new Map<string, unknown>(), messages: string[] = [];
+      const codes = saved.coupons?.length ? codesFor() : null;
       if (n > 0) messages.push(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
       if (saved.coupons?.length) {
-        const supported = opts.capabilities?.coupons === true && (opts.capabilities?.orderCreate ?? 1) >= 6 && opts.coupons && taxContext.rounding?.granularity === 'woocommerce';
-        if (supported) {
-          const ids = builder.getSnapshot().lineItems.filter((line) => !line.custom).map((line) => Number(line.productId)).filter((id) => Number.isSafeInteger(id) && id >= 0);
-          for (const [id, values] of await opts.coupons!.productCategories(ids)) if (values.length) categories.current.set(id, [...values]);
-        }
+        const supported = codes !== null;
+        if (supported) await codes.beforeResume?.(discountState(builder.getSnapshot(), new Map()));
         for (const { code } of saved.coupons) {
           let reason: string | null = supported ? null : COUPONS_UNSUPPORTED;
           if (supported) {
-            const coupon = await opts.coupons!.find(code);
-            if (!coupon) reason = `Coupon ${code} does not exist`;
+            const result = await codes.find(code, discountState(builder.getSnapshot(), kept));
+            if ('refusal' in result) reason = result.refusal;
             else {
-              const snapshot = builder.getSnapshot(), customerId = snapshot.customer && Number(snapshot.customer.id);
-              const validation = woocommerceCoupons.validateCoupon(coupon, {
-                lineItems: couponLineItems(snapshot.lineItems, snapshot.currency, categories.current), appliedCoupons: [...kept.keys()],
-                appliedCouponsWithIndividualUse: [...kept].filter(([, value]) => value.individual_use).map(([key]) => key),
-                cartSubtotal: snapshot.display.subtotalMinor / 10 ** minorUnitDigits(snapshot.currency),
-                customerEmail: snapshot.customer?.email ?? '', customerId: Number.isSafeInteger(customerId) ? customerId : null, now: Date.now(),
-              });
-              if (!validation.valid) reason = couponRefusal(code, validation.rejection);
-              else try { builder.setCoupons([...kept.keys(), code], couponContext(new Map([...kept, [code, coupon]]))); kept.set(code, coupon); }
+              reason = codes.check(code, result.found, discountState(builder.getSnapshot(), kept));
+              if (reason === null) try { codes.apply(builder, discountState(builder.getSnapshot(), new Map([...kept, [code, result.found]]))); kept.set(code, result.found); }
               catch (error) { if (error instanceof Error) reason = error.message; else throw error; }
             }
           }
@@ -599,6 +589,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       }
       resetSale(null, builder);
       applied.current = kept;
+      appliedWith.current = kept.size ? codes : null;
       if (messages.length) setError(messages.join(' '));
       return null;
     },
