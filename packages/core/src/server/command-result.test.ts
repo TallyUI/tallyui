@@ -129,6 +129,7 @@ it.each([
   ['refund.byMethod.cash', { ...refund, byMethod: { cash: '1200' } }],
   ['refund.byMethod', { ...refund, byMethod: { cash: 1201 } }],
   ['refund.refunds', { ...refund, refunds: [] }],
+  ['refund.refunds', { totalMinor: 0, byMethod: {}, refunds: [] }],
   ['refund.refunds', { ...refund, refunds: {} }],
   ['refund.refunds[0]', { ...refund, refunds: [null] }],
   ['refund.refunds[0]', { ...refund, refunds: [[]] }],

@@ -96,6 +96,14 @@ describe('precheckCommand', () => {
       } })
   })
 
+  it('names the highest refund version a server lists', () => {
+    expect(precheckCommand({ ...command, type: 'order.refund', version: 3 }, { ...server, orderRefund: [1, 2] }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.refund version 3 is not supported; this server supports 1, 2',
+        data: { orderRefund: 2 },
+      } })
+  })
+
   it.each([{}, { orderRefund: [] }])('takes no refunds when the refund list is absent or empty (%j)', capability => {
     expect(precheckCommand({ ...command, type: 'order.refund' }, { ...server, ...capability }))
       .toEqual({ id: command.id, status: 'rejected', error: {
