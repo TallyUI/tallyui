@@ -179,8 +179,8 @@ export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any
   const order = (n: number, syncStatus?: string): OlderPosOrder => ({ ...sale(n, syncStatus), ...(from >= 1 ? { sessionId: `session-${n}` } : {}),
     ...(from >= 6 ? { taxRounding: DEFAULT_TAX_ROUNDING } : {}) });
   // Version 5's migration records each order's content version as sent: a sale() has no discount, so 1. Version 6's
-  // records the default tax rounding.
-  const moved = (...orders: OlderPosOrder[]) => orders.map((o) => ({ ...o, sentVersion: o.sentVersion ?? 1, taxRounding: DEFAULT_TAX_ROUNDING }));
+  // records the default tax rounding. An order stored at version 5 or later has passed neither step, so it keeps what it had.
+  const moved = (...orders: OlderPosOrder[]) => orders.map((o) => ({ ...o, ...(from < 5 ? { sentVersion: o.sentVersion ?? 1 } : {}), taxRounding: DEFAULT_TAX_ROUNDING }));
   // A sale rung at the current version, which finalize records its tax rounding on.
   const current = (n: number): PosOrder => ({ ...order(n), taxRounding: DEFAULT_TAX_ROUNDING });
 
