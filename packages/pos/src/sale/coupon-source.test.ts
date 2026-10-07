@@ -39,8 +39,10 @@ afterEach(async () => { await db.remove(); });
 describe('createSaleCouponSource', () => {
   it('copies only CouponInput fields present on the document, with defaults for usage', async () => {
     await db.coupons.insert({ ...coupon, description: 'Not a CouponInput field' });
-    expect(await source.find('save10')).toEqual({ id: 101, code: 'save10', discount_type: 'percent', amount: '10',
+    const result = await source.find('save10');
+    expect(result).toEqual({ id: 101, code: 'save10', discount_type: 'percent', amount: '10',
       usage_count: 0, used_by: [] });
+    expect(Object.keys(result!).sort()).toEqual(['amount', 'code', 'discount_type', 'id', 'usage_count', 'used_by']);
   });
 
   it.each(['percent', 'fixed_cart', 'fixed_product'])('copies all supplied CouponInput fields for %s', async (discount_type) => {
@@ -113,6 +115,14 @@ describe('createSaleCouponSource', () => {
       order({ coupons: [appliedCoupon], customer: { name: 'Guest' } }),
     ]);
     expect(await source.find('save10')).toMatchObject({ usage_count: 2, used_by: [] });
+  });
+
+  it('never counts a rejected order, even when fresh', async () => {
+    const doc = await db.coupons.insert(coupon);
+    const lwt = doc.toJSON(true)._meta.lwt;
+    await db.pos_orders.insert(order({ coupons: [appliedCoupon], syncStatus: 'rejected', customer: { id: '8' },
+      updatedAt: new Date(Math.ceil(lwt) + 1).toISOString() }));
+    expect(await source.find('save10')).toMatchObject({ usage_count: 0, used_by: [] });
   });
 
   it('counts an applied order until a later pull rewrites the coupon', async () => {
