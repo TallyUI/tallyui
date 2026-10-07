@@ -4896,6 +4896,75 @@ interface OrderCreatePayload {
     - **The R4 exception in practice.** A 201 whose store total differs stays `applied` with `serverRefs` and the
       `total_mismatch` warning; this needed no new code.
     - **Tests.** 14 mutations of the new code were each killed by the connector tests (listed in the PR).
+  - **Rulings on (d4b) (front desk, 2026-10-07):**
+    - **Q-d4b-1, the marker.** `pos_orders` v9 carries one optional `reopenedAt`. Needs attention hides a rejected
+      order that has it; the order stays as the record and is never sent again.
+    - **Q-d4b-2, the payments.** The parked sale carries the refused order's payments as stored, and the cashier
+      collects the difference.
+    - **R5, counted once.** A rejected order with `reopenedAt` counts nowhere: not in the Z report, the cash counts,
+      or any local expected figure. Its payments count once, on the new order. R5 covers open sessions only (Q-d4b-5).
+    - **Q-d4b-3, the rebuild.** The parked sale is rebuilt from the stored figures, with no snapshot field:
+      - parked prices kept;
+      - discounts as fixed amounts with their labels;
+      - each product line's tax class from the catalogue, else `standard`;
+      - stored regular prices kept;
+      - no coupons.
+    - **Q-d4b-4, the action.** A cashier action, `reopenRefusedOrder`, for `coupon_invalid` and `total_mismatch`
+      only. The refusal's message is the note's prefix. Those two codes get no Retry. The UI is phase (e).
+    - **Q-d4b-5, a closed session.** A refusal that arrives after the order's register session has closed is refused
+      by `reopenRefusedOrder` with `session_closed`, and the order stays in Needs attention for a manual settle. The
+      closed Z report has counted that cash, so carrying the payments would count it twice and dropping them would
+      orphan it. The manual-settle wording is phase (e).
+  - **A WooCommerce-side item: the refused create's leftover order** (the WooCommerce lane's probe on the dev store,
+    2026-10-07; not checked on HPOS stores):
+    - A create refused with `woocommerce_rest_invalid_coupon` still leaves an order in WooCommerce. It is
+      `checkout-draft` and unpaid, has no coupon lines and the total without coupons, carries `_woocommerce_pos_uuid`,
+      and the 400's `data.new_draft_order_id` names it.
+    - A later create with the same uuid reuses that order and answers 200 with it, still `checkout-draft`: completed
+      and paid are not applied, with or without the coupon. A resend would therefore look applied for an unpaid
+      draft. The till never resends such an order: `requeue` skips `coupon_invalid` and `total_mismatch`, and the
+      reopen's sale is a new order with a new id.
+    - Still to do, on the WooCommerce side: one refused create should not leave a draft behind. The mapping cancels
+      the order `new_draft_order_id` names, or the plugin removes it on refusal; reuse is ruled out by the 200 above.
+      The WooCommerce lane picks the side and owns the change (TallyUI's fork for anything in the plugin).
+  - **(d4b) as built (2026-10-07): the reopen.** One-way; `@tallyui/pos`.
+    - **Counted once (R5).** `isReopened(order)` is true for a `rejected` order with `reopenedAt`. Such an order is
+      left out of:
+      - `needsAttention`;
+      - the outbox's `rejected` count;
+      - the Z report (`writeClosure`);
+      - `useRegisterSession`'s expected figures, `salesCount` and close-approval check.
+
+      `requeue` never resends `coupon_invalid` or `total_mismatch`.
+    - **`reopenRefusedOrder(orderId, deps)`.** It refuses with `ReopenRefusedOrderError`, whose `reason` is one of:
+      - `not_found`;
+      - `not_rejected`;
+      - `code_not_reopenable`;
+      - `already_reopened`;
+      - `session_closed`, when the order's `sessionId` names a session that is closed or missing. A late
+        association (`lateSessionId`) does not block.
+    - **The parked sale.**
+      - **Its id is the refused order's id.** A retry therefore rewrites the same draft. When the sale is finalized,
+        its `saleId` names the refused order, and the new order gets a fresh id. A prefixed id would be longer than the
+        36 characters `saleId` allows.
+      - **Line discounts.** When the receipt rows can be trusted, the line discounts come from them as fixed amounts
+        with their labels, and the order discount as one fixed `Discount`. The rows can be trusted when the order has
+        `display` and either no line is in the other tax mode or the order had coupons. Otherwise each line gets one
+        fixed `Discount` of its stored `discountMinor`, in the line's own mode.
+      - **Line figures.** Each line keeps its stored tax rates and regular price. Under WooCommerce rounding the tax
+        class decides the rates instead: the catalogue's class (`taxClassOf`), else `standard`. Custom lines keep
+        their own class and status.
+      - **Fees, shipping and payments.** Fees and shipping are copied. Payments are copied with method, amount and
+        reference.
+      - **The customer.** It is copied when it has an id and a name and passes `customerRefusal`.
+      - **The note.** It is `Refused by the store: <message>`, followed by the original note on a new line.
+      - **No coupons.**
+    - **The order of writes.** The draft is written first. The order is then marked with `reopenedAt` inside
+      `incrementalModify`, only while it is still rejected and unmarked, so a mark made in the meantime stands.
+    - **Resuming.** "Parked prices kept" is the caller's choice: phase (e) resumes the draft with
+      `resume(id, { keepParkedPrices: true })`.
+    - **Tests.** The reviewer applied 7 R5 mutations and 21 reopen mutations; each was killed by the pos tests. They are
+      listed in the PR.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
