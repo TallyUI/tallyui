@@ -134,6 +134,8 @@ describe('createWooCommandTransport', () => {
       ['Coupon code is required.', 'Coupon code is required.', undefined],
       ['Coupon &quot;other&quot; cannot be applied.', 'Coupon "other" cannot be applied.', undefined],
       ['  <b>&quot;ten&quot;</b>\n &amp; &lt; &gt; &#39; &apos; &#x24;  ', '"ten" & < > \' \' $', 'ten'],
+      ['Coupon &quot;ten&quot; &#99999999; &#x110000;', 'Coupon "ten" &#99999999; &#x110000;', 'ten'],
+      ['&#x10FFFF;', String.fromCodePoint(0x10FFFF), undefined],
       ['<b> \n </b>', 'status_400', undefined], [undefined, 'status_400', undefined], [123, 'status_400', undefined],
     ])('rejects the captured coupon refusal %s without retrying', async (message, decoded, couponCode) => {
       const envelope = structuredClone(couponEnvelope);
