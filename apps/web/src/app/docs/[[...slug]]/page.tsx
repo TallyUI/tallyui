@@ -5,6 +5,7 @@ import { getMDXComponents } from '@/mdx-components';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { LLMCopyButton, ViewOptions } from '@/components/ai/page-actions';
+import { docsPageMetadata } from '@/lib/docs-metadata';
 import { gitConfig } from '@/lib/layout.shared';
 import { siteUrl } from '@/lib/site';
 import { breadcrumbJsonLd, jsonLdScript, type Crumb } from '@/lib/structured-data';
@@ -56,12 +57,11 @@ export async function generateMetadata(props: PageProps<'/docs/[[...slug]]'>): P
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
-  return {
+  return docsPageMetadata({
     title: page.data.title,
     description: page.data.description,
-    alternates: { canonical: page.url },
-    openGraph: {
-      images: getPageImage(page).url,
-    },
-  };
+    url: page.url,
+    slugs: page.slugs,
+    imageUrl: getPageImage(page).url,
+  });
 }
