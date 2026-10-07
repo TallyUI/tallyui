@@ -8,4 +8,6 @@
 - a line's `attributes` (#495);
 - a line's `regularUnitPriceMinor`.
 
+It also lets an order's `sentVersion` and `downgradedFrom` be 6, ready for order.create version 6 (ADR-077 d4).
+
 The migration from version 8 is the identity, so every stored order is kept byte for byte. This is a one-way storage change (ADR-069). A till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.
