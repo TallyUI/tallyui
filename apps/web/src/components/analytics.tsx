@@ -14,26 +14,40 @@ const POSTHOG_HOST = 'https://ph.wcpos.com';
 // Sent on every event so dashboards can filter by site.
 const SITE = 'tallyui.com';
 
+// Any of these on window means a person is on the page; posthog-js is only fetched then, to keep it out of the initial load.
+const INTERACTION_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'scroll', 'wheel'] as const;
+
 export function Analytics(): null {
   useEffect(() => {
     let cancelled = false;
 
-    import('posthog-js').then(({ default: posthog }) => {
-      if (cancelled) return;
-      posthog.init(POSTHOG_KEY, {
-        api_host: POSTHOG_HOST,
-        persistence: 'memory',
-        autocapture: false,
-        capture_pageview: 'history_change',
-        person_profiles: 'never',
-        disable_session_recording: true,
-        disable_external_dependency_loading: true,
-        before_send: (event) => event && { ...event, properties: { ...event.properties, site: SITE } },
+    const load = () => {
+      for (const type of INTERACTION_EVENTS) {
+        window.removeEventListener(type, load, { capture: true });
+      }
+
+      import('posthog-js').then(({ default: posthog }) => {
+        if (cancelled) return;
+        posthog.init(POSTHOG_KEY, {
+          api_host: POSTHOG_HOST,
+          persistence: 'memory',
+          autocapture: false,
+          capture_pageview: 'history_change',
+          person_profiles: 'never',
+          disable_session_recording: true,
+          disable_external_dependency_loading: true,
+          before_send: (event) => event && { ...event, properties: { ...event.properties, site: SITE } },
+        });
       });
-    });
+    };
+
+    for (const type of INTERACTION_EVENTS) window.addEventListener(type, load, { capture: true, passive: true, once: true });
 
     return () => {
       cancelled = true;
+      for (const type of INTERACTION_EVENTS) {
+        window.removeEventListener(type, load, { capture: true });
+      }
     };
   }, []);
 

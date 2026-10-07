@@ -13,6 +13,7 @@ export default defineConfig({
       'apps/demo/**/*.test.ts',
       'apps/web/content/docs/**/*.test.ts',
       'apps/web/src/lib/**/*.test.{ts,tsx}',
+      'apps/web/src/components/**/*.test.tsx',
       'scripts/**/*.test.ts',
     ],
     typecheck: {
