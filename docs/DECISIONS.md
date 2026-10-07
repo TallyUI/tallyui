@@ -4700,6 +4700,15 @@ interface OrderCreatePayload {
           capability is absent;
         - (d4) refuses a sale that still carries a coupon if the capability is gone by push time, and it takes Q3's
           path: the order is reopened as a parked sale with the coupon removed and the reason shown.
+    - **R3, how the till knows the plugin version (2026-10-07).** The front desk took this lane's proposal.
+      - **When the gate opens.** The coupon gate opens when `GET wcpos/v2/site` answers with a `wcpos_version` that
+        parses and is 1.9.0 or later. It also opens when `/status` lists a coupon capability; the WooCommerce lane
+        names that string when one exists. Nothing is added to woocommerce-pos main for it (the core plugin rule).
+      - **When it stays closed.** No readable version and no capability means closed, with R2's reason. That
+        includes a 1.9.x store without `/site`.
+      - **A separate rule.** The `orderCreate` rule is unchanged: it is decided by capability alone, whatever the
+        `/site` version. The coupon gate reads the version once per connection and keeps it with the other
+        capabilities.
   - **(d1) as built (2026-10-07).**
     - **Display.** The display figures come from the lines before the replay. Each coupon is its own row in
       `display.coupons` (its discount, plus its tax in an inclusive store), and `display.discountMinor` includes
@@ -4718,6 +4727,23 @@ interface OrderCreatePayload {
       coupon lines' figures, which are what WooCommerce stores on each coupon line.
     - **Not in d1:** the dev store's own coupon figures and settle's restated scenarios. They come with (d3)'s
       tests.
+  - **(d3a) as built (2026-10-07): the capability (R3).** Two-way; `@tallyui/core` and the WooCommerce connector.
+    - **The field.** `ServerCapabilities` gains an optional `coupons`. Absent means closed.
+    - **Reading `/site`.** `readWooCapabilities` reads `GET /site` after `/status`. It does so only when the
+      `/stores` read gave a capabilities object, and it always sets `coupons` to a boolean.
+      - `wooPluginSupportsCoupons` trims the version, then parses `major.minor[.patch]`, which may carry a
+        pre-release and a build suffix. A missing patch counts as 0.
+      - Any version above 1.9.0 is true. 1.9.0 itself is true only without a pre-release suffix: `1.9.0-beta.1` is
+        false, and `1.9.0+build.5` is true.
+      - Every unclear read gives false: a non-OK answer, a network error, a body that is not JSON, and a version
+        that is missing, not a string or does not parse.
+      - A 401 or 403 from `/site` also gives false and is not an unauthorised error, because `/stores` has already
+        settled authorisation.
+    - **When it is read.** It is read with the other capabilities when the till signs in or restores a session, and
+      it is kept with them (`resolveCapabilities`). A conclusive fresh read replaces the stored one, so a store that
+      now answers false closes the gate; an inconclusive one (`undefined`, from a failed `/stores` read) keeps it.
+    - **No coupon capability yet.** No `/status` coupon capability string exists yet, so none is read.
+    - **Nothing reads `coupons` yet.** The sale API (d3c) is the first reader.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
