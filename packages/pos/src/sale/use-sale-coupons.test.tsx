@@ -69,8 +69,8 @@ describe('useSale coupons', () => {
 
   it.each(['absent capability', 'false capability', 'no source', 'non-WooCommerce'])('refuses with %s before looking up a coupon', async (gate) => {
     const coupons = source();
-    const capabilities = gate === 'absent capability' ? { orderCreate: 3 as const }
-      : { orderCreate: 3 as const, coupons: gate !== 'false capability' };
+    const capabilities = gate === 'absent capability' ? { orderCreate: 6 as const }
+      : { orderCreate: 6 as const, coupons: gate !== 'false capability' };
     const { result } = renderSale(gate === 'no source' ? undefined : coupons, { capabilities }, gate !== 'non-WooCommerce');
     add(result);
     const before = result.current.order;
