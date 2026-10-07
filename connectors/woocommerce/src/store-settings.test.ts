@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, StoreSettingsError, type SyncContext } from '@tallyui/core';
-import { wooStoreSettings, readWooCapabilities, WOO_ORDER_CREATE_VERSION } from './store-settings';
+import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, WOO_ORDER_CREATE_VERSION } from './store-settings';
 import { createWooCommerceConnector } from './index';
 import stores from './__tests__/fixtures/taxes-1.10.20/stores.json';
 import taxes from './__tests__/fixtures/taxes-1.10.20/taxes.json';
@@ -17,6 +17,7 @@ let taxesBody: unknown;
 let classesBody: unknown;
 let secondPage: unknown;
 let statusBody: unknown;
+let siteBody: unknown;
 
 beforeEach(() => {
   storesBody = stores;
@@ -24,10 +25,12 @@ beforeEach(() => {
   classesBody = classes;
   secondPage = [];
   statusBody = { capabilities: ['order_create_v5'] };
+  siteBody = { wcpos_version: '1.10.20' };
   fetchMock.mockReset().mockImplementation(async (input) => {
     const url = new URL(String(input));
     if (url.pathname.endsWith('/stores')) return Response.json(storesBody);
     if (url.pathname.endsWith('/status')) return Response.json(statusBody);
+    if (url.pathname.endsWith('/site')) return Response.json(siteBody);
     if (url.pathname.endsWith('/taxes/classes')) return Response.json(classesBody);
     if (url.pathname.endsWith('/taxes')) return Response.json(url.searchParams.get('page') === '1' ? taxesBody : secondPage);
     throw new Error(`Unexpected request: ${url}`);
@@ -200,11 +203,13 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
       multiplePayments: false,
+      coupons: true,
       lineTax: { none: true, classes: true },
     });
     expect(fetchMock.mock.calls).toEqual([
       [`${context.baseUrl}/stores`, { method: 'GET', headers: context.headers, signal: context.signal }],
       [`${context.baseUrl}/status`, { method: 'GET', headers: context.headers, signal: context.signal }],
+      [`${context.baseUrl}/site`, { method: 'GET', headers: context.headers, signal: context.signal }],
     ]);
   });
 
@@ -216,6 +221,7 @@ describe('readWooCapabilities', () => {
     statusBody = body;
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments,
+      coupons: true,
       lineTax: { none: true, classes: true },
     });
   });
@@ -229,14 +235,16 @@ describe('readWooCapabilities', () => {
     statusBody = body;
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      coupons: true,
       lineTax: { none: true, classes: true },
     });
   });
 
-  it('accepts an explicit v5 advertisement without a site version', async () => {
+  it('accepts an explicit v5 advertisement independently of site version', async () => {
     statusBody = { capabilities: ['order_create_v5'] };
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      coupons: true,
       lineTax: { none: true, classes: true },
     });
   });
@@ -245,23 +253,21 @@ describe('readWooCapabilities', () => {
     statusBody = { capabilities: ['order_create_v5', 'order_payments_list'] };
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: true,
+      coupons: true,
       lineTax: { none: true, classes: true },
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it.each(['1.10.19', '1.11.0'])('uses order version 3 without the flag regardless of site version %s', async (wcpos_version) => {
+  it.each(['1.10.19', '1.11.0'])('uses order version 3 without the flag regardless of site version %s, which only decides coupons', async (wcpos_version) => {
     statusBody = {};
-    const defaultFetch = fetchMock.getMockImplementation()!;
-    fetchMock.mockImplementation(async (input, init) => {
-      if (new URL(String(input)).pathname.endsWith('/site')) return Response.json({ wcpos_version });
-      return defaultFetch(input, init);
-    });
+    siteBody = { wcpos_version };
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      coupons: true,
       lineTax: { none: true, classes: true },
     });
-    expect(fetchMock.mock.calls.map(([input]) => String(input)).some((url) => url.endsWith('/site'))).toBe(false);
+    expect(fetchMock.mock.calls.map(([input]) => String(input)).some((url) => url.endsWith('/site'))).toBe(true);
   });
 
   it('reads subtotal rounding enabled', async () => {
@@ -269,6 +275,7 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
       multiplePayments: false,
+      coupons: true,
       lineTax: { none: true, classes: true },
     });
   });
@@ -282,6 +289,7 @@ describe('readWooCapabilities', () => {
     fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json(body));
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments,
+      coupons: true,
       lineTax: { none: true, classes: true },
     });
   });
@@ -293,8 +301,55 @@ describe('readWooCapabilities', () => {
       ? new Response(null, { status: 500 }) : new Response('invalid JSON'));
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      coupons: true,
       lineTax: { none: true, classes: true },
     });
+  });
+
+  it.each(['1.9.0', '1.9', '1.9.0+build.5', '1.9.1', '1.10.0', '2.0', ' 1.10.20 '])('accepts coupons for site version %s', async (version) => {
+    siteBody = { wcpos_version: version };
+    expect(await readWooCapabilities(context)).toMatchObject({ coupons: true });
+  });
+
+  it.each(['1.8.11', '1.8.8', '1.9.0-beta.1', '1.9.0-rc.2', '0.9.9', '', 'v1.10.0', '1.x', 'latest'])('rejects coupons for site version %s', async (version) => {
+    siteBody = { wcpos_version: version };
+    expect(await readWooCapabilities(context)).toMatchObject({ coupons: false });
+  });
+
+  it.each([{}, { wcpos_version: 190 }, { wcpos_version: null }, [], null].map((body) => [body]))('rejects coupons for site body %j', async (body) => {
+    siteBody = body;
+    expect(await readWooCapabilities(context)).toMatchObject({ coupons: false });
+  });
+
+  it('rejects coupons when site answers 404 without changing the other capabilities', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores))
+      .mockResolvedValueOnce(Response.json(statusBody))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    expect(await readWooCapabilities(context)).toStrictEqual({
+      orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+      multiplePayments: false, coupons: false, lineTax: { none: true, classes: true },
+    });
+  });
+
+  it.each([401, 403])('resolves with coupons rejected when site answers HTTP %i', async (status) => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores))
+      .mockResolvedValueOnce(Response.json(statusBody))
+      .mockResolvedValueOnce(new Response(null, { status }));
+    await expect(readWooCapabilities(context)).resolves.toMatchObject({ coupons: false });
+  });
+
+  it('resolves with coupons rejected when the site fetch throws', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores))
+      .mockResolvedValueOnce(Response.json(statusBody))
+      .mockRejectedValueOnce(new TypeError('network'));
+    await expect(readWooCapabilities(context)).resolves.toMatchObject({ coupons: false });
+  });
+
+  it('rejects coupons when site answers non-JSON', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores))
+      .mockResolvedValueOnce(Response.json(statusBody))
+      .mockResolvedValueOnce(new Response('<html>', { status: 200 }));
+    expect(await readWooCapabilities(context)).toMatchObject({ coupons: false });
   });
 
   it.each([401, 403])('propagates status HTTP %i as an auth error', async (status) => {
@@ -314,6 +369,7 @@ describe('readWooCapabilities', () => {
   it('returns undefined for HTTP 500', async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
     expect(await readWooCapabilities(context)).toBeUndefined();
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain(`${context.baseUrl}/site`);
   });
 
   it('returns undefined for a network failure', async () => {
@@ -335,5 +391,14 @@ describe('readWooCapabilities', () => {
     const connector = createWooCommerceConnector();
     expect(connector.storeSettings).toBe(wooStoreSettings);
     expect(connector.capabilities).toBe(readWooCapabilities);
+  });
+});
+
+describe('wooPluginSupportsCoupons', () => {
+  it.each([
+    ['1.9.0', true], ['1.9.0-beta.1', false], ['1.8.99', false],
+    ['10.0.0', true], [undefined, false], [190, false],
+  ])('returns %s for %s', (version, supported) => {
+    expect(wooPluginSupportsCoupons(version)).toBe(supported);
   });
 });

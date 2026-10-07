@@ -52,6 +52,11 @@ export interface ServerCapabilities {
    * `none` is `taxStatus: 'none'`, `classes` is a `taxClass`. Absent means neither; the UI hides what is false.
    */
   lineTax?: { none: boolean; classes: boolean };
+  /**
+   * Whether the store accepts an order's coupons (ADR-077). Absent means it does not: the till refuses to apply a
+   * coupon. WooCommerce: true only when the woocommerce-pos plugin reports 1.9.0 or later.
+   */
+  coupons?: boolean;
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */
