@@ -5,6 +5,20 @@ import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/co
 export const WOO_ORDER_CREATE_VERSION = 5;
 // The order.create version a store gets unless /status lists order_create_v5, which only the TallyUI fork of the plugin advertises.
 const WOO_BASE_ORDER_CREATE_VERSION = 3;
+// The first woocommerce-pos release whose coupon recalculation keeps the POS price (ADR-077 amendment 4, R2: 1.9.0, 2026-05-15).
+const WOO_COUPONS_MIN_PLUGIN: readonly [number, number, number] = [1, 9, 0];
+
+export function wooPluginSupportsCoupons(version: unknown): boolean {
+  if (typeof version !== 'string') return false;
+  const match = /^(\d+)\.(\d+)(?:\.(\d+))?(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/.exec(version.trim());
+  if (!match) return false;
+  const parts: readonly [number, number, number] = [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
+  for (let index = 0; index < parts.length; index++) {
+    if (parts[index] > WOO_COUPONS_MIN_PLUGIN[index]) return true;
+    if (parts[index] < WOO_COUPONS_MIN_PLUGIN[index]) return false;
+  }
+  return !match[4];
+}
 
 export async function wooStoreSettings(context: SyncContext): Promise<StoreSettings> {
   try {
@@ -119,11 +133,24 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
     } catch (error) {
       if (error instanceof ConnectorUnauthorizedError) throw error;
     }
+    let coupons = false;
+    try {
+      const site = await fetch(`${context.baseUrl}/site`, {
+        method: 'GET', headers: context.headers, signal: context.signal,
+      });
+      if (site.ok) {
+        const body = await site.json();
+        coupons = wooPluginSupportsCoupons(body?.wcpos_version);
+      }
+    } catch {
+      coupons = false;
+    }
     const orderCreate = capabilities.includes('order_create_v5') ? WOO_ORDER_CREATE_VERSION : WOO_BASE_ORDER_CREATE_VERSION;
     return {
       orderCreate,
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },
       multiplePayments,
+      coupons,
       // WCPOS v5 takes a fee's, shipping line's and custom line's tax_status and tax_class (orders #146, #161); it has no /tally/v1/info.
       lineTax: { none: true, classes: true },
     };

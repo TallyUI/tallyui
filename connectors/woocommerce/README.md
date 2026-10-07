@@ -35,6 +35,18 @@ The incremental pull can miss an edit: a `modified_after` that over-excludes (in
 - When `wcpos/v2/status` lists `products_id_fast_path` in `capabilities`, the whole catalogue is listed in one request (`per_page=-1` with `_fields=id,date_modified_gmt,stock_quantity,stock_status`) instead of pages of 100; a store that refuses it (a 400) is listed page by page in the same pass.
 - Both listings key on the numeric product id, never the till-local uuid; the adapter's `matchKey` is how the runner finds the till's copy.
 
+## Capabilities
+
+`readWooCapabilities` (the connector's `capabilities`) runs when the till signs in or restores a session. The app keeps the result with the session.
+- **`GET wcpos/v2/stores`** gives the tax rounding (`tax_round_at_subtotal`). A failed or malformed read returns `undefined`: nothing new is known, and the stored capabilities stay.
+- **`GET wcpos/v2/status`.** The strings in its `capabilities` decide two fields:
+  - `order_create_v5` sets `orderCreate` to 5; without it, `orderCreate` is 3. Only the TallyUI fork of the plugin advertises it, and the site version never decides it.
+  - `order_payments_list` sets `multiplePayments`.
+- **`GET wcpos/v2/site`.** Its `wcpos_version` decides `coupons` (ADR-077, ruling R3). It is true only for woocommerce-pos 1.9.0 or later; a 1.9.0 pre-release does not count. Any failed or unclear read gives false, and the till then refuses to apply a coupon.
+- **`lineTax`** is always `{ none: true, classes: true }`.
+- **Unauthorised reads.** A 401 or 403 from `/stores` or `/status` throws `ConnectorUnauthorizedError`. A 401 or 403 from `/site` only closes the coupon gate.
+- **`products_id_fast_path`** is read by the reconcile pass, not here (see Reconciliation).
+
 ## Customers
 
 On WCPOS 1.10.x, `searchCustomers` uses `GET wcpos/v2/customers` with `role=customer`.
