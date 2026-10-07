@@ -58,6 +58,14 @@ describe('createSaleCouponSource', () => {
       usage_count: 0, used_by: [] });
   });
 
+  it('skips a document without code when finding an uppercase WooCommerce code', async () => {
+    const { code: _code, ...withoutCode } = coupon;
+    await db.coupons.insert({ ...withoutCode, uuid: 'coupon-100', id: 100 });
+    await db.coupons.insert({ ...coupon, code: 'SAVE10' });
+    expect(await source.find('save10')).toEqual({ id: 101, code: 'save10', discount_type: 'percent', amount: '10',
+      usage_count: 0, used_by: [] });
+  });
+
   it('prefers the exact indexed code over a case-insensitive match', async () => {
     await db.coupons.insert({ ...coupon, uuid: 'uppercase', id: 102, code: 'SAVE10' });
     await db.coupons.insert(coupon);
@@ -71,6 +79,12 @@ describe('createSaleCouponSource', () => {
 
   it('returns null for an unsupported discount type', async () => {
     await db.coupons.insert({ ...coupon, discount_type: 'gift' });
+    expect(await source.find('save10')).toBeNull();
+  });
+
+  it('returns null for a document without amount', async () => {
+    const { amount: _amount, ...withoutAmount } = coupon;
+    await db.coupons.insert(withoutAmount);
     expect(await source.find('save10')).toBeNull();
   });
 
@@ -110,6 +124,21 @@ describe('createSaleCouponSource', () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
     await db.coupons.upsert({ ...coupon, usage_count: 2, used_by: ['7'] });
     expect(await source.find('save10')).toMatchObject({ usage_count: 2, used_by: ['7'] });
+  });
+
+  it('counts an applied order only within the grace window while pending orders still count', async () => {
+    const doc = await db.coupons.insert({ ...coupon, usage_count: 1 });
+    const lwt = doc.toJSON(true)._meta.lwt;
+    const updatedAt = new Date(Math.ceil(lwt) + 1).toISOString();
+    let currentTime = Date.parse(updatedAt) + 599_999;
+    source = createSaleCouponSource({ coupons: db.coupons, products: db.products, orders: db.pos_orders,
+      now: () => currentTime });
+    await db.pos_orders.insert(order({ coupons: [appliedCoupon], syncStatus: 'applied', updatedAt }));
+    expect(await source.find('save10')).toMatchObject({ usage_count: 2 });
+    currentTime = Date.parse(updatedAt) + 600_000;
+    expect(await source.find('save10')).toMatchObject({ usage_count: 1 });
+    await db.pos_orders.insert(order({ coupons: [appliedCoupon], syncStatus: 'pending', updatedAt }));
+    expect(await source.find('save10')).toMatchObject({ usage_count: 2 });
   });
 
   it('returns category ids for found products, including a product without categories', async () => {
