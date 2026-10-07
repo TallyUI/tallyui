@@ -1,6 +1,6 @@
 'use client';
 
-import { ExpoSnack } from '../expo-snack';
+import { ExpoSnack, type ExpoSnackProps } from '../expo-snack';
 import { createSnackFiles, snackDependencies } from './snack-wrapper';
 
 const demoCode = `import React from 'react';
@@ -42,7 +42,10 @@ export default function Demo({ doc }) {
   );
 }`;
 
-export function CartPanelDemo() {
+export function CartPanelDemo({
+  embedded,
+  minWidth,
+}: Pick<ExpoSnackProps, 'embedded' | 'minWidth'> = {}) {
   return (
     <ExpoSnack
       files={createSnackFiles(demoCode)}
@@ -51,6 +54,8 @@ export function CartPanelDemo() {
       platform="web"
       preview={true}
       height="500px"
+      embedded={embedded}
+      minWidth={minWidth}
     />
   );
 }
