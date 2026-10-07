@@ -5058,8 +5058,9 @@ interface OrderCreatePayload {
      - Expected per tender falls by the refund's `byMethod`: a cash-destination refund lowers expected cash.
      - `periodRefundsTotalMinor` is the sum of the session's applied refunds' `totalMinor`, and
        `perpetualRefundsTotalMinor` accumulates it, as the sales totals do.
-     - `deriveSessionFigures` (the server helper) takes an optional `refunds: [{ byMethod }]` and returns
-       `refundsTotalMinor`. Sales count is unchanged.
+     - `deriveSessionFigures` (the server helper) takes an optional `refunds: [{ byMethod }]`, lowers expected per
+       method by them (a method can go below 0), and returns `refundsTotalMinor` only when `refunds` is passed, so
+       existing callers get exactly the result they had. Sales count is unchanged.
      - **No register contract version bump.** The fields and their meaning ("refunds in the period") already exist;
        only their value stops being always 0. A refund enters a session only through an applied `order.refund` that
        names it, which only a till with the `orderRefund` capability sends, so a register-v1 till that cannot refund
