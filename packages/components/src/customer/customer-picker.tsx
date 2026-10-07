@@ -20,6 +20,8 @@ export interface CustomerPickerProps {
   /** Debounce before a search, ms. */
   debounceMs?: number;
   className?: string;
+  /** testID of the search field, for e2e tests. Default `customer-picker-search`. */
+  testID?: string;
 }
 
 /** `@tallyui/core/server`'s `payloadBoundErrors` bound on `customer.email`, in UTF-16 code units. */
@@ -27,7 +29,7 @@ const EMAIL_MAX = 254;
 /** A simple shape, not RFC 5322: one `@`, a non-empty local part, a domain with text either side of a dot, no whitespace or NUL. */
 const EMAIL_SHAPE = /^[^\s@\u0000]+@[^\s@\u0000]+\.[^\s@\u0000]+$/u;
 
-export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className }: CustomerPickerProps) {
+export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-picker-search' }: CustomerPickerProps) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +98,7 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
       <Pressable accessibilityRole="button" className="items-center rounded-lg border border-border px-4 py-3" onPress={() => onSelect(null)}><Text className="text-sm font-semibold text-foreground">Remove customer</Text></Pressable>
     </View>}
     <Text className="text-xs font-medium text-muted-foreground">Search customers</Text>
-    <TextInput accessibilityLabel="Search customers" value={query} onChangeText={setQuery} editable={online}
+    <TextInput accessibilityLabel="Search customers" testID={testID} value={query} onChangeText={setQuery} editable={online}
       className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
       placeholderTextColorClassName="accent-muted-foreground" placeholder="Name or email" />
     {!online && <Text className="text-sm text-muted-foreground">Connect to search or add customers.</Text>}
