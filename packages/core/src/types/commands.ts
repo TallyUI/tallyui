@@ -8,7 +8,7 @@ export interface CommandEnvelope<P = unknown> {
   /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1;
    *  4 is 3 with every `discountMinor` tax-exclusive, built only when capped at 4 or more (#286).
    *  5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one. */
-  version: 1 | 2 | 3 | 4 | 5;
+  version: 1 | 2 | 3 | 4 | 5 | 6;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -25,7 +25,7 @@ export type RegisterCommandEnvelope<P = Record<string, unknown>> =
 export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown>;
 
 /** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one. */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 };
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -96,6 +96,21 @@ export interface CommandError {
   message: string;
   /** A refusal's details, e.g. the server's supported version. */
   data?: Record<string, unknown>;
+}
+
+/** `coupon_invalid` (order.create v6, ADR-077 d4): the store would not apply one of the order's coupons. */
+export interface OrderCreateCouponInvalidData {
+  /** The payload coupon's code, when the store can tell which one. */
+  couponCode?: string;
+  /** The store's own error code, e.g. WooCommerce's, for the log; never shown as the cashier's message. */
+  storeCode?: string;
+}
+/**
+ * `total_mismatch` as a refusal (order.create v6, ADR-077 R4): the store would accept the order but computes a
+ * different total from the envelope, so it made no order. The store's own figures, as `figures_mismatch` names them.
+ */
+export interface OrderCreateTotalMismatchData {
+  fields: Array<{ field: 'subtotalMinor' | 'taxMinor' | 'discountMinor' | 'totalMinor' | (string & {}); tillMinor: number; serverMinor: number }>;
 }
 
 /** Server result for a single command. */
@@ -186,6 +201,10 @@ export interface OrderCreateLine {
   title?: string;
   quantity: number;
   unitPriceMinor: number;
+  /** Version 6 recorded figure: the product's regular (not sale) unit price, in the line's tax mode and integer minor units, when the till knew it. */
+  regularUnitPriceMinor?: number;
+  /** Version 6 recorded: the variant's attribute names and values (#495), each 1–255 characters. */
+  attributes?: Record<string, string>;
   /**
    * This line's own tax mode, when it differs from the order's `pricesIncludeTax`
    * (a price that carries its own flag, D2c). Absent means the order's flag, so
@@ -199,6 +218,18 @@ export interface OrderCreateLine {
    * Version 4+ (#286): tax-exclusive (net) in every mode; an inclusive line's is `net(A) − net(A − D)`.
    */
   discountMinor?: number;
+}
+
+/** Version 6 (ADR-077): a coupon the till applied. Recorded figures, in integer minor units of the order's currency. */
+export interface OrderCreateCoupon {
+  /** The coupon code as the store knows it, 1–255 characters. */
+  code: string;
+  /** The store's id for the coupon, 1–64 characters. */
+  couponId: string;
+  /** The discount it gave, tax-exclusive, integer >= 0. */
+  discountMinor: number;
+  /** The tax on that discount, integer >= 0. */
+  discountTaxMinor: number;
 }
 
 /** Version 5: a fee, never discounted (ADR-075). */
@@ -267,6 +298,8 @@ export interface OrderCreateDisplay {
     /** Recorded integer minor units, equal to the payload shipping amount. */
     amountMinor: number;
   }>;
+  /** Version 6 recorded figures: one row per payload coupon, its discount in the display tax mode. */
+  coupons?: Array<{ code: string; amountMinor: number }>;
 }
 
 /** Version 3 (ADR-065): one tax rate's net, tax and gross, as the receipt's tax summary splits them. */
@@ -289,6 +322,9 @@ export interface OrderCreatePayload {
   fees?: OrderCreateFee[];
   /** Version 5 instructions: shipping in the order's tax mode; omitted when none. */
   shipping?: OrderCreateShipping[];
+  /** Version 6 (ADR-077): the coupons the till applied, in the order it applied them; omitted when none.
+   * The store re-applies them by `code` and refuses the order with `coupon_invalid` if one no longer applies. */
+  coupons?: OrderCreateCoupon[];
   subtotalMinor: number;
   /**
    * Version 2 (ADR-062): the order's total discount, equal to Σ `lines[].discountMinor`. Present only when above 0.

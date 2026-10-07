@@ -7,6 +7,8 @@ import type { RegisterConflictCode } from './register-outcome'
 export type CommandRejectionCode =
   | 'invalid_payload' | 'unsupported_version' | 'idempotency_mismatch' | 'store_configuration' | 'platform_error'
   | 'insufficient_stock' | 'unsupported_tax_mode' | 'internal_error'
+  // Both are order.create v6 refusals (ADR-077 d4).
+  | 'coupon_invalid' | 'total_mismatch'
   | OrderRejectionCode | RegisterConflictCode
 
 /**
