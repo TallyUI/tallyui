@@ -165,6 +165,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       ...(line.taxClass !== undefined ? { taxClass: line.taxClass } : {}), taxStatus: line.taxStatus ?? 'taxable' } } : {}),
     ...(line.taxStatus !== undefined ? { taxStatus: line.taxStatus } : {}),
     name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
+    ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
     discountMinor: line.discountMinor, netMinor: line.netMinor,
     ...(order.taxRounding?.granularity === 'woocommerce' ? { netMicros: line.netMicros } : {}),
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
@@ -242,6 +243,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(fees?.length ? { fees } : {}), ...(shipping?.length ? { shipping } : {}),
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor, taxRounding,
+    ...(order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor }) =>
+      ({ code, couponId, discountMinor, discountTaxMinor })) } : {}),
     ...(display && taxByRate ? { display, taxByRate } : {}),
     customer: order.customer ? { id: order.customer.id, name: order.customer.name,
       ...(order.customer.email !== undefined ? { email: order.customer.email } : {}) } : null,

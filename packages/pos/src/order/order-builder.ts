@@ -1,5 +1,5 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
-import { resolvePrice, woocommerceTax, type woocommerceCoupons, type ProductTraits, type TaxRounding } from '@tallyui/core';
+import { resolvePrice, woocommerceTax, type woocommerceCoupons, type ProductTraits, type ResolvedPrice, type TaxRounding } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
@@ -62,8 +62,14 @@ export function assertDisplayResidue(residue: number, convertedLines: number, co
   if (Math.abs(residue) > bound) throw new Error(`Display residue ${residue} exceeds its bound of ${bound} (ADR-063)`);
 }
 
+/** The regular unit price to store with a catalogue line (ADR-077 d3): the base price when on sale, else the price charged. */
+export function regularUnitPriceMinor(resolved: ResolvedPrice): number | undefined {
+  return resolved.was === undefined ? resolved.current.amount : resolved.was.taxInclusive === resolved.current.taxInclusive ? resolved.was.amount : undefined;
+}
+
 export interface OrderCouponContext {
   configs: ReadonlyMap<string, woocommerceCoupons.CouponDiscountConfig>;
+  couponIds: ReadonlyMap<string, string>; // lower-case code to the connector's coupon id
   productCategories: ReadonlyMap<number, { id: number }[]>;
   calcDiscountsSequentially: boolean;
 }
@@ -96,14 +102,15 @@ export interface OrderBuilder {
   removePayment(paymentId: string): void;
   setCustomer(customer: CustomerSummary | null): void;
   setNote(note: string): void;
-  /** Replaces the coupon codes with their trimmed, lower-case, deduplicated list. */
-  setCoupons(codes: readonly string[]): void;
+  /** Replaces the coupon codes with their trimmed, lower-case, deduplicated list; a given context replaces the builder's coupon context. */
+  setCoupons(codes: readonly string[], context?: OrderCouponContext): void;
   clear(): void;
   getSnapshot(): Order;
 }
 
 export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
-  const { taxContext, couponContext } = options;
+  const { taxContext } = options;
+  let { couponContext } = options;
   const currency = options.currency.toUpperCase();
   const orderId = options.id ?? uid();
   const woo = taxContext.rounding?.granularity === 'woocommerce' && taxContext.getTaxRates ? taxContext.rounding : undefined;
@@ -360,6 +367,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (unitPrice.currency !== currency) throw new RangeError('Line currency must match ' + currency);
     if (!Number.isInteger(unitPrice.amount)) throw new RangeError('Price must be integer minor units');
     if (!Number.isInteger(quantity) || quantity < 1) throw new RangeError('Quantity must be an integer >= 1');
+    if (input.regularUnitPriceMinor !== undefined && (!Number.isInteger(input.regularUnitPriceMinor) || input.regularUnitPriceMinor < 0))
+      throw new RangeError('Regular price must be integer minor units >= 0');
     // A rate from the tax class carries the backend's name for it when one is mapped (#287, #288).
     const code = woo || input.taxRates ? undefined : taxContext.getTaxRateCode?.(input.taxClass);
     const taxRates = woo ? wooLine(unitPrice.amount * quantity, input.taxClass, unitPrice.taxInclusive ?? taxContext.pricesIncludeTax, input.taxStatus === 'none').taxLines
@@ -370,6 +379,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const existing = lineItems.find(
       (li) => !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
         && (!woo || li.taxClass === input.taxClass && (li.taxStatus === 'none') === (input.taxStatus === 'none'))
+        && li.regularUnitPriceMinor === input.regularUnitPriceMinor
         && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length
         && li.taxLines.every((tax, index) => tax.code === taxRates[index].code && tax.ratePpm === taxRates[index].ratePpm),
     );
@@ -394,6 +404,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       sku: input.sku ?? '',
       imageUrl: input.imageUrl,
       unitPriceMinor: unitPrice.amount,
+      ...(input.regularUnitPriceMinor !== undefined && !input.custom ? { regularUnitPriceMinor: input.regularUnitPriceMinor } : {}),
       quantity,
       taxLines: taxRates.map((tax) => ({ ...tax, taxMicros: '0' })),
       discounts: [],
@@ -458,8 +469,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         ? traits.getVariants(doc, { currency }).find((variant) => variant.id === opts.variantId) : undefined;
       if (opts?.variantId !== undefined && traits.getVariants && !variant)
         throw new Error(`Unknown variant ${opts.variantId} for product ${productId}`);
-      const unitPrice = resolvePrice(variant ? variant.prices : traits.getPrices(doc, { currency }), currency)?.current;
-      if (!unitPrice) throw new Error('No price in ' + currency + ' for product ' + productId);
+      const resolved = resolvePrice(variant ? variant.prices : traits.getPrices(doc, { currency }), currency);
+      if (!resolved) throw new Error('No price in ' + currency + ' for product ' + productId);
+      const unitPrice = resolved.current, regularPrice = regularUnitPriceMinor(resolved);
       return addLine({
         productId,
         variantId: opts?.variantId,
@@ -467,6 +479,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         sku: variant?.sku ?? traits.getSku(doc),
         imageUrl: traits.getImageUrl(doc),
         unitPrice,
+        ...(regularPrice !== undefined ? { regularUnitPriceMinor: regularPrice } : {}),
         quantity: opts?.quantity,
         taxClass: traits.getTaxClass?.(doc, opts?.variantId),
         ...(traits.getTaxStatus?.(doc, opts?.variantId) === 'none' ? { taxStatus: 'none' as const } : {}),
@@ -558,15 +571,18 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       emit();
     },
 
-    setCoupons(codes) {
+    setCoupons(codes, context) {
+      const nextContext = context ?? couponContext;
       const normalized = [...new Set(codes.map((code) => code.trim().toLowerCase()))];
-      if (normalized.length && !couponContext) throw new Error('Coupon context is required');
+      if (normalized.length && !nextContext) throw new Error('Coupon context is required');
       for (const code of normalized) {
-        const config = couponContext!.configs.get(code);
+        const config = nextContext!.configs.get(code);
         if (!config) throw new RangeError(`Unknown coupon ${code}`);
-        // Lines do not carry their regular price yet, so sale lines cannot be identified.
+        // The engine needs the regular price as WCPOS pos_data to find sale lines, which would also reset manual price cuts; lifting this waits (ADR-077 d3).
         if (config.exclude_sale_items) throw new RangeError(`Coupon ${code} excludes sale items`);
+        if (nextContext!.couponIds.get(code) === undefined) throw new RangeError(`Coupon ${code} has no id`);
       }
+      if (context) couponContext = context;
       couponCodes = normalized;
       emit();
     },

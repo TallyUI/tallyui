@@ -33,11 +33,9 @@ export interface ParkedOrderSummary {
 }
 
 export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Promise<string> {
-  // Coupons are not persisted until ADR-077 step (d2).
-  const { coupons: _coupons, ...draft } = snapshot;
   await drafts.upsert({
     id: snapshot.id,
-    data: JSON.stringify(draft),
+    data: JSON.stringify(snapshot),
     customerName: snapshot.customer?.name ?? '',
     itemCount: snapshot.lineItems.length,
     total: snapshot.totalMinor,
@@ -75,6 +73,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       sku: line.sku,
       imageUrl: line.imageUrl,
       unitPrice: { amount: line.unitPriceMinor, currency, taxInclusive: line.taxInclusive },
+      ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
       quantity: line.quantity,
       taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })),
     });
@@ -101,6 +100,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     });
   }
 
+  // Coupons are re-applied by the sale with fresh coupon data (ADR-077 d3), never restored from the draft.
   // Restore payments
   for (const payment of saved.payments) {
     builder.addPayment({
