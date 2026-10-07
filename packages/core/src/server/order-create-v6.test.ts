@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { OrderCreateCoupon, OrderCreatePayload } from '../types'
+import { precheckCommand } from './batch'
 import { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
 
+const supported = { orderCreate: [1, 2, 3, 4, 5, 6], register: [1] }
 const v5: OrderCreatePayload = {
   clientOrderId: 'order', createdAt: '2026-10-07T10:00:00.000Z', currency: 'EUR', pricesIncludeTax: false,
   lines: [{ clientLineId: 'line', variantId: 'variant', quantity: 1, unitPriceMinor: 1000 }],
@@ -31,6 +33,33 @@ describe('order.create v6 (coupons, ADR-077)', () => {
   it('accepts coupons, recorded regular price and attributes, and receipt coupon rows', () => {
     expect(payloadShapeErrors(v6)).toEqual([])
     expect(payloadBoundErrors(v6)).toEqual([])
+    expect(precheckCommand({ id: 'command', type: 'order.create', version: 6, payload: v6 }, supported)).toBeUndefined()
+  })
+
+  it.each([
+    ['coupons', { coupons: v6.coupons }],
+    ['display.coupons', { display: { ...v5.display!, coupons: v6.display.coupons } }],
+    ['lines[0].regularUnitPriceMinor', { lines: [{ ...v5.lines[0], regularUnitPriceMinor: line.regularUnitPriceMinor }] }],
+    ['lines[0].attributes', { lines: [{ ...v5.lines[0], attributes: line.attributes }] }],
+  ])('refuses %s below version 6', (field, patch) => {
+    expect(precheckCommand({ id: 'command', type: 'order.create', version: 5, payload: { ...v5, ...patch } }, supported))
+      .toMatchObject({ status: 'rejected', error: { code: 'invalid_payload', message: `${field} requires version 6` } })
+  })
+
+  it.each([
+    [[{ ...displayCoupon, code: 'UNKNOWN' }], 'display.coupons[0].code: expected a payload.coupons[].code'],
+    [[displayCoupon, displayCoupon], 'display.coupons[1].code: expected no duplicate code'],
+  ] as const)('refuses unmatched or duplicate receipt coupons %j', (coupons, message) => {
+    const payload = { ...v6, display: { ...v6.display, coupons: [...coupons] } }
+    expect(precheckCommand({ id: 'command', type: 'order.create', version: 6, payload }, supported))
+      .toMatchObject({ status: 'rejected', error: { code: 'invalid_payload', message } })
+  })
+
+  it('refuses v6 when the server does not advertise it', () => {
+    expect(precheckCommand({ id: 'command', type: 'order.create', version: 6, payload: v6 },
+      { orderCreate: [1, 2, 3, 4, 5], register: [1] })).toMatchObject({
+      status: 'rejected', error: { code: 'unsupported_version', data: { orderCreate: 5 } },
+    })
   })
 
   it.each([

@@ -94,7 +94,15 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     if (line?.custom !== undefined) v5Fields.push(`lines[${index}].custom`)
   })
   for (const field of ['fees', 'shipping'] as const) if (display?.[field] !== undefined) v5Fields.push(`display.${field}`)
+  const v6Fields = payload.coupons !== undefined ? ['coupons'] : []
+  if (display?.coupons !== undefined) v6Fields.push('display.coupons')
+  if (Array.isArray(lines)) lines.forEach((line, index) => {
+    for (const field of ['regularUnitPriceMinor', 'attributes'] as const) {
+      if (line?.[field] !== undefined) v6Fields.push(`lines[${index}].${field}`)
+    }
+  })
   let versionError = command.version < 5 && v5Fields.length ? v5Fields.map(field => `${field} requires version 5`).join('; ')
+    : command.version < 6 && v6Fields.length ? v6Fields.map(field => `${field} requires version 6`).join('; ')
     : command.version === 2 && discountMinor === undefined ? 'version 2 requires discountMinor'
     : command.version === 1 && discounted ? 'discountMinor requires version 2'
     : !v3 && (display !== undefined || taxByRate !== undefined) ? 'display and taxByRate require version 3'
