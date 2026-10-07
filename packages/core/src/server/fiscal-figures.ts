@@ -22,7 +22,7 @@ export function fiscalFiguresErrors(payload: OrderCreatePayloadV3): string[] {
     for (const key of keys) check(Number.isSafeInteger(value[key]), `${path}.${key}`, 'a safe integer')
   }
   const { display, taxByRate } = payload
-  if (object(display, 'display', ['currency', 'exponent', 'taxInclusive', 'subtotalMinor', 'discountMinor', 'taxMinor', 'totalMinor', 'orderDiscountMinor', 'lines', 'fees', 'shipping'])) {
+  if (object(display, 'display', ['currency', 'exponent', 'taxInclusive', 'subtotalMinor', 'discountMinor', 'taxMinor', 'totalMinor', 'orderDiscountMinor', 'lines', 'fees', 'shipping', 'coupons'])) {
     check(typeof display.currency === 'string', 'display.currency', 'a string')
     check(Number.isInteger(display.exponent) && display.exponent >= 0, 'display.exponent', 'an integer >= 0')
     check(typeof display.taxInclusive === 'boolean', 'display.taxInclusive', 'a boolean')
@@ -63,6 +63,14 @@ export function fiscalFiguresErrors(payload: OrderCreatePayloadV3): string[] {
       })
       for (const key of amounts.keys()) check(seen.has(key), `display.${field}`, `a row for ${id} ${key}`)
     }
+    const codes = new Set((payload.coupons ?? []).map(coupon => coupon.code))
+    const seen = new Set<string>()
+    if (Array.isArray(display.coupons)) display.coupons.forEach((row, index) => {
+      const path = `display.coupons[${index}]`
+      check(codes.has(row.code), `${path}.code`, 'a payload.coupons[].code')
+      check(!seen.has(row.code), `${path}.code`, 'no duplicate code')
+      seen.add(row.code)
+    })
   }
   check(Array.isArray(taxByRate), 'taxByRate', 'an array')
   if (Array.isArray(taxByRate)) taxByRate.forEach((rate, index) => {

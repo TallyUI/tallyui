@@ -46,7 +46,7 @@ describe('useSale coupons', () => {
       return <TaxProvider {...taxProps} rounding={woo ? rounding : undefined}>{children}</TaxProvider>;
     }
     const options: SaleOptions = { registerId: 'register-1', cashierRef: 'cashier@store.test',
-      capabilities: { orderCreate: 3, coupons: true }, drafts: db.pos_drafts, coupons, ...overrides };
+      capabilities: { orderCreate: 6, coupons: true }, drafts: db.pos_drafts, coupons, ...overrides };
     return { ...renderHook((opts: SaleOptions) => useSale({ currency: 'GBP' }, opts), { wrapper: Wrapper, initialProps: options }), options };
   }
   function add(result: { current: ReturnType<typeof useSale> }, index = 0) {
@@ -75,6 +75,13 @@ describe('useSale coupons', () => {
     await act(async () => { expect(await result.current.applyCoupon('ten')).toBe(COUPONS_UNSUPPORTED); });
     expect(coupons.find).not.toHaveBeenCalled();
     expect(result.current.order).toBe(before);
+  });
+
+  it('refuses coupons when the store only accepts order.create version 5', async () => {
+    const { result } = renderSale(source(), { capabilities: { orderCreate: 5, coupons: true } });
+    add(result);
+    await act(async () => { expect(await result.current.applyCoupon('ten')).toBe(COUPONS_UNSUPPORTED); });
+    expect(result.current.order.coupons).toBeUndefined();
   });
 
   it('normalizes codes, refuses empty and unknown codes, and does not fetch duplicates', async () => {
@@ -197,14 +204,17 @@ describe('useSale coupons', () => {
     expect(coupons.find).toHaveBeenCalledTimes(2);
   });
 
-  it('drops parked coupons with a message after the capability goes away', async () => {
+  it.each([
+    { orderCreate: 3, coupons: false },
+    { orderCreate: 5, coupons: true },
+  ] as const)('drops parked coupons with a message after capabilities change to %j', async (capabilities) => {
     const coupons = source([coupon('x')]);
     const { result, rerender, options } = renderSale(coupons);
     add(result);
     await act(async () => { expect(await result.current.applyCoupon('x')).toBeNull(); });
     const id = result.current.order.id;
     await act(async () => { expect(await result.current.park()).toBeNull(); });
-    rerender({ ...options, capabilities: { orderCreate: 3, coupons: false } });
+    rerender({ ...options, capabilities });
     await act(async () => { expect(await result.current.resume(id)).toBeNull(); });
     expect(result.current.order.coupons).toBeUndefined();
     expect(result.current.error).toBe(`Coupon x was removed: ${COUPONS_UNSUPPORTED}.`);

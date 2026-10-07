@@ -32,6 +32,7 @@ export type {
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
+  OrderCreateCoupon, OrderCreateCouponInvalidData, OrderCreateTotalMismatchData,
   CommandBatchRequest, CommandBatchResponse, BatchTooLargeBody,
   RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionAlreadyOpenData, RegisterSessionSupersededData,
   RegisterSessionTransitionPayload,

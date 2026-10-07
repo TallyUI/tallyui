@@ -1,0 +1,96 @@
+{
+  "id": "019f6d2e-7800-7000-8000-000000000005",
+  "type": "order.create",
+  "version": 6,
+  "createdAt": "2026-10-07T10:00:00.000Z",
+  "deviceId": "device_golden",
+  "attempt": 1,
+  "payload": {
+    "clientOrderId": "019f6d2e-7800-7000-8000-000000000001",
+    "createdAt": "2026-10-07T10:00:00.000Z",
+    "currency": "GBP",
+    "pricesIncludeTax": false,
+    "lines": [
+      {
+        "clientLineId": "019f6d2e-7800-7000-8000-000000000002",
+        "variantId": "1",
+        "title": "Item",
+        "quantity": 1,
+        "unitPriceMinor": 800,
+        "regularUnitPriceMinor": 1000,
+        "attributes": {
+          "Size": "L",
+          "Colour": "Red"
+        }
+      },
+      {
+        "clientLineId": "019f6d2e-7800-7000-8000-000000000003",
+        "variantId": "2",
+        "title": "Item 2",
+        "quantity": 1,
+        "unitPriceMinor": 500,
+        "regularUnitPriceMinor": 500
+      }
+    ],
+    "coupons": [
+      {
+        "code": "ten",
+        "couponId": "303",
+        "discountMinor": 130,
+        "discountTaxMinor": 26
+      }
+    ],
+    "payments": [
+      {
+        "clientPaymentId": "019f6d2e-7800-7000-8000-000000000004",
+        "method": "cash",
+        "amountMinor": 1404,
+        "tenderedMinor": 1404,
+        "changeMinor": 0
+      }
+    ],
+    "subtotalMinor": 1170,
+    "taxMinor": 234,
+    "totalMinor": 1404,
+    "display": {
+      "currency": "GBP",
+      "exponent": 2,
+      "taxInclusive": false,
+      "subtotalMinor": 1300,
+      "discountMinor": 130,
+      "taxMinor": 234,
+      "totalMinor": 1404,
+      "lines": [
+        {
+          "clientLineId": "019f6d2e-7800-7000-8000-000000000002",
+          "amountMinor": 800,
+          "discounts": []
+        },
+        {
+          "clientLineId": "019f6d2e-7800-7000-8000-000000000003",
+          "amountMinor": 500,
+          "discounts": []
+        }
+      ],
+      "orderDiscountMinor": 0,
+      "coupons": [
+        {
+          "code": "ten",
+          "amountMinor": 130
+        }
+      ]
+    },
+    "taxByRate": [
+      {
+        "ratePpm": 200000,
+        "code": "VAT",
+        "netMinor": 1170,
+        "taxMinor": 234,
+        "grossMinor": 1404
+      }
+    ],
+    "customer": null,
+    "registerId": "register_golden",
+    "cashierRef": "cashier_golden"
+  }
+}

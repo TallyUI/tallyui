@@ -44,11 +44,11 @@ describe('command types', () => {
     expectTypeOf<Extract<CommandWarning, { code: 'total_mismatch' }>['bridgeMinor']>().toEqualTypeOf<number | undefined>();
   });
 
-  it('pins the envelope versions: 2 for a discounted order.create (ADR-062), 3 for one carrying ADR-065\'s figures, 4 with net discounts (#286)', () => {
-    expectTypeOf<OrderCreateEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5>();
-    expectTypeOf<CommandEnvelope<OrderCreatePayload>['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5>();
+  it('pins the envelope versions: 2 for a discounted order.create (ADR-062), 3 for one carrying ADR-065\'s figures, 4 with net discounts (#286), 6 with coupons (ADR-077)', () => {
+    expectTypeOf<OrderCreateEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6>();
+    expectTypeOf<CommandEnvelope<OrderCreatePayload>['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6>();
     expectTypeOf<RegisterCommandEnvelope['version']>().toEqualTypeOf<number>();
-    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5>();
+    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6>();
     expectTypeOf<OrderCreatePayload['discountMinor']>().toEqualTypeOf<number | undefined>();
     expectTypeOf<OrderCreatePayload['sessionId']>().toEqualTypeOf<string | undefined>();
   });

@@ -398,6 +398,34 @@ describe('order outbox', () => {
     expect(rejected.fees).toEqual(input.fees);
   });
 
+  it('rejects a coupon sale when the store drops to 5, without dropping coupons', async () => {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+      pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => 200000,
+      getTaxRates: () => [{ id: 1, code: 'VAT', label: 'VAT', rate: '20.0000', priority: 1, compound: false, shipping: true }],
+    }, couponContext: {
+      configs: new Map([['ten', { discount_type: 'percent', amount: '10', limit_usage_to_x_items: null,
+        product_ids: [], excluded_product_ids: [], product_categories: [], excluded_product_categories: [], exclude_sale_items: false }]]),
+      couponIds: new Map([['ten', '303']]), productCategories: new Map(), calcDiscountsSequentially: false,
+    } });
+    builder.addLine({ productId: '1', name: 'Item', unitPrice: { amount: 800, currency: 'GBP' }, regularUnitPriceMinor: 1000 });
+    builder.addLine({ productId: '2', name: 'Item 2', unitPrice: { amount: 500, currency: 'GBP' }, regularUnitPriceMinor: 500 });
+    builder.setCoupons(['ten']);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const input = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 6 } });
+    expect(input.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 130, discountTaxMinor: 26 }]);
+    await collection.insert(input);
+    const { outbox, send } = setup({ getMaxOrderCreateVersion: () => 5 });
+    send.mockResolvedValueOnce({ kind: 'results', results: [unsupported(input, 5)] });
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0][0]).toMatchObject({ version: 6, payload: { coupons: input.coupons } });
+    const rejected = (await collection.findOne(input.id).exec())!.toJSON();
+    expect(rejected).toMatchObject({ syncStatus: 'rejected', sentVersion: 6,
+      error: { code: 'unsupported_version', message: 'This sale needs order.create version 6; the server supports up to 5.' } });
+    expect(rejected.downgradedFrom).toBeUndefined();
+    expect(rejected.coupons).toEqual(input.coupons);
+  });
+
   it('requeue clears sentVersion and downgradedFrom: the new command chooses afresh, at v4 when the server advertises 4', async () => {
     const input: PosOrder = { ...v3Order(), sentVersion: 2, downgradedFrom: 3, syncStatus: 'rejected',
       error: { code: 'unsupported_version', message: 'not supported' } };
