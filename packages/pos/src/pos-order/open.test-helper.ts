@@ -18,9 +18,18 @@ import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
+/** The version-8 schema: before coupons, line attributes and the regular price. */
+export function versionEight(): RxJsonSchema<PosOrder> {
+  const schema = structuredClone(posOrderSchema);
+  delete (schema.properties as Record<string, unknown>).coupons;
+  delete (schema.properties.display.properties as Record<string, unknown>).coupons;
+  for (const field of ['attributes', 'regularUnitPriceMinor']) delete ((schema.properties.lines.items as any).properties as Record<string, unknown>)[field];
+  return { ...schema, version: 8 };
+}
+
 /** The version-7 schema: before charges, custom lines and WooCommerce rounding. */
 export function versionSeven(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
+  const schema = versionEight();
   for (const field of ['fees', 'shipping']) {
     delete (schema.properties as Record<string, unknown>)[field];
     delete (schema.properties.display.properties as Record<string, unknown>)[field];
@@ -85,12 +94,13 @@ export function versionZero(): RxJsonSchema<PosOrder> {
 }
 
 /** A stored older `pos_orders` version, which `addPosOrderCollection` migrates to the current one. */
-export type Origin = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type Origin = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
 /** `pos_orders` as the shipped app at `from` added it: version 1 came with its identity strategy. */
 export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
   addRxPlugin(RxDBMigrationSchemaPlugin);
   const identity = (doc: PosOrder) => doc;
+  if (from === 8) return { schema: versionEight(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity, 8: identity } };
   if (from === 7) return { schema: versionSeven(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity } };
   if (from === 6) return { schema: versionSix(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity } };
   if (from === 5) return { schema: versionFive(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity } };
@@ -166,10 +176,11 @@ function slow(storage: RxStorage<any, any>): RxStorage<any, any> {
  */
 export function addPosOrderCollectionTests(makeStorage: () => RxStorage<any, any>, { sqlite = false, from = 0 as Origin } = {}) {
   // A version-1 order carries its session, which the migration keeps.
-  const order = (n: number, syncStatus?: string): OlderPosOrder => ({ ...sale(n, syncStatus), ...(from >= 1 ? { sessionId: `session-${n}` } : {}) });
+  const order = (n: number, syncStatus?: string): OlderPosOrder => ({ ...sale(n, syncStatus), ...(from >= 1 ? { sessionId: `session-${n}` } : {}),
+    ...(from >= 6 ? { taxRounding: DEFAULT_TAX_ROUNDING } : {}) });
   // Version 5's migration records each order's content version as sent: a sale() has no discount, so 1. Version 6's
-  // records the default tax rounding.
-  const moved = (...orders: OlderPosOrder[]) => orders.map((o) => ({ ...o, sentVersion: o.sentVersion ?? 1, taxRounding: DEFAULT_TAX_ROUNDING }));
+  // records the default tax rounding. An order stored at version 5 or later has passed neither step, so it keeps what it had.
+  const moved = (...orders: OlderPosOrder[]) => orders.map((o) => ({ ...o, ...(from < 5 ? { sentVersion: o.sentVersion ?? 1 } : {}), taxRounding: DEFAULT_TAX_ROUNDING }));
   // A sale rung at the current version, which finalize records its tax rounding on.
   const current = (n: number): PosOrder => ({ ...order(n), taxRounding: DEFAULT_TAX_ROUNDING });
 

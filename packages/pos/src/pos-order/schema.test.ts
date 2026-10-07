@@ -27,6 +27,42 @@ it.each(['lines', 'fees', 'shipping'] as const)('refuses invalid netMicros on %s
   } finally { await db.remove(); }
 });
 
+it("stores version 9's coupons, display coupons, line attributes and regular unit price, and refuses malformed ones", async () => {
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 3 } });
+    expect(order.display).toBeDefined();
+    const coupon = { code: 'save10', couponId: '42', discountMinor: 100, discountTaxMinor: 19 };
+    const recorded = { ...order, id: uuidv7(), coupons: [coupon],
+      display: { ...order.display!, coupons: [{ code: 'save10', amountMinor: 100 }] },
+      lines: [{ ...order.lines[0], attributes: { Size: 'S', Colour: 'Blue' }, regularUnitPriceMinor: 1000 }] };
+    await pos_orders.insert(recorded);
+    expect((await pos_orders.findOne(recorded.id).exec())?.toJSON()).toStrictEqual(recorded);
+    for (const malformed of [
+      { coupons: [{ ...coupon, extra: 1 }] },
+      { coupons: [{ code: 'save10', discountMinor: 100, discountTaxMinor: 19 }] },
+      { coupons: [{ ...coupon, discountMinor: 1.5 }] },
+      { coupons: [{ ...coupon, discountMinor: -1 }] },
+      { coupons: [{ ...coupon, code: '' }] },
+      { display: { ...order.display!, coupons: [{ code: 'save10', amountMinor: 100, extra: 1 }] } },
+      { display: { ...order.display!, coupons: [{ code: 'save10' }] } },
+      { lines: [{ ...order.lines[0], attributes: { Size: 1 } }] },
+      { lines: [{ ...order.lines[0], regularUnitPriceMinor: 1.5 }] },
+    ]) {
+      await expect(pos_orders.insert({ ...order, id: uuidv7(), ...malformed } as unknown as typeof order)).rejects.toMatchObject({ code: 'VD2' });
+    }
+  } finally { await db.remove(); }
+});
+
+it('pos_orders keeps no local documents, so its migration has none to carry', () => {
+  expect((posOrderCollection() as { localDocuments?: boolean }).localDocuments ?? false).toBe(false);
+});
+
 it('inserts a finalised order into an AJV-validated RxDB memory collection', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -79,7 +115,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(8);
+  expect(posOrderSchema.version).toBe(9);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -97,7 +133,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   }
 });
 
-it('stores sentVersion and downgradedFrom, and refuses values outside 1–5', async () => {
+it('stores sentVersion and downgradedFrom, and refuses values outside 1–6', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -111,9 +147,30 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–5', as
     const v4 = { ...order, id: uuidv7(), sentVersion: 4 as const, downgradedFrom: 4 as const };
     await pos_orders.insert(v4);
     expect((await pos_orders.findOne(v4.id).exec())?.toJSON()).toStrictEqual(v4);
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 6 as 5 })).rejects.toThrow();
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 6 as 5 })).rejects.toThrow();
+    const v6 = { ...order, id: uuidv7(), sentVersion: 6 as const, downgradedFrom: 6 as const };
+    await pos_orders.insert(v6);
+    expect((await pos_orders.findOne(v6.id).exec())?.toJSON()).toStrictEqual(v6);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 7 as 6 })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 7 as 6 })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 0 as 1 })).rejects.toThrow();
+  } finally {
+    await db.remove();
+  }
+});
+
+it('stores reopenedAt on a rejected order, and refuses a non-string', async () => {
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const order = { ...finalizeOrder(builder.getSnapshot()), syncStatus: 'rejected' as const,
+      error: { code: 'coupon_invalid', message: 'Refused' }, reopenedAt: '2026-10-07T10:00:00.000Z' };
+    await pos_orders.insert(order);
+    expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), reopenedAt: 5 as unknown as string })).rejects.toThrow();
   } finally {
     await db.remove();
   }

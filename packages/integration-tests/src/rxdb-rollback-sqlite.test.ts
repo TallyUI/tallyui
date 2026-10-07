@@ -72,9 +72,9 @@ it('the fixture and its snapshots are present', () => {
           // Two older stores (v2 and v4, a main build rolled back): an open migrates one, so the first rejects DM4
           // with the v4 store left, and the reopen recovers the rest (ADR-069). A 2.0.0 till's v2 store takes one open.
           await expect(addPosOrderCollection(db)).rejects.toMatchObject({ code: 'DM4' });
-          expect(storedCollections(copyPath).tables).toEqual(['pos_orders-4', 'pos_orders-8']);
+          expect(storedCollections(copyPath).tables).toEqual(['pos_orders-4', 'pos_orders-9']);
           const collection = await addPosOrderCollection(db);
-          expect(collection.schema.version).toBe(8);
+          expect(collection.schema.version).toBe(9);
           expect(await readFresh(collection, { selector: {}, sort: [{ id: 'asc' }] })).toStrictEqual(expected);
 
           const pending = expected.filter((order) => order.syncStatus === 'pending').map((order) => order.commandId).sort();
@@ -99,7 +99,7 @@ it('the fixture and its snapshots are present', () => {
         handle.raw.close();
       }
       // Only the v6 collection record and store are left.
-      expect(storedCollections(copyPath)).toEqual({ records: ['collection|pos_orders-8'], tables: ['pos_orders-8'] });
+      expect(storedCollections(copyPath)).toEqual({ records: ['collection|pos_orders-9'], tables: ['pos_orders-9'] });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

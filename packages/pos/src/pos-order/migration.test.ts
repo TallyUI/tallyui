@@ -148,7 +148,7 @@ describe('from version 6', () => {
     const after = await open(name, storage, posOrderCollection());
     try {
       const { pos_orders } = await after.added;
-      expect(pos_orders.schema.version).toBe(8);
+      expect(pos_orders.schema.version).toBe(9);
       expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(original);
     } finally {
       await after.db.remove();
@@ -156,7 +156,7 @@ describe('from version 6', () => {
   });
 });
 
-it('keeps a pending version-7 order byte for byte through the identity migration to version 8', async () => {
+it('keeps a pending version-7 order byte for byte through the identity migration to version 9', async () => {
   const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
   const order: PosOrder = { ...pendingOrder(3), saleId: uuidv7(), taxRounding: { granularity: 'per_line_items', mode: 'half_up' },
     sentVersion: 4, serverFailures: { since: 1000, reason: 'network', isolated: true } };
@@ -168,9 +168,47 @@ it('keeps a pending version-7 order byte for byte through the identity migration
   const after = await open(name, storage, posOrderCollection());
   try {
     const { pos_orders } = await after.added;
-    expect(pos_orders.schema.version).toBe(8);
+    expect(pos_orders.schema.version).toBe(9);
     expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(original);
   } finally { await after.db.remove(); }
+});
+
+it('keeps pending and applied version-8 orders with fees, shipping, a custom line and the woocommerce rounding byte for byte through the identity migration to version 9', async () => {
+  const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 200000,
+    rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+    getTaxRates: () => [{ id: 1, code: 'standard', label: 'Standard', rate: '20', priority: 1, compound: false, shipping: true }] } });
+  builder.addLine({ productId: `custom:${uuidv7()}`, custom: true, name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+  builder.addFee({ name: 'Bag', amountMinor: 20, taxClass: 'standard' });
+  builder.addShipping({ name: 'Delivery', amountMinor: 30, taxClass: 'standard', methodId: 'flat_rate' });
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const pending: PosOrder = { ...order, sentVersion: 5, serverFailures: { since: 1000, reason: 'network', isolated: true } };
+  const applied: PosOrder = { ...order, id: uuidv7(), syncStatus: 'applied', serverRefs: { orderId: 'server-1', totalMinor: order.totalMinor } };
+  const name = `posmigrate${uuidv7().replaceAll('-', '')}`;
+  const before = await open(name, storage, olderCollection(8));
+  expect((await (await before.added).pos_orders.bulkInsert(structuredClone([pending, applied]))).error).toEqual([]);
+  await before.db.close();
+  const originals = await Promise.all([pending, applied].map((original) => olderDocument(storage, name, original.id, 8)));
+  const db = await createRxDatabase({ name, storage, multiInstance: false });
+  try {
+    const pos_orders = await addPosOrderCollection(db);
+    expect(pos_orders.schema.version).toBe(9);
+    for (const [index, original] of [pending, applied].entries()) {
+      const migrated = await pos_orders.findOne(original.id).exec();
+      expect(migrated?.toJSON()).toStrictEqual(original);
+      expect(migrated?.toJSON(true)._meta).toEqual(originals[index]._meta);
+    }
+    const queued = await pos_orders.find({ selector: { syncStatus: 'pending' }, sort: [{ createdAt: 'asc' }] }).exec();
+    expect(queued.map((doc) => doc.toJSON())).toStrictEqual([pending]);
+    const coupons = [{ code: 'save10', couponId: '42', discountMinor: 10, discountTaxMinor: 2 }];
+    await queued[0].incrementalPatch({ coupons });
+    expect((await pos_orders.findOne(pending.id).exec())?.toJSON()).toStrictEqual({ ...pending, coupons });
+  } finally { await db.remove(); }
+});
+
+describe('from version 8', () => {
+  describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory(), { from: 8 }));
 });
 
 it('refuses the current version without its migration strategies, and keeps the order', () => refusedWithoutStrategies(0));

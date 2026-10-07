@@ -1,4 +1,4 @@
-export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder } from './types';
+export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder } from './types';
 export { uuidv7 } from './uuidv7';
 export { finalizeOrder } from './finalize';
 export type { FinalizeOptions } from './finalize';

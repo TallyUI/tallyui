@@ -15,6 +15,14 @@ export interface PosOrderServerFailures {
   isolated: boolean;
 }
 
+/** A WooCommerce coupon on the stored order (ADR-077 d2): its figures are the order builder's coupon replay. */
+export interface PosOrderCoupon {
+  code: string; // lower-case code
+  couponId: string; // the connector's coupon id, as a string
+  discountMinor: number; // the coupon's discount, ex tax, in integer minor units
+  discountTaxMinor: number; // its tax, in integer minor units
+}
+
 export interface PosOrderLine {
   id: string;
   productId: string;
@@ -25,6 +33,10 @@ export interface PosOrderLine {
   sku: string;
   quantity: number;
   unitPriceMinor: number;
+  /** The chosen variation attributes, name to value (pos_orders v9, #495). */
+  attributes?: Record<string, string>;
+  /** The catalogue's regular unit price, in the line's own tax mode like `unitPriceMinor` (pos_orders v9, ADR-077 d2). */
+  regularUnitPriceMinor?: number;
   /** Line discounts plus the allocated order-discount share, in the line's own tax mode (ADR-062). */
   discountMinor: number;
   netMinor: number;
@@ -51,6 +63,8 @@ export interface PosOrder {
   currency: string;
   pricesIncludeTax: boolean;
   lines: PosOrderLine[];
+  /** pos_orders v9, ADR-077 d2; present only on a sale with coupons */
+  coupons?: PosOrderCoupon[];
   fees?: FeeLine[];
   shipping?: ShippingLine[];
   subtotalMinor: number;
@@ -76,9 +90,9 @@ export interface PosOrder {
    * The order.create version every attempt under this `commandId` goes out at: the outbox records it before the first
    * send, and lowers it only on a downgrade (ADR-065 amendment). Absent means not sent yet (or requeued).
    */
-  sentVersion?: 1 | 2 | 3 | 4 | 5;
+  sentVersion?: 1 | 2 | 3 | 4 | 5 | 6;
   /** The version first tried, before the downgrade (the order's audit). */
-  downgradedFrom?: 1 | 2 | 3 | 4 | 5;
+  downgradedFrom?: 1 | 2 | 3 | 4 | 5 | 6;
   /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. */
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */
@@ -97,4 +111,6 @@ export interface PosOrder {
   serverFailures?: PosOrderServerFailures;
   error?: CommandError;
   updatedAt: string;
+  /** When the till reopened this refused order as a parked sale (ADR-077 d4b). Needs attention hides it, and it stays as the record of the refusal. */
+  reopenedAt?: string;
 }
