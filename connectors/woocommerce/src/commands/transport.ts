@@ -38,7 +38,8 @@ function decodeCouponMessage(message: unknown): string {
   const entities: Record<string, string> = { quot: '"', amp: '&', lt: '<', gt: '>', apos: "'" };
   return (typeof message === 'string' ? message : '').replace(/<[^>]*>/g, '')
     .replace(/&(quot|amp|lt|gt|apos|#\d+|#x[\da-f]+);/gi, (_, entity: string) => entities[entity.toLowerCase()]
-      ?? String.fromCodePoint(parseInt(entity.slice(entity[1].toLowerCase() === 'x' ? 2 : 1), entity[1].toLowerCase() === 'x' ? 16 : 10)))
+      ?? ((value: number) => value > 0x10FFFF ? _ : String.fromCodePoint(value))(
+        parseInt(entity.slice(entity[1].toLowerCase() === 'x' ? 2 : 1), entity[1].toLowerCase() === 'x' ? 16 : 10)))
     .replace(/\s+/g, ' ').trim() || 'status_400';
 }
 
