@@ -158,6 +158,24 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–6', as
   }
 });
 
+it('stores reopenedAt on a rejected order, and refuses a non-string', async () => {
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const order = { ...finalizeOrder(builder.getSnapshot()), syncStatus: 'rejected' as const,
+      error: { code: 'coupon_invalid', message: 'Refused' }, reopenedAt: '2026-10-07T10:00:00.000Z' };
+    await pos_orders.insert(order);
+    expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), reopenedAt: 5 as unknown as string })).rejects.toThrow();
+  } finally {
+    await db.remove();
+  }
+});
+
 it('requires taxRounding, and refuses an unknown granularity, an unknown mode and an extra key inside it (#287)', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
