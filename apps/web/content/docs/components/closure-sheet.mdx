@@ -1,0 +1,32 @@
+---
+title: ClosureSheet
+description: Closed register confirmation with closure number and tender figures
+---
+
+## Import
+
+```tsx
+import { ClosureSheet } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ClosureSheet
+  register={register}
+  currency="EUR"
+  onPrint={() => printClosure()}
+  onDone={() => setClosureOpen(false)}
+/>
+```
+
+Renders a confirmation dialog for the last closure, showing its local number and any approver. Counted, expected, and variance figures per tender and the optional print action are hidden while blind; without a last closure, nothing renders.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `register` | `ReturnType<typeof useRegisterSession>` | required | Register session state supplying `lastClosure` and `blind` |
+| `currency` | `string` | required | ISO 4217 code used to display closure figures |
+| `onPrint` | `() => void \| Promise<void>` | --- | Handles printing; the button is absent when omitted or while blind, and thrown errors appear inline |
+| `onDone` | `() => void` | required | Called on Done or when the dialog is dismissed |

@@ -1,0 +1,42 @@
+---
+title: Receipt
+description: Sale receipt with store details, line items, totals, payments, and print actions
+---
+
+## Import
+
+```tsx
+import { Receipt } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Receipt
+  order={order}
+  posOrder={posOrder}
+  store={{ name: 'Sample Store', address: '12 Market Street' }}
+  cashier="Alex"
+  registerId={registerId}
+  registerName="Front counter"
+  newSale={() => startNewSale()}
+/>
+```
+
+Renders store and cashier details, line items, discounts, taxes, totals, payments, and change with Print receipt and New sale buttons. A finalized `posOrder` supplies the order reference and time; without it, the receipt shows a draft reference.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `order` | `SentOrder` | required | Sale data used to build the receipt's lines, totals, payments, and change |
+| `store` | `{ name: string; address?: string }` | required | Store name and optional address printed at the top |
+| `cashier` | `string` | required | Cashier text printed in the receipt header |
+| `registerId` | `string` | required | Register ID passed to the receipt data builder; the ID is not printed |
+| `newSale` | `() => void` | required | Called when New sale is pressed |
+| `registerName` | `string` | --- | Register name printed as “Register: name” |
+| `posOrder` | `PosOrder` | --- | Finalized order supplying the reference and creation time; omission marks the sale ID as a draft |
+| `taxLabel` | `(ratePpm: number) => string` | ``(ratePpm: number) => `Tax ${ratePpm / 10000}%` `` | Formats each tax row's label from its rate in parts per million |
+| `topInset` | `number` | `0` | Height of the space above the receipt, hidden when printing |
+| `formatDate` | `(iso: string) => string` | `defaultFormatDate` | Formats the receipt time; the default uses the locale's medium date and short time |
+| `footerSlot` | `ReactNode` | --- | Printed content after the Change row and above the on-screen buttons |

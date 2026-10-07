@@ -1,0 +1,34 @@
+---
+title: PriceForm
+description: Line price entry with the current price and an optional reason
+---
+
+## Import
+
+```tsx
+import { PriceForm } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<PriceForm
+  lineName={line.name}
+  currency={sale.order.currency}
+  currentMinor={line.unitPriceMinor}
+  onApply={(amountMinor, reason) => applyPrice(amountMinor, reason)}
+  onClose={() => setPriceOpen(false)}
+/>
+```
+
+Renders the line's current price, a new price input, an optional reason, and Apply and Cancel buttons. Prices are parsed into minor units, including zero; parsing errors and application refusals appear inline.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `lineName` | `string` | required | Line name used in the heading and accessible group label |
+| `currency` | `string` | required | Currency used to format the current price and parse the new amount |
+| `currentMinor` | `number` | required | Current price in minor units, displayed above the input |
+| `onApply` | `(amountMinor: number, reason?: string) => string \| null` | required | Receives the parsed price and trimmed reason, or `undefined` for an empty reason; return a refusal or `null` once applied |
+| `onClose` | `() => void` | required | Called on Cancel or after `onApply` returns `null` |

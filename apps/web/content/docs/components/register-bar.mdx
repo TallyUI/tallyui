@@ -1,0 +1,38 @@
+---
+title: RegisterBar
+description: Register status bar with a status pill and panel action
+---
+
+## Import
+
+```tsx
+import { RegisterBar } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<RegisterBar
+  register={register}
+  registerId={registerId}
+  online={online}
+  registerName="Front counter"
+  multiRegister={true}
+  onOpenPanel={() => setRegisterOpen(true)}
+/>
+```
+
+Renders the register name for stores with multiple registers, a status pill when applicable, and a Register button when a session or last closure exists. Supplying `onPressPill` makes the pill a button.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `register` | `ReturnType<typeof useRegisterSession>` | required | Register session status, overdue and enabled state, closing state, and last closure |
+| `registerId` | `string \| null` | required | Bound register ID, or `null` when no register is chosen |
+| `online` | `boolean` | required | Whether the store and app can be reached; `false` is shown as offline |
+| `registerName` | `string` | --- | Name shown when `multiRegister` is true and a register is bound |
+| `multiRegister` | `boolean` | required | Whether the store has multiple registers and needs the register name displayed |
+| `onOpenPanel` | `() => void` | required | Called when the Register panel button is pressed |
+| `onPressPill` | `() => void` | --- | Makes the status pill a button and handles its press |
+| `className` | `string` | --- | Override status bar container styles |

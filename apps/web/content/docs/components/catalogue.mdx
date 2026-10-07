@@ -1,0 +1,54 @@
+---
+title: Catalogue
+description: Searchable product grid or table with variant choices and stock sync times
+---
+
+## Import
+
+```tsx
+import { Catalogue } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Catalogue
+  products={products}
+  traits={traits}
+  currency="EUR"
+  onSelect={(entry) => selectProduct(entry)}
+  lastSyncedAt={lastSyncedAt}
+  showViewToggle
+  showCategoryNav
+/>
+```
+
+Renders a searchable product grid or table with barcode or SKU lookup, variant choices, and stock sync times. Optional category navigation and a view toggle update controlled or internal view state; supplied `items` are displayed in their given order.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `products` | `Doc[]` | required | Product documents used for scanning, variant choices, and the displayed list when `items` is omitted |
+| `traits` | `ProductTraits<Doc>` | required | Accessors used to read product identity, names, variants, categories, search fields, and sort values |
+| `currency` | `string` | required | Currency used for catalogue entries, variant prices, and price sorting |
+| `onSelect` | `(entry: CatalogueEntry<Doc>) => void` | required | Receives the selected product and variant with the nearest ConnectorProvider's stock overlay applied to a copy |
+| `statusText` | `string` | --- | Status line text; a search appends the number of matching results |
+| `statusAccessory` | `ReactNode` | --- | Content at the end of the status line; renders the row even without `statusText` |
+| `lastSyncedAt` | `Date \| null` | required | Last catalogue sync time, used for the stock-as-of time and initial loading state |
+| `loading` | `boolean` | --- | Whether the first pull is running; when omitted, uses `lastSyncedAt === null` with no `pullError` |
+| `pullError` | `unknown` | --- | Last product pull error; when set, a never-synced empty catalogue is not treated as loading |
+| `lastStockCheckAt` | `Date \| null` | --- | Last completed stock reconcile time; the displayed time is the latest of this, the valid provider overlay time, and `lastSyncedAt` |
+| `hour12` | `boolean` | --- | Selects a 12- or 24-hour stock-as-of clock; omission keeps the locale default |
+| `minCodeLength` | `number` | --- | Minimum trimmed search length for Enter to attempt a code lookup; shorter input stays a search |
+| `viewState` | `CatalogueViewState` | --- | Controlled view state; requested changes are reported through `onStateChange` |
+| `defaultViewState` | `Partial<CatalogueViewState>` | --- | Initial uncontrolled state merged over `DEFAULT_CATALOGUE_VIEW_STATE` |
+| `loadViewState` | `() => unknown \| Promise<unknown>` | --- | Reads app-owned stored state once on mount in uncontrolled mode |
+| `saveViewState` | `(state: CatalogueViewState) => void \| Promise<void>` | --- | Saves cashier changes in uncontrolled mode; does not save loads |
+| `onViewStateError` | `(error: unknown) => void` | --- | Receives load and save errors; errors are swallowed when omitted |
+| `onStateChange` | `(state: CatalogueViewState) => void` | --- | Receives loaded state or the cashier's next state, including requested state in controlled mode |
+| `showViewToggle` | `boolean` | `false` | Shows the grid and table toggle in the header |
+| `showCategoryNav` | `boolean` | `false` | Shows category navigation in the header |
+| `categories` | `ProductCategory[]` | --- | Replaces categories derived from the listed products |
+| `items` | `Doc[]` | --- | App-filtered and sorted list shown as given; `products` still drives scanning and variant choices |
+| `onQueryChange` | `(query: string) => void` | --- | Receives search text on each input change for app-owned filtering |

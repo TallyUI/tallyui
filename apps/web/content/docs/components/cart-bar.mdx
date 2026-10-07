@@ -1,0 +1,30 @@
+---
+title: CartBar
+description: Cart summary button showing the item count and total
+---
+
+## Import
+
+```tsx
+import { CartBar } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useSale } from '@tallyui/pos';
+import { CartBar } from '@tallyui/components';
+
+// Inside a component under TaxProvider.
+const sale = useSale(settings, { registerId, cashierRef });
+<CartBar sale={sale} onOpen={() => setCartOpen(true)} />
+```
+
+Renders one button showing the sum of line quantities and the cart's total. An empty cart shows “Cart is empty” and disables the button.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |
+| `onOpen` | `() => void` | required | Called when the cart summary is pressed |

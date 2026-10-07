@@ -1,0 +1,32 @@
+---
+title: OrdersList
+description: Recent orders and orders needing attention with sync details and retry actions
+---
+
+## Import
+
+```tsx
+import { OrdersList } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OrdersList
+  orders={orders}
+  onRetry={(orderIds) => outbox.requeue(orderIds)}
+  stuck={outbox.state.stuck}
+/>
+```
+
+Renders Recent orders and a Needs attention section when applicable, with expandable line and payment details, sync status, and warnings. Eligible rejected orders have a Retry action that calls `onRetry`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `orders` | `PosOrder[]` | required | Orders shown in Recent and filtered into Needs attention |
+| `onRetry` | `(orderIds: string[]) => Promise<number>` | required | Requeues rejected orders; a result of zero re-enables Retry immediately |
+| `formatDate` | `(iso: string) => string` | `defaultFormatDate` | Formats order times; the default uses a medium date and short time, leaving unparseable values unchanged |
+| `footer` | `ReactNode` | --- | App content rendered after the order sections |
+| `stuck` | `OutboxState['stuck']` | --- | Outbox entries that make pending orders need attention and supply each order's waiting-since time |
