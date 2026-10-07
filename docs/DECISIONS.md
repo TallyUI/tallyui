@@ -4965,6 +4965,38 @@ interface OrderCreatePayload {
       `resume(id, { keepParkedPrices: true })`.
     - **Tests.** The reviewer applied 7 R5 mutations and 21 reopen mutations; each was killed by the pos tests. They are
       listed in the PR.
+  - **(d5) as built (2026-10-07): same-register reuse.** One-way; `@tallyui/pos`. The app wires both pieces. Nothing
+    is written to `coupons` (#53).
+    - **`createSaleCouponSource({ coupons, products, orders, now? })`** is the `SaleCouponSource` that `useSale` takes.
+      - **`find(code)`.** It looks up the code with an indexed query, then by a lower-case scan, because WooCommerce
+        may store capitals. It returns `null` when:
+        - no coupon matches;
+        - the `discount_type` is not `percent`, `fixed_cart` or `fixed_product`;
+        - the `id` is not an integer;
+        - the coupon has no `amount`.
+      - **The overlay.** The till's own uses are added to `usage_count` and `used_by` (the customer's id, else their
+        email).
+        - A `pending` order always counts.
+        - An `applied` order counts while its `updatedAt` is later than the coupon document's last local write, and
+          for at most `APPLIED_USE_GRACE_MS` (10 minutes) after it.
+        - A `rejected` order never counts.
+      - **Why the window.** RxDB's downstream writes nothing when a pulled document equals the stored one (rxdb 17.5
+        `replication-protocol/downstream.js`), so the last-write time alone could count an order for ever. Once a
+        coupon order applies, the store's figure is the one that counts.
+      - **`productCategories`** reads the directly assigned categories from `products`.
+    - **`startCouponUsageRefetch({ orders, coupons, enqueue, reSync, now? })`.** When an order with coupons becomes
+      `applied` within the grace window, it hands that order's local coupon documents to the coupon feed's `enqueue`,
+      as `refreshOnly` entries, and calls `reSync()` once. Each order is handled once per run.
+      - A failed read is logged through `saleLogger`; the order stays handled.
+      - Nothing is enqueued after `stop()`, including a read still in flight.
+      - The app passes `connector.reconcile.coupons.enqueue` and the coupons replication's `reSync`.
+    - **Known limits (advisory; the store decides).**
+      - A pull that starts before the store records the use, and lands after the order applied, moves the coupon's
+        last-write time without the use. Until the next pull, this register can then accept a limit-1 coupon once more.
+        The store refuses it as `coupon_invalid`, and (d4b) reopens the sale.
+      - Other registers see the use only on their own next pull of that coupon.
+    - **Tests.** The reviewer applied 21 source mutations and 17 refetch mutations. All were killed except two refetch
+      mutations, which are equivalent. They are listed in the PR.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
