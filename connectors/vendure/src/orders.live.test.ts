@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { vendureAuth } from './auth';
 import { getVendureOrder, listVendureOrders, type VendureOrderListOptions } from './orders';
+import { vendureRefundable } from './refunds';
 
 describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure orders', () => {
   const baseUrl = process.env.VENDURE_DEV_URL!;
@@ -26,7 +27,14 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure orders', () => {
     }
 
     const order = await getVendureOrder(context, firstId, { tallyFields: false });
-    if (order !== null) expect(typeof order.id).toBe('string');
-    else expect(order).toBeNull();
+    if (order !== null) {
+      expect(typeof order.id).toBe('string');
+      for (const line of order.lines) {
+        expect(typeof line.orderPlacedQuantity).toBe('number');
+        expect(typeof line.proratedUnitPrice).toBe('number');
+        expect(typeof line.proratedUnitPriceWithTax).toBe('number');
+      }
+      expect(vendureRefundable(order).lines).toHaveLength(order.lines.length);
+    } else expect(order).toBeNull();
   }, 30000);
 });

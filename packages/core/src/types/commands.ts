@@ -22,7 +22,37 @@ export type RegisterCommandType = 'register.session.open' | 'register.session.tr
 export type RegisterCommandEnvelope<P = Record<string, unknown>> =
   Omit<CommandEnvelope<P>, 'type' | 'version'> & { type: RegisterCommandType; version: number };
 /** Any command a transport can carry. */
-export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown>;
+export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown> | OrderRefundEnvelope<unknown>;
+
+/** A line's refunded quantity and restock choice (ADR-080). */
+export interface OrderRefundLine { orderLineId: string; quantity: number; restock: boolean }
+/** An online refund against an order, attributed to the refunding session (ADR-080). */
+export interface OrderRefundPayload {
+  clientRefundId: string; orderId: string; clientOrderId?: string; lines: OrderRefundLine[];
+  shippingMinor: number; adjustmentMinor: number; totalMinor: number;
+  destination: 'original_method' | 'cash'; reason: string;
+  registerId: string; sessionId: string; cashierRef?: string; createdAt: string;
+}
+/** An order.refund v1 command with the shared idempotency envelope (ADR-080). */
+export type OrderRefundEnvelope<P = OrderRefundPayload> =
+  Omit<CommandEnvelope<P>, 'type' | 'version'> & { type: 'order.refund'; version: 1 };
+/** The server's refund total, tender attribution and platform refunds (ADR-080). */
+export interface OrderRefundResult {
+  totalMinor: number;
+  byMethod: Record<string, number>;
+  refunds: Array<{ id: string; paymentId: string; totalMinor: number; state: string }>;
+}
+/** Per-command refund refusals (ADR-080 decision 5). */
+export type OrderRefundRejectionCode = 'nothing_to_refund' | 'quantity_exceeds' | 'amount_mismatch'
+  | 'order_state' | 'not_till_order' | 'forbidden' | 'no_open_session';
+/** Lines exceeding the server's refundable quantities (ADR-080). */
+export interface OrderRefundQuantityExceedsData { lines: Array<{ orderLineId: string; quantity: number; refundableQuantity: number }> }
+/** The till's expected refund and the server's computed amount (ADR-080). */
+export interface OrderRefundAmountMismatchData { expectedMinor: number; serverMinor: number }
+/** The order state preventing a refund (ADR-080). */
+export interface OrderRefundOrderStateData { state: string }
+/** The session that is not open on the refunding register (ADR-080). */
+export interface OrderRefundNoOpenSessionData { sessionId: string }
 
 /** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one. */
 export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 };
@@ -106,6 +136,7 @@ export interface CommandResult {
   warnings?: CommandWarning[];
   error?: CommandError;
   register?: RegisterCommandResult;
+  refund?: OrderRefundResult;
 }
 
 /** A register command's server figures (registers c2b applies them). */

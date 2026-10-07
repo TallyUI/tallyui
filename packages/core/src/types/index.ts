@@ -29,6 +29,8 @@ export type { CustomerTraits } from './traits/customer';
 export type {
   CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,
   RegisterCommandType, RegisterCommandEnvelope, AnyCommandEnvelope,
+  OrderRefundLine, OrderRefundPayload, OrderRefundEnvelope, OrderRefundResult, OrderRefundRejectionCode,
+  OrderRefundQuantityExceedsData, OrderRefundAmountMismatchData, OrderRefundOrderStateData, OrderRefundNoOpenSessionData,
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,

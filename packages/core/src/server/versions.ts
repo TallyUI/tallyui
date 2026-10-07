@@ -7,3 +7,5 @@
 export const SUPPORTED_ORDER_CREATE_VERSIONS: readonly number[] = [1, 2, 3, 4]
 /** The till's capability for the contract versions shared by all five register commands; a server passes its own. */
 export const SUPPORTED_REGISTER_VERSIONS: readonly number[] = [1]
+/** The till's capability for order.refund versions (ADR-080); a server passes its own. */
+export const SUPPORTED_ORDER_REFUND_VERSIONS: readonly number[] = [1]

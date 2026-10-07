@@ -8,6 +8,7 @@ import { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
 export type ValidatedCommandEnvelope =
   | (Omit<CommandEnvelope<Record<string, unknown>>, 'version'> & { type: 'order.create'; version: number })
   | RegisterCommandEnvelope<Record<string, unknown>>
+  | (Omit<CommandEnvelope<Record<string, unknown>>, 'type' | 'version'> & { type: 'order.refund'; version: number })
 
 /** Validates every envelope before any command is claimed. */
 export function validateBatch(body: unknown):
@@ -30,7 +31,7 @@ export function validateBatch(body: unknown):
     }
     let field: string | undefined
     if (typeof command.id !== 'string' || command.id.length === 0 || command.id.length > 64) field = 'id'
-    else if (!['order.create', 'register.session.open', 'register.session.transition', 'register.movement.record',
+    else if (!['order.create', 'order.refund', 'register.session.open', 'register.session.transition', 'register.movement.record',
       'register.movement.void', 'register.closure.submit'].includes(command.type)) field = 'type'
     else if (!Number.isSafeInteger(command.version) || command.version < 1) field = 'version'
     else if (typeof command.payload !== 'object' || command.payload === null || Array.isArray(command.payload)) field = 'payload'
@@ -57,13 +58,23 @@ export function validateBatch(body: unknown):
  *
  * `supported` is the SERVER's own list (what its /info advertises), never core's constants, which are the
  * till's capability (#297). The version check, the `unsupported_version` message and its `data` all use it:
- * `precheckCommand(envelope, { orderCreate: [1, 2, 3], register: [1] })`.
+ * `precheckCommand(envelope, { orderCreate: [1, 2, 3], register: [1], orderRefund: [1] })` (`orderRefund` is optional).
  */
 export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>,
-  supported: { orderCreate: readonly number[]; register: readonly number[] }): CommandResult | undefined {
+  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[] }): CommandResult | undefined {
   // An empty list would send Math.max() of nothing (-Infinity, null in JSON) as the server's version.
   for (const key of ['orderCreate', 'register'] as const) {
     if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
+  }
+  if (envelope.type === 'order.refund') {
+    const versions = supported.orderRefund ?? []
+    if (!versions.includes(envelope.version)) {
+      return { id: envelope.id, status: 'rejected', error: { code: 'unsupported_version',
+        message: `order.refund version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : 'takes no refunds'}`,
+        data: { orderRefund: versions.length ? Math.max(...versions) : 0 },
+      } }
+    }
+    return undefined
   }
   if (envelope.type !== 'order.create') {
     if (!supported.register.includes(envelope.version)) {
