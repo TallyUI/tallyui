@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
+import { liveDemoEmbed } from '@/lib/live-demo-embed';
 
 const CartPanelDemo = dynamic(
   () => import('@/components/snacks/cart-panel-snack').then((m) => m.CartPanelDemo),
@@ -11,7 +12,15 @@ const CartPanelDemo = dynamic(
 export function LiveDemo() {
   const [loaded, setLoaded] = useState(false);
 
-  if (loaded) return <CartPanelDemo />;
+  if (loaded) {
+    // Below 640px the embed scrolls sideways; rtl starts at the right end, where Snack puts the preview.
+    // lg:col-span-2 gives the demo the full hero row on desktop.
+    return (
+      <div className="overflow-x-auto [direction:rtl] lg:col-span-2">
+        <CartPanelDemo {...liveDemoEmbed} />
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-lg border border-fd-border bg-fd-card p-6">
