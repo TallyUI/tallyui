@@ -55,6 +55,23 @@ describe('startCouponUsageRefetch', () => {
     expect(reSync).toHaveBeenCalledTimes(1);
   });
 
+  it('refetches a fresh pending order only after it applies', async () => {
+    await db.coupons.bulkInsert([coupon, coupon2]);
+    const updatedAt = new Date().toISOString();
+    const doc = await db.pos_orders.insert(order({ syncStatus: 'pending', updatedAt, coupons: [appliedCoupon] }));
+    await db.pos_orders.insert(order({ syncStatus: 'applied', updatedAt, coupons: [appliedCoupon2] }));
+    runners.push(startCouponUsageRefetch({ orders: db.pos_orders, coupons: db.coupons, enqueue, reSync }));
+    await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(1));
+    expect(enqueue.mock.calls[0][0]).toEqual([
+      { key: 'coupon-102', local: expect.objectContaining({ id: 102 }), refreshOnly: true },
+    ]);
+    await doc.patch({ syncStatus: 'applied', updatedAt: new Date().toISOString() });
+    await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(2));
+    expect(enqueue.mock.calls[1][0]).toEqual([
+      { key: 'coupon-101', local: expect.objectContaining({ id: 101 }), refreshOnly: true },
+    ]);
+  });
+
   it('enqueues both coupons of one order in one call', async () => {
     await db.coupons.bulkInsert([coupon, coupon2]);
     await db.pos_orders.insert(order({ syncStatus: 'applied', updatedAt: new Date().toISOString(),
@@ -100,17 +117,20 @@ describe('startCouponUsageRefetch', () => {
   });
 
   it('skips missing local coupons and non-integer coupon ids', async () => {
+    const find = vi.spyOn(db.coupons, 'find');
     await db.coupons.insert(coupon);
     const updatedAt = new Date().toISOString();
     await db.pos_orders.bulkInsert(['999', 'abc'].map((couponId) => order({ syncStatus: 'applied', updatedAt,
       coupons: [{ ...appliedCoupon, couponId }] })));
     runners.push(startCouponUsageRefetch({ orders: db.pos_orders, coupons: db.coupons, enqueue, reSync }));
+    await vi.waitFor(() => expect(find).toHaveBeenCalledTimes(1));
     await db.pos_orders.insert(order({ syncStatus: 'applied', updatedAt, coupons: [appliedCoupon] }));
     await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(1));
     expect(enqueue.mock.calls[0][0]).toEqual([
       { key: 'coupon-101', local: expect.objectContaining({ id: 101 }), refreshOnly: true },
     ]);
     expect(reSync).toHaveBeenCalledTimes(1);
+    find.mockRestore();
   });
 
   it('stops watching; a second runner handles an order applied after stop', async () => {
@@ -129,6 +149,23 @@ describe('startCouponUsageRefetch', () => {
       { key: 'coupon-101', local: expect.objectContaining({ id: 101 }), refreshOnly: true },
     ]);
     expect(secondReSync).toHaveBeenCalledTimes(1);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(reSync).not.toHaveBeenCalled();
+  });
+
+  it('enqueues nothing when stopped during an in-flight coupon read', async () => {
+    let resolveRead!: (docs: unknown[]) => void;
+    const pending = new Promise<unknown[]>((resolve) => { resolveRead = resolve; });
+    const find = vi.fn(() => ({ exec: () => pending }));
+    const coupons = { find } as unknown as RxCollection;
+    await db.pos_orders.insert(order({ syncStatus: 'applied', updatedAt: new Date().toISOString(),
+      coupons: [appliedCoupon] }));
+    const runner = startCouponUsageRefetch({ orders: db.pos_orders, coupons, enqueue, reSync });
+    runners.push(runner);
+    await vi.waitFor(() => expect(find).toHaveBeenCalled());
+    runner.stop();
+    resolveRead([{ uuid: 'coupon-101', toJSON: () => ({ id: 101, uuid: 'coupon-101' }) }]);
+    await new Promise((resolve) => setImmediate(resolve));
     expect(enqueue).not.toHaveBeenCalled();
     expect(reSync).not.toHaveBeenCalled();
   });
