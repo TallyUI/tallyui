@@ -374,7 +374,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     /** ADR-077 (d3): validates and applies a WooCommerce coupon; resolves to the refusal to show, or null once applied. */
     async applyCoupon(code: string): Promise<string | null> {
       if (locked()) return SALE_SAVING;
-      if (opts.capabilities?.coupons !== true || !opts.coupons || taxContext.rounding?.granularity !== 'woocommerce') return COUPONS_UNSUPPORTED;
+      if (opts.capabilities?.coupons !== true || (opts.capabilities?.orderCreate ?? 1) < 6 || !opts.coupons || taxContext.rounding?.granularity !== 'woocommerce') return COUPONS_UNSUPPORTED;
       const builder = builderNow.current, normalized = code.trim().toLowerCase();
       if (!normalized) return 'Enter a coupon code';
       if (applied.current.has(normalized)) return couponRefusal(normalized, { code: 'already_applied' });
@@ -566,7 +566,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const kept = new Map<string, SaleCoupon>(), messages: string[] = [];
       if (n > 0) messages.push(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
       if (saved.coupons?.length) {
-        const supported = opts.capabilities?.coupons === true && opts.coupons && taxContext.rounding?.granularity === 'woocommerce';
+        const supported = opts.capabilities?.coupons === true && (opts.capabilities?.orderCreate ?? 1) >= 6 && opts.coupons && taxContext.rounding?.granularity === 'woocommerce';
         if (supported) {
           const ids = builder.getSnapshot().lineItems.filter((line) => !line.custom).map((line) => Number(line.productId)).filter((id) => Number.isSafeInteger(id) && id >= 0);
           for (const [id, values] of await opts.coupons!.productCategories(ids)) if (values.length) categories.current.set(id, [...values]);

@@ -46,7 +46,7 @@ describe('useSale coupons', () => {
       return <TaxProvider {...taxProps} rounding={woo ? rounding : undefined}>{children}</TaxProvider>;
     }
     const options: SaleOptions = { registerId: 'register-1', cashierRef: 'cashier@store.test',
-      capabilities: { orderCreate: 3, coupons: true }, drafts: db.pos_drafts, coupons, ...overrides };
+      capabilities: { orderCreate: 6, coupons: true }, drafts: db.pos_drafts, coupons, ...overrides };
     return { ...renderHook((opts: SaleOptions) => useSale({ currency: 'GBP' }, opts), { wrapper: Wrapper, initialProps: options }), options };
   }
   function add(result: { current: ReturnType<typeof useSale> }, index = 0) {
@@ -75,6 +75,13 @@ describe('useSale coupons', () => {
     await act(async () => { expect(await result.current.applyCoupon('ten')).toBe(COUPONS_UNSUPPORTED); });
     expect(coupons.find).not.toHaveBeenCalled();
     expect(result.current.order).toBe(before);
+  });
+
+  it('refuses coupons when the store only accepts order.create version 5', async () => {
+    const { result } = renderSale(source(), { capabilities: { orderCreate: 5, coupons: true } });
+    add(result);
+    await act(async () => { expect(await result.current.applyCoupon('ten')).toBe(COUPONS_UNSUPPORTED); });
+    expect(result.current.order.coupons).toBeUndefined();
   });
 
   it('normalizes codes, refuses empty and unknown codes, and does not fetch duplicates', async () => {

@@ -279,7 +279,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         } catch (cause) {
           // Content that cannot downgrade goes at its required version: the server's refusal rejects it.
           if (!(cause instanceof UnsupportedOrderVersionError)) throw cause;
-          envelope = toOrderCreateEnvelope(frozen, deviceId, attempt, { maxVersion: cause.needed === 5 ? 5 : 3 });
+          envelope = toOrderCreateEnvelope(frozen, deviceId, attempt, { maxVersion: cause.needed >= 5 ? cause.needed : 3 });
         }
         // Bounds apply when frozen: persist older tills' sent forms before sending (Front desk, 2026-09-29). A first
         // send's version is stored, awaited, before the batch request leaves, so a crash in between keeps it.
