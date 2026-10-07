@@ -4875,6 +4875,21 @@ interface OrderCreatePayload {
       `sentVersion` and `downgradedFrom` maxima to it, so a version 7 fails a test instead of shipping behind the
       schema.
     - **Tests.** 17 mutations of the new code in `@tallyui/core` and `@tallyui/pos` were each killed (listed in the PR).
+  - **(d4a-woo) as built (2026-10-07): the WooCommerce mapping.** One-way; `@tallyui/connector-woocommerce`.
+    - **The gate.** `orderCreate` is 6 when `/status` lists `order_create_v5` and the coupons gate (R3) passes; else
+      the rule before. `WOO_ORDER_CREATE_VERSION` stays 5.
+    - **The body.** Only an envelope with coupons changes. It gains `coupon_lines` (the codes, in the order applied)
+      after `shipping_lines`, and every line gets one `_woocommerce_pos_data` entry with `price` (the line's
+      pre-coupon unit price; six decimals, half up, when it is not a whole number of minor units) and `regular_price`
+      (the stored regular price, or `price`). A custom line keeps its single entry, with `tax_status` after them. Line
+      `subtotal` and `total` are the pre-coupon figures; WooCommerce applies the coupons itself.
+    - **The refusal.** HTTP 400 `woocommerce_rest_invalid_coupon` is rejected as `coupon_invalid`, not retried. The
+      message is the store's with tags removed and entities decoded (a numeric entity outside Unicode stays as text);
+      `data` is `storeCode` and, when the first quoted text matches a coupon of the sale ignoring case, that
+      `couponCode`. The store's `new_draft_order_id` is not carried.
+    - **The R4 exception in practice.** A 201 whose store total differs stays `applied` with `serverRefs` and the
+      `total_mismatch` warning; this needed no new code.
+    - **Tests.** 14 mutations of the new code were each killed by the connector tests (listed in the PR).
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
