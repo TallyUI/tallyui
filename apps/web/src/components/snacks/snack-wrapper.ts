@@ -1,4 +1,5 @@
 import { tallyVersion } from '@/lib/site';
+import componentsPackage from '../../../../../packages/components/package.json';
 
 /**
  * Generates Expo Snack `files` prop for component demos.
@@ -55,7 +56,7 @@ export default function App() {
   const doc = isWoo ? wooDoc : medusaDoc;
 
   return (
-    <ConnectorProvider connector={connector}>
+    <ConnectorProvider connector={connector} traitContext={{ currency: 'USD' }}>
       <View style={styles.container}>
         <Text style={styles.label}>Connector:</Text>
         <View style={styles.row}>
@@ -99,6 +100,10 @@ export const snackDependencies = [
   `@tallyui/theme@${tallyVersion}`,
   `@tallyui/connector-woocommerce@${tallyVersion}`,
   `@tallyui/connector-medusa@${tallyVersion}`,
+  // rxdb and rxjs follow the versions the components are built against.
+  'react-native-svg',
+  `rxdb@${componentsPackage.devDependencies.rxdb}`,
+  `rxjs@${componentsPackage.devDependencies.rxjs}`,
 ].join(',');
 
 /**
@@ -131,7 +136,12 @@ const styles = StyleSheet.create({
 
 /** Standard npm dependencies for props-based Snack demos */
 export const propsSnackDependencies = [
+  `@tallyui/core@${tallyVersion}`,
   `@tallyui/components@${tallyVersion}`,
   `@tallyui/primitives@${tallyVersion}`,
   `@tallyui/theme@${tallyVersion}`,
+  // rxdb and rxjs follow the versions the components are built against.
+  'react-native-svg',
+  `rxdb@${componentsPackage.devDependencies.rxdb}`,
+  `rxjs@${componentsPackage.devDependencies.rxjs}`,
 ].join(',');
