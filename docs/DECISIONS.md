@@ -4897,3 +4897,63 @@ interface OrderCreatePayload {
     - ~/agent/handoff/register-takeover-ruling-2026-10-06.md (the ruling);
     - ~/agent/handoff/register-takeover-confirmation-2026-10-06.md (medusapos's confirmation);
     - #371.
+
+## ADR-079 Vendure order history: online, paged Admin API reads in Vendure's own shape
+
+- **Date:** 2026-10-07 · **Status:** Accepted (front desk assignment; vendurepos Default-order item 3) · **Relates
+  to:** ADR-046 (Vendure baseline: 3.7, Admin API only), ADR-049 (Vendure connector conventions), Paul's platform ruling of 2026-10-07 (each platform its own way)
+- **Context:**
+  - No connector reads the store's order history. The till's own sales live in `pos_orders`, and vendurepos's
+    orders panel shows only the outbox's recent sales.
+  - vendurepos needs:
+    - an orders list: placed orders, newest first, paged, filtered on the server by placed date, state, register,
+      cashier, customer and a search;
+    - an order detail with everything its receipt reprint reads.
+  - Refunds come later and start from an order. The read shape must carry payment ids and states, and each refund's
+    lines (~/agent/handoff/vendurepos-order-history-item3-2026-10-07.md).
+  - Vendure's Admin API already serves this:
+    - `orders(options: OrderListOptions)` returns `{ items, totalItems }` and `order(id)` returns one order. Both need
+      `ReadOrder` and are scoped to the request's channel.
+    - Plugin custom fields of string type appear as top-level `OrderFilterParameter` keys.
+    - There is no customer filter; one customer's orders come through `customer(id) { orders(options) }`.
+- **Decision:**
+  1. **Online reads, no collection.** `@tallyui/connector-vendure` exports two plain functions, alongside
+     `searchVendureCustomers`:
+     - `listVendureOrders(context, options)` sends one paged Admin API query per call;
+     - `getVendureOrder(context, id)` fetches one order.
+
+     Nothing is replicated and nothing is written locally. A paged, server-filtered history does not fit a pull
+     replication, and a local copy of server orders would be a second source of truth. Offline, the till still has
+     its own sales in `pos_orders`.
+  2. **Vendure's shape, unmapped.** The results are Vendure's own fields (`code`, `state`, `orderPlacedAt`, `lines`,
+     `taxSummary`, `payments { refunds { lines } }`, …), typed field for field as `VendureOrderSummary` and
+     `VendureOrder`. They are not mapped onto a TallyUI order model. Money stays in minor units with both `…WithTax`
+     and plain amounts, as Vendure sends them.
+  3. **Placed orders only.** With no date range given, the filter is `orderPlacedAt: { isNull: false }`, so active
+     carts and drafts never show. A given range uses Vendure's `DateOperators` (`after`, `before`, `between`).
+  4. **Filters are Vendure's.**
+     - State: `state: { in }`.
+     - Register and cashier: the vendurepos plugin's `tallyRegisterId` and `tallyCashierRef` custom fields with
+       `eq`.
+     - Search: `_or` of `code` and `customerLastName` with `contains`.
+     - Customer: the `customer(id) { orders }` route.
+     - Sort: `{ orderPlacedAt: DESC, id: DESC }`, so pages are stable.
+     - Paging: `take` defaults to 25 and is clamped to 1..100.
+  5. **Plugin fields are optional.** `tallyFields` (default true) selects the vendurepos plugin's order and line
+     custom fields. Without them, selecting `customFields { … }` is a query error, so a server without the plugin
+     passes `tallyFields: false`.
+  6. **Permissions.** Reads need `ReadOrder`, and the customer route also needs `ReadCustomer`. A till role with
+     only `TallyPosSell` gets the connector's 403 `ConnectorUnauthorizedError` naming the paths; vendurepos grants
+     both to its till role. Errors pass through `gql` unchanged.
+- **Open:**
+  - **A core order-history contract** waits for a second platform that builds history. Until then, no
+    `TallyConnector` field and no shared order type exist.
+  - **Refunded quantities** per line are computed by the app from `payments[].refunds[].lines`; the connector does
+    not sum them.
+- **Evidence:**
+  - Vendure 3.7.3's Admin API schema and services:
+    - `order.resolver.ts` and `customer.resolver.ts` (ReadOrder);
+    - `OrderFilterParameter` and custom-field filter generation;
+    - `parseSortParams` (keys applied in order);
+    - `OrderService.findByCustomerId` (channel-scoped, excludes Draft only).
+  - The live test `connectors/vendure/src/orders.live.test.ts` against the dev Vendure.
