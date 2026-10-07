@@ -38,6 +38,7 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
       currency,
       pricesIncludeTax: store.prices_include_tax === 'yes',
       taxRoundAtSubtotal: store.tax_round_at_subtotal === 'yes',
+      calcDiscountsSequentially: (store.woocommerce_calc_discounts_sequentially ?? store.calc_discounts_sequentially) === 'yes',
       ...(typeof store.shipping_tax_class === 'string' ? { shippingTaxClass: store.shipping_tax_class } : {}),
       taxClassSlugs: classes.map((row) => row.slug),
       taxRates,

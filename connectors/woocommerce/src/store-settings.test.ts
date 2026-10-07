@@ -41,7 +41,7 @@ describe('wooStoreSettings', () => {
   it('reads the captured settings and matched rates in WooCommerce order', async () => {
     const settings = await wooStoreSettings(context);
     expect(settings).toStrictEqual({
-      currency: 'USD', pricesIncludeTax: false, taxRoundAtSubtotal: false, shippingTaxClass: 'inherit',
+      currency: 'USD', pricesIncludeTax: false, taxRoundAtSubtotal: false, calcDiscountsSequentially: false, shippingTaxClass: 'inherit',
       taxClassSlugs: ['standard', 'reduced-rate', 'zero-rate'],
       taxRatesPpm: { default: 106250, 'reduced-rate': 55000, 'zero-rate': 0 },
       taxRates: expect.any(Object),
@@ -53,6 +53,14 @@ describe('wooStoreSettings', () => {
       id: 4, code: 'US-CA-COMPOUND TEST-3', label: 'Compound Test', rate: '2.0000',
       priority: 3, compound: true, shipping: false,
     });
+  });
+
+  it.each([
+    { woocommerce_calc_discounts_sequentially: 'yes', calc_discounts_sequentially: 'no' },
+    { calc_discounts_sequentially: 'yes' },
+  ])('reads sequential discounts from %j even without taxes', async (settings) => {
+    storesBody = [{ ...stores[0], ...settings, calc_taxes: 'no' }];
+    expect((await wooStoreSettings(context)).calcDiscountsSequentially).toBe(true);
   });
 
   it('uses the rate codes captured from WooCommerce for every fixture rate', async () => {
