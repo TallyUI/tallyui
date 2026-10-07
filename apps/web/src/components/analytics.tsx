@@ -1,11 +1,12 @@
 // Pageview analytics for the open-source POS sites, into wcpos.com's self-hosted PostHog project.
-// Canonical copy: TallyUI/tallyui apps/web/src/components/analytics.tsx.
-// medusapos.com and vendurepos.com copy it verbatim, changing only SITE.
+// Canonical copy: TallyUI/tallyui apps/web/src/components/analytics.tsx and analytics-interaction.ts.
+// medusapos.com and vendurepos.com copy both verbatim, changing only SITE.
 // persistence: 'memory' writes no cookie and no localStorage, so no consent banner is needed
 // (front desk ruling, 2026-10-05); each page load counts as a new anonymous visitor.
 'use client';
 
 import { useEffect } from 'react';
+import { INTERACTION_EVENTS, isUserInteraction } from './analytics-interaction';
 
 // wcpos.com's project token, public by design.
 const POSTHOG_KEY = 'phc_BhTJzZ7fXMqcD4MiaUJQsQqPkEpu94yoSAthXFBWemvd';
@@ -14,16 +15,13 @@ const POSTHOG_HOST = 'https://ph.wcpos.com';
 // Sent on every event so dashboards can filter by site.
 const SITE = 'tallyui.com';
 
-// Any of these on window means a person is on the page; posthog-js is only fetched then, to keep it out of the initial load.
-const INTERACTION_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'scroll', 'wheel'] as const;
-
 export function Analytics(): null {
   useEffect(() => {
     let cancelled = false;
 
     const load = () => {
       for (const type of INTERACTION_EVENTS) {
-        window.removeEventListener(type, load, { capture: true });
+        window.removeEventListener(type, onInteraction, { capture: true });
       }
 
       import('posthog-js').then(({ default: posthog }) => {
@@ -41,12 +39,16 @@ export function Analytics(): null {
       });
     };
 
-    for (const type of INTERACTION_EVENTS) window.addEventListener(type, load, { capture: true, passive: true, once: true });
+    const onInteraction = (event: Event) => {
+      if (isUserInteraction(event)) load();
+    };
+
+    for (const type of INTERACTION_EVENTS) window.addEventListener(type, onInteraction, { capture: true, passive: true });
 
     return () => {
       cancelled = true;
       for (const type of INTERACTION_EVENTS) {
-        window.removeEventListener(type, load, { capture: true });
+        window.removeEventListener(type, onInteraction, { capture: true });
       }
     };
   }, []);
