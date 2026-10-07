@@ -4633,6 +4633,73 @@ interface OrderCreatePayload {
     - It checks the builder's `discount_total` and `discount_tax` against `calculateOrderTotals`.
     - It restates the cart-level scenarios of settle's upstream tests as builder tests: the missing-coupon gate,
       validation of the candidate codes, no partial patch, and money compared by value.
+- **Amendment 4 (2026-10-07): phase (d) in five steps (#501).** Phase (b) is complete with part 5 (#510). Each step
+  below is one spec and one PR. The front desk ruled on R1 and R2 the same day; the rulings follow the steps.
+  - **(d1) The builder computes coupons.** Two-way; `packages/pos` and the WooCommerce connector's store settings.
+    - **Input.** `createOrderBuilder` takes an optional coupon context: a lookup from code to the engine's
+      `CouponDiscountConfig` (built with `toCouponConfigs` from the `coupons` collection), the product categories,
+      and the store's `calc_discounts_sequentially`. The connector reads that setting into its store settings; the
+      WooCommerce lane names the endpoint.
+    - **API.** The builder gets an additive `setCoupons(codes)`. Classified two-way: it is optional, and no caller
+      exists until (d3).
+    - **Calculation.** For a WooCommerce tax context with codes set, the builder replays the coupons with
+      `recalculateCoupons` over the price-overridden lines. Each line goes in as `subtotal = total =` its
+      post-manual-discount net at 6dp, with its per-rate taxes from `woocommerceLine`. Each line then takes the
+      engine's `total` and `taxes` as its `netMicros` and `taxLines`, and `woocommerceTotals` runs over them. The
+      `Order` gains an optional `coupons: [{ code, discountMinor, discountTaxMinor }]`. Other tax contexts ignore
+      codes (decision 3).
+    - **Nothing persists it.** `order-drafts` leaves `coupons` out until (d2), and `useSale` exposes nothing, so no
+      sale can carry a coupon yet.
+    - **Tests.**
+      - Builder results are checked against `calculateOrderTotals`.
+      - The dev store's coupon cases (WooCommerce's own figures, from the WooCommerce lane) are pinned.
+      - Settle's cart-level scenarios are restated (amendment 3).
+      - An inclusive coupon over compound rates with non-default priorities is pinned. Part 5's mutation run
+        found that this path in `recalculate` (the inclusive-discount tax split) has no case yet.
+  - **(d2) Storage: `pos_orders` v9.** One-way, needs-paul.
+    - The order gains `coupons` (`code`, `couponId`, `discountMinor`, `discountTaxMinor`), and the line gains
+      #495's `attributes` (G-V2), in one bump.
+    - The bump goes through the `open.ts` opener with local documents tested (ADR-078 3a: the RxDB 17.5 row-loss
+      bug).
+  - **(d3) The sale API and offline validation.** After (d2).
+    - `useSale().applyCoupon(code) → refusal | null` and `removeCoupon(code)`.
+    - `validateCoupon` runs against the `coupons` collection plus the till's local usage overlay (amendment 2).
+    - The feature is gated on `reconcile.coupons`, and the sale gets the data for Q3's staleness hint.
+  - **(d4) The push.** One-way: the transport payload.
+    - `coupon_lines: [{ code }]` and each line's `_woocommerce_pos_data` intent.
+    - A refusal maps to `coupon_invalid` and keeps the store's own code (amendment 2). The refused sale reopens as a
+      parked sale with the coupon removed (Q3).
+    - On an order with coupons, each line's `subtotal` is its POS price (R2). Coupons are sent only to a store whose
+      woocommerce-pos is 1.9.0 or later (R2).
+  - **(d5) Same-register reuse.** After (d4). The local usage overlay counts a successful coupon order at once, and
+    the coupon is refetched by id (amendment 2).
+  - **Rulings (front desk, 2026-10-07):**
+    - **R1, one bump.** (d2) is a single `pos_orders` v9 that carries the order's coupons and #495's line
+      `attributes`. It gets one needs-paul write-up naming both, with the migration path and what older builds see.
+      There is no second bump this minor.
+    - **R2, gate on woocommerce-pos 1.9.0, fail closed below it.** The WooCommerce lane answered, and the front desk
+      confirmed it. Amendment 1's plugin dependency is corrected:
+      - **The filter is gone.** woocommerce-pos removed the `get_subtotal()` filter in 8f5f0368 (2026-03-25). The
+        client now sends line `subtotal` = the POS price, and WooCommerce's own `recalculate_coupons()` reset
+        (`total = subtotal`) keeps the POS price. The engine's step 1 comment in `recalculate.ts`, ported verbatim
+        from WCPOS, still describes the filter; it is stale, and the code is unchanged because the arithmetic is the
+        same.
+      - **The gate.** woocommerce-pos 1.9.0 (2026-05-15) is the first release on that model, and it has the
+        `coupon_get_items_to_validate` POS hook. Before it:
+        - 1.8.8 to 1.8.11 relied on the fragile filter;
+        - below 1.8.8, a coupon resets POS-discounted lines to the regular price.
+      - **No change to woocommerce-pos,** neither on main nor in a fork.
+      - **Sources:** woocommerce-pos tags v1.9.0 and v1.8.11, `includes/Orders.php` and
+        `tests/includes/Test_Orders_Coupon_Discount.php`.
+      - **Below 1.9.0, or with the version unknown, coupons fail closed** behind a capability check (ADR 0006), and
+        the store gets no `coupon_lines`.
+      - This lane's choice, between creating the order without the coupon and refusing: **refuse, with a clear
+        reason.** An order created without `coupon_lines` would record full price on the store while the customer
+        paid the discounted total. So:
+        - (d3) refuses `applyCoupon` with a "this store's plugin does not support coupons yet" reason when the
+          capability is absent;
+        - (d4) refuses a sale that still carries a coupon if the capability is gone by push time, and it takes Q3's
+          path: the order is reopened as a parked sale with the coupon removed and the reason shown.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
