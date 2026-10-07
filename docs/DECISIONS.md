@@ -5052,8 +5052,9 @@ interface OrderCreatePayload {
      Every string is NUL-free. `refundPayloadErrors(payload)` in `@tallyui/core/server` is the shared shape check; a
      plugin runs it before any lookup, as it does `registerPayloadErrors`.
      - **Line amounts are the server's.** The payload carries quantities, not prices. The till computes `totalMinor`
-       from the platform's own per-unit refund value (on Vendure, `proratedUnitPriceWithTax`, which Vendure documents
-       as the true economic value used in refund calculations), plus shipping and the adjustment.
+       from each line's share of the platform's line total, by the plugin's own rule, plus shipping and the
+       adjustment. On Vendure, that is the cumulative share of `proratedLinePriceWithTax` (amendment 2), not a
+       quantity times `proratedUnitPriceWithTax`.
   4. **The result.** An `applied` result carries `refund`, not `serverRefs`:
      `refund: { totalMinor, byMethod, refunds: [{ id, paymentId, totalMinor, state }] }`.
      - `refunds` lists the platform refunds created, at least one; their totals sum to `totalMinor`. A store may
@@ -5100,8 +5101,8 @@ interface OrderCreatePayload {
        keeps sessions with no refunds and its figures unchanged. The change is still one-way: what a closure's
        expected cash means on a store that takes refunds.
   7. **The connector read** (Vendure). `getVendureOrder` also selects each line's `orderPlacedQuantity`,
-     `proratedUnitPrice` and `proratedUnitPriceWithTax`, and each refund's `items shipping adjustment metadata`. A
-     pure `vendureRefundable(order)` computes, from the order alone:
+     `proratedUnitPrice`, `proratedUnitPriceWithTax` and (amendment 2) `proratedLinePriceWithTax`, and each refund's
+     `items shipping adjustment metadata`. A pure `vendureRefundable(order)` computes, from the order alone:
      - per line: refunded quantity (the sum of its refund lines over refunds not `Failed`), cancelled quantity
        (`orderPlacedQuantity − quantity`, at least 0) and refundable quantity (`quantity − refunded`, at least 0);
      - refundable shipping: `shippingWithTax` less the `shipping` of refunds not `Failed`, at least 0;
@@ -5170,3 +5171,17 @@ interface OrderCreatePayload {
     answer never came, and the till's figures follow the drawer. Closing is not blocked, so a till that has lost
     the network can still close. If the store did apply such a refund, the store's figures differ from the till's
     by that refund, and the Z shows which one.
+- **Amendment 2 (front desk ruling, 2026-10-07): a refund line's amount is its cumulative share of the line total.**
+  The vendurepos plugin computes each line's amount this way (vendurepos ADR 0007, decision 4.9; vendurepos/app#189)
+  and refuses any other `totalMinor` with `amount_mismatch`. The till uses the same rule.
+  - With `N` the line's `quantity`, `T` its `proratedLinePriceWithTax`, `r` the quantity already refunded (refund
+    lines over refunds not `Failed`) and `q` the quantity refunded now, the share is
+    `round((r + q) × T / N) − round(r × T / N)`, rounding half up (`Math.round`, as Vendure's `DefaultMoneyStrategy`).
+  - So refunding a whole line returns exactly `T`, and partial refunds of a line add up to `T`: three one-unit
+    refunds of a 3-unit line totalling 1249 are 416, 417 and 416.
+  - Per-unit amounts are wrong for this. Vendure rounds `proratedUnitPriceWithTax` per unit, so
+    `quantity × proratedUnitPriceWithTax` can miss the line total by a few minor units (3 × 416 = 1248, not 1249).
+  - `getVendureOrder` also selects `proratedLinePriceWithTax`. `vendureRefundable` gives each line
+    `lineTotalWithTax`, and `vendureLineRefundWithTax(line, quantity)` returns the share. It throws a `RangeError`
+    for a quantity that is not an integer from 1 to the line's refundable quantity.
+  - `unitRefundWithTax` stays, deprecated and for display only; the till never multiplies it by a quantity.

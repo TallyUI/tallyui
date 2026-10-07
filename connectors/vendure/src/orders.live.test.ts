@@ -33,6 +33,7 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure orders', () => {
         expect(typeof line.orderPlacedQuantity).toBe('number');
         expect(typeof line.proratedUnitPrice).toBe('number');
         expect(typeof line.proratedUnitPriceWithTax).toBe('number');
+        expect(typeof line.proratedLinePriceWithTax).toBe('number');
       }
       expect(vendureRefundable(order).lines).toHaveLength(order.lines.length);
     } else expect(order).toBeNull();
