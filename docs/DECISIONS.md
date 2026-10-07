@@ -5185,3 +5185,16 @@ interface OrderCreatePayload {
     `lineTotalWithTax`, and `vendureLineRefundWithTax(line, quantity)` returns the share. It throws a `RangeError`
     for a quantity that is not an integer from 1 to the line's refundable quantity.
   - `unitRefundWithTax` stays, deprecated and for display only; the till never multiplies it by a quantity.
+- **Amendment 3 (front desk ruling, 2026-10-07): a refusal that names an existing refund is reconciled, not failed.**
+  The vendurepos plugin refuses an `order.refund` sent under a new command id whose `clientRefundId` it has already
+  applied (vendurepos/app#190). The refusal is `invalid_payload` with the message
+  `clientRefundId: <id> is already refund <refundId>`.
+  - **The till treats that refusal as reconciled.** The refund exists on the store as `<refundId>`. It is not a
+    failed refund, and the app must not offer the cashier a retry or a fresh refund of the same lines.
+  - **Only that exact refusal counts.** The code is `invalid_payload` and the message names the refund's own
+    `clientRefundId`. Any other `invalid_payload` is still a rejection.
+  - **No code yet; this records the rule.** Today `submitOrderRefund` records every `rejected` answer as
+    `rejected` (amendment 1), this one included. The change that handles it settles three things:
+    - what the record becomes;
+    - how the till fetches the applied refund's `byMethod`;
+    - how register figures count a refund whose `applied` answer the till never saw.
