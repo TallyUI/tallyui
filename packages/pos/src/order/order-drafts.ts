@@ -33,9 +33,11 @@ export interface ParkedOrderSummary {
 }
 
 export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Promise<string> {
+  // Coupons are not persisted until ADR-077 step (d2).
+  const { coupons: _coupons, ...draft } = snapshot;
   await drafts.upsert({
     id: snapshot.id,
-    data: JSON.stringify(snapshot),
+    data: JSON.stringify(draft),
     customerName: snapshot.customer?.name ?? '',
     itemCount: snapshot.lineItems.length,
     total: snapshot.totalMinor,

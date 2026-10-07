@@ -1,5 +1,11 @@
 import type { Money, TaxRounding } from '@tallyui/core';
 
+export interface OrderCoupon {
+  code: string; // lower-case code
+  discountMinor: number; // WooCommerce coupon discount, ex tax, in integer minor units
+  discountTaxMinor: number; // its tax, in integer minor units
+}
+
 export interface Order {
   id: string;
   status: 'draft' | 'parked' | 'saved' | 'completed';
@@ -7,6 +13,8 @@ export interface Order {
   fees?: FeeLine[];
   shipping?: ShippingLine[];
   discounts: AppliedDiscount[];
+  /** Present only after coupon replay; discountMinor excludes coupons, which are carried here. */
+  coupons?: OrderCoupon[];
   payments: Payment[];
   customer: CustomerSummary | null;
   note: string;
@@ -37,12 +45,14 @@ export type SentOrder = Omit<Order, 'customer'> & { customer: (Omit<CustomerSumm
 export interface DisplayTotals {
   taxInclusive: boolean;      // = order.pricesIncludeTax
   subtotalMinor: number;      // product lines before discounts, excluding fees and shipping (ADR-075)
-  discountMinor: number;      // Σ lines' discount rows + orderDiscountMinor, in the display mode; >= 0
+  discountMinor: number;      // Σ lines' discount rows + orderDiscountMinor + coupon rows, in the display mode; >= 0
   taxMinor: number;           // = order.taxMinor (added when exclusive, included when inclusive)
   totalMinor: number;         // = order.totalMinor
   lines: DisplayLine[];       // in lineItems order; Σ amountMinor = subtotalMinor
   fees?: Array<{ id: string; name: string; amountMinor: number }>;
   shipping?: Array<{ id: string; name: string; amountMinor: number }>;
+  /** Present exactly when Order.coupons is. */
+  coupons?: Array<{ code: string; amountMinor: number }>;
   orderDiscountMinor: number; // the order discounts as one row, not allocated: Σ each line's share, converted on its own
 }
 

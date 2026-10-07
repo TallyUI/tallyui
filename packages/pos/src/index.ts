@@ -29,10 +29,11 @@ export { createOrderBuilder, createOrderManager, allocateOrderDiscount, taxFigur
 export { orderDraftSchema, writeOrderDraft, restoreOrderDraft, parkedOrderSummaries$ } from './order';
 export { useParkedSales } from './order';
 export type { BasketLine } from './order';
-export type { OrderBuilder, OrderBuilderOptions } from './order';
+export type { OrderBuilder, OrderBuilderOptions, OrderCouponContext } from './order';
 export type { OrderManager, OrderManagerOptions, ParkedOrderSummary } from './order';
 export type {
   Order,
+  OrderCoupon,
   SentOrder,
   LineItem,
   LineTaxLine,

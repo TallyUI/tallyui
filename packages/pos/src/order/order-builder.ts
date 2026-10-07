@@ -1,10 +1,10 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
-import { resolvePrice, woocommerceTax, type ProductTraits, type TaxRounding } from '@tallyui/core';
+import { resolvePrice, woocommerceTax, type woocommerceCoupons, type ProductTraits, type TaxRounding } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
 import { allocateOrderDiscount } from './allocate-order-discount';
-import { woocommerceLine, woocommerceTotals } from './woocommerce-tax';
+import { woocommerceLine, woocommerceTotals, woocommerceCouponReplay } from './woocommerce-tax';
 import type {
   Order,
   LineItem,
@@ -62,10 +62,17 @@ export function assertDisplayResidue(residue: number, convertedLines: number, co
   if (Math.abs(residue) > bound) throw new Error(`Display residue ${residue} exceeds its bound of ${bound} (ADR-063)`);
 }
 
+export interface OrderCouponContext {
+  configs: ReadonlyMap<string, woocommerceCoupons.CouponDiscountConfig>;
+  productCategories: ReadonlyMap<number, { id: number }[]>;
+  calcDiscountsSequentially: boolean;
+}
+
 export interface OrderBuilderOptions {
   currency: string;
   taxContext: TaxContext;
   id?: string;
+  couponContext?: OrderCouponContext;
 }
 
 export interface OrderBuilder {
@@ -89,12 +96,14 @@ export interface OrderBuilder {
   removePayment(paymentId: string): void;
   setCustomer(customer: CustomerSummary | null): void;
   setNote(note: string): void;
+  /** Replaces the coupon codes with their trimmed, lower-case, deduplicated list. */
+  setCoupons(codes: readonly string[]): void;
   clear(): void;
   getSnapshot(): Order;
 }
 
 export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
-  const { taxContext } = options;
+  const { taxContext, couponContext } = options;
   const currency = options.currency.toUpperCase();
   const orderId = options.id ?? uid();
   const woo = taxContext.rounding?.granularity === 'woocommerce' && taxContext.getTaxRates ? taxContext.rounding : undefined;
@@ -113,6 +122,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   let payments: Payment[] = [];
   let customer: CustomerSummary | null = null;
   let note = '';
+  let couponCodes: string[] = [];
   const now = new Date().toISOString();
 
   const subject = new BehaviorSubject<Order>(buildOrder());
@@ -186,7 +196,10 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       return { ...d, amountMinor };
     });
     const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
-    const lines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
+    const displaySourceLines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
+    const replay = woo && couponCodes.length ? woocommerceCouponReplay(displaySourceLines, couponCodes, couponContext!,
+      taxContext.getTaxRates!, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
+    const lines = replay?.lines ?? displaySourceLines;
 
     if (woo) shipping = shipping.map((charge) => ({ ...charge, ...recalculateCharge(charge.id, charge, true) }));
     const wooTotals = woo ? woocommerceTotals(lines, fees, shipping, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
@@ -206,7 +219,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // from the settlement total, so every sum is exact; the rounding residue goes to the converted lines' amounts,
     // never to a discount or an unconverted line.
     const taxInclusive = taxContext.pricesIncludeTax;
-    const figures = lines.map((li) => {
+    const figures = displaySourceLines.map((li) => {
       // A negative-priced (return) line shows what settlement charges for it (recalculateLine caps it at 0 today),
       // with no rows: its capped "discounts" are the negative gross cancelled, not money off.
       const returned = li.unitPriceMinor < 0;
@@ -221,8 +234,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     });
     const displayLines = figures.map((f) => f.line);
     const orderDiscountDisplay = figures.reduce((sum, f) => sum + f.shareMinor, 0);
+    const displayCoupons = replay?.coupons.map(({ code, discountMinor, discountTaxMinor }) =>
+      ({ code, amountMinor: discountMinor + (taxInclusive ? discountTaxMinor : 0) }));
     const displayDiscount = displayLines.reduce(
-      (sum, line) => line.discounts.reduce((lineSum, d) => lineSum + d.amountMinor, sum), orderDiscountDisplay);
+      (sum, line) => line.discounts.reduce((lineSum, d) => lineSum + d.amountMinor, sum), orderDiscountDisplay)
+      + (displayCoupons?.reduce((sum, row) => sum + row.amountMinor, 0) ?? 0);
     const chargeRows = (items: ChargeLine[]) => items.map(({ id, name, amountMinor, netMinor, totalMinor }) =>
       ({ id, name, amountMinor: woo ? taxInclusive ? totalMinor! : netMinor : amountMinor }));
     const displayFees = chargeRows(fees), displayShipping = chargeRows(shipping);
@@ -237,9 +253,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       if (charge) displaySubtotal -= residue;
       residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
     }
-    const converted = lines.flatMap((li, index) => li.taxInclusive === taxInclusive ? [] : [index]);
-    const conversions = converted.reduce((count, index) => count + [lines[index].netMinor, lines[index].orderDiscountMinor,
-      ...lines[index].discounts.map((d) => d.amountMinor)].filter((x) => x !== 0).length, 0);
+    const converted = displaySourceLines.flatMap((li, index) => li.taxInclusive === taxInclusive ? [] : [index]);
+    const conversions = converted.reduce((count, index) => count + [displaySourceLines[index].netMinor, displaySourceLines[index].orderDiscountMinor,
+      ...displaySourceLines[index].discounts.map((d) => d.amountMinor)].filter((x) => x !== 0).length, 0);
     assertDisplayResidue(residue, converted.length, conversions);
     // Largest converted remaining first (ties to the earlier line). A negative residue takes a line down to its rows
     // and share at most, then moves on: six 2-cent inclusive lines can owe −3 with no line above 2. The spill is a
@@ -268,6 +284,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const display = {
       taxInclusive, subtotalMinor: displaySubtotal, discountMinor: displayDiscount, taxMinor, totalMinor,
       lines: displayLines, orderDiscountMinor: orderDiscountDisplay,
+      ...(displayCoupons ? { coupons: displayCoupons } : {}),
       ...(fees.length ? { fees: displayFees } : {}),
       ...(shipping.length ? { shipping: displayShipping } : {}),
     };
@@ -279,6 +296,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       id: orderId,
       status: 'draft',
       lineItems: lines,
+      ...(replay ? { coupons: replay.coupons } : {}),
       ...(fees.length ? { fees: [...fees] } : {}),
       ...(shipping.length ? { shipping: [...shipping] } : {}),
       discounts: recalcedOrderDiscounts,
@@ -540,6 +558,19 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       emit();
     },
 
+    setCoupons(codes) {
+      const normalized = [...new Set(codes.map((code) => code.trim().toLowerCase()))];
+      if (normalized.length && !couponContext) throw new Error('Coupon context is required');
+      for (const code of normalized) {
+        const config = couponContext!.configs.get(code);
+        if (!config) throw new RangeError(`Unknown coupon ${code}`);
+        // Lines do not carry their regular price yet, so sale lines cannot be identified.
+        if (config.exclude_sale_items) throw new RangeError(`Coupon ${code} excludes sale items`);
+      }
+      couponCodes = normalized;
+      emit();
+    },
+
     clear() {
       lineItems = [];
       fees = [];
@@ -548,6 +579,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       payments = [];
       customer = null;
       note = '';
+      couponCodes = [];
       emit();
     },
 

@@ -1,7 +1,8 @@
-import { minorUnitDigits, woocommerceTax } from '@tallyui/core';
-import type { WooRate } from '../tax/types';
+import { minorUnitDigits, woocommerceTax, woocommerceCoupons } from '@tallyui/core';
+import type { TaxContext, WooRate } from '../tax/types';
 import type { RateTaxLine } from '../tax/exact';
-import type { ChargeLine, LineItem, LineTaxLine } from './types';
+import type { ChargeLine, LineItem, LineTaxLine, OrderCoupon } from './types';
+import type { OrderCouponContext } from './order-builder';
 
 /** ADR-076: all WooCommerce float arithmetic stays here; only integer money leaves this module. */
 export function woocommerceLine(amountMinor: number, rates: readonly WooRate[], inclusive: boolean, currency: string,
@@ -19,11 +20,67 @@ export function woocommerceLine(amountMinor: number, rates: readonly WooRate[], 
     return { code: rate.code, rateId: rate.id, compound: rate.compound, ratePpm: Math.round(Number(rate.rate) * 10000),
       taxMicros: String(Math.round(tax.total * factor * 1e6)) };
   });
-  const tax = result.taxes.reduce((sum, rate) => sum + (roundAtSubtotal ? rate.total
+  return lineAmounts(net, result.taxes, taxLines, dp, roundAtSubtotal, pricesIncludeTax);
+}
+
+function lineAmounts(net: number, taxes: { total: number }[], taxLines: LineTaxLine[], dp: number,
+  roundAtSubtotal: boolean, pricesIncludeTax: boolean) {
+  const factor = 10 ** dp;
+  const tax = taxes.reduce((sum, rate) => sum + (roundAtSubtotal ? rate.total
     : woocommerceTax.roundTaxTotal(rate.total, dp, pricesIncludeTax)), 0);
   return { netMinor: Math.round(woocommerceTax.roundHalfUp(net, dp) * factor), netMicros: String(Math.round(net * factor * 1e6)),
     totalMinor: Math.round(woocommerceTax.roundHalfUp(net + tax, dp) * factor), taxLines,
     taxMicros: taxLines.reduce((sum, rate) => sum + BigInt(rate.taxMicros), 0n).toString() };
+}
+
+/** Replays coupons on the manually discounted net lines; only integer money leaves this boundary (ADR-076). */
+export function woocommerceCouponReplay(lines: readonly LineItem[], codes: readonly string[], context: OrderCouponContext,
+  getTaxRates: NonNullable<TaxContext['getTaxRates']>, currency: string, roundAtSubtotal: boolean,
+  pricesIncludeTax: boolean): { lines: LineItem[]; coupons: OrderCoupon[] } {
+  const dp = minorUnitDigits(currency), factor = 10 ** dp;
+  const inputLines = lines.filter((line) => line.unitPriceMinor >= 0);
+  const lineItems: woocommerceCoupons.LineItemInput[] = inputLines.map((line) => {
+    const productId = Number(line.productId), variationId = Number(line.variantId);
+    const net = (Number(line.netMicros) / (factor * 1e6)).toFixed(6);
+    const taxes = line.taxLines.map((tax) => {
+      const amount = (Number(tax.taxMicros) / (factor * 1e6)).toFixed(6);
+      return { id: tax.rateId, subtotal: amount, total: amount };
+    });
+    const tax = taxes.reduce((sum, row) => sum + Number(row.total), 0).toFixed(6);
+    return {
+      product_id: !line.custom && Number.isSafeInteger(productId) && productId >= 0 ? productId : 0,
+      ...(Number.isSafeInteger(variationId) && variationId >= 0 ? { variation_id: variationId } : {}),
+      quantity: line.quantity, tax_class: line.taxClass ?? '',
+      ...(line.taxStatus === 'none' ? { tax_status: 'none' } : {}),
+      subtotal: net, total: net, taxes, subtotal_tax: tax, total_tax: tax,
+    };
+  });
+  const taxRates = new Map<string, woocommerceCoupons.RecalculateInput['taxRates'][number]>();
+  for (const line of inputLines) for (const rate of getTaxRates(line.taxClass)) {
+    const taxClass = line.taxClass ?? '';
+    taxRates.set(JSON.stringify([rate.id, taxClass]), { id: rate.id, rate: rate.rate, compound: rate.compound,
+      order: rate.priority, priority: rate.priority, class: taxClass });
+  }
+  const result = woocommerceCoupons.recalculateCoupons({
+    lineItems, couponLines: codes.map((code) => ({ code })),
+    couponConfigs: new Map(codes.map((code) => [code, context.configs.get(code)!])),
+    pricesIncludeTax, calcDiscountsSequentially: context.calcDiscountsSequentially,
+    productCategories: new Map(context.productCategories), taxRates: [...taxRates.values()],
+    taxRoundAtSubtotal: roundAtSubtotal, dp,
+  });
+  let index = 0;
+  return {
+    lines: lines.map((line) => {
+      if (line.unitPriceMinor < 0) return line;
+      const item = result.lineItems[index++];
+      const taxes = line.taxLines.map((tax) => ({ total: Number(item.taxes?.find((row) => row.id === tax.rateId)?.total ?? '0') }));
+      const taxLines = line.taxLines.map((tax, index) => ({ ...tax, taxMicros: String(Math.round(taxes[index].total * factor * 1e6)) }));
+      return { ...line, ...lineAmounts(Number(item.total), taxes, taxLines, dp, roundAtSubtotal, pricesIncludeTax) };
+    }),
+    coupons: result.couponLines.map((coupon, index) => ({ code: codes[index],
+      discountMinor: Math.round(woocommerceTax.roundHalfUp(Number(coupon.discount), dp) * factor),
+      discountTaxMinor: Math.round(woocommerceTax.roundHalfUp(Number(coupon.discount_tax), dp) * factor) })),
+  };
 }
 
 /** calculateOrderTotals: products round conditionally, fees stay raw, shipping always rounds per item. */
