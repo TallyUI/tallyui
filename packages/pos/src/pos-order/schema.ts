@@ -24,7 +24,7 @@ import type { PosOrder } from './types';
  * It also stores the WooCommerce 6dp net (`netMicros`) under the woocommerce rounding (ADR-076 amendment).
  * Its migration is the identity. It is one-way like version 7.
  * Version 9 adds the order's `coupons` and the receipt's `display.coupons` (ADR-077 d2), and a line's `attributes` (#495)
- * and `regularUnitPriceMinor` (ADR-077 d2), and lets `sentVersion` and `downgradedFrom` be 6 (order.create version 6, ADR-077 d4), and changes nothing else. Nothing writes them yet.
+ * and `regularUnitPriceMinor` (ADR-077 d2), and `reopenedAt`: when a refused order was reopened as a parked sale (ADR-077 d4b), and lets `sentVersion` and `downgradedFrom` be 6 (order.create version 6, ADR-077 d4), and changes nothing else. Nothing writes them yet.
  * Its migration is the identity. It is one-way like version 8.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
@@ -35,6 +35,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     commandId: { type: 'string', maxLength: 36 },
     createdAt: { type: 'string', maxLength: 40 },
     updatedAt: { type: 'string' },
+    reopenedAt: { type: 'string', maxLength: 40 },
     currency: { type: 'string' },
     pricesIncludeTax: { type: 'boolean' },
     subtotalMinor: { type: 'integer' }, discountMinor: { type: 'integer' },
