@@ -203,7 +203,7 @@ export interface OrderCreateLine {
   unitPriceMinor: number;
   /** Version 6 recorded figure: the product's regular (not sale) unit price, in the line's tax mode and integer minor units, when the till knew it. */
   regularUnitPriceMinor?: number;
-  /** Version 6 recorded: the variant's attribute names and values (#495), each 1–255 characters. */
+  /** Version 6 recorded: the variant's attribute names and values (#495), each at most 255 characters. */
   attributes?: Record<string, string>;
   /**
    * This line's own tax mode, when it differs from the order's `pricesIncludeTax`

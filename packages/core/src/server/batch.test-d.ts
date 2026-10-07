@@ -65,6 +65,7 @@ describe('server envelope types', () => {
     expectTypeOf<CommandRejectionCode>().toEqualTypeOf<
       | 'invalid_payload' | 'unsupported_version' | 'idempotency_mismatch' | 'store_configuration' | 'platform_error'
       | 'insufficient_stock' | 'unsupported_tax_mode' | 'internal_error'
+      | 'coupon_invalid' | 'total_mismatch'
       | 'unknown_variant' | 'invalid_quantity' | 'underpaid' | 'unsupported_currency'
       | 'register_session_already_open' | 'register_session_superseded' | 'register_supersede_forbidden'
       | 'register_session_closed' | 'register_closure_exists' | 'register_closure_number_invalid'
