@@ -41,6 +41,134 @@ describe('wooMinorFromDecimal', () => {
 });
 
 describe('createWooCommandTransport', () => {
+  describe('coupon orders', () => {
+    const couponEnvelope = order();
+    couponEnvelope.version = 6;
+    Object.assign(couponEnvelope.payload, { subtotalMinor: 2100, discountMinor: 100, totalMinor: 1750,
+      lines: [
+        { ...couponEnvelope.payload.lines[0], quantity: 2, unitPriceMinor: 900, regularUnitPriceMinor: 1000 },
+        { clientLineId: 'second', variantId: '81', quantity: 3, unitPriceMinor: 100, discountMinor: 100 },
+      ],
+      coupons: [
+        { code: 'ten', couponId: '303', discountMinor: 200, discountTaxMinor: 0 },
+        { code: 'five', couponId: '304', discountMinor: 50, discountTaxMinor: 0 },
+      ],
+    });
+    couponEnvelope.payload.payments[0].amountMinor = 1750;
+
+    it.each([false, true])('posts coupon codes and POS prices with shipping=%s', async (shipping) => {
+      const envelope = structuredClone(couponEnvelope);
+      if (shipping) {
+        envelope.payload.shipping = [{ clientShippingId: 'delivery', name: 'Delivery', amountMinor: 500, taxStatus: 'none', taxMinor: 0 }];
+        envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 2250;
+      }
+      const { transport, fetch } = setup(response(201, { document: { id: 115, total: shipping ? '22.50' : '17.50' } }));
+      await transport.send([envelope]);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      const { payload } = JSON.parse(fetch.mock.calls[0][1]!.body as string);
+      expect(Object.keys(payload)).toEqual(['status', 'set_paid', 'currency', 'payment_method', 'payment_method_title',
+        'line_items', ...(shipping ? ['shipping_lines'] : []), 'coupon_lines', 'meta_data']);
+      expect(payload.coupon_lines).toEqual([{ code: 'ten' }, { code: 'five' }]);
+      expect(payload.line_items).toEqual([
+        { product_id: 80, quantity: 2, subtotal: '18.00', total: '18.00', meta_data: [
+          { key: '_woocommerce_pos_data', value: '{"price":"9.00","regular_price":"10.00"}' }] },
+        { product_id: 81, quantity: 3, subtotal: '2.00', total: '2.00', meta_data: [
+          { key: '_woocommerce_pos_data', value: '{"price":"0.666667","regular_price":"0.666667"}' }] },
+      ]);
+      expect(Object.keys(payload.line_items[0])).toEqual(['product_id', 'quantity', 'subtotal', 'total', 'meta_data']);
+    });
+
+    it('keeps one POS price entry on a custom coupon line', async () => {
+      const envelope = structuredClone(couponEnvelope);
+      envelope.payload.lines = [{ clientLineId: 'custom', quantity: 1, unitPriceMinor: 1000, regularUnitPriceMinor: 1200,
+        custom: { name: 'Gift wrap', taxStatus: 'none' } }];
+      delete envelope.payload.discountMinor;
+      envelope.payload.subtotalMinor = 1000;
+      envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 750;
+      const { transport, fetch } = setup(response(201, { document: { id: 115, total: '7.50' } }));
+      await transport.send([envelope]);
+      expect(JSON.parse(fetch.mock.calls[0][1]!.body as string).payload.line_items).toEqual([
+        { product_id: 0, name: 'Gift wrap', quantity: 1, subtotal: '10.00', total: '10.00', tax_class: '', meta_data: [
+          { key: '_woocommerce_pos_data', value: '{"price":"10.00","regular_price":"12.00","tax_status":"none"}' }] },
+      ]);
+    });
+
+    it.each([5, 6] as const)('keeps the original bytes without coupons on version %i', async (version) => {
+      const envelope = structuredClone(couponEnvelope);
+      envelope.version = version;
+      delete envelope.payload.coupons;
+      envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 2000;
+      const { transport, fetch } = setup(response(201, { document: { id: 115, total: '20.00' } }));
+      await transport.send([envelope]);
+      const body = fetch.mock.calls[0][1]!.body as string;
+      expect(body).toBe(JSON.stringify({ mutationId: envelope.id, operation: 'create', collection: 'orders',
+        recordId: envelope.payload.clientOrderId, baseRevision: null, payload: {
+          status: 'completed', set_paid: true, currency: 'EUR', payment_method: 'pos_cash', payment_method_title: 'Cash',
+          line_items: [{ product_id: 80, quantity: 2, subtotal: '18.00', total: '18.00' },
+            { product_id: 81, quantity: 3, subtotal: '2.00', total: '2.00' }],
+          meta_data: [{ key: '_woocommerce_pos_uuid', value: envelope.payload.clientOrderId }],
+        } }));
+      expect(JSON.parse(body).payload).not.toHaveProperty('coupon_lines');
+      for (const line of JSON.parse(body).payload.line_items) expect(line).not.toHaveProperty('meta_data');
+    });
+
+    it.each([
+      ['EUR', 2, 100, '0.50'], ['EUR', 20000, 1, '1.000000'], ['EUR', 3, 2, '0.993333'],
+      ['JPY', 3, 100, '66.666667'], ['KWD', 16, 1, '0.099938'],
+    ] as const)('formats the exact coupon unit price in %s, quantity %i, discount %i', (currency, quantity, discountMinor, price) => {
+      const envelope = structuredClone(couponEnvelope);
+      envelope.payload.currency = currency;
+      envelope.payload.lines = [{ clientLineId: 'line', variantId: '80', unitPriceMinor: 100, quantity, discountMinor }];
+      expect(toWooOrderPayload(envelope)).toMatchObject({ payload: { line_items: [{ meta_data: [
+        { key: '_woocommerce_pos_data', value: JSON.stringify({ price, regular_price: price }) },
+      ] }] } });
+    });
+
+    it.each([
+      ['Coupon &quot;tally-cap-expired&quot; has expired.', 'Coupon "tally-cap-expired" has expired.', 'TALLY-cap-expired'],
+      ['Coupon &quot;tally-cap-nope&quot; cannot be applied because it does not exist.', 'Coupon "tally-cap-nope" cannot be applied because it does not exist.', 'tally-cap-nope'],
+      ['Usage limit for coupon &quot;tally-cap-used-up&quot; has been reached.', 'Usage limit for coupon "tally-cap-used-up" has been reached.', 'tally-cap-used-up'],
+      ['The minimum spend for coupon &quot;tally-cap-min-spend&quot; is <span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">&#036;</span>100.00</bdi></span>.',
+        'The minimum spend for coupon "tally-cap-min-spend" is $100.00.', 'tally-cap-min-spend'],
+      ['Sorry, coupon &quot;tally-cap-excluded&quot; is not applicable to selected products.', 'Sorry, coupon "tally-cap-excluded" is not applicable to selected products.', 'tally-cap-excluded'],
+      ['Coupon code is required.', 'Coupon code is required.', undefined],
+      ['Coupon &quot;other&quot; cannot be applied.', 'Coupon "other" cannot be applied.', undefined],
+      ['  <b>&quot;ten&quot;</b>\n &amp; &lt; &gt; &#39; &apos; &#x24;  ', '"ten" & < > \' \' $', 'ten'],
+      ['<b> \n </b>', 'status_400', undefined], [undefined, 'status_400', undefined], [123, 'status_400', undefined],
+    ])('rejects the captured coupon refusal %s without retrying', async (message, decoded, couponCode) => {
+      const envelope = structuredClone(couponEnvelope);
+      envelope.payload.coupons = ['TALLY-cap-expired', 'tally-cap-nope', 'tally-cap-used-up', 'tally-cap-min-spend', 'tally-cap-excluded', 'ten']
+        .map((code) => ({ ...couponEnvelope.payload.coupons![0], code }));
+      const { transport, fetch } = setup(response(400, { code: 'woocommerce_rest_invalid_coupon', message,
+        data: { status: 400, new_draft_order_id: 293 } }));
+      const result = await transport.send([envelope]);
+      expect(result).toEqual({ kind: 'results', results: [{ id: envelope.id, status: 'rejected', error: {
+        code: 'coupon_invalid', message: decoded,
+        data: { storeCode: 'woocommerce_rest_invalid_coupon', ...(couponCode ? { couponCode } : {}) },
+      } }] });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(result)).not.toContain('serverRefs');
+      expect(JSON.stringify(result)).not.toContain('293');
+    });
+
+    it.each([[400, 'another_code'], [422, 'woocommerce_rest_invalid_coupon']])('keeps the raw rejection for HTTP %i and %s', async (status, code) => {
+      const message = '<b>Coupon &quot;ten&quot;</b>';
+      const { transport } = setup(response(status, { code, message }));
+      expect(await transport.send([couponEnvelope])).toEqual({ kind: 'results', results: [{
+        id: couponEnvelope.id, status: 'rejected', error: { code: 'invalid_payload', message },
+      }] });
+    });
+
+    it('keeps a created coupon order applied with its server refs and total mismatch warning', async () => {
+      const { transport, fetch } = setup(response(201, { document: { id: 115, number: '115', total: '18.00' } }));
+      expect(await transport.send([couponEnvelope])).toEqual({ kind: 'results', results: [{
+        id: couponEnvelope.id, status: 'applied', serverRefs: { orderId: '115', displayId: '115', totalMinor: 1800 },
+        warnings: [{ code: 'total_mismatch', expectedMinor: 1750, serverMinor: 1800 }],
+      }] });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it.each([
     ['USD', undefined, ['2727272700', '909090900'], ['27.272727', '9.090909']],
     ['JPY', undefined, ['1234000000'], ['1234.000000']],
