@@ -1,0 +1,33 @@
+---
+title: DiscountChips
+description: Removable badges for applied discounts
+---
+
+## Import
+
+```tsx
+import { DiscountChips } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<DiscountChips
+  discounts={line.discounts}
+  currency={sale.order.currency}
+  onRemove={sale.removeDiscount}
+  amounts={sale.order.display.lines.find((row) => row.lineId === line.id)?.discounts}
+/>
+```
+
+Renders one removable badge per applied discount, using display amounts when supplied. Pressing a badge calls `onRemove` with its discount ID; an empty list renders nothing.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `discounts` | `AppliedDiscount[]` | required | Applied discounts to render as badges |
+| `currency` | `string` | required | Currency used to format discount amounts |
+| `onRemove` | `(id: string) => void` | required | Called with the pressed discount's ID |
+| `prefix` | `string` | --- | Text prepended to each label, such as “Order discount” |
+| `amounts` | `{ discountId: string; amountMinor: number }[]` | `[]` | Figures from `order.display` matched by discount ID; shown alongside percentages or as the fixed discount amount |

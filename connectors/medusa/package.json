@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/connector-medusa",
-  "version": "3.8.0",
+  "version": "3.9.0",
   "type": "module",
   "description": "MedusaJS v2 connector for Tally UI",
   "main": "./dist/index.js",
@@ -10,7 +10,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "source": "./src/index.ts"
+      "source": "./src/index.ts",
+      "default": "./dist/index.js"
     }
   },
   "files": [

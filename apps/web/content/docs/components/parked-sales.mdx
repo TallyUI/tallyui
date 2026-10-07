@@ -1,0 +1,46 @@
+---
+title: ParkedSales
+description: Parked sale dialog with park, resume, and discard actions
+---
+
+## Import
+
+```tsx
+import { ParkedSales } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useSale } from '@tallyui/pos';
+import { ParkedSales } from '@tallyui/components';
+
+// Inside a component under TaxProvider.
+const sale = useSale(settings, { registerId, cashierRef });
+<ParkedSales
+  sale={sale}
+  parked={parked}
+  onDiscard={discardParkedSale}
+  onPark={parkSale}
+  onResume={resumeParkedSale}
+  currency={settings.currency}
+  open={parkedOpen}
+  onOpenChange={setParkedOpen}
+/>
+```
+
+Renders a dialog with Park this sale and a list of parked sales showing time, item count, total, and customer name when present. Each row offers Resume and a confirmed Discard action; successful resume closes the dialog, while refusals or thrown errors appear inline.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |
+| `parked` | `ParkedOrderSummary[]` | required | Parked sale summaries, such as the list returned by `useParkedSales(drafts)` |
+| `onDiscard` | `(id: string) => Promise<void>` | required | Discards a parked sale after confirmation |
+| `onPark` | `() => Promise<string \| null>` | --- | Parks the current sale; uses `sale.park` when omitted; return a refusal or `null` |
+| `onResume` | `(id: string) => Promise<string \| null>` | --- | Resumes the selected sale; uses `sale.resume` when omitted; `null` closes the dialog, while a refusal is shown inline |
+| `currency` | `string` | required | Currency used to format parked sale totals |
+| `open` | `boolean` | required | Whether the dialog is open |
+| `onOpenChange` | `(open: boolean) => void` | required | Receives dialog visibility changes, including `false` after a successful resume |
+| `hour12` | `boolean` | --- | Selects a 12- or 24-hour parked time; omission keeps the locale default |

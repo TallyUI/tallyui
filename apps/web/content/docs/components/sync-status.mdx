@@ -1,0 +1,32 @@
+---
+title: SyncStatus
+description: Sale and register sync status with product pull notices
+---
+
+## Import
+
+```tsx
+import { SyncStatus } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<SyncStatus
+  state={outboxState}
+  registerState={registerOutboxState}
+  pluginName="Store POS plugin"
+  pullNotice={pullNotice}
+/>
+```
+
+Renders waiting sale and till update counts, sync status, refusal details, and sending or retry text. A product pull notice appears above the outbox status with its own explanation.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `state` | `OutboxState` | required | Sale outbox state used for pending counts, refusals, sending, retries, and backend status |
+| `registerState` | `OutboxState` | --- | Register outbox state used for till update counts and status when only till updates are waiting |
+| `pluginName` | `string` | `'the POS plugin'` | Name of the store's plugin used in notices and details |
+| `pullNotice` | `SyncNotice` | --- | Stopped product pull notice shown above the outbox line with explanatory detail |

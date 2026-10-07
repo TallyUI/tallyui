@@ -9,11 +9,16 @@ import type {
   OrderCreateEnvelope,
   OrderCreatePayload,
   OrderCreatePayment,
+  OrderRefundEnvelope,
   RegisterCommandEnvelope,
   RegisterCommandType,
 } from '@tallyui/core';
 
 describe('command types', () => {
+  it('permits an OrderRefundEnvelope in AnyCommandEnvelope (ADR-080)', () => {
+    expectTypeOf<OrderRefundEnvelope>().toExtend<AnyCommandEnvelope>();
+  });
+
   it('defaults batches to order envelopes and permits register envelopes explicitly', () => {
     expectTypeOf<CommandBatchRequest['commands']>().toEqualTypeOf<CommandEnvelope[]>();
     expectTypeOf<CommandBatchRequest<AnyCommandEnvelope>['commands']>().toEqualTypeOf<AnyCommandEnvelope[]>();

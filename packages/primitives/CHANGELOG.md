@@ -1,5 +1,11 @@
 # @tallyui/primitives
 
+## 3.9.0
+
+### Patch Changes
+
+- c1bf800: Every exports entry gains a `default` condition so CommonJS and `require`-condition resolvers (Node `require`, webpack, Snack's bundler) resolve the packages; `smoke:pack` checks `require.resolve` for every entry.
+
 ## 3.8.0
 
 ## 3.7.1

@@ -4933,3 +4933,243 @@ interface OrderCreatePayload {
     - ~/agent/handoff/register-takeover-ruling-2026-10-06.md (the ruling);
     - ~/agent/handoff/register-takeover-confirmation-2026-10-06.md (medusapos's confirmation);
     - #371.
+
+## ADR-079 Vendure order history: online, paged Admin API reads in Vendure's own shape
+
+- **Date:** 2026-10-07 · **Status:** Accepted (front desk assignment; vendurepos Default-order item 3) · **Relates
+  to:** ADR-046 (Vendure baseline: 3.7, Admin API only), ADR-049 (Vendure connector conventions), Paul's platform ruling of 2026-10-07 (each platform its own way)
+- **Context:**
+  - No connector reads the store's order history. The till's own sales live in `pos_orders`, and vendurepos's
+    orders panel shows only the outbox's recent sales.
+  - vendurepos needs:
+    - an orders list: placed orders, newest first, paged, filtered on the server by placed date, state, register,
+      cashier, customer and a search;
+    - an order detail with everything its receipt reprint reads.
+  - Refunds come later and start from an order. The read shape must carry payment ids and states, and each refund's
+    lines (~/agent/handoff/vendurepos-order-history-item3-2026-10-07.md).
+  - Vendure's Admin API already serves this:
+    - `orders(options: OrderListOptions)` returns `{ items, totalItems }` and `order(id)` returns one order. Both need
+      `ReadOrder` and are scoped to the request's channel.
+    - Plugin custom fields of string type appear as top-level `OrderFilterParameter` keys.
+    - There is no customer filter; one customer's orders come through `customer(id) { orders(options) }`.
+- **Decision:**
+  1. **Online reads, no collection.** `@tallyui/connector-vendure` exports two plain functions, alongside
+     `searchVendureCustomers`:
+     - `listVendureOrders(context, options)` sends one paged Admin API query per call;
+     - `getVendureOrder(context, id)` fetches one order.
+
+     Nothing is replicated and nothing is written locally. A paged, server-filtered history does not fit a pull
+     replication, and a local copy of server orders would be a second source of truth. Offline, the till still has
+     its own sales in `pos_orders`.
+  2. **Vendure's shape, unmapped.** The results are Vendure's own fields (`code`, `state`, `orderPlacedAt`, `lines`,
+     `taxSummary`, `payments { refunds { lines } }`, …), typed field for field as `VendureOrderSummary` and
+     `VendureOrder`. They are not mapped onto a TallyUI order model. Money stays in minor units with both `…WithTax`
+     and plain amounts, as Vendure sends them.
+  3. **Placed orders only.** With no date range given, the filter is `orderPlacedAt: { isNull: false }`, so active
+     carts and drafts never show. A given range uses Vendure's `DateOperators` (`after`, `before`, `between`).
+  4. **Filters are Vendure's.**
+     - State: `state: { in }`.
+     - Register and cashier: the vendurepos plugin's `tallyRegisterId` and `tallyCashierRef` custom fields with
+       `eq`.
+     - Search: `_or` of `code` and `customerLastName` with `contains`.
+     - Customer: the `customer(id) { orders }` route.
+     - Sort: `{ orderPlacedAt: DESC, id: DESC }`, so pages are stable.
+     - Paging: `take` defaults to 25 and is truncated and clamped to 1..100.
+  5. **Plugin fields are optional.** `tallyFields` (default true) selects the vendurepos plugin's order and line
+     custom fields. Without them, selecting `customFields { … }` is a query error, so a server without the plugin
+     passes `tallyFields: false`.
+     - **Rejected orders are listed, not filtered.** The plugin marks an order its store refused with `tallyRejected`
+       (with `tallyRejectedClientOrderId`); such an order counts as never placed, and the app labels it. A server
+       filter `tallyRejected: { eq: false }` would also drop storefront orders, whose value is null.
+  6. **Permissions.** Reads need `ReadOrder`, and the customer route also needs `ReadCustomer`. A till role with
+     only `TallyPosSell` gets the connector's 403 `ConnectorUnauthorizedError` naming the paths; vendurepos grants
+     both to its till role. Errors pass through `gql` unchanged.
+- **Open:**
+  - **A core order-history contract** waits for a second platform that builds history. Until then, no
+    `TallyConnector` field and no shared order type exist.
+  - **Refunded quantities** per line are computed by the app from `payments[].refunds[].lines`; the connector does
+    not sum them.
+- **Evidence:**
+  - Vendure 3.7.3's Admin API schema and services:
+    - `order.resolver.ts` and `customer.resolver.ts` (ReadOrder);
+    - `OrderFilterParameter` and custom-field filter generation;
+    - `parseSortParams` (keys applied in order);
+    - `OrderService.findByCustomerId` (channel-scoped, excludes Draft only).
+  - The live test `connectors/vendure/src/orders.live.test.ts` against the dev Vendure.
+
+## ADR-080 `order.refund` v1: an online refund command, counted in the session that made it
+
+- **Date:** 2026-10-07 · **Status:** Accepted (front desk assignment and rulings, 2026-10-07; vendurepos Default-order
+  item 4) · **Relates to:** ADR-038 (the command contract), ADR-068 (register commands and figures), ADR-070 (strict
+  payloads), ADR-079 (Vendure order history, whose "Open: refunded quantities" this settles for Vendure), Paul's
+  platform ruling of 2026-10-07 (each platform its own way; WCPOS v2's refund screen is the reference for features
+  and taste only)
+- **Context:**
+  - A till cannot refund. `periodRefundsTotalMinor` and `perpetualRefundsTotalMinor` exist in the register contract
+    but are always 0, and `deriveExpected` says refund attribution is deferred (ADR-032 amendment 1).
+  - vendurepos needs refunds from the order detail (ADR-079): pick lines and quantities, optionally shipping and an
+    adjustment, a required reason, restock per line, and the destination (the original method or cash)
+    (~/agent/handoff/vendurepos-refunds-item4-2026-10-07.md).
+  - Vendure has its own refund model: `refundOrder` creates a `Refund` (`items shipping adjustment total method state
+    reason lines { orderLineId quantity } paymentId metadata`) against one payment. Its documented states are
+    `Pending`, `Settled` and `Failed`. It needs `UpdateOrder`, which is far broader than a till should hold.
+  - WCPOS v2 refunds online only: a refund is never queued offline as done.
+  - Front desk rulings (2026-10-07):
+    1. Refunds need a new plugin permission, which the contract names `TallyPosRefund` on Vendure, never Vendure's
+       `UpdateOrder`.
+    2. Orders the POS did not take (storefront orders) get no refund at the till in v1.
+    3. A refund with no open session on the till is rejected with `no_open_session`, so every refund lands in a
+       session's figures.
+- **Decision:**
+  1. **A new command type, `order.refund`, version 1, on the same channel.** It rides `POST /tally/v1/commands` in
+     the same envelope as `order.create` and the `register.*` commands (`OrderRefundEnvelope`). The command `id` is
+     the idempotency key: a replay returns the originally recorded result, so a resend never refunds twice.
+     - **Capability:** `/tally/v1/info` lists `"order.refund": [1]` under `contracts`, and `ServerCapabilities` gains
+       `orderRefund?: number` (absent or 0: the store takes no refunds, and the app hides the action). The till's
+       own capability is `SUPPORTED_ORDER_REFUND_VERSIONS = [1]`.
+     - **Precheck:** `precheckCommand`'s `supported` gains an optional `orderRefund` list. A server that does not
+       list it answers an `order.refund` with `unsupported_version` (`data: { orderRefund: 0 }`).
+  2. **Online only, never on an outbox.** The till sends one `order.refund` as a one-command batch and shows success
+     only on an `applied` (or `duplicate`) result. Neither the order outbox nor the register outbox ever carries it.
+     - When the answer is unknown (network, timeout, a 5xx, a bad body), the app may resend **the same envelope**,
+       never a new id, so the store either replays the outcome or applies it once.
+     - After a `rejected` result, a new attempt is a new command with a new id; the old id replays its rejection.
+     - `@tallyui/pos` exports `sendOrderRefund(transport, envelope)` for this.
+  3. **The payload (v1)**, strict per ADR-070: an unknown field is `invalid_payload` naming its path.
+
+     | Field | Rule |
+     |---|---|
+     | `clientRefundId` | The refund's own identity, minted once by the till (UUID, at most 64). Recorded, not an idempotency key. |
+     | `orderId` | The platform's order id, at most 64. |
+     | `clientOrderId?` | The till's id for the sale, when the order has one, at most 64. |
+     | `lines` | `[{ orderLineId, quantity, restock }]`: the platform's line id (at most 64, unique in the list), an integer quantity of at least 1, and a boolean. May be empty when only shipping or an adjustment is refunded. At most 500. |
+     | `shippingMinor` | Integer >= 0: shipping refunded, with tax. |
+     | `adjustmentMinor` | Signed integer: a manual adjustment, with tax, added to the refund. |
+     | `totalMinor` | Integer >= 0: the till's expected total. The server computes its own and refuses a difference (`amount_mismatch`). |
+     | `destination` | `original_method` or `cash`. |
+     | `reason` | Required: non-empty after trim, at most 500 characters. |
+     | `registerId`, `sessionId` | The refunding till's register and open session, at most 64 each. |
+     | `cashierRef?` | At most 64. |
+     | `createdAt` | ISO 8601, the till's clock: when the cashier confirmed. |
+
+     Every string is NUL-free. `refundPayloadErrors(payload)` in `@tallyui/core/server` is the shared shape check; a
+     plugin runs it before any lookup, as it does `registerPayloadErrors`.
+     - **Line amounts are the server's.** The payload carries quantities, not prices. The till computes `totalMinor`
+       from the platform's own per-unit refund value (on Vendure, `proratedUnitPriceWithTax`, which Vendure documents
+       as the true economic value used in refund calculations), plus shipping and the adjustment.
+  4. **The result.** An `applied` result carries `refund`, not `serverRefs`:
+     `refund: { totalMinor, byMethod, refunds: [{ id, paymentId, totalMinor, state }] }`.
+     - `refunds` lists the platform refunds created, at least one; their totals sum to `totalMinor`. A store may
+       split one refund across several payments.
+     - `byMethod` maps each register tender the money left by (`cash`, or the sale's payment method) to its amount.
+       Its values sum to `totalMinor`. It is what register figures use, so the store, not the till, attributes a
+       refund to a tender: `cash` for a cash destination, else the original payment's method.
+     - `parseCommandResult` accepts an applied result that has `serverRefs`, `register` or `refund`.
+  5. **Refusal codes** (`OrderRefundRejectionCode`), each a per-command `rejected` result inside a 200:
+
+     | Code | When | `error.data` |
+     |---|---|---|
+     | `nothing_to_refund` | No lines, no shipping and no adjustment, or a total of 0 | none |
+     | `quantity_exceeds` | A line asks for more than its refundable quantity, or a line is not on the order | `{ lines: [{ orderLineId, quantity, refundableQuantity }] }` |
+     | `amount_mismatch` | The server's total differs from `totalMinor`, or exceeds the order's refundable money | `{ expectedMinor, serverMinor }` |
+     | `order_state` | The order's state does not allow a refund (not placed, cancelled, …) | `{ state }` |
+     | `not_till_order` | The order was not taken by the POS (ruling 2) | none |
+     | `forbidden` | The till's credentials lack the store's refund permission (ruling 1) | none |
+     | `no_open_session` | `sessionId` is not an open session of `registerId` on the store: unknown, counting, closed or superseded (ruling 3) | `{ sessionId }` |
+
+     - **`not_till_order` is its own code**, not `order_state`, so the app can say why plainly. An order is the
+       till's when the POS created it; on Vendure, when it has `tallyClientOrderId` and a `tally-pos` payment.
+       Storefront orders are refunded by their own payment handler in the platform's admin.
+     - **`forbidden` on Vendure** is the vendurepos plugin's `TallyPosRefund` permission (a `PermissionDefinition`
+       beside `TallyPosSell`). Once a role stores that name, it is public API.
+     - A refund needs the session **open**, not counting: a refund changes expected cash, and counting has started
+       from it. If the session's open command has not reached the store yet, the refusal is `no_open_session`, and
+       the app retries with a new id once the register queue has drained.
+     - The shared codes still apply: `invalid_payload`, `unsupported_version`, `idempotency_mismatch`, and
+       `platform_error` / `internal_error` under ADR-038's rule that the platform kept no durable change. A plugin
+       restocks, refunds and records the refund in one unit: a partial write is rolled back or compensated before
+       either code is returned.
+  6. **Register figures count a refund in the session that made it.**
+     - The session is the refund's `sessionId` (where the money left the drawer), never the sale's session.
+     - Expected per tender falls by the refund's `byMethod`: a cash-destination refund lowers expected cash.
+     - `periodRefundsTotalMinor` is the sum of the session's applied refunds' `totalMinor`, and
+       `perpetualRefundsTotalMinor` accumulates it, as the sales totals do.
+     - `deriveSessionFigures` (the server helper) takes an optional `refunds: [{ byMethod }]`, lowers expected per
+       method by them (a method can go below 0), and returns `refundsTotalMinor` only when `refunds` is passed, so
+       existing callers get exactly the result they had. Sales count is unchanged.
+     - **No register contract version bump.** The fields and their meaning ("refunds in the period") already exist;
+       only their value stops being always 0. A refund enters a session only through an applied `order.refund` that
+       names it, which only a till with the `orderRefund` capability sends, so a register-v1 till that cannot refund
+       keeps sessions with no refunds and its figures unchanged. The change is still one-way: what a closure's
+       expected cash means on a store that takes refunds.
+  7. **The connector read** (Vendure). `getVendureOrder` also selects each line's `orderPlacedQuantity`,
+     `proratedUnitPrice` and `proratedUnitPriceWithTax`, and each refund's `items shipping adjustment metadata`. A
+     pure `vendureRefundable(order)` computes, from the order alone:
+     - per line: refunded quantity (the sum of its refund lines over refunds not `Failed`), cancelled quantity
+       (`orderPlacedQuantity − quantity`, at least 0) and refundable quantity (`quantity − refunded`, at least 0);
+     - refundable shipping: `shippingWithTax` less the `shipping` of refunds not `Failed`, at least 0;
+     - refundable money: for each `Settled` payment, its amount less its refunds not `Failed`, summed, at least 0.
+
+     `Pending` refunds count as refunded, so the form never offers money already on its way back. The helper only
+     bounds the form; the plugin is authoritative and refuses with `quantity_exceeds` or `amount_mismatch`.
+- **Not in this decision:**
+  - **The till's local record of applied refunds**, which its own `tillExpected` and `periodRefundsTotalMinor` at
+    close need. Settled by amendment 1. Until it lands, a session with a cash refund closes at the till with a
+    variance equal to the refund, so vendurepos must not ship the refund action before it.
+  - The refund screen and receipt (vendurepos's app), and the plugin's handler, `createRefund` and restocking
+    (vendurepos's repo).
+  - Refunds for WooCommerce and Medusa: each will be its platform's own way, on this same contract.
+- **Evidence:**
+  - Vendure Admin API reference (docs.vendure.io): `Refund`, `RefundLine`, `Payment`, `OrderLine`
+    (`orderPlacedQuantity`, `proratedUnitPriceWithTax`); `RefundState = 'Pending' | 'Settled' | 'Failed'`.
+  - The handoff ~/agent/handoff/vendurepos-refunds-item4-2026-10-07.md and the front desk's rulings.
+- **Amendment 1 (front desk ruling, 2026-10-07): the till's refund record, `pos_refunds`.**
+  - **A new local-only collection at version 0, never replicated.** Its primary key is the payload's
+    `clientRefundId`. It is a new collection and migrates no existing data, so it is not a schema bump of an existing
+    collection. `@tallyui/pos` exports `posRefundSchema` and `posRefundCollection()`; the app adds it with
+    `addCollections`, as it adds `cash_movements`.
+  - **A record holds one refund's current attempt:**
+    - the identity fields: `id` (the `clientRefundId`), `commandId` (the attempt's envelope id), `orderId`,
+      `sessionId` and `registerId`;
+    - `envelope`: the envelope as sent, so an unknown answer is resent byte for byte;
+    - `status`: `pending`, `applied`, `rejected` or `unsent`;
+    - the store's answer: `result` (applied), `duplicate`, or `error`;
+    - `createdAt` and `updatedAt`.
+  - **`submitOrderRefund({ refunds, transport, envelope })` is the record flow around `sendOrderRefund`.** It writes
+    the record as `pending` before the send, then stores the answer:
+
+    | `sendOrderRefund` outcome | Record |
+    |---|---|
+    | `applied` (or `duplicate`) | `applied`, with `result` and `duplicate` |
+    | `rejected` | `rejected`, with the store's `error` |
+    | `refused` or `unauthorized` | `unsent`: the store did not take the batch |
+    | `unknown` | stays `pending` |
+
+    - An `applied` record is final. Submitting it again returns its stored result and sends nothing.
+    - A `pending` record is resent only with its own envelope. Any other attempt at that refund is refused with
+      `RefundAnswerPendingError`, which carries the record so the app can resend it.
+    - A `rejected` record replays its rejection for the same envelope id. An `unsent` record may be sent again with
+      the same envelope. Either one may take a new attempt with a new envelope id (decision 2), which replaces the
+      record's attempt.
+    - The answer is written only while the record is still that attempt's `pending`, so a late answer never
+      overwrites a newer attempt or an applied record.
+  - **Register figures at the till count the session's applied records**, by the record's `sessionId`, the same way
+    `deriveSessionFigures` counts them on the server (decision 6):
+    - `deriveExpected` takes optional refunds and lowers expected per method by each applied record's
+      `result.byMethod`.
+    - `writeClosure` takes optional `refunds`:
+      - `till_expected` falls by their `byMethod`, unless `tillExpected` is given, which still wins.
+      - `period_refunds_total_minor` is the sum of their `byMethod` amounts, and `advancePerpetual` carries it into
+        the perpetual total.
+      - `breakdowns.payment_methods[method].refunds_minor` holds each method's refunds.
+      - `breakdowns.refund_count` is their number.
+      - `breakdowns.refund_ids` and `breakdowns.pending_refund_ids` are added only when `refunds` is passed, so a
+        caller that passes none gets the same closure as before.
+    - `useRegisterSession` takes an optional `refunds` collection. `undefined` means the app takes no refunds;
+      `null` means it is still opening, like the other collections. With it, the live expected figures, the close's
+      approval gate and the Z all count the session's applied refunds.
+  - **A refund still `pending` at close does not count**, and the Z lists it in `pending_refund_ids`. The cashier
+    hands over money only on an `applied` answer (decision 2), so the drawer holds the money of a refund whose
+    answer never came, and the till's figures follow the drawer. Closing is not blocked, so a till that has lost
+    the network can still close. If the store did apply such a refund, the store's figures differ from the till's
+    by that refund, and the Z shows which one.

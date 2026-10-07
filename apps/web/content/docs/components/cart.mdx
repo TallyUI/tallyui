@@ -1,0 +1,33 @@
+---
+title: Cart
+description: Sale lines with quantity controls, discounts, charges, totals, and payment actions
+---
+
+## Import
+
+```tsx
+import { Cart } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useSale } from '@tallyui/pos';
+import { Cart } from '@tallyui/components';
+
+// Inside a component under TaxProvider.
+const sale = useSale(settings, { registerId, cashierRef });
+<Cart sale={sale} />
+```
+
+Renders the sale's lines with quantity and removal controls, line and order discounts, totals, and cash or card terminal actions. Price editing appears when permitted, and the charge form appears when the sale's capabilities support it.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |
+| `taxLabel` | `(ratePpm: number) => string` | ``(ratePpm: number) => `Tax ${ratePpm / 10000}%` `` | Formats each tax row's label from its rate in parts per million |
+| `taxClasses` | `ReadonlyArray<{ id: string; label: string }>` | --- | Tax class choices passed to the charge form |
+| `canEditPrice` | `boolean` | `false` | Shows a Price action on each line; pass the till's price-edit permission |
+| `onPriceChange` | `(change: { lineId: string; fromMinor: number; toMinor: number; reason?: string }) => void` | --- | Called after a price is applied for the app's audit log; the reason is kept only in this callback |

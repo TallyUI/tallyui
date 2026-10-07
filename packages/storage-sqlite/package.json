@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/storage-sqlite",
-  "version": "3.8.0",
+  "version": "3.9.0",
   "type": "module",
   "description": "RxDB Premium SQLite storage for a synchronous SQLite handle (expo-sqlite)",
   "main": "./dist/index.js",
@@ -13,17 +13,20 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "source": "./src/index.ts"
+      "source": "./src/index.ts",
+      "default": "./dist/index.js"
     },
     "./web": {
       "types": "./dist/web/index.d.ts",
       "import": "./dist/web/index.js",
-      "source": "./src/web/index.ts"
+      "source": "./src/web/index.ts",
+      "default": "./dist/web/index.js"
     },
     "./web-worker": {
       "types": "./dist/web/worker.d.ts",
       "import": "./dist/web/worker.js",
-      "source": "./src/web/worker.ts"
+      "source": "./src/web/worker.ts",
+      "default": "./dist/web/worker.js"
     }
   },
   "files": [

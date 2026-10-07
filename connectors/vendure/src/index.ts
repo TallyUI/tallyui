@@ -114,6 +114,8 @@ export { vendureStockReconcile } from './reconcile/stock';
 export { vendureStoreSettings } from './store-settings';
 export { vendureGlobalStockSettings } from './global-settings';
 export { searchVendureCustomers, createVendureCustomer, getVendureCustomer, toVendureCustomer } from './customers';
+export { listVendureOrders, getVendureOrder, type VendureOrderListOptions, type VendureOrderList, type VendureOrderSummary, type VendureOrder } from './orders';
+export { vendureRefundable, type VendureRefundableLine, type VendureRefundable } from './refunds';
 
 export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { VendureTimezoneConfigError } from './replication/products';

@@ -1,0 +1,42 @@
+---
+title: RegisterColumn
+description: Register selection, opening, counting, or cart content for the current session
+---
+
+## Import
+
+```tsx
+import { RegisterColumn } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<RegisterColumn
+  register={register}
+  registerId={registerId}
+  registers={registers}
+  onPick={(id) => bindRegister(id)}
+  currency="EUR"
+  countSlot={countContent}
+  cartEmpty={sale.order.lineItems.length === 0}
+>
+  {cartContent}
+</RegisterColumn>
+```
+
+Renders the register picker, opening card, count content, or cart children according to register state. An unfinished closed session gets a Finish closing card, and an overdue open session with an empty cart gets a Close register offer.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `register` | `ReturnType<typeof useRegisterSession>` | required | Register session state that selects the picker, opening, counting, or selling content |
+| `registerId` | `string \| null` | required | Bound register ID passed into `useRegisterSession`; `null` shows the picker |
+| `registers` | `RegisterPickerRegister[]` | required | Register choices passed to `RegisterPicker` |
+| `onPick` | `(id: string) => void` | required | Handler passed to the picker for binding the selected register |
+| `currency` | `string` | required | ISO 4217 code forwarded to `OpenRegisterCard` |
+| `configuredFloatMinor` | `number \| null` | --- | Opening float in minor units forwarded to `OpenRegisterCard` |
+| `countSlot` | `ReactNode` | --- | Replaces the cart while counting or while a closed session's close is in flight; an unfinished close otherwise shows the Finish closing card |
+| `cartEmpty` | `boolean` | --- | Whether the cart has no lines; enables the overdue Close register offer |
+| `children` | `ReactNode` | required | Cart content shown when a register is bound, open, and not counting |
