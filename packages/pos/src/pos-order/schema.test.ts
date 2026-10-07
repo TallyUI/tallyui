@@ -27,6 +27,42 @@ it.each(['lines', 'fees', 'shipping'] as const)('refuses invalid netMicros on %s
   } finally { await db.remove(); }
 });
 
+it("stores version 9's coupons, display coupons, line attributes and regular unit price, and refuses malformed ones", async () => {
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 3 } });
+    expect(order.display).toBeDefined();
+    const coupon = { code: 'save10', couponId: '42', discountMinor: 100, discountTaxMinor: 19 };
+    const recorded = { ...order, id: uuidv7(), coupons: [coupon],
+      display: { ...order.display!, coupons: [{ code: 'save10', amountMinor: 100 }] },
+      lines: [{ ...order.lines[0], attributes: { Size: 'S', Colour: 'Blue' }, regularUnitPriceMinor: 1000 }] };
+    await pos_orders.insert(recorded);
+    expect((await pos_orders.findOne(recorded.id).exec())?.toJSON()).toStrictEqual(recorded);
+    for (const malformed of [
+      { coupons: [{ ...coupon, extra: 1 }] },
+      { coupons: [{ code: 'save10', discountMinor: 100, discountTaxMinor: 19 }] },
+      { coupons: [{ ...coupon, discountMinor: 1.5 }] },
+      { coupons: [{ ...coupon, discountMinor: -1 }] },
+      { coupons: [{ ...coupon, code: '' }] },
+      { display: { ...order.display!, coupons: [{ code: 'save10', amountMinor: 100, extra: 1 }] } },
+      { display: { ...order.display!, coupons: [{ code: 'save10' }] } },
+      { lines: [{ ...order.lines[0], attributes: { Size: 1 } }] },
+      { lines: [{ ...order.lines[0], regularUnitPriceMinor: 1.5 }] },
+    ]) {
+      await expect(pos_orders.insert({ ...order, id: uuidv7(), ...malformed } as unknown as typeof order)).rejects.toMatchObject({ code: 'VD2' });
+    }
+  } finally { await db.remove(); }
+});
+
+it('pos_orders keeps no local documents, so its migration has none to carry', () => {
+  expect((posOrderCollection() as { localDocuments?: boolean }).localDocuments ?? false).toBe(false);
+});
+
 it('inserts a finalised order into an AJV-validated RxDB memory collection', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -79,7 +115,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(8);
+  expect(posOrderSchema.version).toBe(9);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });

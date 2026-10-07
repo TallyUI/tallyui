@@ -23,9 +23,12 @@ import type { PosOrder } from './types';
  * Version 8 adds fees, shipping, custom lines (ADR-075) and the woocommerce tax rounding (ADR-076), and changes nothing else.
  * It also stores the WooCommerce 6dp net (`netMicros`) under the woocommerce rounding (ADR-076 amendment).
  * Its migration is the identity. It is one-way like version 7.
+ * Version 9 adds the order's `coupons` and the receipt's `display.coupons` (ADR-077 d2), and a line's `attributes` (#495)
+ * and `regularUnitPriceMinor` (ADR-077 d2), and changes nothing else. Nothing writes them yet.
+ * Its migration is the identity. It is one-way like version 8.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 8, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 9, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -38,6 +41,10 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     taxMinor: { type: 'integer' }, totalMinor: { type: 'integer' },
     syncStatus: { type: 'string', enum: ['pending', 'applied', 'rejected'], maxLength: 10 },
     note: { type: 'string' }, registerId: { type: 'string' }, sessionId: { type: 'string', maxLength: 36 }, cashierRef: { type: 'string' },
+    coupons: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      code: { type: 'string', minLength: 1, maxLength: 255 }, couponId: { type: 'string', minLength: 1, maxLength: 64 },
+      discountMinor: { type: 'integer', minimum: 0 }, discountTaxMinor: { type: 'integer', minimum: 0 },
+    }, required: ['code', 'couponId', 'discountMinor', 'discountTaxMinor'] } },
     lines: { type: 'array', items: {
       type: 'object', properties: {
         id: { type: 'string', maxLength: 36 }, productId: { type: 'string' }, variantId: { type: 'string' },
@@ -48,6 +55,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
           taxClass: { type: 'string', maxLength: 64 }, taxStatus: { type: 'string', enum: ['taxable', 'none'] },
         }, required: ['name', 'taxStatus'] },
         unitPriceMinor: { type: 'integer' }, discountMinor: { type: 'integer' }, netMinor: { type: 'integer' },
+        attributes: { type: 'object', additionalProperties: { type: 'string' } },
+        regularUnitPriceMinor: { type: 'integer' },
         netMicros: { type: 'string', pattern: '^-?[0-9]{1,24}$', maxLength: 25 },
         taxLines: { type: 'array', items: {
           type: 'object', properties: { code: { type: 'string' }, ratePpm: { type: 'integer' }, taxMicros: { type: 'string' } },
@@ -110,6 +119,9 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
       subtotalMinor: { type: 'integer' }, discountMinor: { type: 'integer' }, taxMinor: { type: 'integer' },
       totalMinor: { type: 'integer' }, orderDiscountMinor: { type: 'integer' },
+      coupons: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        code: { type: 'string', minLength: 1, maxLength: 255 }, amountMinor: { type: 'integer' },
+      }, required: ['code', 'amountMinor'] } },
       fees: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
         id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 }, amountMinor: { type: 'integer' },
       }, required: ['id', 'name', 'amountMinor'] } },
@@ -165,5 +177,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity } };
 }
