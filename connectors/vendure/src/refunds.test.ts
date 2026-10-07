@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { VendureOrder } from './orders';
-import { vendureRefundable } from './refunds';
+import { vendureLineRefundWithTax, vendureRefundable } from './refunds';
 
 const line: VendureOrder['lines'][number] = {
   id: 'line-1', quantity: 3, orderPlacedQuantity: 3, proratedUnitPrice: 80, proratedUnitPriceWithTax: 100,
+  proratedLinePriceWithTax: 300,
   taxRate: 25, productVariant: { id: 'variant-1', name: 'Coffee', sku: 'COFFEE' },
   unitPrice: 100, unitPriceWithTax: 125, linePrice: 300, linePriceWithTax: 375,
   discountedLinePrice: 240, discountedLinePriceWithTax: 300, discounts: [],
@@ -23,7 +24,7 @@ describe('vendureRefundable', () => {
     expect(vendureRefundable(order)).toStrictEqual({
       lines: [{
         orderLineId: 'line-1', quantity: 3, refundedQuantity: 0, cancelledQuantity: 0,
-        refundableQuantity: 3, unitRefundWithTax: 100,
+        refundableQuantity: 3, unitRefundWithTax: 100, lineTotalWithTax: 300,
       }],
       shippingWithTax: 60, moneyWithTax: 0,
     });
@@ -33,7 +34,7 @@ describe('vendureRefundable', () => {
     expect(vendureRefundable({ ...order, payments: [payment] })).toStrictEqual({
       lines: [{
         orderLineId: 'line-1', quantity: 3, refundedQuantity: 1, cancelledQuantity: 0,
-        refundableQuantity: 2, unitRefundWithTax: 100,
+        refundableQuantity: 2, unitRefundWithTax: 100, lineTotalWithTax: 300,
       }],
       shippingWithTax: 40, moneyWithTax: 240,
     });
@@ -72,14 +73,14 @@ describe('vendureRefundable', () => {
   it('reports cancelled quantity separately from the current refundable quantity', () => {
     expect(vendureRefundable({ ...order, lines: [{ ...line, quantity: 1 }] }).lines).toStrictEqual([{
       orderLineId: 'line-1', quantity: 1, refundedQuantity: 0, cancelledQuantity: 2,
-      refundableQuantity: 1, unitRefundWithTax: 100,
+      refundableQuantity: 1, unitRefundWithTax: 100, lineTotalWithTax: 300,
     }]);
   });
 
   it('reports no cancelled quantity when the line grew after placement', () => {
     expect(vendureRefundable({ ...order, lines: [{ ...line, quantity: 5, orderPlacedQuantity: 3 }] }).lines).toStrictEqual([{
       orderLineId: 'line-1', quantity: 5, refundedQuantity: 0, cancelledQuantity: 0,
-      refundableQuantity: 5, unitRefundWithTax: 100,
+      refundableQuantity: 5, unitRefundWithTax: 100, lineTotalWithTax: 300,
     }]);
   });
 
@@ -90,8 +91,8 @@ describe('vendureRefundable', () => {
       ] }] },
     ] });
     expect(result.lines).toStrictEqual([
-      { orderLineId: 'line-2', quantity: 3, refundedQuantity: 0, cancelledQuantity: 0, refundableQuantity: 3, unitRefundWithTax: 100 },
-      { orderLineId: 'line-1', quantity: 3, refundedQuantity: 1, cancelledQuantity: 0, refundableQuantity: 2, unitRefundWithTax: 100 },
+      { orderLineId: 'line-2', quantity: 3, refundedQuantity: 0, cancelledQuantity: 0, refundableQuantity: 3, unitRefundWithTax: 100, lineTotalWithTax: 300 },
+      { orderLineId: 'line-1', quantity: 3, refundedQuantity: 1, cancelledQuantity: 0, refundableQuantity: 2, unitRefundWithTax: 100, lineTotalWithTax: 300 },
     ]);
   });
 
@@ -107,7 +108,7 @@ describe('vendureRefundable', () => {
 
   it.each([undefined, NaN, Infinity, -Infinity])('counts malformed numeric fields (%s) as zero', value => {
     const malformed = {
-      lines: [{ ...line, quantity: value, orderPlacedQuantity: value, proratedUnitPriceWithTax: value }],
+      lines: [{ ...line, quantity: value, orderPlacedQuantity: value, proratedUnitPriceWithTax: value, proratedLinePriceWithTax: value }],
       shippingWithTax: value,
       payments: [{ ...payment, amount: value, refunds: [{
         ...refund, total: value, shipping: value, lines: [{ orderLineId: 'line-1', quantity: value }],
@@ -116,7 +117,7 @@ describe('vendureRefundable', () => {
     expect(vendureRefundable(malformed as unknown as Parameters<typeof vendureRefundable>[0])).toStrictEqual({
       lines: [{
         orderLineId: 'line-1', quantity: 0, refundedQuantity: 0, cancelledQuantity: 0,
-        refundableQuantity: 0, unitRefundWithTax: 0,
+        refundableQuantity: 0, unitRefundWithTax: 0, lineTotalWithTax: 0,
       }],
       shippingWithTax: 0, moneyWithTax: 0,
     });
@@ -130,5 +131,50 @@ describe('vendureRefundable', () => {
     expect(result.lines[0]).toMatchObject({ quantity: 1, refundedQuantity: 2, refundableQuantity: 0 });
     expect(result.shippingWithTax).toBe(20);
     expect(result.moneyWithTax).toBe(120);
+  });
+});
+
+describe('vendureLineRefundWithTax', () => {
+  const refundOrder = { ...order, lines: [{ ...line, proratedUnitPriceWithTax: 416, proratedLinePriceWithTax: 1249 }] };
+
+  it('refunding a whole line returns its total exactly, not quantity × unit', () => {
+    const refundable = vendureRefundable(refundOrder).lines[0];
+    expect(vendureLineRefundWithTax(refundable, 3)).toBe(1249);
+  });
+
+  it('single-unit refunds of 1249 over three units give 416, 417, 416', () => {
+    const amounts = [0, 1, 2].map(quantity => {
+      const refundable = vendureRefundable({ ...refundOrder, payments: [{ ...payment, refunds: quantity === 0 ? [] : [{
+        ...refund, lines: [{ orderLineId: 'line-1', quantity }],
+      }] }] }).lines[0];
+      return vendureLineRefundWithTax(refundable, 1);
+    });
+    expect(amounts).toStrictEqual([416, 417, 416]);
+    expect(amounts.reduce((sum, amount) => sum + amount, 0)).toBe(1249);
+  });
+
+  it('a partial refund after an earlier one takes the remainder of the line total', () => {
+    const refundable = vendureRefundable({ ...refundOrder, payments: [payment] }).lines[0];
+    expect(vendureLineRefundWithTax(refundable, 2)).toBe(833);
+  });
+
+  it('rounds a half share up', () => {
+    const halfOrder = { ...order, lines: [{ ...line, quantity: 2, proratedLinePriceWithTax: 5 }] };
+    expect(vendureLineRefundWithTax(vendureRefundable(halfOrder).lines[0], 1)).toBe(3);
+    expect(vendureLineRefundWithTax(vendureRefundable({ ...halfOrder, payments: [payment] }).lines[0], 1)).toBe(2);
+  });
+
+  it('a Failed refund does not count towards the units already refunded', () => {
+    const refundable = vendureRefundable({ ...refundOrder, payments: [{
+      ...payment, refunds: [{ ...refund, state: 'Failed' }],
+    }] }).lines[0];
+    expect(vendureLineRefundWithTax(refundable, 1)).toBe(416);
+  });
+
+  it('refuses a quantity that is not a whole number from 1 to the refundable quantity', () => {
+    const refundable = vendureRefundable({ ...refundOrder, payments: [payment] }).lines[0];
+    for (const quantity of [0, 1.5, 3, NaN]) {
+      expect(() => vendureLineRefundWithTax(refundable, quantity)).toThrow(RangeError);
+    }
   });
 });

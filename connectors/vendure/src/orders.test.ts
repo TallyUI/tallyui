@@ -23,7 +23,7 @@ const detail: VendureOrder = {
   ...summary, active: false, subTotal: 1000, subTotalWithTax: 1200, shipping: 0, shippingWithTax: 0,
   lines: [{
     id: 'line-1', quantity: 2, taxRate: 20, productVariant: { id: 'variant-1', name: 'Coffee', sku: 'COFFEE' },
-    orderPlacedQuantity: 2, proratedUnitPrice: 500, proratedUnitPriceWithTax: 600,
+    orderPlacedQuantity: 2, proratedUnitPrice: 500, proratedUnitPriceWithTax: 600, proratedLinePriceWithTax: 1200,
     unitPrice: 600, unitPriceWithTax: 720, linePrice: 1200, linePriceWithTax: 1440,
     discountedLinePrice: 1000, discountedLinePriceWithTax: 1200,
     discounts: [{ description: 'Promotion', amount: -200, amountWithTax: -240 }],
@@ -175,7 +175,7 @@ describe('Vendure orders', () => {
       id code state active orderPlacedAt updatedAt currencyCode totalQuantity
       customer { id firstName lastName emailAddress }
       lines {
-        id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax taxRate productVariant { id name sku }
+        id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax proratedLinePriceWithTax taxRate productVariant { id name sku }
         unitPrice unitPriceWithTax linePrice linePriceWithTax discountedLinePrice discountedLinePriceWithTax
         discounts { description amount amountWithTax }
       }
@@ -195,7 +195,7 @@ describe('Vendure orders', () => {
     expect(sent.query).toContain('tallyClientLineId');
     expect(sent.query).toContain('refunds');
     expect(sent.query).toContain('orderLineId');
-    expect(sent.query.replace(/\s+/g, ' ').trim()).toContain('orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax');
+    expect(sent.query.replace(/\s+/g, ' ').trim()).toContain('orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax proratedLinePriceWithTax');
     expect(sent.query.replace(/\s+/g, ' ').trim()).toContain('refunds { id total items shipping adjustment state reason metadata lines { orderLineId quantity } }');
     expect(sent.query).toMatch(/lines\s*{\s*customFields\s*{ tallyCustomName tallyCustomSku tallyUnitPrice tallyPriceIncludesTax tallyClientLineId }/);
     expect(sent.query).toContain('customFields { tallyClientOrderId tallySaleAt tallyRegisterId tallySessionId tallyCashierRef tallyRejected tallyRejectedClientOrderId tallyPayments tallySnapshot tallyShipping }');
