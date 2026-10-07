@@ -76,6 +76,13 @@ describe('vendureRefundable', () => {
     }]);
   });
 
+  it('reports no cancelled quantity when the line grew after placement', () => {
+    expect(vendureRefundable({ ...order, lines: [{ ...line, quantity: 5, orderPlacedQuantity: 3 }] }).lines).toStrictEqual([{
+      orderLineId: 'line-1', quantity: 5, refundedQuantity: 0, cancelledQuantity: 0,
+      refundableQuantity: 5, unitRefundWithTax: 100,
+    }]);
+  });
+
   it('ignores unknown refund line ids and preserves the order of the order lines', () => {
     const result = vendureRefundable({ ...order, lines: [{ ...line, id: 'line-2' }, line], payments: [
       { ...payment, refunds: [{ ...refund, lines: [
