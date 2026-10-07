@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
+import { minorUnitDigits, woocommerceCoupons } from '@tallyui/core';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
@@ -10,6 +11,8 @@ import { recordRegisterFact, stampSession, type RegisterSessionCollection } from
 import { createLogger } from '../logging';
 import type { CatalogueEntry } from './catalogue';
 import { addEntryToCart, CartError } from './cart';
+import { productCategories } from '../product/categories';
+import { COUPONS_UNSUPPORTED, couponLineItems, couponRefusal, type SaleCoupon, type SaleCouponSource } from './coupons';
 
 /** Logs a throw from onSaleCompleted for a confirmed pending completion newSale() has abandoned (Continue): nothing else would ever surface it. */
 export const saleLogger = createLogger('sale');
@@ -29,8 +32,10 @@ export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
 export const HUNG_SAVE_CHECK_MS = 5000;
 
 /** Call under a `TaxProvider`: its tax context and the settings' currency price every sale. */
-export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
+export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscountsSequentially'>, opts: {
   registerId: string; cashierRef: string; capabilities?: ServerCapabilities;
+  /** Where applyCoupon finds coupons (ADR-077); without it, applyCoupon refuses with COUPONS_UNSUPPORTED. */
+  coupons?: SaleCouponSource;
   /** Where `park()` keeps parked carts; create it with `orderDraftSchema` */
   drafts?: RxCollection;
   /**
@@ -63,6 +68,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
   // The live builder, which every mutator reads (#301): newSale() sets it before setBuilder(next) renders, so a
   // call from an older render never reaches a discarded builder. The state only moves the `order` subscription.
   const builderNow = useRef(rendered);
+  const applied = useRef(new Map<string, SaleCoupon>());
+  const categories = useRef(new Map<number, { id: number }[]>());
+  function couponContext(coupons = applied.current) {
+    return { configs: woocommerceCoupons.toCouponConfigs([...coupons.keys()], coupons),
+      couponIds: new Map([...coupons].map(([code, coupon]) => [code, String(coupon.id)])),
+      productCategories: categories.current, calcDiscountsSequentially: settings.calcDiscountsSequentially ?? false };
+  }
   const [order, setOrder] = useState(() => rendered.getSnapshot());
   const [stage, setStage] = useState<SaleStage>({ kind: 'cart' });
   const [saleError, setError] = useState<string | null>(null);
@@ -126,6 +138,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
     const next = restored ?? createOrderBuilder({ currency: settings.currency, taxContext });
     if (customer !== null) next.setCustomer(customer);
     builderNow.current = next;
+    applied.current.clear();
     setBuilder(next);
     setOrder(next.getSnapshot());
     setStage({ kind: 'cart' });
@@ -261,6 +274,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       const builder = builderNow.current;
       try {
         const known = new Set(builder.getSnapshot().lineItems.map((line) => line.id));
+        const productId = Number(traits.getId(entry.product));
+        if (Number.isSafeInteger(productId) && productId >= 0) {
+          const ids = productCategories(entry.product, traits).map(({ id }) => ({ id: Number(id) })).filter(({ id }) => Number.isSafeInteger(id));
+          if (ids.length) categories.current.set(productId, ids);
+        }
         const lineId = addEntryToCart(builder, entry, traits, madeWith.current.currency);
         // A new line whose id or v3 tax code finalize would refuse is taken off at once, in finalize's
         // message shape; finalize stays the backstop.
@@ -353,6 +371,40 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
       return null;
     },
     removeDiscount(id: string) { if (!locked()) builderNow.current.removeDiscount(id); },
+    /** ADR-077 (d3): validates and applies a WooCommerce coupon; resolves to the refusal to show, or null once applied. */
+    async applyCoupon(code: string): Promise<string | null> {
+      if (locked()) return SALE_SAVING;
+      if (opts.capabilities?.coupons !== true || !opts.coupons || taxContext.rounding?.granularity !== 'woocommerce') return COUPONS_UNSUPPORTED;
+      const builder = builderNow.current, normalized = code.trim().toLowerCase();
+      if (!normalized) return 'Enter a coupon code';
+      if (applied.current.has(normalized)) return couponRefusal(normalized, { code: 'already_applied' });
+      const coupon = await opts.coupons.find(normalized);
+      if (!coupon) return `Coupon ${normalized} does not exist`;
+      if (locked() || builderNow.current !== builder) return 'The sale changed while the coupon was being checked; apply it again';
+      const snapshot = builder.getSnapshot(), customerId = snapshot.customer && Number(snapshot.customer.id);
+      const validation = woocommerceCoupons.validateCoupon(coupon, {
+        lineItems: couponLineItems(snapshot.lineItems, snapshot.currency, categories.current), appliedCoupons: [...applied.current.keys()],
+        appliedCouponsWithIndividualUse: [...applied.current].filter(([, value]) => value.individual_use).map(([key]) => key),
+        cartSubtotal: snapshot.display.subtotalMinor / 10 ** minorUnitDigits(snapshot.currency),
+        customerEmail: snapshot.customer?.email ?? '', customerId: Number.isSafeInteger(customerId) ? customerId : null, now: Date.now(),
+      });
+      if (!validation.valid) return couponRefusal(normalized, validation.rejection);
+      try { builder.setCoupons([...applied.current.keys(), normalized], couponContext(new Map([...applied.current, [normalized, coupon]]))); }
+      catch (error) { if (error instanceof Error) return error.message; throw error; }
+      applied.current.set(normalized, coupon);
+      setError(null);
+      return null;
+    },
+    /** Removes an applied coupon; returns the refusal to show, or null once removed. */
+    removeCoupon(code: string): string | null {
+      if (locked()) return SALE_SAVING;
+      const normalized = code.trim().toLowerCase();
+      if (!applied.current.has(normalized)) return null;
+      const remaining = new Map(applied.current); remaining.delete(normalized);
+      builderNow.current.setCoupons([...remaining.keys()], couponContext(remaining));
+      applied.current.delete(normalized);
+      return null;
+    },
     /** the picked customer reaches the server as order.create v3's customer.customerId */
     setCustomer(customer: CustomerSummary | null) {
       if (locked()) return;
@@ -511,13 +563,43 @@ export function useSale(settings: Pick<StoreSettings, 'currency'>, opts: {
           }
         }
       }
+      const kept = new Map<string, SaleCoupon>(), messages: string[] = [];
+      if (n > 0) messages.push(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
+      if (saved.coupons?.length) {
+        const supported = opts.capabilities?.coupons === true && opts.coupons && taxContext.rounding?.granularity === 'woocommerce';
+        if (supported) {
+          const ids = builder.getSnapshot().lineItems.filter((line) => !line.custom).map((line) => Number(line.productId)).filter((id) => Number.isSafeInteger(id) && id >= 0);
+          for (const [id, values] of await opts.coupons!.productCategories(ids)) if (values.length) categories.current.set(id, [...values]);
+        }
+        for (const { code } of saved.coupons) {
+          let reason: string | null = supported ? null : COUPONS_UNSUPPORTED;
+          if (supported) {
+            const coupon = await opts.coupons!.find(code);
+            if (!coupon) reason = `Coupon ${code} does not exist`;
+            else {
+              const snapshot = builder.getSnapshot(), customerId = snapshot.customer && Number(snapshot.customer.id);
+              const validation = woocommerceCoupons.validateCoupon(coupon, {
+                lineItems: couponLineItems(snapshot.lineItems, snapshot.currency, categories.current), appliedCoupons: [...kept.keys()],
+                appliedCouponsWithIndividualUse: [...kept].filter(([, value]) => value.individual_use).map(([key]) => key),
+                cartSubtotal: snapshot.display.subtotalMinor / 10 ** minorUnitDigits(snapshot.currency),
+                customerEmail: snapshot.customer?.email ?? '', customerId: Number.isSafeInteger(customerId) ? customerId : null, now: Date.now(),
+              });
+              if (!validation.valid) reason = couponRefusal(code, validation.rejection);
+              else try { builder.setCoupons([...kept.keys(), code], couponContext(new Map([...kept, [code, coupon]]))); kept.set(code, coupon); }
+              catch (error) { if (error instanceof Error) reason = error.message; else throw error; }
+            }
+          }
+          if (reason !== null) messages.push(`Coupon ${code} was removed: ${reason}.`);
+        }
+      }
       await doc.remove();
       if (builderNow.current !== live || live.getSnapshot() !== liveSnapshot) {
         await writeOrderDraft(opts.drafts, saved);
         return 'The sale changed while it was being resumed; resume it again';
       }
       resetSale(null, builder);
-      if (n > 0) setError(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
+      applied.current = kept;
+      if (messages.length) setError(messages.join(' '));
       return null;
     },
     /**
