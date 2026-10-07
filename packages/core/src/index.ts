@@ -81,3 +81,7 @@ export {
 export type { ConnectorProviderProps } from './context/connector-context';
 export * as woocommerceTax from './tax/woocommerce';
 export * as woocommerceCoupons from './coupons/woocommerce';
+
+// Browser-safe: command-result.ts imports only types. @tallyui/core/server re-exports these too, but
+// its barrel reaches node:crypto (fingerprint.ts), so browser packages import them from here.
+export { parseCommandResult, CommandResultError } from './server/command-result';
