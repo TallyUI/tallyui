@@ -9,7 +9,7 @@
  *
  * Not ported (registers job c2 owns the server side; TallyUI has no refund model yet):
  * - `retryMovement` and `refusedMovements`: there's no outbox to refuse a movement (c2).
- * - Refund records, refund parents and their demand and close-time wait: no refund model.
+ * - Refund parents and the close-time wait: a refund's record is the app's optional `refunds` collection, and one still pending at close is listed on the Z instead (ADR-080 amendment 1).
  * - Anchor invalidation, `server_expected` and `server_sales_count`: no server figures (c2).
  * - `unsyncedCount` and the `sync_status` filters: nothing is sent (c2).
  * - The binding (`useRegisterBinding`) and `blind` from WooCommerce capabilities: app inputs.
@@ -19,6 +19,7 @@ import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
 import type { PosOrder } from '../pos-order/types';
+import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
 import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
@@ -80,6 +81,8 @@ export interface UseRegisterSessionOptions {
   sessions: RegisterSessionCollection | null;
   /** `cash_movements`; `null` while it opens. */
   movements: CashMovementCollection | null;
+  /** `pos_refunds` (`posRefundCollection()`); `null` while it opens. Leave it out when the app takes no refunds (ADR-080 amendment 1). */
+  refunds?: PosRefundCollection | null;
   /** `closures`; `null` while it opens. */
   closures: ClosureCollection | null;
   /** `register_commands`, created with `registerCommandCollection()`; `null` while it opens. */
@@ -118,7 +121,7 @@ export interface UseRegisterSessionOptions {
 type Reservation = RegisterBucket['closure_reservation'];
 type Snapshot = {
   rows: RegisterSession[]; closureRows: Closure[]; reservation: Reservation;
-  entries: CashMovement[]; sales: PosOrder[];
+  entries: CashMovement[]; sales: PosOrder[]; refundRows: PosRefund[];
   open?: RegisterCommand;
 };
 
@@ -153,7 +156,7 @@ function ledgerRows(orders: readonly PosOrder[]): LedgerRow[] {
 
 export function useRegisterSession(options: UseRegisterSessionOptions) {
   const { sessions, movements, closures, orders, register, storeKey, registerId, enabled, actor, timezone, tenderInProgress, expectedCloseTime, labels } = options;
-  const { commands } = options;
+  const { commands, refunds } = options;
   const commandEnabled = (options.capabilities?.register ?? 0) >= 1;
   const commandTarget = useMemo(() => enabled && commandEnabled && commands && sessions && movements && closures && register && registerId
     ? { commands, sessions, movements, closures, host: register, storeKey, registerId, registerContract: options.capabilities?.register, deviceName: options.deviceName } : null,
@@ -180,21 +183,22 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     return () => subscription.unsubscribe();
   }, [commandTarget]);
   const source = useMemo(() => {
-    if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register) return null;
+    if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register || refunds === null) return null;
     return combineLatest([
       watchFresh(sessions, { selector: { register_id: registerId } }),
       watchFresh(closures, { selector: { register_id: registerId } }),
       observeRegister$(register).pipe(map((document) => reservationOf(document, storeKey, registerId))),
     ]).pipe(switchMap(([rows, closureRows, reservation]) => {
       const current = currentSession(rows, closureRows, reservation);
-      if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [] } as Snapshot);
+      if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [], refundRows: [] } as Snapshot);
       return combineLatest([
         watchFresh(movements, { selector: { session_id: current.id } }),
         watchFresh(orders, { selector: { sessionId: current.id } }),
         commandTarget ? watchFresh(commandTarget.commands, { selector: { key: `session.open:${current.id}` } }) : of([]),
-      ]).pipe(map(([entries, sales, opens]) => ({ rows, closureRows, reservation, entries, sales, open: opens[0] })));
+        refunds ? watchFresh(refunds, { selector: { sessionId: current.id } }) : of([]),
+      ]).pipe(map(([entries, sales, opens, refundRows]) => ({ rows, closureRows, reservation, entries, sales, open: opens[0], refundRows })));
     }));
-  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId, commandTarget]);
+  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId, commandTarget, refunds]);
   // A latest-value ref: an `actions` object from an earlier render still sees the current flag.
   const tender = useRef(tenderInProgress);
   tender.current = tenderInProgress;
@@ -273,7 +277,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const entries = data?.entries ?? [];
   const sales = data?.sales ?? [];
   const expected = session
-    ? deriveExpected({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales) })
+    ? deriveExpected({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales), refunds: data?.refundRows ?? [] })
     : {};
   const now = new Date();
   const [hour, minute] = String(expectedCloseTime ?? '').split(':').map(Number);
@@ -287,8 +291,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     return id === null ? null : { id, sessions: sessions as RegisterSessionCollection };
   };
   const live = () => {
-    if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register) throw new RegisterSessionRequiredError();
-    return { sessions, movements, closures, orders, registerId, register };
+    if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register || refunds === null) throw new RegisterSessionRequiredError();
+    return { sessions, movements, closures, orders, registerId, register, refunds };
   };
   const current = () => {
     if (!session) throw new RegisterSessionRequiredError();
@@ -419,7 +423,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         const key = registerId ?? '';
         if (closingByRegister.has(key)) return closingByRegister.get(key)!;
         const run = (async () => {
-        const { sessions, movements, closures, orders, register } = live();
+        const { sessions, movements, closures, orders, register, refunds } = live();
         const open = current();
         // The gate reads the stored session and the Z's own inputs past the query cache, not this
         // render's snapshot, which can lag a sale or a close that already landed (#168 review).
@@ -431,6 +435,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
             session: { id: stored.id, countedFloatMinor: stored.counted_float_minor },
             movements: await readFresh(movements, { selector: { session_id: stored.id } }),
             ledgerRowsBySession: ledgerRows(await readFresh(orders, { selector: { sessionId: stored.id } })),
+            refunds: refunds ? await readFresh(refunds, { selector: { sessionId: stored.id } }) : undefined,
           });
           if (closeNeedsApproval(input.counted.cash ?? 0, fresh.cash ?? 0, options.varianceThreshold)) throw new RegisterApprovalRequiredError();
         }
@@ -447,6 +452,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           counted: cash, otherTenders, timezone, softwareVersion: options.softwareVersion,
           movements: await readFresh(movements, { selector: { session_id: closed.id } }),
           orders: await readFresh(orders, { selector: { sessionId: closed.id } }),
+          refunds: refunds ? await readFresh(refunds, { selector: { sessionId: closed.id } }) : undefined,
           resolveCashierName: labels?.resolveCashierName,
           labels: {
             register_name: labels?.registerName ?? '', closed_by_name: nameOf(closed.closed_by),

@@ -3,12 +3,23 @@
  * captured payments and cash movements — never what the cashier counts. Port provenance
  * (ADR-032 amendment 1): WCPOS `next` `3b5331b5c`.
  *
- * **Refund attribution is deferred.** WCPOS's `attributeRefunds` debits a session's drawer for
- * refunds processed against its captured payments (by stamped session, then by a legacy
- * `refunded_amount` fallback). TallyUI has no refund model yet (ADR-032 amendment 1), so
- * `deriveExpected` covers only the float, the session's captured payment rows, and its
- * paid-in/paid-out cash movements under WCPOS's void rules.
+ * Refunds come from the till's applied `pos_refunds`, counted in the record's own `sessionId`
+ * (ADR-080 amendment 1), by the server's rule. WCPOS's `attributeRefunds` fallbacks (allocations,
+ * `refunded_amount`) are not ported: the store attributes each refund to a tender in `byMethod`.
  */
+import type { PosRefund } from '../refund/pos-refund';
+
+export type RefundRow = Pick<PosRefund, 'id' | 'sessionId' | 'status' | 'result'>;
+
+export function refundAmounts(refund: RefundRow): Array<[string, number]> {
+  const result = refund.result;
+  if (typeof result !== 'object' || result === null ||
+    (Object.getPrototypeOf(result) !== Object.prototype && Object.getPrototypeOf(result) !== null)) return [];
+  const byMethod = result.byMethod;
+  if (typeof byMethod !== 'object' || byMethod === null ||
+    (Object.getPrototypeOf(byMethod) !== Object.prototype && Object.getPrototypeOf(byMethod) !== null)) return [];
+  return Object.entries(byMethod).filter(([method, amount]) => method.length > 0 && Number.isSafeInteger(amount) && amount >= 0);
+}
 
 /** `session_id`, `kind`, `method_id`, `status` kept as WCPOS names them; money is TallyUI's integer-minor-units convention. */
 export type LedgerRow = {
@@ -32,7 +43,7 @@ export type Movement = {
 /**
  * Expected totals per tender method: the counted float, plus every captured ledger row for the
  * session (grouped under `cash` for cash rows, else `method_id`), plus its non-voided
- * paid-in/paid-out movements.
+ * paid-in/paid-out movements, minus its applied refunds.
  *
  * A movement is excluded when its own `voided_by` is set, or when a `type: 'void'` row's
  * `voids` names its id; the `void` row itself carries no amount of its own.
@@ -41,10 +52,12 @@ export function deriveExpected({
   session,
   movements,
   ledgerRowsBySession,
+  refunds,
 }: {
   session: { id: string; countedFloatMinor: number };
   movements: readonly Movement[];
   ledgerRowsBySession: readonly LedgerRow[];
+  refunds?: readonly RefundRow[];
 }): Record<string, number> {
   const totals: Record<string, number> = { cash: session.countedFloatMinor };
   for (const row of ledgerRowsBySession) {
@@ -61,6 +74,10 @@ export function deriveExpected({
     if (row.session_id !== session.id || row.voided_by || voids.has(row.id)) continue;
     if (row.type === 'paid_in') totals.cash += row.amountMinor;
     if (row.type === 'paid_out') totals.cash -= row.amountMinor;
+  }
+  for (const refund of refunds ?? []) {
+    if (refund.status !== 'applied' || refund.sessionId !== session.id) continue;
+    for (const [method, amount] of refundAmounts(refund)) totals[method] = (totals[method] ?? 0) - amount;
   }
   return totals;
 }
