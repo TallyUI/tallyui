@@ -133,7 +133,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   }
 });
 
-it('stores sentVersion and downgradedFrom, and refuses values outside 1–5', async () => {
+it('stores sentVersion and downgradedFrom, and refuses values outside 1–6', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -147,8 +147,11 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–5', as
     const v4 = { ...order, id: uuidv7(), sentVersion: 4 as const, downgradedFrom: 4 as const };
     await pos_orders.insert(v4);
     expect((await pos_orders.findOne(v4.id).exec())?.toJSON()).toStrictEqual(v4);
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 6 as 5 })).rejects.toThrow();
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 6 as 5 })).rejects.toThrow();
+    const v6 = { ...order, id: uuidv7(), sentVersion: 6 as const, downgradedFrom: 6 as const };
+    await pos_orders.insert(v6);
+    expect((await pos_orders.findOne(v6.id).exec())?.toJSON()).toStrictEqual(v6);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 7 as 6 })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 7 as 6 })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 0 as 1 })).rejects.toThrow();
   } finally {
     await db.remove();

@@ -24,7 +24,7 @@ import type { PosOrder } from './types';
  * It also stores the WooCommerce 6dp net (`netMicros`) under the woocommerce rounding (ADR-076 amendment).
  * Its migration is the identity. It is one-way like version 7.
  * Version 9 adds the order's `coupons` and the receipt's `display.coupons` (ADR-077 d2), and a line's `attributes` (#495)
- * and `regularUnitPriceMinor` (ADR-077 d2), and changes nothing else. Nothing writes them yet.
+ * and `regularUnitPriceMinor` (ADR-077 d2), and lets `sentVersion` and `downgradedFrom` be 6 (order.create version 6, ADR-077 d4), and changes nothing else. Nothing writes them yet.
  * Its migration is the identity. It is one-way like version 8.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
@@ -112,8 +112,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       roundAtSubtotal: { type: 'boolean' },
       mode: { type: 'string', enum: ['half_away_from_zero', 'half_up'] },
     }, required: ['granularity'] },
-    sentVersion: { type: 'integer', minimum: 1, maximum: 5 },
-    downgradedFrom: { type: 'integer', minimum: 1, maximum: 5 },
+    sentVersion: { type: 'integer', minimum: 1, maximum: 6 },
+    downgradedFrom: { type: 'integer', minimum: 1, maximum: 6 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
     display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
