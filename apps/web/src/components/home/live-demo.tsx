@@ -1,7 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { CartPanelDemo } from '@/components/snacks/cart-panel-snack';
+import dynamic from 'next/dynamic';
+
+const CartPanelDemo = dynamic(
+  () => import('@/components/snacks/cart-panel-snack').then((m) => m.CartPanelDemo),
+  { ssr: false },
+);
 
 export function LiveDemo() {
   const [loaded, setLoaded] = useState(false);

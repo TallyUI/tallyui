@@ -11,13 +11,13 @@ export default function Demo() {
   return (
     <View style={{ gap: 16 }}>
       <Text style={{ fontSize: 14, fontWeight: '600', color: '#6b7280' }}>Exact amount</Text>
-      <ChangeDisplay tendered={25} total={25} />
+      <ChangeDisplay change={{ amount: 0, currency: 'USD' }} />
 
       <Text style={{ fontSize: 14, fontWeight: '600', color: '#6b7280' }}>Change owed</Text>
-      <ChangeDisplay tendered={50} total={42.50} />
+      <ChangeDisplay change={{ amount: 750, currency: 'USD' }} />
 
       <Text style={{ fontSize: 14, fontWeight: '600', color: '#6b7280' }}>Large overpayment</Text>
-      <ChangeDisplay tendered={100} total={37.25} />
+      <ChangeDisplay change={{ amount: 6275, currency: 'USD' }} />
     </View>
   );
 }`;
