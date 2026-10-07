@@ -2244,6 +2244,39 @@ interface OrderCreatePayload {
   - An app with more products than it keeps in memory passes its own
     filtered and sorted `items`; `products` still drives scanning and the
     variant chooser.
+- **Amendment 1 (front desk ruling, 2026-10-07): server order history in
+  `OrdersList`.** vendurepos and medusapos both show the store's order
+  history next to the till's own sales. TV7's `OrdersList` takes only the
+  outbox's `PosOrder[]`. As vendurepos proposed, it gains platform-neutral
+  history rows, so both apps use the same list.
+  - **`history?: OrderHistoryRow[]`**, exported as a type from
+    `@tallyui/components`:
+    `{ id, clientOrderId?, reference, placedAt, totalMinor, currency,
+    itemCount, stateLabel }`. The app maps its own store's orders into
+    rows. TallyUI reads no platform field and adds no app-specific one.
+  - **The outbox row wins while it exists.** A history row whose
+    `clientOrderId` is the `id` of an order in `orders` is not shown. A row
+    without `clientOrderId` is always shown. `clientOrderId` is the id the
+    till sent as `order.create`'s `clientOrderId`, which is the `PosOrder`
+    `id`.
+  - **Recent merges the two lists, newest first.** Outbox orders sort by
+    `createdAt` and history rows by `placedAt`. The sort is stable: at equal
+    times an outbox order comes before a history row, and each list keeps
+    its given order. A time that does not parse sorts after every time that
+    does.
+  - **Without history rows, Recent is exactly as before.** When `history`
+    is absent, empty or wholly hidden by outbox orders, Recent shows
+    `orders` in the given order, unsorted. Every outbox row, Needs
+    attention, Retry and the empty text render byte for byte as before.
+  - **A history row is read-only.** It shows
+    `Order <reference> · <n> item(s)` and
+    `<formatDate(placedAt)> · <total> · <stateLabel>`. `reference`,
+    `itemCount` and `stateLabel` are shown as given. The row has no
+    expanded detail, no Retry and no warnings, and it never appears under
+    Needs attention: the outbox is the only source of what needs the
+    cashier.
+  - The empty text ("No sales yet") shows only when no outbox order and
+    no shown history row are left.
 
 ## ADR-053 The Vendure MVP starts before the conformance gate (plan V-D1)
 
