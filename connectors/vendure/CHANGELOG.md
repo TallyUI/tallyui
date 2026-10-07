@@ -1,5 +1,21 @@
 # @tallyui/connector-vendure
 
+## 3.9.0
+
+### Minor Changes
+
+- 3e2245a: `order.refund` version 1 (ADR-080), an online refund command on the command channel. `@tallyui/core` adds the envelope and payload types, `refundPayloadErrors` (the strict shape check), the `order.refund` type in `validateBatch`, an optional `orderRefund` list in `precheckCommand`, the `refund` result in `parseCommandResult`, the refusal codes (`nothing_to_refund`, `quantity_exceeds`, `amount_mismatch`, `order_state`, `not_till_order`, `forbidden`, `no_open_session`), the `orderRefund` capability from `/tally/v1/info`, and refunds in `deriveSessionFigures`: a session's expected figures fall by the refunds it made, and it returns `refundsTotalMinor` when refunds are passed (callers that pass none get the same result as before). `@tallyui/pos` adds `sendOrderRefund(transport, envelope)`, which sends one refund and never queues it. `@tallyui/connector-vendure`'s `getVendureOrder` also reads each line's placed quantity and prorated prices and each refund's amounts and metadata, and `vendureRefundable(order)` computes what is left to refund.
+- 0b8a4da: Order history for Vendure (ADR-079). `listVendureOrders(context, options)` reads the channel's placed orders, newest first and paged, through the Admin API. It filters on the server by placed date, state, register (`tallyRegisterId`), cashier (`tallyCashierRef`), customer, and a search on order code or customer last name. `getVendureOrder(context, id)` reads one order with its lines, totals, tax summary, payments and refunds. Both return Vendure's own fields unmapped, need `ReadOrder` (and `ReadCustomer` for the customer filter), and write nothing locally. Pass `tallyFields: false` on a server without the vendurepos plugin.
+
+### Patch Changes
+
+- Updated dependencies [39a4583]
+- Updated dependencies [3e2245a]
+- Updated dependencies [a3dc028]
+- Updated dependencies [006cfb2]
+- Updated dependencies [19093c2]
+  - @tallyui/core@3.9.0
+
 ## 3.8.0
 
 ### Patch Changes

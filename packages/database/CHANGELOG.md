@@ -1,5 +1,16 @@
 # @tallyui/database
 
+## 3.9.0
+
+### Patch Changes
+
+- Updated dependencies [39a4583]
+- Updated dependencies [3e2245a]
+- Updated dependencies [a3dc028]
+- Updated dependencies [006cfb2]
+- Updated dependencies [19093c2]
+  - @tallyui/core@3.9.0
+
 ## 3.8.0
 
 ### Patch Changes
