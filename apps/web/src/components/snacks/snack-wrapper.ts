@@ -100,12 +100,14 @@ export const snackDependencies = [
   `@tallyui/theme@${tallyVersion}`,
   `@tallyui/connector-woocommerce@${tallyVersion}`,
   `@tallyui/connector-medusa@${tallyVersion}`,
-  // rxdb and rxjs follow the versions the components are built against.
   'react-native-svg',
-  `rxdb@${componentsPackage.devDependencies.rxdb}`,
+  // rxjs follows the version the components are built against. rxdb is pinned to 16.21.1
+  // for the Snacks only: @tallyui/core's optional rxdb >=16 peer needs an rxdb listed,
+  // but nothing in the Snacks loads rxdb. Snack reports each optional peer of rxdb 17
+  // (vue, nats, mongodb, firebase, @angular/core, @preact/signals-core) as missing;
+  // 16.21.1's only peer is rxjs.
+  'rxdb@16.21.1',
   `rxjs@${componentsPackage.devDependencies.rxjs}`,
-  // rxdb lists vue as an optional peer ('*'); Snack reports it missing unless it is listed.
-  'vue@3.5.13',
 ].join(',');
 
 /**
@@ -142,10 +144,8 @@ export const propsSnackDependencies = [
   `@tallyui/components@${tallyVersion}`,
   `@tallyui/primitives@${tallyVersion}`,
   `@tallyui/theme@${tallyVersion}`,
-  // rxdb and rxjs follow the versions the components are built against.
   'react-native-svg',
-  `rxdb@${componentsPackage.devDependencies.rxdb}`,
+  // See snackDependencies above for the Snack-only rxdb pin and rxjs version rationale.
+  'rxdb@16.21.1',
   `rxjs@${componentsPackage.devDependencies.rxjs}`,
-  // rxdb lists vue as an optional peer ('*'); Snack reports it missing unless it is listed.
-  'vue@3.5.13',
 ].join(',');
