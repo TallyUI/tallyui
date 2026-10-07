@@ -1,0 +1,32 @@
+---
+title: DiscountForm
+description: Percentage or fixed-amount discount entry with Apply and Cancel actions
+---
+
+## Import
+
+```tsx
+import { DiscountForm } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<DiscountForm
+  title="Order discount"
+  currency={sale.order.currency}
+  onApply={(discount) => sale.applyDiscount(null, discount)}
+  onClose={() => setDiscountOpen(false)}
+/>
+```
+
+Renders a title, percentage or fixed-amount selector, discount input, and Apply and Cancel buttons. Parsing errors and refusals from `onApply` appear inline; a successful application closes the form through `onClose`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `title` | `string` | required | Heading and accessible group label |
+| `currency` | `string` | required | Currency used to parse fixed amounts into minor units and label the amount input |
+| `onApply` | `(discount: Discount) => string \| null` | required | Receives the parsed discount; return a refusal to show inline or `null` once applied |
+| `onClose` | `() => void` | required | Called on Cancel or after `onApply` returns `null` |
