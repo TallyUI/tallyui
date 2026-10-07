@@ -10,7 +10,7 @@ import { posOrderCollection } from './schema';
 
 const fixturePath = fileURLToPath(new URL('./__fixtures__/order-create-v6.json', import.meta.url));
 const supported = { orderCreate: [1, 2, 3, 4, 5, 6], register: [1] };
-function sale(coupons = true, fee = false) {
+function sale(coupons = true, fee = false, shipping = false) {
   const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
     pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => 200000,
     getTaxRates: () => [{ id: 1, code: 'VAT', label: 'VAT', rate: '20.0000', priority: 1, compound: false, shipping: true }],
@@ -23,6 +23,7 @@ function sale(coupons = true, fee = false) {
   builder.addLine({ productId: '2', name: 'Item 2', unitPrice: { amount: 500, currency: 'GBP' }, regularUnitPriceMinor: 500 });
   if (coupons) builder.setCoupons(['ten']);
   if (fee) builder.addFee({ name: 'Bag', amountMinor: 20 });
+  if (shipping) builder.addShipping({ name: 'Delivery', amountMinor: 30, taxClass: 'standard', methodId: 'flat_rate' });
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
   let nextId = 0;
   const order = finalizeOrder(builder.getSnapshot(), {
@@ -44,6 +45,21 @@ describe('order.create v6 coupon envelope (ADR-077)', () => {
     expect(envelope.payload.lines[0].attributes).not.toBe(order.lines[0].attributes);
     expect(envelope.payload.display!.coupons).toEqual(order.display!.coupons);
     expect(envelope.payload.display!.coupons![0]).not.toBe(order.display!.coupons![0]);
+  });
+
+  it('keeps fees, shipping and their display rows alongside coupons at version 6', () => {
+    const order = sale(true, true, true), envelope = toOrderCreateEnvelope(order, 'device_golden', 1, { maxVersion: 6 });
+    expect(envelope.version).toBe(6);
+    expect(envelope.payload.fees).toEqual([
+      expect.objectContaining({ id: order.fees![0].id, name: 'Bag', amountMinor: order.fees![0].amountMinor }),
+    ]);
+    expect(envelope.payload.shipping).toEqual([
+      expect.objectContaining({ id: order.shipping![0].id, name: 'Delivery', amountMinor: order.shipping![0].amountMinor }),
+    ]);
+    expect(envelope.payload.display!.fees).toEqual([{ id: order.fees![0].id, name: 'Bag', amountMinor: 20 }]);
+    expect(envelope.payload.display!.shipping).toEqual([{ id: order.shipping![0].id, name: 'Delivery', amountMinor: 30 }]);
+    expect(envelope.payload.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 130, discountTaxMinor: 26 }]);
+    expect(precheckCommand(envelope, supported)).toBeUndefined();
   });
 
   it('passes the server precheck and resends the same payload at stored version 6', () => {

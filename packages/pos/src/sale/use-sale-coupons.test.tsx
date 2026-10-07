@@ -204,14 +204,17 @@ describe('useSale coupons', () => {
     expect(coupons.find).toHaveBeenCalledTimes(2);
   });
 
-  it('drops parked coupons with a message after the capability goes away', async () => {
+  it.each([
+    { orderCreate: 3, coupons: false },
+    { orderCreate: 5, coupons: true },
+  ] as const)('drops parked coupons with a message after capabilities change to %j', async (capabilities) => {
     const coupons = source([coupon('x')]);
     const { result, rerender, options } = renderSale(coupons);
     add(result);
     await act(async () => { expect(await result.current.applyCoupon('x')).toBeNull(); });
     const id = result.current.order.id;
     await act(async () => { expect(await result.current.park()).toBeNull(); });
-    rerender({ ...options, capabilities: { orderCreate: 3, coupons: false } });
+    rerender({ ...options, capabilities });
     await act(async () => { expect(await result.current.resume(id)).toBeNull(); });
     expect(result.current.order.coupons).toBeUndefined();
     expect(result.current.error).toBe(`Coupon x was removed: ${COUPONS_UNSUPPORTED}.`);
