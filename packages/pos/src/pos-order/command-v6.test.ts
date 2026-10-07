@@ -51,13 +51,13 @@ describe('order.create v6 coupon envelope (ADR-077)', () => {
     const order = sale(true, true, true), envelope = toOrderCreateEnvelope(order, 'device_golden', 1, { maxVersion: 6 });
     expect(envelope.version).toBe(6);
     expect(envelope.payload.fees).toEqual([
-      expect.objectContaining({ id: order.fees![0].id, name: 'Bag', amountMinor: order.fees![0].amountMinor }),
+      expect.objectContaining({ clientFeeId: order.fees![0].id, name: 'Bag', amountMinor: order.fees![0].amountMinor }),
     ]);
     expect(envelope.payload.shipping).toEqual([
-      expect.objectContaining({ id: order.shipping![0].id, name: 'Delivery', amountMinor: order.shipping![0].amountMinor }),
+      expect.objectContaining({ clientShippingId: order.shipping![0].id, name: 'Delivery', amountMinor: order.shipping![0].amountMinor }),
     ]);
-    expect(envelope.payload.display!.fees).toEqual([{ id: order.fees![0].id, name: 'Bag', amountMinor: 20 }]);
-    expect(envelope.payload.display!.shipping).toEqual([{ id: order.shipping![0].id, name: 'Delivery', amountMinor: 30 }]);
+    expect(envelope.payload.display!.fees).toEqual([{ clientFeeId: order.fees![0].id, amountMinor: 20 }]);
+    expect(envelope.payload.display!.shipping).toEqual([{ clientShippingId: order.shipping![0].id, amountMinor: 30 }]);
     expect(envelope.payload.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 130, discountTaxMinor: 26 }]);
     expect(precheckCommand(envelope, supported)).toBeUndefined();
   });
