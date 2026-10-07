@@ -18,7 +18,7 @@ function sourceFiles(dir: string): string[] {
     if (entry.isDirectory()) {
       return ['__tests__', '__fixtures__', '__mocks__'].includes(entry.name) ? [] : sourceFiles(file);
     }
-    return /\.tsx?$/.test(entry.name) && !/\.(?:test\.tsx?|test-d\.ts|spec\.ts)$/.test(entry.name) ? [file] : [];
+    return /\.tsx?$/.test(entry.name) && !/\.(?:test\.tsx?|test-d\.ts|spec\.ts|test-helper\.ts)$/.test(entry.name) ? [file] : [];
   });
 }
 
