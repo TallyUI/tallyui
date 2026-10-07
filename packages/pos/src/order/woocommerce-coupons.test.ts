@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { woocommerceCoupons } from '@tallyui/core';
 import type { TaxContext, WooRate } from '../tax/types';
 import { createOrderBuilder, type OrderCouponContext } from './order-builder';
-import { writeOrderDraft } from './order-drafts';
+import { restoreOrderDraft, writeOrderDraft } from './order-drafts';
 import type { Order } from './types';
 
 const rate = (id: number, percent: string, extra: Partial<WooRate> = {}): WooRate => ({
@@ -25,7 +25,9 @@ const configs = new Map([
   ['ten', config('percent', '10')], ['ten-a', config('percent', '10')], ['ten-b', config('percent', '10')],
   ['no-sale', config('percent', '10', { exclude_sale_items: true })],
 ]);
-const couponContext: OrderCouponContext = { configs, productCategories: new Map(), calcDiscountsSequentially: false };
+const couponContext: OrderCouponContext = { configs,
+  couponIds: new Map([['fixed3', '301'], ['fixed1', '302'], ['ten', '303'], ['ten-a', '304'], ['ten-b', '305'], ['no-sale', '306']]),
+  productCategories: new Map(), calcDiscountsSequentially: false };
 const compoundRates = [rate(1, '5.0000', { compound: true, priority: 2 }), rate(2, '10.0000', { priority: 1 })];
 function make(rates = [rate(1, '20.0000')], inclusive = false, subtotal = false, sequential = false) {
   return createOrderBuilder({ currency: 'GBP', taxContext: context({ standard: rates }, inclusive, subtotal),
@@ -50,7 +52,7 @@ function crossCheck(order: Order, input: woocommerceCoupons.RecalculateInput, ch
   const result = woocommerceCoupons.recalculateCoupons(input);
   expect(result.couponLines.map((coupon) => ({ code: coupon.code,
     discountMinor: Math.round(Number(coupon.discount) * 100),
-    discountTaxMinor: Math.round(Number(coupon.discount_tax) * 100) }))).toEqual(order.coupons);
+    discountTaxMinor: Math.round(Number(coupon.discount_tax) * 100) }))).toEqual(order.coupons!.map(({ couponId: _couponId, ...row }) => row));
   const totals = woocommerceCoupons.calculateOrderTotals({ ...result, shippingLines: [], feeLines: [],
     taxRates: input.taxRates, taxRoundAtSubtotal: input.taxRoundAtSubtotal, dp: input.dp, pricesIncludeTax: input.pricesIncludeTax });
   if (checkDiscountTotals) {
@@ -69,7 +71,7 @@ describe('WooCommerce coupons in the order builder', () => {
     const before = builder.getSnapshot();
     builder.setCoupons(['fixed3']);
     const order = builder.getSnapshot();
-    expect(order.coupons).toEqual([{ code: 'fixed3', discountMinor: 300, discountTaxMinor: 60 }]);
+    expect(order.coupons).toEqual([{ code: 'fixed3', couponId: '301', discountMinor: 300, discountTaxMinor: 60 }]);
     expect(order.lineItems.map((line) => line.netMinor)).toEqual([850, 350]);
     expect(order).toMatchObject({ subtotalMinor: 1200, taxMinor: 240, totalMinor: 1440, discountMinor: 0 });
     expect(order.display.coupons).toEqual([{ code: 'fixed3', amountMinor: 300 }]);
@@ -98,7 +100,7 @@ describe('WooCommerce coupons in the order builder', () => {
     const before = builder.getSnapshot();
     builder.setCoupons(['ten']);
     const order = builder.getSnapshot();
-    expect(order.coupons).toEqual([{ code: 'ten', discountMinor: 160, discountTaxMinor: 0 }]);
+    expect(order.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 160, discountTaxMinor: 0 }]);
     expect(order.totalMinor).toBe(1440);
     expect(order.display).toMatchObject({ discountMinor: 360, subtotalMinor: 1800 });
     expect(order.display.lines).toEqual(before.display.lines);
@@ -127,7 +129,7 @@ describe('WooCommerce coupons in the order builder', () => {
     expect(builder.getSnapshot().lineItems[0]).toMatchObject({ netMinor: 10000, totalMinor: 11550 });
     builder.setCoupons(['ten']);
     const order = builder.getSnapshot();
-    expect(order.coupons).toEqual([{ code: 'ten', discountMinor: 1000, discountTaxMinor: 155 }]);
+    expect(order.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 1000, discountTaxMinor: 155 }]);
     expect(order.lineItems[0].netMinor).toBe(9000);
     expect(order.lineItems[0].taxLines.find((tax) => tax.rateId === 1)!.taxMicros).toBe('495000000');
     expect(order.lineItems[0].taxLines.find((tax) => tax.rateId === 2)!.taxMicros).toBe('900000000');
@@ -190,7 +192,7 @@ describe('WooCommerce coupons in the order builder', () => {
     add(builder, 1000);
     builder.setCoupons([' TEN ', 'ten']);
     const before = builder.getSnapshot();
-    expect(before.coupons).toEqual([{ code: 'ten', discountMinor: 100, discountTaxMinor: 20 }]);
+    expect(before.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 100, discountTaxMinor: 20 }]);
     displayIdentity(before);
     for (const code of ['unknown', 'no-sale']) {
       expect(() => builder.setCoupons(['fixed3', code])).toThrow(RangeError);
@@ -200,6 +202,58 @@ describe('WooCommerce coupons in the order builder', () => {
     builder.setCoupons([' TEN-B ', 'ten-a', 'ten-b']);
     expect(builder.getSnapshot().coupons!.map((row) => row.code)).toEqual(['ten-b', 'ten-a']);
     displayIdentity(builder.getSnapshot());
+  });
+
+  it('refuses a coupon without an id without changing codes, context or emissions', () => {
+    const builder = fixedCart();
+    builder.setCoupons(['ten']);
+    const before = builder.getSnapshot();
+    const emitted = vi.fn();
+    const subscription = builder.order$.subscribe(emitted);
+    const missingId = { ...couponContext, configs: new Map([...configs, ['x', config('percent', '20')]]) };
+    expect(() => builder.setCoupons(['fixed3', 'x'], missingId)).toThrow(new RangeError('Coupon x has no id'));
+    expect(builder.getSnapshot()).toBe(before);
+    expect(emitted).toHaveBeenCalledTimes(1);
+    expect(() => builder.setCoupons(['x'])).toThrow(new RangeError('Unknown coupon x'));
+    expect(builder.getSnapshot()).toBe(before);
+    expect(emitted).toHaveBeenCalledTimes(1);
+    subscription.unsubscribe();
+  });
+
+  it('accepts a late coupon context and uses it on later calls', () => {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: context({ standard: [rate(1, '20.0000')] }) });
+    add(builder, 1000);
+    builder.setCoupons(['ten'], couponContext);
+    expect(builder.getSnapshot().coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 100, discountTaxMinor: 20 }]);
+    builder.setCoupons(['fixed3']);
+    expect(builder.getSnapshot().coupons).toEqual([{ code: 'fixed3', couponId: '301', discountMinor: 300, discountTaxMinor: 60 }]);
+  });
+
+  it('keeps the previous context and codes when a given context does not know a code', () => {
+    const builder = fixedCart();
+    builder.setCoupons(['ten']);
+    const before = builder.getSnapshot();
+    const emitted = vi.fn();
+    const subscription = builder.order$.subscribe(emitted);
+    const otherContext = { ...couponContext, configs: new Map([['fixed3', config('fixed_cart', '1')]]) };
+    expect(() => builder.setCoupons(['fixed3', 'ten'], otherContext)).toThrow(new RangeError('Unknown coupon ten'));
+    expect(builder.getSnapshot()).toBe(before);
+    expect(emitted).toHaveBeenCalledTimes(1);
+    builder.setCoupons(['fixed3', 'ten']);
+    expect(builder.getSnapshot().coupons![0]).toEqual({ code: 'fixed3', couponId: '301', discountMinor: 300, discountTaxMinor: 60 });
+    expect(builder.getSnapshot().coupons!.map((row) => row.code)).toEqual(['fixed3', 'ten']);
+    subscription.unsubscribe();
+  });
+
+  it('replaces the context even with an empty coupon list', () => {
+    const builder = fixedCart();
+    builder.setCoupons(['ten']);
+    const otherContext = { ...couponContext, configs: new Map([['x', config('fixed_cart', '1')]]), couponIds: new Map([['x', '401']]) };
+    builder.setCoupons([], otherContext);
+    expect(builder.getSnapshot()).not.toHaveProperty('coupons');
+    expect(() => builder.setCoupons(['ten'])).toThrow(new RangeError('Unknown coupon ten'));
+    builder.setCoupons(['x']);
+    expect(builder.getSnapshot().coupons).toEqual([{ code: 'x', couponId: '401', discountMinor: 100, discountTaxMinor: 20 }]);
   });
 
   it('requires context only for a non-empty code list', () => {
@@ -253,7 +307,7 @@ describe('WooCommerce coupons in the order builder', () => {
       .toEqual([before.subtotalMinor, before.discountMinor, before.taxMinor, before.totalMinor]);
   });
 
-  it('leaves coupons out of written drafts', async () => {
+  it('keeps coupons in written drafts, and restoring does not apply them', async () => {
     const builder = fixedCart();
     builder.setCoupons(['fixed3']);
     const order = builder.getSnapshot();
@@ -261,8 +315,10 @@ describe('WooCommerce coupons in the order builder', () => {
     const drafts = { upsert: vi.fn() };
     await writeOrderDraft(drafts as unknown as Parameters<typeof writeOrderDraft>[0], order);
     const saved = JSON.parse(drafts.upsert.mock.calls[0][0].data);
-    expect(saved).not.toHaveProperty('coupons');
+    expect(saved.coupons).toEqual(order.coupons);
+    const taxContext = context({ standard: [rate(1, '20.0000')] });
+    expect(restoreOrderDraft(saved, { currency: 'GBP', taxContext }).getSnapshot()).not.toHaveProperty('coupons');
     expect(saved.lineItems).toEqual(order.lineItems);
-    expect(order.coupons).toEqual([{ code: 'fixed3', discountMinor: 300, discountTaxMinor: 60 }]);
+    expect(order.coupons).toEqual([{ code: 'fixed3', couponId: '301', discountMinor: 300, discountTaxMinor: 60 }]);
   });
 });

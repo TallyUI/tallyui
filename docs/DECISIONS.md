@@ -4748,6 +4748,29 @@ interface OrderCreatePayload {
     - **Drafts move to (d3).** A parked sale's draft is a JSON string, not a `pos_orders` field, so saving its
       coupon codes needs no bump. Nothing can set a code before (d3)'s `applyCoupon`, so (d3) saves and restores
       them.
+  - **(d3b) as built (2026-10-07).** The order layer carries what (d3c) and (d4) need. Nothing applies a coupon yet.
+    - **Coupon ids.** `OrderCouponContext` gains `couponIds`, from lower-case code to the connector's coupon id.
+      Each row of `Order.coupons` names its `couponId`, and `setCoupons` refuses a code with no id.
+    - **A late context.** `setCoupons(codes, context)` replaces the builder's coupon context when one is given, after
+      every code passes its checks. The sale loads coupon data after the builder exists, and a line added later
+      needs its product's categories, so the context cannot be fixed at creation.
+    - **The regular price.** A catalogue line keeps the regular unit price (`regularUnitPriceMinor`), in its own
+      tax mode, from `resolvePrice`: the base price when on sale, otherwise the price charged. It is left out when
+      the sale and base prices differ in tax mode. A price edit keeps it, and lines with different regular prices
+      do not merge. Custom lines have none.
+    - **Drafts keep coupons.** A parked sale's draft now stores `Order.coupons`. Restoring a draft does not apply
+      them: (d3c)'s sale re-applies the codes with fresh coupon data, so an expired or changed coupon is refused
+      then, not replayed from the draft.
+    - **The stored order.** `finalizeOrder` writes the order's `coupons` (code, id and figures) and each line's
+      `regularUnitPriceMinor` into `pos_orders` v9 (d2). An order without coupons or regular prices is stored
+      exactly as before.
+    - **`exclude_sale_items` stays refused.** This amends (d1)'s "(d3) lifts the refusal". The coupon engine finds
+      sale lines from WCPOS's `_woocommerce_pos_data` (price below regular price). Given that data, its first step
+      also resets each line's total to that price times the quantity, which drops the line's manual discounts and
+      its share of the order discounts before the coupon. Lifting the refusal needs the engine to tell sale lines
+      apart without that reset; until then a coupon that excludes sale items is refused with its reason. The
+      regular price is still stored, because (d4) sends it.
+    - **Tests.** 14 mutations of the new code were each killed by the pos tests (listed in the PR).
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
