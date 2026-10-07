@@ -4700,6 +4700,24 @@ interface OrderCreatePayload {
           capability is absent;
         - (d4) refuses a sale that still carries a coupon if the capability is gone by push time, and it takes Q3's
           path: the order is reopened as a parked sale with the coupon removed and the reason shown.
+  - **(d1) as built (2026-10-07).**
+    - **Display.** The display figures come from the lines before the replay. Each coupon is its own row in
+      `display.coupons` (its discount, plus its tax in an inclusive store), and `display.discountMinor` includes
+      those rows. No line's display amount contains a coupon. `Order.discountMinor` stays the manual discounts;
+      coupons are carried in `Order.coupons`.
+    - **Rate classes.** Rates go to the engine with their class normalised (`''` becomes `standard`). The engine's
+      discount-tax split normalises the line's class but compares each rate's class as given, so an empty class
+      split no tax out of the discount.
+    - **`fixed_cart` splits per unit.** As in WooCommerce's `apply_coupon_fixed_cart`, the amount is shared equally
+      per unit (floor, then the remainder), not in proportion to price: 3.00 off lines of 10.00 and 5.00 takes 1.50
+      from each.
+    - **`exclude_sale_items` is refused.** Lines do not carry their regular price, so a sale line cannot be
+      identified. The line's regular unit price goes into (d2)'s v9 bump, and (d3) lifts the refusal.
+    - **`discount_total` is not the coupons' sum.** WooCommerce's `discount_total` is the lines' rounded subtotal
+      less their rounded total, and can differ by rounding from the coupon lines' discounts. The builder carries the
+      coupon lines' figures, which are what WooCommerce stores on each coupon line.
+    - **Not in d1:** the dev store's own coupon figures and settle's restated scenarios. They come with (d3)'s
+      tests.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
