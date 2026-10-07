@@ -2,6 +2,13 @@
   "name": "@tallyui/web",
   "version": "0.0.0",
   "private": true,
+  "browserslist": [
+    "chrome >= 120",
+    "edge >= 120",
+    "firefox >= 115",
+    "safari >= 17",
+    "ios_saf >= 17"
+  ],
   "scripts": {
     "build": "next build",
     "dev": "next dev",

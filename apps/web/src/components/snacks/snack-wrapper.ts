@@ -1,3 +1,5 @@
+import { tallyVersion } from '@/lib/site';
+
 /**
  * Generates Expo Snack `files` prop for component demos.
  *
@@ -8,8 +10,8 @@ export function createSnackFiles(demoCode: string) {
   const appCode = `import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { ConnectorProvider } from '@tallyui/core';
-import { woocommerceConnector } from '@tallyui/connector-woocommerce';
-import { medusaConnector } from '@tallyui/connector-medusa';
+import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
+import { createMedusaConnector } from '@tallyui/connector-medusa';
 import Demo from './Demo';
 
 const wooDoc = {
@@ -49,7 +51,7 @@ const medusaDoc = {
 
 export default function App() {
   const [isWoo, setIsWoo] = React.useState(true);
-  const connector = isWoo ? woocommerceConnector : medusaConnector;
+  const connector = React.useMemo(() => (isWoo ? createWooCommerceConnector() : createMedusaConnector()), [isWoo]);
   const doc = isWoo ? wooDoc : medusaDoc;
 
   return (
@@ -91,11 +93,12 @@ const styles = StyleSheet.create({
 
 /** Standard npm dependencies for all component Snack demos */
 export const snackDependencies = [
-  '@tallyui/core',
-  '@tallyui/components',
-  '@tallyui/theme',
-  '@tallyui/connector-woocommerce',
-  '@tallyui/connector-medusa',
+  `@tallyui/core@${tallyVersion}`,
+  `@tallyui/components@${tallyVersion}`,
+  `@tallyui/primitives@${tallyVersion}`,
+  `@tallyui/theme@${tallyVersion}`,
+  `@tallyui/connector-woocommerce@${tallyVersion}`,
+  `@tallyui/connector-medusa@${tallyVersion}`,
 ].join(',');
 
 /**
@@ -128,6 +131,7 @@ const styles = StyleSheet.create({
 
 /** Standard npm dependencies for props-based Snack demos */
 export const propsSnackDependencies = [
-  '@tallyui/components',
-  '@tallyui/theme',
+  `@tallyui/components@${tallyVersion}`,
+  `@tallyui/primitives@${tallyVersion}`,
+  `@tallyui/theme@${tallyVersion}`,
 ].join(',');
