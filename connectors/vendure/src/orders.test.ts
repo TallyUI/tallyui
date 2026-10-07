@@ -23,6 +23,7 @@ const detail: VendureOrder = {
   ...summary, active: false, subTotal: 1000, subTotalWithTax: 1200, shipping: 0, shippingWithTax: 0,
   lines: [{
     id: 'line-1', quantity: 2, taxRate: 20, productVariant: { id: 'variant-1', name: 'Coffee', sku: 'COFFEE' },
+    orderPlacedQuantity: 2, proratedUnitPrice: 500, proratedUnitPriceWithTax: 600,
     unitPrice: 600, unitPriceWithTax: 720, linePrice: 1200, linePriceWithTax: 1440,
     discountedLinePrice: 1000, discountedLinePriceWithTax: 1200,
     discounts: [{ description: 'Promotion', amount: -200, amountWithTax: -240 }],
@@ -39,7 +40,7 @@ const detail: VendureOrder = {
   payments: [{
     id: 'payment-1', method: 'cash', amount: 1200, state: 'Settled', transactionId: '',
     createdAt: '2026-01-02T10:00:00.000Z', metadata: { tendered: 1500, change: 300 },
-    refunds: [{ id: 'refund-1', total: 600, state: 'Settled', reason: 'Return', lines: [{ orderLineId: 'line-1', quantity: 1 }] }],
+    refunds: [{ id: 'refund-1', total: 600, items: 600, shipping: 0, adjustment: 0, state: 'Settled', reason: 'Return', metadata: {}, lines: [{ orderLineId: 'line-1', quantity: 1 }] }],
   }],
   fulfillments: [{ id: 'fulfillment-1', state: 'Delivered', method: 'collection', trackingCode: '' }],
   customFields: { ...summary.customFields!, tallyPayments: '[{"method":"cash"}]', tallySnapshot: '{"version":1}', tallyShipping: null },
@@ -174,7 +175,7 @@ describe('Vendure orders', () => {
       id code state active orderPlacedAt updatedAt currencyCode totalQuantity
       customer { id firstName lastName emailAddress }
       lines {
-        id quantity taxRate productVariant { id name sku }
+        id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax taxRate productVariant { id name sku }
         unitPrice unitPriceWithTax linePrice linePriceWithTax discountedLinePrice discountedLinePriceWithTax
         discounts { description amount amountWithTax }
       }
@@ -184,7 +185,7 @@ describe('Vendure orders', () => {
       taxSummary { description taxRate taxBase taxTotal }
       discounts { description amount amountWithTax }
       couponCodes
-      payments { id method amount state transactionId createdAt metadata refunds { id total state reason lines { orderLineId quantity } } }
+      payments { id method amount state transactionId createdAt metadata refunds { id total items shipping adjustment state reason metadata lines { orderLineId quantity } } }
       fulfillments { id state method trackingCode }
     } }`;
     expect(plain.query.replace(/\s+/g, ' ').trim()).toBe(expected.replace(/\s+/g, ' ').trim());
@@ -194,6 +195,8 @@ describe('Vendure orders', () => {
     expect(sent.query).toContain('tallyClientLineId');
     expect(sent.query).toContain('refunds');
     expect(sent.query).toContain('orderLineId');
+    expect(sent.query.replace(/\s+/g, ' ').trim()).toContain('orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax');
+    expect(sent.query.replace(/\s+/g, ' ').trim()).toContain('refunds { id total items shipping adjustment state reason metadata lines { orderLineId quantity } }');
     expect(sent.query).toMatch(/lines\s*{\s*customFields\s*{ tallyCustomName tallyCustomSku tallyUnitPrice tallyPriceIncludesTax tallyClientLineId }/);
     expect(sent.query).toContain('customFields { tallyClientOrderId tallySaleAt tallyRegisterId tallySessionId tallyCashierRef tallyRejected tallyRejectedClientOrderId tallyPayments tallySnapshot tallyShipping }');
   });

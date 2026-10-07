@@ -51,6 +51,10 @@ export interface VendureOrder extends VendureOrderSummary {
   lines: {
     id: string;
     quantity: number;
+    orderPlacedQuantity: number;
+    proratedUnitPrice: number;
+    /** Vendure's per-unit value used in refund calculations, which the till sums for `order.refund`'s `totalMinor` (ADR-080). */
+    proratedUnitPriceWithTax: number;
     taxRate: number;
     productVariant: { id: string; name: string; sku: string };
     unitPrice: number;
@@ -85,7 +89,7 @@ export interface VendureOrder extends VendureOrderSummary {
     transactionId: string;
     createdAt: string;
     metadata: unknown;
-    refunds: { id: string; total: number; state: string; reason: string; lines: { orderLineId: string; quantity: number }[] }[];
+    refunds: { id: string; total: number; items: number; shipping: number; adjustment: number; state: string; reason: string; metadata: unknown; lines: { orderLineId: string; quantity: number }[] }[];
   }[];
   fulfillments?: { id: string; state: string; method: string; trackingCode: string }[];
   customFields?: VendureOrderSummary['customFields'] & {
@@ -106,7 +110,7 @@ const ORDER_DETAIL_FIELDS_START = `
   customer { id firstName lastName emailAddress }
   lines {`;
 const ORDER_DETAIL_FIELDS_END = `
-    id quantity taxRate productVariant { id name sku }
+    id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax taxRate productVariant { id name sku }
     unitPrice unitPriceWithTax linePrice linePriceWithTax discountedLinePrice discountedLinePriceWithTax
     discounts { description amount amountWithTax }
   }
@@ -116,7 +120,7 @@ const ORDER_DETAIL_FIELDS_END = `
   taxSummary { description taxRate taxBase taxTotal }
   discounts { description amount amountWithTax }
   couponCodes
-  payments { id method amount state transactionId createdAt metadata refunds { id total state reason lines { orderLineId quantity } } }
+  payments { id method amount state transactionId createdAt metadata refunds { id total items shipping adjustment state reason metadata lines { orderLineId quantity } } }
   fulfillments { id state method trackingCode }
 `;
 const ORDER_DETAIL_FIELDS = `${ORDER_DETAIL_FIELDS_START}${ORDER_DETAIL_FIELDS_END}`;
