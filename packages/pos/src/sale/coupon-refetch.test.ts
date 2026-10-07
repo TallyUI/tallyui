@@ -3,16 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wooCouponSchema } from '@tallyui/connector-woocommerce';
+import type { ReconcileFeedEntry } from '@tallyui/core';
 import { posOrderCollection } from '../pos-order/schema';
 import { uuidv7 } from '../pos-order';
 import type { PosOrder } from '../pos-order/types';
 import { APPLIED_USE_GRACE_MS } from './coupon-source';
 import { startCouponUsageRefetch } from './coupon-refetch';
+import { saleLogger } from './use-sale';
 
 let db: RxDatabase<{ coupons: RxCollection; pos_orders: RxCollection<PosOrder> }>;
 let runners: Array<{ stop(): void }>;
-let enqueue: ReturnType<typeof vi.fn>;
-let reSync: ReturnType<typeof vi.fn>;
+let enqueue = vi.fn<(entries: Array<ReconcileFeedEntry>) => void>();
+let reSync = vi.fn<() => void>();
 const coupon = { uuid: 'coupon-101', id: 101, code: 'save10', discount_type: 'percent', amount: '10' };
 const coupon2 = { ...coupon, uuid: 'coupon-102', id: 102, code: 'save20' };
 const appliedCoupon = { code: 'save10', couponId: '101', discountMinor: 10, discountTaxMinor: 0 };
@@ -36,8 +38,8 @@ beforeEach(async () => {
     storage: getRxStorageMemory(), multiInstance: false });
   await db.addCollections({ coupons: { schema: wooCouponSchema }, pos_orders: posOrderCollection() });
   runners = [];
-  enqueue = vi.fn();
-  reSync = vi.fn();
+  enqueue = vi.fn<(entries: Array<ReconcileFeedEntry>) => void>();
+  reSync = vi.fn<() => void>();
 });
 afterEach(async () => { runners.forEach((runner) => runner.stop()); await db.remove(); });
 
@@ -118,8 +120,8 @@ describe('startCouponUsageRefetch', () => {
     runners.push(first);
     first.stop();
     await doc.patch({ syncStatus: 'applied', updatedAt: new Date().toISOString() });
-    const secondEnqueue = vi.fn();
-    const secondReSync = vi.fn();
+    const secondEnqueue = vi.fn<(entries: Array<ReconcileFeedEntry>) => void>();
+    const secondReSync = vi.fn<() => void>();
     runners.push(startCouponUsageRefetch({ orders: db.pos_orders, coupons: db.coupons,
       enqueue: secondEnqueue, reSync: secondReSync }));
     await vi.waitFor(() => expect(secondEnqueue).toHaveBeenCalledTimes(1));
@@ -129,6 +131,25 @@ describe('startCouponUsageRefetch', () => {
     expect(secondReSync).toHaveBeenCalledTimes(1);
     expect(enqueue).not.toHaveBeenCalled();
     expect(reSync).not.toHaveBeenCalled();
+  });
+
+  it('logs a failed coupon read and never throws', async () => {
+    const coupons = { find: () => ({ exec: () => Promise.reject(new Error('boom')) }) } as unknown as RxCollection;
+    const warn = vi.spyOn(saleLogger, 'warn');
+    try {
+      await db.pos_orders.insert(order({ syncStatus: 'applied', updatedAt: new Date().toISOString(),
+        coupons: [appliedCoupon] }));
+      runners.push(startCouponUsageRefetch({ orders: db.pos_orders, coupons, enqueue, reSync }));
+      await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith('coupon refetch: reading local coupons failed',
+          expect.objectContaining({ couponIds: [101] }));
+      });
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(reSync).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('writes nothing to either collection', async () => {
