@@ -687,6 +687,35 @@ describe('order outbox', () => {
     expect(states.at(-1)).toMatchObject({ pending: 1, rejected: 0 });
   });
 
+  it('counts only rejected orders that have not been reopened', async () => {
+    await collection.bulkInsert([
+      { ...order(0), syncStatus: 'rejected' },
+      { ...order(1), syncStatus: 'rejected', reopenedAt: new Date(epoch).toISOString() },
+    ]);
+    const { outbox, states } = setup();
+    await outbox.flush();
+    expect(states.at(-1)).toMatchObject({ pending: 0, rejected: 1 });
+  });
+
+  it.each([false, true])('leaves coupon_invalid and total_mismatch rejections unchanged on requeue (by id: %s)', async (byId) => {
+    const inputs = ['coupon_invalid', 'total_mismatch'].map((code, i) => ({
+      ...order(i), syncStatus: 'rejected' as const, error: { code, message: 'Refused' },
+    }));
+    await collection.bulkInsert(inputs);
+    const { outbox, send } = setup();
+    if (byId) {
+      for (const input of inputs) await expect(outbox.requeue([input.id])).resolves.toBe(0);
+    } else {
+      await expect(outbox.requeue()).resolves.toBe(0);
+    }
+    for (const input of inputs) {
+      expect((await collection.findOne(input.id).exec())?.toJSON()).toMatchObject({
+        syncStatus: 'rejected', error: input.error, commandId: input.commandId,
+      });
+    }
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('requeues once when two calls find the same rejected order', async () => {
     const input = { ...order(0), syncStatus: 'rejected' as const, error: { code: 'unknown_variant', message: 'x' } };
     const doc = await collection.insert(input);

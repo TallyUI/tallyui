@@ -13,7 +13,7 @@ const AUTH_FAILURES_BEFORE_PROMPT = 3;
 
 // Rejections that may hide an order the server already created: resending under a new
 // command id could duplicate it, so requeue() leaves these for manual reconciliation.
-const NOT_REQUEUEABLE = new Set(['idempotency_mismatch']);
+const NOT_REQUEUEABLE = new Set(['idempotency_mismatch', 'coupon_invalid', 'total_mismatch']);
 
 // The store's message in the refusal log is cut to this many characters, the cap connectors use for a foreign 426 message.
 const REFUSAL_LOG_MESSAGE_MAX = 200;
@@ -180,7 +180,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // Retiring them is a separate decision.
   async function updateState(patch: Partial<OutboxState> = {}) {
     const pending = await countFresh(collection, { syncStatus: 'pending' });
-    const rejected = await countFresh(collection, { syncStatus: 'rejected' });
+    const rejected = await countFresh(collection, { syncStatus: 'rejected', reopenedAt: { $exists: false } });
     state$.next({ ...state$.value, ...patch, pending, rejected, stuck: stuckState() });
   }
 
