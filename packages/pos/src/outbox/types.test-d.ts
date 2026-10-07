@@ -1,6 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type { AnyCommandEnvelope, CommandEnvelope, OrderCreateEnvelope, OrderCreatePayload, RegisterCommandEnvelope } from '@tallyui/core';
 import type { CommandTransport } from './types';
+import { sendOrderRefund } from '../refund';
 
 describe('CommandTransport', () => {
   it('defaults to order.create envelopes', () => {
@@ -12,6 +13,10 @@ describe('CommandTransport', () => {
 
   it('the wide transport is accepted where the order outbox wants the order transport', () => {
     expectTypeOf<CommandTransport<AnyCommandEnvelope>>().toMatchTypeOf<CommandTransport<OrderCreateEnvelope>>();
+  });
+
+  it('the wide transport is accepted where sendOrderRefund wants the refund transport', () => {
+    expectTypeOf<CommandTransport<AnyCommandEnvelope>>().toMatchTypeOf<Parameters<typeof sendOrderRefund>[0]>();
   });
 
   it('the wide transport accepts register command envelopes', () => {
