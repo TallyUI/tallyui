@@ -66,6 +66,7 @@ describe('WooCommerce coupons in the order builder', () => {
     const builder = make(undefined, false, roundAtSubtotal);
     add(builder, 1000, 'p1');
     add(builder, 500, 'p2');
+    const before = builder.getSnapshot();
     builder.setCoupons(['fixed3']);
     const order = builder.getSnapshot();
     expect(order.coupons).toEqual([{ code: 'fixed3', discountMinor: 300, discountTaxMinor: 60 }]);
@@ -73,6 +74,8 @@ describe('WooCommerce coupons in the order builder', () => {
     expect(order).toMatchObject({ subtotalMinor: 1200, taxMinor: 240, totalMinor: 1440, discountMinor: 0 });
     expect(order.display.coupons).toEqual([{ code: 'fixed3', amountMinor: 300 }]);
     expect(order.display).toMatchObject({ discountMinor: 300, subtotalMinor: 1500 });
+    expect(order.display.lines).toEqual(before.display.lines);
+    expect(order.display.lines.map((line) => line.amountMinor)).toEqual([1000, 500]);
     displayIdentity(order);
     crossCheck(order, {
       lineItems: [
