@@ -57,7 +57,7 @@ export function woocommerceCouponReplay(lines: readonly LineItem[], codes: reado
   });
   const taxRates = new Map<string, woocommerceCoupons.RecalculateInput['taxRates'][number]>();
   for (const line of inputLines) for (const rate of getTaxRates(line.taxClass)) {
-    const taxClass = line.taxClass ?? '';
+    const taxClass = woocommerceTax.normalizeTaxClass(line.taxClass);
     taxRates.set(JSON.stringify([rate.id, taxClass]), { id: rate.id, rate: rate.rate, compound: rate.compound,
       order: rate.priority, priority: rate.priority, class: taxClass });
   }

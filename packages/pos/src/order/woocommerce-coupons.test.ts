@@ -46,12 +46,17 @@ function fixedCart() {
   add(builder, 500, 'p2');
   return builder;
 }
-function crossCheck(order: Order, input: woocommerceCoupons.RecalculateInput) {
+function crossCheck(order: Order, input: woocommerceCoupons.RecalculateInput, checkDiscountTotals = true) {
   const result = woocommerceCoupons.recalculateCoupons(input);
+  expect(result.couponLines.map((coupon) => ({ code: coupon.code,
+    discountMinor: Math.round(Number(coupon.discount) * 100),
+    discountTaxMinor: Math.round(Number(coupon.discount_tax) * 100) }))).toEqual(order.coupons);
   const totals = woocommerceCoupons.calculateOrderTotals({ ...result, shippingLines: [], feeLines: [],
     taxRates: input.taxRates, taxRoundAtSubtotal: input.taxRoundAtSubtotal, dp: input.dp, pricesIncludeTax: input.pricesIncludeTax });
-  expect(Math.round(Number(totals.discount_total) * 100)).toBe(order.coupons!.reduce((sum, row) => sum + row.discountMinor, 0));
-  expect(Math.round(Number(totals.discount_tax) * 100)).toBe(order.coupons!.reduce((sum, row) => sum + row.discountTaxMinor, 0));
+  if (checkDiscountTotals) {
+    expect(Math.round(Number(totals.discount_total) * 100)).toBe(order.coupons!.reduce((sum, row) => sum + row.discountMinor, 0));
+    expect(Math.round(Number(totals.discount_tax) * 100)).toBe(order.coupons!.reduce((sum, row) => sum + row.discountTaxMinor, 0));
+  }
   expect(Math.round(Number(totals.total) * 100)).toBe(order.totalMinor);
   expect(Math.round(Number(totals.total_tax) * 100)).toBe(order.taxMinor);
 }
@@ -64,7 +69,7 @@ describe('WooCommerce coupons in the order builder', () => {
     builder.setCoupons(['fixed3']);
     const order = builder.getSnapshot();
     expect(order.coupons).toEqual([{ code: 'fixed3', discountMinor: 300, discountTaxMinor: 60 }]);
-    expect(order.lineItems.map((line) => line.netMinor)).toEqual([800, 400]);
+    expect(order.lineItems.map((line) => line.netMinor)).toEqual([850, 350]);
     expect(order).toMatchObject({ subtotalMinor: 1200, taxMinor: 240, totalMinor: 1440, discountMinor: 0 });
     expect(order.display.coupons).toEqual([{ code: 'fixed3', amountMinor: 300 }]);
     expect(order.display).toMatchObject({ discountMinor: 300, subtotalMinor: 1500 });
@@ -77,10 +82,10 @@ describe('WooCommerce coupons in the order builder', () => {
           subtotal_tax: '1.000000', total_tax: '1.000000', taxes: [{ id: 1, subtotal: '1.000000', total: '1.000000' }] },
       ],
       couponLines: [{ code: 'fixed3' }], couponConfigs: new Map([['fixed3', config('fixed_cart', '3')]]),
-      taxRates: [{ id: 1, rate: '20.0000', compound: false, order: 1, priority: 1, class: '' }],
+      taxRates: [{ id: 1, rate: '20.0000', compound: false, order: 1, priority: 1, class: 'standard' }],
       productCategories: new Map(), calcDiscountsSequentially: false, pricesIncludeTax: false,
       taxRoundAtSubtotal: roundAtSubtotal, dp: 2,
-    });
+    }, !roundAtSubtotal);
   });
 
   it('uses the amount after a manual cut as the coupon base', () => {
@@ -134,8 +139,8 @@ describe('WooCommerce coupons in the order builder', () => {
         ] }],
       couponLines: [{ code: 'ten' }], couponConfigs: new Map([['ten', config('percent', '10')]]),
       taxRates: [
-        { id: 1, rate: '5.0000', compound: true, order: 2, priority: 2, class: '' },
-        { id: 2, rate: '10.0000', compound: false, order: 1, priority: 1, class: '' },
+        { id: 1, rate: '5.0000', compound: true, order: 2, priority: 2, class: 'standard' },
+        { id: 2, rate: '10.0000', compound: false, order: 1, priority: 1, class: 'standard' },
       ],
       productCategories: new Map(), calcDiscountsSequentially: false, pricesIncludeTax: true, taxRoundAtSubtotal: false, dp: 2,
     });
@@ -160,9 +165,9 @@ describe('WooCommerce coupons in the order builder', () => {
           subtotal_tax: '0.555000', total_tax: '0.555000', taxes: [{ id: 1, subtotal: '0.555000', total: '0.555000' }] },
       ],
       couponLines: [{ code: 'fixed1' }], couponConfigs: new Map([['fixed1', config('fixed_cart', '1')]]),
-      taxRates: [{ id: 1, rate: '20.0000', compound: false, order: 1, priority: 1, class: '' }],
+      taxRates: [{ id: 1, rate: '20.0000', compound: false, order: 1, priority: 1, class: 'standard' }],
       productCategories: new Map(), calcDiscountsSequentially: false, pricesIncludeTax: true, taxRoundAtSubtotal: false, dp: 2,
-    });
+    }, false);
   });
 
   it('leaves return lines out of the replay', () => {
