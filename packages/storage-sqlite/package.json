@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/storage-sqlite",
-  "version": "3.9.1",
+  "version": "3.9.2",
   "type": "module",
   "description": "RxDB Premium SQLite storage for a synchronous SQLite handle (expo-sqlite)",
   "main": "./dist/index.js",

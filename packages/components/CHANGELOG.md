@@ -1,5 +1,15 @@
 # @tallyui/components
 
+## 3.9.2
+
+### Patch Changes
+
+- Updated dependencies [fc37285]
+  - @tallyui/core@3.9.2
+  - @tallyui/pos@3.9.2
+  - @tallyui/primitives@3.9.2
+  - @tallyui/theme@3.9.2
+
 ## 3.9.1
 
 ### Patch Changes
