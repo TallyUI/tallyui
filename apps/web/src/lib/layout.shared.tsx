@@ -12,6 +12,10 @@ export function baseOptions(): BaseLayoutProps {
       title: 'Tally UI',
     },
     links: [
+      { text: 'Docs', url: '/docs', active: 'nested-url' },
+      { text: 'Components', url: '/docs/components', active: 'nested-url' },
+      { text: 'What works today', url: '/docs/status', active: 'nested-url' },
+      { text: 'Changelog', url: '/docs/changelog', active: 'nested-url' },
       {
         type: 'icon',
         url: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
