@@ -111,4 +111,6 @@ export interface PosOrder {
   serverFailures?: PosOrderServerFailures;
   error?: CommandError;
   updatedAt: string;
+  /** When the till reopened this refused order as a parked sale (ADR-077 d4b). Needs attention hides it, and it stays as the record of the refusal. */
+  reopenedAt?: string;
 }
