@@ -64,7 +64,7 @@ jobs:
       - name: Build docs site
         run: cd apps/web && npx next build
 
-      # Next two crawl built docs from /; fail on any broken internal link (marketing backlog #87)
+      # Crawl from / and every built sitemap.xml page; fail on any broken internal link or anchor (marketing backlog items 87 and 92)
       - name: Start the built docs site
         working-directory: apps/web
         run: |
@@ -78,8 +78,12 @@ jobs:
           cat /tmp/next-start.log
           exit 1
 
+      - name: List link-check seeds
+        working-directory: apps/web
+        run: node scripts/sitemap-seeds.mjs > /tmp/link-seeds.txt
+
       - name: Check internal links
-        run: pnpm --filter @tallyui/web links:check
+        run: xargs pnpm --filter @tallyui/web links:check --check-fragments < /tmp/link-seeds.txt
 
   e2e-web:
     runs-on: ubuntu-latest
