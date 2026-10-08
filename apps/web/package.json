@@ -13,6 +13,7 @@
     "build": "next build",
     "dev": "next dev",
     "start": "next start",
+    "links:check": "linkinator http://localhost:3000 --recurse --skip '^(?!http://localhost:3000)'",
     "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
     "postinstall": "fumadocs-mdx",
     "lint": "eslint"
@@ -43,6 +44,7 @@
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "eslint-config-next": "16.1.6",
-    "eslint": "^9.39.5"
+    "eslint": "^9.39.5",
+    "linkinator": "8.1.0"
   }
 }
