@@ -21,7 +21,7 @@ describe('sitemapSeeds', () => {
       { source: 'sitemap', url: 'http://localhost:3000/docs/architecture' },
       { source: 'sitemap', url: 'http://localhost:3000/docs/ui/accordion' },
     ]);
-    expect(seeds.every(({ url }) => !url.includes('tallyui.com'))).toBe(true);
+    expect(seeds.map(({ url }) => new URL(url).host)).toEqual(Array(seeds.length).fill('localhost:3000'));
   });
 
   it('rejects an empty sitemap or input without a urlset', () => {
