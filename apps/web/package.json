@@ -43,6 +43,7 @@
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "eslint-config-next": "16.1.6",
-    "eslint": "^9.39.5"
+    "eslint": "^9.39.5",
+    "linkinator": "8.1.0"
   }
 }
