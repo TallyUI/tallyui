@@ -21,6 +21,11 @@ const config = {
         source: '/docs/:path*.mdx',
         destination: '/llms.mdx/docs/:path*',
       },
+      // iOS and crawlers ask for /apple-touch-icon.png by name (marketing backlog item 84).
+      {
+        source: '/apple-touch-icon.png',
+        destination: '/apple-icon.png',
+      },
     ];
   },
   // Security headers, matching medusapos.com and vendurepos.com (marketing backlog item 83). Vercel adds HSTS.
