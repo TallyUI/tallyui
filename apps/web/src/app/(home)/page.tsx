@@ -16,6 +16,7 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div className="flex-1">
+      <img src="/x.png" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(homeJsonLd(siteUrl)) }} />
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-16 lg:grid-cols-2 lg:py-24">
         <div>
