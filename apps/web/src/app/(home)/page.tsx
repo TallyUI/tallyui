@@ -4,7 +4,7 @@ import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
 import { ConnectorGrid } from '@/components/home/connector-grid';
 import { LiveDemo } from '@/components/home/live-demo';
 import { gitConfig } from '@/lib/layout.shared';
-import { siteUrl, tallyVersion } from '@/lib/site';
+import { siteUrl, tallyVersion, rxdbVersion } from '@/lib/site';
 import { homeJsonLd, jsonLdScript } from '@/lib/structured-data';
 
 export const metadata: Metadata = {
@@ -48,10 +48,10 @@ export default function HomePage() {
         <CodeBlock className="mt-4">
           <Pre className="py-3 pl-4 pr-12">{`pnpm add @tallyui/core@${tallyVersion} @tallyui/database@${tallyVersion} \\
   @tallyui/components@${tallyVersion} @tallyui/primitives@${tallyVersion} @tallyui/theme@${tallyVersion} \\
-  @tallyui/connector-medusa@${tallyVersion} rxdb@17.5.0 rxjs`}</Pre>
+  @tallyui/connector-medusa@${tallyVersion} rxdb@${rxdbVersion} rxjs`}</Pre>
         </CodeBlock>
         <p className="mt-4 text-fd-foreground/80">
-          Swap the connector for <code>@tallyui/connector-woocommerce</code> or <code>@tallyui/connector-vendure</code>. Keep every <code>@tallyui</code> package on the same version, and <code>rxdb</code> at exactly 17.5.0. The <Link href="/docs" className="underline underline-offset-4">quick start</Link> walks through the rest.
+          Swap the connector for <code>@tallyui/connector-woocommerce</code> or <code>@tallyui/connector-vendure</code>. Keep every <code>@tallyui</code> package on the same version, and <code>rxdb</code> at exactly {rxdbVersion}. The <Link href="/docs" className="underline underline-offset-4">quick start</Link> walks through the rest.
         </p>
       </section>
       <section className="mx-auto max-w-6xl px-6 pb-24">
