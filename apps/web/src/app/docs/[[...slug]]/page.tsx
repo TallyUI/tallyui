@@ -39,7 +39,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
         <MDX
           components={getMDXComponents({
             // this allows you to link to other pages with relative file paths
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dual @types/react versions on Vercel cause ref type mismatch
+            // `as any`: dual @types/react versions on Vercel cause ref type mismatch
             a: createRelativeLink(source, page) as any,
           })}
         />
