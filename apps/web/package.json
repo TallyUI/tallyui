@@ -13,6 +13,7 @@
     "build": "next build",
     "dev": "next dev",
     "start": "next start",
+    "links:check": "linkinator http://localhost:3000 --recurse --skip '^(?!http://localhost:3000)'",
     "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
     "postinstall": "fumadocs-mdx",
     "lint": "eslint"

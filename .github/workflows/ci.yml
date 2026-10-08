@@ -64,6 +64,23 @@ jobs:
       - name: Build docs site
         run: cd apps/web && npx next build
 
+      # Next two crawl built docs from /; fail on any broken internal link (marketing backlog #87)
+      - name: Start the built docs site
+        working-directory: apps/web
+        run: |
+          pnpm start --port 3000 > /tmp/next-start.log 2>&1 &
+          for _ in {1..30}; do
+            if curl -sf -o /dev/null http://localhost:3000/; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/next-start.log
+          exit 1
+
+      - name: Check internal links
+        run: pnpm --filter @tallyui/web links:check
+
   e2e-web:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
