@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { createWooCouponFeed, wooCouponReconcile, wooCouponSchema } from '@tallyui/connector-woocommerce';
-import { posOrderCollection, startCouponUsageRefetch, uuidv7, type PosOrder } from '@tallyui/pos';
+import { posOrderCollection, woocommerceDiscountCodes, uuidv7, type PosOrder } from '@tallyui/pos';
 
 let db: RxDatabase<{ coupons: RxCollection; pos_orders: RxCollection<PosOrder> }>;
 let runner: { stop(): void } | undefined;
@@ -20,7 +20,7 @@ it('wires coupon refetch through the WooCommerce adapter with refreshOnly', asyn
   const enqueueSpy = vi.spyOn(feed, 'enqueue');
   const reSync = vi.fn<() => void>();
   const { pos_orders: orders, coupons } = db;
-  runner = startCouponUsageRefetch({ orders, coupons, enqueue: wooCouponReconcile(feed).enqueue, reSync });
+  runner = woocommerceDiscountCodes.startCouponUsageRefetch({ orders, coupons, enqueue: wooCouponReconcile(feed).enqueue, reSync });
   await coupons.insert({ uuid: 'coupon-101', id: 101, code: 'save10', discount_type: 'percent', amount: '10' });
   const createdAt = new Date().toISOString();
   const order = await orders.insert({

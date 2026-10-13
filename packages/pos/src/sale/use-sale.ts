@@ -383,7 +383,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (!normalized) return 'Enter a coupon code';
       const result = await codes.find(normalized, discountState(builder.getSnapshot(), applied.current));
       if ('refusal' in result) return result.refusal;
-      if (locked() || builderNow.current !== builder) return 'The sale changed while the coupon was being checked; apply it again';
+      if (locked()) return SALE_SAVING;
+      if (builderNow.current !== builder || stageNow.current.kind === 'receipt') return 'The sale changed while the coupon was being checked; apply it again';
       const refusal = codes.check(normalized, result.found, discountState(builder.getSnapshot(), applied.current));
       if (refusal !== null) return refusal;
       const next = new Map([...applied.current, [normalized, result.found]]);
@@ -588,8 +589,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         return 'The sale changed while it was being resumed; resume it again';
       }
       resetSale(null, builder);
-      applied.current = kept;
-      appliedWith.current = kept.size ? codes : null;
+      if (builderNow.current === builder) {
+        applied.current = kept;
+        appliedWith.current = kept.size ? codes : null;
+      }
       if (messages.length) setError(messages.join(' '));
       return null;
     },
