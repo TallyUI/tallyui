@@ -4917,11 +4917,15 @@ interface OrderCreatePayload {
     - **Tests.** 17 mutations of the new code in `@tallyui/core` and `@tallyui/pos` were each killed (listed in the PR).
   - **(d4a-woo) as built (2026-10-07): the WooCommerce mapping.** One-way; `@tallyui/connector-woocommerce`.
     - **The gate.** `orderCreate` is 6 when `/status` lists `order_create_v5` and the coupons gate (R3) passes; else
-      the rule before. `WOO_ORDER_CREATE_VERSION` stays 5.
+      the rule before. `WOO_ORDER_CREATE_VERSION` stays 5. This amends R3's "decided by capability alone": 6 also needs the
+      `/site` version, so a failed `/site` read gives 5 and closes coupons. At push time the transport's `acceptsCoupons`
+      (closed when absent) refuses a sale that still carries coupons as `coupon_invalid` with
+      `storeCode: 'coupons_unsupported'` and no request (R2's push-time refusal); d4b reopens it.
     - **The body.** Only an envelope with coupons changes. It gains `coupon_lines` (the codes, in the order applied)
       after `shipping_lines`, and every line gets one `_woocommerce_pos_data` entry with `price` (the line's
       pre-coupon unit price; six decimals, half up, when it is not a whole number of minor units) and `regular_price`
-      (the stored regular price, or `price`). A custom line keeps its single entry, with `tax_status` after them. Line
+      (the stored regular price, or `price`). On an inclusive line `price` uses the stored gross line discount; without it
+      the order is refused as `unsupported_tax_mode`. A custom line keeps its single entry, with `tax_status` after them. Line
       `subtotal` and `total` are the pre-coupon figures; WooCommerce applies the coupons itself.
     - **The refusal.** HTTP 400 `woocommerce_rest_invalid_coupon` is rejected as `coupon_invalid`, not retried. The
       message is the store's with tags removed and entities decoded (a numeric entity outside Unicode stays as text);
