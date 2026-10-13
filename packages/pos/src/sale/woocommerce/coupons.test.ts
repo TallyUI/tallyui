@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOrderBuilder } from '../order';
+import { createOrderBuilder } from '../../order';
 import { couponLineItems, couponRefusal } from './coupons';
 
 describe('couponRefusal', () => {
