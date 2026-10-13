@@ -6,12 +6,18 @@ import { createSnackFiles, snackDependencies } from './snack-wrapper';
 const demoCode = `import React from 'react';
 import { View } from 'react-native';
 import { CartLine } from '@tallyui/components';
+import { useProductTraits, useTraitContext, resolvePrice } from '@tallyui/core';
 
 export default function Demo({ doc }) {
+  const { getName, getPrices } = useProductTraits();
+  const context = useTraitContext();
+  const unitPrice = resolvePrice(getPrices(doc, context))?.current;
+  if (!unitPrice) return null;
+
   return (
     <View style={{ gap: 4 }}>
-      <CartLine item={{ doc, quantity: 1 }} />
-      <CartLine item={{ doc, quantity: 3 }} currencySymbol="\u20ac" />
+      <CartLine name={getName(doc)} quantity={1} unitPrice={unitPrice} lineTotal={{ amount: unitPrice.amount * 1, currency: unitPrice.currency }} />
+      <CartLine name={getName(doc)} quantity={3} unitPrice={unitPrice} lineTotal={{ amount: unitPrice.amount * 3, currency: unitPrice.currency }} locale="de-DE" />
     </View>
   );
 }`;

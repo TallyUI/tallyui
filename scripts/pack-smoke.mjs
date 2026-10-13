@@ -8,6 +8,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tallyui-pack-'));
 const failures = [];
 const tarballs = [];
 const packages = [];
+const specifiers = [];
 const resolveOnly = ['@tallyui/components', '@tallyui/primitives', '@tallyui/storage-sqlite'];
 
 try {
@@ -45,6 +46,9 @@ try {
       check(files.has('package/package.json'), 'missing package/package.json');
       if (!files.has('package/package.json')) continue;
       const packed = JSON.parse(read('package.json').toString('utf8'));
+      for (const [key, value] of Object.entries(packed.exports)) {
+        if (typeof value === 'object') specifiers.push(key === '.' ? packed.name : `${packed.name}/${key.slice(2)}`);
+      }
       const checkFiles = value => {
         if (typeof value === 'string') {
           if (value.includes('*')) {
@@ -84,6 +88,8 @@ try {
         '--package-lock=false', ...tarballs, 'react', 'rxdb@16.21.1', 'rxjs',
       ], { cwd: project, stdio: 'inherit' });
       fs.writeFileSync(path.join(project, 'smoke.mjs'), `
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 const resolveOnly = ${JSON.stringify(resolveOnly)};
 for (const name of ${JSON.stringify(packages.map(pkg => pkg.name))}) {
   try {
@@ -95,6 +101,14 @@ for (const name of ${JSON.stringify(packages.map(pkg => pkg.name))}) {
     }
   } catch (error) {
     console.error(name + ': ' + error.message);
+    process.exitCode = 1;
+  }
+}
+for (const spec of ${JSON.stringify(specifiers)}) {
+  try {
+    require.resolve(spec);
+  } catch (error) {
+    console.error(spec + ' (require): ' + error.message);
     process.exitCode = 1;
   }
 }

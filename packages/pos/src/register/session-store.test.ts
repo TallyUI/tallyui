@@ -7,7 +7,7 @@
 //     outbox-only and moves to registers job c.
 // Changed: the outbox's `sync_status` assertions are gone (no outbox on these collections), and
 // so is the gate's refusal of a `sync_status: 'failed'` session, which only the outbox sets.
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
@@ -15,7 +15,8 @@ import { createOrderBuilder } from '../order/order-builder';
 import { toOrderCreateEnvelope } from '../pos-order/command';
 import { finalizeOrder } from '../pos-order/finalize';
 import type { PosOrder } from '../pos-order/types';
-import { ensureRegister } from './register-document';
+import type { PosRefund } from '../refund/pos-refund';
+import { ensureRegister, readRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
 import { serverClose as closeOnServer } from './server-close.test-helper';
 import {
@@ -66,6 +67,95 @@ const input = {
   openedBy: '7',
   businessDay: { year: 2026, month: 9, day: 16 },
 };
+
+describe('closure refunds (ADR-080 amendment 1)', () => {
+  const refund = (id: string, sessionId: string, byMethod: Record<string, number>, status: PosRefund['status'] = 'applied'): PosRefund => {
+    const createdAt = '2026-10-07T10:00:00.000Z';
+    const totalMinor = Object.values(byMethod).reduce((sum, amount) => sum + amount, 0);
+    const envelope: PosRefund['envelope'] = {
+      id: `command-${id}`, type: 'order.refund', version: 1, createdAt, deviceId: 'till', attempt: 1,
+      payload: { clientRefundId: id, orderId: 'order', sessionId, registerId: 'register', createdAt,
+        lines: [], shippingMinor: totalMinor, adjustmentMinor: 0, totalMinor, destination: 'cash', reason: 'Return' },
+    };
+    return { id, commandId: envelope.id, orderId: 'order', sessionId, registerId: 'register', envelope,
+      status, result: { byMethod, totalMinor, refunds: [] }, createdAt, updatedAt: createdAt };
+  };
+  async function closedInput() {
+    await ensureRegister(db.register_sessions, 'web');
+    const doc = await openSession(db.register_sessions, input);
+    const session = await closeSession(db.register_sessions, doc.id, { counted: { cash: 14000, external: 2600 }, closedBy: '7' });
+    const order: PosOrder = {
+      id: `order-${session.id}`, commandId: 'sale', sessionId: session.id,
+      createdAt: '2026-10-07T09:00:00.000Z', updatedAt: '2026-10-07T09:00:00.000Z',
+      currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: 8000, discountMinor: 0,
+      taxMinor: 0, totalMinor: 8000, customer: null, syncStatus: 'pending',
+      taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
+      payments: [{ id: 'cash', method: 'cash', amountMinor: 5000 }, { id: 'card', method: 'external', amountMinor: 3000 }],
+    };
+    return { closures: db.closures, register: db.register_sessions, storeKey: 'store', session,
+      counted: 14000, otherTenders: { external: 2600 }, movements: [], orders: [order], softwareVersion: '1.0.0' };
+  }
+  const perpetualRefunds = async () => (await readRegister(db.register_sessions))?.stores.store?.registers?.register?.perpetual_refunds_total_minor;
+
+  it('counts applied session refunds in every closure figure and the perpetual total', async () => {
+    const baseline = await writeClosure(await closedInput());
+    const args = await closedInput();
+    const closure = await writeClosure({ ...args, refunds: [
+      refund('cash-refund', args.session.id, { cash: 1000 }),
+      refund('card-refund', args.session.id, { external: 400 }),
+      refund('other-refund', 'other', { cash: 999 }),
+      refund('pending-refund', args.session.id, { cash: 50 }, 'pending'),
+    ] });
+    expect(closure.toJSON().till_expected).toStrictEqual({ cash: baseline.till_expected.cash - 1000, external: baseline.till_expected.external - 400 });
+    expect(closure.toJSON().variance).toStrictEqual({ cash: baseline.variance.cash + 1000, external: baseline.variance.external + 400 });
+    expect(closure.period_refunds_total_minor).toBe(1400);
+    expect(closure.toJSON().breakdowns.payment_methods).toStrictEqual({
+      cash: { sales_minor: 5000, refunds_minor: 1000 }, external: { sales_minor: 3000, refunds_minor: 400 },
+    });
+    expect(closure.breakdowns.refund_count).toBe(2);
+    expect(closure.toJSON().breakdowns.refund_ids).toStrictEqual(['cash-refund', 'card-refund']);
+    expect(closure.toJSON().breakdowns.pending_refund_ids).toStrictEqual(['pending-refund']);
+    expect(await perpetualRefunds()).toBe(1400);
+  });
+
+  it('adds a payment method that has refunds but no sales', async () => {
+    const args = await closedInput();
+    const closure = await writeClosure({ ...args, refunds: [refund('voucher', args.session.id, { voucher: 300 })] });
+    expect(closure.toJSON().breakdowns.payment_methods).toStrictEqual({ cash: { sales_minor: 5000, refunds_minor: 0 },
+      external: { sales_minor: 3000, refunds_minor: 0 }, voucher: { sales_minor: 0, refunds_minor: 300 } });
+    expect(closure.till_expected.voucher).toBe(-300);
+  });
+
+  it('keeps tillExpected authoritative while counting refund totals', async () => {
+    const args = await closedInput();
+    const tillExpected = { cash: 123, external: 456 };
+    const closure = await writeClosure({ ...args, tillExpected, refunds: [refund('cash', args.session.id, { cash: 1000 })] });
+    expect(closure.toJSON().till_expected).toStrictEqual(tillExpected);
+    expect(closure.period_refunds_total_minor).toBe(1000);
+  });
+
+  it('omits refund id keys when no refunds argument is passed', async () => {
+    const closure = await writeClosure(await closedInput());
+    expect(closure.breakdowns).not.toHaveProperty('refund_ids');
+    expect(closure.breakdowns).not.toHaveProperty('pending_refund_ids');
+    expect(closure.period_refunds_total_minor).toBe(0);
+  });
+
+  it('includes empty refund id lists when refunds is empty', async () => {
+    const closure = await writeClosure({ ...await closedInput(), refunds: [] });
+    expect(closure.breakdowns.refund_ids).toStrictEqual([]);
+    expect(closure.breakdowns.pending_refund_ids).toStrictEqual([]);
+    expect(closure.period_refunds_total_minor).toBe(0);
+  });
+
+  it('returns the frozen closure on a repeat close without adding to perpetual refunds again', async () => {
+    const args = await closedInput();
+    const first = (await writeClosure({ ...args, refunds: [refund('first', args.session.id, { cash: 1000 })] })).toJSON();
+    const second = await writeClosure({ ...args, refunds: [refund('second', args.session.id, { cash: 9000 })] });
+    expect(second.toJSON()).toStrictEqual(first);
+    expect(await perpetualRefunds()).toBe(1000);
+  });
+});
 it('a cashier move on a session whose status this build does not know refuses with RegisterNeedsUpgradeError and leaves the row unchanged', async () => {
   const session = await db.register_sessions.insert({
     id: 'unknown-status', register_id: 'register', status: 'abandoned-by-till' as unknown as RegisterSession['status'],

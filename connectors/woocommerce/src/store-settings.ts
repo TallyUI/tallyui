@@ -1,7 +1,7 @@
 import { ConnectorUnauthorizedError, StoreSettingsError, minorUnitDigits, woocommerceTax } from '@tallyui/core';
 import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/core';
 
-/** The highest order.create version the WooCommerce transport maps: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). */
+/** The highest order.create version the WooCommerce transport maps without coupons: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). Coupons make 6 (ADR-077 d4a-woo). */
 export const WOO_ORDER_CREATE_VERSION = 5;
 // Version 6 is version 5 plus coupons: it needs both order_create_v5 and the coupons gate.
 const WOO_COUPON_ORDER_CREATE_VERSION = 6;

@@ -82,7 +82,7 @@ export interface Closure {
   counted: TenderMap;
   variance: TenderMap;
   period_sales_total_minor: number;
-  /** Always 0 until TallyUI has a refund model (ADR-032 amendment 1). */
+  /** The session's applied refunds (ADR-080 amendment 1); 0 when the app passes none. */
   period_refunds_total_minor: number;
   perpetual_sales_total_minor: number;
   perpetual_refunds_total_minor: number;

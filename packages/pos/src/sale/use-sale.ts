@@ -31,6 +31,11 @@ export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
  */
 export const HUNG_SAVE_CHECK_MS = 5000;
 
+function wooCustomerId(customer: CustomerSummary | null | undefined): number | null {
+  const id = Number(customer?.id);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
 /** Call under a `TaxProvider`: its tax context and the settings' currency price every sale. */
 export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscountsSequentially'>, opts: {
   registerId: string; cashierRef: string; capabilities?: ServerCapabilities;
@@ -380,13 +385,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (applied.current.has(normalized)) return couponRefusal(normalized, { code: 'already_applied' });
       const coupon = await opts.coupons.find(normalized);
       if (!coupon) return `Coupon ${normalized} does not exist`;
-      if (locked() || builderNow.current !== builder) return 'The sale changed while the coupon was being checked; apply it again';
-      const snapshot = builder.getSnapshot(), customerId = snapshot.customer && Number(snapshot.customer.id);
+      if (locked()) return SALE_SAVING;
+      if (builderNow.current !== builder || stageNow.current.kind === 'receipt') return 'The sale changed while the coupon was being checked; apply it again';
+      const snapshot = builder.getSnapshot();
       const validation = woocommerceCoupons.validateCoupon(coupon, {
         lineItems: couponLineItems(snapshot.lineItems, snapshot.currency, categories.current), appliedCoupons: [...applied.current.keys()],
         appliedCouponsWithIndividualUse: [...applied.current].filter(([, value]) => value.individual_use).map(([key]) => key),
         cartSubtotal: snapshot.display.subtotalMinor / 10 ** minorUnitDigits(snapshot.currency),
-        customerEmail: snapshot.customer?.email ?? '', customerId: Number.isSafeInteger(customerId) ? customerId : null, now: Date.now(),
+        customerEmail: snapshot.customer?.email ?? '', customerId: wooCustomerId(snapshot.customer), now: Date.now(),
       });
       if (!validation.valid) return couponRefusal(normalized, validation.rejection);
       try { builder.setCoupons([...applied.current.keys(), normalized], couponContext(new Map([...applied.current, [normalized, coupon]]))); }
@@ -577,12 +583,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
             const coupon = await opts.coupons!.find(code);
             if (!coupon) reason = `Coupon ${code} does not exist`;
             else {
-              const snapshot = builder.getSnapshot(), customerId = snapshot.customer && Number(snapshot.customer.id);
+              const snapshot = builder.getSnapshot();
               const validation = woocommerceCoupons.validateCoupon(coupon, {
                 lineItems: couponLineItems(snapshot.lineItems, snapshot.currency, categories.current), appliedCoupons: [...kept.keys()],
                 appliedCouponsWithIndividualUse: [...kept].filter(([, value]) => value.individual_use).map(([key]) => key),
                 cartSubtotal: snapshot.display.subtotalMinor / 10 ** minorUnitDigits(snapshot.currency),
-                customerEmail: snapshot.customer?.email ?? '', customerId: Number.isSafeInteger(customerId) ? customerId : null, now: Date.now(),
+                customerEmail: snapshot.customer?.email ?? '', customerId: wooCustomerId(snapshot.customer), now: Date.now(),
               });
               if (!validation.valid) reason = couponRefusal(code, validation.rejection);
               else try { builder.setCoupons([...kept.keys(), code], couponContext(new Map([...kept, [code, coupon]]))); kept.set(code, coupon); }
@@ -598,7 +604,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         return 'The sale changed while it was being resumed; resume it again';
       }
       resetSale(null, builder);
-      applied.current = kept;
+      if (builderNow.current === builder) applied.current = kept;
       if (messages.length) setError(messages.join(' '));
       return null;
     },

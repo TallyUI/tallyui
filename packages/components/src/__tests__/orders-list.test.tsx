@@ -10,7 +10,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
 import type { PosOrder } from '@tallyui/pos';
-import { OrdersList } from '../sale/orders-list';
+import { OrdersList, type OrderHistoryRow } from '../sale/orders-list';
 
 afterEach(() => cleanup());
 
@@ -23,6 +23,12 @@ function order(id: string, overrides: Partial<PosOrder> = {}): PosOrder {
     payments: [{ id: `payment-${id}`, method: 'cash', amountMinor: 1200 }], customer: null,
     subtotalMinor: 1200, discountMinor: 0, taxMinor: 0, totalMinor: 1200, syncStatus: 'pending',
     taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' }, ...overrides,
+  };
+}
+function historyRow(id: string, overrides: Partial<OrderHistoryRow> = {}): OrderHistoryRow {
+  return {
+    id, reference: `R-${id}`, placedAt: '2026-09-25T09:00:00.000Z', totalMinor: 1500,
+    currency: 'EUR', itemCount: 3, stateLabel: 'Delivered', ...overrides,
   };
 }
 const formatDate = (iso: string) => `date:${iso.slice(0, 10)}`;
@@ -417,5 +423,84 @@ describe('OrdersList', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
     view.rerender(<OrdersList orders={[rejected]} onRetry={onRetry} />);
     expect(screen.getByRole('button', { name: 'Retry' }).getAttribute('aria-disabled')).toBeNull();
+  });
+});
+
+describe('OrdersList history rows (ADR-052 amendment 1)', () => {
+  it('shows a history row read-only with its reference, item count, date, total and state label as given', () => {
+    render(<OrdersList orders={[]} history={[historyRow('h1')]} onRetry={async () => 0} formatDate={formatDate} />);
+    expect(headers()).toEqual(['Recent']);
+    expect(screen.getByText('Order R-h1 · 3 items')).toBeTruthy();
+    expect(screen.getByText(`date:2026-09-25 · ${formatMoney({ amount: 1500, currency: 'EUR' })} · Delivered`)).toBeTruthy();
+    expect(screen.queryByTestId('orders-empty')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('says 1 item for a history row with one item', () => {
+    render(<OrdersList orders={[]} history={[historyRow('h1', { itemCount: 1 })]} onRetry={async () => 0} />);
+    expect(screen.getByText('Order R-h1 · 1 item')).toBeTruthy();
+  });
+
+  it('hides a history row while the outbox has its clientOrderId, and shows it once the outbox drops the order', () => {
+    const history = [historyRow('h1', { clientOrderId: 'o1' }), historyRow('h2', { clientOrderId: 'other' }), historyRow('h3')];
+    const { rerender } = render(<OrdersList orders={[order('o1')]} history={history} onRetry={async () => 0} />);
+    expect(screen.queryByTestId('history-row-h1')).toBeNull();
+    expect(screen.getByTestId('history-row-h2')).toBeTruthy();
+    expect(screen.getByTestId('history-row-h3')).toBeTruthy();
+    expect(screen.getByTestId('order-row-o1')).toBeTruthy();
+    rerender(<OrdersList orders={[]} history={history} onRetry={async () => 0} />);
+    expect(screen.getByTestId('history-row-h1')).toBeTruthy();
+  });
+
+  it('merges outbox orders and history rows newest first', () => {
+    const orders = [order('o10', { createdAt: '2026-09-25T10:00:00.000Z' }), order('o12', { createdAt: '2026-09-25T12:00:00.000Z' })];
+    const history = [historyRow('h11', { placedAt: '2026-09-25T11:00:00.000Z' }), historyRow('h13', { placedAt: '2026-09-25T13:00:00.000Z' })];
+    render(<OrdersList orders={orders} history={history} onRetry={async () => 0} />);
+    expect(screen.getAllByTestId(/^(order|history)-row-/).map((row) => row.getAttribute('data-testid'))).toEqual([
+      'history-row-h13', 'order-row-o12', 'history-row-h11', 'order-row-o10',
+    ]);
+  });
+
+  it('puts an outbox order before a history row at the same time, and unparseable times last in given order', () => {
+    const orders = [order('o', { createdAt: '2026-09-25T10:00:00.000Z' }), order('bad-o', { createdAt: 'not a date' })];
+    const history = [historyRow('bad-h', { placedAt: 'nope' }), historyRow('h', { placedAt: '2026-09-25T10:00:00.000Z' })];
+    render(<OrdersList orders={orders} history={history} onRetry={async () => 0} />);
+    expect(screen.getAllByTestId(/^(order|history)-row-/).map((row) => row.getAttribute('data-testid'))).toEqual([
+      'order-row-o', 'history-row-h', 'order-row-bad-o', 'history-row-bad-h',
+    ]);
+  });
+
+  it('never lists a history row under Needs attention, and gives it no Retry', () => {
+    render(<OrdersList orders={[order('r', { syncStatus: 'rejected', error: { code: 'unknown_variant', message: 'x' } })]}
+      history={[historyRow('h1')]} onRetry={async () => 0} />);
+    expect(headers()).toEqual(['Needs attention', 'Recent']);
+    expect(screen.getAllByTestId('history-row-h1')).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
+  });
+
+  it('renders exactly as before when history is absent, empty or wholly hidden', () => {
+    const orders = [
+      order('late', { createdAt: '2026-09-25T12:00:00.000Z' }),
+      order('early', { createdAt: '2026-09-25T08:00:00.000Z' }),
+      order('rej', { syncStatus: 'rejected', createdAt: '2026-09-25T10:00:00.000Z' }),
+    ];
+    const original = render(<OrdersList orders={orders} onRetry={async () => 0} />).container.innerHTML;
+    expect(screen.getAllByTestId(/^(order|history)-row-/).map((row) => row.getAttribute('data-testid')).slice(-3)).toEqual([
+      'order-row-late', 'order-row-early', 'order-row-rej',
+    ]);
+    cleanup();
+    const empty = render(<OrdersList orders={orders} history={[]} onRetry={async () => 0} />).container.innerHTML;
+    expect(empty).toBe(original);
+    cleanup();
+    const hidden = render(<OrdersList orders={orders} history={[historyRow('x', { clientOrderId: 'late' })]} onRetry={async () => 0} />).container.innerHTML;
+    expect(hidden).toBe(original);
+  });
+
+  it('shows the empty text only when no outbox order and no shown history row are left', () => {
+    render(<OrdersList orders={[]} history={[historyRow('h1')]} onRetry={async () => 0} />);
+    expect(screen.queryByTestId('orders-empty')).toBeNull();
+    cleanup();
+    render(<OrdersList orders={[]} history={[]} onRetry={async () => 0} />);
+    expect(screen.getByTestId('orders-empty')).toBeTruthy();
   });
 });
