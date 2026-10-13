@@ -298,4 +298,15 @@ describe('CustomerPicker', () => {
     expect(create).not.toHaveBeenCalled();
     expect(screen.getByText('Alice')).toBeDefined();
   });
+
+  it('the search field has the default testID customer-picker-search', () => {
+    render(<CustomerPicker search={vi.fn(async () => [])} selected={null} onSelect={vi.fn()} online />);
+    expect(screen.getByTestId('customer-picker-search')).toBe(screen.getByLabelText('Search customers'));
+  });
+
+  it('a testID prop overrides the search field testID', () => {
+    render(<CustomerPicker search={vi.fn(async () => [])} selected={null} onSelect={vi.fn()} online testID="custom-search" />);
+    expect(screen.getByTestId('custom-search')).toBe(screen.getByLabelText('Search customers'));
+    expect(screen.queryByTestId('customer-picker-search')).toBeNull();
+  });
 });

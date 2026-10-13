@@ -1,3 +1,6 @@
+import { tallyVersion } from '../../lib/site';
+import componentsPackage from '../../../../../packages/components/package.json';
+
 /**
  * Generates Expo Snack `files` prop for component demos.
  *
@@ -8,8 +11,8 @@ export function createSnackFiles(demoCode: string) {
   const appCode = `import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { ConnectorProvider } from '@tallyui/core';
-import { woocommerceConnector } from '@tallyui/connector-woocommerce';
-import { medusaConnector } from '@tallyui/connector-medusa';
+import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
+import { createMedusaConnector } from '@tallyui/connector-medusa';
 import Demo from './Demo';
 
 const wooDoc = {
@@ -49,11 +52,11 @@ const medusaDoc = {
 
 export default function App() {
   const [isWoo, setIsWoo] = React.useState(true);
-  const connector = isWoo ? woocommerceConnector : medusaConnector;
+  const connector = React.useMemo(() => (isWoo ? createWooCommerceConnector() : createMedusaConnector()), [isWoo]);
   const doc = isWoo ? wooDoc : medusaDoc;
 
   return (
-    <ConnectorProvider connector={connector}>
+    <ConnectorProvider connector={connector} traitContext={{ currency: 'USD' }}>
       <View style={styles.container}>
         <Text style={styles.label}>Connector:</Text>
         <View style={styles.row}>
@@ -91,11 +94,20 @@ const styles = StyleSheet.create({
 
 /** Standard npm dependencies for all component Snack demos */
 export const snackDependencies = [
-  '@tallyui/core',
-  '@tallyui/components',
-  '@tallyui/theme',
-  '@tallyui/connector-woocommerce',
-  '@tallyui/connector-medusa',
+  `@tallyui/core@${tallyVersion}`,
+  `@tallyui/components@${tallyVersion}`,
+  `@tallyui/primitives@${tallyVersion}`,
+  `@tallyui/theme@${tallyVersion}`,
+  `@tallyui/connector-woocommerce@${tallyVersion}`,
+  `@tallyui/connector-medusa@${tallyVersion}`,
+  'react-native-svg',
+  // rxjs follows the version the components are built against. rxdb is pinned to 16.21.1
+  // for the Snacks only: @tallyui/core's optional rxdb >=16 peer needs an rxdb listed,
+  // but nothing in the Snacks loads rxdb. Snack reports each optional peer of rxdb 17
+  // (vue, nats, mongodb, firebase, @angular/core, @preact/signals-core) as missing;
+  // 16.21.1's only peer is rxjs.
+  'rxdb@16.21.1',
+  `rxjs@${componentsPackage.devDependencies.rxjs}`,
 ].join(',');
 
 /**
@@ -128,6 +140,12 @@ const styles = StyleSheet.create({
 
 /** Standard npm dependencies for props-based Snack demos */
 export const propsSnackDependencies = [
-  '@tallyui/components',
-  '@tallyui/theme',
+  `@tallyui/core@${tallyVersion}`,
+  `@tallyui/components@${tallyVersion}`,
+  `@tallyui/primitives@${tallyVersion}`,
+  `@tallyui/theme@${tallyVersion}`,
+  'react-native-svg',
+  // See snackDependencies above for the Snack-only rxdb pin and rxjs version rationale.
+  'rxdb@16.21.1',
+  `rxjs@${componentsPackage.devDependencies.rxjs}`,
 ].join(',');

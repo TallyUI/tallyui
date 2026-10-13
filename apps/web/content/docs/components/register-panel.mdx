@@ -1,0 +1,35 @@
+---
+title: RegisterPanel
+description: Register dialog with session figures, cash movements, and closing controls
+---
+
+## Import
+
+```tsx
+import { RegisterPanel } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<RegisterPanel
+  register={register}
+  currency="EUR"
+  registerName="Front counter"
+  open={registerOpen}
+  onOpenChange={setRegisterOpen}
+/>
+```
+
+Renders a register dialog with session sales count, movement actions, an expandable movement list with Undo, and Close register. Expected amounts and movement details are hidden during blind counting; nothing renders without a session or last closure.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `register` | `ReturnType<typeof useRegisterSession>` | required | Session, expected figures, sales count, blind state, movements, last closure, and actions |
+| `currency` | `string` | required | ISO 4217 code used for money display and movement amounts |
+| `registerName` | `string` | --- | Panel title; the heading reads “Register” when omitted |
+| `open` | `boolean` | required | Whether the dialog is open |
+| `onOpenChange` | `(open: boolean) => void` | required | Receives dialog visibility changes, including `false` after starting the closing count |
+| `className` | `string` | --- | Additional styles for the dialog content |

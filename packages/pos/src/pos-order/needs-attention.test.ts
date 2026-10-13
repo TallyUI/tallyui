@@ -14,10 +14,14 @@ function sale(): PosOrder {
 
 describe('needsAttention', () => {
   it.each<Partial<PosOrder>>([{}, { localWarnings: [{ code: 'customer_omitted', field: 'email' }] }, { lateSessionId: 'closed' }])(
-    'leaves out reopened rejections whatever else they carry: %j', (extra) => {
-      const rejected: PosOrder = { ...sale(), syncStatus: 'rejected', ...extra };
+    'leaves out refused orders only once a finalized successor is in the list: %j', (extra) => {
+      const rejected: PosOrder = { ...sale(), syncStatus: 'rejected', createdAt: '2026-01-01T00:00:00Z', ...extra };
       const reopened: PosOrder = { ...rejected, id: 'reopened', reopenedAt: '2026-01-01T12:00:00Z' };
-      expect(needsAttention([reopened, rejected])).toEqual([rejected]);
+      expect(needsAttention([reopened, rejected])).toEqual([reopened, rejected]);
+      const successor: PosOrder = { ...sale(), saleId: reopened.id, syncStatus: 'applied', createdAt: '2026-01-02T00:00:00Z' };
+      expect(needsAttention([reopened, rejected, successor])).toEqual([rejected]);
+      successor.syncStatus = 'rejected';
+      expect(needsAttention([reopened, rejected, successor])).toEqual([successor, rejected]);
     },
   );
 

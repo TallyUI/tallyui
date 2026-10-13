@@ -6,7 +6,7 @@ import { snackDependencies } from './snack-wrapper';
 const code = `import React from 'react';
 import { Text, View, StyleSheet } from 'react-native';
 import { ConnectorProvider } from '@tallyui/core';
-import { woocommerceConnector } from '@tallyui/connector-woocommerce';
+import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
 import { ProductGrid, ProductCard, SearchInput, FilterChipGroup } from '@tallyui/components';
 
 const products = [
@@ -19,6 +19,7 @@ const products = [
 const categories = ['All', 'Equipment', 'Accessories', 'Beans'];
 
 export default function App() {
+  const connector = React.useMemo(() => createWooCommerceConnector(), []);
   const [query, setQuery] = React.useState('');
   const [chips, setChips] = React.useState(
     categories.map((label, i) => ({ label, active: i === 0 }))
@@ -32,7 +33,7 @@ export default function App() {
   });
 
   return (
-    <ConnectorProvider connector={woocommerceConnector}>
+    <ConnectorProvider connector={connector}>
       <View style={styles.container}>
         <ProductGrid
           items={filtered}
