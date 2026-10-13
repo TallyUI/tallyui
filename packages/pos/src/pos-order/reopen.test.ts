@@ -123,20 +123,22 @@ it('the reopened sale finalizes and stores, then refuses another reopen', async 
   expect(refused!.getLatest().toJSON()).toEqual(before);
 });
 
-it.each<{ reason: ReopenRefusal; patch?: Partial<PosOrder>; session?: 'closed' | 'counting'; missing?: boolean }>([
+it.each<{ reason: ReopenRefusal; patch?: Partial<PosOrder>; session?: 'closed' | 'counting'; missing?: boolean; successor?: boolean }>([
   { reason: 'not_found', missing: true },
   { reason: 'not_rejected', patch: { syncStatus: 'applied' } },
   { reason: 'code_not_reopenable', patch: { error: { code: 'validation_failed', message: 'Invalid order' } } },
+  { reason: 'already_replaced', patch: { sessionId: 'closed-session' }, session: 'closed', successor: true },
   { reason: 'session_closed', patch: { sessionId: 'closed-session' }, session: 'closed' },
   { reason: 'session_closed', patch: { sessionId: 'counting-session' }, session: 'counting' },
   { reason: 'session_closed', patch: { sessionId: 'missing-session' } },
-])('refuses $reason without writing a draft or changing the order', async ({ reason, patch, session, missing }) => {
+])('refuses $reason without writing a draft or changing the order', async ({ reason, patch, session, missing, successor }) => {
   const order = { ...storedOrder(), ...patch };
   const document = missing ? undefined : await db.pos_orders.insert(order);
   const before = document?.toJSON();
   if (session) await db.register_sessions.insert({ id: order.sessionId!, register_id: 'register', status: session,
     opened_at_gmt: '2026-10-06T08:00:00Z', counted_float_minor: 10000,
     ...(session === 'closed' ? { closed_at_gmt: '2026-10-06T18:00:00Z' } : {}) });
+  if (successor) await db.pos_orders.insert({ ...storedOrder(), saleId: order.id, syncStatus: 'applied' });
   const result = reopenRefusedOrder(order.id, deps());
   await expect(result).rejects.toBeInstanceOf(ReopenRefusedOrderError);
   await expect(result).rejects.toMatchObject({ orderId: order.id, reason, message: expect.stringContaining(reason) });

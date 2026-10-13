@@ -4936,11 +4936,12 @@ interface OrderCreatePayload {
     - **Tests.** 14 mutations of the new code were each killed by the connector tests (listed in the PR).
   - **Rulings on (d4b) (front desk, 2026-10-07):**
     - **Q-d4b-1, the marker.** `pos_orders` v9 carries one optional `reopenedAt`. Needs attention hides a rejected
-      order that has it; the order stays as the record and is never sent again.
+      order that has it; the order stays as the record and is never sent again. (Hiding superseded by R5 amended.)
     - **Q-d4b-2, the payments.** The parked sale carries the refused order's payments as stored, and the cashier
       collects the difference.
     - **R5, counted once.** A rejected order with `reopenedAt` counts nowhere: not in the Z report, the cash counts,
-      or any local expected figure. Its payments count once, on the new order. R5 covers open sessions only (Q-d4b-5).
+      or any local expected figure. Its payments count once, on the new order. R5 covers open sessions only
+      (Q-d4b-5). (Superseded by R5 amended.)
     - **R5 amended (front desk, 2026-10-13).** A refused order counts nowhere only once a finalized successor exists:
       an order whose `saleId` is its id. Until then it counts in expected cash, `salesCount`, the close check and the
       Z as any rejected order does, and stays in Needs attention. A parked draft is not a successor, so a discarded,
@@ -5013,8 +5014,12 @@ interface OrderCreatePayload {
       `resume(id, { keepParkedPrices: true })`.
       - **Open.** A reopened draft finalized after its refused order's session has closed carries payments that closed
         Z already counted; phase (e) decides how resuming such a draft is handled.
-    - **Tests.** The reviewer applied 7 R5 mutations and 21 reopen mutations; each was killed by the pos tests. They are
-      listed in the PR.
+      - **Open.** `reopenRefusedOrder` sees only parked drafts. Resuming the draft deletes it, so a second reopen
+        while the sale is in the cart writes a second draft with the same payments, and two finalized successors
+        would both count. Phase (e) must not offer or run Reopen while the live sale's id is the refused order's id.
+    - **Tests.** The first review's 21 reopen mutations were each killed on its head. On the final head, 15 mutations
+      of the review fixes and the amended R5 were each killed by the pos and components tests. They are listed in the
+      PR.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
