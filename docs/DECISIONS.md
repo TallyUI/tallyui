@@ -5071,6 +5071,9 @@ interface OrderCreatePayload {
       - `apply(builder, state)` puts every accepted code into the order builder;
       - `beforeResume(state)`, optional, loads what a parked sale needs before its codes are checked again.
 
+      Each call's `state.accepted` is a copy taken for that call, so an implementation that reads it after its own
+      `await` does not see codes accepted later (review of #525).
+
       `useSale` keeps the steps and messages around it: trimming and lower-casing, the gate (capabilities say
       `coupons: true`, the store accepts `order.create` 6, and `supports`), a stale answer after `newSale`,
       re-applying on resume, and `removeCoupon` through the implementation that accepted the codes, even after the gate
@@ -5084,7 +5087,11 @@ interface OrderCreatePayload {
     - **What stays WooCommerce-shaped, on purpose.** The order builder's coupon replay (`OrderCouponContext`,
       `woocommerceCouponReplay`), `pos_orders` v9's coupon fields and the `order.create` 6 envelope are as (d1) to
       (d4a) built them. They are the WooCommerce implementation's output, and they stay until a second platform needs
-      a different one.
+      a different one. Two fields of the contract's own `SaleDiscountState` are WooCommerce-shaped as well:
+      - `categories` is keyed by numeric product id, as WooCommerce's ids are;
+      - `settings.calcDiscountsSequentially` is a WooCommerce store setting.
+
+      An implementation that does not need them ignores them.
     - **What another platform supplies.** A Medusa promotions row supplies its own `SaleDiscountCodes`: `find` over
       its promotions, `check` with Medusa's own rules, budgets and wording, and `apply` with Medusa's adjustments,
       which needs its own builder replay and its own fields in the envelope. Those are that row's design, under this
