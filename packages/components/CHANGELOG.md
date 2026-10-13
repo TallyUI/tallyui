@@ -1,5 +1,26 @@
 # @tallyui/components
 
+## 3.10.0
+
+> **Storage, one way: `pos_orders` moves from schema version 8 to 9.** Every stored order is kept byte for byte, but a till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.
+
+### Patch Changes
+
+- 3fd1ed4: Needs attention offers no Retry for a `coupon_invalid` or `total_mismatch` refusal, which the outbox does not resend (#501, ADR-077 Q-d4b-4).
+- 811b1f2: `CustomerPicker`'s search field now has the testID `customer-picker-search`. A new optional `testID` prop overrides it. The accessibility label "Search customers" is unchanged.
+- Updated dependencies [f50fca2]
+- Updated dependencies [8c35723]
+- Updated dependencies [74a58a4]
+- Updated dependencies [c2efd7d]
+- Updated dependencies [38d3032]
+- Updated dependencies [3fd1ed4]
+- Updated dependencies [f50fca2]
+- Updated dependencies [10a3813]
+  - @tallyui/core@3.10.0
+  - @tallyui/pos@3.10.0
+  - @tallyui/primitives@3.10.0
+  - @tallyui/theme@3.10.0
+
 ## 3.9.2
 
 ### Patch Changes

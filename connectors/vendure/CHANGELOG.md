@@ -1,5 +1,16 @@
 # @tallyui/connector-vendure
 
+## 3.10.0
+
+> **Storage, one way: `pos_orders` moves from schema version 8 to 9.** Every stored order is kept byte for byte, but a till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.
+
+### Patch Changes
+
+- 7649149: A refund line's amount is now its cumulative share of the line total, the vendurepos plugin's rule (ADR-080 amendment 2). `getVendureOrder` also reads each line's `proratedLinePriceWithTax`. `vendureRefundable` gives each line `lineTotalWithTax`, and the new `vendureLineRefundWithTax(line, quantity)` returns `round((r + q) × T / N) − round(r × T / N)`. A whole-line refund is now exactly the line total; per-unit `unitRefundWithTax` could miss it by a few minor units, and the plugin refused it with `amount_mismatch`. `unitRefundWithTax` stays for display and is deprecated.
+- Updated dependencies [f50fca2]
+- Updated dependencies [38d3032]
+  - @tallyui/core@3.10.0
+
 ## 3.9.2
 
 ### Patch Changes
