@@ -1,5 +1,26 @@
 # @tallyui/connector-woocommerce
 
+## 3.10.0
+
+> **Storage, one way: `pos_orders` moves from schema version 8 to 9.** Every stored order is kept byte for byte, but a till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.
+
+### Minor Changes
+
+- 133faac: The WooCommerce connector sends a coupon sale (#501, ADR-077 step d4a-woo).
+  - A store that lists `order_create_v5` and passes the coupons gate (plugin 1.9.0 or later) is advertised `orderCreate: 6`. `WOO_ORDER_CREATE_VERSION` is still 5.
+  - `createWooCommandTransport` takes `acceptsCoupons` (a boolean or a function, read at push time). Absent or false, a sale that still carries coupons is refused as `coupon_invalid` (`storeCode: 'coupons_unsupported'`) without a request, so wire it to the store's `coupons` capability to send coupon sales.
+  - A version-6 envelope with coupons is pushed with `coupon_lines` (the codes, in the order applied), and each line carries its POS price and regular price in `_woocommerce_pos_data`, so WooCommerce applies the coupons to the till's prices.
+  - On a tax-inclusive line, `price` is the gross unit price after the line's own discounts, taken from the till's stored line; without it the order is refused as `unsupported_tax_mode`.
+  - A store's coupon refusal (`woocommerce_rest_invalid_coupon`) is rejected as `coupon_invalid`, never retried, with the store's message as plain text, `storeCode`, and `couponCode` when the message names a coupon of the sale.
+  - A store total that differs after the order is created stays `applied`, with the store order's refs and the `total_mismatch` warning (ADR-077's R4 exception).
+  - An envelope without coupons is pushed exactly as before.
+
+### Patch Changes
+
+- Updated dependencies [f50fca2]
+- Updated dependencies [38d3032]
+  - @tallyui/core@3.10.0
+
 ## 3.9.2
 
 ### Patch Changes

@@ -1,5 +1,56 @@
 # @tallyui/pos
 
+## 3.10.0
+
+> **Storage, one way: `pos_orders` moves from schema version 8 to 9.** Every stored order is kept byte for byte, but a till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.
+
+### Minor Changes
+
+- 8c35723: `pos_orders` is now schema version 9 (#501, ADR-077 step d2). Version 9 declares four optional fields, and nothing writes them yet:
+
+  - the order's `coupons` (`{ code, couponId, discountMinor, discountTaxMinor }`, exported as `PosOrderCoupon`);
+  - the receipt's `display.coupons`;
+  - a line's `attributes` (#495);
+  - a line's `regularUnitPriceMinor`.
+
+  It also lets an order's `sentVersion` and `downgradedFrom` be 6, ready for order.create version 6 (ADR-077 d4).
+
+  It also declares an order's optional `reopenedAt`, for a refused sale the till reopens as a parked sale (ADR-077 d4b).
+
+  The migration from version 8 is the identity, so every stored order is kept byte for byte. This is a one-way storage change (ADR-069). A till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.
+
+- 74a58a4: The order layer carries coupon ids and regular prices (#501, ADR-077 step d3b). Nothing applies a coupon yet.
+  - **Breaking** change for code that builds an `OrderCouponContext` or reads `Order.coupons` as shipped in 3.9.0: `couponIds` is now required and each `Order.coupons` row has a required `couponId`. `setCoupons` refuses a code whose id is missing or empty, and takes an optional new context, which replaces the builder's once every code passes its checks. No consumer outside `@tallyui/pos` builds the context. This remains a minor release because TallyUI is pre-beta.
+  - A catalogue line keeps its regular unit price as `regularUnitPriceMinor`. The order builder picks the regular price from `resolvePrice`'s result. A price edit or a restored draft keeps it, lines with different regular prices do not merge, and custom lines have none.
+  - Parked-sale drafts keep the order's coupons; restoring a draft does not apply them.
+  - `finalizeOrder` stores the order's coupons and each line's regular price in `pos_orders` version 9. An order without them is stored as before.
+  - Coupons that exclude sale items are still refused.
+- c2efd7d: The sale applies coupons (#501, ADR-077 step d3c). No app passes a coupon source yet, so nothing changes for a cashier.
+  - `useSale` returns `applyCoupon(code)` and `removeCoupon(code)`. `applyCoupon` refuses with `COUPONS_UNSUPPORTED` ("This store's plugin does not support coupons yet") unless the store's capabilities say `coupons: true`, the app passes discount codes (`discountCodes`, see the d6 entry), and they support the store; WooCommerce's need its tax context.
+  - Each code is validated with `woocommerceCoupons.validateCoupon` before it is applied, and every refusal has its own cashier-facing sentence (`woocommerceDiscountCodes.couponRefusal`).
+  - Resuming a parked sale looks its coupons up and validates them again; any that no longer pass are removed, and the message says why.
+  - `useSale`'s settings may carry `calcDiscountsSequentially`. New export: `COUPONS_UNSUPPORTED`.
+- 38d3032: A coupon sale is sent as `order.create` version 6 (#501, ADR-077 step d4a). No app passes a coupon source yet, so nothing changes for a cashier.
+  - Version 6 is version 5 plus the order's `coupons` (`code`, `couponId`, `discountMinor`, `discountTaxMinor`), each line's `regularUnitPriceMinor` and `attributes` when stored, and the receipt's `display.coupons`. `precheckCommand` accepts it, refuses those fields below version 6, and checks that each receipt coupon row names a coupon in the payload, once.
+  - In version 6, `subtotalMinor` and `taxMinor` are net of the coupons, and the top-level `discountMinor` still sums only the lines' discounts.
+  - `CommandRejectionCode` gains `coupon_invalid` (with `OrderCreateCouponInvalidData`: `storeCode`, `couponCode`) and `total_mismatch` (with `OrderCreateTotalMismatchData`).
+  - Only a coupon sale goes as 6. A sale without coupons is sent as before, byte for byte, whatever the store advertises.
+  - A coupon sale never goes below 6: `useSale` offers coupons only when the store also accepts version 6, `finalizeOrder` refuses a coupon sale to a store below 6, and the outbox keeps a coupon sale at 6 after an `unsupported_version` answer, so an older store refuses it instead of receiving it without its coupons.
+  - The till's highest `order.create` version (`ORDER_CREATE_MAX_VERSION` in `@tallyui/pos`'s command module, not exported from the package) is 6, and a test pins it to `pos_orders`' `sentVersion` and `downgradedFrom` maxima.
+- 3fd1ed4: A sale the store refused over its coupons can be reopened as a parked sale (#501, ADR-077 step d4b). No app shows the action yet, so nothing changes for a cashier.
+  - `reopenRefusedOrder(orderId, deps)` rebuilds a `coupon_invalid` or `total_mismatch` refusal as a parked sale without its coupons. The parked sale carries the order's payments, and its note gives the store's reason. A second call returns the parked sale already written. The refused order is marked with `reopenedAt` and stays as the record. The function refuses with `ReopenRefusedOrderError` when the order is missing, not rejected, refused for another reason, already replaced by a finalized sale, or in a register session that is not open.
+  - A refused order counts nowhere once its finalized successor (`saleId`) exists (`replacedOrderIds`): it is left out of Needs attention, the outbox's rejected count, the Z report and the register's live expected figures. Until then it counts like any rejected order. `isReopened` only tells that a reopen was started.
+  - `requeue` no longer resends a `coupon_invalid` or `total_mismatch` refusal.
+  - `isRequeueable(code)` reports whether the outbox resends a refusal with that code.
+- f50fca2: Coupons on one register (ADR-077 d5). `woocommerceDiscountCodes.createSaleCouponSource` gives `useSale` its coupons from the local `coupons` collection. It adds this register's own uses to `usage_count` and `used_by`: a pending order always counts, and an applied order counts until a later pull rewrites the coupon or for at most 10 minutes. `woocommerceDiscountCodes.startCouponUsageRefetch` asks the coupon feed to fetch a coupon again by id once an order using it applies. Neither writes to any collection. The overlay records the customer's WooCommerce id, else the lower-cased email.
+- 10a3813: The sale takes the platform's discount codes (ADR-077 amendment 3). Each platform keeps its own discount model, so `useSale`'s `discountCodes` option takes a `SaleDiscountCodes` contract. The contract has five parts: `supports`, `find`, `check`, `apply`, and an optional `beforeResume`. Each part is given a `SaleDiscountState`: the order, a copy of the codes already accepted, the categories and the settings. Both `SaleDiscountCodes` and `SaleDiscountState` are exported as types. A refusal is shown to the cashier in the platform's own words. WooCommerce coupons are one implementation: `woocommerceDiscountCodes.createDiscountCodes(source)`. `createSaleCouponSource`, `startCouponUsageRefetch`, `couponRefusal` and the `SaleCoupon` and `SaleCouponSource` types are exported under `woocommerceDiscountCodes`, not at the top level. A cashier sees no change.
+
+### Patch Changes
+
+- Updated dependencies [f50fca2]
+- Updated dependencies [38d3032]
+  - @tallyui/core@3.10.0
+
 ## 3.9.2
 
 ### Patch Changes

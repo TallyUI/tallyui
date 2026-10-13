@@ -1,5 +1,23 @@
 # @tallyui/core
 
+## 3.10.0
+
+> **Storage, one way: `pos_orders` moves from schema version 8 to 9.** Every stored order is kept byte for byte, but a till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.
+
+### Minor Changes
+
+- 38d3032: A coupon sale is sent as `order.create` version 6 (#501, ADR-077 step d4a). No app passes a coupon source yet, so nothing changes for a cashier.
+  - Version 6 is version 5 plus the order's `coupons` (`code`, `couponId`, `discountMinor`, `discountTaxMinor`), each line's `regularUnitPriceMinor` and `attributes` when stored, and the receipt's `display.coupons`. `precheckCommand` accepts it, refuses those fields below version 6, and checks that each receipt coupon row names a coupon in the payload, once.
+  - In version 6, `subtotalMinor` and `taxMinor` are net of the coupons, and the top-level `discountMinor` still sums only the lines' discounts.
+  - `CommandRejectionCode` gains `coupon_invalid` (with `OrderCreateCouponInvalidData`: `storeCode`, `couponCode`) and `total_mismatch` (with `OrderCreateTotalMismatchData`).
+  - Only a coupon sale goes as 6. A sale without coupons is sent as before, byte for byte, whatever the store advertises.
+  - A coupon sale never goes below 6: `useSale` offers coupons only when the store also accepts version 6, `finalizeOrder` refuses a coupon sale to a store below 6, and the outbox keeps a coupon sale at 6 after an `unsupported_version` answer, so an older store refuses it instead of receiving it without its coupons.
+  - The till's highest `order.create` version (`ORDER_CREATE_MAX_VERSION` in `@tallyui/pos`'s command module, not exported from the package) is 6, and a test pins it to `pos_orders`' `sentVersion` and `downgradedFrom` maxima.
+
+### Patch Changes
+
+- f50fca2: `CatalogueReconcileAdapter.enqueue` entries may carry `refreshOnly`.
+
 ## 3.9.2
 
 ### Patch Changes
