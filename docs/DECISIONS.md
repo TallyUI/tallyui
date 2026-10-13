@@ -5097,7 +5097,7 @@ interface OrderCreatePayload {
       which needs its own builder replay and its own fields in the envelope. Those are that row's design, under this
       contract.
     - **Tests.** 7 new tests use a non-WooCommerce fake. The reviewer applied 23 mutations: 21 were killed and 2 are
-      equivalent. They are listed in the PR.
+      equivalent. They are listed in the PR. #556 adds an eighth, for the copied `accepted`.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
