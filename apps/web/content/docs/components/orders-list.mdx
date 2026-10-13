@@ -21,6 +21,33 @@ import { OrdersList } from '@tallyui/components';
 
 Renders Recent orders and a Needs attention section when applicable, with expandable line and payment details, sync status, and warnings. Eligible rejected orders have a Retry action that calls `onRetry`.
 
+## Server order history
+
+Pass the store's order history as `history` to show it in Recent with the till's own sales. Each row is platform-neutral, and the app maps its own store's orders into it:
+
+```tsx
+import { OrdersList, type OrderHistoryRow } from '@tallyui/components';
+
+const history: OrderHistoryRow[] = storeOrders.map((order) => ({
+  id: order.id,
+  clientOrderId: order.clientOrderId, // the till's PosOrder id, when the till placed it
+  reference: order.code,
+  placedAt: order.placedAt,
+  totalMinor: order.totalMinor,
+  currency: order.currency,
+  itemCount: order.itemCount,
+  stateLabel: order.stateLabel,
+}));
+
+<OrdersList orders={orders} history={history} onRetry={(orderIds) => outbox.requeue(orderIds)} />
+```
+
+- **The outbox row wins.** A history row whose `clientOrderId` is the `id` of an order in `orders` is hidden while that order is there.
+- **Newest first.** Recent merges outbox orders (by `createdAt`) and history rows (by `placedAt`). At equal times the outbox order comes first. A time that does not parse goes last.
+- **Read-only.** A history row shows `Order <reference> · <n> items` and `<date> · <total> · <stateLabel>`, with `reference`, `itemCount` and `stateLabel` as given. It has no detail, no Retry and no warnings, and never appears under Needs attention.
+
+Without `history`, the list renders exactly as before, with `orders` in the given order.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -30,3 +57,4 @@ Renders Recent orders and a Needs attention section when applicable, with expand
 | `formatDate` | `(iso: string) => string` | `defaultFormatDate` | Formats order times; the default uses a medium date and short time, leaving unparseable values unchanged |
 | `footer` | `ReactNode` | --- | App content rendered after the order sections |
 | `stuck` | `OutboxState['stuck']` | --- | Outbox entries that make pending orders need attention and supply each order's waiting-since time |
+| `history` | `OrderHistoryRow[]` | --- | The store's orders, shown read-only in Recent; a row is hidden while an outbox order has its `clientOrderId` as `id` |

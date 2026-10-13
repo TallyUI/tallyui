@@ -53,8 +53,10 @@ export interface VendureOrder extends VendureOrderSummary {
     quantity: number;
     orderPlacedQuantity: number;
     proratedUnitPrice: number;
-    /** Vendure's per-unit value used in refund calculations, which the till sums for `order.refund`'s `totalMinor` (ADR-080). */
+    /** Vendure's per-unit refund value, rounded per unit: for display, never multiplied by a quantity for `order.refund`'s `totalMinor` (ADR-080 amendment 2). */
     proratedUnitPriceWithTax: number;
+    /** The line's total with tax after order-level discounts; a refund's line amount is its share of this (vendurepos ADR 0007, decision 4.9). */
+    proratedLinePriceWithTax: number;
     taxRate: number;
     productVariant: { id: string; name: string; sku: string };
     unitPrice: number;
@@ -110,7 +112,7 @@ const ORDER_DETAIL_FIELDS_START = `
   customer { id firstName lastName emailAddress }
   lines {`;
 const ORDER_DETAIL_FIELDS_END = `
-    id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax taxRate productVariant { id name sku }
+    id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax proratedLinePriceWithTax taxRate productVariant { id name sku }
     unitPrice unitPriceWithTax linePrice linePriceWithTax discountedLinePrice discountedLinePriceWithTax
     discounts { description amount amountWithTax }
   }

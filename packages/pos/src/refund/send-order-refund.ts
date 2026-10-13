@@ -1,5 +1,5 @@
 import type { CommandError, OrderRefundEnvelope, OrderRefundResult } from '@tallyui/core';
-import { parseCommandResult } from '@tallyui/core/server';
+import { parseCommandResult } from '@tallyui/core';
 import type { CommandTransport } from '../outbox/types';
 
 export type OrderRefundOutcome =
