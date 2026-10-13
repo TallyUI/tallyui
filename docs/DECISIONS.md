@@ -4903,7 +4903,8 @@ interface OrderCreatePayload {
       `coupon_invalid` and `total_mismatch`.
     - **The precheck.** `precheckCommand` accepts version 6, refuses each version-6 field below 6 (`<field> requires
       version 6`, after the version-5 refusal), and checks that each `display.coupons` row names a code in
-      `payload.coupons`, once, as it checks fee and shipping rows.
+      `payload.coupons`, once. Unlike fee and shipping rows, it does not require a row for every payload coupon,
+      because `display.coupons` is optional.
     - **Only a coupon sale goes as 6.** A sale without coupons is sent as before, byte for byte, whatever the store
       advertises; its stored regular prices and attributes stay on the till. Attributes therefore do not ride on the
       coupon gate.

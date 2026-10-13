@@ -356,10 +356,12 @@ export interface OrderCreatePayload {
   /** Version 6 (ADR-077): the coupons the till applied, in the order it applied them; omitted when none.
    * The store re-applies them by `code` and refuses the order with `coupon_invalid` if one no longer applies. */
   coupons?: OrderCreateCoupon[];
+  /** Version 6: net of the coupons' `discountMinor`, as `taxMinor` is of their `discountTaxMinor`; coupons are not part of `discountMinor`. */
   subtotalMinor: number;
   /**
    * Version 2 (ADR-062): the order's total discount, equal to Σ `lines[].discountMinor`. Present only when above 0.
    * Version 4+ (#286) means every `discountMinor`, this and each line's, is tax-exclusive, so the sum still holds.
+   * Version 6: coupons are not included; their amounts are in `coupons[].discountMinor`.
    */
   discountMinor?: number;
   taxMinor: number;
