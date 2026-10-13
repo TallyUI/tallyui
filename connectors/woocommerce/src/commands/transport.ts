@@ -43,6 +43,7 @@ function decodeCouponMessage(message: unknown): string {
     .replace(/&(quot|amp|lt|gt|apos|#\d+|#x[\da-f]+);/gi, (_, entity: string) => entities[entity.toLowerCase()]
       ?? ((value: number) => value > 0x10FFFF ? _ : String.fromCodePoint(value))(
         parseInt(entity.slice(entity[1].toLowerCase() === 'x' ? 2 : 1), entity[1].toLowerCase() === 'x' ? 16 : 10)))
+    .replace(/[<>]/g, '')
     .replace(/\s+/g, ' ').trim() || 'status_400';
 }
 

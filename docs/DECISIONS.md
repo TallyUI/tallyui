@@ -4928,9 +4928,9 @@ interface OrderCreatePayload {
       the order is refused as `unsupported_tax_mode`. A custom line keeps its single entry, with `tax_status` after them. Line
       `subtotal` and `total` are the pre-coupon figures; WooCommerce applies the coupons itself.
     - **The refusal.** HTTP 400 `woocommerce_rest_invalid_coupon` is rejected as `coupon_invalid`, not retried. The
-      message is the store's with tags removed and entities decoded (a numeric entity outside Unicode stays as text);
-      `data` is `storeCode` and, when the first quoted text matches a coupon of the sale ignoring case, that
-      `couponCode`. The store's `new_draft_order_id` is not carried.
+      message is the store's with tags removed and entities decoded (a numeric entity outside Unicode stays as text), then
+      any `<` or `>` left is removed; `data` is `storeCode` and, when the first quoted text matches a coupon of
+      the sale ignoring case, that `couponCode`. The store's `new_draft_order_id` is not carried.
     - **The R4 exception in practice.** A 201 whose store total differs stays `applied` with `serverRefs` and the
       `total_mismatch` warning; this needed no new code.
     - **Tests.** 14 mutations of the new code were each killed by the connector tests (listed in the PR).
