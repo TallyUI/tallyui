@@ -114,10 +114,11 @@ describe('createSaleCouponSource', () => {
       order({ coupons: [appliedCoupon], customer: { id: '7', email: 'X@Y.Z' } }),
       order({ coupons: [appliedCoupon], customer: { id: '0', email: 'A@B.C' } }),
       order({ coupons: [appliedCoupon], customer: { id: 'cus_1', email: 'D@E.F' } }),
+      order({ coupons: [appliedCoupon], customer: { id: '2.5', email: 'G@H.I' } }),
       order({ coupons: [appliedCoupon], customer: { email: '' } }),
     ]);
     expect(await source.find('save10')).toMatchObject({
-      usage_count: 6, used_by: ['5', 'stored@b.c', '7', 'a@b.c', 'd@e.f'],
+      usage_count: 7, used_by: ['5', 'stored@b.c', '7', 'a@b.c', 'd@e.f', 'g@h.i'],
     });
   });
 
