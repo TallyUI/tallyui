@@ -43,11 +43,29 @@ describe('finalizeOrder', () => {
     builder.setCoupons(['ten']);
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     const snapshot = builder.getSnapshot();
-    const order = finalizeOrder(snapshot);
+    const order = finalizeOrder(snapshot, { capabilities: { orderCreate: 6 } });
     expect(order.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 130, discountTaxMinor: 26 }]);
     expect(order.coupons).toEqual(snapshot.coupons);
     expect(order.coupons![0]).not.toBe(snapshot.coupons![0]);
     expect(order.lines.map((line) => line.regularUnitPriceMinor)).toEqual([1000, 500]);
+  });
+
+  it('refuses a coupon sale when the store only accepts order.create version 5', () => {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+      pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+      getTaxRatePpm: () => 200000,
+      getTaxRates: () => [{ id: 1, code: 'VAT', label: 'VAT', rate: '20.0000', priority: 1, compound: false, shipping: true }],
+    }, couponContext: {
+      configs: new Map([['ten', { discount_type: 'percent', amount: '10', limit_usage_to_x_items: null,
+        product_ids: [], excluded_product_ids: [], product_categories: [], excluded_product_categories: [], exclude_sale_items: false }]]),
+      couponIds: new Map([['ten', '303']]), productCategories: new Map(), calcDiscountsSequentially: false,
+    } });
+    builder.addLine({ productId: '1', name: 'Item', unitPrice: { amount: 800, currency: 'GBP' }, regularUnitPriceMinor: 1000 });
+    builder.addLine({ productId: '2', name: 'Item 2', unitPrice: { amount: 500, currency: 'GBP' }, regularUnitPriceMinor: 500 });
+    builder.setCoupons(['ten']);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    expect(() => finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } }))
+      .toThrow("finalize: coupons need the store to accept order.create version 6; update the store's TallyUI plugin");
   });
 
   it('omits coupons and regular prices when absent from the sale', () => {

@@ -104,6 +104,36 @@ export function payloadShapeErrors(payload: unknown): string[] {
       }
     })
   }
+  for (const prefix of ['', 'display.']) {
+    const parent = prefix ? payload.display : payload
+    const items = object(parent) ? parent.coupons : undefined
+    if (items === undefined) continue
+    check(Array.isArray(items), `${prefix}coupons`, 'an array')
+    if (!Array.isArray(items)) continue
+    const keys = prefix ? ['code', 'amountMinor'] : ['code', 'couponId', 'discountMinor', 'discountTaxMinor']
+    const seen = new Set<unknown>()
+    items.forEach((item, index) => {
+      const path = `${prefix}coupons[${index}]`
+      check(object(item), path, 'an object')
+      if (!object(item)) return
+      for (const key of Object.keys(item)) check(keys.includes(key), `${path}.${key}`, 'no unknown key')
+      for (const key of prefix ? ['code'] : ['code', 'couponId']) check(typeof item[key] === 'string' && item[key].length > 0, `${path}.${key}`, 'a non-empty string')
+      for (const key of prefix ? ['amountMinor'] : ['discountMinor', 'discountTaxMinor']) check(Number.isSafeInteger(item[key]) && (item[key] as number) >= 0, `${path}.${key}`, 'a safe integer >= 0')
+      if (!prefix) {
+        check(!seen.has(item.code), `${path}.code`, 'no duplicate code')
+        seen.add(item.code)
+      }
+    })
+  }
+  if (Array.isArray(payload.lines)) payload.lines.forEach((line, index) => {
+    if (!object(line)) return
+    const path = `lines[${index}]`
+    if (line.regularUnitPriceMinor !== undefined) check(Number.isSafeInteger(line.regularUnitPriceMinor) && (line.regularUnitPriceMinor as number) >= 0, `${path}.regularUnitPriceMinor`, 'a safe integer >= 0')
+    if (line.attributes !== undefined) {
+      check(object(line.attributes), `${path}.attributes`, 'an object')
+      if (object(line.attributes)) for (const [key, value] of Object.entries(line.attributes)) check(typeof value === 'string', `${path}.attributes.${key}`, 'a string')
+    }
+  })
   // NUL, only on strings (the checks above name any other type): Postgres text can't hold it, and the lookup keys must be clean.
   for (const [value, path] of payloadStrings(payload)) check(!value.includes('\u0000'), path, 'no NUL character')
   return errors
@@ -152,6 +182,18 @@ function payloadStrings(payload: Record<string, unknown>): Array<[string, string
       }
     })
   }
+  for (const prefix of ['', 'display.']) {
+    const parent = prefix ? payload.display : payload
+    const items = object(parent) ? parent.coupons : undefined
+    if (Array.isArray(items)) items.forEach((item, index) => {
+      if (object(item)) for (const key of prefix ? ['code'] : ['code', 'couponId']) found.push([item[key], `${prefix}coupons[${index}].${key}`, key === 'code' ? 255 : 64])
+    })
+  }
+  if (Array.isArray(payload.lines)) payload.lines.forEach((line, index) => {
+    if (object(line) && object(line.attributes)) for (const [key, value] of Object.entries(line.attributes)) {
+      found.push([key, `lines[${index}].attributes`, 255], [value, `lines[${index}].attributes.${key}`, 255])
+    }
+  })
   if (object(payload.customer)) found.push([payload.customer.email, 'customer.email', 254], [payload.customer.customerId, 'customer.customerId', undefined])
   found.push([payload.sessionId, 'sessionId', undefined])
   return found.filter((entry): entry is [string, string, number | undefined] => typeof entry[0] === 'string')
