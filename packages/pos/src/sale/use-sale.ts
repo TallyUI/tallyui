@@ -71,7 +71,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const appliedWith = useRef<SaleDiscountCodes<any> | null>(null);
   const categories = useRef(new Map<number, { id: number }[]>());
   function discountState(order: Order, accepted: ReadonlyMap<string, unknown>): SaleDiscountState<unknown> {
-    return { order, accepted, categories: categories.current, settings: { calcDiscountsSequentially: settings.calcDiscountsSequentially } };
+    return { order, accepted: new Map(accepted), categories: categories.current, settings: { calcDiscountsSequentially: settings.calcDiscountsSequentially } };
   }
   function codesFor(): SaleDiscountCodes<any> | null {
     return opts.capabilities?.coupons === true && (opts.capabilities?.orderCreate ?? 1) >= 6 && opts.discountCodes
