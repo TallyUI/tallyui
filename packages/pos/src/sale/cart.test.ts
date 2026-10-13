@@ -15,6 +15,18 @@ function orderBuilder() {
 }
 
 describe('addEntryToCart', () => {
+  it.each([false, true])('stores the regular price of a variant, on sale: %s', (onSale) => {
+    const builder = orderBuilder();
+    const variant = { ...entry.variant, prices: [
+      { amount: 1000, currency: 'EUR', kind: 'base' as const },
+      ...(onSale ? [{ amount: 800, currency: 'EUR', kind: 'sale' as const }] : []),
+    ] };
+    addEntryToCart(builder, { ...entry, variant }, traits, 'EUR');
+    expect(builder.getSnapshot().lineItems[0]).toMatchObject({
+      unitPriceMinor: onSale ? 800 : 1000, regularUnitPriceMinor: 1000,
+    });
+  });
+
   it('passes the selected variant tax exemption to the line', () => {
     const builder = orderBuilder();
     const addLine = vi.spyOn(builder, 'addLine');

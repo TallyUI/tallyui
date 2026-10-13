@@ -77,7 +77,7 @@ export function woocommerceCouponReplay(lines: readonly LineItem[], codes: reado
       const taxLines = line.taxLines.map((tax, index) => ({ ...tax, taxMicros: String(Math.round(taxes[index].total * factor * 1e6)) }));
       return { ...line, ...lineAmounts(Number(item.total), taxes, taxLines, dp, roundAtSubtotal, pricesIncludeTax) };
     }),
-    coupons: result.couponLines.map((coupon, index) => ({ code: codes[index],
+    coupons: result.couponLines.map((coupon, index) => ({ code: codes[index], couponId: context.couponIds.get(codes[index])!,
       discountMinor: Math.round(woocommerceTax.roundHalfUp(Number(coupon.discount), dp) * factor),
       discountTaxMinor: Math.round(woocommerceTax.roundHalfUp(Number(coupon.discount_tax), dp) * factor) })),
   };

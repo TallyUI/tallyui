@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { firstValueFrom } from 'rxjs';
-import { createOrderBuilder } from './order-builder';
+import { createOrderBuilder, regularUnitPriceMinor } from './order-builder';
+import { restoreOrderDraft } from './order-drafts';
 import type { ProductTraits } from '@tallyui/core';
 import { medusaProductTraits } from '@tallyui/connector-medusa';
 import type { TaxContext } from '../tax/types';
@@ -39,6 +40,72 @@ const productDoc = { id: 'p1', name: 'Espresso', sku: 'ESP-001', price: 450 };
 const productDoc2 = { id: 'p2', name: 'Latte', sku: 'LAT-001', price: 500 };
 
 describe('OrderBuilder', () => {
+  it.each([
+    { current: { amount: 800, currency: 'USD' }, expected: 800 },
+    { current: { amount: 800, currency: 'USD' }, was: { amount: 1000, currency: 'USD' }, expected: 1000 },
+    { current: { amount: 800, currency: 'USD' }, was: undefined, expected: 800 },
+    { current: { amount: 800, currency: 'USD', taxInclusive: true }, was: { amount: 1000, currency: 'USD', taxInclusive: false }, expected: undefined },
+    { current: { amount: 800, currency: 'USD' }, was: { amount: 1000, currency: 'USD', taxInclusive: false }, expected: undefined },
+  ])('resolves the regular price in the current price tax mode: %j', ({ expected, ...resolved }) => {
+    expect(regularUnitPriceMinor(resolved)).toBe(expected);
+  });
+
+  it('stores a regular price only when supplied on a catalogue line', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const input = { productId: 'p1', name: 'Item', unitPrice: { amount: 800, currency: 'USD' } };
+    builder.addLine({ ...input, regularUnitPriceMinor: 1000 });
+    builder.addLine(input);
+    builder.addLine({ ...input, custom: true, regularUnitPriceMinor: 1000 });
+    const lines = builder.getSnapshot().lineItems;
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toHaveProperty('regularUnitPriceMinor', 1000);
+    expect(lines[1]).not.toHaveProperty('regularUnitPriceMinor');
+    expect(lines[2]).not.toHaveProperty('regularUnitPriceMinor');
+  });
+
+  it.each([-1, 1.5, NaN])('rejects invalid regular price %s without changing the snapshot', (regularUnitPriceMinor) => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const input = { productId: 'p1', name: 'Item', unitPrice: { amount: 800, currency: 'USD' } };
+    builder.addLine(input);
+    const before = builder.getSnapshot();
+    expect(() => builder.addLine({ ...input, regularUnitPriceMinor }))
+      .toThrow(new RangeError('Regular price must be integer minor units >= 0'));
+    expect(builder.getSnapshot()).toBe(before);
+  });
+
+  it('merges lines only when their regular prices also match', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const input = { productId: 'p1', name: 'Item', unitPrice: { amount: 800, currency: 'USD' }, regularUnitPriceMinor: 1000 };
+    const id = builder.addLine(input);
+    expect(builder.addLine({ ...input, regularUnitPriceMinor: 1200 })).not.toBe(id);
+    expect(builder.addLine(input)).toBe(id);
+    expect(builder.getSnapshot().lineItems).toMatchObject([
+      { regularUnitPriceMinor: 1000, quantity: 2 }, { regularUnitPriceMinor: 1200, quantity: 1 },
+    ]);
+  });
+
+  it('keeps each regular price through a price edit and draft restoration', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const input = { productId: 'p1', name: 'Item', unitPrice: { amount: 800, currency: 'USD' } };
+    const id = builder.addLine({ ...input, regularUnitPriceMinor: 1000 });
+    builder.addLine({ ...input, regularUnitPriceMinor: 1200 });
+    builder.setUnitPrice(id, 600);
+    expect(builder.getSnapshot().lineItems[0]).toMatchObject({ unitPriceMinor: 600, regularUnitPriceMinor: 1000 });
+    const saved = JSON.parse(JSON.stringify(builder.getSnapshot()));
+    const restored = restoreOrderDraft(saved, { currency: 'USD', taxContext });
+    expect(restored.getSnapshot().lineItems).toMatchObject([
+      { unitPriceMinor: 600, regularUnitPriceMinor: 1000 }, { unitPriceMinor: 800, regularUnitPriceMinor: 1200 },
+    ]);
+  });
+
+  it('adds a product with its sale price and catalogue regular price', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct(productDoc, { ...traits, getPrices: () => [
+      { amount: 1000, currency: 'USD', kind: 'base' }, { amount: 800, currency: 'USD', kind: 'sale' },
+    ] });
+    expect(builder.getSnapshot().lineItems[0]).toMatchObject({ unitPriceMinor: 800, regularUnitPriceMinor: 1000 });
+  });
+
   it.each([
     { name: 'Medusa #301', lines: [[850, 2], [1200, 1]], subtotalMinor: 2900, taxMinor: 551, totalMinor: 3451 },
     { name: 'Medusa vector A', lines: [[150, 1], [35, 3], [5, 1]], subtotalMinor: 260, taxMinor: 49, totalMinor: 309 },

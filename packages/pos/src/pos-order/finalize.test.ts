@@ -28,6 +28,34 @@ function discountedSale() {
 }
 
 describe('finalizeOrder', () => {
+  it('stores coupon ids and regular prices from a fully paid WooCommerce sale', () => {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+      pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+      getTaxRatePpm: () => 200000,
+      getTaxRates: () => [{ id: 1, code: 'VAT', label: 'VAT', rate: '20.0000', priority: 1, compound: false, shipping: true }],
+    }, couponContext: {
+      configs: new Map([['ten', { discount_type: 'percent', amount: '10', limit_usage_to_x_items: null,
+        product_ids: [], excluded_product_ids: [], product_categories: [], excluded_product_categories: [], exclude_sale_items: false }]]),
+      couponIds: new Map([['ten', '303']]), productCategories: new Map(), calcDiscountsSequentially: false,
+    } });
+    builder.addLine({ productId: '1', name: 'Item', unitPrice: { amount: 800, currency: 'GBP' }, regularUnitPriceMinor: 1000 });
+    builder.addLine({ productId: '2', name: 'Item 2', unitPrice: { amount: 500, currency: 'GBP' }, regularUnitPriceMinor: 500 });
+    builder.setCoupons(['ten']);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const snapshot = builder.getSnapshot();
+    const order = finalizeOrder(snapshot);
+    expect(order.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 130, discountTaxMinor: 26 }]);
+    expect(order.coupons).toEqual(snapshot.coupons);
+    expect(order.coupons![0]).not.toBe(snapshot.coupons![0]);
+    expect(order.lines.map((line) => line.regularUnitPriceMinor)).toEqual([1000, 500]);
+  });
+
+  it('omits coupons and regular prices when absent from the sale', () => {
+    const order = finalizeOrder(discountedSale().getSnapshot(), { capabilities: { orderCreate: 3 } });
+    expect(order).not.toHaveProperty('coupons');
+    for (const line of order.lines) expect(line).not.toHaveProperty('regularUnitPriceMinor');
+  });
+
   it('appends localWarnings, remaps builder payment ids by position, and leaves envelope bytes unchanged', () => {
     const builder = sale();
     builder.addPayment({ method: 'external', amountMinor: 1000 });

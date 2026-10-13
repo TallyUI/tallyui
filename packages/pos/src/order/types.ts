@@ -2,6 +2,7 @@ import type { Money, TaxRounding } from '@tallyui/core';
 
 export interface OrderCoupon {
   code: string; // lower-case code
+  couponId: string; // the connector's coupon id, as a string
   discountMinor: number; // WooCommerce coupon discount, ex tax, in integer minor units
   discountTaxMinor: number; // its tax, in integer minor units
 }
@@ -77,6 +78,8 @@ export interface LineItem {
   sku: string;
   imageUrl?: string;
   unitPriceMinor: number;     // as sold, integer
+  /** The catalogue's regular unit price, in the line's own tax mode like unitPriceMinor; absent on custom lines (ADR-077 d3). */
+  regularUnitPriceMinor?: number;
   quantity: number;           // integer >= 1
   taxLines: LineTaxLine[];    // stacked rates on the same net base (ADR-040)
   discounts: AppliedDiscount[];
@@ -158,6 +161,7 @@ export interface AddLineInput {
   sku?: string;
   imageUrl?: string;
   unitPrice: Money & { taxInclusive?: boolean }; // currency must equal the order currency; taxInclusive wins over the order's pricesIncludeTax
+  regularUnitPriceMinor?: number; // the catalogue's regular unit price, integer minor units in unitPrice's tax mode (ADR-077 d3)
   quantity?: number;          // default 1
   taxRates?: Array<{ code?: string; ratePpm: number }>; // default: [{ ratePpm: taxContext's rate for taxClass }]
   taxClass?: string;          // the product's tax class (ProductTraits.getTaxClass); ignored when taxRates is given
