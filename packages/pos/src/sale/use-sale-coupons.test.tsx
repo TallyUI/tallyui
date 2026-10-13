@@ -299,6 +299,27 @@ describe('useSale coupons', () => {
     expect(result.current.order.coupons).toBeUndefined();
   });
 
+  it('refuses a delayed coupon lookup that resolves while a failed save is pending', async () => {
+    const coupons = source();
+    let resolve!: (value: SaleCoupon) => void;
+    coupons.find.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const onSaleCompleted = vi.fn(async () => { throw new Error('Storage full'); });
+    const { result } = renderSale(coupons, { onSaleCompleted });
+    add(result);
+    let applying!: Promise<string | null>;
+    act(() => { applying = result.current.applyCoupon('ten'); });
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    expect(onSaleCompleted).toHaveBeenCalledOnce();
+    expect(result.current.saving).toBe(true);
+    expect(result.current.error).toBe('The sale could not be saved: Storage full');
+    await act(async () => {
+      resolve(coupon());
+      expect(await applying).toBe(SALE_SAVING);
+    });
+    expect(result.current.order.coupons).toBeUndefined();
+  });
+
   it('refuses a delayed coupon lookup after newSale replaces the builder', async () => {
     const coupons = source();
     let resolve!: (value: SaleCoupon) => void;
