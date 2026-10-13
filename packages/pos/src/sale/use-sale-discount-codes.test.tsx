@@ -81,6 +81,29 @@ describe('useSale discount codes', () => {
     expect([...state.accepted]).toEqual([['a', { label: 'a' }], ['b', { label: 'b' }]]);
   });
 
+  it('gives find a copy of the accepted codes that later applies do not change', async () => {
+    const codes = fake();
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => { release = resolve; });
+    let keys!: string[];
+    codes.find.mockImplementation(async (code, sale) => {
+      if (code === 'a') {
+        await waiting;
+        keys = [...sale.accepted.keys()];
+      }
+      return { found: { label: code } };
+    });
+    const { result } = renderSale(codes);
+    let applying!: Promise<string | null>;
+    act(() => { applying = result.current.applyCoupon('a'); });
+    await act(async () => {
+      expect(await result.current.applyCoupon('b')).toBeNull();
+      release();
+      expect(await applying).toBeNull();
+    });
+    expect(keys).toEqual([]);
+  });
+
   it('refuses with COUPONS_UNSUPPORTED when the implementation does not support the store', async () => {
     const codes = fake();
     codes.supports.mockReturnValue(false);

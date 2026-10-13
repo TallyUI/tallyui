@@ -8,7 +8,7 @@ export const COUPONS_UNSUPPORTED = "This store's plugin does not support coupons
 export interface SaleDiscountState<Accepted> {
   /** The sale as it stands. */
   order: Order;
-  /** The codes on the sale, in the order applied, each with what `find` gave for it. */
+  /** The codes on the sale, in the order applied, each with what `find` gave for it: a copy taken for this call, so codes accepted later do not appear in it. */
   accepted: ReadonlyMap<string, Accepted>;
   /** The categories the sale knows for each numeric product id; `beforeResume` may add to it. */
   categories: Map<number, { id: number }[]>;
