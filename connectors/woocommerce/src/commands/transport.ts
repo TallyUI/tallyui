@@ -37,9 +37,19 @@ export interface WooLocalOrder {
   shipping?: ReadonlyArray<{ id: string; netMicros?: string }>;
 }
 
+// Repeated until stable so no removal can join a new tag (CodeQL js/incomplete-multi-character-sanitization).
+function stripTags(text: string): string {
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(/<[^>]*>/g, '');
+  } while (text !== previous);
+  return text;
+}
+
 function decodeCouponMessage(message: unknown): string {
   const entities: Record<string, string> = { quot: '"', amp: '&', lt: '<', gt: '>', apos: "'" };
-  return (typeof message === 'string' ? message : '').replace(/<[^>]*>/g, '')
+  return stripTags(typeof message === 'string' ? message : '')
     .replace(/&(quot|amp|lt|gt|apos|#\d+|#x[\da-f]+);/gi, (_, entity: string) => entities[entity.toLowerCase()]
       ?? ((value: number) => value > 0x10FFFF ? _ : String.fromCodePoint(value))(
         parseInt(entity.slice(entity[1].toLowerCase() === 'x' ? 2 : 1), entity[1].toLowerCase() === 'x' ? 16 : 10)))
