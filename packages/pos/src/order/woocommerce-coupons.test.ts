@@ -214,6 +214,10 @@ describe('WooCommerce coupons in the order builder', () => {
     expect(() => builder.setCoupons(['fixed3', 'x'], missingId)).toThrow(new RangeError('Coupon x has no id'));
     expect(builder.getSnapshot()).toBe(before);
     expect(emitted).toHaveBeenCalledTimes(1);
+    const emptyId = { ...missingId, couponIds: new Map([...couponContext.couponIds, ['x', '']]) };
+    expect(() => builder.setCoupons(['fixed3', 'x'], emptyId)).toThrow(new RangeError('Coupon x has no id'));
+    expect(builder.getSnapshot()).toBe(before);
+    expect(emitted).toHaveBeenCalledTimes(1);
     expect(() => builder.setCoupons(['x'])).toThrow(new RangeError('Unknown coupon x'));
     expect(builder.getSnapshot()).toBe(before);
     expect(emitted).toHaveBeenCalledTimes(1);

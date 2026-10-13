@@ -580,7 +580,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         if (!config) throw new RangeError(`Unknown coupon ${code}`);
         // The engine needs the regular price as WCPOS pos_data to find sale lines, which would also reset manual price cuts; lifting this waits (ADR-077 d3).
         if (config.exclude_sale_items) throw new RangeError(`Coupon ${code} excludes sale items`);
-        if (nextContext!.couponIds.get(code) === undefined) throw new RangeError(`Coupon ${code} has no id`);
+        const couponId = nextContext!.couponIds.get(code);
+        if (couponId === undefined || couponId === '') throw new RangeError(`Coupon ${code} has no id`);
       }
       if (context) couponContext = context;
       couponCodes = normalized;

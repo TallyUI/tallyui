@@ -1,4 +1,4 @@
-import type { CommandResult } from '../types'
+import type { CommandResult, OrderRefundRejectionCode } from '../types'
 import type { OrderRejectionCode } from './total-warnings'
 import type { RegisterConflictCode } from './register-outcome'
 
@@ -9,12 +9,12 @@ export type CommandRejectionCode =
   | 'insufficient_stock' | 'unsupported_tax_mode' | 'internal_error'
   // Both are order.create v6 refusals (ADR-077 d4).
   | 'coupon_invalid' | 'total_mismatch'
-  | OrderRejectionCode | RegisterConflictCode
+  | OrderRejectionCode | RegisterConflictCode | OrderRefundRejectionCode
 
 /**
  * The rejected result for a platform-native error the plugin has judged permanent (a replay would fail
  * the same way, e.g. a Vendure ErrorResult code) and the contract has no code for. `platform_error` is
- * for `order.create` only, for now: a rejected register command halts that register's queue until c2c,
+ * for `order.create` and `order.refund` (ADR-080): a rejected register command halts that register's queue until c2c,
  * so register refusals use the ADR-068 codes.
  *
  * Return it only when the platform made no durable change for this command: the plugin threw so its
@@ -41,7 +41,7 @@ export function platformErrorResult(id: string, platformCode: string, platformMe
  * the correlation id links it to the plugin's log.
  *
  * Database, network, unknown-SQLSTATE and any other unclassifiable errors stay transient (503), never
- * `internal_error`. `order.create` only, as for `platform_error`.
+ * `internal_error`. `order.create` and `order.refund` (ADR-080), as for `platform_error`.
  *
  * See ADR-038's `internal_error` amendment (needs-admin on a failed compensation; on Vendure only
  * before the first write).
