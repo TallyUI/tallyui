@@ -81,7 +81,7 @@ it('inserts a finalised WooCommerce coupon sale into the AJV-validated v9 collec
     builder.addLine({ productId: '2', name: 'Item 2', unitPrice: { amount: 500, currency: 'GBP' }, regularUnitPriceMinor: 500 });
     builder.setCoupons(['ten']);
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
-    const order = finalizeOrder(builder.getSnapshot());
+    const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 6 } });
     expect(order.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 130, discountTaxMinor: 26 }]);
     const doc = await pos_orders.insert(order);
     expect(doc.toJSON()).toStrictEqual(order);
