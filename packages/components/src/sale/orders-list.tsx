@@ -5,6 +5,12 @@ import { needsAttention, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { orderReference } from './order-reference';
 import { sinceText } from './since-text';
 
+/** One order from the store's own history (ADR-052 amendment 1), mapped by the app from its platform. */
+export type OrderHistoryRow = {
+  id: string; clientOrderId?: string; reference: string; placedAt: string;
+  totalMinor: number; currency: string; itemCount: number; stateLabel: string;
+};
+
 const STATUS_LABEL = { pending: 'Waiting to sync', applied: 'Synced', rejected: 'Not accepted' };
 /** `figures_mismatch`'s labels; a field a newer store sends that isn't here is shown by its raw name. */
 const FIGURE_LABELS = new Map([['subtotalMinor', 'Subtotal'], ['taxMinor', 'Tax'], ['discountMinor', 'Discount']]);
@@ -36,10 +42,12 @@ function defaultFormatDate(iso: string) {
 /** The "Needs attention" (when not empty) and "Recent" orders, lifted from medusapos/app's orders screen (ADR-052).
  * `onRetry` is the outbox's `requeue`; `formatDate` replaces the app's date util; `footer` is the app's own content
  * (medusapos: the feedback link). The router and session redirect stay in the app. `stuck` is the outbox's
- * `state.stuck` (`useOrderOutbox`): those pending orders need attention too, each with its own entry's reason and since. */
-export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck }: {
+ * `state.stuck` (`useOrderOutbox`): those pending orders need attention too, each with its own entry's reason and since.
+ * `history` adds read-only store order rows to Recent (ADR-052 amendment 1). */
+export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history }: {
   orders: PosOrder[]; onRetry(orderIds: string[]): Promise<number>; formatDate?: (iso: string) => string; footer?: ReactNode;
   stuck?: OutboxState['stuck'];
+  history?: OrderHistoryRow[];
 }) {
   const retrying = useRef(new Set<string>());
   const [retryingIds, setRetryingIds] = useState(new Set<string>());
@@ -50,12 +58,27 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
     }
     setRetryingIds(new Set(retrying.current));
   }, [orders]);
+  const shown = (history ?? []).filter((row) => row.clientOrderId === undefined || !orders.some((order) => order.id === row.clientOrderId));
+  const recent = shown.length === 0 ? orders : [...orders, ...shown].sort((a, b) => {
+    const aTime = Date.parse('placedAt' in a ? a.placedAt : a.createdAt);
+    const bTime = Date.parse('placedAt' in b ? b.placedAt : b.createdAt);
+    if (Number.isNaN(aTime)) return Number.isNaN(bTime) ? 0 : 1;
+    if (Number.isNaN(bTime)) return -1;
+    return bTime - aTime;
+  });
   return <ScrollView className="flex-1 bg-background p-4">
-    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section) => (
+    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section) => (
       <View key={section.title} className="mb-6 gap-3">
         <Text accessibilityRole="header" className="text-xl font-semibold text-foreground">{section.title}</Text>
-        {section.title === 'Recent' && orders.length === 0 ? <Text testID="orders-empty" className="text-muted-foreground">No sales yet. Completed sales appear here.</Text> : null}
+        {section.title === 'Recent' && orders.length === 0 && shown.length === 0 ? <Text testID="orders-empty" className="text-muted-foreground">No sales yet. Completed sales appear here.</Text> : null}
         {section.orders.map((order) => {
+          if ('placedAt' in order) {
+            const row = order;
+            return <View key={`history:${row.id}`} testID={`history-row-${row.id}`} className="gap-1 rounded-md border border-border bg-card p-3">
+              <Text className="text-foreground">{`Order ${row.reference} · ${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`}</Text>
+              <Text className="text-muted-foreground">{formatDate(row.placedAt)} · {formatMoney({ amount: row.totalMinor, currency: row.currency })} · {row.stateLabel}</Text>
+            </View>;
+          }
           const count = order.lines.reduce((sum, line) => sum + line.quantity, 0);
           const key = `${section.title}:${order.id}`;
           const isExpanded = expanded.has(key);

@@ -1,5 +1,50 @@
 # @tallyui/components
 
+## 3.9.2
+
+### Patch Changes
+
+- Updated dependencies [fc37285]
+  - @tallyui/core@3.9.2
+  - @tallyui/pos@3.9.2
+  - @tallyui/primitives@3.9.2
+  - @tallyui/theme@3.9.2
+
+## 3.9.1
+
+### Patch Changes
+
+- d0df307: `OrdersList` shows the store's order history next to the till's own sales (ADR-052 amendment 1). It takes an optional `history` of platform-neutral rows (`OrderHistoryRow`: `id`, `clientOrderId?`, `reference`, `placedAt`, `totalMinor`, `currency`, `itemCount`, `stateLabel`), which the app maps from its own store.
+
+  - A history row whose `clientOrderId` matches an outbox order is hidden while that order is in `orders`.
+  - Recent merges the two lists, newest first.
+  - A history row is read-only: it has no detail, no Retry, and never appears under Needs attention.
+
+  Without `history`, `OrdersList` renders exactly as before.
+
+  - @tallyui/core@3.9.1
+  - @tallyui/pos@3.9.1
+  - @tallyui/primitives@3.9.1
+  - @tallyui/theme@3.9.1
+
+## 3.9.0
+
+### Patch Changes
+
+- c1bf800: Every exports entry gains a `default` condition so CommonJS and `require`-condition resolvers (Node `require`, webpack, Snack's bundler) resolve the packages; `smoke:pack` checks `require.resolve` for every entry.
+- Updated dependencies [39a4583]
+- Updated dependencies [c1bf800]
+- Updated dependencies [3e2245a]
+- Updated dependencies [a3dc028]
+- Updated dependencies [2a79339]
+- Updated dependencies [a51d0bb]
+- Updated dependencies [006cfb2]
+- Updated dependencies [19093c2]
+  - @tallyui/core@3.9.0
+  - @tallyui/pos@3.9.0
+  - @tallyui/primitives@3.9.0
+  - @tallyui/theme@3.9.0
+
 ## 3.8.0
 
 ### Patch Changes
