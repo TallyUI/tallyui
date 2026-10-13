@@ -201,7 +201,7 @@ describe('readWooCapabilities', () => {
   it('reads the captured rounding flag and the supported order version with context requests', async () => {
     expect(WOO_ORDER_CREATE_VERSION).toBe(5);
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+      orderCreate: 6, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
       multiplePayments: false,
       coupons: true,
       lineTax: { none: true, classes: true },
@@ -240,10 +240,10 @@ describe('readWooCapabilities', () => {
     });
   });
 
-  it('accepts an explicit v5 advertisement independently of site version', async () => {
+  it('advertises v6 with an explicit v5 advertisement and the coupons gate', async () => {
     statusBody = { capabilities: ['order_create_v5'] };
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      orderCreate: 6, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
       coupons: true,
       lineTax: { none: true, classes: true },
     });
@@ -252,7 +252,7 @@ describe('readWooCapabilities', () => {
   it('accepts an explicit v5 advertisement with payment lists', async () => {
     statusBody = { capabilities: ['order_create_v5', 'order_payments_list'] };
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: true,
+      orderCreate: 6, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: true,
       coupons: true,
       lineTax: { none: true, classes: true },
     });
@@ -273,7 +273,7 @@ describe('readWooCapabilities', () => {
   it('reads subtotal rounding enabled', async () => {
     storesBody = [{ ...stores[0], tax_round_at_subtotal: 'yes' }];
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
+      orderCreate: 6, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
       multiplePayments: false,
       coupons: true,
       lineTax: { none: true, classes: true },
@@ -309,6 +309,16 @@ describe('readWooCapabilities', () => {
   it.each(['1.9.0', '1.9', '1.9.0+build.5', '1.9.1', '1.10.0', '2.0', ' 1.10.20 '])('accepts coupons for site version %s', async (version) => {
     siteBody = { wcpos_version: version };
     expect(await readWooCapabilities(context)).toMatchObject({ coupons: true });
+  });
+
+  it.each([
+    [['order_create_v5'], '1.9.0', 6, true],
+    [['order_create_v5'], '1.8.99', 5, false],
+    [[], '1.9.0', 3, true],
+  ])('uses capabilities %j and site %s to advertise order version %i, coupons=%s', async (capabilities, wcpos_version, orderCreate, coupons) => {
+    statusBody = { capabilities };
+    siteBody = { wcpos_version };
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate, coupons });
   });
 
   it.each(['1.8.11', '1.8.8', '1.9.0-beta.1', '1.9.0-rc.2', '0.9.9', '', 'v1.10.0', '1.x', 'latest'])('rejects coupons for site version %s', async (version) => {

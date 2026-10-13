@@ -15,6 +15,9 @@ export interface WooCommandTransportOptions {
   /** True when the store's `/status` lists `order_payments_list` (`ServerCapabilities.multiplePayments`): an order may
    * then carry several payments, recorded in `_woocommerce_pos_payments`. */
   acceptsPaymentsList?: boolean | (() => boolean | Promise<boolean>);
+  /** True when the store passes the coupons gate (`ServerCapabilities.coupons`, ADR-077 R2/R3). Read at push time;
+   * absent means closed, so a sale still carrying coupons is refused with `coupon_invalid` and no request is made. */
+  acceptsCoupons?: boolean | (() => boolean | Promise<boolean>);
 }
 
 export function wooMinorFromDecimal(text: string, currency: string): number | undefined {
@@ -29,9 +32,29 @@ export function wooMinorFromDecimal(text: string, currency: string): number | un
 }
 
 export interface WooLocalOrder {
-  lines: ReadonlyArray<{ id: string; netMicros?: string }>;
+  lines: ReadonlyArray<{ id: string; netMicros?: string; /** The line's discount in its own tax mode (gross when inclusive), as stored. */ discountMinor?: number }>;
   fees?: ReadonlyArray<{ id: string; netMicros?: string }>;
   shipping?: ReadonlyArray<{ id: string; netMicros?: string }>;
+}
+
+// Repeated until stable so no removal can join a new tag (CodeQL js/incomplete-multi-character-sanitization).
+function stripTags(text: string): string {
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(/<[^>]*>/g, '');
+  } while (text !== previous);
+  return text;
+}
+
+function decodeCouponMessage(message: unknown): string {
+  const entities: Record<string, string> = { quot: '"', amp: '&', lt: '<', gt: '>', apos: "'" };
+  return stripTags(typeof message === 'string' ? message : '')
+    .replace(/&(quot|amp|lt|gt|apos|#\d+|#x[\da-f]+);/gi, (_, entity: string) => entities[entity.toLowerCase()]
+      ?? ((value: number) => value > 0x10FFFF ? _ : String.fromCodePoint(value))(
+        parseInt(entity.slice(entity[1].toLowerCase() === 'x' ? 2 : 1), entity[1].toLowerCase() === 'x' ? 16 : 10)))
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ').trim() || 'status_400';
 }
 
 export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLocalOrder, options?: { paymentsList?: boolean }): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
@@ -76,12 +99,23 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
       subtotal = total = net;
     }
     const custom = line.custom;
-    const price = major(line.unitPriceMinor);
+    let price = major(line.unitPriceMinor);
+    if (p.coupons?.length) {
+      const discount = (line.taxInclusive ?? p.pricesIncludeTax) && (line.discountMinor ?? 0) > 0
+        ? local?.lines.find((stored) => stored.id === line.clientLineId)?.discountMinor : line.discountMinor ?? 0;
+      if (discount === undefined) return { error: { code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } };
+      const quantity = BigInt(line.quantity), minor = BigInt(line.unitPriceMinor) * quantity - BigInt(discount);
+      const divisor = quantity * 10n ** BigInt(digits), micros = (minor * 1000000n * 2n + divisor) / (divisor * 2n);
+      price = minor % quantity === 0n ? major(Number(minor / quantity))
+        : `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;
+    }
+    const regular_price = p.coupons?.length && line.regularUnitPriceMinor !== undefined ? major(line.regularUnitPriceMinor) : price;
     line_items.push(custom ? {
       product_id: 0, name: custom.name, ...(custom.sku ? { sku: custom.sku } : {}), quantity: line.quantity, subtotal, total,
       tax_class: custom.taxClass ?? '', meta_data: [{ key: '_woocommerce_pos_data',
-        value: JSON.stringify({ price, regular_price: price, tax_status: custom.taxStatus }) }],
-    } : { product_id: Number(line.variantId), quantity: line.quantity, subtotal, total });
+        value: JSON.stringify({ price, regular_price, tax_status: custom.taxStatus }) }],
+    } : { product_id: Number(line.variantId), quantity: line.quantity, subtotal, total,
+      ...(p.coupons?.length ? { meta_data: [{ key: '_woocommerce_pos_data', value: JSON.stringify({ price, regular_price }) }] } : {}) });
   }
   const fee_lines = [], shipping_lines = [];
   for (const fee of p.fees ?? []) {
@@ -114,6 +148,7 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     line_items,
     ...(fee_lines.length ? { fee_lines } : {}),
     ...(shipping_lines.length ? { shipping_lines } : {}),
+    ...(p.coupons?.length ? { coupon_lines: p.coupons.map(({ code }) => ({ code })) } : {}),
     meta_data,
     ...(p.customer?.customerId && /^\d+$/.test(p.customer.customerId) ? { customer_id: Number(p.customer.customerId) } : {}),
     ...(p.customer?.email ? { billing: { email: p.customer.email } } : {}),
@@ -130,8 +165,16 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
     async send(batch, context) {
       const paymentsList = typeof options.acceptsPaymentsList === 'function'
         ? await options.acceptsPaymentsList() : options.acceptsPaymentsList ?? false;
+      const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && (typeof options.acceptsCoupons === 'function'
+        ? await options.acceptsCoupons() : options.acceptsCoupons ?? false);
       const results: CommandResult[] = [];
       for (const envelope of batch) {
+        if (envelope.payload.coupons?.length && !coupons) {
+          results.push({ id: envelope.id, status: 'rejected', error: { code: 'coupon_invalid',
+            message: "This store's WooCommerce POS plugin does not accept coupons (1.9.0 or later is needed). Remove the coupon and complete the sale again.",
+            data: { storeCode: 'coupons_unsupported' } } });
+          continue;
+        }
         const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id), { paymentsList });
         if ('error' in mapped) {
           results.push({ id: envelope.id, status: 'rejected', error: mapped.error });
@@ -172,6 +215,12 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
                 }] } : {}) });
                 continue;
               }
+            } else if (status === 400 && body?.code === 'woocommerce_rest_invalid_coupon') {
+              const message = decodeCouponMessage(body?.message), quoted = /"([^"]*)"/.exec(message)?.[1];
+              const couponCode = envelope.payload.coupons?.find(({ code }) => code.toLowerCase() === quoted?.toLowerCase())?.code;
+              results.push({ id: envelope.id, status: 'rejected', error: { code: 'coupon_invalid', message,
+                data: { storeCode: body.code, ...(couponCode ? { couponCode } : {}) } } });
+              continue;
             } else if (status === 400 || status === 422) {
               results.push({ id: envelope.id, status: 'rejected', error: {
                 code: status === 400 && body?.code === 'wcpos_insufficient_stock' ? 'insufficient_stock' : 'invalid_payload',
