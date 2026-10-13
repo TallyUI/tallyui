@@ -5055,7 +5055,9 @@ interface OrderCreatePayload {
         used up when the store would accept it.
       - Other registers see the use only on their own next pull of that coupon.
     - **Tests.** The reviewer applied 21 source mutations and 17 refetch mutations. All were killed except two refetch
-      mutations, which are equivalent. They are listed in the PR.
+      mutations, which are equivalent. The review fixes (2026-10-13) added 8 more, all killed, one of them by
+      `packages/integration-tests/src/woo-coupon-refetch-wiring.test.ts`, which also proves the wiring typechecks. They
+      are listed in the PR.
 
 ## ADR-078 Register v2: take over a register, supersede its session, resume on the same device
 
