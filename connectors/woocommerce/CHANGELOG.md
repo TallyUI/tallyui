@@ -1,5 +1,24 @@
 # @tallyui/connector-woocommerce
 
+## 3.9.0
+
+### Minor Changes
+
+- a3dc028: The order builder can apply WooCommerce coupons (#501, ADR-077 step d1). `createOrderBuilder` takes an optional `couponContext` (the coupon configs, product categories and the store's sequential-discount setting), and `setCoupons(codes)` replays the codes through the ported engine on a WooCommerce tax context. The order then carries `coupons` (`{ code, discountMinor, discountTaxMinor }`), its lines and totals are the post-coupon figures, and `display.coupons` shows one row per coupon while the display lines keep their pre-coupon amounts. Codes are trimmed, lower-cased and deduplicated. An unknown code, or one that excludes sale items, throws a `RangeError`. Other tax contexts ignore the codes. Drafts do not save coupons yet (step d2), and `useSale` does not expose them yet (step d3). `@tallyui/core` also exports `woocommerceCoupons.calculateOrderTotals` and `StoreSettings.calcDiscountsSequentially`, which the WooCommerce connector now reads from the store's settings.
+- 006cfb2: `ServerCapabilities` gains an optional `coupons` (#501, ADR-077 ruling R3). Absent means the store does not accept an order's coupons. The WooCommerce connector's `readWooCapabilities` now also reads `GET wcpos/v2/site`. `coupons` is true only when its `wcpos_version` is woocommerce-pos 1.9.0 or later; every unclear or failed read gives false. `orderCreate` is decided as before. Nothing reads `coupons` yet.
+- 19093c2: The WooCommerce connector now has a `coupons` collection (#500, ADR-077 amendment 2). Its only source is a catalogue reconcile over the store's published coupons. Each coupon's fingerprint is `date_modified_gmt|usage_count|used_by`, because using a coupon does not move its modified time. A coupon whose fingerprint differs is refetched by id. A draft arrives deleted. A coupon that is trashed or no longer published is removed only after the store confirms it by id. `TallyConnector.reconcile` gains an optional `coupons` key. A connector without it has no coupons. Nothing reads the collection yet, and no app starts the coupons reconcile yet.
+
+### Patch Changes
+
+- c1bf800: Every exports entry gains a `default` condition so CommonJS and `require`-condition resolvers (Node `require`, webpack, Snack's bundler) resolve the packages; `smoke:pack` checks `require.resolve` for every entry.
+- Updated dependencies [39a4583]
+- Updated dependencies [c1bf800]
+- Updated dependencies [3e2245a]
+- Updated dependencies [a3dc028]
+- Updated dependencies [006cfb2]
+- Updated dependencies [19093c2]
+  - @tallyui/core@3.9.0
+
 ## 3.8.0
 
 ### Minor Changes

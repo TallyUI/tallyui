@@ -1,0 +1,29 @@
+---
+title: Tender
+description: Cash or card terminal payment controls for a sale
+---
+
+## Import
+
+```tsx
+import { Tender } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useSale } from '@tallyui/pos';
+import { Tender } from '@tallyui/components';
+
+// Inside a component under TaxProvider.
+const sale = useSale(settings, { registerId, cashierRef });
+<Tender sale={sale} />
+```
+
+Renders only during the sale's tender stage. Cash payments show an amount input, change, and any balance due; card terminal payments show the total and a reference input. Includes completion, error, continuation, and Back controls as the sale state requires.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |

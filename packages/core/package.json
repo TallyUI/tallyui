@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/core",
-  "version": "3.8.0",
+  "version": "3.9.0",
   "type": "module",
   "description": "Core interfaces, traits, and context providers for Tally UI",
   "main": "./dist/index.js",
@@ -10,12 +10,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "source": "./src/index.ts"
+      "source": "./src/index.ts",
+      "default": "./dist/index.js"
     },
     "./rxdb": {
       "types": "./dist/rxdb/index.d.ts",
       "import": "./dist/rxdb/index.js",
-      "source": "./src/rxdb/index.ts"
+      "source": "./src/rxdb/index.ts",
+      "default": "./dist/rxdb/index.js"
     },
     "./server": {
       "types": "./dist/server/index.d.ts",

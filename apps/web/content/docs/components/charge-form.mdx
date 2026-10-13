@@ -1,0 +1,35 @@
+---
+title: ChargeForm
+description: Fee, shipping, or custom item entry with amount and tax choices
+---
+
+## Import
+
+```tsx
+import { ChargeForm } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ChargeForm
+  currency="EUR"
+  lineTax={{ none: true, classes: true }}
+  taxClasses={[{ id: 'reduced', label: 'Reduced rate' }]}
+  onApply={(charge) => applyCharge(charge)}
+  onClose={() => setChargeOpen(false)}
+/>
+```
+
+Renders a fee, shipping, or custom item selector with name and amount inputs, available tax choices, and Apply and Cancel buttons. A missing name, invalid amount, or refusal from `onApply` is shown inline; successful application calls `onClose`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `currency` | `string` | required | Currency used to parse the amount into minor units and label its input |
+| `lineTax` | `{ none: boolean; classes: boolean }` | --- | Enables the No tax switch and tax class choices when shipping tax is not taken from the store |
+| `taxClasses` | `ReadonlyArray<{ id: string; label: string }>` | --- | Tax class choices shown when `lineTax.classes` is enabled and the list is nonempty |
+| `shippingTaxFromStore` | `boolean` | --- | For shipping, replaces tax controls with a store tax class notice and omits tax overrides from the submitted charge |
+| `onApply` | `(charge: { kind: 'fee' \| 'shipping' \| 'custom'; name: string; amountMinor: number; taxStatus?: 'none'; taxClass?: string }) => string \| null` | required | Receives the charge with a trimmed name and amount in minor units; return a refusal or `null` once applied |
+| `onClose` | `() => void` | required | Called on Cancel or after `onApply` returns `null` |

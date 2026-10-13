@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import type { BatchTooLargeBody, OrderCreateEnvelope, RegisterCommandEnvelope } from '../types'
+import type { BatchTooLargeBody, OrderCreateEnvelope, OrderRefundEnvelope, RegisterCommandEnvelope } from '../types'
 import { precheckCommand, validateBatch, type ValidatedCommandEnvelope } from './batch'
 import { commandFingerprint } from './fingerprint'
 import type { CommandRejectionCode } from './rejection-codes'
@@ -22,15 +22,19 @@ describe('server envelope types', () => {
     const envelope = {} as ValidatedCommandEnvelope
     if (envelope.type === 'order.create') {
       expectTypeOf(envelope.version).toEqualTypeOf<number>()
+    } else if (envelope.type === 'order.refund') {
+      expectTypeOf(envelope.version).toEqualTypeOf<number>()
     } else {
       expectTypeOf(envelope).toEqualTypeOf<RegisterCommandEnvelope<Record<string, unknown>>>()
     }
   })
 
-  it('precheckCommand accepts a register, an order.create and a validated envelope without a cast', () => {
+  it('precheckCommand accepts a register, an order.create, an order.refund and a validated envelope without a cast', () => {
     const server = { orderCreate: [1, 2, 3], register: [1] } as const
     precheckCommand({} as RegisterCommandEnvelope, server)
     precheckCommand({} as OrderCreateEnvelope, server)
+    precheckCommand({} as OrderRefundEnvelope, server)
+    precheckCommand({} as OrderRefundEnvelope, { ...server, orderRefund: [1] })
     precheckCommand({} as ValidatedCommandEnvelope, server)
   })
 
@@ -68,6 +72,7 @@ describe('server envelope types', () => {
       | 'unknown_variant' | 'invalid_quantity' | 'underpaid' | 'unsupported_currency'
       | 'register_session_already_open' | 'register_session_superseded' | 'register_supersede_forbidden'
       | 'register_session_closed' | 'register_closure_exists' | 'register_closure_number_invalid'
+      | 'nothing_to_refund' | 'quantity_exceeds' | 'amount_mismatch' | 'order_state' | 'not_till_order' | 'forbidden' | 'no_open_session'
     >()
   })
 })

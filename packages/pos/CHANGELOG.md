@@ -1,5 +1,25 @@
 # @tallyui/pos
 
+## 3.9.0
+
+### Minor Changes
+
+- 3e2245a: `order.refund` version 1 (ADR-080), an online refund command on the command channel. `@tallyui/core` adds the envelope and payload types, `refundPayloadErrors` (the strict shape check), the `order.refund` type in `validateBatch`, an optional `orderRefund` list in `precheckCommand`, the `refund` result in `parseCommandResult`, the refusal codes (`nothing_to_refund`, `quantity_exceeds`, `amount_mismatch`, `order_state`, `not_till_order`, `forbidden`, `no_open_session`), the `orderRefund` capability from `/tally/v1/info`, and refunds in `deriveSessionFigures`: a session's expected figures fall by the refunds it made, and it returns `refundsTotalMinor` when refunds are passed (callers that pass none get the same result as before). `@tallyui/pos` adds `sendOrderRefund(transport, envelope)`, which sends one refund and never queues it. `@tallyui/connector-vendure`'s `getVendureOrder` also reads each line's placed quantity and prorated prices and each refund's amounts and metadata, and `vendureRefundable(order)` computes what is left to refund.
+- a3dc028: The order builder can apply WooCommerce coupons (#501, ADR-077 step d1). `createOrderBuilder` takes an optional `couponContext` (the coupon configs, product categories and the store's sequential-discount setting), and `setCoupons(codes)` replays the codes through the ported engine on a WooCommerce tax context. The order then carries `coupons` (`{ code, discountMinor, discountTaxMinor }`), its lines and totals are the post-coupon figures, and `display.coupons` shows one row per coupon while the display lines keep their pre-coupon amounts. Codes are trimmed, lower-cased and deduplicated. An unknown code, or one that excludes sale items, throws a `RangeError`. Other tax contexts ignore the codes. Drafts do not save coupons yet (step d2), and `useSale` does not expose them yet (step d3). `@tallyui/core` also exports `woocommerceCoupons.calculateOrderTotals` and `StoreSettings.calcDiscountsSequentially`, which the WooCommerce connector now reads from the store's settings.
+- 2a79339: The till keeps a record of its refunds (ADR-080 amendment 1). `posRefundSchema` and `posRefundCollection()` define `pos_refunds`, a new local-only collection that the app adds as it adds `cash_movements`. `submitOrderRefund({ refunds, transport, envelope })` records each refund before it is sent and then stores the store's answer: `applied`, `rejected`, `unsent` (the store did not take the batch) or still `pending` (the answer is unknown, so resend the same envelope). The session's applied refunds now lower its expected figures. `deriveExpected` and `writeClosure` take optional `refunds`. The closure then fills `period_refunds_total_minor`, each method's `refunds_minor` and `refund_count`, and lists `refund_ids` and `pending_refund_ids`. `useRegisterSession` takes an optional `refunds` collection. Callers that pass no refunds get the same figures and closures as before.
+
+### Patch Changes
+
+- c1bf800: Every exports entry gains a `default` condition so CommonJS and `require`-condition resolvers (Node `require`, webpack, Snack's bundler) resolve the packages; `smoke:pack` checks `require.resolve` for every entry.
+- a51d0bb: `takeOverSession` now checks register contract 2 itself (#498). It takes an optional `registerContract` (the store's `capabilities.register`). Below 2, or when the contract is missing, it refuses with `RegisterTakeOverError` (`REGISTER_TAKEOVER_UNSUPPORTED`) before it reads or writes anything. A direct caller therefore can no longer queue a version 2 open for a register v1 store. `useRegisterSession` passes its contract through, so the hook behaves as before. Direct callers of `takeOverSession` must now pass `registerContract`.
+- Updated dependencies [39a4583]
+- Updated dependencies [c1bf800]
+- Updated dependencies [3e2245a]
+- Updated dependencies [a3dc028]
+- Updated dependencies [006cfb2]
+- Updated dependencies [19093c2]
+  - @tallyui/core@3.9.0
+
 ## 3.8.0
 
 ### Minor Changes

@@ -43,7 +43,33 @@ export function parseCommandResult(value: unknown): CommandResult {
     if (!object(input.register)) throw new CommandResultError('Invalid register')
     result.register = input.register as RegisterCommandResult
   }
-  if (result.status === 'applied' && result.serverRefs === undefined && result.register === undefined) {
+  if (input.refund !== undefined) {
+    if (!object(input.refund)) throw new CommandResultError('Invalid refund')
+    const refund = input.refund as Record<string, unknown>
+    if (!Number.isSafeInteger(refund.totalMinor) || (refund.totalMinor as number) < 0) throw new CommandResultError('Invalid refund.totalMinor')
+    if (!object(refund.byMethod)) throw new CommandResultError('Invalid refund.byMethod')
+    const byMethod = Object.fromEntries(Object.entries(refund.byMethod as Record<string, unknown>).map(([key, amount]) => {
+      if (!key.length) throw new CommandResultError('Invalid refund.byMethod')
+      if (!Number.isSafeInteger(amount) || (amount as number) < 0) throw new CommandResultError(`Invalid refund.byMethod.${key}`)
+      return [key, amount as number]
+    }))
+    if (Object.values(byMethod).reduce((sum, amount) => sum + amount, 0) !== refund.totalMinor) throw new CommandResultError('Invalid refund.byMethod')
+    if (!Array.isArray(refund.refunds) || refund.refunds.length === 0) throw new CommandResultError('Invalid refund.refunds')
+    const refunds = refund.refunds.map((value: unknown, index) => {
+      const field = `refund.refunds[${index}]`
+      if (!object(value)) throw new CommandResultError(`Invalid ${field}`)
+      const entry = value as Record<string, unknown>
+      for (const key of ['id', 'paymentId']) {
+        if (typeof entry[key] !== 'string' || entry[key].length === 0) throw new CommandResultError(`Invalid ${field}.${key}`)
+      }
+      if (!Number.isSafeInteger(entry.totalMinor) || (entry.totalMinor as number) < 0) throw new CommandResultError(`Invalid ${field}.totalMinor`)
+      if (typeof entry.state !== 'string' || entry.state.length === 0) throw new CommandResultError(`Invalid ${field}.state`)
+      return { id: entry.id as string, paymentId: entry.paymentId as string, totalMinor: entry.totalMinor as number, state: entry.state }
+    })
+    if (refunds.reduce((sum, entry) => sum + entry.totalMinor, 0) !== refund.totalMinor) throw new CommandResultError('Invalid refund.refunds')
+    result.refund = { totalMinor: refund.totalMinor as number, byMethod, refunds }
+  }
+  if (result.status === 'applied' && result.serverRefs === undefined && result.register === undefined && result.refund === undefined) {
     throw new CommandResultError('Invalid serverRefs: required for applied')
   }
   if (input.warnings !== undefined) {

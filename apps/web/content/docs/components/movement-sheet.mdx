@@ -1,0 +1,36 @@
+---
+title: MovementSheet
+description: Cash movement dialog with amount, reason, and record controls
+---
+
+## Import
+
+```tsx
+import { MovementSheet } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<MovementSheet
+  register={register}
+  type="paid_in"
+  currency="EUR"
+  onOpenChange={(open) => {
+    if (!open) setMovementType(null);
+  }}
+/>
+```
+
+Renders an open dialog for the chosen paid-in, paid-out, or no-sale movement with a reason input and Record button. No-sale movements hide the amount input, record zero, and call `onOpenDrawer` after recording when supplied.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `register` | `ReturnType<typeof useRegisterSession>` | required | Register session state and actions; records through `register.actions.recordMovement` |
+| `type` | `MovementType` | required | Movement type chosen before mounting the sheet |
+| `currency` | `string` | required | ISO 4217 code used to parse the entered amount into minor units |
+| `onDone` | `(id: string, type: MovementType, amountMinor: number) => void` | --- | Called with the recorded movement's ID, type, and amount |
+| `onOpenChange` | `(open: boolean) => void` | required | Receives dialog visibility changes; called with `false` after recording |
+| `onOpenDrawer` | `() => void` | --- | Called after recording a no-sale movement to open the drawer |

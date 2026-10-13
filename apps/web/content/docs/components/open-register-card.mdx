@@ -1,0 +1,31 @@
+---
+title: OpenRegisterCard
+description: Register opening form with a starting cash amount and float choices
+---
+
+## Import
+
+```tsx
+import { OpenRegisterCard } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OpenRegisterCard
+  register={register}
+  currency="EUR"
+  configuredFloatMinor={10000}
+/>
+```
+
+Renders a starting cash input, available configured-float and last-counted-cash choices, any opening variance, and an Open register button. The initial amount uses the configured float before the last counted cash; opening calls `register.actions.openSession`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `register` | `ReturnType<typeof useRegisterSession>` | required | Register session state and actions; reads the last closure and opens through `register.actions.openSession` |
+| `currency` | `string` | required | ISO 4217 code used to parse and format the entered amount |
+| `configuredFloatMinor` | `number \| null` | --- | Configured opening float in minor units, preferred over the last counted cash |
+| `className` | `string` | --- | Override container styles |

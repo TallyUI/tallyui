@@ -41,6 +41,8 @@ export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-setti
 export type {
   CommandType, CommandEnvelope, CommandStatus, CommandServerRefs,
   RegisterCommandType, RegisterCommandEnvelope, AnyCommandEnvelope,
+  OrderRefundLine, OrderRefundPayload, OrderRefundEnvelope, OrderRefundResult, OrderRefundRejectionCode,
+  OrderRefundQuantityExceedsData, OrderRefundAmountMismatchData, OrderRefundOrderStateData, OrderRefundNoOpenSessionData,
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,

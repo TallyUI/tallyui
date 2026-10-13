@@ -1,0 +1,41 @@
+---
+title: RegisterPicker
+description: Register selection card listing the store's registers
+---
+
+## Import
+
+```tsx
+import { RegisterPicker } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<RegisterPicker
+  registers={[
+    { id: 'front', name: 'Front counter' },
+    { id: 'back', name: 'Back counter' },
+  ]}
+  onPick={(id) => bindRegister(id)}
+/>
+```
+
+Renders a Choose a register card with a scrollable list of register buttons, each labeled “Not opened”. Selecting one calls `onPick` so the app can bind the till; an empty list shows a message that no registers are set up.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `registers` | `RegisterPickerRegister[]` | required | The app's list of registers for the store |
+| `onPick` | `(id: string) => void` | required | Called with the selected register's ID |
+| `className` | `string` | --- | Styles passed to the containing card |
+
+### RegisterPickerRegister
+
+```ts
+interface RegisterPickerRegister {
+  id: string;
+  name: string;
+}
+```
