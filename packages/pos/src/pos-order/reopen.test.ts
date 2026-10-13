@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { createOrderBuilder } from '../order/order-builder';
+import { createOrderBuilder, type OrderCouponContext } from '../order/order-builder';
 import { orderDraftSchema, restoreOrderDraft } from '../order/order-drafts';
 import type { Order } from '../order/types';
 import { registerSessionCreator } from '../register/schemas';
@@ -110,19 +110,21 @@ it('the reopened sale finalizes and stores', async () => {
     .toEqual(order.payments.map(({ method, amountMinor, reference }) => ({ method, amountMinor, reference })));
 });
 
-it.each<{ reason: ReopenRefusal; patch?: Partial<PosOrder>; session?: 'closed'; missing?: boolean }>([
+it.each<{ reason: ReopenRefusal; patch?: Partial<PosOrder>; session?: 'closed' | 'counting'; missing?: boolean }>([
   { reason: 'not_found', missing: true },
   { reason: 'not_rejected', patch: { syncStatus: 'applied' } },
   { reason: 'code_not_reopenable', patch: { error: { code: 'validation_failed', message: 'Invalid order' } } },
   { reason: 'already_reopened', patch: { reopenedAt: now.toISOString() } },
   { reason: 'session_closed', patch: { sessionId: 'closed-session' }, session: 'closed' },
+  { reason: 'session_closed', patch: { sessionId: 'counting-session' }, session: 'counting' },
   { reason: 'session_closed', patch: { sessionId: 'missing-session' } },
 ])('refuses $reason without writing a draft or changing the order', async ({ reason, patch, session, missing }) => {
   const order = { ...storedOrder(), ...patch };
   const document = missing ? undefined : await db.pos_orders.insert(order);
   const before = document?.toJSON();
   if (session) await db.register_sessions.insert({ id: order.sessionId!, register_id: 'register', status: session,
-    opened_at_gmt: '2026-10-06T08:00:00Z', closed_at_gmt: '2026-10-06T18:00:00Z', counted_float_minor: 10000 });
+    opened_at_gmt: '2026-10-06T08:00:00Z', counted_float_minor: 10000,
+    ...(session === 'closed' ? { closed_at_gmt: '2026-10-06T18:00:00Z' } : {}) });
   const result = reopenRefusedOrder(order.id, deps());
   await expect(result).rejects.toBeInstanceOf(ReopenRefusedOrderError);
   await expect(result).rejects.toMatchObject({ orderId: order.id, reason, message: expect.stringContaining(reason) });
@@ -172,6 +174,33 @@ it('uses own-mode stored figures for a converted line without coupons under defa
   expect(totals(saved)).toEqual(totals(order));
   expect(saved.discounts).toEqual([]);
   expect(saved.lineItems[0].discounts).toEqual([expect.objectContaining({ type: 'fixed', value: 360, label: 'Discount' })]);
+});
+
+it.each([
+  [true, false], [true, true], [false, false], [false, true],
+])('rebuilds a converted coupon sale without coupons: inclusive = %s, order discount = %s', async (pricesIncludeTax, orderDiscount) => {
+  const context: TaxContext = { ...taxContext, pricesIncludeTax };
+  const couponContext: OrderCouponContext = {
+    configs: new Map([['ten', { discount_type: 'percent', amount: '10', limit_usage_to_x_items: null,
+      product_ids: [], excluded_product_ids: [], product_categories: [], excluded_product_categories: [], exclude_sale_items: false }]]),
+    couponIds: new Map([['ten', '303']]), productCategories: new Map(), calcDiscountsSequentially: false,
+  };
+  function make(coupon: boolean) {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: context, couponContext });
+    const line = builder.addLine({ productId: '1', name: 'Item', taxClass: 'standard',
+      unitPrice: { amount: 1000, currency: 'GBP', taxInclusive: !pricesIncludeTax }, regularUnitPriceMinor: 1000, quantity: 2 });
+    builder.applyLineDiscount(line, { type: 'fixed', value: 300, label: 'Staff' });
+    builder.addLine({ productId: '2', name: 'Item 2', taxClass: 'standard',
+      unitPrice: { amount: 500, currency: 'GBP' }, regularUnitPriceMinor: 500 });
+    if (orderDiscount) builder.applyOrderDiscount({ type: 'fixed', value: 150 });
+    if (coupon) builder.setCoupons(['ten']);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    return builder.getSnapshot();
+  }
+  const order: PosOrder = { ...finalizeOrder(make(true), { capabilities: { orderCreate: 6 } }), syncStatus: 'rejected', error };
+  await db.pos_orders.insert(order);
+  const saved = await draft(await reopenRefusedOrder(order.id, deps(context)));
+  expect(saved.totalMinor).toBe(make(false).totalMinor);
 });
 
 it("keeps the stored tax rates when the store's rate has changed", async () => {

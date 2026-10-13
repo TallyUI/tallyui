@@ -10,7 +10,7 @@ import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder, posOrderCollection, toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS, STUCK_AFTER_MS, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
-import { outboxLogger } from './index';
+import { isRequeueable, outboxLogger } from './index';
 import type { CommandTransport, OutboxState, TransportOutcome } from './types';
 
 let db: RxDatabase<{ pos_orders: RxCollection<PosOrder> }>;
@@ -80,6 +80,13 @@ afterEach(async () => {
 });
 
 describe('order outbox', () => {
+  it.each([
+    ['idempotency_mismatch', false], ['coupon_invalid', false], ['total_mismatch', false],
+    ['platform_error', true], [undefined, true],
+  ] as const)('isRequeueable(%s) is %s', (code, expected) => {
+    expect(isRequeueable(code)).toBe(expected);
+  });
+
   it('passes frozen WooCommerce orders by envelope id only in the local context', async () => {
     const inputs = [0, 1].map((i) => {
       const builder = createOrderBuilder({ currency: 'USD', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 100000,

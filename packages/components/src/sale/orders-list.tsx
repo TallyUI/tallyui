@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { formatMoney, knownWarnings } from '@tallyui/core';
-import { needsAttention, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { isRequeueable, needsAttention, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { orderReference } from './order-reference';
 import { sinceText } from './since-text';
 
@@ -115,8 +115,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
                 ? `The customer's ${warning.field} couldn't be sent to the store, so the order isn't linked to them.`
                 : "The terminal's payment reference couldn't be kept; the payment is recorded without it."}
             </Text>)}
-            {/* idempotency_mismatch isn't requeueable (the outbox's NOT_REQUEUEABLE): its sentence says not to send it again, and no Retry. */}
-            {section.title === 'Needs attention' && order.syncStatus === 'rejected' && order.error?.code !== 'idempotency_mismatch'
+            {/* Retry is offered only for a code the outbox resends (isRequeueable). */}
+            {section.title === 'Needs attention' && order.syncStatus === 'rejected' && isRequeueable(order.error?.code)
               ? <Pressable accessibilityRole="button" disabled={retryingIds.has(order.id)} onPress={async () => {
                 if (retrying.current.has(order.id)) return;
                 retrying.current.add(order.id);

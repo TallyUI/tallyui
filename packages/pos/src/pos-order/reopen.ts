@@ -32,11 +32,11 @@ export async function reopenRefusedOrder(orderId: string, deps: {
   if (order.reopenedAt) throw new ReopenRefusedOrderError(orderId, 'already_reopened');
   if (order.sessionId) {
     const session = await readSession(deps.sessions, order.sessionId);
-    if (!session || session.status === 'closed') throw new ReopenRefusedOrderError(orderId, 'session_closed');
+    if (!session || session.status !== 'open') throw new ReopenRefusedOrderError(orderId, 'session_closed');
   }
   const builder = createOrderBuilder({ currency: order.currency, taxContext: deps.taxContext, id: order.id });
   const converted = order.lines.some((line) => line.taxInclusive !== undefined && line.taxInclusive !== order.pricesIncludeTax);
-  const display = order.display && (!converted || order.coupons) ? order.display : undefined;
+  const display = order.display && !converted ? order.display : undefined;
   for (const [i, line] of order.lines.entries()) {
     const lineId = builder.addLine({
       productId: line.productId, variantId: line.variantId, name: line.name, sku: line.sku,

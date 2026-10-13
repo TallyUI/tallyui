@@ -318,7 +318,7 @@ describe('OrdersList', () => {
     expect(screen.getAllByText(`${dateAndTotal} · Not accepted`)).toHaveLength(2);
   });
 
-  it.each(['invalid', 'idempotency_mismatch', 'warnings'])('offers Retry only for requeueable rejections: %s', async (kind) => {
+  it.each(['invalid', 'idempotency_mismatch', 'coupon_invalid', 'total_mismatch', 'warnings'])('offers Retry only for requeueable rejections: %s', async (kind) => {
     const base = order('r');
     const orders: PosOrder[] = [kind === 'warnings'
       ? { ...base, syncStatus: 'applied', warnings: [{ code: 'total_mismatch', serverMinor: 1000, expectedMinor: 1200 }] }

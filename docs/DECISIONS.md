@@ -4974,12 +4974,14 @@ interface OrderCreatePayload {
       - `useRegisterSession`'s expected figures, `salesCount` and close-approval check.
 
       `requeue` never resends `coupon_invalid` or `total_mismatch`.
+    - **Retry.** Needs attention offers no Retry for a code `requeue` does not resend (`isRequeueable`, exported from
+      `@tallyui/pos`).
     - **`reopenRefusedOrder(orderId, deps)`.** It refuses with `ReopenRefusedOrderError`, whose `reason` is one of:
       - `not_found`;
       - `not_rejected`;
       - `code_not_reopenable`;
       - `already_reopened`;
-      - `session_closed`, when the order's `sessionId` names a session that is closed or missing. A late
+      - `session_closed`, when the order's `sessionId` names a session that is not `open` or is missing. A late
         association (`lateSessionId`) does not block.
     - **The parked sale.**
       - **Its id is the refused order's id.** A retry therefore rewrites the same draft. When the sale is finalized,
@@ -4987,8 +4989,8 @@ interface OrderCreatePayload {
         36 characters `saleId` allows.
       - **Line discounts.** When the receipt rows can be trusted, the line discounts come from them as fixed amounts
         with their labels, and the order discount as one fixed `Discount`. The rows can be trusted when the order has
-        `display` and either no line is in the other tax mode or the order had coupons. Otherwise each line gets one
-        fixed `Discount` of its stored `discountMinor`, in the line's own mode.
+        `display` and no line is in the other tax mode. Otherwise each line gets one fixed `Discount` of its stored
+        `discountMinor`, in the line's own mode. Neither the receipt rows nor the stored discounts include coupons.
       - **Line figures.** Each line keeps its stored tax rates and regular price. Under WooCommerce rounding the tax
         class decides the rates instead: the catalogue's class (`taxClassOf`), else `standard`. Custom lines keep
         their own class and status.
