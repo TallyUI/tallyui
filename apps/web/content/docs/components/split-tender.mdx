@@ -1,0 +1,29 @@
+---
+title: SplitTender
+description: SplitTender adds or removes cash and card terminal payments during tender, showing total, paid, remaining, and change amounts.
+---
+
+## Import
+
+```tsx
+import { SplitTender } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useSale } from '@tallyui/pos';
+import { SplitTender } from '@tallyui/components';
+
+// Inside a component under TaxProvider.
+const sale = useSale(settings, { registerId, cashierRef });
+<SplitTender sale={sale} />
+```
+
+Renders only during the tender stage, with controls to add or remove cash and card terminal payments. Shows total, paid, remaining, and any change; completion is disabled while a balance remains or there are no payments.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |

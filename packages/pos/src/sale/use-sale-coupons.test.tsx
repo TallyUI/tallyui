@@ -114,6 +114,15 @@ describe('useSale coupons', () => {
     expect(result.current.order).toBe(before);
   });
 
+  it.each(['', '0'])('validates a guest with an empty or zero id by email for the per-customer limit', async (id) => {
+    const { result } = renderSale(source([coupon('ten', { usage_limit_per_user: 1, used_by: ['buyer@example.com'] })]));
+    add(result);
+    act(() => result.current.setCustomer({ id, name: 'Guest', email: 'Buyer@example.com' }));
+    expect(result.current.order.customer).toEqual({ id, name: 'Guest', email: 'Buyer@example.com' });
+    await act(async () => { expect(await result.current.applyCoupon('ten')).not.toBeNull(); });
+    expect(result.current.order.coupons).toBeUndefined();
+  });
+
   it('passes categories from add to validation and replay, discounting only the matching line', async () => {
     const coupons = source([coupon('category', { product_categories: [7] })]);
     const { result } = renderSale(coupons);
@@ -265,6 +274,27 @@ describe('useSale coupons', () => {
     await act(async () => { await expect(result.current.resume(id)).rejects.toThrow('Source unavailable'); });
     expect(await db.pos_drafts.findOne(id).exec()).not.toBeNull();
     expect(result.current.order.lineItems).toEqual([]);
+  });
+
+  it('refuses a delayed coupon lookup that resolves after the sale completed', async () => {
+    const coupons = source();
+    let resolve!: (value: SaleCoupon) => void;
+    coupons.find.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const { result } = renderSale(coupons);
+    add(result);
+    let applying!: Promise<string | null>;
+    act(() => { applying = result.current.applyCoupon('ten'); });
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.stage.kind).toBe('receipt');
+    await act(async () => {
+      resolve(coupon());
+      expect(await applying).toBe('The sale changed while the coupon was being checked; apply it again');
+    });
+    const stage = result.current.stage;
+    expect(stage.kind).toBe('receipt');
+    if (stage.kind === 'receipt') expect(stage.order.coupons).toBeUndefined();
+    expect(result.current.order.coupons).toBeUndefined();
   });
 
   it('refuses a delayed coupon lookup after newSale replaces the builder', async () => {

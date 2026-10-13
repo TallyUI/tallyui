@@ -77,4 +77,47 @@ describe('session figures', () => {
     expect(Object.keys(figures.expected)).toEqual(['cash', 'external'])
     expect(deriveVariance({ cash: 500, other: 100 }, figures.expected)).toEqual({ cash: 0, other: 100 })
   })
+
+  it('lowers expected cash by refunds without changing salesCount', () => {
+    expect(deriveSessionFigures({ ...workedExample, refunds: [{ byMethod: { cash: 300 } }] }))
+      .toEqual({ expected: { cash: 14456 }, salesCount: 1, refundsTotalMinor: 300 })
+  })
+
+  it('applies split refunds and makes a method without sales negative', () => {
+    expect(deriveSessionFigures({ countedFloatMinor: 100, movements: [], orders: [
+      { payments: [{ method: 'cash', amountMinor: 500 }, { method: 'card', amountMinor: 1000 }] },
+    ], refunds: [{ byMethod: { cash: 300, card: 200 } }, { byMethod: { cash: 50, external: 75 } }] }))
+      .toEqual({ expected: { cash: 250, card: 800, external: -75 }, salesCount: 1, refundsTotalMinor: 625 })
+  })
+
+  it('returns a zero refund total for an empty list and omits it for undefined refunds', () => {
+    expect(deriveSessionFigures({ ...workedExample, refunds: [] }))
+      .toEqual({ expected: { cash: 14756 }, salesCount: 1, refundsTotalMinor: 0 })
+    expect(deriveSessionFigures({ ...workedExample, refunds: undefined }))
+      .toEqual({ expected: { cash: 14756 }, salesCount: 1 })
+  })
+
+  it('skips malformed refunds and amounts without throwing', () => {
+    const refunds = [null, undefined, 1, 'refund', {}, { byMethod: null }, { byMethod: 1 },
+      { byMethod: 'cash' }, { byMethod: [] }, { byMethod: new Date() },
+      { byMethod: { '': 500, negative: -1, fraction: 1.5, string: '500', unsafe: Number.MAX_SAFE_INTEGER + 1,
+        nan: NaN, infinity: Infinity } },
+    ] as unknown as NonNullable<typeof workedExample.refunds>
+    expect(deriveSessionFigures({ countedFloatMinor: 100, orders: [], movements: [], refunds }))
+      .toEqual({ expected: { cash: 100 }, salesCount: 0, refundsTotalMinor: 0 })
+    refunds.push({ byMethod: { cash: 25, zero: 0 } })
+    expect(deriveSessionFigures({ countedFloatMinor: 100, orders: [], movements: [], refunds }))
+      .toEqual({ expected: { cash: 75, zero: 0 }, salesCount: 0, refundsTotalMinor: 25 })
+  })
+
+  it('treats __proto__ as an ordinary refund method and accepts null-prototype records', () => {
+    const byMethod = Object.assign(Object.create(null), { ['__proto__']: 100, constructor: 20 })
+    const figures = deriveSessionFigures({ countedFloatMinor: 0, movements: [], orders: [
+      { payments: [{ method: '__proto__', amountMinor: 400 }] },
+    ], refunds: [{ byMethod }, { byMethod: { ['__proto__']: 50, toString: 30 } }] })
+    expect(figures).toEqual({ expected: { cash: 0, ['__proto__']: 250, constructor: -20, toString: -30 },
+      salesCount: 1, refundsTotalMinor: 200 })
+    expect(Object.keys(figures.expected)).toEqual(['cash', '__proto__', 'constructor', 'toString'])
+    expect(Object.getPrototypeOf(figures.expected)).toBe(Object.prototype)
+  })
 })

@@ -4,8 +4,8 @@
  *
  * Everything here writes local-only collections (`schemas.ts`). WCPOS's outbox (`pending`,
  * `retryMovement`) moves to registers job c. A session's sales are the `pos_orders` documents
- * whose `sessionId` is the session's id, and their payments are its ledger rows. Refunds are
- * not attributed yet (no refund model, as in `deriveExpected`). The frozen closure's money
+ * whose `sessionId` is the session's id, and their payments are its ledger rows.
+ * A session's refunds are its applied `pos_refunds` records, when the app passes them (ADR-080 amendment 1). The frozen closure's money
  * breakdowns (`payment_methods`, `opening_float`, `movements`, `tax_rates`) are minor-unit
  * integers, the same convention as the closure row itself; `closure-document.ts` converts them
  * to the decimal strings its envelope carries.
@@ -13,8 +13,9 @@
 import type { RxCollection } from 'rxdb';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import type { PosOrder } from '../pos-order/types';
+import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
-import { deriveExpected, type LedgerRow } from './expected';
+import { deriveExpected, refundAmounts, type LedgerRow } from './expected';
 import { recordRegisterFact } from './facts';
 import { MAX_REASON_LENGTH } from './movement-input';
 import { countVariance } from './register-count.helpers';
@@ -440,6 +441,7 @@ export async function voidMovement(
  * Only a closed session (`closed` with `closed_at_gmt`) has a closure, and a closed session is
  * final, so its existing closure is returned as it was frozen. Orders the server rejected still
  * count in the drawer, because the cash was taken.
+ * A refund still pending at close is not counted, and the Z lists it.
  */
 export async function writeClosure({
   closures,
@@ -450,6 +452,7 @@ export async function writeClosure({
   otherTenders,
   movements,
   orders,
+  refunds,
   tillExpected,
   labels,
   resolveCashierName,
@@ -467,6 +470,8 @@ export async function writeClosure({
   movements: readonly CashMovement[];
   /** Any `pos_orders`; only those whose `sessionId` is this session's are counted. */
   orders: readonly PosOrder[];
+  /** `pos_refunds` rows; only this session's applied ones are counted (ADR-080 amendment 1). */
+  refunds?: readonly PosRefund[];
   tillExpected?: Record<string, number>;
   labels?: { register_name: string; closed_by_name: string; opened_by_name?: string; approved_by_name?: string };
   resolveCashierName?: (id: string) => string;
@@ -486,6 +491,7 @@ export async function writeClosure({
     return existing;
   }
   const bound = orders.filter((order) => order.sessionId === session.id);
+  const countedRefunds = (refunds ?? []).filter((refund) => refund.status === 'applied' && refund.sessionId === session.id);
   // Each payment is captured, and a cash payment's amount is already net of change.
   const rows: LedgerRow[] = bound.flatMap((order) =>
     order.payments.map((payment) => ({
@@ -503,6 +509,7 @@ export async function writeClosure({
       session: { id: session.id, countedFloatMinor: session.counted_float_minor },
       movements: entries,
       ledgerRowsBySession: rows,
+      refunds,
     });
   const counts = { cash: counted, ...otherTenders };
   const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
@@ -510,6 +517,11 @@ export async function writeClosure({
   for (const row of rows) {
     const method = row.kind === 'cash' ? 'cash' : row.method_id;
     payment_methods[method] = { sales_minor: (payment_methods[method]?.sales_minor ?? 0) + row.amountMinor, refunds_minor: 0 };
+  }
+  for (const refund of countedRefunds) {
+    for (const [method, amount] of refundAmounts(refund)) {
+      payment_methods[method] = { sales_minor: payment_methods[method]?.sales_minor ?? 0, refunds_minor: (payment_methods[method]?.refunds_minor ?? 0) + amount };
+    }
   }
   // Same per-rate split a receipt shows (`taxLinesByRate`), run per order so each order's rates
   // add up to its own taxMinor, then summed across the session's orders by rate. A line's own
@@ -552,7 +564,7 @@ export async function writeClosure({
       Object.entries(counts).map(([method, value]) => [method, countVariance(value, till_expected[method] ?? 0)]),
     ),
     period_sales_total_minor: sum(rows.map((row) => row.amountMinor)),
-    period_refunds_total_minor: 0,
+    period_refunds_total_minor: sum(countedRefunds.flatMap((refund) => refundAmounts(refund).map(([, amount]) => amount))),
     perpetual_sales_total_minor: 0,
     perpetual_refunds_total_minor: 0,
     unsynced_count: unsynced.length,
@@ -581,7 +593,11 @@ export async function writeClosure({
         id, type, amountMinor, reason, voids: voids ?? null, created_at_gmt, created_by: created_by ?? null, voided_by: voided_by ?? null,
       })),
       transaction_count: bound.length,
-      refund_count: 0,
+      refund_count: countedRefunds.length,
+      ...(refunds !== undefined ? {
+        refund_ids: countedRefunds.map((refund) => refund.id),
+        pending_refund_ids: refunds.filter((refund) => refund.status === 'pending' && refund.sessionId === session.id).map((refund) => refund.id),
+      } : {}),
       cashiers: [...new Set(bound.map((order) => order.cashierRef ?? '').filter(Boolean))].map((id) => ({
         id,
         name: resolveCashierName?.(id) || id,
