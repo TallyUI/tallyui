@@ -694,14 +694,16 @@ describe('order outbox', () => {
     expect(states.at(-1)).toMatchObject({ pending: 1, rejected: 0 });
   });
 
-  it('counts only rejected orders that have not been reopened', async () => {
+  it.each([false, true])('counts reopened refused orders until their successor is stored (%s)', async (replaced) => {
+    const reopened = { ...order(1), syncStatus: 'rejected' as const, reopenedAt: new Date(epoch).toISOString() };
     await collection.bulkInsert([
       { ...order(0), syncStatus: 'rejected' },
-      { ...order(1), syncStatus: 'rejected', reopenedAt: new Date(epoch).toISOString() },
+      reopened,
+      ...(replaced ? [{ ...order(2), saleId: reopened.id, syncStatus: 'applied' as const }] : []),
     ]);
     const { outbox, states } = setup();
     await outbox.flush();
-    expect(states.at(-1)).toMatchObject({ pending: 0, rejected: 1 });
+    expect(states.at(-1)).toMatchObject({ pending: 0, rejected: replaced ? 1 : 2 });
   });
 
   it.each([false, true])('leaves coupon_invalid and total_mismatch rejections unchanged on requeue (by id: %s)', async (byId) => {

@@ -8,5 +8,5 @@ export { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from 
 export { getDeviceId } from './device-id';
 export { needsAttention } from './needs-attention';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './reopen';
-export { isReopened } from './reopened';
+export { isReopened, replacedOrderIds } from './reopened';
 export { sameSale, OrderContentMismatchError } from './same-sale';

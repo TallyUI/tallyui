@@ -4941,6 +4941,12 @@ interface OrderCreatePayload {
       collects the difference.
     - **R5, counted once.** A rejected order with `reopenedAt` counts nowhere: not in the Z report, the cash counts,
       or any local expected figure. Its payments count once, on the new order. R5 covers open sessions only (Q-d4b-5).
+    - **R5 amended (front desk, 2026-10-13).** A refused order counts nowhere only once a finalized successor exists:
+      an order whose `saleId` is its id. Until then it counts in expected cash, `salesCount`, the close check and the
+      Z as any rejected order does, and stays in Needs attention. A parked draft is not a successor, so a discarded,
+      replaced or crashed draft changes nothing. `reopenedAt` has no accounting meaning. Reopening an order that
+      already has a draft returns that draft; one with a finalized successor cannot be reopened. Blocking count and
+      close while a draft exists was rejected: a forgotten draft would lock the session.
     - **Q-d4b-3, the rebuild.** The parked sale is rebuilt from the stored figures, with no snapshot field:
       - parked prices kept;
       - discounts as fixed amounts with their labels;
@@ -4966,13 +4972,14 @@ interface OrderCreatePayload {
       the order `new_draft_order_id` names, or the plugin removes it on refusal; reuse is ruled out by the 200 above.
       The WooCommerce lane picks the side and owns the change (TallyUI's fork for anything in the plugin).
   - **(d4b) as built (2026-10-07): the reopen.** One-way; `@tallyui/pos`.
-    - **Counted once (R5).** `isReopened(order)` is true for a `rejected` order with `reopenedAt`. Such an order is
-      left out of:
+    - **Counted once (R5).** `replacedOrderIds(orders)` finds refused orders with a finalized successor in the list.
+      Until then they count like any rejected order; once replaced, they are left out of:
       - `needsAttention`;
       - the outbox's `rejected` count;
       - the Z report (`writeClosure`);
       - `useRegisterSession`'s expected figures, `salesCount` and close-approval check.
 
+      `isReopened` only tells that a reopen was started; it has no accounting meaning.
       `requeue` never resends `coupon_invalid` or `total_mismatch`.
     - **Retry.** Needs attention offers no Retry for a code `requeue` does not resend (`isRequeueable`, exported from
       `@tallyui/pos`).
@@ -4980,13 +4987,13 @@ interface OrderCreatePayload {
       - `not_found`;
       - `not_rejected`;
       - `code_not_reopenable`;
-      - `already_reopened`;
+      - `already_replaced`, when a finalized successor exists;
       - `session_closed`, when the order's `sessionId` names a session that is not `open` or is missing. A late
         association (`lateSessionId`) does not block.
     - **The parked sale.**
-      - **Its id is the refused order's id.** A retry therefore rewrites the same draft. When the sale is finalized,
-        its `saleId` names the refused order, and the new order gets a fresh id. A prefixed id would be longer than the
-        36 characters `saleId` allows.
+      - **Its id is the refused order's id.** A second call returns the draft already written, unchanged. When the
+        sale is finalized, its `saleId` names the refused order, and the new order gets a fresh id. A prefixed id
+        would be longer than the 36 characters `saleId` allows.
       - **Line discounts.** When the receipt rows can be trusted, the line discounts come from them as fixed amounts
         with their labels, and the order discount as one fixed `Discount`. The rows can be trusted when the order has
         `display` and no line is in the other tax mode. Otherwise each line gets one fixed `Discount` of its stored
@@ -5001,8 +5008,11 @@ interface OrderCreatePayload {
       - **No coupons.**
     - **The order of writes.** The draft is written first. The order is then marked with `reopenedAt` inside
       `incrementalModify`, only while it is still rejected and unmarked, so a mark made in the meantime stands.
+      A crash after the draft write leaves the order counted once (the draft is not counted); the next call marks it.
     - **Resuming.** "Parked prices kept" is the caller's choice: phase (e) resumes the draft with
       `resume(id, { keepParkedPrices: true })`.
+      - **Open.** A reopened draft finalized after its refused order's session has closed carries payments that closed
+        Z already counted; phase (e) decides how resuming such a draft is handled.
     - **Tests.** The reviewer applied 7 R5 mutations and 21 reopen mutations; each was killed by the pos tests. They are
       listed in the PR.
 

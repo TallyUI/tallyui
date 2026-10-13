@@ -19,7 +19,7 @@ import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
 import type { PosOrder } from '../pos-order/types';
-import { isReopened } from '../pos-order/reopened';
+import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
 import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
@@ -148,8 +148,8 @@ function currentSession(rows: RegisterSession[], closureRows: Closure[], reserva
 }
 
 /** A session's ledger rows, built from its orders' payments the way `writeClosure` builds them. */
-function ledgerRows(orders: readonly PosOrder[]): LedgerRow[] {
-  return orders.filter((order) => !isReopened(order)).flatMap((order) => order.payments.map((payment) => ({
+function ledgerRows(orders: readonly PosOrder[], replaced = replacedOrderIds(orders)): LedgerRow[] {
+  return orders.filter((order) => !replaced.has(order.id)).flatMap((order) => order.payments.map((payment) => ({
     session_id: order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
     status: 'captured', amountMinor: payment.amountMinor,
   })));
@@ -277,8 +277,9 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         ? { sessionId: refusal.sessionId, openedAt: refusal.openedAt, openedBy: refusal.openedBy, deviceName: refusal.deviceName, takingOver: false } : undefined;
   const entries = data?.entries ?? [];
   const sales = data?.sales ?? [];
+  const replaced = replacedOrderIds(sales);
   const expected = session
-    ? deriveExpected({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales), refunds: data?.refundRows ?? [] })
+    ? deriveExpected({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales, replaced), refunds: data?.refundRows ?? [] })
     : {};
   const now = new Date();
   const [hour, minute] = String(expectedCloseTime ?? '').split(':').map(Number);
@@ -312,7 +313,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     needsUpgrade: data?.rows.some((row) => !store.isKnownSessionStatus(row.status)) ?? false,
     movements: entries,
     expected,
-    salesCount: sales.filter((order) => !isReopened(order)).length,
+    salesCount: sales.filter((order) => !replaced.has(order.id)).length,
     overdue,
     /** A `closeSession` for this register is in flight, in any hook instance: the session can already be stored `closed` while its closure isn't written yet. */
     closing,

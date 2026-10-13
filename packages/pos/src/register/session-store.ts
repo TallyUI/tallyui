@@ -13,7 +13,7 @@
 import type { RxCollection } from 'rxdb';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import type { PosOrder } from '../pos-order/types';
-import { isReopened } from '../pos-order/reopened';
+import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
 import { deriveExpected, refundAmounts, type LedgerRow } from './expected';
@@ -441,7 +441,7 @@ export async function voidMovement(
  * same snapshot and number, and its period reaches the perpetual totals exactly once.
  * Only a closed session (`closed` with `closed_at_gmt`) has a closure, and a closed session is
  * final, so its existing closure is returned as it was frozen. Orders the server rejected still
- * count in the drawer, because the cash was taken, unless the till reopened them as a parked sale (ADR-077 R5): their payments count on the new sale.
+ * count in the drawer, because the cash was taken, until a finalized successor carries their payments (ADR-077 R5 amended).
  * A refund still pending at close is not counted, and the Z lists it.
  */
 export async function writeClosure({
@@ -491,7 +491,8 @@ export async function writeClosure({
     });
     return existing;
   }
-  const bound = orders.filter((order) => order.sessionId === session.id && !isReopened(order));
+  const replaced = replacedOrderIds(orders);
+  const bound = orders.filter((order) => order.sessionId === session.id && !replaced.has(order.id));
   const countedRefunds = (refunds ?? []).filter((refund) => refund.status === 'applied' && refund.sessionId === session.id);
   // Each payment is captured, and a cash payment's amount is already net of change.
   const rows: LedgerRow[] = bound.flatMap((order) =>

@@ -2,7 +2,7 @@ import type { OrderCreateEnvelope } from '@tallyui/core';
 import { deepEqual, type RxCollection, type RxDocumentData } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { outboxLogger } from './logger';
-import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, type PosOrder, type PosOrderServerFailures } from '../pos-order';
+import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, replacedOrderIds, type PosOrder, type PosOrderServerFailures } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
@@ -185,7 +185,10 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // Retiring them is a separate decision.
   async function updateState(patch: Partial<OutboxState> = {}) {
     const pending = await countFresh(collection, { syncStatus: 'pending' });
-    const rejected = await countFresh(collection, { syncStatus: 'rejected', reopenedAt: { $exists: false } });
+    const refused = await readFresh(collection, { selector: { syncStatus: 'rejected' } });
+    const successors = refused.length ? await readFresh(collection, { selector: { saleId: { $in: refused.map((order) => order.id) } } }) : [];
+    const replaced = replacedOrderIds([...refused, ...successors]);
+    const rejected = refused.filter((order) => !replaced.has(order.id)).length;
     state$.next({ ...state$.value, ...patch, pending, rejected, stuck: stuckState() });
   }
 

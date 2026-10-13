@@ -12,8 +12,11 @@ import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
+import { orderDraftSchema, restoreOrderDraft } from '../order/order-drafts';
 import { toOrderCreateEnvelope } from '../pos-order/command';
 import { finalizeOrder } from '../pos-order/finalize';
+import { reopenRefusedOrder } from '../pos-order/reopen';
+import { posOrderCollection } from '../pos-order/schema';
 import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 import { ensureRegister, readRegister } from './register-document';
@@ -342,25 +345,40 @@ it('writes approvedBy in the close, and the Z carries it as breakdowns.approved_
   expect(closure.breakdowns.approved_by).toBe('mgr-1');
 });
 
-it('excludes reopened rejections from the closure but still counts other rejected cash sales', async () => {
+it.each(['pending', 'discarded', 'different sale', 'finalized'])('counts refused cash once with a %s draft', async (state) => {
   await ensureRegister(db.register_sessions, 'web');
   const session = await openSession(db.register_sessions, input);
+  const { pos_orders, order_drafts } = await db.addCollections({ pos_orders: posOrderCollection(), order_drafts: { schema: orderDraftSchema } });
+  const taxContext = { pricesIncludeTax: false, getTaxRatePpm: () => 0 };
   const orders: PosOrder[] = [100, 200, 400].map((amountMinor, i) => {
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
     builder.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: amountMinor, currency: 'EUR' } });
     builder.addPayment({ method: 'cash', amountMinor });
     return { ...finalizeOrder(builder.getSnapshot()), sessionId: session.id,
-      syncStatus: i === 0 ? 'applied' : 'rejected', ...(i === 2 ? { reopenedAt: '2026-09-16T12:00:00.000Z' } : {}) };
+      syncStatus: i === 0 ? 'applied' : 'rejected', ...(i === 2 ? { error: { code: 'coupon_invalid', message: 'Refused' } } : {}) };
   });
-  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 10300 } });
+  await pos_orders.bulkInsert(orders);
+  await reopenRefusedOrder(orders[2].id, { orders: pos_orders, drafts: order_drafts, sessions: db.register_sessions, taxContext });
+  const parked = (await order_drafts.findOne(orders[2].id).exec())!;
+  if (state === 'finalized') {
+    const restored = restoreOrderDraft(JSON.parse(parked.data), { currency: 'EUR', taxContext });
+    await pos_orders.insert({ ...finalizeOrder(restored.getSnapshot()), sessionId: session.id });
+  } else if (state === 'different sale') {
+    await pos_orders.insert({ ...orders[2], id: 'different', saleId: 'another-sale', syncStatus: 'applied' });
+  }
+  if (state !== 'pending') await parked.remove();
+  const stored = (await pos_orders.find().exec()).map((row) => row.toJSON() as PosOrder);
+  expect(stored.find((order) => order.id === orders[2].id)!.reopenedAt).toBeDefined();
+  const salesMinor = state === 'different sale' ? 1100 : 700;
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 10000 + salesMinor } });
   const closure = await writeClosure({
-    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10300,
-    otherTenders: {}, movements: [], orders, softwareVersion: '1.0.0',
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000 + salesMinor,
+    otherTenders: {}, movements: [], orders: stored, softwareVersion: '1.0.0',
   });
-  expect(closure.expected).toEqual({ cash: 10300 });
-  expect(closure.breakdowns.payment_methods).toEqual({ cash: { sales_minor: 300, refunds_minor: 0 } });
-  expect(closure.period_sales_total_minor).toBe(300);
-  expect(closure.order_ids).toEqual(orders.slice(0, 2).map((order) => order.id));
+  expect(closure.expected).toEqual({ cash: 10000 + salesMinor });
+  expect(closure.breakdowns.payment_methods).toEqual({ cash: { sales_minor: salesMinor, refunds_minor: 0 } });
+  expect(closure.period_sales_total_minor).toBe(salesMinor);
+  expect(closure.order_ids).toEqual(stored.filter((order) => state !== 'finalized' || order.id !== orders[2].id).map((order) => order.id));
 });
 
 // Without an approver the session's `approved_by` stays unset (the schema has no default), and
