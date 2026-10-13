@@ -5029,8 +5029,8 @@ interface OrderCreatePayload {
         - the `discount_type` is not `percent`, `fixed_cart` or `fixed_product`;
         - the `id` is not an integer;
         - the coupon has no `amount`.
-      - **The overlay.** The till's own uses are added to `usage_count` and `used_by` (the customer's id, else their
-        email).
+      - **The overlay.** The till's own uses are added to `usage_count` and `used_by` (the customer's WooCommerce id,
+        else their lower-cased email, as the validator compares them).
         - A `pending` order always counts.
         - An `applied` order counts while its `updatedAt` is later than the coupon document's last local write, and
           for at most `APPLIED_USE_GRACE_MS` (10 minutes) after it.
@@ -5049,6 +5049,10 @@ interface OrderCreatePayload {
       - A pull that starts before the store records the use, and lands after the order applied, moves the coupon's
         last-write time without the use. Until the next pull, this register can then accept a limit-1 coupon once more.
         The store refuses it as `coupon_invalid`, and (d4b) reopens the sale.
+      - The store records the use when it creates the order; this register marks the order applied only when the response
+        arrives. A pull that lands between the two writes the coupon with the use, and the still-pending order counts it
+        again. Until a later pull changes the coupon or the grace window ends, this register can then refuse the coupon as
+        used up when the store would accept it.
       - Other registers see the use only on their own next pull of that coupon.
     - **Tests.** The reviewer applied 21 source mutations and 17 refetch mutations. All were killed except two refetch
       mutations, which are equivalent. They are listed in the PR.

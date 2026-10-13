@@ -108,6 +108,19 @@ describe('createSaleCouponSource', () => {
     expect(await source.find('save10')).toMatchObject({ usage_count: 3, used_by: ['5', '7', 'a@b.c'] });
   });
 
+  it("records the validator's identifier: a positive integer id, else the lower-cased email", async () => {
+    await db.coupons.insert({ ...coupon, usage_count: 2, used_by: ['5', 'stored@b.c'] });
+    await db.pos_orders.bulkInsert([
+      order({ coupons: [appliedCoupon], customer: { id: '7', email: 'X@Y.Z' } }),
+      order({ coupons: [appliedCoupon], customer: { id: '0', email: 'A@B.C' } }),
+      order({ coupons: [appliedCoupon], customer: { id: 'cus_1', email: 'D@E.F' } }),
+      order({ coupons: [appliedCoupon], customer: { email: '' } }),
+    ]);
+    expect(await source.find('save10')).toMatchObject({
+      usage_count: 6, used_by: ['5', 'stored@b.c', '7', 'a@b.c', 'd@e.f'],
+    });
+  });
+
   it('counts each order once and adds no used_by entry without a customer id or email', async () => {
     await db.coupons.insert(coupon);
     await db.pos_orders.bulkInsert([

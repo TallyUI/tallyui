@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wooCouponSchema } from '@tallyui/connector-woocommerce';
-import type { ReconcileFeedEntry } from '@tallyui/core';
 import { posOrderCollection } from '../pos-order/schema';
 import { uuidv7 } from '../pos-order';
 import type { PosOrder } from '../pos-order/types';
@@ -13,7 +12,7 @@ import { saleLogger } from './use-sale';
 
 let db: RxDatabase<{ coupons: RxCollection; pos_orders: RxCollection<PosOrder> }>;
 let runners: Array<{ stop(): void }>;
-let enqueue = vi.fn<(entries: Array<ReconcileFeedEntry>) => void>();
+let enqueue = vi.fn<(entries: Array<{ key: string; local: unknown; refreshOnly: true }>) => void>();
 let reSync = vi.fn<() => void>();
 const coupon = { uuid: 'coupon-101', id: 101, code: 'save10', discount_type: 'percent', amount: '10' };
 const coupon2 = { ...coupon, uuid: 'coupon-102', id: 102, code: 'save20' };
@@ -38,7 +37,7 @@ beforeEach(async () => {
     storage: getRxStorageMemory(), multiInstance: false });
   await db.addCollections({ coupons: { schema: wooCouponSchema }, pos_orders: posOrderCollection() });
   runners = [];
-  enqueue = vi.fn<(entries: Array<ReconcileFeedEntry>) => void>();
+  enqueue = vi.fn<(entries: Array<{ key: string; local: unknown; refreshOnly: true }>) => void>();
   reSync = vi.fn<() => void>();
 });
 afterEach(async () => { runners.forEach((runner) => runner.stop()); await db.remove(); });
@@ -140,7 +139,7 @@ describe('startCouponUsageRefetch', () => {
     runners.push(first);
     first.stop();
     await doc.patch({ syncStatus: 'applied', updatedAt: new Date().toISOString() });
-    const secondEnqueue = vi.fn<(entries: Array<ReconcileFeedEntry>) => void>();
+    const secondEnqueue = vi.fn<(entries: Array<{ key: string; local: unknown; refreshOnly: true }>) => void>();
     const secondReSync = vi.fn<() => void>();
     runners.push(startCouponUsageRefetch({ orders: db.pos_orders, coupons: db.coupons,
       enqueue: secondEnqueue, reSync: secondReSync }));
@@ -179,11 +178,33 @@ describe('startCouponUsageRefetch', () => {
       runners.push(startCouponUsageRefetch({ orders: db.pos_orders, coupons, enqueue, reSync }));
       await vi.waitFor(() => {
         expect(warn).toHaveBeenCalledTimes(1);
-        expect(warn).toHaveBeenCalledWith('coupon refetch: reading local coupons failed',
+        expect(warn).toHaveBeenCalledWith('coupon refetch failed',
           expect.objectContaining({ couponIds: [101] }));
       });
       expect(enqueue).not.toHaveBeenCalled();
       expect(reSync).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('logs a failing enqueue and still handles the next applied order', async () => {
+    const warn = vi.spyOn(saleLogger, 'warn');
+    enqueue.mockImplementationOnce(() => { throw new Error('boom'); });
+    try {
+      await db.coupons.bulkInsert([coupon, coupon2]);
+      const first = await db.pos_orders.insert(order({ coupons: [appliedCoupon] }));
+      runners.push(startCouponUsageRefetch({ orders: db.pos_orders, coupons: db.coupons, enqueue, reSync }));
+      await first.patch({ syncStatus: 'applied', updatedAt: new Date().toISOString() });
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('coupon refetch failed',
+        { couponIds: [101], error: 'Error: boom' }));
+      const second = await db.pos_orders.insert(order({ coupons: [appliedCoupon2] }));
+      await second.patch({ syncStatus: 'applied', updatedAt: new Date().toISOString() });
+      await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(2));
+      expect(enqueue).toHaveBeenNthCalledWith(2, [
+        { key: 'coupon-102', local: expect.objectContaining({ id: 102 }), refreshOnly: true },
+      ]);
+      expect(reSync).toHaveBeenCalledTimes(1);
     } finally {
       warn.mockRestore();
     }

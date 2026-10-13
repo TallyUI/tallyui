@@ -1,4 +1,3 @@
-import type { ReconcileFeedEntry } from '@tallyui/core';
 import type { RxCollection } from 'rxdb';
 import type { PosOrder } from '../pos-order/types';
 import { APPLIED_USE_GRACE_MS } from './coupon-source';
@@ -7,7 +6,7 @@ import { saleLogger } from './use-sale';
 export function startCouponUsageRefetch(deps: {
   orders: RxCollection<PosOrder>;
   coupons: RxCollection;
-  enqueue: (entries: Array<ReconcileFeedEntry>) => void;
+  enqueue: (entries: Array<{ key: string; local: unknown; refreshOnly: true }>) => void;
   reSync: () => void;
   now?: () => number;
 }): { stop(): void } {
@@ -32,7 +31,7 @@ export function startCouponUsageRefetch(deps: {
       deps.enqueue(docs.map((doc) => ({ key: doc.uuid, local: doc.toJSON(), refreshOnly: true })));
       deps.reSync();
     } catch (error) {
-      saleLogger.warn('coupon refetch: reading local coupons failed',
+      saleLogger.warn('coupon refetch failed',
         { couponIds: [...ids], error: String(error) });
       // A failed read stays handled; the store remains authoritative.
     }
