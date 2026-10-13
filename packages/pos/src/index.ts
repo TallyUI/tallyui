@@ -62,15 +62,16 @@ export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, ty
 export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';
 export type { SaleStage, CatalogueEntry, SaleDiscountCodes, SaleDiscountState } from './sale';
 
-export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, sameSale, OrderContentMismatchError } from './pos-order';
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions } from './pos-order';
-export { createHttpCommandTransport, createOrderOutbox, useOrderOutbox, outboxLogger } from './outbox';
+export { createHttpCommandTransport, createOrderOutbox, isRequeueable, useOrderOutbox, outboxLogger } from './outbox';
 export { createRegisterOutbox, useRegisterOutbox } from './outbox';
 export type { RegisterOutboxOptions, RegisterOutbox, UseRegisterOutboxOptions, UseRegisterOutboxResult } from './outbox';
 export { createBackendNotFound } from './outbox/backend-not-found';
 export type { BackendNotFound } from './outbox/backend-not-found';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OrderTransportContext, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
+export { sendOrderRefund, type OrderRefundOutcome, posRefundSchema, posRefundCollection, submitOrderRefund, RefundAnswerPendingError, type PosRefund, type PosRefundStatus, type PosRefundCollection } from './refund';
 export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderVoidSchema, tenderVoidCollection } from './tender';
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid } from './tender';
 

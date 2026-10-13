@@ -29,8 +29,11 @@ export function createSaleCouponSource(deps: {
           && now() - Date.parse(order.updatedAt) < APPLIED_USE_GRACE_MS)));
       const usedBy = [...(data.used_by ?? [])];
       for (const order of counted) {
-        const customer = order.customer?.id ?? order.customer?.email;
-        if (customer !== undefined) usedBy.push(customer);
+        // Mirrors the identifier validate.ts compares: wooCustomerId, else the email.
+        const id = Number(order.customer?.id);
+        const email = order.customer?.email;
+        if (Number.isSafeInteger(id) && id > 0) usedBy.push(String(id));
+        else if (typeof email === 'string' && email.length > 0) usedBy.push(email.toLowerCase());
       }
       const fields = [
         'limit_usage_to_x_items', 'product_ids', 'excluded_product_ids',

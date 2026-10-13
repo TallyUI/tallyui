@@ -1,6 +1,6 @@
 'use client';
 
-interface ExpoSnackProps {
+export interface ExpoSnackProps {
   /** Code for a single-file snack (App.js) */
   code?: string;
   /** Multi-file snack as JSON object */
@@ -19,6 +19,10 @@ interface ExpoSnackProps {
   theme?: 'light' | 'dark';
   /** iframe height */
   height?: string;
+  /** Use Snack's embedded view */
+  embedded?: boolean;
+  /** Minimum iframe width */
+  minWidth?: string;
 }
 
 /**
@@ -35,6 +39,8 @@ export function ExpoSnack({
   preview = true,
   theme = 'light',
   height = '500px',
+  embedded = false,
+  minWidth,
 }: ExpoSnackProps) {
   const params = new URLSearchParams();
 
@@ -50,7 +56,7 @@ export function ExpoSnack({
   params.append('name', name);
   params.append('theme', theme);
 
-  const url = `https://snack.expo.dev/?${params.toString()}`;
+  const url = `https://snack.expo.dev/${embedded ? 'embedded' : ''}?${params.toString()}`;
 
   return (
     <iframe
@@ -63,6 +69,7 @@ export function ExpoSnack({
         borderRadius: '8px',
         height,
         width: '100%',
+        minWidth,
       }}
       allow="accelerometer; ambient-light-sensor; camera; encrypted-media; geolocation; gyroscope; hid; microphone; midi; payment; usb; vr; xr-spatial-tracking"
       sandbox="allow-forms allow-modals allow-popups allow-presentation allow-same-origin allow-scripts"

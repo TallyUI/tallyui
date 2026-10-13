@@ -1,0 +1,31 @@
+---
+title: RegisterCount
+description: Drawer counting controls with denomination tiles, tender amounts, and closing actions
+---
+
+## Import
+
+```tsx
+import { RegisterCount } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<RegisterCount
+  register={register}
+  currency="EUR"
+  approve={() => requestApproval()}
+/>
+```
+
+Renders denomination tiles or a typed cash count, other tender inputs, and Back to selling and Close register buttons. Non-blind counts show expected cash and variance; closing above the variance threshold requires approval, and no session renders nothing.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `register` | `ReturnType<typeof useRegisterSession>` | required | Session, expected amounts, blind state, variance threshold, and back-to-selling and close actions |
+| `currency` | `string` | required | ISO 4217 code used for denomination faces, parsing, and display |
+| `approve` | `() => Promise<{ approvedBy: string; approvedByName?: string } \| null>` | --- | Requested above `register.varianceThreshold`; `null` refuses without changing the count, omission refuses with `APPROVAL_REQUIRED_TEXT`, and approval fields are passed to `closeSession` |
+| `className` | `string` | --- | Override container styles |

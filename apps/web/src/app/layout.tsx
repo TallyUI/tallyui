@@ -22,7 +22,8 @@ export default function Layout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="en" className={inter.className} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen">
-        <RootProvider>{children}</RootProvider>
+        {/* Load the search dialog's chunks when search opens instead of with every page (backlog item 76). */}
+        <RootProvider search={{ preload: false }}>{children}</RootProvider>
         <Analytics />
       </body>
     </html>

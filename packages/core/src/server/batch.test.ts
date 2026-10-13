@@ -12,6 +12,11 @@ const command = {
 }
 
 describe('validateBatch', () => {
+  it('accepts an order.refund envelope (ADR-080)', () => {
+    const commands = [{ ...command, type: 'order.refund' }]
+    expect(validateBatch({ commands })).toEqual({ ok: true, commands })
+  })
+
   it('accepts a valid batch and leaves payload validation to the workflow', () => {
     expect(validateBatch({ commands: [command] })).toEqual({ ok: true, commands: [command] })
     expect(validateBatch({ commands: Array(50).fill(command) }).ok).toBe(true)
@@ -78,6 +83,34 @@ describe('validateBatch', () => {
 describe('precheckCommand', () => {
   // A server's own lists (#297); core's SUPPORTED_* constants are the till's capability.
   const server = { orderCreate: [1, 2, 3, 4], register: [1] }
+
+  it('leaves a supported order.refund to the plugin payload check (ADR-080)', () => {
+    expect(precheckCommand({ ...command, type: 'order.refund' }, { ...server, orderRefund: [1] })).toBeUndefined()
+  })
+
+  it('refuses an unsupported order.refund version with the server capability', () => {
+    expect(precheckCommand({ ...command, type: 'order.refund', version: 2 }, { ...server, orderRefund: [1] }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.refund version 2 is not supported; this server supports 1',
+        data: { orderRefund: 1 },
+      } })
+  })
+
+  it('names the highest refund version a server lists', () => {
+    expect(precheckCommand({ ...command, type: 'order.refund', version: 3 }, { ...server, orderRefund: [1, 2] }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.refund version 3 is not supported; this server supports 1, 2',
+        data: { orderRefund: 2 },
+      } })
+  })
+
+  it.each([{}, { orderRefund: [] }])('takes no refunds when the refund list is absent or empty (%j)', capability => {
+    expect(precheckCommand({ ...command, type: 'order.refund' }, { ...server, ...capability }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.refund version 1 is not supported; this server takes no refunds',
+        data: { orderRefund: 0 },
+      } })
+  })
 
   it('a server supporting [1, 2, 3] refuses a v4 order.create naming its own list, not core\'s', () => {
     const v4 = { ...fixture, version: 4, payload: { ...fixture.payload, lines: fixture.payload.lines.map((line, i) =>

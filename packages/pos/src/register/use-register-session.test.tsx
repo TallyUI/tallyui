@@ -47,8 +47,11 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { LogEntry } from '../logging';
+import { orderDraftSchema } from '../order/order-drafts';
 import { addPosOrderCollection } from '../pos-order/open';
+import { reopenRefusedOrder } from '../pos-order/reopen';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
+import { posRefundCollection, type PosRefund, type PosRefundCollection } from '../refund/pos-refund';
 import { registerFactsLogger } from './facts';
 import { reconcileRegisterCommands, registerCommandCollection, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
 import { readFresh } from '../rxdb';
@@ -79,6 +82,7 @@ import { RegisterApprovalRequiredError, RegisterCloseIncompleteError, RegisterSe
 let db: RxDatabase<{
   register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection; closures: ClosureCollection;
   pos_orders: RxCollection<PosOrder>;
+  pos_refunds: PosRefundCollection;
   register_commands: RegisterCommandCollection;
 }>;
 const logs: LogEntry[] = [];
@@ -100,6 +104,7 @@ beforeEach(async () => {
     cash_movements: { schema: cashMovementSchema },
     closures: { schema: closureSchema },
     register_commands: registerCommandCollection(),
+    pos_refunds: posRefundCollection(),
   });
   await addPosOrderCollection(created);
   db = created as unknown as typeof db;
@@ -599,21 +604,132 @@ it('derives expected locally while a movement is still on its way to the server'
   await waitFor(() => expect(result.current.expected.cash).toBe(12000));
 });
 
-it('excludes reopened rejections from expected cash, salesCount and the close approval check', async () => {
+it.each([false, true])('counts reopened cash once in expected, salesCount and close (successor: %s)', async (replaced) => {
   const session = await seed();
+  const { order_drafts } = await db.addCollections({ order_drafts: { schema: orderDraftSchema } });
   await sale('applied', session.id, [{ method: 'cash', amountMinor: 100 }], { syncStatus: 'applied' });
   await sale('rejected', session.id, [{ method: 'cash', amountMinor: 200 }], { syncStatus: 'rejected' });
   await sale('reopened', session.id, [{ method: 'cash', amountMinor: 400 }], {
-    syncStatus: 'rejected', reopenedAt: '2026-09-16T12:00:00.000Z',
+    syncStatus: 'rejected', error: { code: 'coupon_invalid', message: 'Refused' },
   });
+  await reopenRefusedOrder('reopened', { orders: db.pos_orders, drafts: order_drafts, sessions: db.register_sessions,
+    taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
+  if (replaced) await sale('successor', session.id, [{ method: 'cash', amountMinor: 400 }], { saleId: 'reopened' });
   const result = await settled({ varianceThreshold: 0 });
-  await waitFor(() => expect(result.current.expected.cash).toBe(10300));
-  expect(result.current.salesCount).toBe(2);
+  await waitFor(() => expect(result.current.expected.cash).toBe(10700));
+  expect(result.current.salesCount).toBe(3);
   await act(() => result.current.actions.startCounting());
   await waitFor(() => expect(result.current.session?.status).toBe('counting'));
   await act(async () => {
-    const closure = await result.current.actions.closeSession({ counted: { cash: 10300 } });
-    expect(closure.expected).toEqual({ cash: 10300 });
+    const closure = await result.current.actions.closeSession({ counted: { cash: 10700 } });
+    expect(closure.expected).toEqual({ cash: 10700 });
+    expect(closure.breakdowns.approved_by).toBeNull();
+  });
+  expect((await db.register_sessions.findOne(session.id).exec())!.status).toBe('closed');
+  expect(await order_drafts.count().exec()).toBe(1);
+});
+
+describe('refunds (ADR-080 amendment 1)', () => {
+  function refund(id: string, sessionId: string, status: PosRefund['status'], result?: PosRefund['result']) {
+    const createdAt = '2026-10-07T10:00:00.000Z';
+    const envelope: PosRefund['envelope'] = {
+      id: '019d0e2e-0000-7000-8000-000000000001', type: 'order.refund', version: 1, createdAt, deviceId: 'till', attempt: 1,
+      payload: { clientRefundId: id, orderId: 'order', sessionId, registerId: 'register', createdAt,
+        lines: [], shippingMinor: 1000, adjustmentMinor: 0, totalMinor: 1000, destination: 'cash', reason: 'Return' },
+    };
+    const row: PosRefund = { id, commandId: envelope.id, orderId: 'order', sessionId, registerId: 'register',
+      envelope, status, ...(result ? { result } : {}), createdAt, updatedAt: createdAt };
+    return db.pos_refunds.insert(row);
+  }
+  const cashRefund = { byMethod: { cash: 1000 }, totalMinor: 1000, refunds: [] };
+
+  it('lowers live expected for applied refunds, including one inserted after render', async () => {
+    const session = await seed();
+    await sale('order', session.id, [{ method: 'cash', amountMinor: 5000 }]);
+    await refund('first', session.id, 'applied', cashRefund);
+    const result = await settled({ refunds: db.pos_refunds });
+    await waitFor(() => expect(result.current.expected).toStrictEqual({ cash: 14000 }));
+    await act(async () => { await refund('second', session.id, 'applied', cashRefund); });
+    await waitFor(() => expect(result.current.expected).toStrictEqual({ cash: 13000 }));
+  });
+
+  it('ignores another session and pending refunds in live expected', async () => {
+    const session = await seed();
+    await sale('order', session.id, [{ method: 'cash', amountMinor: 5000 }]);
+    await refund('other', 'other-session', 'applied', cashRefund);
+    await refund('pending', session.id, 'pending', cashRefund);
+    const result = await settled({ refunds: db.pos_refunds });
+    await waitFor(() => expect(result.current.expected).toStrictEqual({ cash: 15000 }));
+  });
+
+  it.each([true, false])('the approval gate counts applied refunds (record present: %s)', async (present) => {
+    const session = await seed();
+    await sale('order', session.id, [{ method: 'cash', amountMinor: 5000 }]);
+    const row = await refund('cash', session.id, 'applied', cashRefund);
+    if (!present) await row.remove();
+    const result = await settled({ refunds: db.pos_refunds, varianceThreshold: 500 });
+    await act(async () => {
+      const close = result.current.actions.closeSession({ counted: { cash: 14000 } });
+      if (present) {
+        const closure = await close;
+        expect(closure.toJSON().variance).toStrictEqual({ cash: 0 });
+        expect(session.getLatest().status).toBe('closed');
+      } else {
+        await expect(close).rejects.toBeInstanceOf(RegisterApprovalRequiredError);
+        expect(session.getLatest().status).toBe('open');
+      }
+    });
+  });
+
+  it('freezes applied refund totals and lists a pending refund on the Z', async () => {
+    const session = await seed();
+    await refund('applied', session.id, 'applied', cashRefund);
+    await refund('pending', session.id, 'pending');
+    const result = await settled({ refunds: db.pos_refunds });
+    await act(async () => {
+      const closure = await result.current.actions.closeSession({ counted: { cash: 9000 } });
+      expect(closure.period_refunds_total_minor).toBe(1000);
+      expect(closure.breakdowns.refund_ids).toStrictEqual(['applied']);
+      expect(closure.breakdowns.pending_refund_ids).toStrictEqual(['pending']);
+    });
+  });
+
+  it('keeps refund ids off the closure when the refunds option is omitted', async () => {
+    const session = await seed();
+    await refund('unused', session.id, 'applied', cashRefund);
+    const result = await settled();
+    await act(async () => {
+      const closure = await result.current.actions.closeSession({ counted: { cash: 10000 } });
+      expect(closure.breakdowns).not.toHaveProperty('refund_ids');
+      expect(closure.breakdowns).not.toHaveProperty('pending_refund_ids');
+      expect(closure.period_refunds_total_minor).toBe(0);
+    });
+  });
+
+  it('refuses actions using live() while refunds is null and becomes ready when it opens', async () => {
+    await seed();
+    const view = render({ refunds: null });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(view.result.current.session).toBeNull();
+    expect(view.result.current.expected).toStrictEqual({});
+    const actions = view.result.current.actions;
+    await act(async () => {
+      await expect(actions.closeSession({ counted: { cash: 10000 } })).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+      await expect(actions.openSession(openInput)).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+      await expect(actions.startCounting()).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+      await expect(actions.backToSelling()).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+      await expect(actions.recordMovement({ type: 'paid_in', amountMinor: 100, reason: 'Top up' })).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+      await expect(actions.voidMovement('movement')).rejects.toBeInstanceOf(RegisterSessionRequiredError);
+    });
+    view.rerender(options({ refunds: db.pos_refunds }));
+    await waitFor(() => expect(view.result.current.session).not.toBeNull());
+    view.rerender(options({ refunds: null }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(view.result.current.session).toBeNull();
   });
 });
 

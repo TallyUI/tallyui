@@ -2,7 +2,7 @@ import type { OrderCreateEnvelope } from '@tallyui/core';
 import { deepEqual, type RxCollection, type RxDocumentData } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { outboxLogger } from './logger';
-import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, type PosOrder, type PosOrderServerFailures } from '../pos-order';
+import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, replacedOrderIds, type PosOrder, type PosOrderServerFailures } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
@@ -14,6 +14,11 @@ const AUTH_FAILURES_BEFORE_PROMPT = 3;
 // Rejections that may hide an order the server already created: resending under a new
 // command id could duplicate it, so requeue() leaves these for manual reconciliation.
 const NOT_REQUEUEABLE = new Set(['idempotency_mismatch', 'coupon_invalid', 'total_mismatch']);
+
+/** Whether the outbox resends a rejection with this code. */
+export function isRequeueable(code: string | undefined): boolean {
+  return !NOT_REQUEUEABLE.has(code ?? '');
+}
 
 // The store's message in the refusal log is cut to this many characters, the cap connectors use for a foreign 426 message.
 const REFUSAL_LOG_MESSAGE_MAX = 200;
@@ -180,7 +185,10 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // Retiring them is a separate decision.
   async function updateState(patch: Partial<OutboxState> = {}) {
     const pending = await countFresh(collection, { syncStatus: 'pending' });
-    const rejected = await countFresh(collection, { syncStatus: 'rejected', reopenedAt: { $exists: false } });
+    const refused = await readFresh(collection, { selector: { syncStatus: 'rejected' } });
+    const successors = refused.length ? await readFresh(collection, { selector: { saleId: { $in: refused.map((order) => order.id) } } }) : [];
+    const replaced = replacedOrderIds([...refused, ...successors]);
+    const rejected = refused.filter((order) => !replaced.has(order.id)).length;
     state$.next({ ...state$.value, ...patch, pending, rejected, stuck: stuckState() });
   }
 
@@ -459,14 +467,14 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     async requeue(orderIds) {
       const orders = (await readFresh(collection, { selector: { syncStatus: 'rejected',
         ...(orderIds ? { id: { $in: orderIds } } : {}) } }))
-        .filter((order) => !NOT_REQUEUEABLE.has(order.error?.code ?? ''));
+        .filter((order) => isRequeueable(order.error?.code));
       let count = 0;
       for (const order of orders) {
         const oldCommandId = order.commandId;
         let changed = false;
         // The modifier sees the stored state, even when findOne's cached result is stale.
         await (await collection.findOne(order.id).exec())?.incrementalModify((data) => {
-          changed = data.syncStatus === 'rejected' && !NOT_REQUEUEABLE.has(data.error?.code ?? '');
+          changed = data.syncStatus === 'rejected' && isRequeueable(data.error?.code);
           if (!changed) return data;
           data.syncStatus = 'pending';
           delete data.error;

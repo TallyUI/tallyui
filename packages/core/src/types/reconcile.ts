@@ -76,8 +76,9 @@ export interface CatalogueReconcileAdapter<Doc = any, Cursor = unknown> {
   /**
    * Hand documents to the collection's pull (the reconcile feed). An entry's `key` is the local primary key when
    * there is a local copy, and otherwise the listing's key.
+   * A `refreshOnly` entry asks the feed to fetch the document again and is never tombstoned when the fetch omits it.
    */
-  enqueue(entries: Array<{ key: string; local?: Doc; remote?: unknown; tombstone?: boolean }>): void;
+  enqueue(entries: Array<{ key: string; local?: Doc; remote?: unknown; tombstone?: boolean; refreshOnly?: boolean }>): void;
   /** Ids per `fetchByIds` request of the feed this adapter enqueues into: a page's `n` refetches take `ceil(n / refetchBatchSize)` budget slots (1 when unset). */
   refetchBatchSize?: number;
 }
