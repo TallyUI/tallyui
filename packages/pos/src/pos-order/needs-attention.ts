@@ -1,4 +1,5 @@
 import { knownWarnings } from '@tallyui/core';
+import { replacedOrderIds } from './reopened';
 import type { PosOrder } from './types';
 
 /**
@@ -7,11 +8,14 @@ import type { PosOrder } from './types';
  * `stuckCommandIds` (the outbox's `OutboxState.stuck`: the store keeps failing it), newest first.
  * A warning code this till version doesn't know is not shown here (`knownWarnings`). Never changes `orders`.
  * `register_session_unknown` is not shown, because the store counts the order once its session arrives (ADR-078).
+ * A refused order is left out once its finalized successor is in `orders`.
  */
 export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: readonly string[] } = {}): PosOrder[] {
+  const replaced = replacedOrderIds(orders);
   return orders.filter((order) => order.syncStatus === 'rejected'
     || (order.localWarnings?.length ?? 0) > 0
     || (order.syncStatus === 'applied' && knownWarnings(order.warnings).some((warning) => warning.code !== 'register_session_unknown')) || order.lateSessionId !== undefined
     || (order.syncStatus === 'pending' && options.stuckCommandIds?.includes(order.commandId) === true))
+    .filter((order) => !replaced.has(order.id))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

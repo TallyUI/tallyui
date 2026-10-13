@@ -10,7 +10,7 @@ import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder, posOrderCollection, toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS, STUCK_AFTER_MS, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
-import { outboxLogger } from './index';
+import { isRequeueable, outboxLogger } from './index';
 import type { CommandTransport, OutboxState, TransportOutcome } from './types';
 
 let db: RxDatabase<{ pos_orders: RxCollection<PosOrder> }>;
@@ -80,6 +80,13 @@ afterEach(async () => {
 });
 
 describe('order outbox', () => {
+  it.each([
+    ['idempotency_mismatch', false], ['coupon_invalid', false], ['total_mismatch', false],
+    ['platform_error', true], [undefined, true],
+  ] as const)('isRequeueable(%s) is %s', (code, expected) => {
+    expect(isRequeueable(code)).toBe(expected);
+  });
+
   it('passes frozen WooCommerce orders by envelope id only in the local context', async () => {
     const inputs = [0, 1].map((i) => {
       const builder = createOrderBuilder({ currency: 'USD', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 100000,
@@ -685,6 +692,37 @@ describe('order outbox', () => {
     outbox.stop();
     await expect(outbox.requeue()).resolves.toBe(1);
     expect(states.at(-1)).toMatchObject({ pending: 1, rejected: 0 });
+  });
+
+  it.each([false, true])('counts reopened refused orders until their successor is stored (%s)', async (replaced) => {
+    const reopened = { ...order(1), syncStatus: 'rejected' as const, reopenedAt: new Date(epoch).toISOString() };
+    await collection.bulkInsert([
+      { ...order(0), syncStatus: 'rejected' },
+      reopened,
+      ...(replaced ? [{ ...order(2), saleId: reopened.id, syncStatus: 'applied' as const }] : []),
+    ]);
+    const { outbox, states } = setup();
+    await outbox.flush();
+    expect(states.at(-1)).toMatchObject({ pending: 0, rejected: replaced ? 1 : 2 });
+  });
+
+  it.each([false, true])('leaves coupon_invalid and total_mismatch rejections unchanged on requeue (by id: %s)', async (byId) => {
+    const inputs = ['coupon_invalid', 'total_mismatch'].map((code, i) => ({
+      ...order(i), syncStatus: 'rejected' as const, error: { code, message: 'Refused' },
+    }));
+    await collection.bulkInsert(inputs);
+    const { outbox, send } = setup();
+    if (byId) {
+      for (const input of inputs) await expect(outbox.requeue([input.id])).resolves.toBe(0);
+    } else {
+      await expect(outbox.requeue()).resolves.toBe(0);
+    }
+    for (const input of inputs) {
+      expect((await collection.findOne(input.id).exec())?.toJSON()).toMatchObject({
+        syncStatus: 'rejected', error: input.error, commandId: input.commandId,
+      });
+    }
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('requeues once when two calls find the same rejected order', async () => {

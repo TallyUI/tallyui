@@ -1,6 +1,6 @@
 export { createHttpCommandTransport } from './http-transport';
 export type { HttpTransportOptions } from './http-transport';
-export { createOrderOutbox } from './order-outbox';
+export { createOrderOutbox, isRequeueable } from './order-outbox';
 export type { OrderOutboxOptions, OrderOutbox } from './order-outbox';
 export { createRegisterOutbox } from './register-outbox';
 export type { RegisterOutboxOptions, RegisterOutbox } from './register-outbox';

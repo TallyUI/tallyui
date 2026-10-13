@@ -43,6 +43,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'catalogueViewReducer', 'normalizeCatalogueViewState', 'resolveGridColumns', 'DEFAULT_CATALOGUE_VIEW_STATE',
   // the catalogue (slice c): the pure category list and membership test Catalogue filters with, never a hook or the store.
   'listCategories', 'inCategory',
+  // Needs attention's Retry (ADR-077 d4b): the one definition of which refusal codes the outbox resends, never a hook or the store.
+  'isRequeueable',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

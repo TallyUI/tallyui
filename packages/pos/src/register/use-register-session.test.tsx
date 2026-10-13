@@ -47,7 +47,9 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { LogEntry } from '../logging';
+import { orderDraftSchema } from '../order/order-drafts';
 import { addPosOrderCollection } from '../pos-order/open';
+import { reopenRefusedOrder } from '../pos-order/reopen';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
 import { posRefundCollection, type PosRefund, type PosRefundCollection } from '../refund/pos-refund';
 import { registerFactsLogger } from './facts';
@@ -600,6 +602,31 @@ it('derives expected locally while a movement is still on its way to the server'
   await movement(session.id, 'paid_in', 2000);
   const result = await settled();
   await waitFor(() => expect(result.current.expected.cash).toBe(12000));
+});
+
+it.each([false, true])('counts reopened cash once in expected, salesCount and close (successor: %s)', async (replaced) => {
+  const session = await seed();
+  const { order_drafts } = await db.addCollections({ order_drafts: { schema: orderDraftSchema } });
+  await sale('applied', session.id, [{ method: 'cash', amountMinor: 100 }], { syncStatus: 'applied' });
+  await sale('rejected', session.id, [{ method: 'cash', amountMinor: 200 }], { syncStatus: 'rejected' });
+  await sale('reopened', session.id, [{ method: 'cash', amountMinor: 400 }], {
+    syncStatus: 'rejected', error: { code: 'coupon_invalid', message: 'Refused' },
+  });
+  await reopenRefusedOrder('reopened', { orders: db.pos_orders, drafts: order_drafts, sessions: db.register_sessions,
+    taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
+  if (replaced) await sale('successor', session.id, [{ method: 'cash', amountMinor: 400 }], { saleId: 'reopened' });
+  const result = await settled({ varianceThreshold: 0 });
+  await waitFor(() => expect(result.current.expected.cash).toBe(10700));
+  expect(result.current.salesCount).toBe(3);
+  await act(() => result.current.actions.startCounting());
+  await waitFor(() => expect(result.current.session?.status).toBe('counting'));
+  await act(async () => {
+    const closure = await result.current.actions.closeSession({ counted: { cash: 10700 } });
+    expect(closure.expected).toEqual({ cash: 10700 });
+    expect(closure.breakdowns.approved_by).toBeNull();
+  });
+  expect((await db.register_sessions.findOne(session.id).exec())!.status).toBe('closed');
+  expect(await order_drafts.count().exec()).toBe(1);
 });
 
 describe('refunds (ADR-080 amendment 1)', () => {
