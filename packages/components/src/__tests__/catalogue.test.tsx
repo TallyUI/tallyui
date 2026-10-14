@@ -861,4 +861,15 @@ describe('Catalogue Any picks (#495)', () => {
     fireEvent.click(picker.getByRole('button', { name: 'Add to cart' }));
     expect(onSelect).toHaveBeenCalledExactlyOnceWith({ product, variant, picks: { Size: 'S' } });
   });
+
+  it('closes the picker when its product leaves the catalogue', () => {
+    const onSelect = vi.fn();
+    const props = { traits: wooProductTraits, currency: 'EUR', onSelect, lastSyncedAt: null, pickAnyOptions: true };
+    const { rerender } = render(<Catalogue products={[tee()]} {...props} />);
+    fireEvent.click(screen.getByTestId('product-tile-Tee'));
+    expect(screen.getByLabelText('Choose options')).toBeTruthy();
+    rerender(<Catalogue products={[]} {...props} />);
+    expect(screen.queryByLabelText('Choose options')).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });
