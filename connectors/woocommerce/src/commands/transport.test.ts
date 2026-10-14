@@ -713,3 +713,61 @@ describe('createWooCommandTransport', () => {
     } finally { vi.useRealTimers(); }
   });
 });
+
+describe('Any picks as line meta (#495)', () => {
+  function picked(anyAttributes: string[], attributes: Record<string, string> = { Size: 'L', Colour: 'Black' }) {
+    const envelope = order();
+    envelope.version = 6;
+    envelope.payload.lines[0] = { ...envelope.payload.lines[0], attributes, anyAttributes };
+    return envelope;
+  }
+  function mapped(envelope: OrderCreateEnvelope) {
+    const result = toWooOrderPayload(envelope);
+    if (!('payload' in result)) throw new Error(result.error.message);
+    return result.payload as { line_items: Array<Record<string, unknown>> } & Record<string, unknown>;
+  }
+
+  it('sends one pick as line meta keyed in lower case, and no fixed attribute', () => {
+    const [line] = mapped(picked(['Size'])).line_items;
+    expect(line.meta_data).toEqual([{ key: 'size', value: 'L' }]);
+    expect(Object.keys(line)).toEqual(['product_id', 'quantity', 'subtotal', 'total', 'meta_data']);
+  });
+
+  it('keys a two-word name with a hyphen', () => {
+    expect(mapped(picked(['Shoe Size'], { 'Shoe Size': '42' })).line_items[0].meta_data).toEqual([{ key: 'shoe-size', value: '42' }]);
+  });
+
+  it.each(['Größe', 'Size (EU)', ' Size', 'Size  EU'])('sends no entry for the unkeyable name %j', (name) => {
+    expect(mapped(picked([name, 'Size'], { [name]: 'X', Size: 'L' })).line_items[0].meta_data).toEqual([{ key: 'size', value: 'L' }]);
+    expect(Object.keys(mapped(picked([name], { [name]: 'X' })).line_items[0])).toEqual(['product_id', 'quantity', 'subtotal', 'total']);
+  });
+
+  it('puts a pick after _woocommerce_pos_data in a coupon sale and leaves an unpicked line as it was', () => {
+    const envelope = order();
+    envelope.version = 6;
+    Object.assign(envelope.payload, { subtotalMinor: 2100, discountMinor: 100, totalMinor: 1750,
+      lines: [
+        { ...envelope.payload.lines[0], quantity: 2, unitPriceMinor: 900, regularUnitPriceMinor: 1000,
+          attributes: { Size: 'L', Colour: 'Black' }, anyAttributes: ['Size'] },
+        { clientLineId: 'second', variantId: '81', quantity: 3, unitPriceMinor: 100, discountMinor: 100, attributes: { Colour: 'Red' } },
+      ],
+      coupons: [{ code: 'ten', couponId: '303', discountMinor: 250, discountTaxMinor: 0 }],
+    });
+    envelope.payload.payments[0].amountMinor = 1750;
+    const [first, second] = mapped(envelope).line_items;
+    expect(first).toEqual({ product_id: 80, quantity: 2, subtotal: '18.00', total: '18.00', meta_data: [
+      { key: '_woocommerce_pos_data', value: '{"price":"9.00","regular_price":"10.00"}' }, { key: 'size', value: 'L' }] });
+    expect(JSON.stringify(second)).toBe('{"product_id":81,"quantity":3,"subtotal":"2.00","total":"2.00","meta_data":'
+      + '[{"key":"_woocommerce_pos_data","value":"{\\"price\\":\\"0.666667\\",\\"regular_price\\":\\"0.666667\\"}"}]}');
+  });
+
+  it('changes nothing in the request but the picked line meta', () => {
+    const plain = order();
+    plain.version = 6;
+    const { line_items: pickedLines, ...pickedRest } = mapped(picked(['Size']));
+    const { line_items: plainLines, ...plainRest } = mapped(plain);
+    expect(JSON.stringify(pickedRest)).toBe(JSON.stringify(plainRest));
+    const { meta_data: _meta, ...pickedLine } = pickedLines[0];
+    expect(JSON.stringify(pickedLine)).toBe(JSON.stringify(plainLines[0]));
+  });
+});

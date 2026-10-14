@@ -4949,6 +4949,12 @@ interface OrderCreatePayload {
       without picks is sent as before, byte for byte.
     - **The cart.** A pick is part of a line's identity: the same variant with different picks makes separate lines.
       Only local "Any" groups (no group `id`) can be picked; global `pa_*` attributes are #572.
+    - **The picker.** `Catalogue` asks for a value for each local "Any" group when `pickAnyOptions` is set; an app sets
+      it only when the store accepts order.create version 6.
+    - **WooCommerce.** The transport appends `{ key, value }` line meta for each picked name, after `_woocommerce_pos_data`
+      on a coupon line. The key is the name in lower case with each space as a hyphen, which is how the dev store keyed
+      "Size" and "Shoe Size"; the sent value replaced Woo's own empty row rather than adding one (2026-10-14 proof). A
+      name with any other character is not sent, so Woo keeps its empty row for it, as before.
   - **Rulings on (d4b) (front desk, 2026-10-07):**
     - **Q-d4b-1, the marker.** `pos_orders` v9 carries one optional `reopenedAt`. Needs attention hides a rejected
       order that has it; the order stays as the record and is never sent again. (Hiding superseded by R5 amended.)

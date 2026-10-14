@@ -47,6 +47,12 @@ function stripTags(text: string): string {
   return text;
 }
 
+// The dev store keyed "Size" as `size` and "Shoe Size" as `shoe-size` (#495 c/d proof, 2026-10-14): lower case, a space
+// as a hyphen. A name with any other character is not sent, so Woo keeps its own empty row for it, as before.
+function wooAnyAttributeKey(name: string): string | undefined {
+  return /^[A-Za-z0-9]+(?:[ -][A-Za-z0-9]+)*$/.test(name) ? name.toLowerCase().replace(/ /g, '-') : undefined;
+}
+
 function decodeCouponMessage(message: unknown): string {
   const entities: Record<string, string> = { quot: '"', amp: '&', lt: '<', gt: '>', apos: "'" };
   return stripTags(typeof message === 'string' ? message : '')
@@ -110,12 +116,18 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
         : `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;
     }
     const regular_price = p.coupons?.length && line.regularUnitPriceMinor !== undefined ? major(line.regularUnitPriceMinor) : price;
+    const picked = (line.anyAttributes ?? []).flatMap((name) => {
+      const key = wooAnyAttributeKey(name);
+      const value = line.attributes?.[name];
+      return key && value ? [{ key, value }] : [];
+    });
+    const lineMeta = [...(p.coupons?.length ? [{ key: '_woocommerce_pos_data', value: JSON.stringify({ price, regular_price }) }] : []), ...picked];
     line_items.push(custom ? {
       product_id: 0, name: custom.name, ...(custom.sku ? { sku: custom.sku } : {}), quantity: line.quantity, subtotal, total,
       tax_class: custom.taxClass ?? '', meta_data: [{ key: '_woocommerce_pos_data',
         value: JSON.stringify({ price, regular_price, tax_status: custom.taxStatus }) }],
     } : { product_id: Number(line.variantId), quantity: line.quantity, subtotal, total,
-      ...(p.coupons?.length ? { meta_data: [{ key: '_woocommerce_pos_data', value: JSON.stringify({ price, regular_price }) }] } : {}) });
+      ...(lineMeta.length ? { meta_data: lineMeta } : {}) });
   }
   const fee_lines = [], shipping_lines = [];
   for (const fee of p.fees ?? []) {
