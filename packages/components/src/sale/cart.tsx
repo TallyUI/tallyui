@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import { buildReceiptData } from '@tallyui/pos';
@@ -9,13 +9,15 @@ import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, taxClasses }:
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, taxClasses, afterSubtotal }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
     /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
     canEditPrice?: boolean;
     /** Called after a price is applied, for the app's audit log. The reason is kept only here. */
     onPriceChange?: (change: { lineId: string; fromMinor: number; toMinor: number; reason?: string }) => void;
+    /** Rows under the totals' Subtotal, e.g. the platform's coupon chips (passed to CartTotal). */
+    afterSubtotal?: ReactNode;
   }) {
   const { order } = sale;
   const money = (amount: number) => ({ amount, currency: order.currency });
@@ -95,7 +97,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     footer={<View testID="cart-footer" className="gap-3 pb-4">
       {/* Exclusive: subtotal − discount + tax = total. Inclusive: subtotal − discount = total, the tax "incl.", not added. */}
       <CartTotal subtotal={money(totals.subtotalMinor)} discount={money(totals.discountMinor)} total={money(totals.totalMinor)}
-        taxLines={taxRows} taxInclusive={totals.taxInclusive} />
+        taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
       <View className="flex-row gap-3">
         <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('cash')} className={pay}>
