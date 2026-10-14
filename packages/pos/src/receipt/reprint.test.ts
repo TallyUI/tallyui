@@ -201,6 +201,21 @@ describe('reprint receipt data with converted lines, tax labels and coupons', ()
     },
   );
 
+  it('carries the exclusive lines\' tax fraction into a converted line\'s share', () => {
+    // A's tax is 8.25 (1.00 at 8.25 %); B's, inclusive, is 8.383. Their running sum rounds to 17, so B's share is 17 - 8 = 9,
+    // where B's tax rounded on its own would be 8.
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 82500, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'A', sku: 'A', unitPrice: { amount: 100, currency: 'USD' } });
+    builder.addLine({ productId: 'p2', name: 'B', sku: 'B', unitPrice: { amount: 110, currency: 'USD', taxInclusive: true } });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const order = builder.getSnapshot();
+    const original = buildReceiptData(order, plainConfig);
+    const reprint = buildReceiptDataFromPosOrder(finalizeOrder(order, { capabilities: { orderCreate: 6 } }), plainConfig);
+    expect(reprint.lineItems.map((line) => line.lineTotalMinor)).toEqual(original.lineItems.map((line) => line.lineTotalMinor));
+    expect(reprint.lineItems.map((line) => line.lineTotalMinor)).toEqual([100, 110 - 9]);
+    expect(reprint.totals).toEqual(original.totals);
+  });
+
   it('labels the tax rows as buildReceiptData does without config.taxLabels', () => {
     const order = plainSale(false, undefined, false, false);
     const reprint = buildReceiptDataFromPosOrder(finalizeOrder(order, { capabilities: { orderCreate: 3 } }), plainConfig);

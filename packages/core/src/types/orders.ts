@@ -1,7 +1,8 @@
 import type { PaymentMethodKind } from './commands';
 
 /** A line of an order the store holds (ADR-081). Money in integer minor units of the order's currency, as the store
- * records it: every amount excludes tax, and the tax is beside it. */
+ * records it: every amount excludes tax, and the tax is beside it.
+ * Each tax field is such that net + tax is the gross rounded once. */
 export interface StoreOrderLine {
   /** The store's line id: what `OrderRefundLine.orderLineId` names. */
   id: string;
@@ -21,7 +22,8 @@ export interface StoreOrderLine {
   taxMinor: number;
 }
 
-/** A fee or shipping line: excluding tax, the tax beside it. A fee may be negative. */
+/** A fee or shipping line: excluding tax, the tax beside it. A fee may be negative.
+ * `taxMinor` is such that `totalMinor + taxMinor` is the gross rounded once. */
 export interface StoreOrderCharge { name: string; totalMinor: number; taxMinor: number }
 
 export interface StoreOrderPayment {
@@ -55,6 +57,7 @@ export interface StoreOrder {
   lines: StoreOrderLine[];
   fees: StoreOrderCharge[];
   shipping: StoreOrderCharge[];
+  /** `discountMinor + discountTaxMinor` is the coupon's gross discount rounded once. */
   coupons: Array<{ code: string; discountMinor: number; discountTaxMinor: number }>;
   /** Tax by rate; `amountMinor` includes the rate's shipping tax. */
   taxLines: Array<{ label: string; code?: string; ratePpm: number; amountMinor: number }>;

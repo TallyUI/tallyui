@@ -21,6 +21,22 @@ function minor(text: unknown, currency: string): number {
   return negative && value !== 0 ? -value : value;
 }
 
+// The exact sum of two WooCommerce decimal strings (WCPOS stores 6dp), in text `minor` reads, so a gross rounds once.
+function decimalSum(a: unknown, b: unknown): string {
+  const parts = [a, b].map((text) => /^(-?)(\d+)(?:\.(\d+))?$/.exec(typeof text === 'string' ? text.trim() : ''));
+  const scale = Math.max(...parts.map((part) => part?.[3]?.length ?? 0));
+  let total = 0n;
+  for (const part of parts) {
+    if (!part) throw unexpected();
+    total += BigInt(`${part[1]}${part[2]}${(part[3] ?? '').padEnd(scale, '0')}`);
+  }
+  const digits = (total < 0n ? -total : total).toString().padStart(scale + 1, '0');
+  return `${total < 0n ? '-' : ''}${scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits}`;
+}
+
+/** The tax such that net + tax is the gross rounded once, not two rounded halves. */
+const grossTax = (net: unknown, tax: unknown, currency: string) => minor(decimalSum(net, tax), currency) - minor(net, currency);
+
 function posUuid(metaData: unknown): string | undefined {
   const entry = rows(metaData).find((meta) => meta.key === '_woocommerce_pos_uuid' && nonEmpty(meta.value));
   return entry ? (entry.value as string) : undefined;
@@ -75,21 +91,21 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
         ...(sku ? { sku } : {}),
         quantity: Number(line.quantity),
         subtotalMinor: minor(line.subtotal, currency),
-        subtotalTaxMinor: minor(line.subtotal_tax, currency),
+        subtotalTaxMinor: grossTax(line.subtotal, line.subtotal_tax, currency),
         totalMinor: minor(line.total, currency),
-        taxMinor: minor(line.total_tax, currency),
+        taxMinor: grossTax(line.total, line.total_tax, currency),
       };
     }),
     fees: rows(raw.fee_lines).map((fee) => ({
-      name: String(fee.name), totalMinor: minor(fee.total, currency), taxMinor: minor(fee.total_tax, currency),
+      name: String(fee.name), totalMinor: minor(fee.total, currency), taxMinor: grossTax(fee.total, fee.total_tax, currency),
     })),
     shipping: rows(raw.shipping_lines).map((line) => ({
-      name: String(line.method_title), totalMinor: minor(line.total, currency), taxMinor: minor(line.total_tax, currency),
+      name: String(line.method_title), totalMinor: minor(line.total, currency), taxMinor: grossTax(line.total, line.total_tax, currency),
     })),
     coupons: rows(raw.coupon_lines).map((coupon) => ({
       code: String(coupon.code),
       discountMinor: minor(coupon.discount, currency),
-      discountTaxMinor: minor(coupon.discount_tax, currency),
+      discountTaxMinor: grossTax(coupon.discount, coupon.discount_tax, currency),
     })),
     taxLines: rows(raw.tax_lines).map((tax) => {
       const code = nonEmpty(tax.rate_code);

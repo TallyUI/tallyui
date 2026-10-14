@@ -5609,6 +5609,8 @@ interface OrderCreatePayload {
   - **What a stored order cannot give back.** A `PosOrder` reprint matches the original `ReceiptData` figures
     (totals, tax rows and their labels, line totals including converted lines). But a `PosOrder` keeps no discount
     labels, so a reprint lists the order discount as one `Order discount` row. When lines were converted, that row is
-    in the display mode.
+    in the display mode. An order finalized below `order.create` v3 (no `display`) keeps a converted line's discount
+    only in the line's own mode. Its line totals and order total still match, but `displayAmountMinor`, `subtotalMinor`
+    and `discountMinor` can differ from the original by that discount's tax conversion.
 - **Evidence:** `connectors/woocommerce/src/orders.test.ts`, `packages/pos/src/receipt/reprint.test.ts`,
   `packages/components/src/__tests__/receipt.test.tsx`, `packages/core/src/__tests__/connector-orders.test.ts`.

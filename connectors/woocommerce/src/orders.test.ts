@@ -77,6 +77,43 @@ describe('WooCommerce orders', () => {
     expect(Object.is(fee.totalMinor, 0)).toBe(true);
   });
 
+  it('maps 6dp tax so that net + tax is the gross rounded once (inclusive GBP, 20 % VAT)', () => {
+    const [line] = list[1]!.line_items;
+    // Rounded on its own, each figure gives one minor unit too many: 13 + 3, 63 + 13, 43 + 9, 33 + 7, 129 + 26, 29 + 6.
+    const order = toWooStoreOrder({
+      ...list[1], currency: 'GBP', prices_include_tax: true, total: '2.590000',
+      line_items: [
+        { ...line, quantity: 1, subtotal: '0.125000', subtotal_tax: '0.025000', total: '0.125000', total_tax: '0.025000' },
+        { ...line, id: 21, quantity: 1, subtotal: '0.625000', subtotal_tax: '0.125000', total: '0.427517', total_tax: '0.085503' },
+      ],
+      fee_lines: [{ ...list[1]!.fee_lines[0], tax_status: 'taxable', total: '0.326667', total_tax: '0.065333' }],
+      shipping_lines: [{ ...list[1]!.shipping_lines[0], total: '1.286000', total_tax: '0.257200' }],
+      coupon_lines: [{ ...list[1]!.coupon_lines[0], discount: '0.286000', discount_tax: '0.057200' }],
+    });
+    const gross = (net: number, tax: number) => net + tax;
+    expect(order.lines.map((l) => [gross(l.subtotalMinor, l.subtotalTaxMinor), gross(l.totalMinor, l.taxMinor)])).toStrictEqual([[15, 15], [75, 51]]);
+    expect(order.lines[0]).toMatchObject({ subtotalMinor: 13, subtotalTaxMinor: 2, totalMinor: 13, taxMinor: 2 });
+    expect(order.fees.map((fee) => gross(fee.totalMinor, fee.taxMinor))).toStrictEqual([39]);
+    expect(order.shipping.map((ship) => gross(ship.totalMinor, ship.taxMinor))).toStrictEqual([154]);
+    expect(order.coupons.map((coupon) => gross(coupon.discountMinor, coupon.discountTaxMinor))).toStrictEqual([34]);
+    const charges = [...order.fees, ...order.shipping];
+    expect(order.lines.reduce((sum, l) => sum + l.totalMinor + l.taxMinor, 0) + charges.reduce((sum, c) => sum + c.totalMinor + c.taxMinor, 0))
+      .toBe(order.totalMinor);
+    expect(order.totalMinor).toBe(259);
+  });
+
+  it('maps a negative 6dp fee symmetrically', () => {
+    const fee = toWooStoreOrder({ ...list[1], fee_lines: [{ ...list[1]!.fee_lines[0]!, total: '-0.125000', total_tax: '-0.025000' }] }).fees[0]!;
+    expect(fee).toStrictEqual({ name: 'Loyalty', totalMinor: -13, taxMinor: -2 });
+  });
+
+  it('throws a server error on an unparseable tax amount', () => {
+    for (const total_tax of ['abc', 0.5, '1e3', '--1', undefined]) {
+      expect(() => toWooStoreOrder({ ...list[1], fee_lines: [{ ...list[1]!.fee_lines[0]!, total_tax }] }))
+        .toThrow(expect.objectContaining({ code: 'server', message: 'unexpected response' }));
+    }
+  });
+
   it('throws a server error on an unparseable amount', () => {
     for (const total of ['abc', 32.91, '1e3', '--1']) {
       const call = () => toWooStoreOrder({ ...list[0], total });
