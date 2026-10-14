@@ -29,4 +29,3 @@ function useAugmentedRef<T>({
 }
 
 export { useAugmentedRef };
-export type { AugmentRefProps };

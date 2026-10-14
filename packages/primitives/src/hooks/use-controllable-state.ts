@@ -84,4 +84,3 @@ function useCallbackRef<T extends (...args: any[]) => any>(
 }
 
 export { useControllableState };
-export type { UseControllableStateParams };
