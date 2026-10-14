@@ -97,7 +97,17 @@ it('labels whole notes and coins without decimals, and a fraction as money (the 
 });
 
 it('holds for ten, repeats, and does not also single tap', async () => {
-  await renderCounting();
+  // Rendered here, not by renderCounting, to keep `rerender`. The tiles mount on an RxDB emission
+  // during waitFor, outside act, so their passive effects can still be pending when waitFor
+  // returns; react-native-web's Pressable registers with its responder system in one, and a
+  // mouseDown before that is never granted (no long press). React flushes pending effects before
+  // it renders again, so the rerender (in act) registers the tiles before the gesture.
+  const session = await seedSession(db, 10000);
+  await (await db.register_sessions.findOne(session.id).exec())?.incrementalPatch({ status: 'counting' });
+  const ui = <RegisterHarness db={db}>{(register) => <RegisterCount register={register} currency="EUR" />}</RegisterHarness>;
+  const { rerender } = render(ui);
+  await waitFor(() => expect(screen.getByTestId('register-count')).toBeTruthy());
+  rerender(ui);
   const tile = screen.getByTestId('den-tile-2000');
   vi.useFakeTimers();
   fireEvent.mouseDown(tile);
