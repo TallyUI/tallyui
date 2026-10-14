@@ -32,22 +32,6 @@ export const wooCustomerDoc = {
   },
 };
 
-/**
- * Sample MedusaJS customer document for component tests.
- */
-export const medusaCustomerDoc = {
-  id: 'cus_01H',
-  first_name: 'Jane',
-  last_name: 'Smith',
-  email: 'jane@example.com',
-  addresses: [{
-    address_1: '123 Main St',
-    city: 'Springfield',
-    province: 'IL',
-    postal_code: '62701',
-  }],
-};
-
 const wooCustomerTraits: CustomerTraits = {
   getId: (doc) => String(doc.id),
   getName: (doc) => [doc.first_name, doc.last_name].filter(Boolean).join(' ') || 'Guest',

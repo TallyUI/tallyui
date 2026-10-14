@@ -30,7 +30,6 @@ export type DemoRegisterDb = RxDatabase<{
 }>;
 
 export const DEMO_ACTOR = { id: 'demo-cashier', name: 'Demo cashier' };
-export const DEMO_CURRENCY = 'EUR';
 
 export function useDemoRegister({
   registerId = 'demo-register',
