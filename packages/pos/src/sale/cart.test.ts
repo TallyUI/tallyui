@@ -88,6 +88,17 @@ describe('addEntryToCart', () => {
       { variantId: 'large', name: 'Shirt · Large', unitPriceMinor: 1500 },
     ]);
   });
+  it("keeps the variant's options as line attributes and leaves the name alone", () => {
+    const builder = orderBuilder();
+    addEntryToCart(builder, { ...entry, variant: { ...entry.variant, options: { Size: 'M', Color: 'Black' } } }, traits, 'EUR');
+    expect(builder.getSnapshot().lineItems[0]).toMatchObject({ name: 'Shirt', attributes: { Size: 'M', Color: 'Black' } });
+  });
+  it.each([undefined, {}])('adds no attributes key when the options are %s', (options) => {
+    const builder = orderBuilder();
+    addEntryToCart(builder, { ...entry, variant: { ...entry.variant, options } }, traits, 'EUR');
+    expect(builder.getSnapshot().lineItems[0]).not.toHaveProperty('attributes');
+    expect(builder.getSnapshot().lineItems[0].name).toBe('Shirt');
+  });
   it('uses an empty SKU when the selected variant has none', () => {
     const noSku = { ...product, variants: [{ id: 'plain', prices: [{ amount: 10, currency_code: 'eur' }] }] };
     const builder = orderBuilder();

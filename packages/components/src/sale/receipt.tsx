@@ -48,6 +48,7 @@ export function Receipt({ order, posOrder, store, cashier, registerId, registerN
     {receipt.header.customer && <Text className="text-muted-foreground">Customer: {receipt.header.customer}</Text>}
     {receipt.lineItems.map((line, index) => <View key={index}>
       <Text className="text-foreground">{line.name}</Text>
+      {Object.entries(line.attributes ?? {}).map(([name, value]) => <Text key={name} className="text-muted-foreground">{`${name}: ${value}`}</Text>)}
       {/* Before any discount, then the line's own discounts as sub-rows (TallyUI ADR-063); they add up to the subtotal. */}
       {row(`${line.quantity} × ${money(line.unitPriceMinor)}`, money(line.displayAmountMinor))}
       {line.displayDiscounts.map((discount, i) => <View key={i} className="pl-4">{row(`${discountLabel(

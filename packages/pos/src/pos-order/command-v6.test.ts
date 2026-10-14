@@ -89,6 +89,21 @@ describe('order.create v6 coupon envelope (ADR-077)', () => {
     expect(contentVersion(order)).toBe(fee ? 5 : 3);
   });
 
+  it('sends no attributes for a coupon-free sale whose finalized line has them, at the same version', () => {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 200000 } });
+    const input = { productId: '1', name: 'Shirt', unitPrice: { amount: 800, currency: 'GBP' } };
+    builder.addLine(input);
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const plain = finalizeOrder(builder.getSnapshot());
+    builder.removeItem(builder.getSnapshot().lineItems[0].id);
+    builder.addLine({ ...input, attributes: { Size: 'M' } });
+    const order = finalizeOrder(builder.getSnapshot());
+    expect(order.lines[0].attributes).toEqual({ Size: 'M' });
+    const envelope = toOrderCreateEnvelope(order, 'device_golden', 1, { maxVersion: 6 });
+    expect(envelope.version).toBe(toOrderCreateEnvelope(plain, 'device_golden', 1, { maxVersion: 6 }).version);
+    for (const line of envelope.payload.lines) expect(line).not.toHaveProperty('attributes');
+  });
+
   it('strips stored receipt coupons from a coupon-free order', () => {
     const order = sale(false);
     order.display!.coupons = [{ code: 'ten', amountMinor: 130 }];

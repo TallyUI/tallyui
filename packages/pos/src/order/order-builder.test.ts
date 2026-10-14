@@ -98,6 +98,16 @@ describe('OrderBuilder', () => {
     ]);
   });
 
+  it('keeps line attributes through draft restoration', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addLine({ productId: 'p1', name: 'Shirt', attributes: { Size: 'M', Color: 'Black' }, unitPrice: { amount: 800, currency: 'USD' } });
+    builder.addLine({ productId: 'p2', name: 'Mug', unitPrice: { amount: 500, currency: 'USD' } });
+    const saved = JSON.parse(JSON.stringify(builder.getSnapshot()));
+    const lines = restoreOrderDraft(saved, { currency: 'USD', taxContext }).getSnapshot().lineItems;
+    expect(lines[0].attributes).toEqual({ Size: 'M', Color: 'Black' });
+    expect(lines[1]).not.toHaveProperty('attributes');
+  });
+
   it('adds a product with its sale price and catalogue regular price', () => {
     const builder = createOrderBuilder({ currency: 'USD', taxContext });
     builder.addProduct(productDoc, { ...traits, getPrices: () => [

@@ -98,6 +98,15 @@ it.each([
   expect(await db.order_drafts.count().exec()).toBe(1);
 });
 
+it('keeps line attributes on the reopened sale', async () => {
+  const order = storedOrder();
+  order.lines[0].attributes = { Size: 'M', Color: 'Black' };
+  await db.pos_orders.insert(order);
+  const saved = await draft(await reopenRefusedOrder(order.id, deps()));
+  expect(saved.lineItems[0].attributes).toEqual({ Size: 'M', Color: 'Black' });
+  expect(saved.lineItems[1]).not.toHaveProperty('attributes');
+});
+
 it('the reopened sale finalizes and stores, then refuses another reopen', async () => {
   const order = storedOrder();
   await db.pos_orders.insert(order);

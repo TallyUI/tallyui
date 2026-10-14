@@ -10,6 +10,18 @@ describe('CartLine', () => {
     expect(screen.getByText('€17.00')).toBeDefined();
   });
 
+  it('renders one "Name: Value" row per attribute, in order, under the name', () => {
+    const { container } = render(<CartLine name="Shirt" attributes={{ Size: 'M', Color: 'Black' }} quantity={1}
+      unitPrice={{ amount: 850, currency: 'EUR' }} lineTotal={{ amount: 850, currency: 'EUR' }} locale="en" />);
+    expect(container.textContent).toBe('ShirtSize: MColor: Black€8.50 × 1€8.50');
+  });
+
+  it.each([undefined, {}])('renders no attribute rows when attributes are %s', (attributes) => {
+    const { container } = render(<CartLine name="Shirt" attributes={attributes} quantity={1}
+      unitPrice={{ amount: 850, currency: 'EUR' }} lineTotal={{ amount: 850, currency: 'EUR' }} locale="en" />);
+    expect(container.textContent).toBe('Shirt€8.50 × 1€8.50');
+  });
+
   it('displays the supplied total without recomputing it', () => {
     render(<CartLine name="Coffee" quantity={2} unitPrice={{ amount: 850, currency: 'EUR' }} lineTotal={{ amount: 1500, currency: 'EUR' }} locale="en" />);
     expect(screen.getByText('€15.00')).toBeDefined();

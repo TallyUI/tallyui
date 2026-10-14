@@ -168,6 +168,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       ...(line.taxClass !== undefined ? { taxClass: line.taxClass } : {}), taxStatus: line.taxStatus ?? 'taxable' } } : {}),
     ...(line.taxStatus !== undefined ? { taxStatus: line.taxStatus } : {}),
     name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
+    ...(line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),
     ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
     discountMinor: line.discountMinor, netMinor: line.netMinor,
     ...(order.taxRounding?.granularity === 'woocommerce' ? { netMicros: line.netMicros } : {}),

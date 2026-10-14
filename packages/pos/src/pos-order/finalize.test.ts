@@ -50,6 +50,16 @@ describe('finalizeOrder', () => {
     expect(order.lines.map((line) => line.regularUnitPriceMinor)).toEqual([1000, 500]);
   });
 
+  it("copies a line's attributes and leaves them out when the line has none", () => {
+    const builder = sale();
+    builder.addLine({ productId: 'p3', name: 'Shirt', attributes: { Size: 'M' }, unitPrice: { amount: 500, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const snapshot = builder.getSnapshot(), order = finalizeOrder(snapshot);
+    expect(order.lines[2].attributes).toEqual({ Size: 'M' });
+    expect(order.lines[2].attributes).not.toBe(snapshot.lineItems[2].attributes);
+    for (const line of order.lines.slice(0, 2)) expect(line).not.toHaveProperty('attributes');
+  });
+
   it('refuses a coupon sale when the store only accepts order.create version 5', () => {
     const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
       pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false },

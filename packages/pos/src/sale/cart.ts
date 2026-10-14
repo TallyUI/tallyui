@@ -19,6 +19,7 @@ export function addEntryToCart<Doc>(builder: OrderBuilder, entry: CatalogueEntry
   const unitPrice = resolved.current, regularPrice = regularUnitPriceMinor(resolved);
   return builder.addLine({
     productId: traits.getId(product), variantId: variant.id, name,
+    ...(variant.options && Object.keys(variant.options).length ? { attributes: variant.options } : {}),
     sku: variant.sku ?? '', imageUrl: traits.getImageUrl?.(product), unitPrice,
     ...(regularPrice !== undefined ? { regularUnitPriceMinor: regularPrice } : {}),
     taxClass: traits.getTaxClass?.(product, variant.id),
