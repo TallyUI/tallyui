@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Text } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import { Cart } from '../sale/cart';
 import { blue, click, discount, pricing, SaleHarness, sale, totals, traits } from './sale-harness';
@@ -149,6 +150,12 @@ describe('Cart', () => {
     </SaleHarness>);
     act(() => sale.add(blue, traits));
     expect(screen.getByText('incl. VAT 25%')).toBeTruthy();
+  });
+
+  it('renders afterSubtotal inside the footer', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} afterSubtotal={<Text testID="cart-coupon-row">SAVE10</Text>} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(within(screen.getByTestId('cart-footer')).getByTestId('cart-coupon-row')).toBeTruthy();
   });
 
   it('defaults taxLabel to `Tax ${ratePpm / 10000}%`', () => {

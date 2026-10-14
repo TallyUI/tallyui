@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { Text } from 'react-native';
 import { CartTotal } from '../cart/cart-total';
 
 const subtotal = { amount: 3000, currency: 'EUR' };
@@ -45,6 +46,16 @@ describe('CartTotal', () => {
     const positions = ['Subtotal', 'Discount', 'VAT', 'Total'].map((label) => text.indexOf(label));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it('renders afterSubtotal between Subtotal and Discount', () => {
+    render(<CartTotal subtotal={subtotal} total={total} discount={{ amount: 250, currency: 'EUR' }} locale="en"
+      afterSubtotal={<Text testID="coupon-row">SAVE10</Text>} />);
+    const label = screen.getByText('Subtotal');
+    const slot = screen.getByText('SAVE10');
+    const discountLabel = screen.getByText('Discount');
+    expect(label.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(slot.compareDocumentPosition(discountLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('labels tax rows as included, not added, when taxInclusive', () => {

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { formatMoney, type Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, HStack, VStack, type VStackProps } from '../ui';
@@ -11,6 +12,8 @@ export interface CartTotalProps extends Omit<VStackProps, 'children'> {
   taxInclusive?: boolean;
   locale?: string;
   className?: string;
+  /** Rows rendered directly under Subtotal, e.g. a platform's coupon chips. */
+  afterSubtotal?: ReactNode;
 }
 
 /**
@@ -28,6 +31,7 @@ export function CartTotal({
   taxInclusive,
   locale,
   className,
+  afterSubtotal,
   ...props
 }: CartTotalProps) {
   return (
@@ -36,6 +40,8 @@ export function CartTotal({
         <Text className="text-sm text-muted-foreground">Subtotal</Text>
         <Text className="text-sm">{formatMoney(subtotal, locale) ?? '—'}</Text>
       </HStack>
+
+      {afterSubtotal}
 
       {discount && discount.amount > 0 && (
         <HStack space="none" className="justify-between">
