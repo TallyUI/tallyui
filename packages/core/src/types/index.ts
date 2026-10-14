@@ -7,8 +7,6 @@ export type {
   CollectionSync,
   RemoteIdEntry,
   SyncContext,
-  ServerCapabilities,
-  TaxRounding,
 } from './connector';
 
 export type { ReplicationAdapter } from './replication';
@@ -16,7 +14,6 @@ export type { ReplicationAdapter } from './replication';
 export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 
 export type { StoreSettings, StoreSettingsChoice } from './store-settings';
-export { customerTraits, CustomerServiceError, type Customer, type CustomerInput } from './customers';
 
 export type { ProductTraits, TraitContext, VariantSummary, VariantOptionGroup, ProductCategory } from './traits/product';
 

@@ -21,8 +21,6 @@ import { type CouponLineItem, getEligibleItems } from './helpers';
 
 import type { CouponRejection, CouponRejectionCode } from './types';
 
-export type { CouponRejectionCode, CouponRejection };
-
 export interface CouponValidationContext {
 	lineItems: CouponLineItem[];
 	appliedCoupons: string[];
