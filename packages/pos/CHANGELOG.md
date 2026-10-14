@@ -1,5 +1,19 @@
 # @tallyui/pos
 
+## 3.11.0
+
+### Minor Changes
+
+- fc6e0d8: Cart lines keep a variant's chosen options as `attributes` (from `VariantSummary.options`) through park, resume and reopen. `finalizeOrder` stores them on `PosOrderLine.attributes`, and receipt data carries them. The order-create envelope is unchanged: attributes still go only at version 6 (#495).
+
+### Patch Changes
+
+- 6e058ac: Export the `PosOrderCoupon` type from the package index, as the 3.x changelog already said.
+- 1cebe19: Drop dead re-exports from internal modules. The package entry points export the same names as before.
+- Updated dependencies [916055f]
+- Updated dependencies [1cebe19]
+  - @tallyui/core@3.11.0
+
 ## 3.10.0
 
 > **Storage, one way: `pos_orders` moves from schema version 8 to 9.** Every stored order is kept byte for byte, but a till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.

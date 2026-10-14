@@ -1,5 +1,12 @@
 # @tallyui/core
 
+## 3.11.0
+
+### Patch Changes
+
+- 916055f: Remove an unused type import. No behaviour change.
+- 1cebe19: Drop dead re-exports from internal modules. The package entry points export the same names as before.
+
 ## 3.10.0
 
 > **Storage, one way: `pos_orders` moves from schema version 8 to 9.** Every stored order is kept byte for byte, but a till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.

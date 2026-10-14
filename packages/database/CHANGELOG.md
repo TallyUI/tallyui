@@ -1,5 +1,13 @@
 # @tallyui/database
 
+## 3.11.0
+
+### Patch Changes
+
+- Updated dependencies [916055f]
+- Updated dependencies [1cebe19]
+  - @tallyui/core@3.11.0
+
 ## 3.10.0
 
 > **Storage, one way: `pos_orders` moves from schema version 8 to 9.** Every stored order is kept byte for byte, but a till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.

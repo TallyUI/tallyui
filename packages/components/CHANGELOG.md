@@ -1,5 +1,24 @@
 # @tallyui/components
 
+## 3.11.0
+
+### Minor Changes
+
+- a6b1a7a: `CartTotal` and `Cart` take `afterSubtotal`, rows rendered directly under Subtotal (e.g. a platform's coupon chips).
+- fc6e0d8: `CartLine` takes `attributes` and shows a "Name: Value" row for each. `Cart` and `Receipt` pass a line's attributes through (#495).
+
+### Patch Changes
+
+- Updated dependencies [916055f]
+- Updated dependencies [6e058ac]
+- Updated dependencies [1cebe19]
+- Updated dependencies [9f84f24]
+- Updated dependencies [fc6e0d8]
+  - @tallyui/core@3.11.0
+  - @tallyui/pos@3.11.0
+  - @tallyui/primitives@3.11.0
+  - @tallyui/theme@3.11.0
+
 ## 3.10.0
 
 > **Storage, one way: `pos_orders` moves from schema version 8 to 9.** Every stored order is kept byte for byte, but a till that goes back to a build on version 8 shows no orders and sends none of its pending ones until it is upgraded again. Nothing is deleted.
