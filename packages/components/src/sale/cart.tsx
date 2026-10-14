@@ -9,7 +9,7 @@ import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, taxClasses, afterSubtotal }:
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, taxClasses, afterSubtotal, couponDiscountMinor }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
     /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
@@ -18,6 +18,10 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     onPriceChange?: (change: { lineId: string; fromMinor: number; toMinor: number; reason?: string }) => void;
     /** Rows under the totals' Subtotal, e.g. the platform's coupon chips (passed to CartTotal). */
     afterSubtotal?: ReactNode;
+    /** The coupon amount the app itemises in `afterSubtotal` (e.g. Σ `order.display.coupons`), in integer minor units of
+     * the order's currency, in the display mode. When given, the Discount row shows the other discounts only (the
+     * totals' discount minus this) and is hidden when they come to 0. Absent: the Discount row is the whole discount. */
+    couponDiscountMinor?: number;
   }) {
   const { order } = sale;
   const money = (amount: number) => ({ amount, currency: order.currency });
@@ -96,7 +100,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     </View> : null}</>}
     footer={<View testID="cart-footer" className="gap-3 pb-4">
       {/* Exclusive: subtotal − discount + tax = total. Inclusive: subtotal − discount = total, the tax "incl.", not added. */}
-      <CartTotal subtotal={money(totals.subtotalMinor)} discount={money(totals.discountMinor)} total={money(totals.totalMinor)}
+      <CartTotal subtotal={money(totals.subtotalMinor)} total={money(totals.totalMinor)}
+        discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
       <View className="flex-row gap-3">

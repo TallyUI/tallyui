@@ -244,4 +244,45 @@ describe('Cart', () => {
     expect(sale.order).toBe(before);
     expect(screen.getByRole('group', { name: 'Discount on Shirt' })).toBeTruthy();
   });
+
+  describe('couponDiscountMinor', () => {
+    const capabilities = { orderCreate: 2 };
+    const footer = () => within(screen.getByTestId('cart-footer'));
+    const row = (label: string) => footer().getByText(label).parentElement!;
+    const addAndDiscount = () => {
+      act(() => sale.add(blue, traits));
+      discount('Order discount', 'Amount', '5');
+      expect(sale.order.display.discountMinor).toBeGreaterThan(100);
+    };
+
+    it('shows the whole discount without couponDiscountMinor', () => {
+      render(<SaleHarness capabilities={capabilities}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      addAndDiscount();
+      expect(within(row('Discount')).getByText(`−${money(sale.order.display.discountMinor)}`)).toBeTruthy();
+    });
+
+    it('shows the discount less the itemised coupons', () => {
+      const { rerender } = render(<SaleHarness capabilities={capabilities}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      addAndDiscount();
+      const subtotal = row('Subtotal').textContent;
+      const total = row('Total').textContent;
+      rerender(<SaleHarness capabilities={capabilities}>{(sale) => <Cart sale={sale} couponDiscountMinor={50} />}</SaleHarness>);
+      expect(within(row('Discount')).getByText(`−${money(sale.order.display.discountMinor - 50)}`)).toBeTruthy();
+      expect(row('Subtotal').textContent).toBe(subtotal);
+      expect(row('Total').textContent).toBe(total);
+    });
+
+    it('hides the Discount row when the coupons are the whole discount', () => {
+      render(<SaleHarness capabilities={capabilities}>{(sale) => <Cart sale={sale} couponDiscountMinor={sale.order.display.discountMinor} />}</SaleHarness>);
+      addAndDiscount();
+      expect(footer().queryByText('Discount')).toBeNull();
+    });
+
+    it('hides the Discount row when the coupons exceed it', () => {
+      render(<SaleHarness capabilities={capabilities}>{(sale) => <Cart sale={sale} couponDiscountMinor={sale.order.display.discountMinor + 1} />}</SaleHarness>);
+      addAndDiscount();
+      expect(footer().queryByText('Discount')).toBeNull();
+      expect(footer().queryByText(/^−/)).toBeNull();
+    });
+  });
 });
