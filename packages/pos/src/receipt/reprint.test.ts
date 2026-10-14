@@ -11,7 +11,7 @@ const config: ReceiptConfig = {
   taxLabels: { 100000: 'VAT 10%' },
 };
 
-function finalizedSale(pricesIncludeTax: boolean) {
+function finalizedSale(pricesIncludeTax: boolean, orderCreate: 2 | 6 = 6) {
   const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax } });
   const lineId = builder.addLine({ productId: 'p1', name: 'Espresso', sku: 'ESP-001', unitPrice: { amount: 450, currency: 'USD' }, quantity: 2 });
   builder.addLine({ productId: 'p2', name: 'Muffin', sku: 'MUF-001', unitPrice: { amount: 300, currency: 'USD' } });
@@ -23,12 +23,13 @@ function finalizedSale(pricesIncludeTax: boolean) {
   const order = builder.getSnapshot();
   let next = 0;
   const posOrder = finalizeOrder(order, {
-    capabilities: { orderCreate: 6 }, now: new Date('2026-10-14T09:30:00.000Z'), newId: () => `id-${++next}`,
+    capabilities: { orderCreate }, now: new Date('2026-10-14T09:30:00.000Z'), newId: () => `id-${++next}`,
   });
   return { order, posOrder };
 }
 
 const withoutLabels = (receipt: ReceiptData) => receipt.totals.taxLines.map(({ label: _label, ...rest }) => rest);
+const total = (rows: Array<{ amountMinor: number }>) => rows.reduce((sum, row) => sum + row.amountMinor, 0);
 
 describe('reprint receipt data', () => {
   it.each([false, true])('matches buildReceiptData for a finalized order, marked as a reprint (inclusive: %s)', (pricesIncludeTax) => {
@@ -50,11 +51,14 @@ describe('reprint receipt data', () => {
       expect({
         name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
         displayAmountMinor: line.displayAmountMinor, discounts: line.displayDiscounts.map((d) => d.amountMinor),
+        lineTotalMinor: line.lineTotalMinor, discountMinor: line.discountMinor,
       }).toEqual({
         name: want.name, sku: want.sku, quantity: want.quantity, unitPriceMinor: want.unitPriceMinor,
         displayAmountMinor: want.displayAmountMinor, discounts: want.displayDiscounts.map((d) => d.amountMinor),
+        lineTotalMinor: want.lineTotalMinor, discountMinor: want.discountMinor,
       });
     });
+    expect(total(reprint.discounts)).toBe(total(original.discounts));
     expect(reprint.lineItems[0]!.displayDiscounts.map((d) => d.label)).toEqual(['Regular']);
 
     expect(reprint.fiscal).toStrictEqual({ document_type: 'sale', is_reprint: true, reprint_count: 1, qr_payload: '' });
@@ -66,6 +70,25 @@ describe('reprint receipt data', () => {
     expect(reprint.software).toStrictEqual(original.software);
     expect(reprint.schemaVersion).toBe(original.schemaVersion);
     expect(reprint.payments).toEqual(original.payments);
+  });
+
+  it.each([false, true])('matches buildReceiptData for a WooCommerce-rounded sale (inclusive: %s)', (pricesIncludeTax) => {
+    for (const roundAtSubtotal of [false, true]) {
+      const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+        pricesIncludeTax, rounding: { granularity: 'woocommerce', roundAtSubtotal }, getTaxRatePpm: () => 200000,
+        getTaxRates: () => [{ id: 1, code: 'VAT', label: 'VAT', rate: '20.0000', priority: 1, compound: false, shipping: true }],
+      } });
+      builder.addLine({ productId: '11', name: 'Tea', sku: 'TEA', unitPrice: { amount: 333, currency: 'GBP' }, quantity: 3 });
+      builder.addLine({ productId: '12', name: 'Cake', sku: 'CAKE', unitPrice: { amount: 457, currency: 'GBP' } });
+      builder.applyOrderDiscount({ type: 'percentage', value: 10, label: 'Staff' });
+      builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+      const order = builder.getSnapshot();
+      const posOrder = finalizeOrder(order, { capabilities: { orderCreate: 6 } });
+      expect(posOrder.lines.every((line) => line.netMicros !== undefined)).toBe(true);
+      const original = buildReceiptData(order, config);
+      expect(buildReceiptDataFromPosOrder(posOrder, config).lineItems.map((line) => line.lineTotalMinor), `roundAtSubtotal: ${roundAtSubtotal}`)
+        .toEqual(original.lineItems.map((line) => line.lineTotalMinor));
+    }
   });
 
   it('uses displayId as the order number once the store has one', () => {
@@ -82,23 +105,29 @@ describe('reprint receipt data', () => {
     expect(buildReceiptDataFromStoreOrder(order136, { ...config, fiscal: { reprint_count: 2 } }).fiscal.reprint_count).toBe(2);
   });
 
-  it('builds from a PosOrder without display', () => {
-    const { posOrder } = finalizedSale(false);
-    const { display: _display, ...stored } = posOrder;
-    const receipt = buildReceiptDataFromPosOrder(stored, config);
+  // orderCreate 2, not 1: this sale has discounts, which finalizeOrder refuses below version 2.
+  it.each([false, true])('builds from a PosOrder finalized below order.create v3, without display (inclusive: %s)', (pricesIncludeTax) => {
+    const { order, posOrder } = finalizedSale(pricesIncludeTax, 2);
+    expect(posOrder.display).toBeUndefined();
+    expect(posOrder.taxByRate).toBeUndefined();
+    const receipt = buildReceiptDataFromPosOrder(posOrder, config);
     expect(receipt.lineItems.map((line) => line.displayAmountMinor)).toEqual([900, 300]);
     expect(receipt.lineItems.map((line) => line.displayDiscounts)).toEqual(posOrder.lines.map((line) =>
       line.discountMinor > 0 ? [{ label: 'Discount', amountMinor: line.discountMinor }] : []));
-    expect(receipt.lineItems.map((line) => line.lineTotalMinor)).toEqual(posOrder.lines.map((line) => line.unitPriceMinor * line.quantity - line.discountMinor));
+    expect(receipt.lineItems.map((line) => line.lineTotalMinor)).toEqual(posOrder.lines.map((line) => line.netMinor));
     expect(receipt.discounts).toEqual([]);
     expect(receipt.orderDiscountMinor).toBe(0);
     expect(receipt.fees).toEqual([]);
     expect(receipt.shipping).toEqual([]);
     expect(receipt.totals).toEqual({
-      taxInclusive: false, subtotalMinor: 1200, discountMinor: posOrder.lines[0]!.discountMinor + posOrder.lines[1]!.discountMinor,
+      taxInclusive: pricesIncludeTax, subtotalMinor: 1200, discountMinor: posOrder.lines[0]!.discountMinor + posOrder.lines[1]!.discountMinor,
       taxLines: [{ label: 'VAT 10%', ratePpm: 100000, amountMinor: posOrder.taxMinor }],
       taxMinor: posOrder.taxMinor, totalMinor: posOrder.totalMinor,
     });
+    const amounts = receipt.totals.taxLines.map((row) => row.amountMinor);
+    expect(amounts).toEqual(buildReceiptData(order, config).totals.taxLines.map((row) => row.amountMinor));
+    expect(amounts.length).toBeGreaterThan(0);
+    expect(total(receipt.totals.taxLines)).toBe(posOrder.taxMinor);
   });
 
   it('builds charges from a PosOrder without display', () => {
@@ -158,6 +187,9 @@ describe('reprint receipt data from a StoreOrder', () => {
     expect(receipt.totals).toStrictEqual({
       taxInclusive: false, subtotalMinor: 3175, discountMinor: 0, taxLines: order136.taxLines, taxMinor: 116, totalMinor: 3291,
     });
+    const { totals } = receipt;
+    expect(totals.subtotalMinor - totals.discountMinor + total(receipt.fees) + total(receipt.shipping) + total(totals.taxLines))
+      .toBe(totals.totalMinor);
     expect(receipt.payments).toStrictEqual([{ method: 'cash', amountMinor: 3291 }]);
     expect(receipt.changeDueMinor).toBe(0);
     expect(receipt.fiscal).toStrictEqual({ document_type: 'sale', is_reprint: true, reprint_count: 1, qr_payload: '' });
@@ -173,12 +205,12 @@ describe('reprint receipt data from a StoreOrder', () => {
         { ...order136.lines[0]!, subtotalMinor: 900, subtotalTaxMinor: 90, totalMinor: 800, taxMinor: 80 },
         { id: '24', name: 'Gift', quantity: 0, subtotalMinor: 0, subtotalTaxMinor: 0, totalMinor: 0, taxMinor: 0 },
       ],
-      coupons: [{ code: 'save5', discountMinor: 500, discountTaxMinor: 50 }],
+      coupons: [{ code: 'save5', discountMinor: 100, discountTaxMinor: 10 }],
       fees: [{ name: 'Loyalty', totalMinor: -100, taxMinor: 0 }],
       shipping: [{ name: 'Delivery', totalMinor: 400, taxMinor: 40 }],
       taxLines: [{ label: 'VAT', ratePpm: 100000, amountMinor: 120 }],
-      taxMinor: 120, totalMinor: 1320,
-      payments: [{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 1320 }, { method: 'bacs', title: 'Bank', amountMinor: 0 },
+      discountMinor: 100, discountTaxMinor: 10, taxMinor: 120, totalMinor: 1220,
+      payments: [{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 1220 }, { method: 'bacs', title: 'Bank', amountMinor: 0 },
         { method: 'cod', amountMinor: 0 }],
     };
     const receipt = buildReceiptDataFromStoreOrder(order, config);
@@ -188,16 +220,18 @@ describe('reprint receipt data from a StoreOrder', () => {
         displayAmountMinor: 990, displayDiscounts: [{ label: 'Discount', amountMinor: 110 }] },
       { name: 'Gift', sku: '', quantity: 0, unitPriceMinor: 0, lineTotalMinor: 0, displayAmountMinor: 0, displayDiscounts: [] },
     ]);
-    expect(receipt.discounts).toStrictEqual([{ label: 'save5', amountMinor: 550 }]);
+    expect(receipt.discounts).toStrictEqual([{ label: 'save5', amountMinor: 110 }]);
     expect(receipt.fees).toStrictEqual([{ name: 'Loyalty', amountMinor: -100 }]);
     expect(receipt.shipping).toStrictEqual([{ name: 'Delivery', amountMinor: 440 }]);
     expect(receipt.orderDiscountMinor).toBe(0);
     expect(receipt.totals).toStrictEqual({
       taxInclusive: true, subtotalMinor: 990, discountMinor: 110, taxLines: [{ label: 'VAT', ratePpm: 100000, amountMinor: 120 }],
-      taxMinor: 120, totalMinor: 1320,
+      taxMinor: 120, totalMinor: 1220,
     });
+    const { totals } = receipt;
+    expect(totals.subtotalMinor - totals.discountMinor + total(receipt.fees) + total(receipt.shipping)).toBe(totals.totalMinor);
     expect(receipt.payments).toStrictEqual([
-      { method: 'external', amountMinor: 1320 }, { method: 'Bank', amountMinor: 0 }, { method: 'cod', amountMinor: 0 },
+      { method: 'external', amountMinor: 1220 }, { method: 'Bank', amountMinor: 0 }, { method: 'cod', amountMinor: 0 },
     ]);
     expect(receipt.changeDueMinor).toBe(0);
     expect(receipt.fiscal).toMatchObject({ is_reprint: true, reprint_count: 1 });

@@ -1,5 +1,6 @@
-import type { StoreOrder } from '@tallyui/core';
+import { minorUnitDigits, woocommerceTax, type StoreOrder } from '@tallyui/core';
 import type { PosOrder } from '../pos-order/types';
+import { taxLinesByRate } from '../tax/exact';
 import type { ReceiptConfig, ReceiptData, ReceiptLineItem } from './types';
 import { RECEIPT_SCHEMA_VERSION } from './types';
 
@@ -26,7 +27,15 @@ const sum = (amounts: number[]) => amounts.reduce((total, amount) => total + amo
 /** Receipt data for reprinting the till's own stored order (ADR-081). */
 export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptConfig): ReceiptData {
   const { header, ...blocks } = reprintBlocks(config, order.customer);
-  const { display } = order;
+  const { display, taxRounding: rounding } = order;
+  const dp = minorUnitDigits(order.currency), factor = 10 ** dp;
+  // A WooCommerce line's rounded gross (its builder `totalMinor`), as woocommerce-tax.ts lineAmounts computes it from
+  // the 6dp net and per-rate taxes, read back from the stored micros as woocommerceTotals reads them (ADR-076).
+  const wooGrossMinor = (line: PosOrder['lines'][number], roundAtSubtotal: boolean) => {
+    const tax = line.taxLines.reduce((sum, row) => sum + (roundAtSubtotal ? Number(row.taxMicros) / (factor * 1e6)
+      : woocommerceTax.roundTaxTotal(Number(row.taxMicros) / (factor * 1e6), dp, order.pricesIncludeTax)), 0);
+    return Math.round(woocommerceTax.roundHalfUp(Number(line.netMicros) / (factor * 1e6) + tax, dp) * factor);
+  };
   const lineItems = order.lines.map((line): ReceiptLineItem => {
     const displayLine = display?.lines.find((row) => row.lineId === line.id);
     const displayAmountMinor = display ? displayLine?.amountMinor ?? 0 : line.unitPriceMinor * line.quantity;
@@ -39,15 +48,24 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
       sku: line.sku,
       quantity: line.quantity,
       unitPriceMinor: line.unitPriceMinor,
-      lineTotalMinor: displayAmountMinor - (display ? sum(displayDiscounts.map((d) => d.amountMinor)) : line.discountMinor),
+      lineTotalMinor: rounding.granularity === 'woocommerce' && line.netMicros !== undefined
+        ? order.pricesIncludeTax ? wooGrossMinor(line, rounding.roundAtSubtotal) : line.netMinor
+        // A converted line (ADR-038 amendment): the stored order no longer carries its conversion share.
+        : line.taxInclusive !== undefined ? displayAmountMinor - line.discountMinor : line.netMinor,
       ...(line.discountMinor > 0 ? { discountMinor: line.discountMinor } : {}),
       displayAmountMinor,
       displayDiscounts,
     };
   });
-  const taxLines = (order.taxByRate ?? []).map((row) => ({
+  // Without taxByRate (finalized below order.create v3), the rows are computed as buildReceiptData computes them. A line's
+  // taxInclusive is stored only when it differs from the order's mode; WooCommerce lines take the order's, as there.
+  const taxedLines = [...order.lines.map((line) => ({ ...line, taxInclusive: order.taxRounding.granularity === 'woocommerce'
+    && line.netMicros !== undefined ? order.pricesIncludeTax : line.taxInclusive ?? order.pricesIncludeTax })),
+  ...[...(order.fees ?? []), ...(order.shipping ?? [])].map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
+  const taxLines = order.taxByRate ? order.taxByRate.map((row) => ({
     label: row.label ?? config.taxLabels?.[row.ratePpm] ?? '', code: row.code, ratePpm: row.ratePpm, amountMinor: row.amountMinor,
-  }));
+  })) : taxLinesByRate(taxedLines, order.taxMinor, config.taxLabels, order.taxRounding)
+    .map(({ label, code, ratePpm, amountMinor }) => ({ label, code, ratePpm, amountMinor }));
   const charges = (rows: Array<{ name: string; amountMinor: number }> | undefined) =>
     (rows ?? []).map(({ name, amountMinor }) => ({ name, amountMinor }));
 
@@ -55,7 +73,8 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
     ...blocks,
     header: { ...header, orderNumber: order.serverRefs?.displayId ?? order.id, date: order.createdAt },
     lineItems,
-    discounts: display ? (display.coupons ?? []).map(({ code, amountMinor }) => ({ label: code, amountMinor })) : [],
+    discounts: display ? [...display.orderDiscountMinor > 0 ? [{ label: 'Order discount', amountMinor: display.orderDiscountMinor }] : [],
+      ...(display.coupons ?? []).map(({ code, amountMinor }) => ({ label: code, amountMinor }))] : [],
     fees: charges(display ? display.fees : order.fees),
     shipping: charges(display ? display.shipping : order.shipping),
     orderDiscountMinor: display ? display.orderDiscountMinor : 0,

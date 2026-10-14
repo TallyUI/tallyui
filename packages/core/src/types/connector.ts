@@ -314,8 +314,8 @@ export interface TallyConnector {
    */
   emailReceipt?: (context: SyncContext, orderId: string, email: string, options?: { saveToBilling?: boolean }) => Promise<void>;
   /**
-   * The store's orders, newest first, one page per call (ADR-081): online only, read-only. Rejects with
-   * `ConnectorUnauthorizedError` for credentials and `CustomerServiceError` otherwise, like `emailReceipt`.
+   * The store's orders, newest first, one page per call (ADR-081): online only, read-only. Rejects as `emailReceipt`
+   * does (`ConnectorUnauthorizedError` for credentials; a connector's own errors otherwise, e.g. `CustomerServiceError`).
    * `undefined` when the connector has no order history.
    */
   listOrders?: (context: SyncContext, query?: ListOrdersQuery) => Promise<StoreOrderPage>;

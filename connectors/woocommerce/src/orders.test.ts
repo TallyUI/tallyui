@@ -71,6 +71,12 @@ describe('WooCommerce orders', () => {
     expect(order).toMatchObject({ fees: [], shipping: [], coupons: [], refunds: [] });
   });
 
+  it('maps a "-0.00" fee to a positive zero', () => {
+    const fee = toWooStoreOrder({ ...list[1], fee_lines: [{ ...list[1]!.fee_lines[0]!, total: '-0.00' }] }).fees[0]!;
+    expect(fee.totalMinor).toBe(0);
+    expect(Object.is(fee.totalMinor, 0)).toBe(true);
+  });
+
   it('throws a server error on an unparseable amount', () => {
     for (const total of ['abc', 32.91, '1e3', '--1']) {
       const call = () => toWooStoreOrder({ ...list[0], total });

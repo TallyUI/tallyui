@@ -18,7 +18,7 @@ function minor(text: unknown, currency: string): number {
   const negative = /^-\d/.test(trimmed);
   const value = wooMinorFromDecimal(negative ? trimmed.slice(1) : trimmed, currency);
   if (value === undefined) throw unexpected();
-  return negative ? -value : value;
+  return negative && value !== 0 ? -value : value;
 }
 
 function posUuid(metaData: unknown): string | undefined {
