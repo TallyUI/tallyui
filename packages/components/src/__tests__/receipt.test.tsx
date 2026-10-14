@@ -21,6 +21,14 @@ describe('Receipt', () => {
     expect(screen.getByText('Cashier: Alex').compareDocumentPosition(register) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it.each([false, true])('prints a "Name: Value" row per attribute under the line name (attributes: %s)', (withAttributes) => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    act(() => { sale.add(withAttributes ? { ...blue, variant: { ...blue.variant, options: { Size: 'M', Color: 'Black' } } } : blue, traits); });
+    const { container } = render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    expect(container.textContent).toContain(withAttributes ? 'ShirtSize: MColor: Black1 ×' : 'Shirt1 ×');
+    expect(container.textContent?.includes('Size: M')).toBe(withAttributes);
+  });
+
   it('prints no register line without a register name', () => {
     render(<SaleHarness>{() => null}</SaleHarness>);
     const { container } = render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);

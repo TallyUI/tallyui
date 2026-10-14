@@ -144,6 +144,12 @@ describe('Cart', () => {
     expect(screen.getByText(`Order discount −${money(50)}`)).toBeTruthy();
   });
 
+  it("shows a line's attributes as rows", () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add({ ...blue, variant: { ...blue.variant, options: { Size: 'M' } } }, traits));
+    expect(screen.getByText('Size: M')).toBeTruthy();
+  });
+
   it('passes taxInclusive to CartTotal, and labels each tax row with taxLabel', () => {
     render(<SaleHarness settings={{ ...pricing, pricesIncludeTax: true }}>
       {(sale) => <Cart sale={sale} taxLabel={(ratePpm) => `VAT ${ratePpm / 10000}%`} />}

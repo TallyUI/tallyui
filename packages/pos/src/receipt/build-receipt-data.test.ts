@@ -122,6 +122,16 @@ describe('receipt schema 1.4 blocks', () => {
 });
 
 describe('buildReceiptData', () => {
+  it("passes a line's attributes through and leaves them out when it has none", () => {
+    const attributes = { Size: 'M', Color: 'Black' };
+    const order = { ...baseOrder, lineItems: [{ ...baseOrder.lineItems[0], attributes }, { ...baseOrder.lineItems[1], attributes: {} }] };
+    const [first, second] = buildReceiptData(order, config).lineItems;
+    expect(first.attributes).toEqual(attributes);
+    expect(first.attributes).not.toBe(attributes);
+    expect(second).not.toHaveProperty('attributes');
+    expect(buildReceiptData(baseOrder, config).lineItems[0]).not.toHaveProperty('attributes');
+  });
+
   it("puts the customer's name, or else email, in the header, and nothing for a guest", () => {
     const guestHeader = {
       storeName: 'Test Coffee Shop', storeAddress: '123 Main St', orderNumber: 'order-001',

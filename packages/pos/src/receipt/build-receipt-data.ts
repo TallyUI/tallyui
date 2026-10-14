@@ -49,6 +49,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
     },
     lineItems: order.lineItems.map((li, index) => ({
       name: li.name,
+      ...(li.attributes && Object.keys(li.attributes).length ? { attributes: { ...li.attributes } } : {}),
       sku: li.sku,
       quantity: li.quantity,
       unitPriceMinor: li.unitPriceMinor,

@@ -15,6 +15,8 @@ export interface ReceiptFiscal {
 
 export interface ReceiptLineItem {
   name: string;
+  /** The variant's chosen options, name to value (#495); absent when none. */
+  attributes?: Record<string, string>;
   sku: string;
   quantity: number;
   unitPriceMinor: number;

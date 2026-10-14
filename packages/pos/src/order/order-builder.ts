@@ -401,6 +401,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       ...(input.taxStatus === 'none' ? { taxStatus: 'none' as const } : {}),
       variantId,
       name: input.name,
+      ...(input.attributes && Object.keys(input.attributes).length ? { attributes: { ...input.attributes } } : {}),
       sku: input.sku ?? '',
       imageUrl: input.imageUrl,
       unitPriceMinor: unitPrice.amount,

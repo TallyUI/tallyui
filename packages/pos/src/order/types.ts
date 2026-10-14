@@ -75,6 +75,8 @@ export interface LineItem {
   productId: string;
   variantId?: string;
   name: string;
+  /** The variant's chosen options, name to value (#495). */
+  attributes?: Record<string, string>;
   sku: string;
   imageUrl?: string;
   unitPriceMinor: number;     // as sold, integer
@@ -158,6 +160,8 @@ export interface AddLineInput {
   taxStatus?: 'taxable' | 'none';
   variantId?: string;
   name: string;
+  /** The variant's chosen options, name to value (#495). */
+  attributes?: Record<string, string>;
   sku?: string;
   imageUrl?: string;
   unitPrice: Money & { taxInclusive?: boolean }; // currency must equal the order currency; taxInclusive wins over the order's pricesIncludeTax
