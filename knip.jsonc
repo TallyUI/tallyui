@@ -11,9 +11,7 @@
     // ADR-076 ports the WCPOS engine verbatim; unused exports keep the port diffable against upstream.
     "packages/core/src/tax/woocommerce/tax-class.ts": ["exports"],
     // ADR-076 verbatim port, as above (MoneyString, RefundLike).
-    "packages/core/src/coupons/woocommerce/types.ts": ["types"],
-    // baseline 2026-10-14: remove when fixed (PosOrderCoupon)
-    "packages/pos/src/pos-order/index.ts": ["types"]
+    "packages/core/src/coupons/woocommerce/types.ts": ["types"]
   },
   "workspaces": {
     ".": {
