@@ -1,0 +1,1026 @@
+{
+  "connectors/medusa/src/pricing/calculated.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    }
+  },
+  "connectors/medusa/src/reconcile/feed-per-store.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "connectors/medusa/src/reconcile/ids.live.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/medusa/src/reconcile/ids.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "connectors/medusa/src/reconcile/ids.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/medusa/src/reconcile/ids.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/medusa/src/reconcile/prices.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "connectors/medusa/src/reconcile/prices.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/medusa/src/reconcile/stock.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/medusa/src/replication/products.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/medusa/src/replication/products.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "connectors/medusa/src/replication/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "connectors/medusa/src/replication/variant-feed.live.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/medusa/src/replication/variant-feed.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "connectors/medusa/src/replication/variant-feed.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/medusa/src/schemas/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/medusa/src/store-settings.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/medusa/src/sync/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "connectors/medusa/src/traits/product.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "connectors/shopify/src/replication/products.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/shopify/src/replication/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "connectors/shopify/src/schemas/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/shopify/src/sync/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/shopify/src/traits/product.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/vendure/src/customers.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/vendure/src/index.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "connectors/vendure/src/reconcile/feed-per-store.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "connectors/vendure/src/reconcile/ids.live.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "connectors/vendure/src/reconcile/ids.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "connectors/vendure/src/reconcile/ids.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/vendure/src/reconcile/prices.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "connectors/vendure/src/reconcile/prices.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/vendure/src/reconcile/stock.live.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "connectors/vendure/src/reconcile/stock.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/vendure/src/refunds.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "connectors/vendure/src/replication/products.live.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "connectors/vendure/src/replication/products.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "connectors/vendure/src/replication/products.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 9
+    }
+  },
+  "connectors/vendure/src/replication/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 9
+    }
+  },
+  "connectors/vendure/src/replication/variant-feed.live.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "connectors/vendure/src/replication/variant-feed.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    }
+  },
+  "connectors/vendure/src/replication/variant-feed.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/vendure/src/replication/variant-feed.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "connectors/vendure/src/schemas/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/vendure/src/store-settings.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/vendure/src/sync/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "connectors/vendure/src/traits/product.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 13
+    }
+  },
+  "connectors/woocommerce/src/__tests__/fake-store.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "connectors/woocommerce/src/commands/transport.ts": {
+    "no-empty": {
+      "count": 1
+    }
+  },
+  "connectors/woocommerce/src/index.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/woocommerce/src/reconcile/catalogue.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    }
+  },
+  "connectors/woocommerce/src/reconcile/coupons.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 12
+    }
+  },
+  "connectors/woocommerce/src/reconcile/feed-per-store.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/woocommerce/src/reconcile/feed.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "connectors/woocommerce/src/replication/coupons.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "connectors/woocommerce/src/replication/products.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/woocommerce/src/replication/products.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "connectors/woocommerce/src/replication/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 10
+    }
+  },
+  "connectors/woocommerce/src/replication/wcpos-1.10.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "connectors/woocommerce/src/schemas/coupons.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/woocommerce/src/schemas/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "connectors/woocommerce/src/sync/products.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "connectors/woocommerce/src/traits/product.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 15
+    }
+  },
+  "packages/components/src/__tests__/cart-note-input.test.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/components/src/__tests__/pos-layout.test.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/components/src/__tests__/settings-layout.test.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "packages/components/src/customer/customer-card.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/components/src/customer/customer-form.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/components/src/customer/customer-order-history.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/components/src/customer/customer-picker.tsx": {
+    "no-control-regex": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "packages/components/src/customer/customer-select.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/components/src/index.ts": {
+    "@typescript-eslint/triple-slash-reference": {
+      "count": 1
+    }
+  },
+  "packages/components/src/input/search-input.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/components/src/order/order-list.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/components/src/product/product-card.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "react-hooks/rules-of-hooks": {
+      "count": 1
+    }
+  },
+  "packages/components/src/product/product-grid.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    },
+    "react-hooks/rules-of-hooks": {
+      "count": 1
+    }
+  },
+  "packages/components/src/product/product-image.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/components/src/product/product-list.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/components/src/product/product-price.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/components/src/product/product-sku.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/components/src/product/product-stock-badge.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/components/src/product/product-table.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    },
+    "react-hooks/rules-of-hooks": {
+      "count": 1
+    }
+  },
+  "packages/components/src/product/product-title.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/components/src/sale/catalogue.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "packages/components/src/sale/sync-status.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "packages/components/src/ui/checkbox/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/components/src/ui/combobox/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "packages/components/src/ui/dialog/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "packages/components/src/ui/dropdown-menu/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/components/src/ui/input/index.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "packages/components/src/ui/progress/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/components/src/ui/radio-group/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/components/src/ui/select/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/components/src/ui/slider/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/components/src/ui/table/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "packages/components/src/ui/toast/index.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/components/src/uniwind-env.d.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/core/src/__tests__/connector-email-receipt.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/core/src/context/connector-context.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/core/src/coupons/woocommerce/helpers.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/core/src/coupons/woocommerce/order-totals.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 15
+    }
+  },
+  "packages/core/src/coupons/woocommerce/order-totals.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "packages/core/src/coupons/woocommerce/recalculate.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/core/src/coupons/woocommerce/validate.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/core/src/replication/combine.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "packages/core/src/replication/combine.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "packages/core/src/replication/reconcile-feed.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "packages/core/src/server/command-result.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/core/src/server/fiscal-figures.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/core/src/stock-overlay.test.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/core/src/tax/woocommerce/calculate-taxes.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "packages/core/src/tax/woocommerce/filter-tax-rates.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "packages/core/src/tax/woocommerce/sum-taxes.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/core/src/tax/woocommerce/types.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/core/src/types/connector.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "packages/core/src/types/reconcile.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "packages/core/src/types/replication.test-d.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/core/src/types/replication.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/core/src/types/traits/customer.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/core/src/types/traits/product.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/database/src/catalogue-reconcile.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 14
+    }
+  },
+  "packages/database/src/chunks.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/database/src/create-db.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/database/src/fingerprint-reconcile.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "packages/database/src/id-reconcile.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "packages/database/src/reconcile.replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/database/src/reconcile.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "packages/database/src/replication.errors.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/database/src/replication.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 11
+    }
+  },
+  "packages/database/src/replication.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "packages/database/src/storage-watchdog.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 20
+    }
+  },
+  "packages/database/src/storage-watchdog.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "packages/database/src/storage.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "packages/database/src/storage.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/integration-tests/bench/replication-bench.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/integration-tests/src/database-schema-migration.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "packages/integration-tests/src/pos-stock-vendure.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/logging/logger.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/order/order-builder.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/order/order-drafts.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/order/order-manager.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    }
+  },
+  "packages/pos/src/order/order-manager.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/order/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/outbox/http-transport.ts": {
+    "no-empty": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/outbox/order-outbox.test.ts": {
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/outbox/order-outbox.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "no-empty": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/outbox/register-outbox.ts": {
+    "no-empty": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/pos-order/command.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    }
+  },
+  "packages/pos/src/pos-order/finalize.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/pos-order/migration.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 13
+    }
+  },
+  "packages/pos/src/pos-order/open.test-helper.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 39
+    }
+  },
+  "packages/pos/src/receipt/build-receipt-data.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/refund/submit-order-refund.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 5
+    }
+  },
+  "packages/pos/src/register/export-csv.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/register/open.test-helper.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "packages/pos/src/register/register-document.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/register/use-register-session.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/rxdb/open-migrated-collection.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "packages/pos/src/sale/use-sale.test.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/pos/src/sale/use-sale.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "packages/primitives/src/__tests__/accordion.test.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/__tests__/combobox.test.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/__tests__/list.test.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/__tests__/toast.test.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/alert-dialog/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 5
+    }
+  },
+  "packages/primitives/src/animated/types.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/animated/use-presence.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/primitives/src/combobox/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 3
+    }
+  },
+  "packages/primitives/src/context-menu/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 3
+    }
+  },
+  "packages/primitives/src/dialog/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 4
+    }
+  },
+  "packages/primitives/src/dropdown-menu/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 3
+    }
+  },
+  "packages/primitives/src/hooks/use-augmented-ref.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/hooks/use-controllable-state.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/primitives/src/hooks/use-relative-position.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/hover-card/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/image/image.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/primitives/src/index.ts": {
+    "@typescript-eslint/triple-slash-reference": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/popover/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 2
+    }
+  },
+  "packages/primitives/src/progress/progress.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/progress/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/select/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 4
+    }
+  },
+  "packages/primitives/src/slot.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "packages/primitives/src/switch/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/table/table.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/table/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 7
+    }
+  },
+  "packages/primitives/src/tabs/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/text/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/tooltip/types.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/types.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/primitives/src/utils.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/storage-sqlite/src/node-sqlite.test-helper.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/storage-sqlite/src/rx-storage-sqlite.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/storage-sqlite/src/web/index.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "packages/storage-sqlite/src/web/index.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/storage-sqlite/src/web/sqlite-basics-sahpool.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "packages/storage-sqlite/src/web/worker.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "packages/storage-sqlite/typecheck/expo-handle.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  }
+}
