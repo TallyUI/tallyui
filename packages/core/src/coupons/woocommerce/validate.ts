@@ -19,7 +19,7 @@
  */
 import { type CouponLineItem, getEligibleItems } from './helpers';
 
-import type { CouponRejection, CouponRejectionCode } from './types';
+import type { CouponRejection } from './types';
 
 export interface CouponValidationContext {
 	lineItems: CouponLineItem[];
