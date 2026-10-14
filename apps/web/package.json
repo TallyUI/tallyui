@@ -31,8 +31,7 @@
     "@tallyui/connector-medusa": "workspace:*",
     "@tallyui/connector-woocommerce": "workspace:*",
     "@tallyui/core": "workspace:*",
-    "@tallyui/theme": "workspace:*",
-    "tailwind-merge": "^3.4.1"
+    "@tallyui/theme": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",

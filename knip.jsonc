@@ -20,8 +20,6 @@
       "ignoreDependencies": [
         // Used through a vitest alias.
         "react-native-web",
-        // baseline 2026-10-14: remove when fixed
-        "@testing-library/jest-dom",
         // Imported by the e2e storage-sqlite test page; build-and-serve.mjs resolves it through an esbuild alias to packages/storage-sqlite's copy.
         "rxdb"
       ]
@@ -29,13 +27,12 @@
     "apps/web": {
       // Wired up through next.config.
       "entry": ["src/lib/no-polyfills.js"],
-      // baseline 2026-10-14: remove when fixed
+      // Imported inside the Snack code strings (src/components/snacks); pnpm check:deps requires them declared.
       "ignoreDependencies": [
         "@tallyui/components",
         "@tallyui/connector-medusa",
         "@tallyui/connector-woocommerce",
-        "@tallyui/core",
-        "tailwind-merge"
+        "@tallyui/core"
       ]
     },
     "apps/demo": {
@@ -52,13 +49,7 @@
     },
     "packages/primitives": {
       // Platform files that the bundler resolves.
-      "entry": ["src/**/*.web.{ts,tsx}"],
-      // baseline 2026-10-14: remove when fixed
-      "ignoreDependencies": ["@testing-library/jest-dom"]
-    },
-    "packages/theme": {
-      // baseline 2026-10-14: remove when fixed
-      "ignoreDependencies": ["tailwindcss"]
+      "entry": ["src/**/*.web.{ts,tsx}"]
     }
   }
 }
