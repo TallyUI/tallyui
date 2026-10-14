@@ -14,8 +14,8 @@ export function addEntryToCart<Doc>(builder: OrderBuilder, entry: CatalogueEntry
   const position = (name: string) => groups.findIndex((group) => group.id === undefined && group.name === name);
   for (const [name, value] of Object.entries(picks)) {
     const group = groups[position(name)];
-    if (!group || Object.keys(variant.options ?? {}).includes(name)) throw new Error(`addEntryToCart: ${name} is not an Any option of this variant`);
-    if (typeof value !== 'string' || !value || !group.values.includes(value)) throw new Error(`addEntryToCart: ${value} is not a value of ${name}`);
+    if (!group || Object.keys(variant.options ?? {}).includes(name)) throw new CartError(`${name} is not an option to choose for this item`);
+    if (typeof value !== 'string' || !value || !group.values.includes(value)) throw new CartError(`${value} is not a choice for ${name}`);
   }
   const anyAttributes = Object.keys(picks).sort((a, b) => position(a) - position(b));
   const attributes = { ...variant.options, ...Object.fromEntries(anyAttributes.map((name) => [name, picks[name]])) };

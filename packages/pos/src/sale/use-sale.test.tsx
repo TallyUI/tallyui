@@ -281,6 +281,14 @@ describe('sale', () => {
     expect(result.current.order.lineItems).toEqual([]);
   });
 
+  it('reports an invalid Any pick as a CartError without adding a line (#495)', () => {
+    const { result } = renderSale(pricing);
+    const anyTraits = { ...traits, getVariantOptions: () => [{ name: 'Logo', values: ['Cat'] }] };
+    expect(() => act(() => result.current.add({ ...entries[0], picks: { Logo: 'Fish' } }, anyTraits))).not.toThrow();
+    expect(result.current.error).toBe('Fish is not a choice for Logo');
+    expect(result.current.order.lineItems).toEqual([]);
+  });
+
   it('takes its tax from the TaxProvider: inclusive settings give pricesIncludeTax with the default rate', () => {
     const inclusive: PricingSettings = { currency: 'EUR', pricesIncludeTax: true, taxRatesPpm: { default: 190000, reduced: 70000 } };
     const { result } = renderSale(inclusive);

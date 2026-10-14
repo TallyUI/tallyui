@@ -175,6 +175,11 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     setPickEntry(null);
     setPicks({});
   }
+  // An entry that leaves the catalogue (a resync, or no longer sellable) closes its picker.
+  useEffect(() => {
+    if (pickEntry && !entries.some((entry) => traits.getId(entry.product) === traits.getId(pickEntry.product)
+      && entry.variant.id === pickEntry.variant.id)) closePicker();
+  }, [pickEntry, entries, traits]);
 
   function select(entry: CatalogueEntry<Doc>) {
     const picking = pickAnyOptions && anyGroupsOf(entry).length > 0;

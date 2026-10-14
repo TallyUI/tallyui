@@ -130,14 +130,15 @@ describe('addEntryToCart with Any picks (#495)', () => {
   });
 
   it.each([
-    [{ Colour: 'Red' }, 'addEntryToCart: Colour is not an Any option of this variant'],
-    [{ Size: 'S' }, 'addEntryToCart: Size is not an Any option of this variant'],
-    [{ Engraving: 'Yes' }, 'addEntryToCart: Engraving is not an Any option of this variant'],
-    [{ Logo: 'Fish' }, 'addEntryToCart: Fish is not a value of Logo'],
-    [{ Logo: '' }, 'addEntryToCart:  is not a value of Logo'],
+    [{ Colour: 'Red' }, 'Colour is not an option to choose for this item'],
+    [{ Size: 'S' }, 'Size is not an option to choose for this item'],
+    [{ Engraving: 'Yes' }, 'Engraving is not an option to choose for this item'],
+    [{ Logo: 'Fish' }, 'Fish is not a choice for Logo'],
+    [{ Logo: '' }, ' is not a choice for Logo'],
   ])('refuses the pick %j', (picks, message) => {
     const builder = orderBuilder();
     expect(() => addEntryToCart(builder, picked(picks), anyTraits, 'EUR')).toThrow(message);
+    expect(() => addEntryToCart(builder, picked(picks), anyTraits, 'EUR')).toThrow(CartError);
     expect(builder.getSnapshot().lineItems).toHaveLength(0);
   });
 
