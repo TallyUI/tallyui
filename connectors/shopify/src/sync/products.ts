@@ -1,4 +1,5 @@
 import type { CollectionSync, SyncContext } from '@tallyui/core';
+import { normalizeId, parseLinkNext } from '../replication/products';
 
 /**
  * Shopify product sync implementation.
@@ -72,20 +73,3 @@ export const shopifyProductSync: CollectionSync = {
     return products;
   },
 };
-
-/**
- * Shopify IDs are integers but RxDB primary keys must be strings.
- */
-function normalizeId(product: any) {
-  return { ...product, id: String(product.id) };
-}
-
-/**
- * Parse the "next" URL from Shopify's Link header for cursor pagination.
- * Returns null if there's no next page.
- */
-function parseLinkNext(linkHeader: string | null): string {
-  if (!linkHeader) return '';
-  const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-  return match ? match[1] : '';
-}

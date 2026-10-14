@@ -8,7 +8,7 @@ export type ShopifyProductCheckpoint = {
  * Parse the "next" URL from Shopify's Link header for cursor pagination.
  * Returns an empty string if there's no next page.
  */
-function parseLinkNext(linkHeader: string | null): string {
+export function parseLinkNext(linkHeader: string | null): string {
   if (!linkHeader) return '';
   const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
   return match ? match[1] : '';
@@ -17,7 +17,7 @@ function parseLinkNext(linkHeader: string | null): string {
 /**
  * Shopify IDs are integers but RxDB primary keys must be strings.
  */
-function normalizeId(product: any) {
+export function normalizeId(product: any) {
   return { ...product, id: String(product.id) };
 }
 
