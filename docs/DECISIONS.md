@@ -4934,6 +4934,21 @@ interface OrderCreatePayload {
     - **The R4 exception in practice.** A 201 whose store total differs stays `applied` with `serverRefs` and the
       `total_mismatch` warning; this needed no new code.
     - **Tests.** 14 mutations of the new code were each killed by the connector tests (listed in the PR).
+  - **(d4c) as built (2026-10-14): Any picks (#495 c/d).** One-way; `@tallyui/core` and `@tallyui/pos`. It reverses one
+    rule of (d4a) for one case.
+    - **Why.** WooCommerce writes a variation's "Any" attribute onto the order line with an empty value (dev store
+      order 348, line 325), so the cashier's pick reaches the order only if the till sends it.
+    - **The marker.** A line's `anyAttributes` names the attributes the cashier picked. The picks themselves sit in
+      `attributes` beside the variant's fixed options. `pos_orders` version 10 adds `lines[].anyAttributes`; its migration
+      is the identity, through `addPosOrderCollection`. Older lines have none.
+    - **Version 6.** `anyAttributes` is a version-6 line field. The shape check requires unique, non-empty names of at
+      most 255 characters, each naming a non-empty value in the line's `attributes`. `contentVersion` is 6 for a sale
+      with coupons or a picked line. A version-6 envelope carries `coupons` and `display.coupons` only when the sale has
+      coupons. Finalize refuses a picked sale to a store below 6, and the outbox never downgrades one, as for coupons.
+    - **What it reverses.** (d4a) said only a coupon sale goes as 6. A sale with picks now goes as 6 too. Every sale
+      without picks is sent as before, byte for byte.
+    - **The cart.** A pick is part of a line's identity: the same variant with different picks makes separate lines.
+      Only local "Any" groups (no group `id`) can be picked; global `pa_*` attributes are #572.
   - **Rulings on (d4b) (front desk, 2026-10-07):**
     - **Q-d4b-1, the marker.** `pos_orders` v9 carries one optional `reopenedAt`. Needs attention hides a rejected
       order that has it; the order stays as the record and is never sent again. (Hiding superseded by R5 amended.)

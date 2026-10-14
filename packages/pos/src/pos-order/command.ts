@@ -58,10 +58,10 @@ function netDiscountMinor(line: PosOrderLine, pricesIncludeTax: boolean): number
 
 /**
  * The order.create version an order's stored content makes: 3 with ADR-065's figures, else 2 when its lines are
- * discounted (ADR-062), else 1; fees, shipping or custom lines need 5; coupons need 6. Also used by pos_orders v5's migration.
+ * discounted (ADR-062), else 1; fees, shipping or custom lines need 5; coupons or a line's Any picks (#495) need 6. Also used by pos_orders v5's migration.
  */
 export function contentVersion(order: Pick<PosOrder, 'display' | 'taxByRate' | 'lines' | 'fees' | 'shipping' | 'coupons'>): 1 | 2 | 3 | 5 | 6 {
-  if (order.coupons?.length) return 6;
+  if (order.coupons?.length || order.lines.some((line) => line.anyAttributes?.length)) return 6;
   if (order.fees?.length || order.shipping?.length || order.lines.some((line) => line.custom)) return 5;
   return order.display && order.taxByRate ? 3 : order.lines.reduce((sum, line) => sum + line.discountMinor, 0) > 0 ? 2 : 1;
 }
@@ -73,6 +73,7 @@ export function contentVersion(order: Pick<PosOrder, 'display' | 'taxByRate' | '
  * ADR-065's figures make version 3; otherwise a discounted order is version 2 (ADR-062), else version 1, byte-identical.
  * A version-3 order goes as version 4 (#286) only when `maxVersion` is at least 4 and its `sentVersion` doesn't cap it.
  * Coupon orders need version 6, carrying coupons, stored regular prices, line attributes and receipt coupons.
+ * Orders with Any picks (#495) need version 6 too, carrying a line's `anyAttributes`, and coupons only when they have some.
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
   options?: { maxVersion?: number }): OrderCreateEnvelope {
@@ -105,6 +106,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         ...(lineDiscounts[i] > 0 ? { discountMinor: lineDiscounts[i] } : {}),
         ...(version === 6 && line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
         ...(version === 6 && line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),
+        ...(version === 6 && line.anyAttributes?.length ? { anyAttributes: [...line.anyAttributes] } : {}),
       })),
       ...(version >= 5 && order.fees?.length ? { fees: order.fees.map((fee) => ({
         clientFeeId: fee.id, name: fee.name, amountMinor: fee.amountMinor, taxStatus: fee.taxStatus,
@@ -115,7 +117,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         amountMinor: charge.amountMinor, taxStatus: charge.taxStatus,
         ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(charge.taxMicros)),
       })) } : {}),
-      ...(version === 6 ? { coupons: order.coupons!.map(({ code, couponId, discountMinor, discountTaxMinor }) => ({
+      ...(version === 6 && order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor }) => ({
         code, couponId, discountMinor, discountTaxMinor,
       })) } : {}),
       payments: order.payments.map((payment) => ({
@@ -133,7 +135,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         })),
         ...(version >= 5 && order.display!.fees ? { fees: order.display!.fees.map(({ id, amountMinor }) => ({ clientFeeId: id, amountMinor })) } : {}),
         ...(version >= 5 && order.display!.shipping ? { shipping: order.display!.shipping.map(({ id, amountMinor }) => ({ clientShippingId: id, amountMinor })) } : {}),
-        ...(version === 6 && order.display!.coupons ? { coupons: order.display!.coupons.map(({ code, amountMinor }) => ({ code, amountMinor })) } : {}),
+        ...(version === 6 && order.coupons?.length && order.display!.coupons ? { coupons: order.display!.coupons.map(({ code, amountMinor }) => ({ code, amountMinor })) } : {}),
         },
         taxByRate: order.taxByRate!.map(({ ratePpm, code, netMinor, amountMinor, grossMinor }) => ({
           ratePpm, ...(code !== undefined ? { code } : {}), netMinor, taxMinor: amountMinor, grossMinor,

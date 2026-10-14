@@ -37,6 +37,9 @@ if (!getRxStorageSQLite && process.env.CI) {
 (getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage from version 3', () =>
   addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 3 }));
 
+(getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage from version 9', () =>
+  addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 9 }));
+
 (getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage from version 8', () =>
   addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 8 }));
 
@@ -118,7 +121,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(9);
+    expect(orders.schema.version).toBe(10);
     const byId = async (id: string) => (await orders.findOne(id).exec())?.toJSON();
     // Version 6 then records each one's default tax rounding.
     const taxRounding = DEFAULT_TAX_ROUNDING;
@@ -144,7 +147,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(9);
+    expect(orders.schema.version).toBe(10);
     for (const order of [pending, applied]) {
       expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual({ ...order, taxRounding: DEFAULT_TAX_ROUNDING });
     }
@@ -167,7 +170,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(9);
+    expect(orders.schema.version).toBe(10);
     for (const order of [pending, applied]) {
       const migrated = (await orders.findOne(order.id).exec())?.toJSON();
       expect(migrated).toStrictEqual(order);
@@ -192,7 +195,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(9);
+    expect(orders.schema.version).toBe(10);
     for (const order of [pending, applied]) expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
   } finally {
     await db.close();
@@ -213,7 +216,31 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(9);
+    expect(orders.schema.version).toBe(10);
+    for (const order of [pending, applied]) expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+  } finally {
+    await db.close();
+    handle.raw.close();
+  }
+});
+
+(getRxStorageSQLite ? it : it.skip)('version 9 to 10 keeps pending and applied sales with coupons and line attributes byte for byte', async () => {
+  const handle = openNodeSQLite();
+  const storage = wrappedValidateAjvStorage({ storage: getRxStorageSQLite!(handle.database) });
+  const name = `posorder${uuidv7().replaceAll('-', '')}`;
+  const v9 = (order: OlderPosOrder) => ({ ...order, taxRounding: DEFAULT_TAX_ROUNDING,
+    coupons: [{ code: 'save10', couponId: '42', discountMinor: 10, discountTaxMinor: 2 }],
+    lines: order.lines.map((line) => ({ ...line, attributes: { Size: 'S' }, regularUnitPriceMinor: 1000 })) });
+  const pending = { ...v9(versionThreeOrder()), saleId: uuidv7(), sentVersion: 6 as const,
+    serverFailures: { since: 1000, reason: 'network', isolated: true } };
+  const applied = { ...v9(versionThreeOrder()), syncStatus: 'applied' as const };
+  const older = await createRxDatabase({ name, storage, multiInstance: false });
+  expect((await (await older.addCollections({ pos_orders: olderCollection(9) })).pos_orders.bulkInsert(structuredClone([pending, applied]))).error).toEqual([]);
+  await older.close();
+  const db = await createRxDatabase({ name, storage, multiInstance: false });
+  try {
+    const orders = await addPosOrderCollection(db);
+    expect(orders.schema.version).toBe(10);
     for (const order of [pending, applied]) expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
   } finally {
     await db.close();

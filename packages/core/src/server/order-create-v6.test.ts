@@ -41,6 +41,7 @@ describe('order.create v6 (coupons, ADR-077)', () => {
     ['display.coupons', { display: { ...v5.display!, coupons: v6.display.coupons } }],
     ['lines[0].regularUnitPriceMinor', { lines: [{ ...v5.lines[0], regularUnitPriceMinor: line.regularUnitPriceMinor }] }],
     ['lines[0].attributes', { lines: [{ ...v5.lines[0], attributes: line.attributes }] }],
+    ['lines[0].anyAttributes', { lines: [{ ...v5.lines[0], anyAttributes: ['Size'] }] }],
   ])('refuses %s below version 6', (field, patch) => {
     expect(precheckCommand({ id: 'command', type: 'order.create', version: 5, payload: { ...v5, ...patch } }, supported))
       .toMatchObject({ status: 'rejected', error: { code: 'invalid_payload', message: `${field} requires version 6` } })
@@ -122,6 +123,33 @@ describe('order.create v6 (coupons, ADR-077)', () => {
       'currency: expected a string',
       ...coupons.slice(0, 9).map((_, index) => `coupons[${index}].discountMinor: expected a safe integer >= 0`),
     ])
+  })
+
+  it('accepts a picks-only v6 payload without coupons (#495)', () => {
+    const payload = { ...v5, lines: [{ ...v5.lines[0], attributes: { Size: 'Large', Logo: 'Cat' }, anyAttributes: ['Logo'] }] }
+    expect(payloadShapeErrors(payload)).toEqual([])
+    expect(payloadBoundErrors(payload)).toEqual([])
+    expect(precheckCommand({ id: 'command', type: 'order.create', version: 6, payload }, supported)).toBeUndefined()
+  })
+
+  it.each([
+    [{ anyAttributes: 'Size' }, 'lines[0].anyAttributes: expected an array'],
+    [{ anyAttributes: [''] }, 'lines[0].anyAttributes[0]: expected a non-empty string'],
+    [{ anyAttributes: [42] }, 'lines[0].anyAttributes[0]: expected a non-empty string'],
+    [{ anyAttributes: ['Size', 'Size'] }, 'lines[0].anyAttributes[1]: expected no duplicate name'],
+    [{ anyAttributes: ['Logo'] }, 'lines[0].anyAttributes[0]: expected a key of lines[0].attributes with a non-empty value'],
+    [{ attributes: { Size: '' }, anyAttributes: ['Size'] }, 'lines[0].anyAttributes[0]: expected a key of lines[0].attributes with a non-empty value'],
+    [{ attributes: undefined, anyAttributes: ['Size'] }, 'lines[0].anyAttributes[0]: expected a key of lines[0].attributes with a non-empty value'],
+  ])('checks malformed anyAttributes %j (#495)', (patch, expected) => {
+    expect(payloadShapeErrors({ ...v6, lines: [{ ...line, ...patch }] })).toEqual([expected])
+  })
+
+  it('bounds anyAttributes names and rejects NUL in them (#495)', () => {
+    const long = 'x'.repeat(256)
+    expect(payloadBoundErrors({ ...v6, lines: [{ ...line, attributes: { Size: 'Large', [long]: 'Cat' }, anyAttributes: [long] }] }))
+      .toEqual(['lines[0].attributes: expected at most 255 characters', 'lines[0].anyAttributes[0]: expected at most 255 characters'])
+    expect(payloadShapeErrors({ ...v6, lines: [{ ...line, attributes: { Size: 'Large', ['\u0000']: 'Cat' }, anyAttributes: ['\u0000'] }] }))
+      .toEqual(['lines[0].attributes: expected no NUL character', 'lines[0].anyAttributes[0]: expected no NUL character'])
   })
 
   it('still accepts a v5 payload without v6 fields', () => {

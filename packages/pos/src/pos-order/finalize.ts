@@ -119,6 +119,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   if (order.coupons?.length && (options.capabilities?.orderCreate ?? 1) < 6) {
     throw new Error("finalize: coupons need the store to accept order.create version 6; update the store's TallyUI plugin");
   }
+  if (order.lineItems.some((line) => line.anyAttributes?.length) && (options.capabilities?.orderCreate ?? 1) < 6) {
+    throw new Error("finalize: picked options need the store to accept order.create version 6; update the store's TallyUI plugin");
+  }
   if (!order.lineItems.length) throw new Error('finalize: no lines');
   // Defence in depth: the builder already clamps every discount to >= 0, so this should never fire.
   if (order.discountMinor < 0
@@ -169,6 +172,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(line.taxStatus !== undefined ? { taxStatus: line.taxStatus } : {}),
     name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
     ...(line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),
+    ...(line.anyAttributes?.length ? { anyAttributes: [...line.anyAttributes] } : {}),
     ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
     discountMinor: line.discountMinor, netMinor: line.netMinor,
     ...(order.taxRounding?.granularity === 'woocommerce' ? { netMicros: line.netMicros } : {}),

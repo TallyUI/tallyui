@@ -236,6 +236,8 @@ export interface OrderCreateLine {
   regularUnitPriceMinor?: number;
   /** Version 6 recorded: the variant's attribute names and values (#495), each at most 255 characters. */
   attributes?: Record<string, string>;
+  /** Version 6: the names in attributes the cashier picked for the variant's "Any" option groups (#495 c/d). */
+  anyAttributes?: string[];
   /**
    * This line's own tax mode, when it differs from the order's `pricesIncludeTax`
    * (a price that carries its own flag, D2c). Absent means the order's flag, so

@@ -71,6 +71,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       variantId: line.variantId,
       name: line.name,
       ...(line.attributes !== undefined ? { attributes: line.attributes } : {}),
+      ...(line.anyAttributes !== undefined ? { anyAttributes: line.anyAttributes } : {}),
       sku: line.sku,
       imageUrl: line.imageUrl,
       unitPrice: { amount: line.unitPriceMinor, currency, taxInclusive: line.taxInclusive },

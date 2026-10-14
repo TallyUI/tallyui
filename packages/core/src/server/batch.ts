@@ -108,7 +108,7 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   const v6Fields = payload.coupons !== undefined ? ['coupons'] : []
   if (display?.coupons !== undefined) v6Fields.push('display.coupons')
   if (Array.isArray(lines)) lines.forEach((line, index) => {
-    for (const field of ['regularUnitPriceMinor', 'attributes'] as const) {
+    for (const field of ['regularUnitPriceMinor', 'attributes', 'anyAttributes'] as const) {
       if (line?.[field] !== undefined) v6Fields.push(`lines[${index}].${field}`)
     }
   })

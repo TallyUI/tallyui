@@ -114,3 +114,43 @@ describe('addEntryToCart', () => {
     expect(builder.getSnapshot().lineItems).toHaveLength(0);
   });
 });
+
+describe('addEntryToCart with Any picks (#495)', () => {
+  const groups = [{ id: '1', name: 'Size', values: ['S', 'M'] }, { name: 'Colour', values: ['Black', 'Red'] },
+    { name: 'Logo', values: ['Cat', 'Dog'] }, { name: 'Lace', values: ['Flat', 'Round'] }];
+  const anyTraits = { ...traits, getVariantOptions: () => groups };
+  const picked = (picks: Record<string, string>) => ({ ...entry, variant: { ...entry.variant, options: { Colour: 'Black' } }, picks });
+
+  it('puts the picks in attributes and their names in anyAttributes, in group order', () => {
+    const builder = orderBuilder();
+    addEntryToCart(builder, picked({ Lace: 'Round', Logo: 'Cat' }), anyTraits, 'EUR');
+    const [line] = builder.getSnapshot().lineItems;
+    expect(Object.entries(line.attributes!)).toEqual([['Colour', 'Black'], ['Logo', 'Cat'], ['Lace', 'Round']]);
+    expect(line.anyAttributes).toEqual(['Logo', 'Lace']);
+  });
+
+  it.each([
+    [{ Colour: 'Red' }, 'addEntryToCart: Colour is not an Any option of this variant'],
+    [{ Size: 'S' }, 'addEntryToCart: Size is not an Any option of this variant'],
+    [{ Engraving: 'Yes' }, 'addEntryToCart: Engraving is not an Any option of this variant'],
+    [{ Logo: 'Fish' }, 'addEntryToCart: Fish is not a value of Logo'],
+    [{ Logo: '' }, 'addEntryToCart:  is not a value of Logo'],
+  ])('refuses the pick %j', (picks, message) => {
+    const builder = orderBuilder();
+    expect(() => addEntryToCart(builder, picked(picks), anyTraits, 'EUR')).toThrow(message);
+    expect(builder.getSnapshot().lineItems).toHaveLength(0);
+  });
+
+  it('merges the same picks only, and keeps a picked and an unpicked line of the variant apart', () => {
+    const builder = orderBuilder();
+    const plain = addEntryToCart(builder, picked({}), anyTraits, 'EUR');
+    const cat = addEntryToCart(builder, picked({ Logo: 'Cat' }), anyTraits, 'EUR');
+    expect(cat).not.toBe(plain);
+    expect(addEntryToCart(builder, picked({ Logo: 'Cat' }), anyTraits, 'EUR')).toBe(cat);
+    addEntryToCart(builder, picked({ Logo: 'Dog' }), anyTraits, 'EUR');
+    expect(addEntryToCart(builder, picked({}), anyTraits, 'EUR')).toBe(plain);
+    expect(builder.getSnapshot().lineItems.map((line) => [line.attributes, line.anyAttributes, line.quantity])).toEqual([
+      [{ Colour: 'Black' }, undefined, 2], [{ Colour: 'Black', Logo: 'Cat' }, ['Logo'], 2], [{ Colour: 'Black', Logo: 'Dog' }, ['Logo'], 1],
+    ]);
+  });
+});

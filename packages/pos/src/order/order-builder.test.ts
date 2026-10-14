@@ -108,6 +108,27 @@ describe('OrderBuilder', () => {
     expect(lines[1]).not.toHaveProperty('attributes');
   });
 
+  it('merges a line only into one with the same Any picks, and keeps the picks through draft restoration (#495)', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const line = { productId: 'p1', variantId: 'v1', name: 'Cap', unitPrice: { amount: 800, currency: 'USD' } };
+    const cat = { ...line, attributes: { Colour: 'Black', Logo: 'Cat' }, anyAttributes: ['Logo'] };
+    const first = builder.addLine(cat);
+    expect(builder.addLine(cat)).toBe(first);
+    builder.addLine({ ...cat, attributes: { Colour: 'Black', Logo: 'Dog' } });
+    builder.addLine({ ...line, attributes: { Colour: 'Black', Logo: 'Cat' } });
+    builder.addLine({ ...line, attributes: { Logo: 'Cat', Lace: 'Flat' }, anyAttributes: ['Logo', 'Lace'] });
+    builder.addLine({ ...line, attributes: { Logo: 'Cat', Lace: 'Flat' }, anyAttributes: ['Lace', 'Logo'] });
+    builder.addLine({ ...cat, anyAttributes: [] });
+    const lines = builder.getSnapshot().lineItems;
+    expect(lines.map((item) => [item.anyAttributes, item.quantity])).toEqual([
+      [['Logo'], 2], [['Logo'], 1], [undefined, 2], [['Logo', 'Lace'], 1], [['Lace', 'Logo'], 1],
+    ]);
+    expect(lines[0].anyAttributes).not.toBe(cat.anyAttributes);
+    const saved = JSON.parse(JSON.stringify(builder.getSnapshot()));
+    expect(restoreOrderDraft(saved, { currency: 'USD', taxContext }).getSnapshot().lineItems
+      .map((item) => [item.attributes, item.anyAttributes, item.quantity])).toEqual(lines.map((item) => [item.attributes, item.anyAttributes, item.quantity]));
+  });
+
   it('adds a product with its sale price and catalogue regular price', () => {
     const builder = createOrderBuilder({ currency: 'USD', taxContext });
     builder.addProduct(productDoc, { ...traits, getPrices: () => [
