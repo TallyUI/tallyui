@@ -1,8 +1,8 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'react-native';
-import { formatMoney } from '@tallyui/core';
-import type { PosOrder } from '@tallyui/pos';
+import { formatMoney, type StoreOrder } from '@tallyui/core';
+import { buildReceiptDataFromStoreOrder, type PosOrder } from '@tallyui/pos';
 import { Receipt } from '../sale/receipt';
 import { blue, pricing, sale, SaleHarness, traits } from './sale-harness';
 
@@ -230,5 +230,61 @@ describe('Receipt', () => {
     render(<Receipt order={sale.order} store={store} cashier="cashier" registerId="register-1" newSale={() => {}} formatDate={() => 'CUSTOM DATE'} />);
     expect(screen.getByText('CUSTOM DATE')).toBeTruthy();
     expect(screen.queryByText(defaultLabel)).toBeNull();
+  });
+
+  it('shows no reprint marker in the order form', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    render(<Receipt order={sale.order} store={store} cashier="cashier" registerId="register-1" newSale={() => {}} />);
+    expect(screen.queryByTestId('receipt-reprint')).toBeNull();
+    expect(screen.getByText('New sale')).toBeTruthy();
+  });
+});
+
+describe('Receipt with a prebuilt receipt', () => {
+  const storeOrder: StoreOrder = {
+    id: '136', reference: '136', status: 'completed', placedAt: '2026-10-06T04:54:03.000Z', currency: 'USD',
+    pricesIncludeTax: false, customer: null,
+    lines: [{ id: '20', name: 'Espresso', sku: 'COF-ESP', quantity: 3, subtotalMinor: 900, subtotalTaxMinor: 97, totalMinor: 800, taxMinor: 86 }],
+    fees: [], shipping: [], coupons: [],
+    taxLines: [{ label: 'CA State', ratePpm: 72500, amountMinor: 86 }],
+    discountMinor: 100, discountTaxMinor: 11, taxMinor: 86, totalMinor: 886,
+    payments: [{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 886 }], refunds: [],
+  };
+  const receipt = buildReceiptDataFromStoreOrder(storeOrder, { storeName: 'Reprint Shop', register: 'register-1', registerName: 'Front till' });
+
+  it('renders a prebuilt reprint receipt', () => {
+    const newSale = vi.fn();
+    render(<Receipt receipt={receipt} newSale={newSale} doneLabel="Done" formatDate={(iso) => `date:${iso}`} />);
+    expect(screen.getByTestId('receipt-order').textContent).toBe('Order 136');
+    expect(screen.getByTestId('receipt-reprint').textContent).toBe('Reprint 1');
+    expect(screen.getByText('Reprint Shop')).toBeTruthy();
+    expect(screen.getByText('date:2026-10-06T04:54:03.000Z')).toBeTruthy();
+    expect(screen.queryByText(/^Cashier:/)).toBeNull();
+    expect(screen.getByTestId('receipt-register').textContent).toBe('Register: Front till');
+    expect(screen.getByLabelText(`Discount off: −${formatMoney({ amount: 100, currency: 'USD' })}`)).toBeTruthy();
+    expect(screen.getByLabelText(`Card terminal: ${formatMoney({ amount: 886, currency: 'USD' })}`)).toBeTruthy();
+    expect(screen.queryByLabelText(/^Change:/)).toBeNull();
+    expect(screen.queryByText('New sale')).toBeNull();
+    fireEvent.click(screen.getByText('Done'));
+    expect(newSale).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels a payment the till does not take by its method and shows change when there is some', () => {
+    render(<Receipt receipt={{ ...receipt, payments: [{ method: 'Bank', amountMinor: 886 }, { method: 'cash', amountMinor: 900 }], changeDueMinor: 14,
+      header: { ...receipt.header, cashier: 'Bob' } }} newSale={() => {}} />);
+    expect(screen.getByLabelText(`Bank: ${formatMoney({ amount: 886, currency: 'USD' })}`)).toBeTruthy();
+    expect(screen.getByLabelText(`Cash tendered: ${formatMoney({ amount: 900, currency: 'USD' })}`)).toBeTruthy();
+    expect(screen.getByLabelText(`Change: ${formatMoney({ amount: 14, currency: 'USD' })}`)).toBeTruthy();
+    expect(screen.getByText('Cashier: Bob')).toBeTruthy();
+    expect(screen.getByText('New sale')).toBeTruthy();
+  });
+
+  it('uses orderReference with a posOrder in the receipt form', () => {
+    const posOrder = { id: '0192aaaa-bbbb-7ccc-8ddd-eeee12345678', createdAt: '2026-10-06T12:12:46.000Z',
+      serverRefs: { displayId: '136', orderId: '136', totalMinor: 886 } } as PosOrder;
+    render(<Receipt receipt={receipt} posOrder={posOrder} newSale={() => {}} formatDate={(iso) => `date:${iso}`} />);
+    expect(screen.getByTestId('receipt-order').textContent).toBe('Order 12345678 · #136');
+    expect(screen.getByText(`date:${receipt.header.date}`)).toBeTruthy();
   });
 });

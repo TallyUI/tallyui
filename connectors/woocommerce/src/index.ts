@@ -9,6 +9,7 @@ import { wooCatalogueReconcile } from './reconcile/catalogue';
 import { createWooReconcileFeed, MAX_IDS_PER_REQUEST } from './reconcile/feed';
 import { createWooCouponFeed, wooCouponReconcile } from './reconcile/coupons';
 import { createWooCustomers } from './customers';
+import { createWooOrders } from './orders';
 import { wooStoreSettings, readWooCapabilities } from './store-settings';
 import { version } from '../package.json';
 
@@ -51,6 +52,8 @@ export function createWooCommerceConnector(): TallyConnector {
     ...wooConnectorParts,
     // WCPOS wcpos/v2/customers, push/customers and orders/<id>/email.
     ...customers,
+    // WCPOS wcpos/v2/orders: order history (ADR-081).
+    ...createWooOrders(),
     replication: {
       // One replication per collection; the reconcile feed is last, so its fetch wins duplicates;
       // duplicates are matched by uuid, the primary key, not the store id (#331). legacyKey
@@ -130,6 +133,7 @@ export const woocommerceConnector: TallyConnector = createWooCommerceConnector()
 // Re-export pieces for advanced usage
 export { wooStoreSettings, readWooCapabilities, WOO_ORDER_CREATE_VERSION } from './store-settings';
 export { createWooCustomers, toWooCustomer } from './customers';
+export { createWooOrders, toWooStoreOrder } from './orders';
 export { createWooCommandTransport, toWooOrderPayload, type WooCommandTransportOptions } from './commands/transport';
 export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { wooProductSchema } from './schemas/products';

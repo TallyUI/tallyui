@@ -52,7 +52,7 @@ export type {
 } from './order';
 
 // Receipt
-export { buildReceiptData, RECEIPT_SCHEMA_VERSION } from './receipt';
+export { buildReceiptData, buildReceiptDataFromPosOrder, buildReceiptDataFromStoreOrder, RECEIPT_SCHEMA_VERSION } from './receipt';
 export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, ReceiptRegister, ReceiptFiscal } from './receipt';
 
 // Product
