@@ -1,6 +1,6 @@
 import { minorUnitDigits, woocommerceTax, type StoreOrder } from '@tallyui/core';
 import type { PosOrder } from '../pos-order/types';
-import { taxLinesByRate } from '../tax/exact';
+import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import type { ReceiptConfig, ReceiptData, ReceiptLineItem } from './types';
 import { RECEIPT_SCHEMA_VERSION } from './types';
 
@@ -24,7 +24,10 @@ function reprintBlocks(config: ReceiptConfig, customer: { name?: string; email?:
 
 const sum = (amounts: number[]) => amounts.reduce((total, amount) => total + amount, 0);
 
-/** Receipt data for reprinting the till's own stored order (ADR-081). */
+/**
+ * Receipt data for reprinting the till's own stored order (ADR-081). A stored order keeps no discount labels: the order discount
+ * is one row, `Order discount`, in the display mode when lines were converted. Without `display`, a converted line's discount is in its own mode.
+ */
 export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptConfig): ReceiptData {
   const { header, ...blocks } = reprintBlocks(config, order.customer);
   const { display, taxRounding: rounding } = order;
@@ -36,9 +39,18 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
       : woocommerceTax.roundTaxTotal(Number(row.taxMicros) / (factor * 1e6), dp, order.pricesIncludeTax)), 0);
     return Math.round(woocommerceTax.roundHalfUp(Number(line.netMicros) / (factor * 1e6) + tax, dp) * factor);
   };
-  const lineItems = order.lines.map((line): ReceiptLineItem => {
+  const lineTaxMicros = (line: PosOrder['lines'][number]) => line.taxLines.reduce((total, row) => total + BigInt(row.taxMicros), 0n);
+  let taxSoFar = order.pricesIncludeTax ? 0n : order.lines.reduce((total, line) => line.taxInclusive === undefined ? total + lineTaxMicros(line) : total, 0n);
+  const lineTotals = order.lines.map((line) => {
+    if (rounding.granularity === 'woocommerce' && line.netMicros !== undefined) return order.pricesIncludeTax ? wooGrossMinor(line, rounding.roundAtSubtotal) : line.netMinor;
+    if (line.taxInclusive === undefined) return line.netMinor;
+    const share = roundMicrosToMinor(taxSoFar + lineTaxMicros(line)) - roundMicrosToMinor(taxSoFar);
+    taxSoFar += lineTaxMicros(line);
+    return line.taxInclusive ? line.netMinor - share : line.netMinor + share;
+  });
+  const lineItems = order.lines.map((line, index): ReceiptLineItem => {
     const displayLine = display?.lines.find((row) => row.lineId === line.id);
-    const displayAmountMinor = display ? displayLine?.amountMinor ?? 0 : line.unitPriceMinor * line.quantity;
+    const displayAmountMinor = display ? displayLine?.amountMinor ?? 0 : line.taxInclusive !== undefined ? lineTotals[index]! + line.discountMinor : line.unitPriceMinor * line.quantity;
     const displayDiscounts = display
       ? (displayLine?.discounts ?? []).map((d) => ({ label: d.label ?? 'Discount', amountMinor: d.amountMinor }))
       : line.discountMinor > 0 ? [{ label: 'Discount', amountMinor: line.discountMinor }] : [];
@@ -48,10 +60,7 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
       sku: line.sku,
       quantity: line.quantity,
       unitPriceMinor: line.unitPriceMinor,
-      lineTotalMinor: rounding.granularity === 'woocommerce' && line.netMicros !== undefined
-        ? order.pricesIncludeTax ? wooGrossMinor(line, rounding.roundAtSubtotal) : line.netMinor
-        // A converted line (ADR-038 amendment): the stored order no longer carries its conversion share.
-        : line.taxInclusive !== undefined ? displayAmountMinor - line.discountMinor : line.netMinor,
+      lineTotalMinor: lineTotals[index]!,
       ...(line.discountMinor > 0 ? { discountMinor: line.discountMinor } : {}),
       displayAmountMinor,
       displayDiscounts,
@@ -63,7 +72,7 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
     && line.netMicros !== undefined ? order.pricesIncludeTax : line.taxInclusive ?? order.pricesIncludeTax })),
   ...[...(order.fees ?? []), ...(order.shipping ?? [])].map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
   const taxLines = order.taxByRate ? order.taxByRate.map((row) => ({
-    label: row.label ?? config.taxLabels?.[row.ratePpm] ?? '', code: row.code, ratePpm: row.ratePpm, amountMinor: row.amountMinor,
+    label: config.taxLabels?.[row.ratePpm] ?? row.label ?? `Tax ${row.ratePpm / 10000}%`, code: row.code, ratePpm: row.ratePpm, amountMinor: row.amountMinor,
   })) : taxLinesByRate(taxedLines, order.taxMinor, config.taxLabels, order.taxRounding)
     .map(({ label, code, ratePpm, amountMinor }) => ({ label, code, ratePpm, amountMinor }));
   const charges = (rows: Array<{ name: string; amountMinor: number }> | undefined) =>
@@ -73,8 +82,7 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
     ...blocks,
     header: { ...header, orderNumber: order.serverRefs?.displayId ?? order.id, date: order.createdAt },
     lineItems,
-    discounts: display ? [...display.orderDiscountMinor > 0 ? [{ label: 'Order discount', amountMinor: display.orderDiscountMinor }] : [],
-      ...(display.coupons ?? []).map(({ code, amountMinor }) => ({ label: code, amountMinor }))] : [],
+    discounts: display && display.orderDiscountMinor > 0 ? [{ label: 'Order discount', amountMinor: display.orderDiscountMinor }] : [],
     fees: charges(display ? display.fees : order.fees),
     shipping: charges(display ? display.shipping : order.shipping),
     orderDiscountMinor: display ? display.orderDiscountMinor : 0,

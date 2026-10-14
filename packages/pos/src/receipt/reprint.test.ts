@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { StoreOrder } from '@tallyui/core';
+import type { StoreOrder, TaxRounding } from '@tallyui/core';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder } from '../pos-order/finalize';
 import { buildReceiptData } from './build-receipt-data';
@@ -137,6 +137,96 @@ describe('reprint receipt data', () => {
     const receipt = buildReceiptDataFromPosOrder({ ...stored, fees: [charge], shipping: [{ ...charge, name: 'Courier', amountMinor: 500 }] }, config);
     expect(receipt.fees).toEqual([{ name: 'Bag', amountMinor: 10 }]);
     expect(receipt.shipping).toEqual([{ name: 'Courier', amountMinor: 500 }]);
+  });
+});
+
+const plainConfig: ReceiptConfig = { storeName: 'S' };
+const coupons = {
+  configs: new Map([['ten', { discount_type: 'percent' as const, amount: '10', limit_usage_to_x_items: null,
+    product_ids: [], excluded_product_ids: [], product_categories: [], excluded_product_categories: [], exclude_sale_items: false }]]),
+  couponIds: new Map([['ten', '303']]), productCategories: new Map(), calcDiscountsSequentially: false,
+};
+
+function wooSale(pricesIncludeTax: boolean, roundAtSubtotal: boolean, withCoupon: boolean) {
+  const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+    pricesIncludeTax, rounding: { granularity: 'woocommerce', roundAtSubtotal }, getTaxRatePpm: () => 200000,
+    getTaxRates: () => [{ id: 1, code: 'VAT', label: 'VAT', rate: '20.0000', priority: 1, compound: false, shipping: true }],
+  }, couponContext: coupons as never });
+  const a = builder.addLine({ productId: '11', name: 'Tea', sku: 'TEA', unitPrice: { amount: 333, currency: 'GBP' }, quantity: 3 });
+  builder.addLine({ productId: '12', name: 'Cake', sku: 'CAKE', unitPrice: { amount: 457, currency: 'GBP' } });
+  builder.applyLineDiscount(a, { type: 'fixed', value: 37, label: 'Dent' });
+  builder.applyOrderDiscount({ type: 'percentage', value: 7, label: 'Staff' });
+  if (withCoupon) builder.setCoupons(['ten']);
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor + 101 });
+  return builder.getSnapshot();
+}
+
+// Lines B and C are priced in the other tax mode when `converted` (ADR-038 amendment). Fees and shipping need order.create v5.
+function plainSale(pricesIncludeTax: boolean, rounding: TaxRounding | undefined, converted: boolean, charges: boolean) {
+  const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 82500, pricesIncludeTax, ...(rounding ? { rounding } : {}) } });
+  const other = converted ? { taxInclusive: !pricesIncludeTax } : {};
+  const a = builder.addLine({ productId: 'p1', name: 'A', sku: 'A', unitPrice: { amount: 451, currency: 'USD' }, quantity: 3 });
+  builder.addLine({ productId: 'p2', name: 'B', sku: 'B', unitPrice: { amount: 307, currency: 'USD', ...other }, quantity: 2 });
+  builder.addLine({ productId: 'p3', name: 'C', sku: 'C', unitPrice: { amount: 999, currency: 'USD', ...other } });
+  builder.applyLineDiscount(a, { type: 'fixed', value: 41, label: 'Dent' });
+  builder.applyOrderDiscount({ type: 'percentage', value: 13, label: 'Staff' });
+  if (charges) {
+    builder.addFee({ name: 'Bag', amountMinor: 23 });
+    builder.addShipping({ name: 'Courier', amountMinor: 650 });
+  }
+  builder.addPayment({ method: 'external', amountMinor: 500, reference: 'r1' });
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor - 500 });
+  return builder.getSnapshot();
+}
+
+const lineFigures = (receipt: ReceiptData) => receipt.lineItems.map(({ lineTotalMinor, discountMinor, displayAmountMinor }) =>
+  ({ lineTotalMinor, discountMinor, displayAmountMinor }));
+const roundings: Array<TaxRounding | undefined> = [undefined, { granularity: 'per_line_items', mode: 'half_up' },
+  { granularity: 'per_rate_group_items', mode: 'half_away_from_zero' }];
+const modes = [false, true].flatMap((inc) => roundings.map((rounding) => [inc, rounding] as const));
+
+describe('reprint receipt data with converted lines, tax labels and coupons', () => {
+  it.each(modes.flatMap(([inc, rounding]) => [3, 6].flatMap((orderCreate) => [false, true].map((converted) =>
+    [inc, rounding?.granularity ?? 'default', orderCreate, converted, rounding] as const))))(
+    'matches buildReceiptData (inclusive: %s, rounding: %s, order.create v%s, converted: %s)', (inc, _name, orderCreate, converted, rounding) => {
+      const order = plainSale(inc, rounding, converted, orderCreate >= 5);
+      const posOrder = finalizeOrder(order, { capabilities: { orderCreate } });
+      const original = buildReceiptData(order, plainConfig);
+      const reprint = buildReceiptDataFromPosOrder(posOrder, plainConfig);
+      expect(lineFigures(reprint)).toEqual(lineFigures(original));
+      expect(reprint.totals).toEqual(original.totals);
+      expect(reprint.totals.taxLines.map((row) => row.label)).toEqual(['Tax 8.25%']);
+      // A stored order keeps the order discount only in the display mode, so with converted lines that is the row.
+      expect(total(reprint.discounts)).toBe(converted ? posOrder.display!.orderDiscountMinor : total(original.discounts));
+    },
+  );
+
+  it('labels the tax rows as buildReceiptData does without config.taxLabels', () => {
+    const order = plainSale(false, undefined, false, false);
+    const reprint = buildReceiptDataFromPosOrder(finalizeOrder(order, { capabilities: { orderCreate: 3 } }), plainConfig);
+    expect(reprint.totals.taxLines.map((row) => row.label)).toEqual(['Tax 8.25%']);
+    expect(reprint.totals.taxLines.map((row) => row.label)).toEqual(buildReceiptData(order, plainConfig).totals.taxLines.map((row) => row.label));
+  });
+
+  it.each([false, true])('lists the order discount, not the coupons, on a WooCommerce sale with a coupon (inclusive: %s)', (inc) => {
+    for (const roundAtSubtotal of [false, true]) {
+      const order = wooSale(inc, roundAtSubtotal, true);
+      expect(order.coupons?.map((coupon) => coupon.code)).toEqual(['ten']);
+      const original = buildReceiptData(order, plainConfig);
+      const reprint = buildReceiptDataFromPosOrder(finalizeOrder(order, { capabilities: { orderCreate: 6 } }), plainConfig);
+      expect(total(reprint.discounts), `roundAtSubtotal: ${roundAtSubtotal}`).toBe(total(original.discounts));
+      expect(reprint.discounts.map((row) => row.label)).not.toContain('ten');
+    }
+  });
+
+  it.each([false, true])('adds up the totals of a converted sale finalized below order.create v3 (inclusive: %s)', (inc) => {
+    const order = plainSale(inc, undefined, true, false);
+    const posOrder = finalizeOrder(order, { capabilities: { orderCreate: 2 } });
+    expect(posOrder.display).toBeUndefined();
+    const { totals, fees, shipping, lineItems } = buildReceiptDataFromPosOrder(posOrder, plainConfig);
+    expect(totals.subtotalMinor - totals.discountMinor + (inc ? 0 : total(totals.taxLines)) + total(fees) + total(shipping)).toBe(totals.totalMinor);
+    const original = buildReceiptData(order, plainConfig);
+    for (const index of [1, 2]) expect(lineItems[index]!.lineTotalMinor).toBe(original.lineItems[index]!.lineTotalMinor);
   });
 });
 
