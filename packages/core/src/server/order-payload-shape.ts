@@ -133,6 +133,16 @@ export function payloadShapeErrors(payload: unknown): string[] {
       check(object(line.attributes), `${path}.attributes`, 'an object')
       if (object(line.attributes)) for (const [key, value] of Object.entries(line.attributes)) check(typeof value === 'string', `${path}.attributes.${key}`, 'a string')
     }
+    const { anyAttributes: names, attributes } = line
+    if (names !== undefined) check(Array.isArray(names), `${path}.anyAttributes`, 'an array')
+    if (Array.isArray(names)) names.forEach((name, index) => {
+      const at = `${path}.anyAttributes[${index}]`
+      check(typeof name === 'string' && name.length > 0, at, 'a non-empty string')
+      if (typeof name !== 'string' || !name) return
+      check(names.indexOf(name) === index, at, 'no duplicate name')
+      check(object(attributes) && Object.hasOwn(attributes, name) && typeof attributes[name] === 'string' && attributes[name].length > 0,
+        at, `a key of ${path}.attributes with a non-empty value`)
+    })
   })
   // NUL, only on strings (the checks above name any other type): Postgres text can't hold it, and the lookup keys must be clean.
   for (const [value, path] of payloadStrings(payload)) check(!value.includes('\u0000'), path, 'no NUL character')
@@ -193,6 +203,7 @@ function payloadStrings(payload: Record<string, unknown>): Array<[string, string
     if (object(line) && object(line.attributes)) for (const [key, value] of Object.entries(line.attributes)) {
       found.push([key, `lines[${index}].attributes`, 255], [value, `lines[${index}].attributes.${key}`, 255])
     }
+    if (object(line) && Array.isArray(line.anyAttributes)) line.anyAttributes.forEach((name, i) => found.push([name, `lines[${index}].anyAttributes[${i}]`, 255]))
   })
   if (object(payload.customer)) found.push([payload.customer.email, 'customer.email', 254], [payload.customer.customerId, 'customer.customerId', undefined])
   found.push([payload.sessionId, 'sessionId', undefined])

@@ -1,7 +1,11 @@
 import { findVariantByCode, formatMoney, resolvePrice } from '@tallyui/core';
 import type { ProductTraits, TraitContext, VariantSummary } from '@tallyui/core';
 
-export type CatalogueEntry<Doc> = { product: Doc; variant: VariantSummary };
+export type CatalogueEntry<Doc> = {
+  product: Doc; variant: VariantSummary;
+  /** The cashier's value for each of the variant's local "Any" option groups, group name to value (#495). */
+  picks?: Record<string, string>;
+};
 
 /** Variants in product/variant order, passing context through; without getVariants,
  * simple products use their own traits and products with variants contribute no entries. */

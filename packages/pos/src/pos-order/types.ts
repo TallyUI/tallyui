@@ -35,6 +35,8 @@ export interface PosOrderLine {
   unitPriceMinor: number;
   /** The chosen variation attributes, name to value (pos_orders v9, #495). */
   attributes?: Record<string, string>;
+  /** The names in attributes the cashier picked for the variant's "Any" option groups (#495); absent when none. */
+  anyAttributes?: string[];
   /** The catalogue's regular unit price, in the line's own tax mode like `unitPriceMinor` (pos_orders v9, ADR-077 d2). */
   regularUnitPriceMinor?: number;
   /** Line discounts plus the allocated order-discount share, in the line's own tax mode (ADR-062). */

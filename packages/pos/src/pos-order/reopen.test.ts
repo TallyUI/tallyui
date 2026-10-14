@@ -107,6 +107,16 @@ it('keeps line attributes on the reopened sale', async () => {
   expect(saved.lineItems[1]).not.toHaveProperty('attributes');
 });
 
+it('keeps Any picks on the reopened sale (#495)', async () => {
+  const order = storedOrder();
+  order.lines[0].attributes = { Size: 'M', Logo: 'Cat' };
+  order.lines[0].anyAttributes = ['Logo'];
+  await db.pos_orders.insert(order);
+  const saved = await draft(await reopenRefusedOrder(order.id, deps()));
+  expect(saved.lineItems[0]).toMatchObject({ attributes: { Size: 'M', Logo: 'Cat' }, anyAttributes: ['Logo'] });
+  expect(saved.lineItems[1]).not.toHaveProperty('anyAttributes');
+});
+
 it('the reopened sale finalizes and stores, then refuses another reopen', async () => {
   const order = storedOrder();
   await db.pos_orders.insert(order);

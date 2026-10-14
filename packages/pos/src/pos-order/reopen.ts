@@ -45,6 +45,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
         unitPrice: { amount: line.unitPriceMinor, currency: order.currency, taxInclusive: line.taxInclusive },
         ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
         ...(line.attributes !== undefined ? { attributes: line.attributes } : {}),
+        ...(line.anyAttributes !== undefined ? { anyAttributes: line.anyAttributes } : {}),
         quantity: line.quantity,
         taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })),
         ...(line.custom ? { custom: true, taxClass: line.custom.taxClass, taxStatus: line.custom.taxStatus }

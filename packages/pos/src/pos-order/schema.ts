@@ -27,9 +27,10 @@ import type { PosOrder } from './types';
  * and `regularUnitPriceMinor` (ADR-077 d2), and `reopenedAt`: when a refused order was reopened as a parked sale (ADR-077 d4b), and lets `sentVersion` and `downgradedFrom` be 6 (order.create version 6, ADR-077 d4), and changes nothing else.
  * `finalizeOrder` writes a line's `attributes`; the order.create envelope sends them only at version 6.
  * Its migration is the identity. It is one-way like version 8.
+ * Version 10 adds a line's `anyAttributes` (#495 c/d) and changes nothing else. Its migration is the identity. It is one-way like version 9.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 9, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 10, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -58,6 +59,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
         }, required: ['name', 'taxStatus'] },
         unitPriceMinor: { type: 'integer' }, discountMinor: { type: 'integer' }, netMinor: { type: 'integer' },
         attributes: { type: 'object', additionalProperties: { type: 'string' } },
+        anyAttributes: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 255 } },
         regularUnitPriceMinor: { type: 'integer' },
         netMicros: { type: 'string', pattern: '^-?[0-9]{1,24}$', maxLength: 25 },
         taxLines: { type: 'array', items: {
@@ -179,5 +181,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity } };
 }

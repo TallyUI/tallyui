@@ -6,6 +6,7 @@ import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, s
   listCategories, inCategory,
   type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction } from '@tallyui/pos';
 import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle, CategoryNav } from '../product';
+import { ProductVariantPicker } from '../product/product-variant-picker';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
 
@@ -34,7 +35,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
 }
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
-  viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categories }: {
+  viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categories, pickAnyOptions = false }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -82,6 +83,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   items?: Doc[];
   /** Search text on every input change, for apps that filter items themselves. */
   onQueryChange?: (query: string) => void;
+  /** Ask for a value for each of a variant's local "Any" option groups before onSelect (#495); set it only when the store accepts order.create version 6. */
+  pickAnyOptions?: boolean;
 }) {
   const [initial] = useState<{
     state: CatalogueViewState; loaded?: CatalogueViewState; pending?: Promise<unknown>; failed?: boolean; error?: unknown;
@@ -156,15 +159,35 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
   useEffect(() => { if (chooserId !== null && choices.length === 0) setChooserId(null); }, [chooserId, choices]);
 
+  // The picker step (#495): the entry waiting for its "Any" picks, and the cashier's picks so far.
+  const [pickEntry, setPickEntry] = useState<CatalogueEntry<Doc> | null>(null);
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  // A variant's local "Any" groups: no backend id (global pa_* attributes are #572), no fixed value on the variant.
+  function anyGroupsOf(entry: CatalogueEntry<Doc>) {
+    const fixed = entry.variant.options ?? {};
+    return (traits.getVariantOptions?.(entry.product) ?? []).filter(({ id, name, values }) =>
+      id === undefined && !Object.prototype.hasOwnProperty.call(fixed, name) && values.length > 0);
+  }
+  const anyGroups = pickEntry ? anyGroupsOf(pickEntry) : [];
+  const allPicked = anyGroups.every(({ name }) => picks[name]);
+
+  function closePicker() {
+    setPickEntry(null);
+    setPicks({});
+  }
+
   function select(entry: CatalogueEntry<Doc>) {
-    onSelect(entry);
+    const picking = pickAnyOptions && anyGroupsOf(entry).length > 0;
+    closePicker();
+    if (picking) setPickEntry(entry);
+    else onSelect(entry);
     setChooserId(null);
   }
 
   function selectProduct(product: Doc) {
     const variants = entries.filter((entry) => traits.getId(entry.product) === traits.getId(product));
     if (variants.length === 1) select(variants[0]);
-    else setChooserId(traits.getId(product));
+    else { closePicker(); setChooserId(traits.getId(product)); }
   }
 
   const emptyState = <Text className="mt-10 text-center text-sm text-muted-foreground">
@@ -193,7 +216,19 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
         {showCategoryNav ? <CategoryNav categories={[{ id: '', name: 'All products' }, ...categoryList]}
           selectedId={activeCategory?.id ?? ''}
           onSelect={(id) => changeState({ type: 'setCategory', categoryId: id === '' ? null : id })} /> : null}
-        {choices.length > 0 ? (
+        {pickEntry ? (
+          <View accessibilityLabel="Choose options" className="gap-2">
+            <Text className="font-semibold text-foreground">{pickEntry.variant.title ?? traits.getName(pickEntry.product)}</Text>
+            <ProductVariantPicker options={anyGroups.map(({ name, values }) => ({ name, values }))} selected={picks} onSelect={setPicks} />
+            <Pressable accessibilityRole="button" disabled={!allPicked} onPress={() => { onSelect({ ...pickEntry, picks }); closePicker(); }}
+              className={`rounded-md border border-border bg-card px-4 py-3 ${allPicked ? '' : 'opacity-50'}`}>
+              <Text className="text-center text-foreground">Add to cart</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={closePicker} className="rounded-md border border-border bg-card px-4 py-3">
+              <Text className="text-center text-foreground">Cancel</Text>
+            </Pressable>
+          </View>
+        ) : choices.length > 0 ? (
           <View accessibilityLabel="Choose variant" className="gap-2">
             {choices.map((entry) => (
               <Pressable key={entry.variant.id} accessibilityRole="button" onPress={() => select(entry)}

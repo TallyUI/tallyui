@@ -60,6 +60,18 @@ describe('finalizeOrder', () => {
     for (const line of order.lines.slice(0, 2)) expect(line).not.toHaveProperty('attributes');
   });
 
+  it("copies a line's Any picks, leaves them out without picks, and refuses them below order.create version 6 (#495)", () => {
+    const builder = sale();
+    builder.addLine({ productId: 'p3', name: 'Cap', attributes: { Size: 'L' }, anyAttributes: ['Size'], unitPrice: { amount: 500, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 5000 });
+    const snapshot = builder.getSnapshot(), order = finalizeOrder(snapshot, { capabilities: { orderCreate: 6 } });
+    expect(order.lines[2].anyAttributes).toEqual(['Size']);
+    expect(order.lines[2].anyAttributes).not.toBe(snapshot.lineItems[2].anyAttributes);
+    for (const line of order.lines.slice(0, 2)) expect(line).not.toHaveProperty('anyAttributes');
+    expect(() => finalizeOrder(snapshot, { capabilities: { orderCreate: 5 } }))
+      .toThrow("finalize: picked options need the store to accept order.create version 6; update the store's TallyUI plugin");
+  });
+
   it('refuses a coupon sale when the store only accepts order.create version 5', () => {
     const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
       pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false },

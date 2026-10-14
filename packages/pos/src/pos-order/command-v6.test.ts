@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { precheckCommand } from '@tallyui/core/server';
+import { payloadShapeErrors, precheckCommand } from '@tallyui/core/server';
 import { createOrderBuilder } from '../order/order-builder';
 import { contentVersion, ORDER_CREATE_MAX_VERSION, toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
 import { finalizeOrder } from './finalize';
@@ -117,5 +117,42 @@ describe('order.create v6 coupon envelope (ADR-077)', () => {
     expect(properties.downgradedFrom.maximum).toBe(ORDER_CREATE_MAX_VERSION);
     expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(ORDER_CREATE_MAX_VERSION);
     expect(contentVersion(sale())).toBe(6);
+  });
+});
+
+describe('order.create v6 Any picks (#495)', () => {
+  it('sends a picks-only sale at version 6 with its anyAttributes and no coupons', () => {
+    const order = sale(false);
+    order.lines[0].anyAttributes = ['Size'];
+    const envelope = toOrderCreateEnvelope(order, 'device_golden', 1, { maxVersion: 6 });
+    expect(envelope.version).toBe(6);
+    expect(envelope.payload).not.toHaveProperty('coupons');
+    expect(envelope.payload.display).not.toHaveProperty('coupons');
+    expect(envelope.payload.lines[0]).toMatchObject({ attributes: { Size: 'L', Colour: 'Red' }, anyAttributes: ['Size'] });
+    expect(Object.keys(envelope.payload.lines[0]).slice(-2)).toEqual(['attributes', 'anyAttributes']);
+    expect(envelope.payload.lines[0].anyAttributes).not.toBe(order.lines[0].anyAttributes);
+    expect(envelope.payload.lines[1]).not.toHaveProperty('anyAttributes');
+    expect(payloadShapeErrors(envelope.payload)).toEqual([]);
+    expect(precheckCommand(envelope, supported)).toBeUndefined();
+  });
+
+  it('sends anyAttributes only on the picked line of a coupon sale', () => {
+    const order = sale();
+    order.lines[1].attributes = { Logo: 'Cat' };
+    order.lines[1].anyAttributes = ['Logo'];
+    const envelope = toOrderCreateEnvelope(order, 'device_golden', 1, { maxVersion: 6 });
+    expect(envelope.payload.coupons).toEqual([{ code: 'ten', couponId: '303', discountMinor: 130, discountTaxMinor: 26 }]);
+    expect(envelope.payload.lines[0]).not.toHaveProperty('anyAttributes');
+    expect(envelope.payload.lines[1].anyAttributes).toEqual(['Logo']);
+    expect(precheckCommand(envelope, supported)).toBeUndefined();
+  });
+
+  it.each(['maxVersion', 'sentVersion'] as const)('refuses a picks-only sale capped at 5 by %s', (cap) => {
+    const order = sale(false);
+    order.lines[0].anyAttributes = ['Size'];
+    if (cap === 'sentVersion') order.sentVersion = 5;
+    const send = () => toOrderCreateEnvelope(order, 'device_golden', 1, cap === 'maxVersion' ? { maxVersion: 5 } : undefined);
+    expect(send).toThrow(UnsupportedOrderVersionError);
+    expect(send).toThrow(expect.objectContaining({ needed: 6, supported: 5 }));
   });
 });

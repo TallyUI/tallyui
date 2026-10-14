@@ -62,6 +62,12 @@ export function assertDisplayResidue(residue: number, convertedLines: number, co
   if (Math.abs(residue) > bound) throw new Error(`Display residue ${residue} exceeds its bound of ${bound} (ADR-063)`);
 }
 
+/** Whether two lines carry the same "Any" picks (#495): the same names in the same order with equal values; none matches none. */
+export function samePicks(a: Pick<LineItem, 'anyAttributes' | 'attributes'>, b: Pick<LineItem, 'anyAttributes' | 'attributes'>): boolean {
+  const names = a.anyAttributes ?? [], other = b.anyAttributes ?? [];
+  return names.length === other.length && names.every((name, i) => name === other[i] && a.attributes?.[name] === b.attributes?.[name]);
+}
+
 /** The regular unit price to store with a catalogue line (ADR-077 d3): the base price when on sale, else the price charged. */
 export function regularUnitPriceMinor(resolved: ResolvedPrice): number | undefined {
   return resolved.was === undefined ? resolved.current.amount : resolved.was.taxInclusive === resolved.current.taxInclusive ? resolved.was.amount : undefined;
@@ -379,7 +385,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const existing = lineItems.find(
       (li) => !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
         && (!woo || li.taxClass === input.taxClass && (li.taxStatus === 'none') === (input.taxStatus === 'none'))
-        && li.regularUnitPriceMinor === input.regularUnitPriceMinor
+        && li.regularUnitPriceMinor === input.regularUnitPriceMinor && samePicks(li, input)
         && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length
         && li.taxLines.every((tax, index) => tax.code === taxRates[index].code && tax.ratePpm === taxRates[index].ratePpm),
     );
@@ -402,6 +408,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       variantId,
       name: input.name,
       ...(input.attributes && Object.keys(input.attributes).length ? { attributes: { ...input.attributes } } : {}),
+      ...(input.anyAttributes?.length ? { anyAttributes: [...input.anyAttributes] } : {}),
       sku: input.sku ?? '',
       imageUrl: input.imageUrl,
       unitPriceMinor: unitPrice.amount,

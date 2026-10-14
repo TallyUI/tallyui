@@ -3,6 +3,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorProvider } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
+import { wooProductTraits } from '@tallyui/connector-woocommerce';
 import { Catalogue, formatStockSyncTime } from '../sale/catalogue';
 import type { CategoryNavProps, ProductGrid, ProductStockBadge, ProductTableProps, ViewToggleProps } from '../product';
 
@@ -789,5 +790,75 @@ describe('Catalogue view state', () => {
     fireEvent.change(input, { target: { value: '111' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ variant: expect.objectContaining({ id: 'hat-one' }) }));
+  });
+});
+
+describe('Catalogue Any picks (#495)', () => {
+  // A Woo variable product whose one variation fixes Colour and leaves the local group Size as "Any".
+  const tee = (sizeId?: number) => ({ id: 70, name: 'Tee', type: 'variable', status: 'publish', attributes: [
+    { name: 'Colour', variation: true, position: 0, options: ['Black'] },
+    { ...(sizeId ? { id: sizeId } : {}), name: 'Size', variation: true, position: 1, options: ['S', 'M', 'L'] },
+  ], variation_docs: [{ id: 71, status: 'publish', sku: 'TEE-BLACK', regular_price: '20', stock_status: 'instock',
+    attributes: [{ name: 'Colour', option: 'Black' }] }] });
+  function mountTee(pickAnyOptions?: boolean, sizeId?: number) {
+    const onSelect = vi.fn();
+    const product = tee(sizeId);
+    render(<Catalogue products={[product]} traits={wooProductTraits} currency="EUR" onSelect={onSelect}
+      lastSyncedAt={null} pickAnyOptions={pickAnyOptions} />);
+    return { onSelect, product, variant: wooProductTraits.getVariants!(product, { currency: 'EUR' })[0] };
+  }
+
+  it('selects without picks when pickAnyOptions is unset', () => {
+    const { onSelect, product, variant } = mountTee();
+    expect(variant.options).toEqual({ Colour: 'Black' });
+    fireEvent.click(screen.getByTestId('product-tile-Tee'));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ product, variant });
+    expect(screen.queryByLabelText('Choose options')).toBeNull();
+  });
+
+  it('asks for each Any group, then selects with the picks', () => {
+    const { onSelect, product, variant } = mountTee(true);
+    fireEvent.click(screen.getByTestId('product-tile-Tee'));
+    const picker = within(screen.getByLabelText('Choose options'));
+    expect(picker.getByText('Size')).toBeTruthy();
+    expect(picker.queryByText('Colour')).toBeNull();
+    const add = picker.getByRole('button', { name: 'Add to cart' });
+    expect(add.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(add);
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(picker.getByText('L'));
+    expect(add.getAttribute('aria-disabled')).not.toBe('true');
+    fireEvent.click(add);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ product, variant, picks: { Size: 'L' } });
+    expect(screen.queryByLabelText('Choose options')).toBeNull();
+  });
+
+  it('selects directly when the group has an id (a global attribute)', () => {
+    const { onSelect, product, variant } = mountTee(true, 5);
+    fireEvent.click(screen.getByTestId('product-tile-Tee'));
+    expect(screen.queryByLabelText('Choose options')).toBeNull();
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ product, variant });
+  });
+
+  it('closes the picker on Cancel without selecting', () => {
+    const { onSelect } = mountTee(true);
+    fireEvent.click(screen.getByTestId('product-tile-Tee'));
+    const picker = within(screen.getByLabelText('Choose options'));
+    fireEvent.click(picker.getByText('M'));
+    fireEvent.click(picker.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Choose options')).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('opens the picker from a scanned code too', () => {
+    const { onSelect, product, variant } = mountTee(true);
+    const input = screen.getByPlaceholderText('Search or scan barcode / SKU');
+    fireEvent.change(input, { target: { value: 'TEE-BLACK' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).not.toHaveBeenCalled();
+    const picker = within(screen.getByLabelText('Choose options'));
+    fireEvent.click(picker.getByText('S'));
+    fireEvent.click(picker.getByRole('button', { name: 'Add to cart' }));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ product, variant, picks: { Size: 'S' } });
   });
 });
