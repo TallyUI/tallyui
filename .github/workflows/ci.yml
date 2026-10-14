@@ -52,6 +52,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Lint packages and connectors
+        run: pnpm lint:code
+
+      - name: Check for unused files, exports and dependencies
+        run: pnpm knip
+
       - name: Run tests
         run: pnpm test
 
