@@ -60,6 +60,14 @@ caches and artifacts can be read from fork PRs. So:
 The installer prints the token in its output. Don't paste install logs
 anywhere public.
 
+## Lint
+
+`pnpm lint` runs apps/web's Next lint through turbo and the shared config over
+packages/ and connectors/ (`pnpm lint:code`). New violations fail; existing
+ones are listed per file in `eslint-suppressions.json`. After fixing
+grandfathered violations, run `pnpm lint:code --prune-suppressions` and commit
+the smaller file. Never add new entries with `--suppress-all` to get a PR through.
+
 ## Versions
 
 `rxdb` and `rxdb-premium` are pinned to the same exact version (currently
