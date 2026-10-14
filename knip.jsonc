@@ -1,0 +1,66 @@
+// `pnpm knip` gates new unused files, exports, dependencies and binaries.
+// Entries marked "baseline" are known dead code: a baseline to shrink, never to grow.
+// Every other ignore is permanent and needs a one-line reason comment.
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  // Exporting a symbol that is also used in its own file is the repo's style.
+  "ignoreExportsUsedInFile": true,
+  // Installed outside npm; used by test:e2e:native.
+  "ignoreBinaries": ["maestro"],
+  "ignoreIssues": {
+    // ADR-076 ports the WCPOS engine verbatim; unused exports keep the port diffable against upstream.
+    "packages/core/src/tax/woocommerce/tax-class.ts": ["exports"],
+    // ADR-076 verbatim port, as above (MoneyString, RefundLike).
+    "packages/core/src/coupons/woocommerce/types.ts": ["types"],
+    // baseline 2026-10-14: remove when fixed (PosOrderCoupon)
+    "packages/pos/src/pos-order/index.ts": ["types"]
+  },
+  "workspaces": {
+    ".": {
+      // e2e setup, node tests and the storage-sqlite test page, which knip does not discover.
+      "entry": ["e2e/server-identity.setup.ts", "e2e/*.test.mjs", "e2e/storage-sqlite/page/index.ts"],
+      "ignoreDependencies": [
+        // Used through a vitest alias.
+        "react-native-web",
+        // baseline 2026-10-14: remove when fixed
+        "@testing-library/jest-dom",
+        // Imported by the e2e storage-sqlite test page; build-and-serve.mjs resolves it through an esbuild alias to packages/storage-sqlite's copy.
+        "rxdb"
+      ]
+    },
+    "apps/web": {
+      // Wired up through next.config.
+      "entry": ["src/lib/no-polyfills.js"],
+      // baseline 2026-10-14: remove when fixed
+      "ignoreDependencies": [
+        "@tallyui/components",
+        "@tallyui/connector-medusa",
+        "@tallyui/connector-woocommerce",
+        "@tallyui/core",
+        "tailwind-merge"
+      ]
+    },
+    "apps/demo": {
+      // Named in app.json and provided by Expo.
+      "ignoreDependencies": ["expo-updates"]
+    },
+    "packages/integration-tests": {
+      // Fixture generator and rollback scripts, run by hand.
+      "ignore": ["fixtures/**/*.mjs"]
+    },
+    "packages/storage-sqlite": {
+      // Type-only checks.
+      "entry": ["typecheck/*.ts"]
+    },
+    "packages/primitives": {
+      // Platform files that the bundler resolves.
+      "entry": ["src/**/*.web.{ts,tsx}"],
+      // baseline 2026-10-14: remove when fixed
+      "ignoreDependencies": ["@testing-library/jest-dom"]
+    },
+    "packages/theme": {
+      // baseline 2026-10-14: remove when fixed
+      "ignoreDependencies": ["tailwindcss"]
+    }
+  }
+}

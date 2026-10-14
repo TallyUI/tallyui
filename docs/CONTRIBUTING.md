@@ -68,6 +68,11 @@ ones are listed per file in `eslint-suppressions.json`. After fixing
 grandfathered violations, run `pnpm lint:code --prune-suppressions` and commit
 the smaller file. Never add new entries with `--suppress-all` to get a PR through.
 
+`pnpm knip` reports unused files, exports, dependencies and binaries; new ones
+fail. Known dead code is listed in `knip.jsonc` under `baseline` comments;
+remove an entry when its code is fixed. Never add an ignore just to get a PR
+through: a new permanent ignore needs a one-line reason comment.
+
 ## Versions
 
 `rxdb` and `rxdb-premium` are pinned to the same exact version (currently

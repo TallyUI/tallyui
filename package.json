@@ -15,6 +15,7 @@
     "smoke:pack": "node scripts/pack-smoke.mjs",
     "lint": "turbo lint && pnpm -s lint:code",
     "lint:code": "eslint packages connectors --max-warnings=0 --pass-on-unpruned-suppressions",
+    "knip": "knip",
     "typecheck": "turbo typecheck",
     "clean": "turbo clean",
     "changeset": "changeset",
