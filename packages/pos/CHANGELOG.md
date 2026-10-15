@@ -1,5 +1,19 @@
 # @tallyui/pos
 
+## 3.12.0
+
+### Minor Changes
+
+- b1397a3: **Storage, one way: `pos_orders` moves from schema version 9 to 10.** It adds a line's `anyAttributes`, and the migration keeps every order byte for byte. `CatalogueEntry` takes `picks` for a variant's local "Any" option groups. `addEntryToCart` validates them, stores them on the line, and keeps lines with different picks apart. A sale with picks goes at order.create version 6, and every other sale's envelope is unchanged (#495).
+- e32dda1: Order history and reprint (G7, ADR-081). `TallyConnector` gains optional `listOrders` and `getOrders`, which read the store's orders online as `StoreOrder`s, with the store's line ids and prior refunds; a connector without them is unchanged. The WooCommerce connector implements both over WCPOS `wcpos/v2/orders`. `@tallyui/pos` adds `buildReceiptDataFromPosOrder` and `buildReceiptDataFromStoreOrder`, which build a receipt marked as a reprint (`fiscal.is_reprint`, `reprint_count`) from a stored order, and `Receipt` takes a prebuilt `receipt` and a `doneLabel`.
+
+### Patch Changes
+
+- 5df00c0: An invalid Any pick is reported as a cart error instead of being thrown. The Any picker closes when its product leaves the catalogue (#495).
+- Updated dependencies [b1397a3]
+- Updated dependencies [e32dda1]
+  - @tallyui/core@3.12.0
+
 ## 3.11.0
 
 ### Minor Changes

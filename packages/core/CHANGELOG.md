@@ -1,5 +1,12 @@
 # @tallyui/core
 
+## 3.12.0
+
+### Minor Changes
+
+- b1397a3: `OrderCreateLine` takes `anyAttributes`, the names of the attributes the cashier picked for a variant's "Any" option groups. It is a version-6 field, checked by the precheck and the shape check (#495).
+- e32dda1: Order history and reprint (G7, ADR-081). `TallyConnector` gains optional `listOrders` and `getOrders`, which read the store's orders online as `StoreOrder`s, with the store's line ids and prior refunds; a connector without them is unchanged. The WooCommerce connector implements both over WCPOS `wcpos/v2/orders`. `@tallyui/pos` adds `buildReceiptDataFromPosOrder` and `buildReceiptDataFromStoreOrder`, which build a receipt marked as a reprint (`fiscal.is_reprint`, `reprint_count`) from a stored order, and `Receipt` takes a prebuilt `receipt` and a `doneLabel`.
+
 ## 3.11.0
 
 ### Patch Changes

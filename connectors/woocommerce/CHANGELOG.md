@@ -1,5 +1,18 @@
 # @tallyui/connector-woocommerce
 
+## 3.12.0
+
+### Minor Changes
+
+- 6a6e925: A line's picked "Any" options go to WooCommerce as line meta, keyed as WooCommerce keys a local attribute, so the order shows the cashier's choice instead of an empty value. Every line without picks is sent as before (#495).
+- e32dda1: Order history and reprint (G7, ADR-081). `TallyConnector` gains optional `listOrders` and `getOrders`, which read the store's orders online as `StoreOrder`s, with the store's line ids and prior refunds; a connector without them is unchanged. The WooCommerce connector implements both over WCPOS `wcpos/v2/orders`. `@tallyui/pos` adds `buildReceiptDataFromPosOrder` and `buildReceiptDataFromStoreOrder`, which build a receipt marked as a reprint (`fiscal.is_reprint`, `reprint_count`) from a stored order, and `Receipt` takes a prebuilt `receipt` and a `doneLabel`.
+
+### Patch Changes
+
+- Updated dependencies [b1397a3]
+- Updated dependencies [e32dda1]
+  - @tallyui/core@3.12.0
+
 ## 3.11.0
 
 ### Patch Changes
