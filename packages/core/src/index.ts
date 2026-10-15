@@ -36,6 +36,9 @@ export { errorKind, type ErrorKind, type SyncNotice } from './sync-notice';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
 export { customerTraits, CustomerServiceError, type Customer, type CustomerInput } from './types/customers';
+export type {
+  StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, ListOrdersQuery, StoreOrderPage,
+} from './types/orders';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 
 export type {

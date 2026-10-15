@@ -35,7 +35,7 @@ function newWooId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-async function customerRequest(context: SyncContext, route: string, init: RequestInit = {}) {
+export async function customerRequest(context: SyncContext, route: string, init: RequestInit = {}) {
   let response: Response;
   try {
     response = await fetch(`${context.baseUrl}/${route}`, {
@@ -50,7 +50,7 @@ async function customerRequest(context: SyncContext, route: string, init: Reques
     const invalid = [400, 404, 422].includes(response.status);
     throw new CustomerServiceError(invalid ? 'invalid' : 'server', invalid ? body?.message ?? `HTTP ${response.status}` : `HTTP ${response.status}`);
   }
-  return { status: response.status, body };
+  return { status: response.status, body, headers: response.headers };
 }
 
 export function createWooCustomers(options?: { newId?: () => string }) {

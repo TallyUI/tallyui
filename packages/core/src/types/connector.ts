@@ -6,6 +6,7 @@ import type { ReplicationAdapter } from './replication';
 import type { CatalogueReconcileAdapter, FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 import type { StoreSettings, StoreSettingsChoice } from './store-settings';
 import type { Customer, CustomerInput } from './customers';
+import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
 
 /**
  * Authentication configuration for a connector.
@@ -312,4 +313,15 @@ export interface TallyConnector {
    * email receipts.
    */
   emailReceipt?: (context: SyncContext, orderId: string, email: string, options?: { saveToBilling?: boolean }) => Promise<void>;
+  /**
+   * The store's orders, newest first, one page per call (ADR-081): online only, read-only. Rejects as `emailReceipt`
+   * does (`ConnectorUnauthorizedError` for credentials; a connector's own errors otherwise, e.g. `CustomerServiceError`).
+   * `undefined` when the connector has no order history.
+   */
+  listOrders?: (context: SyncContext, query?: ListOrdersQuery) => Promise<StoreOrderPage>;
+  /**
+   * The given orders by store id (ADR-081), in the order asked; an id the store does not have is left out. Online only,
+   * read-only; rejects as `listOrders`. `undefined` when the connector has no order history.
+   */
+  getOrders?: (context: SyncContext, ids: readonly string[]) => Promise<StoreOrder[]>;
 }

@@ -5540,3 +5540,77 @@ interface OrderCreatePayload {
     - what the record becomes;
     - how the till fetches the applied refund's `byMethod`;
     - how register figures count a refund whose `applied` answer the till never saw.
+
+## ADR-081 Order history in core: optional `listOrders`/`getOrders`, and reprint from a stored order (G7)
+
+- **Date:** 2026-10-14 · **Status:** Accepted (front desk ruling, 2026-10-14) · **Relates to:** ADR-079 (Vendure
+  order history, whose "Open: a core order-history contract waits for a second platform" this settles), ADR-080
+  (`order.refund` v1), ADR-065 (the stored order's display figures), ADR-073 (the WooCommerce order transport)
+- **Context:**
+  - The tallyui-woocommerce app's M6 needs to browse past orders, reprint one and refund it
+    (~/agent/handoff/tallyui-woo-g7-gap-2026-10-14.md). Before this change, `TallyConnector` had no order read. The
+    only typed target was the components' `OrderHistoryRow`, which the app had to map itself.
+  - WooCommerce is the second platform to build order history, after Vendure (ADR-079). A refund needs the store's
+    line ids (`OrderRefundLine.orderLineId`). The till's own sales do not have them: the push response's line ids
+    are dropped. So the read has to carry them.
+  - `Receipt` and `buildReceiptData` took only the order builder's `SentOrder`. So an app could not reprint a stored
+    `PosOrder`, or an order read from the store, without mapping the order itself.
+- **Decision:**
+  1. **Two optional, online members on `TallyConnector`.**
+     - `listOrders(context, query?)` returns `{ orders, hasMore }`: newest first, one page per call, with `page`,
+       `perPage` (1..100, default 25) and the platform's own `search`.
+     - `getOrders(context, ids)` returns the orders asked for, in that order, and leaves out any id the store does
+       not have.
+     - Both are read-only, with no collection and no cache: a local copy of server orders would be a second source
+       of truth (ADR-079 decision 1).
+     - They reject like `emailReceipt`: `ConnectorUnauthorizedError` for credentials, `CustomerServiceError`
+       otherwise.
+     - A connector without them is unchanged. The app hides history when they are `undefined`.
+  2. **`StoreOrder` is a small, neutral shape.**
+     - It carries the store's order and line ids, and the till's `clientOrderId`/`clientLineId` when a till created
+       the order.
+     - Its `status` is the platform's own word, which the app labels.
+     - Every amount is in integer minor units, excluding tax, with the tax beside it, as stores record them.
+     - It also carries charges, coupons, tax by rate, payments, and the refunds already recorded.
+     - It is a common subset, not a TallyUI order model. Platform-specific detail stays in each connector's own
+       exports. Vendure keeps `listVendureOrders`/`getVendureOrder` in its own shape (ADR-079); adopting the core
+       members there is a separate job.
+  3. **WooCommerce reads WCPOS `GET wcpos/v2/orders`.**
+     - The list uses `page`, `per_page`, `orderby=date`, `order=desc` and `search`.
+     - The by-id read uses `include=` in chunks of 100, since WCPOS has no per-id route.
+     - `hasMore` comes from `X-WP-TotalPages`, or from a full page when that header is missing.
+     - `clientOrderId` and `clientLineId` come from the `_woocommerce_pos_uuid` meta that the push writes.
+     - A payment's `kind` is set for `pos_cash` and `pos_card` only.
+  4. **Reprint from a stored order.**
+     - `@tallyui/pos` adds two builders that return `ReceiptData` with `fiscal.is_reprint: true`:
+       `buildReceiptDataFromPosOrder` (from `PosOrder.display` and `taxByRate`, or from the settlement figures for
+       an order stored before ADR-065) and `buildReceiptDataFromStoreOrder`.
+     - `reprint_count` is this reprint's ordinal, starting at 1. The app passes it in `config.fiscal`. Nothing on
+       `PosOrder` counts reprints.
+     - `Receipt` takes a prebuilt `receipt` instead of `order`, and a `doneLabel`. It prints `Reprint <n>` under
+       the order line.
+     - The `SentOrder` path and its output are unchanged.
+  5. **Out of G7 core (front desk ruling, 2026-10-14).**
+     - M6 drops reopen-to-edit and order notes, so neither gets core support.
+     - Refunds use the existing `order.refund` v1 (ADR-080). For WooCommerce, `clientRefundId` is the refund's
+       idempotency key (`X-WCPOS-Idempotency-Key`). Its transport is later work.
+- **Open:**
+  - **Live confirmation.** The WooCommerce mapping is tested against the order document recorded from WCPOS
+    1.10.20's push response (order 136), plus one order derived from it by hand. That `wcpos/v2/orders` returns the
+    same resource, with `refunds[]` and line `meta_data`, still needs a live read on the dev store.
+  - **Multiple payments.** An order paid with several payments (`_woocommerce_pos_payments`) is read as one payment
+    of the order total.
+  - **Cash tendered on a store order.** A `StoreOrder` carries no tendered amount or change. So a reprint of a
+    WooCommerce cash order prints the order total as cash tendered, with no change. A `PosOrder` reprint prints what
+    was tendered, as the first receipt did.
+  - **Coupons on the printed receipt.** `Receipt` prints no coupon rows. Its "Line discounts" row is the total
+    discount less the order discount, so it includes coupons. This was already the case for a sale's own receipt
+    before G7, and reprints match it.
+  - **What a stored order cannot give back.** A `PosOrder` reprint matches the original `ReceiptData` figures
+    (totals, tax rows and their labels, line totals including converted lines). But a `PosOrder` keeps no discount
+    labels, so a reprint lists the order discount as one `Order discount` row. When lines were converted, that row is
+    in the display mode. An order finalized below `order.create` v3 (no `display`) keeps a converted line's discount
+    only in the line's own mode. Its line totals and order total still match, but `displayAmountMinor`, `subtotalMinor`
+    and `discountMinor` can differ from the original by that discount's tax conversion.
+- **Evidence:** `connectors/woocommerce/src/orders.test.ts`, `packages/pos/src/receipt/reprint.test.ts`,
+  `packages/components/src/__tests__/receipt.test.tsx`, `packages/core/src/__tests__/connector-orders.test.ts`.
