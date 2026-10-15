@@ -1,5 +1,25 @@
 # @tallyui/components
 
+## 3.12.0
+
+### Minor Changes
+
+- 6a6e925: `Catalogue` takes `pickAnyOptions`. When it is set, choosing a variant with local "Any" option groups first asks for a value for each group, then passes them to `onSelect` as the entry's `picks` (#495).
+- 2076f68: `Cart` takes `couponDiscountMinor`, the coupon amount the app itemises under the Subtotal (`afterSubtotal`). When it is set, the totals' Discount row shows the other discounts only and is hidden when they come to 0, so a coupon is no longer counted twice. Without it, the Discount row is unchanged.
+- e32dda1: Order history and reprint (G7, ADR-081). `TallyConnector` gains optional `listOrders` and `getOrders`, which read the store's orders online as `StoreOrder`s, with the store's line ids and prior refunds; a connector without them is unchanged. The WooCommerce connector implements both over WCPOS `wcpos/v2/orders`. `@tallyui/pos` adds `buildReceiptDataFromPosOrder` and `buildReceiptDataFromStoreOrder`, which build a receipt marked as a reprint (`fiscal.is_reprint`, `reprint_count`) from a stored order, and `Receipt` takes a prebuilt `receipt` and a `doneLabel`.
+
+### Patch Changes
+
+- 5df00c0: An invalid Any pick is reported as a cart error instead of being thrown. The Any picker closes when its product leaves the catalogue (#495).
+- Updated dependencies [b1397a3]
+- Updated dependencies [5df00c0]
+- Updated dependencies [b1397a3]
+- Updated dependencies [e32dda1]
+  - @tallyui/core@3.12.0
+  - @tallyui/pos@3.12.0
+  - @tallyui/primitives@3.12.0
+  - @tallyui/theme@3.12.0
+
 ## 3.11.0
 
 ### Minor Changes
