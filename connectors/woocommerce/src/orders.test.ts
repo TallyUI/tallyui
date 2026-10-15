@@ -102,6 +102,31 @@ describe('WooCommerce orders', () => {
     expect(order.totalMinor).toBe(259);
   });
 
+  it('rounds exact half-cent gross amounts away from zero on an inclusive GBP order', () => {
+    const order = toWooStoreOrder({
+      ...list[1], currency: 'GBP', prices_include_tax: true,
+      line_items: [{ ...list[1]!.line_items[0], total: '0.125000', total_tax: '0.020000' }],
+      fee_lines: [
+        { name: 'Fee', total: '1.000000', total_tax: '0.005000' },
+        { name: 'Negative fee', total: '-0.125000', total_tax: '-0.020000' },
+      ],
+    });
+    expect(order.lines[0]!.totalMinor).toBe(13);
+    expect(order.lines[0]!.totalMinor + order.lines[0]!.taxMinor).toBe(15);
+    expect(order.fees.map((fee) => fee.totalMinor + fee.taxMinor)).toStrictEqual([101, -15]);
+  });
+
+  it.each([
+    ['JPY', '1', '0.500000', 2],
+    ['KWD', '-1.000', '-0.000500', -1001],
+  ])('rounds an exact half-minor-unit gross away from zero in %s', (currency, total, total_tax, expected) => {
+    const order = toWooStoreOrder({
+      ...list[1], currency, prices_include_tax: true,
+      fee_lines: [{ name: 'Fee', total, total_tax }],
+    });
+    expect(order.fees[0]!.totalMinor + order.fees[0]!.taxMinor).toBe(expected);
+  });
+
   it('maps a negative 6dp fee symmetrically', () => {
     const fee = toWooStoreOrder({ ...list[1], fee_lines: [{ ...list[1]!.fee_lines[0]!, total: '-0.125000', total_tax: '-0.025000' }] }).fees[0]!;
     expect(fee).toStrictEqual({ name: 'Loyalty', totalMinor: -13, taxMinor: -2 });

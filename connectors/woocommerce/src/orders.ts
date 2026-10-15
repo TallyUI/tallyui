@@ -1,4 +1,4 @@
-import { CustomerServiceError, type PaymentMethodKind, type StoreOrder, type StoreOrderLine, type SyncContext, type TallyConnector } from '@tallyui/core';
+import { CustomerServiceError, minorUnitDigits, type PaymentMethodKind, type StoreOrder, type StoreOrderLine, type SyncContext, type TallyConnector } from '@tallyui/core';
 import { customerRequest } from './customers';
 import { wooMinorFromDecimal } from './commands/transport';
 
@@ -21,21 +21,22 @@ function minor(text: unknown, currency: string): number {
   return negative && value !== 0 ? -value : value;
 }
 
-// The exact sum of two WooCommerce decimal strings (WCPOS stores 6dp), in text `minor` reads, so a gross rounds once.
-function decimalSum(a: unknown, b: unknown): string {
+// Sum two WooCommerce decimal strings (WCPOS stores 6dp) exactly, then round half away from zero to minor units.
+function decimalSumMinor(a: unknown, b: unknown, currency: string): number {
   const parts = [a, b].map((text) => /^(-?)(\d+)(?:\.(\d+))?$/.exec(typeof text === 'string' ? text.trim() : ''));
-  const scale = Math.max(...parts.map((part) => part?.[3]?.length ?? 0));
+  const scale = Math.max(minorUnitDigits(currency), ...parts.map((part) => part?.[3]?.length ?? 0));
   let total = 0n;
   for (const part of parts) {
     if (!part) throw unexpected();
     total += BigInt(`${part[1]}${part[2]}${(part[3] ?? '').padEnd(scale, '0')}`);
   }
-  const digits = (total < 0n ? -total : total).toString().padStart(scale + 1, '0');
-  return `${total < 0n ? '-' : ''}${scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits}`;
+  const divisor = 10n ** BigInt(scale - minorUnitDigits(currency));
+  const rounded = ((total < 0n ? -total : total) + divisor / 2n) / divisor;
+  return Number(total < 0n ? -rounded : rounded);
 }
 
-/** The tax such that net + tax is the gross rounded once, not two rounded halves. */
-const grossTax = (net: unknown, tax: unknown, currency: string) => minor(decimalSum(net, tax), currency) - minor(net, currency);
+/** The tax such that net + tax is the gross rounded once, exactly. */
+const grossTax = (net: unknown, tax: unknown, currency: string) => decimalSumMinor(net, tax, currency) - minor(net, currency);
 
 function posUuid(metaData: unknown): string | undefined {
   const entry = rows(metaData).find((meta) => meta.key === '_woocommerce_pos_uuid' && nonEmpty(meta.value));
