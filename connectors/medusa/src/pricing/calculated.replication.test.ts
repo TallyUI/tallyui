@@ -227,7 +227,7 @@ describe('Medusa calculated prices, run against a real RxDB replication', () => 
     prices.stop();
   }, 60000);
 
-  it('5. mode off: without a pricing context the documents are exactly the admin projection, and the check is empty and complete', async () => {
+  it('5. mode off: without a pricing context the documents are exactly the admin projection, and the check yields no page, so it is not complete', async () => {
     const w = world();
     const { runner } = await start(admin);
 

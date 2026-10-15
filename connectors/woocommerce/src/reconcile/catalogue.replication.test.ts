@@ -343,6 +343,50 @@ describe('WooCommerce catalogue reconcile: guards', () => {
   });
 });
 
+describe('a listing failure after the status read (#376)', () => {
+  it.each(['paged', 'fast-path'])('%s: a fresh pass restarts uninterrupted and deletes a trashed product', async (mode) => {
+    const store = createFakeStore(10);
+    if (mode === 'fast-path') store.capabilities = ['products_id_fast_path'];
+    const till = await tillOf(store);
+    store.row(7).status = 'trash';
+    store.respond = (url) => (url.searchParams.has('_fields') && !url.searchParams.has('include')
+      ? new Response('boom', { status: 500 }) : undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const first = await reconcile(till);
+    expect(first).toContainEqual(expect.objectContaining({ type: 'stopped', reason: 'transient' }));
+    const saved = (await till.collection.getLocal('catalogue-reconcile'))?.get('pass');
+    expect(saved).toBeDefined();
+    expect(saved.cursor).toBeUndefined();
+    expect((await till.local()).has('u7')).toBe(true);
+
+    store.respond = () => undefined;
+    const second = await reconcile(till);
+    expect(second).toContainEqual({ type: 'pass-started', resumed: false });
+    expect(keysOf(second, 'tombstoned')).toEqual(['u7']);
+    expect(second).toContainEqual(expect.objectContaining({ type: 'pass-completed', complete: true }));
+    expect((await till.local()).has('u7')).toBe(false);
+  });
+
+  it('a real resume keeps cursor 2 and starts its listing at page 2', async () => {
+    const store = createFakeStore(150);
+    const till = await tillOf(store);
+    store.respond = (url) => (url.searchParams.has('_fields') && url.searchParams.get('page') === '2'
+      ? new Response('boom', { status: 500 }) : undefined);
+
+    const first = await reconcile(till);
+    expect(first).toContainEqual(expect.objectContaining({ type: 'stopped', reason: 'transient' }));
+    expect((await till.collection.getLocal('catalogue-reconcile'))?.get('pass')).toMatchObject({ cursor: 2 });
+
+    store.respond = () => undefined;
+    const before = store.requests.length;
+    const second = await reconcile(till);
+    expect(second).toContainEqual({ type: 'pass-started', resumed: true });
+    const listing = store.requests.slice(before).find((url) => url.searchParams.has('_fields'));
+    expect(listing?.searchParams.get('page')).toBe('2');
+  });
+});
+
 describe('WooCommerce catalogue reconcile: fast path (#313)', () => {
   const fastStore = (size: number) => {
     const store = createFakeStore(size);

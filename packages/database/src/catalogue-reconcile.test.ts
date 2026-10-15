@@ -576,6 +576,15 @@ describe('startCatalogueReconcile', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       server.remove(1);
       const { adapter } = fakeAdapter(server, feed, { pageSize: 20, now: time.now });
+      const fetchPages = adapter.fetchPages;
+      adapter.fetchPages = async function* (context, from) {
+        let yielded = false;
+        for await (const page of fetchPages(context, from)) {
+          yielded = true;
+          yield page;
+        }
+        if (!yielded) yield { entries: [], cursor: 1 };
+      };
       const { runner, events, count } = start(collection, adapter, time);
 
       runner.reconcile();
@@ -808,6 +817,33 @@ describe('startCatalogueReconcile', () => {
     await time.runUntil(() => count('pass-completed') === 1);
     expect(seen.at(-1)).toMatchObject({ running: false, lastResult: { pages: 1 }, lastResultAt: time.now() });
   }, 30_000);
+});
+
+describe('a pass that yields no page (#376)', () => {
+  it.each([[12, false], [12, true], [1, false]] as const)(
+    '%i docs, allowMassDelete=%s: no candidates, warnings or deletions', async (size, allowMassDelete) => {
+      const { server, feed, collection } = await setup(size);
+      const time = fakeTime();
+      const { adapter } = fakeAdapter(server, feed);
+      adapter.fetchPages = async function* () {};
+      adapter.confirmGone = vi.fn(async (locals) => locals.map((doc: Product) => doc.uuid));
+      const enqueue = vi.spyOn(adapter, 'enqueue');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { runner, events, count } = start(collection, adapter, time, allowMassDelete ? { allowMassDelete } : {});
+
+      runner.reconcile();
+      await time.runUntil(() => count('pass-completed') === 1);
+      expect(events.filter((event) => event.type === 'kept' || event.type === 'duplicate')).toEqual([]);
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Catalogue reconcile'));
+      expect(adapter.confirmGone).not.toHaveBeenCalled();
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(events.find((event) => event.type === 'pass-completed')).toEqual(expect.objectContaining({
+        pages: 0, compared: 0, refetched: 0, tombstoned: 0, kept: 0, unlisted: 0, complete: false,
+      }));
+      await settle();
+      expect(await collection.count().exec()).toBe(size);
+    },
+  );
 });
 
 describe('matchKey: a listing keyed by the backend id, not the primary key (#313)', () => {
