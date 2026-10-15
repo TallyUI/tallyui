@@ -43,11 +43,13 @@ function defaultFormatDate(iso: string) {
  * `onRetry` is the outbox's `requeue`; `formatDate` replaces the app's date util; `footer` is the app's own content
  * (medusapos: the feedback link). The router and session redirect stay in the app. `stuck` is the outbox's
  * `state.stuck` (`useOrderOutbox`): those pending orders need attention too, each with its own entry's reason and since.
+ * `onOpen` adds an Open button to each row that passes its order to the app.
  * `history` adds read-only store order rows to Recent (ADR-052 amendment 1). */
-export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history }: {
+export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen }: {
   orders: PosOrder[]; onRetry(orderIds: string[]): Promise<number>; formatDate?: (iso: string) => string; footer?: ReactNode;
   stuck?: OutboxState['stuck'];
   history?: OrderHistoryRow[];
+  onOpen?: (row: PosOrder | OrderHistoryRow) => void;
 }) {
   const retrying = useRef(new Set<string>());
   const [retryingIds, setRetryingIds] = useState(new Set<string>());
@@ -77,6 +79,11 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             return <View key={`history:${row.id}`} testID={`history-row-${row.id}`} className="gap-1 rounded-md border border-border bg-card p-3">
               <Text className="text-foreground">{`Order ${row.reference} · ${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`}</Text>
               <Text className="text-muted-foreground">{formatDate(row.placedAt)} · {formatMoney({ amount: row.totalMinor, currency: row.currency })} · {row.stateLabel}</Text>
+              {onOpen ? <Pressable accessibilityRole="button" accessibilityLabel={`Open order ${row.reference}`}
+                testID={`history-open-${row.id}`} onPress={() => onOpen(row)}
+                className="rounded-md border border-border px-4 py-2">
+                <Text className="text-center font-semibold text-foreground">Open</Text>
+              </Pressable> : null}
             </View>;
           }
           const count = order.lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -96,6 +103,11 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               <Text className="text-foreground">{`Order ${orderReference(order)} · ${count} ${count === 1 ? 'item' : 'items'}`}</Text>
               <Text className="text-muted-foreground">{formatDate(order.createdAt)} · {formatMoney({ amount: order.totalMinor, currency: order.currency })} · {STATUS_LABEL[order.syncStatus]}</Text>
             </Pressable>
+            {onOpen ? <Pressable accessibilityRole="button" accessibilityLabel={`Open order ${orderReference(order)}`}
+              testID={`order-open-${order.id}`} onPress={() => onOpen(order)}
+              className="rounded-md border border-border px-4 py-2">
+              <Text className="text-center font-semibold text-foreground">Open</Text>
+            </Pressable> : null}
             {isExpanded ? <View testID={`order-detail-${order.id}`} className="mt-1 gap-1 border-t border-border pt-2">
               {order.lines.map((line) => <Text key={line.id} className="text-foreground">{`${line.quantity} × ${line.name}`}</Text>)}
               {order.payments.map((payment) => <Text key={payment.id} className="text-muted-foreground">
