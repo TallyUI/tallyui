@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
 import type { PosOrder } from '@tallyui/pos';
 import { OrdersList, type OrderHistoryRow } from '../sale/orders-list';
+import { orderReference } from '../sale/order-reference';
 
 afterEach(() => cleanup());
 
@@ -33,6 +34,73 @@ function historyRow(id: string, overrides: Partial<OrderHistoryRow> = {}): Order
 }
 const formatDate = (iso: string) => `date:${iso.slice(0, 10)}`;
 const headers = () => screen.getAllByRole('heading').map((heading) => heading.textContent);
+
+describe('OrdersList onOpen', () => {
+  it('renders no Open buttons when onOpen is absent', () => {
+    render(<OrdersList orders={[order('o1')]} history={[historyRow('h1')]} onRetry={async () => 0} />);
+    expect(screen.queryByText('Open')).toBeNull();
+    expect(screen.queryAllByTestId(/^(order|history)-open-/)).toHaveLength(0);
+  });
+
+  it('opens the same till order without expanding its lines', () => {
+    const orders = [order('o1')];
+    const onOpen = vi.fn();
+    render(<OrdersList orders={orders} onRetry={async () => 0} onOpen={onOpen} />);
+    fireEvent.click(screen.getByTestId('order-open-o1'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onOpen.mock.calls[0][0]).toBe(orders[0]);
+    expect(screen.queryByTestId('order-detail-o1')).toBeNull();
+  });
+
+  it('opens the same history row', () => {
+    const history = [historyRow('h1')];
+    const onOpen = vi.fn();
+    render(<OrdersList orders={[]} history={history} onRetry={async () => 0} onOpen={onOpen} />);
+    fireEvent.click(screen.getByTestId('history-open-h1'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onOpen.mock.calls[0][0]).toBe(history[0]);
+  });
+
+  it('opens a rejected till order from each section', () => {
+    const orders = [order('o1', { syncStatus: 'rejected' })];
+    const onOpen = vi.fn();
+    render(<OrdersList orders={orders} onRetry={async () => 0} onOpen={onOpen} />);
+    const buttons = screen.getAllByTestId('order-open-o1');
+    expect(buttons).toHaveLength(2);
+    buttons.forEach((button, index) => {
+      fireEvent.click(button);
+      expect(onOpen).toHaveBeenCalledTimes(index + 1);
+      expect(onOpen.mock.calls[index][0]).toBe(orders[0]);
+    });
+  });
+
+  it('still expands the till row without opening the order', () => {
+    const onOpen = vi.fn();
+    render(<OrdersList orders={[order('o1')]} onRetry={async () => 0} onOpen={onOpen} />);
+    fireEvent.click(screen.getByTestId('order-row-o1'));
+    expect(screen.getByTestId('order-detail-o1')).toBeTruthy();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  // Keyboard: the Open control is a native <button type="button">, which a browser activates with Enter and Space.
+  // react-native-web leaves that click to the browser, and jsdom does not synthesise it from key events.
+  it('renders each Open control as a native button, which the keyboard activates', () => {
+    render(<OrdersList orders={[order('o1')]} history={[historyRow('h1')]} onRetry={async () => 0} onOpen={vi.fn()} />);
+    for (const testId of ['order-open-o1', 'history-open-h1']) {
+      const button = screen.getByTestId(testId);
+      expect(button.tagName).toBe('BUTTON');
+      expect(button.getAttribute('type')).toBe('button');
+    }
+  });
+
+  it('names each Open button with its order reference', () => {
+    const sale = order('o1', { serverRefs: { orderId: 'server', displayId: '42', totalMinor: 1200 } });
+    render(<OrdersList orders={[sale]} history={[historyRow('h1')]} onRetry={async () => 0} onOpen={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Open order R-h1' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: `Open order ${orderReference(sale)}` })).toBeTruthy();
+  });
+});
+
 // #269: each refusal code's sentence, word for word as the Front desk accepted it (2026-09-30).
 const refusals = {
   invalid_payload: "The online store refused this sale: this till sent it in a form the store can't read. Ask the store owner to look at the till's sync log.",
