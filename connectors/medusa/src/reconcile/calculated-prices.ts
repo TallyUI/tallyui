@@ -18,8 +18,9 @@ function fingerprintOf(variants: Variant[]): string {
  * Every product the store API lists for the pricing context, with its
  * calculated-price fingerprint, one `/store/products` request per page of
  * 100 (ADR-060 amendment 8, D2b). Without `context.pricingContext` it yields
- * nothing, so the pass is empty and complete. Products the sales channel
- * does not list are not reported; the runner counts them as `unreported`.
+ * no page, so the pass is not complete and runs again at the next check.
+ * Products the sales channel does not list are not reported; the runner
+ * counts them as `unreported`.
  *
  * The app runs it as `reconcile.calculatedPrices` with
  * `startFingerprintReconcile({ …, intervalMs: MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS, maxPages: 1000 })`:

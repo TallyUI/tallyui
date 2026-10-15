@@ -291,7 +291,10 @@ export function startCatalogueRunner<Doc, Cursor = unknown>({
       if (docs.length) log({ type: 'kept', ...listed(docs.map(keyOf)), ...why });
     };
     if (!current.uninterrupted) log({ type: 'kept', count: 0, keys: [], reason: 'resumed-pass' });
-    else {
+    // A pass that yielded no page listed nothing, so it has no candidates: nothing is proven gone (#376).
+    else if (pages === 0) {
+      // Nothing listed: the gate runs the pass again at the next check (see counted below).
+    } else {
       // Local documents the listing never named are candidates; only confirmed ones may go.
       const candidates: Doc[] = [];
       const duplicates: Doc[] = [];

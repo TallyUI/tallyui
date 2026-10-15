@@ -62,11 +62,12 @@ const toEntries = (rows: any[]) => rows.filter((row) => Number.isInteger(row?.id
  * fast-path request where the store offers it (#313), else page by page, with no date filter, and hands differences
  * to `feed`, which reaches the collection only through the pull. `confirmGone` is the deletion proof: a by-id re-read.
  */
-export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>): CatalogueReconcileAdapter<any, number> {
+export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>): CatalogueReconcileAdapter<any, number | undefined> {
   return {
-    async *fetchPages(context, from = 1) {
+    async *fetchPages(context, from) {
       // One status read per pass, yielded as an empty page so that it takes its own budget slot.
       const fast = await wooHasIdFastPath(context);
+      // A fresh pass carries no cursor, so a failure before the first listing page restarts it uninterrupted (#376).
       yield { entries: [], cursor: from };
       if (fast) {
         // The whole catalogue in one request, so `from` is moot. A store that refuses it (a store scope answers 400)
@@ -91,7 +92,7 @@ export function wooCatalogueReconcile(feed: Pick<ReconcileFeed<any>, 'enqueue'>)
       }
       // status=publish: a product that is not published is absent, so it becomes a deletion candidate and
       // confirmGone decides; drafts cost no daily refetch.
-      for (let page = from; ; page++) {
+      for (let page = from ?? 1; ; page++) {
         const params = new URLSearchParams({
           per_page: String(PAGE_SIZE), page: String(page), orderby: 'id', order: 'asc', status: 'publish', _fields: LISTING_FIELDS,
         });

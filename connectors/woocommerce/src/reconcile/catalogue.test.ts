@@ -20,7 +20,7 @@ describe('wooCatalogueReconcile listing', () => {
     store.row(3).status = 'draft';
     const listed = await pages(wooCatalogueReconcile(createWooReconcileFeed()));
     // First the status read, as an empty page so that it takes its own budget slot.
-    expect(listed.map((p) => [p.entries.length, p.cursor])).toEqual([[0, 1], [100, 2], [100, 3], [49, 4]]);
+    expect(listed.map((p) => [p.entries.length, p.cursor])).toEqual([[0, undefined], [100, 2], [100, 3], [49, 4]]);
     expect(listed[1].entries[0]).toEqual({ key: '1', fingerprint: '2026-01-01T08:00:01|10|instock', remote: 1 });
     expect(store.requests[0].pathname).toBe('/wp-json/wcpos/v2/status');
     expect(Object.fromEntries(store.requests[1].searchParams)).toEqual({
@@ -28,6 +28,13 @@ describe('wooCatalogueReconcile listing', () => {
       _fields: 'id,date_modified_gmt,stock_quantity,stock_status',
     });
     expect(store.requests.some((url) => url.searchParams.has('modified_after'))).toBe(false);
+  });
+
+  it.each([undefined, 3])('the status page preserves cursor %s, with no cursor on a fresh pass (#376)', async (from) => {
+    const store = createFakeStore(250);
+    const listed = await pages(wooCatalogueReconcile(createWooReconcileFeed()), from);
+    expect(listed[0]).toEqual({ entries: [], cursor: from });
+    expect(store.requests[1].searchParams.get('page')).toBe(String(from ?? 1));
   });
 
   it('resumes from a cursor, and stops on an empty page', async () => {
@@ -155,7 +162,7 @@ describe('the bulk-id fast path switch (wcpos/woocommerce-pos#2113)', () => {
     store.respond = (url) => (url.searchParams.get('per_page') === '-1' ? new Response('no', { status: 400 }) : undefined);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const listed = await pages(wooCatalogueReconcile(createWooReconcileFeed()));
-    expect(listed.map((p) => [p.entries.length, p.cursor])).toEqual([[0, 1], [0, 1], [3, 2]]);
+    expect(listed.map((p) => [p.entries.length, p.cursor])).toEqual([[0, undefined], [0, undefined], [3, 2]]);
     expect(store.requests.map((url) => url.searchParams.get('page'))).toEqual([null, null, '1']);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('400'));
