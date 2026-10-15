@@ -21,6 +21,7 @@ description: Released changes to the @tallyui packages, newest first, grouped by
 - 6a6e925: `Catalogue` takes `pickAnyOptions`. When it is set, choosing a variant with local "Any" option groups first asks for a value for each group, then passes them to `onSelect` as the entry's `picks` (#495).
 - 2076f68: `Cart` takes `couponDiscountMinor`, the coupon amount the app itemises under the Subtotal (`afterSubtotal`). When it is set, the totals' Discount row shows the other discounts only and is hidden when they come to 0, so a coupon is no longer counted twice. Without it, the Discount row is unchanged.
 - e32dda1: Order history and reprint (G7, ADR-081). `TallyConnector` gains optional `listOrders` and `getOrders`, which read the store's orders online as `StoreOrder`s, with the store's line ids and prior refunds; a connector without them is unchanged. The WooCommerce connector implements both over WCPOS `wcpos/v2/orders`. `@tallyui/pos` adds `buildReceiptDataFromPosOrder` and `buildReceiptDataFromStoreOrder`, which build a receipt marked as a reprint (`fiscal.is_reprint`, `reprint_count`) from a stored order, and `Receipt` takes a prebuilt `receipt` and a `doneLabel`.
+- f52dfcd: `OrdersList` takes `onOpen`. When it is set, each order row, from the till or the store's history, gets an Open button that passes that row to `onOpen`, so an app can open the order and reprint its receipt. A till row's press still expands its lines, and without `onOpen` the list is unchanged.
 
 #### Patch Changes
 
