@@ -8,6 +8,7 @@ import type { StoreSettings, StoreSettingsChoice } from './store-settings';
 import type { Customer, CustomerInput } from './customers';
 import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
 import type { PaymentMethodDescriptor } from './payment-methods';
+import type { RegisterInfo } from './registers';
 
 /**
  * Authentication configuration for a connector.
@@ -330,4 +331,9 @@ export interface TallyConnector {
    * read-only; rejects as `listOrders`. `undefined` when the connector has no order history.
    */
   getOrders?: (context: SyncContext, ids: readonly string[]) => Promise<StoreOrder[]>;
+  /**
+   * The store's register directory (v2 parity A4): online only, read-only. Rejects with `ConnectorUnauthorizedError`
+   * for credentials; a connector's own errors otherwise. `undefined` when the connector has no register directory.
+   */
+  listRegisters?: (context: SyncContext) => Promise<RegisterInfo[]>;
 }
