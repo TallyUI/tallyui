@@ -53,6 +53,7 @@ import { reopenRefusedOrder } from '../pos-order/reopen';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
 import { posRefundCollection, type PosRefund, type PosRefundCollection } from '../refund/pos-refund';
 import { registerFactsLogger } from './facts';
+import { adoptRegisterResults } from './register-adoption';
 import { reconcileRegisterCommands, registerCommandCollection, registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
 import { readFresh } from '../rxdb';
 import { ensureRegister, readRegister } from './register-document';
@@ -373,6 +374,32 @@ describe('register commands', () => {
     await waitFor(() => expect(result.current.session?.status).toBe('conflict'));
     expect(result.current.session?.id).toBe(id);
     expect(result.current.saleSession).toBeUndefined();
+  });
+
+  it("a fresh till numbers its first closure after the store's counters, keeps it, and a later result raises only what is behind (#651)", async () => {
+    const { result } = render(commandsOn());
+    const bucket = async () => (await readRegister(db.register_sessions))?.stores.store?.registers?.register;
+    const counters = { counters: { lastClosureNumber: 41, perpetualSalesTotalMinor: 500000, perpetualRefundsTotalMinor: 2000 } };
+    let id = '';
+    await act(async () => { id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    await waitFor(async () => expect(await keys()).toStrictEqual([`session.open:${id}`]));
+    await act(async () => {
+      await (await db.register_commands.findOne(`session.open:${id}`).exec(true)).incrementalPatch({ syncStatus: 'applied', result: counters });
+    });
+    await waitFor(async () => expect((await bucket())?.last_closure_number).toBe(41));
+    let closure: Awaited<ReturnType<typeof result.current.actions.closeSession>> | undefined;
+    await act(async () => { closure = await result.current.actions.closeSession({ counted: { cash: 10000 } }); });
+    expect(closure).toMatchObject({ number: 42, perpetual_sales_total_minor: 500000, perpetual_refunds_total_minor: 2000 });
+    await waitFor(async () => expect(await keys()).toContain(`closure.submit:${id}`));
+    await act(async () => {
+      // Behind on the number, ahead on sales: only sales rise, and the reserved closure keeps its number and totals.
+      await (await db.register_commands.findOne(`closure.submit:${id}`).exec(true)).incrementalPatch({ syncStatus: 'applied',
+        result: { counters: { ...counters.counters, perpetualSalesTotalMinor: 600000 } } });
+      await adoptRegisterResults({ commands: db.register_commands, sessions: db.register_sessions, registerId: 'register',
+        host: db.register_sessions, storeKey: 'store' });
+    });
+    expect(await bucket()).toMatchObject({ last_closure_number: 42, perpetual_sales_total_minor: 600000, perpetual_refunds_total_minor: 2000,
+      closure_reservation: { applied: true, row: { id, number: 42, perpetual_sales_total_minor: 500000 } } });
   });
 
   it('a restart over a refused open derives conflict from the stored rows', async () => {
