@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
-import type { MovementType, useRegisterSession } from '@tallyui/pos';
+import type { ApprovalNeeded, MovementType, useRegisterSession } from '@tallyui/pos';
 
 import { formatMoney } from '@tallyui/core';
 import { errorText } from '../lib/error-text';
@@ -25,6 +25,12 @@ export interface RegisterPanelProps {
   registerName?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * The host's gate for a closure the store refused (`register.approvalNeeded`, ADR-082 d7): it
+   * gets the refusal, including `liveAtStore`, and returns a new proof and approver, or `null`
+   * to leave it. Its result goes to `actions.reapproveClosure`. Without it, the card has no button.
+   */
+  reapprove?: (needed: ApprovalNeeded) => Promise<{ approvedBy: string; approval: string } | null>;
   className?: string;
 }
 
@@ -37,8 +43,9 @@ export interface RegisterPanelProps {
  * note): refused-movement Retry and "Unsynced" (no outbox here to refuse a movement), the
  * X-report, Z and print/reprint, and the Reports deep link.
  */
-export function RegisterPanel({ register, currency, registerName, open, onOpenChange, className }: RegisterPanelProps) {
-  const { session, expected, salesCount, blind, movements, lastClosure, actions } = register;
+export function RegisterPanel({ register, currency, registerName, open, onOpenChange, reapprove, className }: RegisterPanelProps) {
+  const { session, expected, salesCount, blind, movements, lastClosure, approvalNeeded, actions } = register;
+  const [reapproving, setReapproving] = useState(false);
   const otherTenders = Object.entries(expected).filter(([method, amount]) => method !== 'cash' && amount !== 0);
   const { height: windowHeight } = useWindowDimensions();
   const maxHeight = Math.max(280, windowHeight - DIALOG_VERTICAL_MARGIN);
@@ -79,6 +86,39 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
         </View>
         <Text testID="register-panel-sales-count">{salesCount} sale{salesCount === 1 ? '' : 's'} this session</Text>
         <ScrollView testID="register-panel-body" className="flex-1" contentContainerClassName="gap-3">
+          {/* Here, not in RegisterCount: a refused closure's session is already closed, and the
+              panel is what still shows once a closure exists. Title and button: WCPOS v2's
+              `register.approval_needed` and `register.approve` (monorepo core.json:2974-2976). */}
+          {approvalNeeded && (
+            <View testID="register-panel-reapproval" className="bg-warning/10 gap-2 rounded-md p-3">
+              <Text className="font-semibold">Approval needed</Text>
+              <Text>The store refused this closure&apos;s manager approval. A manager must approve it again.</Text>
+              {reapprove && (
+                <Button
+                  testID="register-panel-reapprove"
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={reapproving}
+                  onPress={() =>
+                    attempt(async () => {
+                      setReapproving(true);
+                      try {
+                        const result = await reapprove(approvalNeeded);
+                        if (!result) return;
+                        await actions.reapproveClosure({
+                          closureId: approvalNeeded.closureId, approval: result.approval, approvedBy: result.approvedBy,
+                        });
+                      } finally {
+                        setReapproving(false);
+                      }
+                    })
+                  }
+                >
+                  <Text>Approve</Text>
+                </Button>
+              )}
+            </View>
+          )}
           <View className="flex-row gap-2">
             {(['paid_in', 'paid_out', 'no_sale'] as const).map((type) => (
               <Button
