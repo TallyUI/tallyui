@@ -28,7 +28,9 @@ export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin): Repor
       const taxMinor = roundMicrosToMinor(line.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n));
       return {
         key: line.variantId || line.productId || line.name, name: line.name, quantity: line.quantity,
-        netMinor: (line.taxInclusive ?? order.pricesIncludeTax) ? line.netMinor - taxMinor : line.netMinor,
+        netMinor: order.taxRounding.granularity === 'woocommerce' && line.netMicros !== undefined
+          ? line.netMinor
+          : (line.taxInclusive ?? order.pricesIncludeTax) ? line.netMinor - taxMinor : line.netMinor,
         taxMinor, ...joinedLine(line, join),
       };
     }),

@@ -49,6 +49,29 @@ it.each([false, true])('maps a finalized PosOrder', (pricesIncludeTax) => {
   expect(result.taxes.reduce((sum, tax) => sum + tax.taxMinor, 0)).toBe(posOrder.taxMinor);
 });
 
+it('takes a WooCommerce line net as already exclusive of tax', () => {
+  for (const pricesIncludeTax of [false, true]) {
+    for (const roundAtSubtotal of [false, true]) {
+      const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+        pricesIncludeTax, rounding: { granularity: 'woocommerce', roundAtSubtotal }, getTaxRatePpm: () => 200000,
+        getTaxRates: () => [{ id: 1, code: 'VAT', label: 'VAT', rate: '20.0000', priority: 1, compound: false, shipping: true }],
+      } });
+      builder.addLine({ productId: '11', name: 'Tea', sku: 'TEA', unitPrice: { amount: 333, currency: 'GBP' }, quantity: 3 });
+      builder.addLine({ productId: '12', name: 'Cake', sku: 'CAKE', unitPrice: { amount: 457, currency: 'GBP' } });
+      builder.applyOrderDiscount({ type: 'percentage', value: 10, label: 'Staff' });
+      builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+      const order = builder.getSnapshot();
+      const posOrder = finalizeOrder(order, { capabilities: { orderCreate: 6 } });
+      expect(posOrder.lines.every((line) => line.netMicros !== undefined)).toBe(true);
+      const result = reportOrderFromPosOrder(posOrder);
+      result.lines.forEach((line, index) => {
+        expect(line.netMinor).toBe(posOrder.lines[index].netMinor);
+        expect(Math.abs(line.netMinor + line.taxMinor - order.lineItems[index].totalMinor)).toBeLessThanOrEqual(1);
+      });
+    }
+  }
+});
+
 it('falls back to taxLinesByRate when a PosOrder has no taxByRate', () => {
   for (const pricesIncludeTax of [false, true]) {
     const { posOrder } = finalizedSale(pricesIncludeTax);
@@ -75,7 +98,9 @@ it('includes fees and shipping in fallback taxes and respects each line tax mode
       expect(result.taxes.reduce((sum, tax) => sum + tax.taxMinor, 0)).toBe(posOrder.taxMinor);
       result.lines.forEach((line, index) => {
         const source = posOrder.lines[index];
-        expect(line.netMinor).toBe((source.taxInclusive ?? pricesIncludeTax) ? source.netMinor - line.taxMinor : source.netMinor);
+        expect(line.netMinor).toBe(posOrder.taxRounding.granularity === 'woocommerce' && source.netMicros !== undefined
+          ? source.netMinor
+          : (source.taxInclusive ?? pricesIncludeTax) ? source.netMinor - line.taxMinor : source.netMinor);
       });
     }
   }
