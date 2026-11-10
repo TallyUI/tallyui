@@ -2046,3 +2046,54 @@ describe('app configuration outside the order.create bounds', () => {
     expect(result.current.error).toBeNull();
   });
 });
+
+describe('a tender change clears the stale sale error (#650)', () => {
+  /** A sale whose complete() was refused as underpaid with one leg of 1000 of the given method. */
+  async function underpaid(method: 'cash' | 'external') {
+    const hook = renderSale(pricing, saleOpts({ onSaleCompleted: vi.fn() }));
+    addSaleLines(hook.result);
+    act(() => hook.result.current.startTender('cash'));
+    act(() => { hook.result.current.addTender({ method, amountMinor: 1000 }); });
+    await act(async () => { await hook.result.current.complete(); });
+    expect(hook.result.current.error).toBe('finalize: underpaid');
+    return { ...hook, leg: hook.result.current.order.payments[0] };
+  }
+
+  it.each(['cash', 'external'] as const)('addTender %s for the balance clears it', async (method) => {
+    const { result } = await underpaid('cash');
+    act(() => { expect(result.current.addTender({ method, amountMinor: result.current.order.balanceDueMinor })).not.toBeNull(); });
+    expect(result.current.error).toBeNull();
+  });
+
+  it('voidTender of a leg clears it', async () => {
+    const { result, leg } = await underpaid('external');
+    act(() => { expect(result.current.voidTender(leg.id)).toBe(true); });
+    expect(result.current.error).toBeNull();
+  });
+
+  it('removeTender of a leg clears it', async () => {
+    const { result, leg } = await underpaid('cash');
+    act(() => result.current.removeTender(leg.id));
+    expect(result.current.order.payments).toEqual([]);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('addTender whose reference is dropped shows the dropped-reference message', async () => {
+    const { result } = await underpaid('cash');
+    act(() => { result.current.addTender({ method: 'external', amountMinor: 1000, reference: 'r'.repeat(256) }); });
+    expect(result.current.error)
+      .toBe("The terminal's payment reference couldn't be kept (it is over 255 characters); the payment is recorded without it.");
+  });
+
+  it('a refused addTender, voidTender or removeTender keeps it', async () => {
+    const { result } = await underpaid('cash');
+    const before = result.current.order.payments;
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 0 })).toBeNull(); });
+    expect(result.current.error).toBe('finalize: underpaid');
+    act(() => { expect(result.current.voidTender('unknown')).toBe(false); });
+    expect(result.current.error).toBe('finalize: underpaid');
+    act(() => result.current.removeTender('unknown'));
+    expect(result.current.error).toBe('finalize: underpaid');
+    expect(result.current.order.payments).toEqual(before);
+  });
+});

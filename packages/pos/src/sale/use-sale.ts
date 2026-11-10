@@ -450,8 +450,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const snapshot = builderNow.current.getSnapshot();
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
         if (due <= 0) return null;
+        setError(null); // the tenders change: a stale error goes (a dropped reference sets its own message)
         return addOne({ ...tender, amountMinor: Math.min(tender.amountMinor, due) });
       }
+      setError(null);
       return addOne(tender);
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
@@ -465,6 +467,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (!payment || (payment.method !== 'cash' && payment.method !== 'external') || !canVoidLeg(payment, paymentMethodOf(payment.method))) return false;
       builderNow.current.setPaymentStatus(paymentId, 'voided');
       droppedReferences.current.delete(paymentId);
+      setError(null);
       return true;
     },
     /** ADR-072: remove one tender and its dropped-reference warning. An id not among the payments changes nothing. */
@@ -473,6 +476,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (!builderNow.current.getSnapshot().payments.some((payment) => payment.id === paymentId)) return;
       builderNow.current.removePayment(paymentId);
       droppedReferences.current.delete(paymentId);
+      setError(null);
     },
     cancelTender() {
       if (locked()) return;
