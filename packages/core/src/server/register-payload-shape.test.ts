@@ -135,3 +135,17 @@ it('limits errors to ten and rejects non-object payloads', () => {
   expect(registerPayloadErrors('register.closure.submit', {})).toHaveLength(10)
   for (const payload of [null, [], 1]) expect(registerPayloadErrors('register.session.open', payload)).toEqual(['payload: expected an object'])
 })
+
+it('accepts an opaque approval proof on a closure', () => {
+  expect(registerPayloadErrors('register.closure.submit', { ...closure, approval: 'opaque-proof' })).toEqual([])
+})
+
+it.each([[''], [null], [1], [{}]])('rejects a malformed approval proof %j', (approval) => {
+  expect(registerPayloadErrors('register.closure.submit', { ...closure, approval }))
+    .toEqual(['approval: expected a non-empty string'])
+})
+
+it('rejects a NUL in an approval proof', () => {
+  expect(registerPayloadErrors('register.closure.submit', { ...closure, approval: 'pro\u0000of' }))
+    .toEqual(['approval: expected no NUL character'])
+})
