@@ -2,7 +2,7 @@ export { normalizeAmount, isServerDecimal, movementFieldError } from './movement
 export type { MovementType } from './movement-input';
 export { deriveExpected } from './expected';
 export type { LedgerRow, Movement } from './expected';
-export { parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, denominationTotal, varianceText } from './register-count.helpers';
+export { parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, closureVariance, denominationTotal, varianceText } from './register-count.helpers';
 export { denominations } from './register-count.denominations';
 export { registerSessionSchema, registerSessionCollection, cashMovementSchema, closureSchema } from './schemas';
 export { addRegisterSessionCollection, RegisterSessionOpenClosedError, registerSessionsLogger, REGISTER_SESSION_MIGRATION_CLOSE_WAIT_MS } from './open';

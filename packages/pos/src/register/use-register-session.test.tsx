@@ -988,6 +988,81 @@ describe('the approval gate', () => {
     return { session, result };
   };
 
+  it("the store's threshold wins over the app's when it is higher", async () => {
+    const { result } = await counting({ varianceThreshold: 500, capabilities: {
+      orderCreate: 1, register: 3, registerApproval: { thresholdMinor: 2000 },
+    } });
+    expect(result.current.varianceThreshold).toBe(2000);
+    await act(async () => {
+      await result.current.actions.closeSession({ counted: { cash: 9000 } });
+    });
+    expect(await db.closures.find().exec()).toHaveLength(1);
+  });
+
+  it("the store's threshold wins over the app's when it is lower", async () => {
+    const { session, result } = await counting({ varianceThreshold: 5000, capabilities: {
+      orderCreate: 1, register: 3, registerApproval: { thresholdMinor: 100 },
+    } });
+    expect(result.current.varianceThreshold).toBe(100);
+    await expect(result.current.actions.closeSession({ counted: { cash: 9500 } })).rejects.toBeInstanceOf(RegisterApprovalRequiredError);
+    expect((await db.register_sessions.findOne(session.id).exec())?.status).toBe('counting');
+  });
+
+  it('exposes the variance the close will be bound to', async () => {
+    const { result } = await counting();
+    expect(await result.current.actions.closureVariance({ cash: 9000 })).toStrictEqual({ cash: -1000 });
+    expect(await result.current.actions.closureVariance({ card: 300 })).toStrictEqual({ card: 300, cash: -10000 });
+  });
+
+  it('an approvedVariance that no longer matches refuses before any write', async () => {
+    const { session, result } = await counting();
+    const before = session.getLatest().toJSON();
+    for (const approvedVariance of [{ cash: -900 }, { cash: -1000, card: 0 }] as Record<string, number>[]) {
+      await expect(result.current.actions.closeSession({
+        counted: { cash: 9000 }, approvedBy: 'mgr-1', approval: 'proof', approvedVariance,
+      })).rejects.toBeInstanceOf(RegisterApprovalRequiredError);
+      const stored = (await db.register_sessions.findOne(session.id).exec())?.toJSON();
+      expect(stored).toEqual(before);
+      expect(stored?.status).toBe('counting');
+      expect(await db.closures.find().exec()).toEqual([]);
+      expect(await reservation()).toBeUndefined();
+      expect((await readRegister(db.register_sessions))?.stores.store?.registers?.register?.last_closure_number ?? 0).toBe(0);
+    }
+  });
+
+  it('the approval reaches only the version 3 closure command', async () => {
+    const { session, result } = await counting({ commands: db.register_commands, capabilities: {
+      orderCreate: 1, register: 3, registerApproval: { thresholdMinor: 500 },
+    } });
+    let closure!: Awaited<ReturnType<typeof result.current.actions.closeSession>>;
+    await act(async () => {
+      closure = await result.current.actions.closeSession({
+        counted: { cash: 9000 }, approvedBy: 'mgr-1', approval: 'proof-xyz', approvedVariance: { cash: -1000 },
+      });
+    });
+    await waitFor(async () => expect(await db.register_commands.findOne(`closure.submit:${session.id}`).exec()).not.toBeNull());
+    const command = (await db.register_commands.findOne(`closure.submit:${session.id}`).exec())!;
+    expect(command.version).toBe(3);
+    expect(command.payload.approval).toBe('proof-xyz');
+    expect((await db.register_sessions.findOne(session.id).exec())?.approver_token).toBe('proof-xyz');
+    expect(JSON.stringify(closure.toJSON())).not.toContain('proof-xyz');
+    expect(JSON.stringify(logs)).not.toContain('proof-xyz');
+    expect(JSON.stringify(commandLogs)).not.toContain('proof-xyz');
+  });
+
+  it('at contract 3 a close with approvedBy alone still closes (unit 4 adds the live-session rule)', async () => {
+    const { session, result } = await counting({ commands: db.register_commands, capabilities: {
+      orderCreate: 1, register: 3, registerApproval: { thresholdMinor: 500 },
+    } });
+    await act(async () => {
+      await result.current.actions.closeSession({ counted: { cash: 9000 }, approvedBy: 'mgr-1' });
+    });
+    await waitFor(async () => expect(await db.register_commands.findOne(`closure.submit:${session.id}`).exec()).not.toBeNull());
+    const command = (await db.register_commands.findOne(`closure.submit:${session.id}`).exec())!;
+    expect(command.version).toBe(3);
+    expect(command.payload).not.toHaveProperty('approval');
+  });
+
   // Revert: drop the hook's gate.
   it.each([false, true])('refuses an over-threshold close without approvedBy before any write (blind: %s)', async (blind) => {
     const { session, result } = await counting({ blind });

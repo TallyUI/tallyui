@@ -40,6 +40,10 @@ export const overThreshold = (variance: number, thresholdMinor?: number | null) 
 export const closeNeedsApproval = (countedCashMinor: number, expectedCashMinor: number, thresholdMinor?: number | null) =>
   overThreshold(countVariance(countedCashMinor, expectedCashMinor), thresholdMinor);
 
+/** ADR-082 d3: counted minus till-expected for each key of `counted`, the variance a store approval is bound to. */
+export const closureVariance = (counted: Record<string, number>, tillExpected: Record<string, number>) =>
+  Object.fromEntries(Object.entries(counted).map(([method, value]) => [method, countVariance(value, tillExpected[method] ?? 0)]));
+
 /** Sums denomination face values (already minor units) by piece count. */
 export const denominationTotal = (pieces: Record<number, number>) =>
   Object.entries(pieces).reduce((sum, [value, count]) => sum + Number(value) * count, 0);
