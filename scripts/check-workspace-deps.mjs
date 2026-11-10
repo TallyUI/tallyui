@@ -47,6 +47,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'isRequeueable',
   // the refund form (plan unit 20, ADR-080 amendment 2): the pure refundable-quantity and refund pricing the form shows and sends, never a hook or the store.
   'refundableLines', 'priceRefund',
+  // Settings › Display (plan unit 22): the two pure lists of choices the app settings parse against, never a hook or the store.
+  'UI_SCALES', 'UI_THEMES',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
