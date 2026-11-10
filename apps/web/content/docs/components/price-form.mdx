@@ -23,6 +23,8 @@ import { PriceForm } from '@tallyui/components';
 
 Renders the line's current price, a new price input, an optional reason, and Apply and Cancel buttons. Prices are parsed into minor units, including zero; parsing errors and application refusals appear inline.
 
+With `quickDiscounts`, the first three valid percentages appear as keys (`−5%`, `−10%`, `−15%`), as on WCPOS v2's price keypad. A key lights and previews the current price less that percentage, rounded half up to the minor unit; pressing it again or typing a price clears it, and Apply passes the previewed price to `onApply`.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -32,3 +34,4 @@ Renders the line's current price, a new price input, an optional reason, and App
 | `currentMinor` | `number` | required | Current price in minor units, displayed above the input |
 | `onApply` | `(amountMinor: number, reason?: string) => string \| null` | required | Receives the parsed price and trimmed reason, or `undefined` for an empty reason; return a refusal or `null` once applied |
 | `onClose` | `() => void` | required | Called on Cancel or after `onApply` returns `null` |
+| `quickDiscounts` | `readonly number[]` | --- | Percentages off the current price drawn as keys; values outside 0 < n ≤ 100 are dropped and only the first three are drawn. No keys when absent or empty |
