@@ -3,6 +3,8 @@ import { Link, Stack } from 'expo-router';
 import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 const screens = [
+  // App shell
+  { href: '/pos/app-shell', label: 'AppShell' },
   // Input
   { href: '/pos/quantity-stepper', label: 'QuantityStepper' },
   // Cart

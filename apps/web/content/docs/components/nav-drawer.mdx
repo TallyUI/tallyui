@@ -1,0 +1,38 @@
+---
+title: NavDrawer
+description: NavDrawer is the phone layout's slide-over navigation, closed by Escape, a backdrop press or a choice.
+---
+
+## Import
+
+```tsx
+import { NavDrawer } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+const [open, setOpen] = useState(false);
+
+<NavDrawer
+  open={open}
+  onOpenChange={setOpen}
+  items={navItems}
+  activeId="pos"
+  onNavigate={(id) => router.navigate(`/${id}`)}
+/>
+```
+
+`AppShell` renders it on phones and opens it from the `RegisterBar` menu, so most apps never use it directly. The 200 px panel slides in from the left over a dimmed backdrop. It is a modal dialog holding a `navigation` landmark. On the web, focus moves into the panel, Tab and Shift+Tab stay inside it, and focus returns to where it was when the drawer closes. Escape, a backdrop press or an item press closes it, and pressing the current item only closes it.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | required | Whether the drawer is shown |
+| `onOpenChange` | `(open: boolean) => void` | required | Called with `false` when the drawer asks to close |
+| `items` | `ShellNavItem[]` | required | Navigation entries |
+| `activeId` | `string` | --- | The `id` of the item marked `aria-current="page"` |
+| `onNavigate` | `(id: string) => void` | required | Called with the pressed item's `id` when it isn't the active one |
+| `header` | `ReactNode` | --- | Drawn above the items, such as the store name |
+| `testID` | `string` | `'nav-drawer'` | Test identifier; the panel is `<testID>-panel` and the backdrop `<testID>-backdrop` |
