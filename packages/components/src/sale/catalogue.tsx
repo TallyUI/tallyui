@@ -3,10 +3,12 @@ import { Pressable, Text, View } from 'react-native';
 import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
   catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE,
-  listCategories, inCategory,
-  type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction } from '@tallyui/pos';
+  listCategories, inCategory, cartQuantities,
+  type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction, type CartQuantityLine } from '@tallyui/pos';
 import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle, CategoryNav } from '../product';
 import { ProductVariantPicker } from '../product/product-variant-picker';
+import { InCartBadge } from '../product/in-cart-badge';
+import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
 
@@ -35,7 +37,8 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
 }
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
-  viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categories, pickAnyOptions = false }: {
+  viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categories, pickAnyOptions = false,
+  cartLines, showFilterBar = false, filterChips = ['inStock'], filters: filtersProp, onFiltersChange }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -85,6 +88,16 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   onQueryChange?: (query: string) => void;
   /** Ask for a value for each of a variant's local "Any" option groups before onSelect (#495); set it only when the store accepts order.create version 6. */
   pickAnyOptions?: boolean;
+  /** The open sale's lines (e.g. useSale's order.lineItems); each grid tile shows its product's summed quantity. */
+  cartLines?: readonly CartQuantityLine[];
+  /** Show v2's filter chips under the search box. Default false. */
+  showFilterBar?: boolean;
+  /** Which chips the bar shows. Default ['inStock'], the one Catalogue applies itself. */
+  filterChips?: readonly ProductFilterChip[];
+  /** Controlled filters; changes are reported through onFiltersChange. */
+  filters?: ProductFilters;
+  /** The cashier's next filters (requested filters when controlled). */
+  onFiltersChange?: (filters: ProductFilters) => void;
 }) {
   const [initial] = useState<{
     state: CatalogueViewState; loaded?: CatalogueViewState; pending?: Promise<unknown>; failed?: boolean; error?: unknown;
@@ -130,6 +143,14 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     }
   }
 
+  const [internalFilters, setInternalFilters] = useState(DEFAULT_PRODUCT_FILTERS);
+  const filters = filtersProp ?? internalFilters;
+  function changeFilters(next: ProductFilters) {
+    if (filtersProp === undefined) setInternalFilters(next);
+    onFiltersChange?.(next);
+  }
+  const quantities = useMemo(() => cartQuantities(cartLines ?? []), [cartLines]);
+
   const isLoading = loading ?? (lastSyncedAt === null && pullError == null);
   // Idempotent (the adapter's overlay returns just the fields the stock map sets), so an app that already
   // merges the overlay itself keeps working, and can drop its own merge.
@@ -148,12 +169,16 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const [width, setWidth] = useState(0);
   const columns = resolveGridColumns(state.gridColumns, width);
   const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
+  // v2's In Stock pill is stock_status 'instock', so it drops backorders too; a stock the backend did not report stays.
+  const stockFiltered = showFilterBar && filters.inStock;
   const results = useMemo(() => {
     if (items !== undefined) return suppliedItems;
-    const filtered = searchProducts(activeCategory
+    const matched = searchProducts(activeCategory
       ? shown.filter((doc) => inCategory(doc, activeCategory.id, traits)) : shown, query, traits);
+    const filtered = stockFiltered
+      ? matched.filter((doc) => !['out_of_stock', 'backorder'].includes(traits.getStock(doc).status)) : matched;
     return state.sort ? sortProducts(filtered, state.sort, (doc, field) => productSortValue(doc, field, traits, { currency })) : filtered;
-  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory]);
+  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
@@ -197,6 +222,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
 
   const emptyState = <Text className="mt-10 text-center text-sm text-muted-foreground">
     {query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
+      : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
       : isLoading ? 'Loading products…' : 'No products yet.'}
   </Text>;
 
@@ -209,6 +235,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             const entry = findEntryByCode(entries, query);
             if (entry) { select(entry); setQuery(''); }
           }} />
+        {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips} /> : null}
         {(statusText || statusAccessory || showViewToggle) ? (
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">
             {statusText ? <Text className="flex-1 text-xs text-muted-foreground" numberOfLines={statusAccessory ? 1 : undefined}>
@@ -265,6 +292,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
               <ProductPrice doc={product} />
               <ProductStockBadge doc={product} showAsOf={false} className="self-center" />
             </VStack>
+            <InCartBadge count={quantities.get(traits.getId(product)) ?? 0} className="absolute right-2 top-2"
+              testID={`in-cart-${traits.getId(product)}`} />
           </Pressable>
         )}
         emptyState={emptyState} />}

@@ -56,6 +56,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'legStatus', 'countsTowardPaid', 'isInMotion', 'canVoidLeg',
   // the Sales room (plan unit 25): the pure store-day date presets its filters bar offers, never a hook or the store.
   'presetRange', 'DATE_PRESETS',
+  // the catalogue tiles (unit ucat): the pure per-product cart quantity the in-cart badge shows, never a hook or the store.
+  'cartQuantities',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

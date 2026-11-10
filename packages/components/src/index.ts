@@ -40,6 +40,10 @@ export {
   ProductVariantPicker,
   type ProductVariantPickerProps,
   type VariantOption,
+  InCartBadge,
+  type InCartBadgeProps,
+  CategoryTile,
+  type CategoryTileProps,
 } from './product';
 
 // Cart components
@@ -185,6 +189,7 @@ export {
   ChargeForm, type ChargeFormProps,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, type OrderHistoryRow, orderReference,
   ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps, CustomerDisplayScreen,
+  ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters,
 } from './sale';
 
 // Layout components

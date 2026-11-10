@@ -1,0 +1,32 @@
+---
+title: InCartBadge
+description: Count of a product already in the cart, shown on its tile and hidden at zero
+---
+
+## Import
+
+```tsx
+import { InCartBadge } from '@tallyui/components';
+import { cartQuantities } from '@tallyui/pos';
+```
+
+## Usage
+
+```tsx
+const quantities = cartQuantities(order.lineItems);
+
+<View>
+  <ProductCard doc={product} />
+  <InCartBadge count={quantities.get(product.id) ?? 0} className="absolute right-2 top-2" />
+</View>
+```
+
+A primary circle with the count, as WCPOS v2 shows on a product tile. Nothing renders while the count is 0. `cartQuantities` sums quantities by product id, so a product with variants shows every variant's lines together; custom lines count for none. `Catalogue` places it on each grid tile when given `cartLines`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `count` | `number` | required | How many of the product the cart holds; 0 or less renders nothing |
+| `className` | `string` | — | Placement, e.g. `absolute right-2 top-2` |
+| `testID` | `string` | — | Test id on the badge |
