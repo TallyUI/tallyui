@@ -1,5 +1,12 @@
 # @tallyui/connector-vendure
 
+## 3.14.0
+
+### Patch Changes
+
+- Updated dependencies [c2319ab]
+  - @tallyui/core@3.14.0
+
 ## 3.13.0
 
 ### Minor Changes
