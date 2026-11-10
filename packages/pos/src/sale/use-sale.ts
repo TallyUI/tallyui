@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
 import { paymentMethodOf } from '@tallyui/core';
-import { canVoidLeg, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
+import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
@@ -25,6 +25,13 @@ export const DISCOUNTS_UNSUPPORTED = 'finalize: discounts are not supported by t
 /** Every sale change refuses with this while a completion is pending (see `complete()`). */
 export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
 export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before completing the sale';
+/**
+ * `switchSale()` and `closeSale()` refuse a sale whose legs took money (u19). v2 keeps a partly paid order's legs on
+ * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every leg, and `resume`
+ * re-checks coupons: so the sale stays on the till until it is paid or its paid legs are voided.
+ */
+export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the payment or void the paid legs first.';
+export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
 /**
  * How often a hung save re-asks `isStored`, while the order is built and its save is still in flight
  * and unconfirmed: an app whose tender has no New sale control while saving (the Front desk,
@@ -147,7 +154,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     appliedWith.current = null;
     setBuilder(next);
     setOrder(next.getSnapshot());
-    setStage({ kind: 'cart' });
+    // Live at once, so a resume() in the same tick (switchSale) sees the cart before the next render.
+    stageNow.current = { kind: 'cart' };
+    setStage(stageNow.current);
     setError(null);
   }
   useEffect(() => {
@@ -576,7 +585,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
       const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext });
       let n = 0;
-      if (opts.currentPrice && !options?.keepParkedPrices) {
+      // A draft whose legs took money keeps the prices it was paid against (u19).
+      if (opts.currentPrice && !options?.keepParkedPrices && capturedMinor(saved.payments ?? []) === 0) {
         for (const line of builder.getSnapshot().lineItems) {
           if (!line.variantId) continue;
           const price = opts.currentPrice(line.variantId);
@@ -617,6 +627,37 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         appliedWith.current = kept.size ? codes : null;
       }
       if (messages.length) setError(messages.join(' '));
+      return null;
+    },
+    /**
+     * Opens the parked draft `draftId`, or an empty sale for null (New), as a tab switch (u19, v2 cart/tabs.tsx):
+     * parks the current sale first when it has lines, fees or shipping (a receipt is done and is not parked).
+     * Refused, changing nothing, while saving, for a partly paid sale (SALE_PARTLY_PAID), a payment in motion or
+     * the tender stage. Resolves to a refusal (park's, or `resume`'s for the chosen draft), or null.
+     */
+    async switchSale(draftId: string | null): Promise<string | null> {
+      if (locked()) return SALE_SAVING;
+      if (!opts.drafts) throw new Error('useSale: switchSale() needs the drafts option');
+      const builder = builderNow.current;
+      const snapshot = builder.getSnapshot();
+      if (draftId === snapshot.id) return null;
+      if (capturedMinor(snapshot.payments) > 0 && snapshot.balanceDueMinor > 0) return SALE_PARTLY_PAID;
+      if (snapshot.payments.some(isInMotion)) return PAYMENT_IN_MOTION;
+      if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
+      if (stageNow.current.kind !== 'receipt' && (snapshot.lineItems.length || snapshot.fees?.length || snapshot.shipping?.length)) {
+        await writeOrderDraft(opts.drafts, snapshot);
+        if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
+      }
+      resetSale(null);
+      return draftId === null ? null : result.resume(draftId);
+    },
+    /** Discards the current sale (nothing is parked) and starts an empty one; refused while saving, once a leg of an unfinished sale took or holds money, or in the tender stage. */
+    closeSale(): string | null {
+      if (locked()) return SALE_SAVING;
+      const { payments } = builderNow.current.getSnapshot();
+      if (stageNow.current.kind !== 'receipt' && (capturedMinor(payments) > 0 || payments.some(isInMotion))) return SALE_PARTLY_PAID;
+      if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
+      resetSale(null);
       return null;
     },
     /**
