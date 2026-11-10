@@ -59,9 +59,14 @@ test.describe('Cart charges (order.create 5)', () => {
 
       const due = await footer.getByText('Total', { exact: true }).locator('xpath=following-sibling::*[1]').innerText();
       await footer.getByRole('button', { name: 'Cash', exact: true }).click();
-      // The first quick amount is the exact total.
-      await page.getByText(due, { exact: true }).first().click();
-      await page.getByRole('button', { name: 'Complete sale' }).click();
+      // The tender pane opens on Cash. A quick-cash chip only sets the entry; Take records the leg, and
+      // Complete sale is enabled once nothing is due. The first quick amount is the exact total.
+      const pane = page.getByTestId('tender-pane');
+      await pane.getByTestId('tender-method-cash').click();
+      await pane.getByRole('button', { name: `Exact ${due}`, exact: true }).click();
+      await pane.getByRole('button', { name: `Take ${due} in Cash`, exact: true }).click();
+      await expect(pane.getByText('Paid in full', { exact: true })).toBeVisible();
+      await pane.getByRole('button', { name: 'Complete sale' }).click();
 
       const receipt = page.getByTestId('sale-receipt');
       const delivery = receipt.getByLabel(/^Delivery: /);

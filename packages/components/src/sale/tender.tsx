@@ -10,10 +10,14 @@ function HostedPane({ sale, method, methods }: { sale: Sale; method: string; met
   return <TenderPane sale={sale} state={state} dispatch={dispatch} methods={methods} />;
 }
 
+type TenderProps = { sale: Sale; methods?: PaymentMethodDescriptor[] };
+
 /** The tender pane with its own reducer, opened on the method `startTender` chose. Renders nothing outside the tender stage. */
-export function Tender({ sale, methods }: { sale: Sale; methods?: PaymentMethodDescriptor[] }): JSX.Element | null {
+export function Tender({ sale, methods }: TenderProps): JSX.Element | null {
   return sale.stage.kind === 'tender' ? <HostedPane sale={sale} method={sale.stage.method} methods={methods} /> : null;
 }
 
-/** Split payments are legs on the one tender pane: kept as a name for `Tender`. */
-export const SplitTender = Tender;
+/** @deprecated Use Tender: the pane now handles split payments. */
+export function SplitTender(props: TenderProps): JSX.Element {
+  return <Tender {...props} />;
+}
