@@ -22,7 +22,8 @@ export interface CommandTransport<E extends AnyCommandEnvelope = CommandEnvelope
 export interface OutboxState {
   pending: number;
   /** The order outbox's count of `pos_orders` the store refused (`syncStatus: 'rejected'`), read with `pending`. Each
-   * stays until requeue() sends it again. The register outbox leaves it unset. */
+   * stays until requeue() sends it again. The register outbox's count of rejected `register_commands` that stop their
+   * register's ledger (superseded, abandoned and an abandoned session's already-open refusal are left out, ADR-078). */
   rejected?: number;
   sending: boolean;
   lastRetryReason?: string;

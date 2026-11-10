@@ -52,6 +52,66 @@ afterEach(async () => {
 });
 
 describe('register outbox', () => {
+  it('state.rejected counts only the rejections that stop a ledger', async () => {
+    await collection.bulkInsert([
+      command(1, 'a', { syncStatus: 'rejected', error }),
+      command(1, 'b', { syncStatus: 'rejected', error: { code: 'register_session_superseded', message: 'superseded' } }),
+      command(1, 'c', { syncStatus: 'rejected', error: { code: 'register_session_abandoned', message: 'abandoned' } }),
+      ...['d', 'e'].map((registerId) => command(1, registerId, { type: 'register.session.open', syncStatus: 'rejected',
+        error: { code: 'register_session_already_open', message: 'already open' } })),
+    ]);
+    await db.register_sessions.bulkInsert([
+      { id: 'd-1', register_id: 'd', status: 'abandoned', opened_at_gmt: new Date(epoch).toISOString(), counted_float_minor: 0 },
+      { id: 'e-1', register_id: 'e', status: 'conflict', opened_at_gmt: new Date(epoch).toISOString(), counted_float_minor: 0 },
+    ]);
+    const { outbox, states } = setup({ sessions: db.register_sessions });
+    await outbox.flush();
+    expect(states.at(-1)).toMatchObject({ rejected: 2, pending: 0 });
+  });
+
+  it('requeue resends a rejected command under its own id and bytes, and the ledger moves on', async () => {
+    const inputs = [command(1, 'a', { syncStatus: 'rejected', error }), command(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states } = setup({ now: () => epoch + 1000 });
+    await outbox.flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(states.at(-1)?.rejected).toBe(1);
+    expect(await outbox.requeue()).toBe(1);
+    await outbox.flush();
+    const sent = send.mock.calls.flatMap(([batch]) => batch);
+    expect(sent.map(({ id }) => id)).toEqual(inputs.map(({ commandId }) => commandId));
+    for (const [index, input] of inputs.entries()) {
+      expect(sent[index].payload).toEqual(input.payload);
+      const expected = { ...input, syncStatus: 'applied', updatedAt: new Date(epoch + 1000).toISOString() };
+      delete expected.error;
+      expect(await stored(input.key)).toStrictEqual(expected);
+    }
+    expect(await stored(inputs[0].key)).not.toHaveProperty('error');
+    expect(states.at(-1)).toMatchObject({ rejected: 0, pending: 0 });
+  });
+
+  it.each(['register_session_already_open', 'register_session_closed', 'register_approval_required',
+    'register_closure_exists', 'register_closure_number_invalid', 'register_session_superseded',
+    'register_session_abandoned', 'register_supersede_forbidden', 'idempotency_mismatch'])('requeue leaves a code it must not resend: %s', async (code) => {
+    const input = command(1, 'a', { syncStatus: 'rejected', error: { code, message: code } });
+    await collection.insert(input);
+    const { outbox, send } = setup();
+    expect(await outbox.requeue()).toBe(0);
+    expect(await stored(input.key)).toStrictEqual(input);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('requeue with ids moves only the listed commands', async () => {
+    const a = command(1, 'a', { syncStatus: 'rejected', error });
+    const b = command(1, 'b', { syncStatus: 'rejected', error });
+    await collection.bulkInsert([a, b]);
+    const { outbox } = setup();
+    expect(await outbox.requeue([a.commandId])).toBe(1);
+    await outbox.flush();
+    expect(await stored(a.key)).toMatchObject({ syncStatus: 'applied' });
+    expect(await stored(b.key)).toStrictEqual(b);
+  });
+
   it('accepts a transport for AnyCommandEnvelope without a cast', () => {
     const transport: CommandTransport<AnyCommandEnvelope> = { send: async () => ({ kind: 'results', results: [] }) };
     const option: RegisterOutboxOptions['transport'] = transport;

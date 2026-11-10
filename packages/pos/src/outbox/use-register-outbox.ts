@@ -27,6 +27,8 @@ export interface UseRegisterOutboxResult {
   state: OutboxState;
   /** Sends pending till updates; does nothing while there is no collection. */
   flush(): Promise<void>;
+  /** Moves rejected till updates back to pending (see RegisterOutbox.requeue); resolves to 0 while there is no collection. */
+  requeue(commandIds?: string[]): Promise<number>;
 }
 
 export function useRegisterOutbox(options: UseRegisterOutboxOptions): UseRegisterOutboxResult {
@@ -55,5 +57,9 @@ export function useRegisterOutbox(options: UseRegisterOutboxOptions): UseRegiste
     async flush() {
       const active = current.current;
       if (active?.commands === commands && active.deviceId === deviceId) await active.outbox.flush();
+    },
+    async requeue(commandIds) {
+      const active = current.current;
+      return active?.commands === commands && active.deviceId === deviceId ? active.outbox.requeue(commandIds) : 0;
     } };
 }
