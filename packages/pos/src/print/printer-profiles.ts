@@ -2,7 +2,7 @@
  * Printers set up on this device. Local only, never replicated; the app adds the collection as
  * `printer_profiles`. Ported from WCPOS v2 `packages/database/src/collections/schemas/printer-profiles.ts`
  * (monorepo main, version 0, device-local). Left out: v2's cloud fields (`cloudPrinterId`, `cloudProvider`,
- * `connectionType: 'cloud'`; cloud printing stays out of the MIT packages, ADR-084), its vendor-SDK and
+ * `connectionType: 'cloud'`; vendor services stay out of the MIT packages, ADR-084 decision 2), its vendor-SDK and
  * encoder-library hints (`nativeInterfaceType`, `printerModel`), `emitEscPrintMode` and `fullReceiptRaster`.
  * v2's schema defaults are kept as comments, not schema `default`s; a reader treats a missing field as its default.
  */
