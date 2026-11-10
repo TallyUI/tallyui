@@ -6,6 +6,7 @@ import type { RegisterSessionCollection } from '../register/session-store';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
 import { STUCK_AFTER_MS } from './order-outbox';
+import { safeErrorMessage, safeErrorString } from './safe-error';
 import type { CommandTransport, OutboxState } from './types';
 
 /** Final rejections that do not stop their register's ledger (ADR-078): the commands behind them are still sent. */
@@ -233,7 +234,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
             ? { id: result.id, status: 'rejected', error }
             : { ...result, ...(error ? { error } : {}) };
           try { await options.onResult?.(plainCommand(stored), normalized); }
-          catch (cause) { registerCommandsLogger.warn('Failed to apply register command result', { commandId: command.commandId, cause }); }
+          catch (cause) { registerCommandsLogger.warn('Failed to apply register command result', { commandId: command.commandId, error: safeErrorString(cause) }); }
           const updatedAt = new Date(now()).toISOString();
           await current.incrementalModify((row) => {
             if (row.syncStatus !== 'pending' || row.commandId !== command.commandId) return row;
@@ -254,7 +255,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
       }
       if (!sent) return;
     } catch (error) {
-      scheduleRetry('error: ' + (error instanceof Error ? error.message : String(error)));
+      scheduleRetry('error: ' + safeErrorMessage(error));
       return;
     }
     stoppedDuringRun = true;

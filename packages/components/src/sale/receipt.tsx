@@ -1,11 +1,11 @@
 import { useEffect, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { formatMoney } from '@tallyui/core';
-import { buildReceiptData, type ReceiptData, type SentOrder } from '@tallyui/pos';
+import { buildReceiptData, noteDelivery, type ReceiptData, type SentOrder } from '@tallyui/pos';
 import type { PosOrder } from '@tallyui/pos';
 import { injectPrintStyle } from './print-style';
 import { discountLabel } from './discount-form';
-import { orderReference } from './order-reference';
+import { NOTE_NOT_SENT, orderReference } from './order-reference';
 
 const defaultFormatDate = (iso: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 
@@ -86,6 +86,12 @@ export function Receipt(props: ReceiptProps) {
       : order || payment.method === 'external' ? 'Card terminal' : payment.method,
       money(payment.amountMinor) + (payment.reference ? ` · ${payment.reference}` : ''), false, index))}
     {order || receipt.changeDueMinor > 0 ? row('Change', money(receipt.changeDueMinor)) : null}
+    {receipt.footer.note ? <View testID="receipt-note" className="gap-1">
+      <Text className="text-foreground">{receipt.footer.note}</Text>
+      {/* ADR-083 condition 2: for the cashier, so it is not printed. */}
+      {receipt.footer.noteNotSent || (posOrder !== undefined && noteDelivery(posOrder) === 'not_sent')
+        ? <View dataSet={{ print: 'hide' }}><Text testID="receipt-note-not-sent" className="text-destructive">{NOTE_NOT_SENT}</Text></View> : null}
+    </View> : null}
     {footerSlot ? <View testID="receipt-footer" className="mt-3 items-center border-t border-dashed border-border pt-3">{footerSlot}</View> : null}
     <View dataSet={{ print: 'hide' }} className="flex-row gap-4">
       <Pressable accessibilityRole="button" onPress={() => { if (typeof window !== 'undefined' && typeof window.print === 'function') window.print(); }} className="rounded-md border border-border bg-card px-4 py-3">

@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, CustomerServiceError } from '@tallyui/core';
-import { createVendureCustomer, getVendureCustomer, searchVendureCustomers, toVendureCustomer } from './customers';
+import { createVendureCustomer, getVendureCustomer, searchVendureCustomers, toVendureCustomer, updateVendureCustomer } from './customers';
 import { createVendureConnector } from './index';
 import search from './__tests__/fixtures/customers/1a-customers-search-matches.json';
 import noMatches from './__tests__/fixtures/customers/1b-customers-search-none.json';
 import create from './__tests__/fixtures/customers/2a-createCustomer-success.json';
 import duplicate from './__tests__/fixtures/customers/2b-createCustomer-duplicate-email.json';
 import get from './__tests__/fixtures/customers/3-customer-with-addresses.json';
+import update from './__tests__/fixtures/customers/4a-updateCustomer-success.json';
+import updateConflict from './__tests__/fixtures/customers/4b-updateCustomer-duplicate-email.json';
 
 const context = {
   connectorId: 'vendure', baseUrl: 'https://vendure.test',
@@ -97,6 +99,95 @@ describe('Vendure customers', () => {
     await expect(result).rejects.toMatchObject({ code: 'server', message: 'unexpected response' });
   });
 
+  describe('update', () => {
+    const replies = (...bodies: unknown[]) => {
+      const spy = vi.spyOn(globalThis, 'fetch');
+      for (const body of bodies) spy.mockResolvedValueOnce(Response.json(body));
+      return spy;
+    };
+    const sent = (spy: ReturnType<typeof replies>): Array<{ query: string; variables: unknown }> =>
+      spy.mock.calls.map((call) => JSON.parse(call[1]!.body as string));
+    const created = { data: { createCustomerAddress: { id: '5' } } };
+    const updated = { data: { updateCustomerAddress: { id: '1' } } };
+    const billing = { firstName: 'Ada', lastName: 'Lovelace', address1: '1 Bill Road', city: 'London', postcode: 'N1 1AA', country: 'GB', email: 'dropped@example.com' };
+    const vendureBilling = { fullName: 'Ada Lovelace', company: '', streetLine1: '1 Bill Road', streetLine2: '', city: 'London', province: '', postalCode: 'N1 1AA', countryCode: 'GB', phoneNumber: '' };
+    const shipping = { company: 'Fixture GmbH', address1: '2 Ship Lane', country: 'DE' };
+    const vendureShipping = { fullName: '', company: 'Fixture GmbH', streetLine1: '2 Ship Lane', streetLine2: '', city: '', province: '', postalCode: '', countryCode: 'DE', phoneNumber: '' };
+
+    it('reads the customer, then sends only the patched field and maps the recorded-shape result', async () => {
+      const spy = replies(get.response, update.response);
+      await expect(updateVendureCustomer(context, '2', { phone: '+44 20 7946 0002' })).resolves.toStrictEqual({ ...ada, phone: '+44 20 7946 0002' });
+      const [read, write] = sent(spy);
+      expect(read.variables).toStrictEqual({ id: '2' });
+      expect(read.query.replace(/\s+/g, ' ')).toBe('query Addresses($id: ID!) { customer(id: $id) { id firstName lastName emailAddress phoneNumber addresses { id defaultShippingAddress defaultBillingAddress } } }');
+      expect(write).toStrictEqual({ query: update.query, variables: update.variables });
+    });
+
+    it('drops company and tax ids, as create does, and resolves the stored customer unchanged', async () => {
+      const spy = replies(get.response);
+      await expect(updateVendureCustomer(context, '2', { company: 'Ignored Co', taxIds: [{ type: 'gb_vat', value: 'GB123' }] })).resolves.toStrictEqual(ada);
+      expect(spy).toHaveBeenCalledOnce();
+    });
+
+    it('gives billing its own new default when the recorded default is shared with shipping', async () => {
+      const spy = replies(get.response, created, updated);
+      await expect(updateVendureCustomer(context, '2', { billing })).resolves.toStrictEqual(ada);
+      expect(sent(spy).slice(1).map((body) => body.variables)).toStrictEqual([
+        { customerId: '2', input: { ...vendureBilling, defaultBillingAddress: true } },
+        { input: { id: '1', defaultBillingAddress: false } },
+      ]);
+      expect(sent(spy)[1].query).toContain('createCustomerAddress(customerId: $customerId, input: $input) { id }');
+      expect(sent(spy)[2].query).toContain('updateCustomerAddress(input: $input) { id }');
+    });
+
+    it('then rewrites the shared address in place for shipping, once it is shipping alone', async () => {
+      const spy = replies(get.response, created, updated, updated);
+      await updateVendureCustomer(context, '2', { billing, shipping });
+      expect(sent(spy).slice(1).map((body) => body.variables)).toStrictEqual([
+        { customerId: '2', input: { ...vendureBilling, defaultBillingAddress: true } },
+        { input: { id: '1', defaultBillingAddress: false } },
+        { input: { id: '1', ...vendureShipping } },
+      ]);
+    });
+
+    it('rewrites a default billing address that is billing alone in place', async () => {
+      const addresses = [{ id: '1', defaultBillingAddress: true, defaultShippingAddress: false }, { id: '4', defaultBillingAddress: false, defaultShippingAddress: true }];
+      const spy = replies({ data: { customer: { ...get.response.data.customer, addresses } } }, updated);
+      await updateVendureCustomer(context, '2', { billing });
+      expect(sent(spy).slice(1).map((body) => body.variables)).toStrictEqual([{ input: { id: '1', ...vendureBilling } }]);
+    });
+
+    it.each([{ country: 'GB' }, { address1: '1 Bill Road' }])('refuses an address Vendure cannot store (%j) before any request', async (address) => {
+      const spy = vi.spyOn(globalThis, 'fetch');
+      await expect(updateVendureCustomer(context, '2', { shipping: address })).rejects.toMatchObject({ code: 'invalid', status: undefined });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unknown customer id', async () => {
+      const spy = replies({ data: { customer: null } });
+      const result = updateVendureCustomer(context, 'missing', { phone: '+44 20 7946 0002' });
+      await expect(result).rejects.toBeInstanceOf(CustomerServiceError);
+      await expect(result).rejects.toMatchObject({ code: 'invalid', message: 'unknown customer', status: 200 });
+      expect(spy).toHaveBeenCalledOnce();
+    });
+
+    it('refuses the email conflict with its message and writes no address', async () => {
+      const spy = replies(get.response, updateConflict.response);
+      const result = updateVendureCustomer(context, '2', { email: 'adam.fixture@example.com', billing });
+      await expect(result).rejects.toMatchObject({ code: 'invalid', message: 'The email address is not available.', status: 200 });
+      expect(sent(spy)[1].variables).toStrictEqual(updateConflict.variables);
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      [Response.json({}, { status: 503 }), { code: 'server', status: 503 }],
+      [Response.json({ data: {} }), { code: 'server', message: 'unexpected response' }],
+    ])('classifies a failed update mutation after the read (%#)', async (reply, error) => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(get.response)).mockResolvedValueOnce(reply);
+      await expect(updateVendureCustomer(context, '2', { firstName: 'Augusta' })).rejects.toMatchObject(error);
+    });
+  });
+
   it('omits empty fields and falls back to email, then id for the name', () => {
     expect(toVendureCustomer({ id: '2', firstName: '', lastName: null, emailAddress: input.email, phoneNumber: '' }))
       .toStrictEqual({ id: '2', name: input.email, email: input.email });
@@ -123,6 +214,7 @@ describe('Vendure customers', () => {
     ['search', () => searchVendureCustomers(context, 'ada')],
     ['create', () => createVendureCustomer(context, input)],
     ['get', () => getVendureCustomer(context, '2')],
+    ['update', () => updateVendureCustomer(context, '2', { phone: '+44 20 7946 0002' })],
   ] as const;
   describe.each(calls)('%s errors', (_name, call) => {
     it('carries the HTTP status', async () => {
@@ -182,10 +274,11 @@ describe('Vendure customers', () => {
     });
   });
 
-  it('exposes the three functions on the connector', () => {
+  it('exposes the four functions on the connector', () => {
     const connector = createVendureConnector();
     expect(connector.searchCustomers).toBe(searchVendureCustomers);
     expect(connector.createCustomer).toBe(createVendureCustomer);
     expect(connector.getCustomer).toBe(getVendureCustomer);
+    expect(connector.updateCustomer).toBe(updateVendureCustomer);
   });
 });
