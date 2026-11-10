@@ -1,6 +1,6 @@
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import type { RxCollection } from 'rxdb';
-import { BehaviorSubject, filter, firstValueFrom, merge, type Observable, type Subscription } from 'rxjs';
+import { BehaviorSubject, EMPTY, filter, firstValueFrom, merge, type Observable, type Subscription } from 'rxjs';
 
 import { errorKind, type ReplicationAdapter, type SyncContext, type SyncNotice } from '@tallyui/core';
 
@@ -80,6 +80,19 @@ export type TallyReplicationState<RxDocType, CheckpointType = any> = RxReplicati
 export function retryAfter(error: unknown): number {
   const value = (error as { retryAfterMs?: unknown } | null)?.retryAfterMs;
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+type ProtocolEvents = NonNullable<RxReplicationState<any, any>['internalReplicationState']>['events'];
+
+/**
+ * Resolves once `ready()` holds or the replication is cancelled, waking on a pause change, the cancel and `wake$`.
+ * The protocol's own `canceled` is set before a cancel awaits anything (17.5 replication-protocol/index.js 216), and
+ * completes after, hence the check first and the default value.
+ */
+async function hold(events: ProtocolEvents, ready: () => boolean, wake$: Observable<unknown> = EMPTY) {
+  const done = () => events.canceled.getValue() || ready();
+  if (done()) return;
+  await firstValueFrom(merge(events.paused, events.canceled, wake$).pipe(filter(done)), { defaultValue: undefined });
 }
 
 /** The notice for a till or store error, with the error's string `software`, `minVersion` and `fix`. */
@@ -190,26 +203,23 @@ export function startReplication<RxDocType, CheckpointType = any>({
     },
     push: adapter.push
       ? {
+          // A push is held, never thrown or dropped, while latched or paused: before the send, and after it until
+          // the pause ends. RxDB 17.5 drops a paused push's answer (plugins/replication/index.js 269, upstream.js
+          // 287), so its rows go twice. And the pages queued behind it (upstream.js 90-100) then find no rows and
+          // store the up checkpoint anyway (upstream.js 211), so those rows never go. Only a cancel ends a hold,
+          // with nothing sent.
           handler: async (rows) => {
-            if (!connectivity) return adapter.push!.handler(rows, context);
-            // Held, not thrown, while latched: RxDB retries a thrown push every retryTime with one error$ each. The
-            // reset releases it; a cancel ends it. A push already in flight when the latch sets finishes as usual.
-            // Paused at release: throw, not send. RxDB drops a paused push's answer and sends its rows again after
-            // resume (17.5 replication-protocol/upstream.js); a thrown one ends its retry loop and goes once on resume.
-            if (connectivity.current().updateRequired) {
-              const rx = state!;
-              await firstValueFrom(merge(connectivity.snapshot$, rx.canceled$).pipe(
-                filter(() => rx.isStopped() || !connectivity.current().updateRequired)));
-              if (rx.isStoppedOrPaused()) throw new Error('update required: push held');
-            }
-            try {
-              const conflicts = await adapter.push!.handler(rows, context);
-              connectivity.recordSuccess();
-              return conflicts;
-            } catch (error) {
-              connectivity.recordFailure(error);
+            const events = state!.internalReplicationState!.events;
+            const latched = () => Boolean(connectivity?.current().updateRequired);
+            await hold(events, () => !latched() && !events.paused.getValue(), connectivity?.snapshot$);
+            if (events.canceled.getValue()) return [];
+            const conflicts = await adapter.push!.handler(rows, context).catch((error: unknown) => {
+              connectivity?.recordFailure(error);
               throw error;
-            }
+            });
+            connectivity?.recordSuccess();
+            await hold(events, () => !events.paused.getValue());
+            return conflicts;
           },
           batchSize: adapter.push.batchSize,
         }
@@ -224,8 +234,10 @@ export function startReplication<RxDocType, CheckpointType = any>({
   // The re-probe (v2: a fresh engine re-probes the store, so only it clears the latch; apps/main/lib/create-app-engine.ts):
   // when the latch is reset, pull again from the checkpoint and re-run the push.
   let latched = Boolean(connectivity?.current().updateRequired);
+  // Not while paused: an upstream pass run while paused sends nothing yet stores its checkpoint (upstream.js 211,
+  // 287), and RxDB's start() re-syncs after a pause anyway (plugins/replication/index.js 110).
   const probe: Subscription | undefined = connectivity?.snapshot$.subscribe(({ updateRequired }) => {
-    if (latched && !updateRequired && !tillStopped) replication.reSync();
+    if (latched && !updateRequired && !tillStopped && !replication.isPaused()) replication.reSync();
     latched = updateRequired !== null;
   });
   replication.canceled$.subscribe((canceled) => {

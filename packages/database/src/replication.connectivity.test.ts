@@ -67,12 +67,18 @@ async function setup(answer: (call: number) => unknown, connector?: Pick<TallyCo
   return { state, tracker, states, calls: () => calls };
 }
 
+/** Waits for `check` like `until`, then lets the test's own assertions report what is missing. */
+const settle = (check: () => boolean, ms?: number) => until(check, ms).catch(() => undefined);
+
 /**
  * A push-only store: `answer` runs per push call (an Error rejects it, a promise holds it); `accepted` lists each row
- * id the store took, in order. The tracker's clock moves 30 s per push call.
+ * id the store took, in order. The tracker's clock moves 30 s per push call. `rows` are in the collection before the
+ * replication starts, so RxDB's initial upstream sync sends them in `batchSize` pages.
  */
-async function pushSetup(answer: (call: number) => unknown, tracker?: ConnectivityTracker) {
+async function pushSetup(answer: (call: number) => unknown, tracker?: ConnectivityTracker,
+  { batchSize, rows = [], retryTime = 10 }: { batchSize?: number; rows?: string[]; retryTime?: number } = {}) {
   const collection = await products();
+  await insert(collection, ...rows);
   let calls = 0;
   const connectivity = tracker ?? createConnectivityTracker({ connector: gate, now: () => calls * 30_000 });
   const accepted: string[] = [];
@@ -85,9 +91,10 @@ async function pushSetup(answer: (call: number) => unknown, tracker?: Connectivi
         accepted.push(...rows.map(row => row.newDocumentState.id));
         return [];
       },
+      batchSize,
     },
   };
-  const state = startReplication({ collection, adapter: adapter as never, context, retryTime: 10, connectivity });
+  const state = startReplication({ collection, adapter: adapter as never, context, retryTime, connectivity });
   cleanup.push(() => state.cancel());
   const errors: unknown[] = [];
   state.error$.subscribe(error => errors.push(error));
@@ -96,8 +103,12 @@ async function pushSetup(answer: (call: number) => unknown, tracker?: Connectivi
   return { state, collection, tracker: connectivity, accepted, errors, states, calls: () => calls };
 }
 
-const insert = (collection: Awaited<ReturnType<typeof products>>, ...ids: string[]) =>
-  Promise.all(ids.map(id => collection.insert({ id, name: id })));
+function insert(collection: Awaited<ReturnType<typeof products>>, ...ids: string[]) {
+  return Promise.all(ids.map(id => collection.insert({ id, name: id })));
+}
+// Seven rows in push pages of two: four pages, so RxDB queues pages behind the first (upstream.js 90-100).
+const seven = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+const pages = { batchSize: 2 };
 
 describe('startReplication with a connectivity tracker', () => {
   it('a failing pull drives the tracker offline, and a success brings it back online', async () => {
@@ -197,6 +208,100 @@ describe('startReplication with a connectivity tracker', () => {
     await until(() => accepted.length >= 1);
     await sleep(100);
     expect(accepted).toEqual(['a']);
+  });
+
+  it('a held push released while paused loses no row across push pages, and sends each once after start', async () => {
+    const tracker = createConnectivityTracker({ connector: gate });
+    tracker.recordFailure(refusal());
+    const { state, accepted, calls } = await pushSetup(() => undefined, tracker, { ...pages, rows: seven });
+    await sleep(100);
+    expect(calls()).toBe(0);
+    await state.pause();
+    tracker.resetUpdateRequired();
+    await sleep(100);
+    expect(calls()).toBe(0);
+    await state.start();
+    await settle(() => accepted.length >= seven.length);
+    await sleep(100);
+    expect([...accepted].sort()).toEqual(seven);
+  });
+
+  it('a reset while paused, with rows written during the pause, sends each row once after start', async () => {
+    const tracker = createConnectivityTracker({ connector: gate });
+    tracker.recordFailure(refusal());
+    const { state, collection, accepted, calls } = await pushSetup(() => undefined, tracker, pages);
+    await sleep(50);
+    await state.pause();
+    await insert(collection, ...seven);
+    tracker.resetUpdateRequired();
+    await sleep(100);
+    expect(calls()).toBe(0);
+    await state.start();
+    await settle(() => accepted.length >= seven.length);
+    await sleep(100);
+    expect([...accepted].sort()).toEqual(seven);
+  });
+
+  it('a cancel releases a held push without sending it', async () => {
+    const tracker = createConnectivityTracker({ connector: gate });
+    tracker.recordFailure(refusal());
+    const { state, calls } = await pushSetup(() => undefined, tracker, { ...pages, rows: seven });
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => rejections.push(reason);
+    process.on('unhandledRejection', onRejection);
+    try {
+      await sleep(100);
+      await state.cancel();
+      // RxDB's upstream queue settles only once every held push has returned.
+      const queue = state.internalReplicationState!.streamQueue.up.then(() => 'settled');
+      expect(await Promise.race([queue, sleep(1000).then(() => 'still held')])).toBe('settled');
+      await sleep(50);
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+    expect(calls()).toBe(0);
+    expect(rejections).toEqual([]);
+  });
+
+  it('a pause during a push in flight keeps its answer: the row is marked pushed and not sent again after start', async () => {
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => { finish = resolve; });
+    const { state, collection, accepted, calls } = await pushSetup(call => (call === 1 ? held : undefined));
+    await insert(collection, 'a');
+    await until(() => calls() === 1);
+    await state.pause();
+    finish();
+    await sleep(50);
+    await state.start();
+    await insert(collection, 'b');
+    await settle(() => accepted.length >= 3, 300);
+    expect(accepted).toEqual(['a', 'b']);
+  });
+
+  it('start() inside the retry wait after a thrown push sends each row once', async () => {
+    const { state, accepted, calls } = await pushSetup(call => (call === 1 ? unreachable() : undefined), undefined,
+      { ...pages, rows: seven, retryTime: 300 });
+    await until(() => calls() === 1);
+    await state.pause();
+    await state.start();
+    await settle(() => accepted.length >= seven.length);
+    await sleep(100);
+    expect([...accepted].sort()).toEqual(seven);
+  });
+
+  // Known limit (RxDB 17.5): after a thrown push, RxDB's retry wait runs outside the handler, so nothing can hold it.
+  // Ending while paused, its push loop returns [] unsent (plugins/replication/index.js 240, 269), the queued pages store
+  // the up checkpoint (upstream.js 211), and these rows never go. Flips to a pass if RxDB fixes it.
+  it.fails('known limit: a retry wait after a thrown push that ends while paused loses the queued pages', async () => {
+    const { state, accepted, calls } = await pushSetup(call => (call === 1 ? unreachable() : undefined), undefined,
+      { ...pages, rows: seven, retryTime: 100 });
+    await until(() => calls() === 1);
+    await state.pause();
+    await sleep(300);
+    await state.start();
+    await settle(() => accepted.length >= seven.length);
+    await sleep(100);
+    expect([...accepted].sort()).toEqual(seven);
   });
 
   it('flapping offline, online, offline, online loses and doubles no write, and ends online', async () => {
