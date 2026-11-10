@@ -2,8 +2,7 @@ import type { CommandResult, OrderRefundRejectionCode } from '../types'
 import type { OrderRejectionCode } from './total-warnings'
 import type { RegisterConflictCode } from './register-outcome'
 
-/** Every error.code a plugin may put on a rejected result (ADR-038 and its amendments, ADR-068),
- *  except `register_approval_required`, which arrives with registers c2c. */
+/** Every error.code a plugin may put on a rejected result (ADR-038 and its amendments, ADR-068, ADR-082). */
 export type CommandRejectionCode =
   | 'invalid_payload' | 'unsupported_version' | 'idempotency_mismatch' | 'store_configuration' | 'platform_error'
   | 'insufficient_stock' | 'unsupported_tax_mode' | 'internal_error'

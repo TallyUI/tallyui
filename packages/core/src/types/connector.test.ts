@@ -174,3 +174,39 @@ describe('parseInfoCapabilities (ADR-062, #287)', () => {
     expect(warn).toHaveBeenCalledOnce();
   });
 });
+
+describe('parseInfoCapabilities registerApproval (ADR-082)', () => {
+  it('reads the store approval threshold beside contracts', () => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1], register: [1, 2, 3] }, registerApproval: { thresholdMinor: 500 } }, warn))
+      .toStrictEqual({ orderCreate: 1, register: 3, registerApproval: { thresholdMinor: 500 } });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps a zero threshold', () => {
+    expect(parseInfoCapabilities({ registerApproval: { thresholdMinor: 0 } }))
+      .toStrictEqual({ orderCreate: 1, registerApproval: { thresholdMinor: 0 } });
+  });
+
+  it('strips extra keys', () => {
+    expect(parseInfoCapabilities({ registerApproval: { thresholdMinor: 500, required: true } }))
+      .toStrictEqual({ orderCreate: 1, registerApproval: { thresholdMinor: 500 } });
+  });
+
+  it('omits absent registerApproval without warning', () => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1], register: [1, 2, 3] } }, warn))
+      .toStrictEqual({ orderCreate: 1, register: 3 });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [null], [[]], [500], [true], [{}], [{ thresholdMinor: -1 }], [{ thresholdMinor: 0.5 }],
+    [{ thresholdMinor: '500' }], [{ thresholdMinor: Number.MAX_SAFE_INTEGER + 1 }], [{ thresholdMinor: NaN }],
+  ])('keeps other capabilities and warns once for malformed registerApproval %j', (registerApproval) => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1], register: [1, 2, 3] }, registerApproval }, warn))
+      .toStrictEqual({ orderCreate: 1, register: 3 });
+    expect(warn).toHaveBeenCalledExactlyOnceWith('ignoring a malformed registerApproval');
+  });
+});

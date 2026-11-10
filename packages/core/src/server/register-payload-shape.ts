@@ -74,6 +74,10 @@ export function registerPayloadErrors(type: string, payload: unknown): string[] 
     case 'register.closure.submit':
       for (const field of ['closureId', 'registerId', 'openedAt', 'closedAt', 'softwareVersion']) string(field)
       for (const field of ['businessDay', 'closedBy', 'approvedBy']) string(field, true)
+      if (payload.approval !== undefined) {
+        check(typeof payload.approval === 'string' && payload.approval.length > 0, 'approval', 'a non-empty string')
+        noNul(payload.approval, 'approval')
+      }
       integer('number', 1)
       for (const field of ['periodSalesTotalMinor', 'periodRefundsTotalMinor', 'perpetualSalesTotalMinor',
         'perpetualRefundsTotalMinor', 'unsyncedCount', 'unsyncedTotalMinor']) integer(field, 0)
