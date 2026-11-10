@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
+import { createRxDatabase, newRxError, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { AnyCommandEnvelope, CommandError, CommandResult, OrderCreateEnvelope, RegisterCommandEnvelope } from '@tallyui/core';
@@ -49,6 +49,57 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   await db.remove();
+});
+
+describe('register outbox keeps the approval proof out of logs and state (ADR-082 d2)', () => {
+  it('an onResult RxDB error is logged by name, never its parameters', async () => {
+    const logs = (['warn', 'error', 'info', 'debug', 'createScope', 'addSink', 'removeSink'] as const)
+      .map((method) => vi.spyOn(registerCommandsLogger, method));
+    await collection.insert(command(1, 'a', { key: 'closure.submit:c', type: 'register.closure.submit', version: 3,
+      payload: { sessionId: 'a-1', registerId: 'a', approval: 'proof-secret' } }));
+    const cause = newRxError('SNH', { document: { payload: { approval: 'proof-secret' } } });
+    const { outbox, states } = setup({ onResult: () => { throw cause; } });
+    await outbox.flush();
+    expect(logs[0]).toHaveBeenCalledWith(expect.any(String), { commandId: expect.any(String), error: cause.name });
+    const text = JSON.stringify([logs.map((log) => log.mock.calls), states],
+      (_key, value) => value instanceof Error ? String(value) + ' ' + value.message : value);
+    expect(text).not.toContain('proof-secret');
+    expect((await stored('closure.submit:c')).syncStatus).toBe('applied');
+  });
+
+  it('a send that throws an RxDB error leaves no proof in the retry reason', async () => {
+    const logs = (['warn', 'error', 'info', 'debug', 'createScope', 'addSink', 'removeSink'] as const)
+      .map((method) => vi.spyOn(registerCommandsLogger, method));
+    await collection.insert(command(1, 'a', { key: 'closure.submit:c', type: 'register.closure.submit', version: 3,
+      payload: { sessionId: 'a-1', registerId: 'a', approval: 'proof-secret' } }));
+    const { outbox, send, states } = setup();
+    send.mockRejectedValueOnce(newRxError('SNH', { document: { payload: { approval: 'proof-secret' } } }));
+    await outbox.flush();
+    const text = JSON.stringify([logs.map((log) => log.mock.calls), states],
+      (_key, value) => value instanceof Error ? String(value) + ' ' + value.message : value);
+    expect(text).not.toContain('proof-secret');
+    expect(states.at(-1)?.lastRetryReason).toMatch(/^error: RxError/);
+  });
+
+  it('a refused proof keeps it only in the row\'s payload', async () => {
+    const logs = (['warn', 'error', 'info', 'debug', 'createScope', 'addSink', 'removeSink'] as const)
+      .map((method) => vi.spyOn(registerCommandsLogger, method));
+    const input = command(1, 'a', { key: 'closure.submit:c', type: 'register.closure.submit', version: 3,
+      payload: { sessionId: 'a-1', registerId: 'a', approval: 'proof-secret' } });
+    await collection.insert(input);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: input.commandId, status: 'rejected',
+      error: { code: 'register_approval_invalid', message: 'Approval invalid', data: { reason: 'used' } } }] });
+    await outbox.flush();
+    const row = await stored('closure.submit:c');
+    expect(row.syncStatus).toBe('rejected');
+    expect(JSON.stringify(row.error)).not.toContain('proof-secret');
+    const text = JSON.stringify([logs.map((log) => log.mock.calls), states],
+      (_key, value) => value instanceof Error ? String(value) + ' ' + value.message : value);
+    expect(text).not.toContain('proof-secret');
+    // ADR-082 d2: the proof stays in the local register_commands row.
+    expect(row.payload.approval).toBe('proof-secret');
+  });
 });
 
 describe('register outbox', () => {
@@ -446,7 +497,7 @@ describe('register outbox', () => {
       .toEqual(inputs.map(({ commandId }) => ({ commandId, id: commandId, syncStatus: 'pending' })));
     observed.forEach(({ command }, i) => expect(command).toMatchObject(inputs[i]));
     expect(log).toHaveBeenCalledTimes(3);
-    expect(log).toHaveBeenCalledWith(expect.any(String), { commandId: inputs[0].commandId, cause });
+    expect(log).toHaveBeenCalledWith(expect.any(String), { commandId: inputs[0].commandId, error: 'Error: callback failed' });
     expect((await readFresh(collection, { selector: { syncStatus: 'pending' } }))).toHaveLength(0);
   });
 

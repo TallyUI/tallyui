@@ -66,6 +66,20 @@ export function contentVersion(order: Pick<PosOrder, 'display' | 'taxByRate' | '
   return order.display && order.taxByRate ? 3 : order.lines.reduce((sum, line) => sum + line.discountMinor, 0) > 0 ? 2 : 1;
 }
 
+const LEGACY_REFUSAL_PREFIX = 'Refused by the store: ';
+
+/**
+ * The note as it goes on the wire. ADR-083 condition 1: `payload.note` never carries the refusal prefix that
+ * @tallyui/pos 3.12.0's `reopenRefusedOrder` wrote into a reopened draft's note (`Refused by the store: <message>`,
+ * then `\n` and the cashier's note, or the prefix alone), so a draft parked by 3.12.0 drops that first line here.
+ * A note that is only that line is no note. The phrase anywhere else in a cashier's note is kept.
+ */
+function wireNote(note: string | undefined): string | undefined {
+  if (!note?.startsWith(LEGACY_REFUSAL_PREFIX)) return note || undefined;
+  const newline = note.indexOf('\n');
+  return newline === -1 ? undefined : note.slice(newline + 1) || undefined;
+}
+
 /**
  * Builds the ADR-038 order.create envelope for a PosOrder. It sends the stored order unchanged, so every resend of
  * an order is byte-identical, and an order stored by an older till goes out exactly as that till sent it:
@@ -89,7 +103,8 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
     : Math.min(content, cap ?? content)) as 1 | 2 | 3 | 4 | 5 | 6;
   // Version 7 (ADR-083) is 6 plus the note: only for a sale with one, with figures (3+), when the cap allows 7.
   // Every other field follows `base`, so a note changes nothing else in the payload.
-  const version = (order.note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
+  const note = wireNote(order.note);
+  const version = (note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
   const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax) : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
@@ -151,7 +166,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
       ...(base >= 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
-      ...(version === 7 ? { note: order.note } : {}),
+      ...(version === 7 ? { note } : {}),
     },
   };
 }

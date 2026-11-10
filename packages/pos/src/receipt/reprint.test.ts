@@ -32,6 +32,12 @@ const withoutLabels = (receipt: ReceiptData) => receipt.totals.taxLines.map(({ l
 const total = (rows: Array<{ amountMinor: number }>) => rows.reduce((sum, row) => sum + row.amountMinor, 0);
 
 describe('reprint receipt data', () => {
+  it.each([[6, true], [7, false], [undefined, false]] as const)('marks a note not sent when it went at version %s: %s (ADR-083)', (sentVersion, notSent) => {
+    const { posOrder } = finalizedSale(false);
+    const footer = buildReceiptDataFromPosOrder({ ...posOrder, sentVersion }, config).footer;
+    expect(footer).toStrictEqual({ note: 'Extra hot', ...(notSent ? { noteNotSent: true } : {}), barcode: posOrder.id });
+  });
+
   it.each([false, true])('matches buildReceiptData for a finalized order, marked as a reprint (inclusive: %s)', (pricesIncludeTax) => {
     const { order, posOrder } = finalizedSale(pricesIncludeTax);
     expect(posOrder.display).toBeDefined();

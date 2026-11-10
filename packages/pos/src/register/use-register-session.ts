@@ -18,13 +18,14 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
+import { safeErrorString } from '../outbox/safe-error';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
 import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
-import { closeNeedsApproval } from './register-count.helpers';
+import { closeNeedsApproval, closureVariance } from './register-count.helpers';
 import { abandonSession, adoptRegisterResults, takeOverSession } from './register-adoption';
 import { reconcileRegisterCommands, registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
@@ -109,7 +110,7 @@ export interface UseRegisterSessionOptions {
   softwareVersion: string;
   /** A sale is at tender (`sale.stage.kind === 'tender'`): counting and closing refuse. */
   tenderInProgress: boolean;
-  /** The count variance, in minor units, over which the app asks for approval. */
+  /** The count variance, in minor units, over which the app asks for approval. The store's `capabilities.registerApproval.thresholdMinor` wins over it (ADR-082). */
   varianceThreshold?: number;
   /** `'HH:mm'` on the device's clock; an open session after it is `overdue`. */
   expectedCloseTime?: string;
@@ -155,9 +156,17 @@ function ledgerRows(orders: readonly PosOrder[], replaced = replacedOrderIds(ord
   })));
 }
 
+/** The closure's counted map, as `closeSession` hands it to `writeClosure`: cash is always present. */
+const closedCount = (counted: Record<string, number>) => ({ ...counted, cash: counted.cash ?? 0 });
+/** The store's match (ADR-082 d5): the same keys, and each the same figure. */
+const sameVariance = (a: Record<string, number>, b: Record<string, number>) =>
+  Object.keys(a).length === Object.keys(b).length && Object.entries(b).every(([method, value]) => a[method] === value);
+
 export function useRegisterSession(options: UseRegisterSessionOptions) {
   const { sessions, movements, closures, orders, register, storeKey, registerId, enabled, actor, timezone, tenderInProgress, expectedCloseTime, labels } = options;
   const { commands, refunds } = options;
+  // ADR-082 d3: the store's threshold wins over the app's; the gate and RegisterCount use this one.
+  const varianceThreshold = options.capabilities?.registerApproval?.thresholdMinor ?? options.varianceThreshold;
   const commandEnabled = (options.capabilities?.register ?? 0) >= 1;
   const commandTarget = useMemo(() => enabled && commandEnabled && commands && sessions && movements && closures && register && registerId
     ? { commands, sessions, movements, closures, host: register, storeKey, registerId, registerContract: options.capabilities?.register, deviceName: options.deviceName } : null,
@@ -169,7 +178,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     if (!target) return;
     void reconcileRegisterCommands({ ...target, observed: row ? [row] : undefined }).catch((error: unknown) => {
       try {
-        registerCommandsLogger.error('Register command reconcile failed', { context: { registerId: target.registerId, error: String(error) } });
+        registerCommandsLogger.error('Register command reconcile failed', { context: { registerId: target.registerId, error: safeErrorString(error) } });
       } catch {
         // A failing log sink must not affect a register action either.
       }
@@ -300,6 +309,16 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     if (!session) throw new RegisterSessionRequiredError();
     return session;
   };
+  // As `writeClosure` derives the Z's expected figures, from the same rows, past the query cache.
+  const freshExpected = async (row: RegisterSession) => {
+    const { movements, orders, refunds } = live();
+    return deriveExpected({
+      session: { id: row.id, countedFloatMinor: row.counted_float_minor },
+      movements: await readFresh(movements, { selector: { session_id: row.id } }),
+      ledgerRowsBySession: ledgerRows(await readFresh(orders, { selector: { sessionId: row.id } })),
+      refunds: refunds ? await readFresh(refunds, { selector: { sessionId: row.id } }) : undefined,
+    });
+  };
   const refuseDuringTender = () => {
     if (tender.current) throw new RegisterTenderInProgressError();
   };
@@ -320,7 +339,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     lastClosure: [...(data?.closureRows ?? [])].sort((a, b) => b.closed_at.localeCompare(a.closed_at))[0] ?? null,
     lastClosed: (data?.rows ?? []).filter((row) => row.status === 'closed')
       .sort((a, b) => (b.closed_at_gmt ?? '').localeCompare(a.closed_at_gmt ?? ''))[0] ?? null,
-    varianceThreshold: options.varianceThreshold,
+    varianceThreshold,
     enabled,
     blind: options.blind ?? false,
     /** Pass straight to useSale's `session` option: `complete()` then stamps through `stampSession`. */
@@ -417,10 +436,14 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
        * `approvedBy` throws `RegisterApprovalRequiredError` before any write, blind or not; a
        * resumed close (the stored session already closed) isn't gated again. `approvedBy` reaches the Z
        * (`breakdowns.approved_by`), and `approvedByName` its `approved_by_name`.
+       * `approval` is the store's opaque proof (ADR-082): it goes to the session's
+       * `approver_token` and from there only onto a version 3 closure command, never onto the Z, a fact or a log. With
+       * `approvedVariance` (the variance the app sent to its approval route), a close whose `closureVariance` differs
+       * throws `RegisterApprovalRequiredError` before any write. A resumed close checks neither.
        * One close per register runs at a time, in any hook instance: a call while one is in flight joins
        * it, getting its closure or error, and its own `counted`, `approvedBy` and `approvedByName` are ignored.
        */
-      closeSession: async (input: { counted: Record<string, number>; approvedBy?: string; approvedByName?: string }) => {
+      closeSession: async (input: { counted: Record<string, number>; approvedBy?: string; approvedByName?: string; approval?: string; approvedVariance?: Record<string, number> }) => {
         refuseDuringTender();
         const key = registerId ?? '';
         if (closingByRegister.has(key)) return closingByRegister.get(key)!;
@@ -431,19 +454,18 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         // render's snapshot, which can lag a sale or a close that already landed (#168 review).
         const stored = await store.readSession(sessions, open.id);
         if (!stored) throw new RegisterSessionRequiredError();
-        if (stored.status !== 'closed' && !input.approvedBy) {
-          // As `writeClosure` derives the Z's expected figures, from the same rows.
-          const fresh = deriveExpected({
-            session: { id: stored.id, countedFloatMinor: stored.counted_float_minor },
-            movements: await readFresh(movements, { selector: { session_id: stored.id } }),
-            ledgerRowsBySession: ledgerRows(await readFresh(orders, { selector: { sessionId: stored.id } })),
-            refunds: refunds ? await readFresh(refunds, { selector: { sessionId: stored.id } }) : undefined,
-          });
-          if (closeNeedsApproval(input.counted.cash ?? 0, fresh.cash ?? 0, options.varianceThreshold)) throw new RegisterApprovalRequiredError();
+        if (stored.status !== 'closed' && (!input.approvedBy || input.approvedVariance)) {
+          const fresh = await freshExpected(stored);
+          if (!input.approvedBy && closeNeedsApproval(input.counted.cash ?? 0, fresh.cash ?? 0, varianceThreshold)) throw new RegisterApprovalRequiredError();
+          // ADR-082 d5: a sale or a movement since the approval moved the variance the proof is bound to; ask again.
+          if (input.approvedVariance && !sameVariance(input.approvedVariance, closureVariance(closedCount(input.counted), fresh))) throw new RegisterApprovalRequiredError();
         }
+        // TODO(ADR-082 unit 4): at register >= 3 with the store's registerApproval, a close over the threshold on a session
+        // live at the store also needs `approval` (decision 5). Until `liveAtStore` exists, `approvedBy` alone closes, as at
+        // contract 2, and the store refuses it register_approval_required for decision 7 to recover.
         // By id, not `open` (plain data): `store.closeSession`'s guard runs again inside
         // `incrementalModify` on the stored document, so a close that already landed keeps its count, time, actor and approver.
-        const closed = await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, approvedBy: input.approvedBy, timezone });
+        const closed = await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, approvedBy: input.approvedBy, approval: input.approval, timezone });
         // The session stores no approver name, so a close resumed without this call's name (after
         // a restart, say) falls back to `nameOf`.
         const approvedByName = (input.approvedBy && closed.approved_by === input.approvedBy && input.approvedByName) || nameOf(closed.approved_by);
@@ -486,6 +508,12 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           notifyClosing();
           reconcile();
         }
+      },
+      /** ADR-082 d3: the variance this count would close with, read as the gate reads it; the app sends it to its approval route and back as `approvedVariance`. */
+      closureVariance: async (counted: Record<string, number>) => {
+        const stored = await store.readSession(live().sessions, current().id);
+        if (!stored) throw new RegisterSessionRequiredError();
+        return closureVariance(closedCount(counted), await freshExpected(stored));
       },
       recordMovement: async (input: { type: 'paid_in' | 'paid_out' | 'no_sale'; amountMinor: number; reason: string }) => {
         try {

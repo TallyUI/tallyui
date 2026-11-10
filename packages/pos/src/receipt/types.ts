@@ -58,6 +58,8 @@ export interface ReceiptData {
   changeDueMinor: number;
   footer: {
     note?: string;
+    /** ADR-083 condition 2: set only on a reprint of a till order whose note was not sent to the store. */
+    noteNotSent?: true;
     barcode?: string;
   };
   currency: string;
