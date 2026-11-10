@@ -5888,7 +5888,8 @@ interface OrderCreatePayload {
 
 ## ADR-083 order.create v7: the sale note
 
-- **Date:** 2026-11-10 · **Status:** Proposed (assignment u06, #520) · **Relates to:** ADR-038 (commands), ADR-062 and
+- **Date:** 2026-11-10 · **Status:** Accepted (front desk, 2026-11-10; #601, with the two conditions under
+  Consequences) · **Relates to:** ADR-038 (commands), ADR-062 and
   ADR-077 (how versions 2 and 6 were added), ADR-070 (strict payloads and field kinds)
 - **Context:**
   - The till already keeps a note on the sale: `OrderBuilder.setNote`, drafts park and resume it, `newSale()` clears
@@ -5908,7 +5909,8 @@ interface OrderCreatePayload {
   3. **Version selection is unchanged.** The outbox still caps a first send at the server's advertised
      `order.create` maximum and stores `sentVersion`. A server that does not list 7 gets 6 or lower without the note;
      an `unsupported_version` answer to a 7 downgrades it the same way. Unlike coupons (ADR-077), the note may be
-     dropped: it is informational, so the sale is better recorded without it than refused.
+     dropped, so the sale is better recorded without it than refused. A dropped note must be shown as not sent
+     (condition 2 under Consequences).
   4. **Frozen like other text.** `freezeSentForm` cuts the note with `cutText` (NUL stripped; over the cap,
      999 units plus '…'), and the receipt shows the frozen note.
   5. **Server checks.** `precheckCommand` refuses `note` below 7 (`note requires version 7`);
@@ -5921,10 +5923,16 @@ interface OrderCreatePayload {
     downgrades).
   - No connector advertises 7 yet, so no note is sent until one maps it: WooCommerce `customer_note`, Medusa order
     `metadata`, Vendure `addNoteToOrder`. Each connector's own version list decides, as for 5 and 6.
-    `SUPPORTED_ORDER_CREATE_VERSIONS` is not changed here.
-  - A reopened refused sale (ADR-077 d4b) carries its "Refused by the store: …" prefix in its note, so a connector
-    that maps the note to a customer-visible field shows that prefix to the customer. The connector chooses where
-    the note lands.
+    `SUPPORTED_ORDER_CREATE_VERSIONS` (core's own list, pinned to the envelope's version union by
+    `versions.test.ts`) lists 7; it is not what a connector advertises.
+  - **Two conditions (front desk, 2026-11-10).** A follow-up unit must meet both before any connector advertises
+    `order.create` 7:
+    1. **The wire `note` never carries the till's "Refused by the store: …" prefix.** A reopened refused sale
+       (ADR-077 d4b) puts that prefix in its note today. The prefix goes in a till-only field, or is stripped when
+       the command is built, so no connector can show it to a customer.
+    2. **A dropped note is shown as not sent.** When a sale with a note goes out below 7 and the note is dropped,
+       the till's order view and receipt view say that the note was not sent to the store. A note such as "deliver
+       after 5" that is lost silently is a defect, not an informational loss.
 - **Evidence:** `packages/pos/src/pos-order/command-v7.test.ts` (golden `__fixtures__/order-create-v7.json`),
   `packages/core/src/server/order-create-v7.test.ts`, `packages/pos/src/sale/use-sale-note.test.tsx`,
   `packages/pos/src/pos-order/migration.test.ts`, `packages/integration-tests/src/pos-orders-open-sqlite.test.ts`.
