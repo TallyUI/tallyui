@@ -66,7 +66,8 @@ it('takes a WooCommerce line net as already exclusive of tax', () => {
       const result = reportOrderFromPosOrder(posOrder);
       result.lines.forEach((line, index) => {
         expect(line.netMinor).toBe(posOrder.lines[index].netMinor);
-        expect(Math.abs(line.netMinor + line.taxMinor - order.lineItems[index].totalMinor)).toBeLessThanOrEqual(1);
+        // Net and tax are each rounded half up, so their sum can differ from the rounded gross by up to 2.
+        expect(Math.abs(line.netMinor + line.taxMinor - order.lineItems[index].totalMinor)).toBeLessThanOrEqual(2);
       });
     }
   }
