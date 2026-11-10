@@ -309,11 +309,13 @@ export const backToSelling = (sessions: RegisterSessionCollection, id: string) =
  * Closes the session with its counted tenders (minor units); `timezone` dates a session opened
  * without a business day. `approvedBy`, the manager who approved the count, is written in the same
  * write as the close, and a repeat close keeps the first close's approver as it keeps its count.
+ * `approval`, the store's opaque proof (ADR-082), is written to `approver_token` in the same
+ * write; it never reaches the closure or its breakdowns.
  */
 export async function closeSession(
   sessions: RegisterSessionCollection,
   id: string,
-  input: { counted: Record<string, number>; closedBy?: string; approvedBy?: string; timezone?: string },
+  input: { counted: Record<string, number>; closedBy?: string; approvedBy?: string; approval?: string; timezone?: string },
 ) {
   const session = await sessions.findOne(id).exec();
   if (!session) throw new RegisterSessionRequiredError();
@@ -322,6 +324,7 @@ export async function closeSession(
     counted: input.counted,
     closed_by: input.closedBy ?? null,
     ...(input.approvedBy ? { approved_by: input.approvedBy } : {}),
+    ...(input.approval ? { approver_token: input.approval } : {}),
     closure_id: id,
   });
 }
