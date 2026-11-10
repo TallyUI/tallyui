@@ -102,6 +102,30 @@ describe('order.create v7 sale note (ADR-083)', () => {
     expect(envelope.payload).not.toHaveProperty('note');
   });
 
+  it('drops a 3.12.0 reopen prefix and sends only the cashier\'s note', () => {
+    const order = sale(true, false, false, 'Refused by the store: Coupon "ten" does not exist.\nKeep the receipt');
+    const envelope = toOrderCreateEnvelope(order, 'device_golden', 1, { maxVersion: 7 });
+    expect(envelope.version).toBe(7);
+    expect(envelope.payload.note).toBe('Keep the receipt');
+    expect(JSON.stringify(envelope)).not.toContain('Refused by the store');
+  });
+
+  it('sends no note and no version 7 for a 3.12.0 reopen prefix alone', () => {
+    const order = sale(true, false, false, 'Refused by the store: Coupon "ten" does not exist.'), withoutNote = { ...order };
+    delete withoutNote.note;
+    const envelope = toOrderCreateEnvelope(order, 'device_golden', 1, { maxVersion: 7 });
+    expect(envelope.version).toBe(6);
+    expect(envelope.payload).not.toHaveProperty('note');
+    expect(JSON.stringify(envelope)).toBe(JSON.stringify(toOrderCreateEnvelope(withoutNote, 'device_golden', 1, { maxVersion: 7 })));
+  });
+
+  it('keeps a cashier note that merely contains the phrase whole', () => {
+    const note = 'Customer said: Refused by the store: last time.\nCall first';
+    const envelope = toOrderCreateEnvelope(sale(true, false, false, note), 'device_golden', 1, { maxVersion: 7 });
+    expect(envelope.version).toBe(7);
+    expect(envelope.payload.note).toBe(note);
+  });
+
   it('passes the server precheck for the golden envelope', () => {
     expect(precheckCommand(toOrderCreateEnvelope(sale(), 'device_golden', 1, { maxVersion: 7 }), supported)).toBeUndefined();
   });

@@ -4977,6 +4977,9 @@ interface OrderCreatePayload {
       - no coupons.
     - **Q-d4b-4, the action.** A cashier action, `reopenRefusedOrder`, for `coupon_invalid` and `total_mismatch`
       only. The refusal's message is the note's prefix. Those two codes get no Retry. The UI is phase (e).
+      - *Amended 2026-11-10:* the note's prefix is superseded by ADR-083 condition 1. The refusal stays on the
+        refused `pos_orders` row's `error`, and the reopened draft's note holds only the cashier's note. A
+        prefix left by @tallyui/pos 3.12.0 is stripped when the order.create command is built.
     - **Q-d4b-5, a closed session.** A refusal that arrives after the order's register session has closed is refused
       by `reopenRefusedOrder` with `session_closed`, and the order stays in Needs attention for a manual settle. The
       closed Z report has counted that cash, so carrying the payments would count it twice and dropping them would
