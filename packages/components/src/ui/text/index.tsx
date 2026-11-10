@@ -3,6 +3,7 @@ import { Text as RNText } from 'react-native';
 import { Slot, TextClassContext } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { withFont } from './font-text';
 
 const textVariants = cva('text-foreground web:select-text text-base', {
   variants: {
@@ -23,7 +24,7 @@ type TextProps = React.ComponentPropsWithoutRef<typeof RNText> &
 
 function Text({ className, variant, asChild = false, children, ...props }: TextProps) {
   const textClass = React.useContext(TextClassContext);
-  const Component = asChild ? Slot : RNText;
+  const Component = withFont(asChild ? Slot : RNText);
 
   return (
     <Component className={cn(textVariants({ variant }), textClass, className)} {...props}>
