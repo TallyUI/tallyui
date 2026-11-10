@@ -1,3 +1,5 @@
+import { ORDER_NOTE_MAX } from '../commands'
+
 /** Shape errors of an order.create payload, e.g. ['lines: expected a non-empty array',
  * 'payments[0].method: expected a string']; [] when the shape is valid, at most ten. Checks
  * presence, types, the `customerId` (64) and `sessionId` (36) bounds, and U+0000 in any string;
@@ -74,6 +76,7 @@ export function payloadShapeErrors(payload: unknown): string[] {
   for (const field of ['registerId', 'cashierRef', 'locationId']) {
     if (payload[field] !== undefined) check(typeof payload[field] === 'string', field, 'a string')
   }
+  if (payload.note !== undefined) check(typeof payload.note === 'string' && payload.note.length > 0, 'note', 'a non-empty string')
   for (const field of ['fees', 'shipping', 'lines']) {
     const items = payload[field]
     if (items === undefined || field === 'lines' && !Array.isArray(items)) continue
@@ -151,7 +154,7 @@ export function payloadShapeErrors(payload: unknown): string[] {
 
 /** Length-bound errors of an order.create payload, e.g. ['lines[0].title: expected at most 255
  * characters']; [] when every string is within its bound, at most ten. Bounds in UTF-16 code units:
- * `customer.email` 254, v5 ids 36 and class/sku/method 64, other strings 255 (`customerId` and `sessionId` keep theirs in
+ * `note` ORDER_NOTE_MAX (1000), `customer.email` 254, v5 ids 36 and class/sku/method 64, other strings 255 (`customerId` and `sessionId` keep theirs in
  * payloadShapeErrors); only strings are checked. A plugin calls it through precheckCommand, after
  * its replay lookup, so a bound tightened later never turns an applied command's resend into
  * `invalid_payload`. */
@@ -169,6 +172,7 @@ function payloadStrings(payload: Record<string, unknown>): Array<[string, string
   const object = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value)
   for (const field of ['clientOrderId', 'createdAt', 'currency', 'registerId', 'cashierRef', 'locationId']) found.push([payload[field], field, 255])
+  found.push([payload.note, 'note', ORDER_NOTE_MAX])
   for (const field of ['lines', 'payments']) {
     const items = payload[field]
     if (Array.isArray(items)) items.forEach((item, index) => {

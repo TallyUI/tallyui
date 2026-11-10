@@ -114,6 +114,7 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   })
   let versionError = command.version < 5 && v5Fields.length ? v5Fields.map(field => `${field} requires version 5`).join('; ')
     : command.version < 6 && v6Fields.length ? v6Fields.map(field => `${field} requires version 6`).join('; ')
+    : command.version < 7 && payload.note !== undefined ? 'note requires version 7'
     : command.version === 2 && discountMinor === undefined ? 'version 2 requires discountMinor'
     : command.version === 1 && discounted ? 'discountMinor requires version 2'
     : !v3 && (display !== undefined || taxByRate !== undefined) ? 'display and taxByRate require version 3'

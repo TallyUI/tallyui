@@ -5883,6 +5883,49 @@ interface OrderCreatePayload {
   `register-count.helpers.ts`, `schemas.ts`; `packages/pos/src/outbox/register-outbox.ts`;
   `packages/core/src/types/connector.ts`; WCPOS v2 `approve-sheet.tsx` and `queue.ts` (monorepo `main`).
 
+## ADR-083 order.create v7: the sale note
+
+- **Date:** 2026-11-10 · **Status:** Proposed (assignment u06, #520) · **Relates to:** ADR-038 (commands), ADR-062 and
+  ADR-077 (how versions 2 and 6 were added), ADR-070 (strict payloads and field kinds)
+- **Context:**
+  - The till already keeps a note on the sale: `OrderBuilder.setNote`, drafts park and resume it, `newSale()` clears
+    it, `finalizeOrder` stores it on the `pos_orders` row. It never leaves the till, and `useSale` has no way to set it.
+  - No `order.create` version carries a note, and servers refuse fields they do not know (medusapos's plugin checks
+    the payload's shape), so the note cannot be added to version 6 in place.
+  - WCPOS v2 sends the cart's note as WooCommerce's `customer_note`, with no length cap
+    (`packages/core/src/screens/main/pos/cart/buttons/edit-order-meta/form.tsx:82`, monorepo `main` 5ac185b0e).
+- **Decision:**
+  1. **Version 7 is version 6 plus an optional top-level `payload.note`**: a non-empty string of at most
+     `ORDER_NOTE_MAX` (1000) UTF-16 units, exported by `@tallyui/core`. v2 has no cap; 1000 bounds the wire and is
+     ours to raise. `useSale().setNote(text)` sets it on the open sale.
+  2. **Sent only when there is a note.** The till sends 7 only for a sale with a non-empty note, with figures
+     (content version 3 or more), when the cap (`maxVersion` from the server's advertised list, and any stored
+     `sentVersion`) is at least 7. Every other field follows the version the sale would have gone at without the
+     note, so a note adds `note` and nothing else; a sale without a note is sent byte for byte as before.
+  3. **Version selection is unchanged.** The outbox still caps a first send at the server's advertised
+     `order.create` maximum and stores `sentVersion`. A server that does not list 7 gets 6 or lower without the note;
+     an `unsupported_version` answer to a 7 downgrades it the same way. Unlike coupons (ADR-077), the note may be
+     dropped: it is informational, so the sale is better recorded without it than refused.
+  4. **Frozen like other text.** `freezeSentForm` cuts the note with `cutText` (NUL stripped; over the cap,
+     999 units plus '…'), and the receipt shows the frozen note.
+  5. **Server checks.** `precheckCommand` refuses `note` below 7 (`note requires version 7`);
+     `payloadShapeErrors` requires a non-empty string; `payloadBoundErrors` bounds it at `ORDER_NOTE_MAX`; the NUL
+     check covers it. Field kind: informational (`docs/contract/field-kinds.md`).
+  6. **`pos_orders` goes to schema version 11**, which lets `sentVersion` and `downgradedFrom` be 7. Its migration
+     is the identity, through `addPosOrderCollection`. `ORDER_CREATE_MAX_VERSION` is 7.
+- **Consequences:**
+  - One-way: an older build cannot open schema 11, and an older server refuses a 7 it does not list (the till then
+    downgrades).
+  - No connector advertises 7 yet, so no note is sent until one maps it: WooCommerce `customer_note`, Medusa order
+    `metadata`, Vendure `addNoteToOrder`. Each connector's own version list decides, as for 5 and 6.
+    `SUPPORTED_ORDER_CREATE_VERSIONS` is not changed here.
+  - A reopened refused sale (ADR-077 d4b) carries its "Refused by the store: …" prefix in its note, so a connector
+    that maps the note to a customer-visible field shows that prefix to the customer. The connector chooses where
+    the note lands.
+- **Evidence:** `packages/pos/src/pos-order/command-v7.test.ts` (golden `__fixtures__/order-create-v7.json`),
+  `packages/core/src/server/order-create-v7.test.ts`, `packages/pos/src/sale/use-sale-note.test.tsx`,
+  `packages/pos/src/pos-order/migration.test.ts`, `packages/integration-tests/src/pos-orders-open-sqlite.test.ts`.
+
 ## ADR-084 v2 parity: sync, hardware, the customer display and the Woo target (front desk rulings)
 
 - **Date:** 2026-11-10 · **Status:** Accepted (front desk, 2026-11-10) · **Amends:** ADR-067 (deferred), ADR-073

@@ -64,7 +64,7 @@ export type {
 } from './types';
 
 export {
-  COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, MAX_COMMANDS_PER_BATCH,
+  COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, MAX_COMMANDS_PER_BATCH, ORDER_NOTE_MAX,
   isCommandBatchResponse,
 } from './commands';
 
