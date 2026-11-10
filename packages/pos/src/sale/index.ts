@@ -1,4 +1,4 @@
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger } from './use-sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, saleLogger } from './use-sale';
 export type { SaleStage } from './use-sale';
 export { COUPONS_UNSUPPORTED } from './discount-codes';
 export type { SaleDiscountCodes, SaleDiscountState } from './discount-codes';
