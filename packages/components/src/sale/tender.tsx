@@ -1,38 +1,23 @@
-import { Pressable, Text, TextInput, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
-import type { useSale } from '@tallyui/pos';
-import { CashTendered, ChangeDisplay } from '../checkout';
+import { useReducer, type JSX } from 'react';
+import type { PaymentMethodDescriptor } from '@tallyui/core';
+import { initTenderState, tenderReducer, type useSale } from '@tallyui/pos';
+import { TenderPane } from './tender-pane';
 
-/** order.create's bound on `payments[].reference`, in UTF-16 units: a typed reference never goes past what finalize keeps. */
-const REFERENCE_MAX = 255;
+type Sale = ReturnType<typeof useSale>;
 
-export function Tender({ sale }: { sale: ReturnType<typeof useSale> }) {
-  const { order, stage } = sale;
-  if (stage.kind !== 'tender') return null;
-  const money = (amount: number) => ({ amount, currency: order.currency });
-  return <View dataSet={{ print: 'hide' }} className="gap-4 p-4">
-    {stage.method === 'cash' ? <>
-      <CashTendered total={money(order.totalMinor)} amount={money(order.payments[0]?.amountMinor ?? 0)}
-        onChangeAmount={(amount) => sale.setTender({ method: 'cash', amountMinor: amount.amount })} />
-      <ChangeDisplay change={money(order.changeDueMinor)} />
-      {order.balanceDueMinor > 0 ? <Text className="text-foreground">Balance due: {formatMoney(money(order.balanceDueMinor))}</Text> : null}
-      <Pressable accessibilityRole="button" disabled={order.balanceDueMinor > 0} onPress={sale.complete} className={`rounded-md bg-primary px-4 py-3 ${order.balanceDueMinor > 0 ? 'opacity-50' : ''}`}>
-        <Text className="text-center font-semibold text-primary-foreground">Complete sale</Text>
-      </Pressable>
-    </> : <>
-      <Text className="text-foreground">Card terminal: {formatMoney(money(order.totalMinor))}</Text>
-      <TextInput accessibilityLabel="Terminal reference" placeholder="Terminal reference" maxLength={REFERENCE_MAX}
-        value={order.payments[0]?.reference ?? ''}
-        onChangeText={(reference) => sale.setTender({ method: 'external', amountMinor: order.totalMinor, reference })} className="rounded-md border border-border px-3 py-2 text-foreground" />
-      <Pressable accessibilityRole="button" onPress={sale.complete} className="rounded-md bg-primary px-4 py-3"><Text className="text-center font-semibold text-primary-foreground">Payment approved on terminal</Text></Pressable>
-    </>}
-    {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
-    {sale.canContinue ? <>
-      <Text className="text-foreground">This sale is stored and will be sent. Continue to the next sale.</Text>
-      <Pressable accessibilityRole="button" onPress={() => sale.continueSale()} className="rounded-md bg-primary px-4 py-3">
-        <Text className="text-center font-semibold text-primary-foreground">Continue</Text>
-      </Pressable>
-    </> : null}
-    <Pressable accessibilityRole="button" onPress={sale.cancelTender} className="rounded-md border border-border bg-card px-4 py-3"><Text className="text-center text-foreground">Back</Text></Pressable>
-  </View>;
+function HostedPane({ sale, method, methods }: { sale: Sale; method: string; methods?: PaymentMethodDescriptor[] }) {
+  const [state, dispatch] = useReducer(tenderReducer, { methodId: method, balanceMinor: sale.order.balanceDueMinor }, initTenderState);
+  return <TenderPane sale={sale} state={state} dispatch={dispatch} methods={methods} />;
+}
+
+type TenderProps = { sale: Sale; methods?: PaymentMethodDescriptor[] };
+
+/** The tender pane with its own reducer, opened on the method `startTender` chose. Renders nothing outside the tender stage. */
+export function Tender({ sale, methods }: TenderProps): JSX.Element | null {
+  return sale.stage.kind === 'tender' ? <HostedPane sale={sale} method={sale.stage.method} methods={methods} /> : null;
+}
+
+/** @deprecated Use Tender: the pane now handles split payments. */
+export function SplitTender(props: TenderProps): JSX.Element {
+  return <Tender {...props} />;
 }

@@ -1,5 +1,8 @@
 import { businessDayOf } from '../register/session-store';
+import type { DatePreset } from './presets';
 import type { DayRange, ReportLine, ReportOrder, ReportRefund, StoreDay } from './types';
+
+const DAY_MS = 86_400_000;
 
 export interface Margin {
   costedNetMinor: number;
@@ -54,19 +57,30 @@ export function daysOf(range: DayRange): StoreDay[] {
   }
 }
 
-export function comparisonRange(range: DayRange, mode: 'previous' | 'week'): DayRange {
+/**
+ * The range a report is compared with, period to date. Port of WCPOS v2 `useReportsPeriod`
+ * (`screens/main/reports/context.tsx`). A week or month preset is a week or a month; any other
+ * range is a day (one day), a week (up to seven) or a month (longer). A day goes back one day
+ * (`previous`) or seven (`week`), and a week seven, so Monday to today meets the same weekdays of
+ * the week before. A month starts a month earlier, a 31st clamped to a shorter month's last day:
+ * a whole calendar month meets the whole month before, and any other range keeps its day count,
+ * so 1–10 Nov meets 1–10 Oct.
+ */
+export function comparisonRange(range: DayRange, mode: 'previous' | 'week', preset?: DatePreset): DayRange {
+  const iso = (at: number): StoreDay => new Date(at).toISOString().slice(0, 10);
   const [year, month, day] = range.from.split('-').map(Number);
   const from = Date.UTC(year, month - 1, day);
   const [toYear, toMonth, toDay] = range.to.split('-').map(Number);
   const to = Date.UTC(toYear, toMonth - 1, toDay);
-  if (mode === 'previous' && day === 1 && to === Date.UTC(year, month, 0)) {
-    return {
-      from: new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 10),
-      to: new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10),
-    };
+  const days = daysOf(range).length;
+  const period = preset?.endsWith('Month') ? 'month' : preset?.endsWith('Week') ? 'week' : days === 1 ? 'day' : days <= 7 ? 'week' : 'month';
+  if (period !== 'month') {
+    const shift = (period === 'day' && mode === 'previous' ? 1 : 7) * DAY_MS;
+    return { from: iso(from - shift), to: iso(to - shift) };
   }
-  const shift = (mode === 'week' ? 7 : daysOf(range).length) * 86_400_000;
-  return { from: new Date(from - shift).toISOString().slice(0, 10), to: new Date(to - shift).toISOString().slice(0, 10) };
+  const start = Date.UTC(year, month - 2, Math.min(day, new Date(Date.UTC(year, month - 1, 0)).getUTCDate()));
+  const wholeMonth = day === 1 && to === Date.UTC(year, month, 0);
+  return { from: iso(start), to: iso(wholeMonth ? Date.UTC(year, month - 1, 0) : start + (days - 1) * DAY_MS) };
 }
 
 export function marginOf(lines: readonly ReportLine[]): Margin {

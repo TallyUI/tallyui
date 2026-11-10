@@ -1,5 +1,44 @@
 # @tallyui/pos
 
+## 3.13.0
+
+### Minor Changes
+
+- 41fa7bf: Adds cash rounding to the tender: `roundedDue` rounds a balance to a hand-counted method's rounding increment, with halves rounding up, and `tenderRounding` gives the tender pane the rounded amount due and the signed rounding difference. These are figures only: nothing is added to the sale yet.
+- 73387ab: Adds cashier permissions: a connector may describe the signed-in cashier with an optional `cashier()` that returns neutral permissions (`viewReports`, `manageClosures`, `approveVariance`, `refund`, `discount`). In `@tallyui/pos`, `can()` and the `useCashier` hook read them and give the blind-count flag and a Reports gate; a connector without `cashier()` still allows everything, as before.
+- 31a244c: App settings gain a device-local `ui.theme` (`system`, `light` or `dark`, default `system`). The new `DisplaySettings` component lets the user choose the theme, the UI scale and the font set, and saves each choice through `useAppSettings`.
+- 9beba13: Adds open sales as cart tabs: `useSale` gains `switchSale` (it parks the current sale and opens a parked one, or a new one) and `closeSale`, and `openSales` lists the open sales for `OpenSaleTabs`, which shows each sale's customer or contents, its total and a Partly paid chip. A partly paid sale cannot be switched away from or closed until it is paid or its paid legs are voided.
+- e2d3a2b: The register outbox now counts the till updates the store rejected that hold up their register (`state.rejected`), and `requeue()` sends a rejected till update again under its own command id, except for the refusals the store records or that have their own exits (#366). The new `summarizeOutboxHealth`, `watchOutboxHealth` and `useOutboxHealth` give one summary of sales and till updates waiting, rejected or stuck, and whether either outbox needs the cashier to sign in again, with one `flush()` for both (#373).
+- 13f8a3b: Each payment on a sale now has a status (pending, authorized, captured, failed or voided). Only captured payments count toward the balance. A payment can be voided and stays on the sale, counting nothing, and a sale with a payment still in progress cannot complete.
+- c9ca7a2: Add a device-local app settings store: an `app_settings` collection that is never replicated, a typed `AppSettings` map with defaults (`ui.scale`, `ui.font`), `readAppSettings`/`writeAppSetting`, and a `useAppSettings` hook. Unknown or invalid stored values fall back to their defaults.
+- 3b32e4c: Add keyboard-wedge barcode scanning: `useBarcodeScanner` tells a scanner's fast burst of keys from a person typing and calls `onScan` with the code, along with retail barcode helpers ported from WCPOS v2 (UPC-A/EAN-13 leading-zero handling, check digits and a repeat-scan cooldown).
+- 6995e84: Add a shared CSV writer (`toCsv`, `csvFromCells`, `csvCell`) that quotes every cell and guards formula-leading text, as WCPOS v2's reports export does. The register's closures export now uses it, with unchanged output.
+- d4ae385: Add the customer display protocol: a versioned message envelope with `encodeDisplayMessage` and a `decodeDisplayMessage` that refuses anything it cannot trust, the five display actions, a cart snapshot over `ReceiptData` kept under 200 KiB, and a `displayReducer` for the idle, cart and payment screens.
+- 9e0a750: POS now describes a card reader or payment terminal through a backend-neutral `PaymentDriver` interface, with a registry that finds a payment method's driver by its `capture.provider`. A deterministic simulated driver, with injectable timers, approves, declines, cancels and times out on cue for tests and demos.
+- 53c6dc8: POS now prints through a `PrintTransport` interface, with `createPrintQueue` running each printer's jobs one at a time so a failed or stalled printer never holds up another. A device-local `printer_profiles` collection stores the printers set up on a till, and `createSystemPrintTransport` prints receipt HTML through the browser's print dialog, or through a `printHtml` function the app passes in on native (such as expo-print).
+- 5fedc5d: New receipt templates: `renderReceiptHtml` turns a `ReceiptData` into sanitised HTML with a default 80 mm or 58 mm template, and `receiptTemplateData`, `renderThermalPreview` and `sanitizeHtml` let an app render its own thermal-XML Mustache templates, sanitised with DOMPurify in a browser and parsed with xmldom on React Native. QR codes and barcodes render as placeholders for now.
+- d0dc455: Add sales figures for the Reports screen: totals, payments by method, top products and categories, taxes by rate, refunds on the day they were made and a per-day series with a comparison range, all by store day. Adapters read the till's own orders and refunds and the store's orders.
+- 9b6d07c: `refundableLines` shows what is still refundable on each order line after earlier refunds, as a quantity plus net and tax amounts. `priceRefund` prices a chosen refund by each line's cumulative share (ADR-080 amendment 2), caps each quantity at what remains, and returns the `order.refund` v1 payload lines.
+- 5cb82ce: `useRegisterSession` now returns `liveAtStore`, `approvalNeeded` and `closureApprovalStatus`, and `actions.reapproveClosure` sends a closure the store refused for its approval again with a new proof; at register contract 3 a close over the threshold on a session live at the store needs the store's proof, not `approvedBy` alone. The closure sheet shows "Approval not yet verified by the store" beside the approver until the store applies the closure with its proof.
+- d1c587e: At register contract 3 (ADR-082), the closure command is sent as version 3 and carries the store's opaque `approval` proof, which `closeSession` keeps on the session and never puts on the Z, a fact or a log. The store's approval threshold now wins over the app's `varianceThreshold`, and the new `closureVariance` helper and hook action give the variance an approval is bound to; a close whose `approvedVariance` no longer matches is refused.
+- 9f04b1b: Connectors can now offer the store's register directory through an optional `listRegisters`, which returns each register's id, name, default float and expected close time. `@tallyui/pos` adds `suggestFloat`, which suggests a register's opening float: its default float, else the cash counted at the last close.
+- 4a9f14c: The register outbox no longer lets a closure the store refused for its approval (`register_approval_required` or `register_approval_invalid`) block the register's other commands, but it holds the register's next closure until the refused one is approved again (ADR-082 decision 6). Requeue never resends either refusal, and neither counts in `rejected` or keeps a stuck clock on the held closure.
+- f52d025: Adds the Reports Sales room (`SalesRoom`, with its hero chart, figure cards and filters bar) to components, and the store-time date presets it uses (`presetRange`, `DATE_PRESETS`) to pos.
+- e4299f5: A reopened refused sale now keeps only the cashier's own note, so the "Refused by the store" text never goes out with `order.create` 7; a sale parked by 3.12.0 that still carries that first line has it dropped when the command is built. New `noteDelivery(order)` tells whether a stored sale's note was sent, and `Receipt` and `OrdersList` show the note and say when it couldn't be sent to the store.
+- 80c7a6b: A cashier can now add a note to a sale with `useSale().setNote()`; it is kept when the sale is parked and resumed, and cleared by a new sale. The note is sent to the store as `order.create` version 7, only to servers that advertise version 7 (ADR-083).
+
+### Patch Changes
+
+- Updated dependencies [73387ab]
+- Updated dependencies [0bf0072]
+- Updated dependencies [135eda4]
+- Updated dependencies [dfda46e]
+- Updated dependencies [7e12633]
+- Updated dependencies [c31eef8]
+- Updated dependencies [9f04b1b]
+- Updated dependencies [80c7a6b]
+  - @tallyui/core@3.13.0
+
 ## 3.12.0
 
 ### Minor Changes

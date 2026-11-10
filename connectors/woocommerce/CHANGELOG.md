@@ -1,5 +1,25 @@
 # @tallyui/connector-woocommerce
 
+## 3.13.0
+
+### Minor Changes
+
+- 135eda4: `CustomerServiceError` now has an optional `status`: the HTTP status the store answered with, or undefined when no response came. The WooCommerce, Medusa and Vendure connectors set it, so a retry can check the status instead of parsing the message.
+- e4e59d7: The WooCommerce connector now has `updateCustomer`: it edits a customer's name, email, phone, company, billing and shipping addresses and tax ids through WCPOS's own `push/customers` update, the same route `createCustomer` uses.
+
+### Patch Changes
+
+- 6014050: A catalogue reconcile pass that lists no page now skips the deletion check, so it no longer raises a false "kept on this till" message every hour (#376). The WooCommerce catalogue check now restarts in full after its listing fails on a fresh pass, instead of resuming and skipping deletions for a day (#376).
+- Updated dependencies [73387ab]
+- Updated dependencies [0bf0072]
+- Updated dependencies [135eda4]
+- Updated dependencies [dfda46e]
+- Updated dependencies [7e12633]
+- Updated dependencies [c31eef8]
+- Updated dependencies [9f04b1b]
+- Updated dependencies [80c7a6b]
+  - @tallyui/core@3.13.0
+
 ## 3.12.0
 
 ### Minor Changes

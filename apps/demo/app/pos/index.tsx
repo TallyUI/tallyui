@@ -33,6 +33,8 @@ const screens = [
   { href: '/pos/register/count', label: 'RegisterCount' },
   { href: '/pos/register/count-blind', label: 'RegisterCount (blind)' },
   { href: '/pos/register/closure', label: 'ClosureSheet' },
+  // Reports
+  { href: '/pos/reports/sales', label: 'Sales room' },
   // Settings
   { href: '/pos/connector-status', label: 'ConnectorStatus' },
   { href: '/pos/settings-group', label: 'SettingsGroup' },

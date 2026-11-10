@@ -1,5 +1,16 @@
 # @tallyui/theme
 
+## 3.13.0
+
+### Minor Changes
+
+- ff03391: Add font choices for the `ui.font` setting: the font-family tokens, face list and type sets (system, instrument, grotesk, fraunces, manrope) in `@tallyui/theme`, and a `FontProvider` in `@tallyui/components` that loads the chosen set through an app-supplied loader so `Text` draws its body or numbers face. No font files ship in the packages; each app bundles the OFL files and passes `loadFonts`.
+- 6296a06: Add the UI scale: nine size tokens for each of the compact, regular and spacious steps with Auto picking by window size, pointer floors for controls and rows, an opt-in `@tallyui/theme/scale.css`, and a `ScaleProvider` that applies the stored `ui.scale` setting on native and mirrors it onto the web document root so portals scale too. `Text` now caps the OS text multiplier at `MAX_FONT_SCALE` (1.3) unless a caller overrides it.
+
+### Patch Changes
+
+- 09d7140: `tokens.css` no longer wraps its `@variant light` and `@variant dark` blocks in `:root`, so the dark theme applies on web with Uniwind 1.4, which turned the wrapped rule into `:root .dark` and never matched. Token values are unchanged, and both themes still apply on web and native with Uniwind 1.3.
+
 ## 3.12.0
 
 ## 3.11.0

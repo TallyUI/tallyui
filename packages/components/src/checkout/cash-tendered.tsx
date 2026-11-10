@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View, type ViewProps } from 'react-native';
 
 import { formatMoney, minorUnitDigits, moneyFromDecimalString, type Money } from '@tallyui/core';
+import { quickTenderedAmounts } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 
 export interface CashTenderedProps extends Omit<ViewProps, 'children'> {
@@ -14,15 +15,12 @@ export interface CashTenderedProps extends Omit<ViewProps, 'children'> {
   className?: string;
 }
 
+/** Quick-cash round-ups in major units: WCPOS v2 tender-figures.ts:25 QUICK_TENDER_STEPS. */
+export const QUICK_CASH_STEPS = [5, 10, 50] as const;
+
 function defaultQuickAmounts(total: Money): Money[] {
   const unit = 10 ** minorUnitDigits(total.currency);
-  const amounts = [
-    total.amount,
-    Math.ceil(total.amount / (5 * unit)) * 5 * unit,
-    Math.ceil(total.amount / (10 * unit)) * 10 * unit,
-    Math.ceil(total.amount / (20 * unit)) * 20 * unit,
-  ];
-  return [...new Set(amounts)].sort((a, b) => a - b).map((amount) => ({ amount, currency: total.currency }));
+  return quickTenderedAmounts(total.amount, QUICK_CASH_STEPS.map((step) => step * unit)).map((amount) => ({ amount, currency: total.currency }));
 }
 
 export function CashTendered({
