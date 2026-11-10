@@ -32,6 +32,8 @@ export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before 
  */
 export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the payment or void the paid legs first.';
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
+// The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
+const REFERENCE_DROPPED = "The terminal's payment reference couldn't be kept";
 /**
  * How often a hung save re-asks `isStored`, while the order is built and its save is still in flight
  * and unconfirmed: an app whose tender has no New sale control while saving (the Front desk,
@@ -193,7 +195,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const paymentId = builder.addPayment(kept);
     if (dropped) {
       droppedReferences.current.add(paymentId);
-      setError(`The terminal's payment reference couldn't be kept (${dropped}); the payment is recorded without it.`);
+      setError(`${REFERENCE_DROPPED} (${dropped}); the payment is recorded without it.`);
     }
     try {
       if (dropped) saleLogger.warn("the terminal's payment reference was dropped", { reason: dropped, method: tender.method });
@@ -208,6 +210,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     droppedReferences.current.clear();
     setError(null);
     if (tender) addOne(tender);
+  }
+
+  /** addTender, voidTender and removeTender changed the tenders: a stale error goes, a dropped-reference message stays. */
+  function clearStaleError() {
+    setError((current) => current?.startsWith(REFERENCE_DROPPED) ? current : null);
   }
 
   /** Asks `isStored`; Continue is offered only once it confirms, for this attempt, with the completion still pending. */
@@ -450,10 +457,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const snapshot = builderNow.current.getSnapshot();
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
         if (due <= 0) return null;
-        setError(null); // the tenders change: a stale error goes (a dropped reference sets its own message)
+        clearStaleError(); // before addOne, which sets its own message for a dropped reference
         return addOne({ ...tender, amountMinor: Math.min(tender.amountMinor, due) });
       }
-      setError(null);
+      clearStaleError();
       return addOne(tender);
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
@@ -467,7 +474,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (!payment || (payment.method !== 'cash' && payment.method !== 'external') || !canVoidLeg(payment, paymentMethodOf(payment.method))) return false;
       builderNow.current.setPaymentStatus(paymentId, 'voided');
       droppedReferences.current.delete(paymentId);
-      setError(null);
+      clearStaleError();
       return true;
     },
     /** ADR-072: remove one tender and its dropped-reference warning. An id not among the payments changes nothing. */
@@ -476,7 +483,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (!builderNow.current.getSnapshot().payments.some((payment) => payment.id === paymentId)) return;
       builderNow.current.removePayment(paymentId);
       droppedReferences.current.delete(paymentId);
-      setError(null);
+      clearStaleError();
     },
     cancelTender() {
       if (locked()) return;
