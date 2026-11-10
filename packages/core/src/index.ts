@@ -44,6 +44,7 @@ export type {
 export type {
   StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, ListOrdersQuery, StoreOrderPage,
 } from './types/orders';
+export type { RegisterInfo } from './types/registers';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 
 export type {
