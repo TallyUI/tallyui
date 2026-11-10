@@ -22,6 +22,8 @@ const sale = useSale(settings, { registerId, cashierRef });
 
 Renders the sale's lines with quantity and removal controls, line and order discounts, totals, and cash or card terminal actions. Price editing appears when permitted, and the charge form appears when the sale's capabilities support it.
 
+The lines sit under [CartColumnHeads](/docs/components/cart-column-heads) (Qty, Item, Price, Total). Each line shows its variant attributes under the name, and its regular price struck through when the line costs less, from the line's `attributes` and `regularUnitPriceMinor`. The Price column is hidden when the cart is under 300 wide, or the window is under 768 wide or 480 tall. The Discount and Price actions sit with each line's quantity buttons.
+
 ## Props
 
 | Prop | Type | Default | Description |
