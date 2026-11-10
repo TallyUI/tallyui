@@ -5617,7 +5617,7 @@ interface OrderCreatePayload {
 
 ## ADR-082 Register contract 3: the close carries the store's approval
 
-- **Date:** 2026-11-10 · **Status:** Proposed · **Amends:** ADR-068 (decision 5's conflict table, decision 7's
+- **Date:** 2026-11-10 · **Status:** Accepted (front desk, 2026-11-10, with decision 9 as its condition) · **Amends:** ADR-068 (decision 5's conflict table, decision 7's
   approval, and the ledger rule), ADR-078 (decision 4's non-blocking codes) · **Relates to:** ADR-032 (local
   registers), ADR-070 (strict payloads), medusapos ADR 0023 (the store's half, shipped in plugin 0.3.0, medusapos#254),
   Paul's platform ruling of 2026-10-07 (each platform its own way; the core carries the platform's proof and invents
@@ -5858,18 +5858,70 @@ interface OrderCreatePayload {
        - the approval dialog against its route;
        - `approval`, `approvedBy` and `approvedVariance` passed to `closeSession`;
        - the "Manager approval needed again" card, from `approvalNeeded`.
-- **Open (for Paul or the front desk):**
+- **Rulings (front desk, 2026-11-10):** all six questions were decided as recommended:
   - Over the threshold and offline, the close is allowed with a recorded approver, and the store asks again later
-    (decision 5). *Recommend yes.*
-  - The store's threshold overrides the app's `varianceThreshold` (decision 3). *Recommend yes;* ADR 0023 says it
-    replaces the app's constant.
-  - The two codes are owned by core as TallyUI's wire, not left as connector-specific codes (decision 6). *Recommend
-    core,* as ADR 0023 says.
-  - The register's next closure is held behind a refused approval (decision 6). *Recommend yes.*
-  - The approval is bound to the variance (medusapos), not the counted map (WCPOS v2). *Recommend medusapos's.*
-  - When a second manager re-approves, the local Z keeps the first approver's name (decision 7). *Recommend accepting
-    this;* the store's record is the verified one.
+    (decision 5). This holds on the condition in decision 9.
+  - The store's threshold overrides the app's `varianceThreshold` (decision 3).
+  - The two codes are owned by core as TallyUI's wire (decision 6).
+  - The register's next closure is held behind a refused approval (decision 6).
+  - The approval is bound to the variance, as medusapos does, not the counted map (decision 7's rejected list).
+  - When a second manager re-approves, the local Z keeps the first approver's name (decision 7). The store's record is
+    the verified one.
+- **Decision 9, the front desk's condition: an approval is shown as unverified until the store accepts it.**
+  - A recorded approver must never be read as a verified one.
+  - This applies to a closure that needs a verified approval (contract 3, `registerApproval` present, over the
+    threshold). Until its `register.closure.submit` row is `applied`, the Z and the outbox show it as "Approval not yet
+    verified by the store". This covers an offline close, a close queued without `approval`, a pending row, and a row
+    refused with either code.
+  - The status is derived from the closure row; nothing new is stored. pos exports it as `closureApprovalStatus`, with
+    the values `'verified' | 'unverified' | 'not_required'`. `useRegisterSession` returns it for each closure it lists.
+  - The Z component and the outbox health view (unit 23) render `unverified` beside the approver's name. They show
+    the name alone only once the status is `verified`.
+  - This goes into build unit 4, with the Z rendering in `@tallyui/components`.
 - **Evidence:** medusapos `docs/adr/0023-pos-sign-in-and-approval.md` and plugin commit `ab091be` (medusapos#254);
   `packages/pos/src/register/register-commands.ts`, `register-adoption.ts`, `use-register-session.ts`,
   `register-count.helpers.ts`, `schemas.ts`; `packages/pos/src/outbox/register-outbox.ts`;
   `packages/core/src/types/connector.ts`; WCPOS v2 `approve-sheet.tsx` and `queue.ts` (monorepo `main`).
+
+## ADR-084 v2 parity: sync, hardware, the customer display and the Woo target (front desk rulings)
+
+- **Date:** 2026-11-10 · **Status:** Accepted (front desk, 2026-11-10) · **Amends:** ADR-067 (deferred), ADR-073
+  (superseded once the Woo transport unit lands) · **Relates to:** ADR-033, `docs/v2-parity/PLAN.md` Part C (Q1-Q4)
+- **Context:** WCPOS 2.0 shipped on 2026-11-09. It is now the target for TallyUI's shared libraries and for the three
+  platform apps. The v2 parity plan raised four questions that the backlog could not settle alone.
+- **Decision:**
+  1. **Sync (Q1).**
+     - ADR-067 is **deferred, not withdrawn**. TallyUI keeps its own sync: pull, reconcile and the command outbox.
+       It ports the v2 behaviours it lacks (plan unit 34).
+     - The ported behaviours sit behind the same seams `@wcpos/sync-core` and `@wcpos/sync-engine` would fill. The
+       units that port them name the seam in their PR.
+     - Switching to the packages needs two things to be true:
+       - the packages are public;
+       - Paul says to switch.
+     - Until then, monorepo `main` is read only as reference, and nothing reads the private packages.
+  2. **Hardware in the MIT packages (Q2).**
+     - These go in the MIT packages: the hardware interfaces (`PaymentDriver`, `PrintTransport`), the simulated card
+       driver, the system print transport and the ESC/POS encoder. They are protocols and logic.
+     - Vendor SDK drivers (Stripe Terminal, SumUp, Epson, Star and the like) stay out. Paul decides them, and the
+       front desk asks him; none are built meanwhile.
+     - ADR-033's rule that hardware drivers stay splittable stands.
+  3. **Customer display (Q3).**
+     - The first transport is a second window on the same device, over BroadcastChannel (plan unit 37). It is proven
+       in Playwright Chromium.
+     - LAN pairing comes later, through each backend's own server-plugin signalling. It does not copy v2's
+       WordPress/Pro WebRTC path.
+  4. **The WooCommerce target (Q4).**
+     - The Woo connector moves onto WCPOS 2.0's `wcpos/v2` endpoints: the payments ledger, `orders/{id}/close` and
+       refunds. ADR-073's 1.10.x push transport is retired when that unit lands.
+     - Any server change goes only into TallyUI's own fork of the plugin. Nothing goes to `wcpos/woocommerce-pos` or
+       `woocommerce-pos-pro`.
+     - Development uses TallyUI's own dev store. Nothing is installed, updated or written on dev-pro, dev-free or
+       demo.wcpos.com, because they share the production database.
+     - A real WCPOS bug found on the way is reported to the front desk in one line. It is not fixed here.
+- **Consequences:**
+  - Plan unit 34 (connectivity and the update latch) is unblocked.
+  - Units 17, 29 and 38 build the interfaces, the simulated driver, the system transport and the ESC/POS encoder,
+    and nothing vendor-specific.
+  - Unit 37 is unblocked.
+  - The Woo transport unit starts when the tallyui-woocommerce worker asks for it. The worker asked on 2026-11-10.
+  - Door: one-way for Q4 (the order wire to Woo stores). Q1-Q3 are two-way.
