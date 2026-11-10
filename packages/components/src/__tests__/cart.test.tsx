@@ -8,10 +8,12 @@ import { formatMoney } from '@tallyui/core';
 import { Cart } from '../sale/cart';
 import { blue, click, discount, pricing, SaleHarness, sale, totals, traits } from './sale-harness';
 
-// jsdom has no window size; the Cart sees a tablet so its Price column shows.
+// jsdom has no window size; the Cart sees a tablet so its Price column shows, unless a test sets a phone.
+const tablet = { width: 1024, height: 768, scale: 1, fontScale: 1 };
+let dimensions = tablet;
 vi.mock('react-native', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-native')>()),
-  useWindowDimensions: () => ({ width: 1024, height: 768, scale: 1, fontScale: 1 }),
+  useWindowDimensions: () => dimensions,
 }));
 
 const money = (amount: number) => formatMoney({ amount, currency: 'EUR' })!;
@@ -20,7 +22,7 @@ const notHead = { ignore: '[role="columnheader"] *' };
 // A cart line's row: the name's cell, then its row.
 const row = (name: string) => screen.getByText(name).parentElement!.parentElement!;
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); dimensions = tablet; });
 
 describe('Cart', () => {
   it.each([undefined, 1, 2, 3, 4])('hides Add charge below orderCreate 5 (%s)', (orderCreate) => {
@@ -174,6 +176,25 @@ describe('Cart', () => {
   it('shows the column heads', () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     expect(screen.getAllByRole('columnheader').map((head) => head.textContent)).toEqual(['Qty', 'Item', 'Price', 'Total']);
+  });
+
+  it('folds the Price head and price cells on a phone window, keeping Total', () => {
+    dimensions = { ...tablet, width: 400, height: 800 };
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.getAllByRole('columnheader').map((head) => head.textContent)).toEqual(['Qty', 'Item', 'Total']);
+    expect(within(row('Shirt')).getAllByText(money(1250))).toHaveLength(1);
+  });
+
+  it('folds the Price column when the cart lays out under 300 wide', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(within(row('Shirt')).getAllByText(money(1250))).toHaveLength(2);
+    // react-native-web keeps a View's onLayout on its node (useElementLayout); jsdom has no ResizeObserver to call it.
+    const wrapper = screen.getByRole('row').parentElement as HTMLElement & { __reactLayoutHandler: (event: unknown) => void };
+    act(() => wrapper.__reactLayoutHandler({ nativeEvent: { layout: { x: 0, y: 0, width: 299, height: 600 } } }));
+    expect(screen.getAllByRole('columnheader').map((head) => head.textContent)).toEqual(['Qty', 'Item', 'Total']);
+    expect(within(row('Shirt')).getAllByText(money(1250))).toHaveLength(1);
   });
 
   it("shows a line's attributes as rows", () => {
