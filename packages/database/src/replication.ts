@@ -4,6 +4,8 @@ import { BehaviorSubject, type Observable } from 'rxjs';
 
 import { errorKind, type ReplicationAdapter, type SyncContext, type SyncNotice } from '@tallyui/core';
 
+import type { ConnectivityTracker } from './connectivity';
+
 /** The longest backoff between pull retries, and a store error's wait: 5 minutes. */
 export const MAX_RETRY_TIME_MS = 5 * 60 * 1000;
 
@@ -58,6 +60,11 @@ export interface StartReplicationOptions<RxDocType, CheckpointType = any> {
   autoStart?: boolean;
   /** The backoff's ceiling and a store error's wait, in ms (default: MAX_RETRY_TIME_MS); tests shorten it. */
   maxRetryTimeMs?: number;
+  /**
+   * Fed with every pull and push outcome. While its update-required latch is set, the pull pauses and the push throws,
+   * neither calling the adapter (v2 sends nothing once latched). `resume()` keeps the latch: reset it first.
+   */
+  connectivity?: ConnectivityTracker;
 }
 
 /** RxDB's replication state plus the pull notice and a way to restart after a till error. */
@@ -98,6 +105,7 @@ export function startReplication<RxDocType, CheckpointType = any>({
   retryTime = 5000,
   autoStart = true,
   maxRetryTimeMs = MAX_RETRY_TIME_MS,
+  connectivity,
 }: StartReplicationOptions<RxDocType, CheckpointType>): TallyReplicationState<RxDocType, CheckpointType> {
   // Pull errors fall in three classes by who can fix them (errorKind):
   // - till (sign in again): one notice, pause, and an empty page (RxDB stores no
@@ -119,7 +127,7 @@ export function startReplication<RxDocType, CheckpointType = any>({
     if (state) state.retryTime = ms;
   };
   const pullHandler = async (checkpoint: CheckpointType | undefined, batchSize: number) => {
-    if (tillStopped) {
+    if (tillStopped || connectivity?.current().updateRequired) {
       void state?.pause();
       return { documents: [], checkpoint };
     }
@@ -130,6 +138,7 @@ export function startReplication<RxDocType, CheckpointType = any>({
     }
     try {
       const result = await adapter.pull.handler(checkpoint, batchSize, context);
+      connectivity?.recordSuccess();
       failures = 0;
       storeError = undefined;
       storeRetryAt = 0;
@@ -137,6 +146,7 @@ export function startReplication<RxDocType, CheckpointType = any>({
       setRetryTime(retryTime);
       return result;
     } catch (error) {
+      connectivity?.recordFailure(error);
       const kind = errorKind(error);
       if (kind === 'transient') {
         const backoff = Math.min(retryTime * 2 ** failures++, maxRetryTimeMs);
@@ -176,7 +186,18 @@ export function startReplication<RxDocType, CheckpointType = any>({
     },
     push: adapter.push
       ? {
-          handler: (rows) => adapter.push!.handler(rows, context),
+          handler: async (rows) => {
+            if (!connectivity) return adapter.push!.handler(rows, context);
+            if (connectivity.current().updateRequired) throw new Error('update required: push held');
+            try {
+              const conflicts = await adapter.push!.handler(rows, context);
+              connectivity.recordSuccess();
+              return conflicts;
+            } catch (error) {
+              connectivity.recordFailure(error);
+              throw error;
+            }
+          },
           batchSize: adapter.push.batchSize,
         }
       : undefined,

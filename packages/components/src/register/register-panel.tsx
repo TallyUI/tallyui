@@ -3,6 +3,7 @@ import { ScrollView, useWindowDimensions, View } from 'react-native';
 import type { MovementType, useRegisterSession } from '@tallyui/pos';
 
 import { formatMoney } from '@tallyui/core';
+import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog';
 import { IconButton } from '../ui/icon-button';
@@ -48,7 +49,7 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
     try {
       await action();
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     }
   };
   // Refused cash keeps a panel open on its own in WCPOS; there is no outbox here to refuse a

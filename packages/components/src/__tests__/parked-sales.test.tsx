@@ -205,8 +205,21 @@ it('catches a thrown resume error and keeps the draft and sheet', async () => {
     await (await db.pos_drafts.findOne(id).exec())!.incrementalPatch({ data: '{' });
   });
   fireEvent.click(screen.getByTestId(`parked-resume-${id}`));
-  await waitFor(() => expect(screen.getByTestId('parked-sales-error').textContent).toContain('SyntaxError'));
+  const error = await waitFor(() => screen.getByTestId('parked-sales-error'));
+  expect(error.textContent).toBeTruthy();
+  expect(error.textContent).not.toContain('SyntaxError');
   expect(await db.pos_drafts.findOne(id).exec()).not.toBeNull();
   expect(sale.order.lineItems).toHaveLength(0);
   expect(onOpenChange).not.toHaveBeenCalled();
+});
+
+it('shows a thrown error by its message alone, without its class name', async () => {
+  class FooError extends Error {
+    name = 'FooError';
+  }
+  renderSheet({ onResume: () => Promise.reject(new FooError('Finish first')) });
+  addLines();
+  const id = await parkCurrentSale();
+  fireEvent.click(screen.getByTestId(`parked-resume-${id}`));
+  await waitFor(() => expect(screen.getByTestId('parked-sales-error').textContent).toBe('Finish first'));
 });

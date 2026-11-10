@@ -33,3 +33,4 @@ The lines sit under [CartColumnHeads](/docs/components/cart-column-heads) (Qty, 
 | `taxClasses` | `ReadonlyArray<{ id: string; label: string }>` | --- | Tax class choices passed to the charge form |
 | `canEditPrice` | `boolean` | `false` | Shows a Price action on each line; pass the till's price-edit permission |
 | `onPriceChange` | `(change: { lineId: string; fromMinor: number; toMinor: number; reason?: string }) => void` | --- | Called after a price is applied for the app's audit log; the reason is kept only in this callback |
+| `quickDiscounts` | `readonly number[]` | --- | Quick-discount keys on each line's [PriceForm](/docs/components/price-form), e.g. the app's `cart.quickDiscounts` setting (default `[5, 10, 15]`); needs `canEditPrice` |

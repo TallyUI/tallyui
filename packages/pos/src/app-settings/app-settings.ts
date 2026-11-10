@@ -22,6 +22,11 @@ export interface AppSettings {
   'ui.scale': UiScale;
   /** A font id; `'auto'` follows the theme. Not an enum: the font list lives in the UI layer. */
   'ui.font': string;
+  /**
+   * The cart's quick-discount keys in percent, for `Cart`'s `quickDiscounts`. v2 keeps them per screen,
+   * `pos-cart.quickDiscounts: [5, 10, 15]` (`core/src/screens/main/contexts/ui-settings/initial-settings.json`).
+   */
+  'cart.quickDiscounts': readonly number[];
 }
 export type AppSettingKey = keyof AppSettings;
 
@@ -37,11 +42,19 @@ export const APP_SETTING_DEFINITIONS: { [K in AppSettingKey]: AppSettingDefiniti
     default: 'auto',
     parse: (value) => typeof value === 'string' && value.length > 0 && value.length <= 64 ? value : undefined,
   },
+  'cart.quickDiscounts': {
+    default: [5, 10, 15],
+    // As v2's `ensureNumberArray`: only real percentages (0 < n <= 100) survive; an empty list is no keys.
+    parse: (value) => Array.isArray(value)
+      ? value.filter((n): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= 100)
+      : undefined,
+  },
 };
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   'ui.theme': APP_SETTING_DEFINITIONS['ui.theme'].default,
   'ui.scale': APP_SETTING_DEFINITIONS['ui.scale'].default,
   'ui.font': APP_SETTING_DEFINITIONS['ui.font'].default,
+  'cart.quickDiscounts': APP_SETTING_DEFINITIONS['cart.quickDiscounts'].default,
 };
 
 /** One stored setting. `value` is the JSON encoding of the setting's value, so the schema never changes when a key is added. */
@@ -86,8 +99,10 @@ export function appSettings$(collection: AppSettingCollection): Observable<AppSe
 export async function writeAppSetting<K extends AppSettingKey>(
   collection: AppSettingCollection, key: K, value: AppSettings[K],
 ): Promise<void> {
-  if (APP_SETTING_DEFINITIONS[key].parse(value) === undefined) {
+  // The parsed value is stored, so a list keeps only what a read would keep.
+  const parsed = APP_SETTING_DEFINITIONS[key].parse(value);
+  if (parsed === undefined) {
     throw new Error(`writeAppSetting: invalid value for ${key}`);
   }
-  await collection.upsert({ key, value: JSON.stringify(value) });
+  await collection.upsert({ key, value: JSON.stringify(parsed) });
 }

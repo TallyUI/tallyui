@@ -10,13 +10,15 @@ import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, taxClasses, afterSubtotal, couponDiscountMinor }:
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
     /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
     canEditPrice?: boolean;
     /** Called after a price is applied, for the app's audit log. The reason is kept only here. */
     onPriceChange?: (change: { lineId: string; fromMinor: number; toMinor: number; reason?: string }) => void;
+    /** v2's quick-discount keys on each line's Price form (e.g. the app's `cart.quickDiscounts` setting); needs `canEditPrice`. */
+    quickDiscounts?: readonly number[];
     /** Rows under the totals' Subtotal, e.g. the platform's coupon chips (passed to CartTotal). */
     afterSubtotal?: ReactNode;
     /** The coupon amount the app itemises in `afterSubtotal` (e.g. Σ `order.display.coupons`), in integer minor units of
@@ -65,7 +67,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     </CartLineActions>
     {discountForm(line.id, `Discount on ${line.name}`)}
     {canEditPrice && form?.type === 'price' && form.lineId === line.id ? <PriceForm key={line.id} lineName={line.name}
-      currency={order.currency} currentMinor={line.unitPriceMinor} onClose={() => setForm(null)}
+      currency={order.currency} currentMinor={line.unitPriceMinor} quickDiscounts={quickDiscounts} onClose={() => setForm(null)}
       onApply={(amount, reason) => {
         const fromMinor = line.unitPriceMinor;
         const refused = sale.setUnitPrice(line.id, amount);

@@ -1,0 +1,56 @@
+---
+title: SwitchConfirm
+description: SwitchConfirm asks before a cashier switch, a register switch or a sign-out, and names what the switch leaves behind.
+---
+
+## Import
+
+```tsx
+import { SwitchConfirm } from '@tallyui/components';
+import { switchWarnings } from '@tallyui/pos';
+```
+
+## Usage
+
+```tsx
+const warnings = switchWarnings({
+  kind: 'cashier',
+  outbox: health,
+  parkedSales: parked.length,
+  paidMinor: 0,
+  sessionStatus: register.session?.status,
+});
+
+<SwitchConfirm
+  kind="cashier"
+  warnings={warnings}
+  targetName="Sam"
+  registerName="Till 1"
+  onConfirm={() => switchCashier()}
+  onCancel={() => setConfirmOpen(false)}
+  onPrintHandover={() => printHandoverSlip()}
+/>
+```
+
+## Behaviour
+
+- **Cashier switch:** asks "Hand the till to Sam?" and says the drawer stays open on the register. The "Print hand-over slip" action is shown when `onPrintHandover` is passed.
+- **Register switch:** asks "Switch to Till 2?". When a session is open, it says that session's drawer stays open for whoever is there.
+- **Sign-out with an open session:** names the register and the expected amount (no amount while blind), and offers "Close register" when `onCloseRegister` is passed. Without an open session it asks "Sign out?".
+- **Warnings:** each warning from `switchWarnings` is listed: unsent sales, unsent till updates, parked sales and a partly paid sale.
+- **Unsent sales:** the confirm label gains "anyway", for example "Hand over to Sam anyway".
+- **Dismissing:** closing the dialog calls `onCancel`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `kind` | `'cashier' \| 'register' \| 'signOut'` | required | Which switch is being confirmed |
+| `warnings` | `SwitchWarnings` | required | The result of `switchWarnings(...)` from `@tallyui/pos` |
+| `targetName` | `string` | --- | The cashier or register switched to; unused for `signOut` |
+| `registerName` | `string` | --- | The bound register's name, used in the descriptions and the sign-out title |
+| `amount` | `string` | --- | A formatted expected cash amount for the sign-out title; omit while blind |
+| `onConfirm` | `() => void` | required | Called on the confirm action |
+| `onCancel` | `() => void` | required | Called on Cancel or when the dialog is dismissed |
+| `onCloseRegister` | `() => void` | --- | Sign-out with an open session: shows "Close register", which calls this |
+| `onPrintHandover` | `() => void` | --- | Cashier switch: shows "Print hand-over slip", which calls this |

@@ -75,3 +75,24 @@ it('uses a last count that arrives after the local query, without replacing type
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect((screen.getByTestId('open-register-amount') as HTMLInputElement).value).toBe('600');
 });
+
+it('shows a thrown error by its message alone, without its class name', async () => {
+  class FooError extends Error {
+    name = 'FooError';
+  }
+  render(
+    <RegisterHarness db={db}>
+      {(register) => (
+        <OpenRegisterCard
+          register={{ ...register, actions: { ...register.actions, openSession: () => Promise.reject(new FooError('Finish first')) } }}
+          currency="EUR"
+          configuredFloatMinor={20000}
+        />
+      )}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect((screen.getByTestId('open-register-amount') as HTMLInputElement).value).toBe('200.00'));
+  fireEvent.click(screen.getByTestId('open-register-button'));
+  await waitFor(() => expect(screen.getByText('Finish first')).toBeTruthy());
+  expect(screen.queryByText(/FooError/)).toBeNull();
+});

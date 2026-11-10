@@ -99,10 +99,12 @@ export type {
 export {
   PrintError, toPrintError, createPrintQueue, SYSTEM_PRINTER_ID, PRINTER_PROFILES_COLLECTION, printerProfileSchema,
   printerProfileCollection, addPrinterProfileCollection, createSystemPrintTransport, SYSTEM_PRINT_TIMING,
+  escpos, encodeEscPos, createEscPosTransport, ESCPOS_CODE_PAGES,
 } from './print';
 export type {
   PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
   PrinterProfile, PrinterProfileCollection, SystemPrintTransportOptions,
+  EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions,
 } from './print';
 
 // Sale
@@ -144,6 +146,8 @@ export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlrea
 export { roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';
 export { suggestFloat, type FloatSuggestion } from './register';
+export { switchWarnings, handoverSlip } from './register';
+export type { SwitchKind, SwitchWarning, SwitchWarningInput, SwitchWarnings, HandoverSlipInput, HandoverSlipData } from './register';
 
 // Reports
 export { salesFigures, marginOf, comparisonRange, daysOf, inRange, presetRange, DATE_PRESETS, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';

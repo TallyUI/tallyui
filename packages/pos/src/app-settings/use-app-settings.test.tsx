@@ -27,7 +27,7 @@ afterEach(async () => {
 it('returns stored values, re-renders on change, and writes through the setter', async () => {
   await writeAppSetting(db.app_settings, 'ui.font', 'grotesk');
   const { result } = renderHook(() => useAppSettings(db.app_settings));
-  await waitFor(() => expect(result.current.settings).toEqual({ 'ui.theme': 'system', 'ui.scale': 'auto', 'ui.font': 'grotesk' }));
+  await waitFor(() => expect(result.current.settings).toEqual({ ...DEFAULT_APP_SETTINGS, 'ui.font': 'grotesk' }));
 
   await act(async () => {
     await writeAppSetting(db.app_settings, 'ui.scale', 'compact');

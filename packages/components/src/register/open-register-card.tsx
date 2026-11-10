@@ -5,6 +5,7 @@ import { parseMinor, validAmount } from '@tallyui/pos';
 
 import { currencySymbol, formatMoney, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -48,7 +49,7 @@ export function OpenRegisterCard({ register, currency, configuredFloatMinor, cla
     try {
       await register.actions.openSession({ expectedFloatMinor, countedFloatMinor: countedMinor });
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

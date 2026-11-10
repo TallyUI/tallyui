@@ -140,6 +140,20 @@ describe('Cart', () => {
     expect(screen.queryByTestId('price-form')).toBeNull();
   });
 
+  it("applies a line's quick-discount key through the price path, and draws no keys without the prop", () => {
+    const onPriceChange = vi.fn();
+    const { rerender } = render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    fireEvent.click(screen.getByText('Price', notHead));
+    expect(screen.queryByTestId('price-quick-discounts')).toBeNull();
+    rerender(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice quickDiscounts={[5, 10, 15]} onPriceChange={onPriceChange} />}</SaleHarness>);
+    const lineId = sale.order.lineItems[0].id;
+    fireEvent.click(screen.getByRole('button', { name: 'Discount (10%)' }));
+    fireEvent.click(screen.getByTestId('price-apply'));
+    expect(sale.order.lineItems[0].unitPriceMinor).toBe(1125);
+    expect(onPriceChange).toHaveBeenCalledExactlyOnceWith({ lineId, fromMinor: 1250, toMinor: 1125, reason: undefined });
+  });
+
   it('renders lines with their display amount, each discount chip with its own display amount, and the order chip with orderDiscountMinor', () => {
     render(<SaleHarness capabilities={{ orderCreate: 2 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     act(() => { sale.add(blue, traits); sale.add(blue, traits); });

@@ -57,6 +57,51 @@ describe('PriceForm', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it.each([[undefined], [[]], [[0, 150, Number.NaN]]])('draws no quick keys for %j', (quickDiscounts) => {
+    render(<PriceForm lineName="Shirt" currency="EUR" currentMinor={1250} quickDiscounts={quickDiscounts}
+      onApply={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByTestId('price-quick-discounts')).toBeNull();
+  });
+
+  it("draws v2's first three keys in order, lights the pressed one and applies the price less its percent", () => {
+    const onApply = vi.fn().mockReturnValue(null);
+    render(<PriceForm lineName="Shirt" currency="EUR" currentMinor={1250} quickDiscounts={[5, 10, 15, 20]}
+      onApply={onApply} onClose={vi.fn()} />);
+    const keys = screen.getAllByRole('button').filter((key) => key.getAttribute('aria-label')?.startsWith('Discount'));
+    expect(keys.map((key) => [key.textContent, key.getAttribute('aria-label')]))
+      .toEqual([['−5%', 'Discount (5%)'], ['−10%', 'Discount (10%)'], ['−15%', 'Discount (15%)']]);
+    const selected = () => keys.map((key) => key.getAttribute('aria-selected'));
+    fireEvent.click(screen.getByTestId('price-discount-10'));
+    expect(selected()).toEqual(['false', 'true', 'false']);
+    expect(screen.getByTestId('price-quick-draft').textContent)
+      .toBe(`${formatMoney({ amount: 1250, currency: 'EUR' })} −10% → ${formatMoney({ amount: 1125, currency: 'EUR' })}`);
+    fireEvent.click(screen.getByTestId('price-discount-10'));
+    expect(selected()).toEqual(['false', 'false', 'false']);
+    expect(screen.queryByTestId('price-quick-draft')).toBeNull();
+    fireEvent.click(screen.getByTestId('price-discount-10'));
+    fireEvent.click(screen.getByTestId('price-apply'));
+    expect(onApply).toHaveBeenCalledExactlyOnceWith(1125, undefined);
+  });
+
+  it('typing after a key starts over with the typed price', () => {
+    const onApply = vi.fn().mockReturnValue(null);
+    render(<PriceForm lineName="Shirt" currency="EUR" currentMinor={1250} quickDiscounts={[10]} onApply={onApply} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('price-discount-10'));
+    fireEvent.change(screen.getByTestId('price-input'), { target: { value: '9' } });
+    expect(screen.getByTestId('price-discount-10').getAttribute('aria-selected')).toBe('false');
+    fireEvent.click(screen.getByTestId('price-apply'));
+    expect(onApply).toHaveBeenCalledExactlyOnceWith(900, undefined);
+  });
+
+  // 1999 × 0.875 = 1749.125; 1250 × 0.95 = 1187.5, half up.
+  it.each([[1999, 12.5, 1749], [1250, 5, 1188]])('rounds %i less %s percent to %i minor units', (currentMinor, percent, expected) => {
+    const onApply = vi.fn().mockReturnValue(null);
+    render(<PriceForm lineName="Shirt" currency="EUR" currentMinor={currentMinor} quickDiscounts={[percent]} onApply={onApply} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId(`price-discount-${percent}`));
+    fireEvent.click(screen.getByTestId('price-apply'));
+    expect(onApply).toHaveBeenCalledExactlyOnceWith(expected, undefined);
+  });
+
   it('closes on Cancel without applying', () => {
     const onApply = vi.fn();
     const onClose = vi.fn();

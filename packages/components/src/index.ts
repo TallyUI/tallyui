@@ -159,6 +159,10 @@ export {
   type RegisterCountProps,
   ClosureSheet,
   type ClosureSheetProps,
+  SwitchConfirm,
+  type SwitchConfirmProps,
+  HandoverSlip,
+  type HandoverSlipProps,
 } from './register';
 
 // Settings components

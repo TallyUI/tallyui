@@ -10,6 +10,7 @@ import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
 import type { PaymentMethodDescriptor } from './payment-methods';
 import type { RegisterInfo } from './registers';
 import type { Cashier } from './cashier';
+import type { FailureClass } from '../connectivity';
 
 /**
  * Authentication configuration for a connector.
@@ -369,4 +370,11 @@ export interface TallyConnector {
    * Permission names outside `CashierPermission` are dropped by `useCashier` (`cashierPermissions`).
    */
   cashier?: (context: SyncContext) => Promise<Cashier | null>;
+  /**
+   * Maps one of this connector's request failures (pull, push, reconcile, online calls) to a connectivity verdict or
+   * its own update-required refusal (v2 parity A6). Synchronous and pure. `null` when the failure says nothing about
+   * connectivity (a validation refusal). `undefined` (no method) uses `neutralFailureClass`, which a connector's own
+   * method may also call for the failures it does not map.
+   */
+  classifyFailure?: (error: unknown) => FailureClass;
 }

@@ -2,6 +2,7 @@ import { useState, type JSX } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import type { ParkedOrderSummary, useSale } from '@tallyui/pos';
+import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog';
 import { IconButton } from '../ui/icon-button';
@@ -33,7 +34,7 @@ export function ParkedSales({ sale, parked, onDiscard, onPark, onResume, currenc
     try {
       await action();
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     }
   };
 

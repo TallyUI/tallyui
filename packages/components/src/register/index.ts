@@ -10,3 +10,5 @@ export { RegisterPanel, type RegisterPanelProps } from './register-panel';
 export { RegisterColumn, type RegisterColumnProps } from './register-column';
 export { RegisterCount, APPROVAL_REQUIRED_TEXT, type RegisterCountProps } from './register-count';
 export { ClosureSheet, type ClosureSheetProps } from './closure-sheet';
+export { SwitchConfirm, type SwitchConfirmProps } from './switch-confirm';
+export { HandoverSlip, type HandoverSlipProps } from './handover-slip';
