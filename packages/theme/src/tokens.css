@@ -59,115 +59,113 @@
 }
 
 @layer theme {
-  :root {
-    @variant light {
-      /* Base */
-      --color-background: #f8f9fa;
-      --color-foreground: #111827;
+  @variant light {
+    /* Base */
+    --color-background: #f8f9fa;
+    --color-foreground: #111827;
 
-      /* Card */
-      --color-card: #ffffff;
-      --color-card-foreground: #111827;
+    /* Card */
+    --color-card: #ffffff;
+    --color-card-foreground: #111827;
 
-      /* Popover */
-      --color-popover: #ffffff;
-      --color-popover-foreground: #111827;
+    /* Popover */
+    --color-popover: #ffffff;
+    --color-popover-foreground: #111827;
 
-      /* Primary */
-      --color-primary: #5b5ef0;
-      --color-primary-foreground: #ffffff;
+    /* Primary */
+    --color-primary: #5b5ef0;
+    --color-primary-foreground: #ffffff;
 
-      /* Secondary */
-      --color-secondary: #f3f4f6;
-      --color-secondary-foreground: #111827;
+    /* Secondary */
+    --color-secondary: #f3f4f6;
+    --color-secondary-foreground: #111827;
 
-      /* Muted */
-      --color-muted: #f3f4f6;
-      --color-muted-foreground: #656c79;
+    /* Muted */
+    --color-muted: #f3f4f6;
+    --color-muted-foreground: #656c79;
 
-      /* Accent */
-      --color-accent: #f3f4f6;
-      --color-accent-foreground: #111827;
+    /* Accent */
+    --color-accent: #f3f4f6;
+    --color-accent-foreground: #111827;
 
-      /* Destructive */
-      --color-destructive: #dc2626;
-      --color-destructive-foreground: #ffffff;
+    /* Destructive */
+    --color-destructive: #dc2626;
+    --color-destructive-foreground: #ffffff;
 
-      /* Success */
-      --color-success: #047857;
-      --color-success-foreground: #ffffff;
+    /* Success */
+    --color-success: #047857;
+    --color-success-foreground: #ffffff;
 
-      /* Warning */
-      --color-warning: #b45309;
-      --color-warning-foreground: #ffffff;
+    /* Warning */
+    --color-warning: #b45309;
+    --color-warning-foreground: #ffffff;
 
-      /* Info */
-      --color-info: #2563eb;
-      --color-info-foreground: #ffffff;
+    /* Info */
+    --color-info: #2563eb;
+    --color-info-foreground: #ffffff;
 
-      /* Border / Input / Ring */
-      --color-border: #e5e7eb;
-      --color-input: #848a94;
-      --color-ring: #5b5ef0;
+    /* Border / Input / Ring */
+    --color-border: #e5e7eb;
+    --color-input: #848a94;
+    --color-ring: #5b5ef0;
 
-      /* Commerce */
-      --color-price: #047857;
-      --color-sale: #dc2626;
-    }
+    /* Commerce */
+    --color-price: #047857;
+    --color-sale: #dc2626;
+  }
 
-    @variant dark {
-      /* Base */
-      --color-background: #0d1117;
-      --color-foreground: #c9d1d9;
+  @variant dark {
+    /* Base */
+    --color-background: #0d1117;
+    --color-foreground: #c9d1d9;
 
-      /* Card */
-      --color-card: #161b22;
-      --color-card-foreground: #c9d1d9;
+    /* Card */
+    --color-card: #161b22;
+    --color-card-foreground: #c9d1d9;
 
-      /* Popover */
-      --color-popover: #1c2128;
-      --color-popover-foreground: #c9d1d9;
+    /* Popover */
+    --color-popover: #1c2128;
+    --color-popover-foreground: #c9d1d9;
 
-      /* Primary */
-      --color-primary: #818cf8;
-      --color-primary-foreground: #1e1b4b;
+    /* Primary */
+    --color-primary: #818cf8;
+    --color-primary-foreground: #1e1b4b;
 
-      /* Secondary */
-      --color-secondary: #1c2128;
-      --color-secondary-foreground: #c9d1d9;
+    /* Secondary */
+    --color-secondary: #1c2128;
+    --color-secondary-foreground: #c9d1d9;
 
-      /* Muted */
-      --color-muted: #1c2128;
-      --color-muted-foreground: #8b949e;
+    /* Muted */
+    --color-muted: #1c2128;
+    --color-muted-foreground: #8b949e;
 
-      /* Accent */
-      --color-accent: #1c2128;
-      --color-accent-foreground: #c9d1d9;
+    /* Accent */
+    --color-accent: #1c2128;
+    --color-accent-foreground: #c9d1d9;
 
-      /* Destructive */
-      --color-destructive: #f85149;
-      --color-destructive-foreground: #0d1117;
+    /* Destructive */
+    --color-destructive: #f85149;
+    --color-destructive-foreground: #0d1117;
 
-      /* Success */
-      --color-success: #3fb950;
-      --color-success-foreground: #0d1117;
+    /* Success */
+    --color-success: #3fb950;
+    --color-success-foreground: #0d1117;
 
-      /* Warning */
-      --color-warning: #d29922;
-      --color-warning-foreground: #0d1117;
+    /* Warning */
+    --color-warning: #d29922;
+    --color-warning-foreground: #0d1117;
 
-      /* Info */
-      --color-info: #58a6ff;
-      --color-info-foreground: #0d1117;
+    /* Info */
+    --color-info: #58a6ff;
+    --color-info-foreground: #0d1117;
 
-      /* Border / Input / Ring */
-      --color-border: #3d444d;
-      --color-input: #636c76;
-      --color-ring: #818cf8;
+    /* Border / Input / Ring */
+    --color-border: #3d444d;
+    --color-input: #636c76;
+    --color-ring: #818cf8;
 
-      /* Commerce */
-      --color-price: #3fb950;
-      --color-sale: #f85149;
-    }
+    /* Commerce */
+    --color-price: #3fb950;
+    --color-sale: #f85149;
   }
 }
