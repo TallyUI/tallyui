@@ -36,7 +36,8 @@ function createI18n(locale: string, resources: Catalogues): I18n {
     load: 'currentOnly',
     ns: [NS],
     defaultNS: NS,
-    resources: Object.fromEntries([...Object.entries(resources), ['en', en]].map(([lng, catalogue]) => [lng, { [NS]: catalogue }])),
+    // An app's `en` overrides bundled keys and keeps the rest, as addResourceBundle's deep merge does after mount.
+    resources: Object.fromEntries(Object.entries({ ...resources, en: { ...en, ...resources.en } }).map(([lng, catalogue]) => [lng, { [NS]: catalogue }])),
     keySeparator: false,
     nsSeparator: false,
     initAsync: false,

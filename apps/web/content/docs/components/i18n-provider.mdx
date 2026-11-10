@@ -40,6 +40,8 @@ When a key is missing, the string falls back from a regional locale to its base 
 
 English is bundled with the package. Other languages come from the app in `resources`: an object of catalogues by language code, each mapping a key to its string. The library fetches nothing, so the app loads the catalogues from wherever it keeps them (bundled JSON, its own server, its database) and passes them. A catalogue that arrives after mount is added in place, and the components re-render.
 
+An app may override English keys with its own wording by passing `en` in `resources`: its keys replace the bundled ones, and every key it leaves out keeps the bundled English, whether `en` is passed at mount or later.
+
 ```json
 {
   "common.total": "Total à payer",

@@ -62,6 +62,13 @@ describe('I18nProvider and useT', () => {
     expect(text('tender-headline')).toBe(`Total à payer${money(5000)}`);
   });
 
+  it("lets the app's en override a bundled English key at mount, keeping the others", () => {
+    start((children) => <I18nProvider locale="en" resources={{ en: { 'tender.complete_sale': 'Finish' } }}>{children}</I18nProvider>);
+    expect(text('tender-complete')).toBe('Finish');
+    expect(text('tender-headline')).toBe(`Total${money(5000)}`);
+    expect(text('tender-ledger')).toBe('No payments yet');
+  });
+
   it('takes catalogues that arrive after mount, and a locale change', () => {
     const view = start((children) => <I18nProvider locale="fr">{children}</I18nProvider>);
     expect(text('tender-headline')).toBe(`Total${money(5000)}`);
