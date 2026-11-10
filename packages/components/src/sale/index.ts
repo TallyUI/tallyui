@@ -13,3 +13,4 @@ export { SyncStatus } from './sync-status';
 export { OrdersList, type OrderHistoryRow } from './orders-list';
 export { ParkedSales, type ParkedSalesProps } from './parked-sales';
 export { OpenSaleTabs, type OpenSaleTabsProps } from './open-sale-tabs';
+export { CustomerDisplayScreen } from './customer-display-screen';

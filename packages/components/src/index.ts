@@ -182,7 +182,7 @@ export {
   PriceForm, parsePrice,
   ChargeForm, type ChargeFormProps,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, type OrderHistoryRow, orderReference,
-  ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps,
+  ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps, CustomerDisplayScreen,
 } from './sale';
 
 // Layout components
