@@ -3,6 +3,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { formatMoney, type OrderRefundPayload } from '@tallyui/core';
 import { priceRefund, refundableLines, type EarlierRefund, type RefundableOrderLine } from '@tallyui/pos';
 import { QuantityStepper } from '../input/quantity-stepper';
+import { errorText } from '../lib/error-text';
 import { parsePrice } from '../sale/price-form';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -103,7 +104,7 @@ export function RefundForm({
     try {
       await onConfirm(value);
     } catch (e) {
-      setThrown(String(e));
+      setThrown(errorText(e));
     } finally {
       busyRef.current = false;
       setBusy(false);

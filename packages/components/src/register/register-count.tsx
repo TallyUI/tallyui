@@ -14,6 +14,7 @@ import {
 
 import { currencySymbol, formatMoney, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -29,10 +30,6 @@ export function varianceWord(key: string): string {
   if (key === 'register.exact') return 'Exact';
   if (key === 'register.short') return 'short';
   return 'over';
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -181,7 +178,7 @@ export function RegisterCount({ register, currency, approve, className }: Regist
     } catch (e) {
       // The hook's own gate (by name: components import no class from pos, ADR-064).
       if (e instanceof Error && e.name === 'RegisterApprovalRequiredError') setRefusal(APPROVAL_REQUIRED_TEXT);
-      else setError(errorMessage(e));
+      else setError(errorText(e));
     } finally {
       setBusy(false);
     }

@@ -98,3 +98,25 @@ it('normalises a keypad decimal comma to the amount the server accepts', async (
     expect(row?.amountMinor).toBe(1050);
   });
 });
+
+it('shows a thrown error by its message alone, without its class name', async () => {
+  class FooError extends Error {
+    name = 'FooError';
+  }
+  render(
+    <RegisterHarness db={db}>
+      {(register) => (
+        <MovementSheet
+          register={{ ...register, actions: { ...register.actions, recordMovement: () => Promise.reject(new FooError('Finish first')) } }}
+          type="no_sale"
+          currency="EUR"
+          onOpenChange={vi.fn()}
+        />
+      )}
+    </RegisterHarness>,
+  );
+  fireEvent.change(screen.getByTestId('movement-reason'), { target: { value: 'Wrong change' } });
+  fireEvent.click(confirmButton());
+  await waitFor(() => expect(screen.getByText('Finish first')).toBeTruthy());
+  expect(screen.queryByText(/FooError/)).toBeNull();
+});
