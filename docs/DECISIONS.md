@@ -5615,6 +5615,274 @@ interface OrderCreatePayload {
 - **Evidence:** `connectors/woocommerce/src/orders.test.ts`, `packages/pos/src/receipt/reprint.test.ts`,
   `packages/components/src/__tests__/receipt.test.tsx`, `packages/core/src/__tests__/connector-orders.test.ts`.
 
+## ADR-082 Register contract 3: the close carries the store's approval
+
+- **Date:** 2026-11-10 · **Status:** Accepted (front desk, 2026-11-10, with decision 9 as its condition) · **Amends:** ADR-068 (decision 5's conflict table, decision 7's
+  approval, and the ledger rule), ADR-078 (decision 4's non-blocking codes) · **Relates to:** ADR-032 (local
+  registers), ADR-070 (strict payloads), medusapos ADR 0023 (the store's half, shipped in plugin 0.3.0, medusapos#254),
+  Paul's platform ruling of 2026-10-07 (each platform its own way; the core carries the platform's proof and invents
+  no approval model of its own)
+- **Context:**
+  - Today only the till checks an over-threshold close. `closeSession` throws `RegisterApprovalRequiredError` when
+    `closeNeedsApproval` says so and no `approvedBy` is given (`packages/pos/src/register/use-register-session.ts:433-443`).
+    `approvedBy` is whatever the app passes. It reaches the Z as `breakdowns.approved_by` and the closure command as
+    `approvedBy` (`packages/pos/src/register/register-commands.ts:91`). Nothing at the store checks it.
+  - ADR-068 decision 7 left the verified approval to "c2c's approve route", and kept `register_approval_required`
+    unraised until then (this file, lines 3586-3588). Its consequences say that until then, the server does not refuse
+    an over-threshold close (line 3767).
+  - medusapos has shipped the store's half (plugin 0.3.0, `ab091be`). Paths below are in
+    `~/Projects/medusapos/packages/medusa-plugin/src`. The plugin:
+    - advertises `contracts.register: [1, 2, 3]` and a top-level `registerApproval: { thresholdMinor }` on
+      `/tally/v1/info` (`api/tally/v1/versions.ts:9`, `api/tally/v1/info/route.ts:13`). The default threshold is 500
+      minor units;
+    - issues an opaque proof from `POST /tally/v1/register-approvals`. The body is `{ sessionId, variance, email,
+      password }` and the answer is `{ approval, approvedBy, approvedByName, expiresAt }` (ADR 0023, lines 66-83). The
+      proof can be used once, is bound to one session and one variance, and lives 15 minutes;
+    - checks `approval` on `register.closure.submit` only when the envelope version is 3 or more
+      (`modules/tally-register/service.ts:234`). Over the threshold with no `approval`, it refuses
+      `register_approval_required` with `data: { sessionId, thresholdMinor, variance }` (`service.ts:248-252`). A bad
+      proof is refused `register_approval_invalid`, with `data.reason` set to `unknown`, `expired`, `used`,
+      `session_mismatch` or `variance_mismatch` (ADR 0023, lines 102-107). Refusals are stored, and a stored refusal
+      replays for its command id (ADR 0023, lines 110-112);
+    - counts a close as over when `|counted.cash − tillExpected.cash| > thresholdMinor` (`service.ts:250`). That is
+      TallyUI's `overThreshold` rule (`packages/pos/src/register/register-count.helpers.ts:32-33`). The variance the
+      proof is bound to is `counted − tillExpected` for every key of `counted` (`service.ts:248`);
+    - numbers closures in order. It inserts a closure only when its `number` is the register's last number plus one
+      (`service.ts:265`). Any other number is refused `register_closure_number_invalid`.
+  - ADR 0023 says the wire contract is TallyUI's, so vendurepos copies it as it is ("What vendurepos can copy"). ADR 0023
+    also leaves two things to TallyUI: the recovery from a refused proof, and asking for approval only after the store
+    has applied the session's open (lines 74 and 116-121).
+  - Today the till sends every closure at version 1 (`register-commands.ts:86`), and the plugin records each one as
+    "recorded, not verified". So nothing breaks now, and nothing is verified.
+  - Core has no field for any of this:
+    - `ServerCapabilities` has no threshold (`packages/core/src/types/connector.ts:41-63`);
+    - `RegisterClosureSubmitPayload` has no `approval` (`packages/core/src/types/commands.ts:206-214`);
+    - `RegisterConflictCode` has neither code (`packages/core/src/server/register-outcome.ts:3-9`);
+    - `packages/core/src/server/rejection-codes.ts:5-6` still says `register_approval_required` "arrives with registers
+      c2c".
+  - WCPOS v2 asks for a manager online and binds the approval to the exact counted map (monorepo
+    `packages/core/src/screens/main/pos/cart/approve-sheet.tsx`, `isSameCount`). A refused override sends the session
+    back to counting (`packages/query/src/register-session/queue.ts:300-318`). v2 is the reference for the feature,
+    not for its shape (Paul, 2026-10-07).
+- **Decision:**
+  1. **Contract 3, and what the outbox sends (a).**
+     - A store is at register contract 3 when `capabilities.register >= 3`.
+     - At 3, `closureCommand` builds `register.closure.submit` at version 3. It adds `approval` when the session has
+       one.
+     - Below 3, or when the contract is unknown, the closure is built as it is today: version 1, no `approval`, the
+       same bytes.
+     - The other commands keep their versions. The open is version 2 from contract 2 (`register-commands.ts:135`).
+       Transitions and movements stay at version 1.
+     - The version is chosen when `reconcileRegisterCommands` first inserts the row, and the row's bytes never change
+       after that. So a closure queued at contract 2 still goes as version 1 if the store later says 3. A version 3 row
+       is never downgraded. A store that drops 3 refuses that row `unsupported_version`, which blocks, as it does today.
+  2. **The approval is opaque and stays local (b).**
+     - `approval` is a string. Core and pos never parse, decode, sign or compare it. The payload check takes it as an
+       optional non-empty string, like `approvedBy` (`packages/core/src/server/register-payload-shape.ts:74-76`).
+     - `closeSession`, in the store and in the hook, takes `approval?` next to `approvedBy`. It writes it to the
+       session's `approver_token` (`packages/pos/src/register/schemas.ts:49, 125`), in the same write that closes the
+       session and sets `approved_by`. The field already exists and is unused (a WCPOS port), so there is no schema
+       bump.
+     - `reconcileRegisterCommands` reads `approver_token` from the session when it builds the closure at contract 3.
+       From then on the proof lives in the `register_commands` row's payload.
+     - Both collections are local only and never replicated (`schemas.ts:6-7`; ADR-068 decision 3). The proof never
+       goes in `closures`, `breakdowns`, the Z, a CSV export, a register fact or a log context. The `approval-granted`
+       fact keeps `approvedBy` only (`use-register-session.ts:471`).
+     - Its lifetime is the store's: it is dead after its first use, or 15 minutes after it was issued. The till keeps
+       no clock and does not read `expiresAt`. An expired proof is refused `expired` and recovered (decision 7).
+     - The session's copy is not cleared after use. It is local, dead after use, and worth nothing beyond its one
+       session and variance (ADR 0023, question 3).
+     - This amends ADR-068 decision 7. The field is `approval`, not `approverToken`, and it is opaque, not "signed".
+  3. **The threshold comes from the connector's capabilities (c).**
+     - `ServerCapabilities` gains `registerApproval?: { thresholdMinor: number }`.
+     - `parseInfoCapabilities` reads it from the top level of `/tally/v1/info`, beside `taxRounding`
+       (`connector.ts:126-149`). `thresholdMinor` must be a non-negative safe integer. A malformed value is ignored
+       with a warning, as a malformed `lineTax` is.
+     - It is a capability, not a connector method. It is read, stored and refreshed with the other capabilities. It
+       reaches `useRegisterSession` through `options.capabilities`, as `register` does (`use-register-session.ts:163`).
+       A method would mean a second fetch for one number.
+     - There is no `required` flag. A verified approval is needed when `register >= 3` and `registerApproval` is
+       present. That is exactly when the plugin enforces it (`service.ts:234, 249-251`), and the plugin sends no such
+       flag (`info/route.ts:13`).
+     - The store's threshold wins over the app's `varianceThreshold` option (`use-register-session.ts:112-113`). The
+       hook returns the threshold it gates with as `varianceThreshold`, so `RegisterCount` and the gate agree. A store
+       without `registerApproval` keeps the app's threshold.
+     - The rule stays `overThreshold`: the absolute cash variance is greater than the threshold.
+     - pos exports one helper, `closureVariance(counted, tillExpected)`. It returns `counted − tillExpected` for each
+       key of `counted`, which is the plugin's rule. The hook exposes this figure for the count being closed, read
+       the way the gate reads it (`use-register-session.ts:434-441`). The app sends it to its route as `variance`.
+  4. **Live at the store (d).**
+     - A session is live at the store when both of these hold:
+       - its `session.open:<id>` row is `applied`. A resumed open counts, and so does a `duplicate` with no error, which
+         the outbox records as applied;
+       - the session is not `conflict`, `superseded` or `abandoned`.
+     - Nothing else in the ledger is needed. A later transition does not change whether the store holds the session.
+       A closed session with no applied closure is still live for this purpose, because the route accepts it (ADR 0023,
+       line 72).
+     - pos gets a pure helper, `isLiveAtStore(session, openRow)`, beside adoption in
+       `packages/pos/src/register/register-adoption.ts`. `useRegisterSession` returns `liveAtStore`. The hook already
+       watches that row (`use-register-session.ts:198`).
+     - The app asks for approval with the local session id. The store resolves the alias (ADR 0023, line 70).
+  5. **Closing over the threshold at contract 3.**
+     - **When the session is live,** the close needs both `approval` and `approvedBy`, from the route's answer.
+       Without `approval`, it throws `RegisterApprovalRequiredError` before any write, as it does today without
+       `approvedBy`.
+     - **Before writing,** the hook compares the approved variance with the variance it is about to close with. The
+       app passes the `variance` it sent to the route as `approvedVariance`. If they differ, the close throws
+       `RegisterApprovalRequiredError`, and the cashier asks again. This catches a sale or a movement that landed between
+       the approval and the close. A change that lands after the check still reaches the store, which refuses it
+       `variance_mismatch`. Decision 7 recovers that.
+     - **When the session is not live** (offline, or its open is not answered yet), the route can't be used. The close
+       then goes with `approvedBy` only, as at contract 2. The till queues a version 3 closure with no `approval`. The
+       store refuses it `register_approval_required`, and decision 7 asks again once the till is live. An offline till
+       can always close.
+     - **Under the threshold,** an `approval` the app passes is still sent. The store verifies and records it (ADR 0023,
+       line 112).
+     - **A resumed close** (the stored session is already closed) is not gated again, as today.
+  6. **The two refusals in the outbox.**
+     - `RegisterConflictCode` gains `register_approval_required` and `register_approval_invalid`. Core types their data
+       as `RegisterApprovalRequiredData { sessionId; thresholdMinor; variance }` and `RegisterApprovalInvalidData
+       { reason }`. `rejection-codes.ts` drops its c2c exception. These are TallyUI's codes on TallyUI's wire, as ADR
+       0023 says.
+     - Neither refusal blocks the register's other commands, just as `register_session_superseded` doesn't (ADR-078
+       decision 4).
+     - But the walk stops before the register's next `register.closure.submit`. The store numbers closures in order
+       (`service.ts:265`). A later closure sent past the refused one would be refused
+       `register_closure_number_invalid`. That refusal blocks, and ADR-068 decision 6 gives a renumbered closure no way
+       to be resent. The next session's open, sales, transitions and movements still go.
+     - Both ledger walks follow this rule:
+       - In `run` (`packages/pos/src/outbox/register-outbox.ts:143-153`), the refused row is skipped, and the register's
+         walk ends at its next closure row.
+       - In `updateState` (lines 106-121), the refused row does not block. Held closure rows are outside the sendable
+         part of the ledger, so they keep no stuck clock. The card in decision 7 speaks for them, not the stuck strip.
+     - The rows stay `rejected`. Adoption leaves the session as it is: `closed`.
+  7. **Recovery (e).**
+     - `useRegisterSession` returns `approvalNeeded` for a rejected closure row with either code. It gives:
+       - the `closureId` and `sessionId`;
+       - the `variance`, from `data.variance` or else computed from the row's stored `counted` and `tillExpected`;
+       - the code, and the `reason` if there is one.
+
+       It is built from the rows, so it survives a restart.
+     - The app shows its own "Manager approval needed again" card. It runs its approval route while `liveAtStore` is
+       true.
+     - A new pos action, `reapproveClosure({ closureId, approval, approvedBy })`, requeues the row the way take over
+       does (`register-adoption.ts:70-76`). It keeps:
+       - the same key and the same `seq`.
+
+       It changes:
+       - a new `uuidv7` command id;
+       - version 3;
+       - `syncStatus: 'pending'`;
+       - no error;
+       - the payload's new `approval` and `approvedBy`.
+
+       Everything else in the payload stays, so the store sees the same `closureId`, number and figures.
+     - It throws unless the row is rejected with one of the two codes and the contract is 3 or more.
+     - It needs a new command id because the store replays a stored refusal for its command id (ADR 0023, line 110).
+     - This is a second exception to "the bytes of an existing key never change", beside take over. The reason is the
+       same: the old command id is dead at the store.
+     - The local closure and its Z are not rewritten. If another manager approves, the store records that manager,
+       from the proof (`service.ts:281-283`), and the local Z keeps the first name. The store's record is the
+       verified one.
+     - Nothing retries on its own. A new proof is needed, and only a manager can give one.
+  8. **Other platforms are unchanged (f).**
+     - **WooCommerce.** Its connector reads `wcpos/v2/status` capabilities and sets no `register` contract
+       (`connectors/woocommerce/src/store-settings.ts:118-150`). It never reaches contract 3.
+     - **Vendure.** Its connector uses the same `parseInfoCapabilities` (`connectors/vendure/src/capabilities.ts:44`). It
+       reads `registerApproval` once vendurepos advertises it with contract 3, and needs no TallyUI change for that.
+       Until then, nothing changes.
+     - Core's server-side default, `SUPPORTED_REGISTER_VERSIONS = [1]` (`packages/core/src/server/versions.ts:9`),
+       stays. A server adds 3 when it implements it.
+     - Each platform owns its approval route, its dialog, its credential check and who counts as a manager (Paul,
+       2026-10-07). TallyUI only carries the store's opaque proof.
+- **Rejected:**
+  - **The proof on the closing transition.** The closure is the only command that carries both `counted` and
+    `tillExpected` (ADR 0023, line 95).
+  - **A connector method in core that asks for the approval.** Core would then own the credential flow and a
+    TallyUI-wide approval model. Each platform checks managers its own way.
+  - **A `required` flag in `/info`.** The plugin sends none. Working it out from the contract and the threshold matches
+    what the plugin enforces.
+  - **Storing the proof on the closure or in its breakdowns.** The breakdowns are the Z, and they are exported.
+  - **Holding every command behind a refused approval.** The register would stop on one dead proof. Only the next
+    closure needs to wait.
+  - **No hold at all.** The next closure would be lost to `register_closure_number_invalid`.
+  - **Refusing an offline over-threshold close.** A till that sells offline must be able to close offline.
+  - **Binding to the counted map, as WCPOS v2 does.** medusapos binds the variance and has shipped it. For one closure,
+    `tillExpected` is fixed, so the two checks are the same.
+- **Consequences:**
+  - **Changes to ADR-068:** decision 5's conflict table gains two codes with data. Decision 7's token is `approval`, and
+    it is opaque. "Until c2c ships" ends for stores at contract 3.
+  - **Changes to ADR-078:** the non-blocking rule gains two codes, and the walk holds the next closure behind them.
+  - **A till whose capabilities are unknown when it closes** queues a version 1 closure. The store records it as
+    unverified. A store that wants every close verified sets `minRegisterContract: 3` (ADR 0023, line 114).
+  - **Units 2, 3 and 4 below ship in one TallyUI release.** The plugin already advertises contract 3. A release with
+    unit 2 alone would send version 3 closures whose refusals block the register.
+  - **Door: one-way.**
+    - The wire changes: a new envelope version, a new field, and two codes that stores keep in their ledgers and
+      replay for good.
+    - Version 3 rows that carry a proof stay in local `register_commands` and can't be rewritten later.
+    - It touches money (the closure and the Z) and auth (manager approval).
+    - `ServerCapabilities` and `closeSession` are public API. vendurepos copies the wire.
+    - Each PR gets `door:one-way`, `needs-paul` and `blast:shared`.
+  - **TallyUI build order** (one PR each):
+    1. **Core.**
+       - `registerApproval` on `ServerCapabilities` and in `parseInfoCapabilities`;
+       - `approval?` on `RegisterClosureSubmitPayload` and in `registerPayloadErrors`;
+       - the two codes and their data types;
+       - the `rejection-codes.ts` comment;
+       - fixtures.
+
+       Files: `packages/core/src/types/connector.ts`, `packages/core/src/types/commands.ts`,
+       `packages/core/src/server/register-payload-shape.ts`, `packages/core/src/server/register-outcome.ts`,
+       `packages/core/src/server/rejection-codes.ts`, their tests in `packages/core/src/__tests__/`, and a changeset.
+       Acceptance includes `packages/integration-tests`.
+    2. **The closure command and the close.**
+       - `closureCommand` at version 3, with `approval` (and `BuiltCommand` versions `1 | 2 | 3`);
+       - `reconcileRegisterCommands` passes the contract and the session's `approver_token`;
+       - `closeSession` takes `approval` and `approvedVariance`, as in decision 5;
+       - `closureVariance`;
+       - the store's threshold wins.
+
+       Files: `packages/pos/src/register/register-commands.ts`, `packages/pos/src/register/session-store.ts`,
+       `packages/pos/src/register/register-count.helpers.ts`, `packages/pos/src/register/use-register-session.ts`, their
+       tests, and a changeset.
+    3. **The outbox rules.** The two codes are non-blocking, and the register's next closure is held, in both walks.
+       Files: `packages/pos/src/outbox/register-outbox.ts`, its tests, and a changeset.
+    4. **Live at the store, and recovery.**
+       - `isLiveAtStore` and `reapproveClosure`;
+       - `liveAtStore` and `approvalNeeded` from `useRegisterSession`.
+
+       Files: `packages/pos/src/register/register-adoption.ts`, `packages/pos/src/register/use-register-session.ts`,
+       their tests, and a changeset.
+    5. **The medusapos app** (its own repo and worker), on the release with units 2-4:
+       - the approval dialog against its route;
+       - `approval`, `approvedBy` and `approvedVariance` passed to `closeSession`;
+       - the "Manager approval needed again" card, from `approvalNeeded`.
+- **Rulings (front desk, 2026-11-10):** all six questions were decided as recommended:
+  - Over the threshold and offline, the close is allowed with a recorded approver, and the store asks again later
+    (decision 5). This holds on the condition in decision 9.
+  - The store's threshold overrides the app's `varianceThreshold` (decision 3).
+  - The two codes are owned by core as TallyUI's wire (decision 6).
+  - The register's next closure is held behind a refused approval (decision 6).
+  - The approval is bound to the variance, as medusapos does, not the counted map (decision 7's rejected list).
+  - When a second manager re-approves, the local Z keeps the first approver's name (decision 7). The store's record is
+    the verified one.
+- **Decision 9, the front desk's condition: an approval is shown as unverified until the store accepts it.**
+  - A recorded approver must never be read as a verified one.
+  - This applies to a closure that needs a verified approval (contract 3, `registerApproval` present, over the
+    threshold). Until its `register.closure.submit` row is `applied`, the Z and the outbox show it as "Approval not yet
+    verified by the store". This covers an offline close, a close queued without `approval`, a pending row, and a row
+    refused with either code.
+  - The status is derived from the closure row; nothing new is stored. pos exports it as `closureApprovalStatus`, with
+    the values `'verified' | 'unverified' | 'not_required'`. `useRegisterSession` returns it for each closure it lists.
+  - The Z component and the outbox health view (unit 23) render `unverified` beside the approver's name. They show
+    the name alone only once the status is `verified`.
+  - This goes into build unit 4, with the Z rendering in `@tallyui/components`.
+- **Evidence:** medusapos `docs/adr/0023-pos-sign-in-and-approval.md` and plugin commit `ab091be` (medusapos#254);
+  `packages/pos/src/register/register-commands.ts`, `register-adoption.ts`, `use-register-session.ts`,
+  `register-count.helpers.ts`, `schemas.ts`; `packages/pos/src/outbox/register-outbox.ts`;
+  `packages/core/src/types/connector.ts`; WCPOS v2 `approve-sheet.tsx` and `queue.ts` (monorepo `main`).
+
 ## ADR-083 order.create v7: the sale note
 
 - **Date:** 2026-11-10 · **Status:** Proposed (assignment u06, #520) · **Relates to:** ADR-038 (commands), ADR-062 and
@@ -5657,3 +5925,46 @@ interface OrderCreatePayload {
 - **Evidence:** `packages/pos/src/pos-order/command-v7.test.ts` (golden `__fixtures__/order-create-v7.json`),
   `packages/core/src/server/order-create-v7.test.ts`, `packages/pos/src/sale/use-sale-note.test.tsx`,
   `packages/pos/src/pos-order/migration.test.ts`, `packages/integration-tests/src/pos-orders-open-sqlite.test.ts`.
+
+## ADR-084 v2 parity: sync, hardware, the customer display and the Woo target (front desk rulings)
+
+- **Date:** 2026-11-10 · **Status:** Accepted (front desk, 2026-11-10) · **Amends:** ADR-067 (deferred), ADR-073
+  (superseded once the Woo transport unit lands) · **Relates to:** ADR-033, `docs/v2-parity/PLAN.md` Part C (Q1-Q4)
+- **Context:** WCPOS 2.0 shipped on 2026-11-09. It is now the target for TallyUI's shared libraries and for the three
+  platform apps. The v2 parity plan raised four questions that the backlog could not settle alone.
+- **Decision:**
+  1. **Sync (Q1).**
+     - ADR-067 is **deferred, not withdrawn**. TallyUI keeps its own sync: pull, reconcile and the command outbox.
+       It ports the v2 behaviours it lacks (plan unit 34).
+     - The ported behaviours sit behind the same seams `@wcpos/sync-core` and `@wcpos/sync-engine` would fill. The
+       units that port them name the seam in their PR.
+     - Switching to the packages needs two things to be true:
+       - the packages are public;
+       - Paul says to switch.
+     - Until then, monorepo `main` is read only as reference, and nothing reads the private packages.
+  2. **Hardware in the MIT packages (Q2).**
+     - These go in the MIT packages: the hardware interfaces (`PaymentDriver`, `PrintTransport`), the simulated card
+       driver, the system print transport and the ESC/POS encoder. They are protocols and logic.
+     - Vendor SDK drivers (Stripe Terminal, SumUp, Epson, Star and the like) stay out. Paul decides them, and the
+       front desk asks him; none are built meanwhile.
+     - ADR-033's rule that hardware drivers stay splittable stands.
+  3. **Customer display (Q3).**
+     - The first transport is a second window on the same device, over BroadcastChannel (plan unit 37). It is proven
+       in Playwright Chromium.
+     - LAN pairing comes later, through each backend's own server-plugin signalling. It does not copy v2's
+       WordPress/Pro WebRTC path.
+  4. **The WooCommerce target (Q4).**
+     - The Woo connector moves onto WCPOS 2.0's `wcpos/v2` endpoints: the payments ledger, `orders/{id}/close` and
+       refunds. ADR-073's 1.10.x push transport is retired when that unit lands.
+     - Any server change goes only into TallyUI's own fork of the plugin. Nothing goes to `wcpos/woocommerce-pos` or
+       `woocommerce-pos-pro`.
+     - Development uses TallyUI's own dev store. Nothing is installed, updated or written on dev-pro, dev-free or
+       demo.wcpos.com, because they share the production database.
+     - A real WCPOS bug found on the way is reported to the front desk in one line. It is not fixed here.
+- **Consequences:**
+  - Plan unit 34 (connectivity and the update latch) is unblocked.
+  - Units 17, 29 and 38 build the interfaces, the simulated driver, the system transport and the ESC/POS encoder,
+    and nothing vendor-specific.
+  - Unit 37 is unblocked.
+  - The Woo transport unit starts when the tallyui-woocommerce worker asks for it. The worker asked on 2026-11-10.
+  - Door: one-way for Q4 (the order wire to Woo stores). Q1-Q3 are two-way.

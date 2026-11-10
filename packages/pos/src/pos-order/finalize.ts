@@ -1,5 +1,6 @@
 import { minorUnitDigits, ORDER_NOTE_MAX, type ServerCapabilities, type TaxRounding } from '@tallyui/core';
 import type { Order, SentOrder } from '../order/types';
+import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import { outboxLogger } from '../outbox/logger';
 import { cutText, PAYLOAD_STRING_MAX, sendable } from './command';
@@ -144,6 +145,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     if (payment.method !== 'cash' && payment.method !== 'external') {
       throw new Error(`finalize: unsupported payment method ${payment.method}`);
     }
+    if (legStatus(payment) !== 'captured') throw new Error(`finalize: the ${payment.method} payment is ${legStatus(payment)}, not captured`);
   }
   if (order.paidMinor < order.totalMinor) throw new Error('finalize: underpaid');
   let change = order.paidMinor - order.totalMinor;

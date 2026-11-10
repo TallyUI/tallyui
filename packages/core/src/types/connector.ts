@@ -5,8 +5,10 @@ import type { CustomerTraits } from './traits/customer';
 import type { ReplicationAdapter } from './replication';
 import type { CatalogueReconcileAdapter, FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 import type { StoreSettings, StoreSettingsChoice } from './store-settings';
-import type { Customer, CustomerInput } from './customers';
+import type { Customer, CustomerInput, CustomerPatch } from './customers';
 import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
+import type { PaymentMethodDescriptor } from './payment-methods';
+import type { RegisterInfo } from './registers';
 
 /**
  * Authentication configuration for a connector.
@@ -60,6 +62,12 @@ export interface ServerCapabilities {
    * coupon. WooCommerce: true only when the woocommerce-pos plugin reports 1.9.0 or later.
    */
   coupons?: boolean;
+  /**
+   * The store's register approval threshold (ADR-082 d3), from the top level of `/tally/v1/info`. With
+   * `register >= 3`, a close whose absolute cash variance is over `thresholdMinor` needs the store's approval.
+   * Absent means the store sets none, and the app's own threshold applies.
+   */
+  registerApproval?: { thresholdMinor: number };
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */
@@ -115,6 +123,16 @@ export function parseLineTax(value: unknown, warn?: (reason: string) => void): {
   return undefined;
 }
 
+function parseRegisterApproval(value: unknown, warn?: (reason: string) => void): { thresholdMinor: number } | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const { thresholdMinor } = value as { thresholdMinor?: unknown };
+    if (typeof thresholdMinor === 'number' && Number.isSafeInteger(thresholdMinor) && thresholdMinor >= 0) return { thresholdMinor };
+  }
+  warn?.('ignoring a malformed registerApproval');
+  return undefined;
+}
+
 const maxVersion = (list: unknown): number | undefined => {
   const valid = Array.isArray(list) ? list.filter((v): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0) : [];
   return valid.length > 0 ? Math.max(...valid) : undefined;
@@ -124,6 +142,7 @@ const maxVersion = (list: unknown): number | undefined => {
  * Reads a 2xx body of `GET /tally/v1/info` (ADR-062): `orderCreate` is the max of
  * `contracts["order.create"]`, or 1 when it's missing or malformed; `register` is the max of
  * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287); malformed `lineTax` is ignored.
+ * malformed `registerApproval` is ignored (ADR-082).
  * `orderRefund` is the max of `contracts["order.refund"]` when valid, otherwise absent (ADR-080).
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
  * A non-object body is also unknown, not a statement of the store's defaults.
@@ -133,7 +152,7 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     warn?.('non-object info body: capabilities unknown');
     return undefined;
   }
-  const { contracts, taxRounding, lineTax } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown };
+  const { contracts, taxRounding, lineTax, registerApproval } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown };
   const register = maxVersion(contracts?.register);
   const orderRefund = maxVersion(contracts?.['order.refund']);
   const rounding = parseTaxRounding(taxRounding);
@@ -142,10 +161,12 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     return undefined;
   }
   const parsedLineTax = parseLineTax(lineTax, warn);
+  const parsed = parseRegisterApproval(registerApproval, warn);
   return { orderCreate: maxVersion(contracts?.['order.create']) ?? 1,
     ...(orderRefund !== undefined ? { orderRefund } : {}),
     ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}),
-    ...(parsedLineTax ? { lineTax: parsedLineTax } : {}) };
+    ...(parsedLineTax ? { lineTax: parsedLineTax } : {}),
+    ...(parsed ? { registerApproval: parsed } : {}) };
 }
 
 export interface AuthField {
@@ -298,10 +319,21 @@ export interface TallyConnector {
    * `unauthorized` or `invalid_credentials` means sign in again), never on its class.
    */
   capabilities?: (context: SyncContext) => Promise<ServerCapabilities | undefined>;
+  /**
+   * The payment methods the till may offer, in the order it shows them (v2 parity A2). Read-only, never writes to
+   * the store. `undefined` when the connector has none of its own: the till offers `defaultPaymentMethods()`.
+   */
+  paymentMethods?: (context: SyncContext) => Promise<PaymentMethodDescriptor[]>;
   /** Customer search: online only; `undefined` when the connector has no customer support. */
   searchCustomers?: (context: SyncContext, query: string, options?: { limit?: number }) => Promise<Customer[]>;
   /** Customer creation: online only; `undefined` when the connector has no customer support. */
   createCustomer?: (context: SyncContext, input: CustomerInput) => Promise<Customer>;
+  /**
+   * Customer edit: online only; resolves the customer as the store now has it. Rejects with
+   * `ConnectorUnauthorizedError` for credentials and `CustomerServiceError` (`invalid` for a refused patch or an id
+   * the store does not have, `server` or `network` otherwise). `undefined` when the connector can't edit customers.
+   */
+  updateCustomer?: (context: SyncContext, id: string, patch: CustomerPatch) => Promise<Customer>;
   /** Customer lookup: online only; `undefined` when the connector has no customer support. */
   getCustomer?: (context: SyncContext, id: string) => Promise<Customer | null>;
   /**
@@ -324,4 +356,9 @@ export interface TallyConnector {
    * read-only; rejects as `listOrders`. `undefined` when the connector has no order history.
    */
   getOrders?: (context: SyncContext, ids: readonly string[]) => Promise<StoreOrder[]>;
+  /**
+   * The store's register directory (v2 parity A4): online only, read-only. Rejects with `ConnectorUnauthorizedError`
+   * for credentials; a connector's own errors otherwise. `undefined` when the connector has no register directory.
+   */
+  listRegisters?: (context: SyncContext) => Promise<RegisterInfo[]>;
 }

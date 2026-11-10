@@ -33,7 +33,12 @@ describe.skipIf(!process.env.VENDURE_DEV_URL)('live Vendure orders', () => {
         expect(typeof line.orderPlacedQuantity).toBe('number');
         expect(typeof line.proratedUnitPrice).toBe('number');
         expect(typeof line.proratedUnitPriceWithTax).toBe('number');
+        expect(typeof line.proratedLinePrice).toBe('number');
         expect(typeof line.proratedLinePriceWithTax).toBe('number');
+      }
+      for (const line of order.shippingLines) {
+        expect(typeof line.discountedPrice).toBe('number');
+        expect(typeof line.discountedPriceWithTax).toBe('number');
       }
       expect(vendureRefundable(order).lines).toHaveLength(order.lines.length);
     } else expect(order).toBeNull();

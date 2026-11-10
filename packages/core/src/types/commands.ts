@@ -194,6 +194,14 @@ export interface RegisterSessionSupersededData {
   sessionId: string; supersededAt?: string; supersededBy?: string;
   deviceId?: string; deviceName?: string; newSessionId?: string;
 }
+/** error.data for register_approval_required (ADR-082 d6): variance is counted − tillExpected for each key of counted. */
+export interface RegisterApprovalRequiredData {
+  sessionId: string; thresholdMinor: number; variance: Record<string, number>;
+}
+/** error.data for register_approval_invalid (ADR-082 d6). */
+export interface RegisterApprovalInvalidData {
+  reason: 'unknown' | 'expired' | 'used' | 'session_mismatch' | 'variance_mismatch';
+}
 export interface RegisterSessionTransitionPayload {
   sessionId: string; status: 'open' | 'counting' | 'closed'; at: string;
   /** Closing only. */ counted?: Record<string, number>; closedBy?: string; approvedBy?: string;
@@ -208,6 +216,7 @@ export interface RegisterMovementVoidPayload {
 export interface RegisterClosureSubmitPayload {
   closureId: string; sessionId: string; registerId: string; number: number; businessDay?: string;
   openedAt: string; closedAt: string; closedBy?: string; approvedBy?: string;
+  /** Register v3 only (ADR-082): the store's approval proof, opaque; never parsed, logged or stored in the Z. */ approval?: string;
   tillExpected: Record<string, number>; counted: Record<string, number>;
   periodSalesTotalMinor: number; periodRefundsTotalMinor: number;
   perpetualSalesTotalMinor: number; perpetualRefundsTotalMinor: number;

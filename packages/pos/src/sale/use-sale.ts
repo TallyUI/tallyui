@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
+import { paymentMethodOf } from '@tallyui/core';
+import { canVoidLeg, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
@@ -22,6 +24,7 @@ export type SaleStage = { kind: 'cart' } | { kind: 'tender'; method: 'cash' | 'e
 export const DISCOUNTS_UNSUPPORTED = 'finalize: discounts are not supported by the server yet (order.create v2)';
 /** Every sale change refuses with this while a completion is pending (see `complete()`). */
 export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
+export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before completing the sale';
 /**
  * How often a hung save re-asks `isStored`, while the order is built and its save is still in flight
  * and unconfirmed: an app whose tender has no New sale control while saving (the Front desk,
@@ -170,13 +173,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     }
   }, []);
 
-  function addOne(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string }): string {
+  function addOne(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string {
     // A terminal reference finalize would refuse is dropped as it's entered, never the payment (the money is
     // taken): the tender applies without it, with a message that doesn't block complete() and a
     // localWarnings entry on the stored order naming the payment whose reference was dropped.
     const reason = referenceReason(tender.reference);
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
-    const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor } : tender;
+    const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor, ...(tender.status !== undefined ? { status: tender.status } : {}) } : tender;
     const builder = builderNow.current;
     const paymentId = builder.addPayment(kept);
     if (dropped) {
@@ -430,15 +433,30 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       setStage({ kind: 'tender', method });
     },
     setTender,
-    /** ADR-072: external is capped at the balance due; change comes only from cash. */
-    addTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string }): string | null {
+    /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. */
+    addTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string | null {
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
+      if (tender.method === 'cash' && tender.status !== undefined && tender.status !== 'captured') return null;
       if (tender.method === 'external') {
-        const due = builderNow.current.getSnapshot().balanceDueMinor;
+        const snapshot = builderNow.current.getSnapshot();
+        const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
         if (due <= 0) return null;
         return addOne({ ...tender, amountMinor: Math.min(tender.amountMinor, due) });
       }
       return addOne(tender);
+    },
+    setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
+      if (locked()) return false;
+      return builderNow.current.setPaymentStatus(paymentId, status);
+    },
+    /** The leg stays in order.payments as voided and counts nothing; removeTender still removes a leg outright. */
+    voidTender(paymentId: string): boolean {
+      if (locked()) return false;
+      const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
+      if (!payment || (payment.method !== 'cash' && payment.method !== 'external') || !canVoidLeg(payment, paymentMethodOf(payment.method))) return false;
+      builderNow.current.setPaymentStatus(paymentId, 'voided');
+      droppedReferences.current.delete(paymentId);
+      return true;
     },
     /** ADR-072: remove one tender and its dropped-reference warning. An id not among the payments changes nothing. */
     removeTender(paymentId: string): void {
@@ -473,7 +491,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       confirm(null);
       if (pending.current) return deliver(pending.current);
       setSaving(true);
-      const current = builderNow.current.getSnapshot();
+      const snapshot = builderNow.current.getSnapshot();
+      if (snapshot.payments.some(isInMotion)) { setSaving(false); setError(PAYMENT_IN_MOTION); return; }
+      // Failed and voided legs stay on the screen's ledger but are never sent: only captured money is the sale's.
+      const current = { ...snapshot, payments: snapshot.payments.filter(countsTowardPaid) };
       const localWarnings = current.payments.filter((payment) => droppedReferences.current.has(payment.id))
         .map((payment) => ({ code: 'payment_reference_dropped' as const, paymentId: payment.id }));
       let posOrder: PosOrder;

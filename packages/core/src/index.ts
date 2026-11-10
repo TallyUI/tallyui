@@ -35,10 +35,16 @@ export { isRxdbRemoteVersionMismatch } from './rxdb-remote-version-mismatch';
 export { errorKind, type ErrorKind, type SyncNotice } from './sync-notice';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
-export { customerTraits, CustomerServiceError, type Customer, type CustomerInput } from './types/customers';
+export { customerTraits, CustomerServiceError, type Customer, type CustomerInput, type CustomerAddress, type CustomerTaxId, type CustomerPatch } from './types/customers';
+export { paymentMethodOf, defaultPaymentMethods } from './types/payment-methods';
+export type {
+  PaymentMethodDescriptor, PaymentKind, CaptureMode, CaptureModeEntry, PaymentHardware, PaymentTransport,
+  PaymentOfflineMode, PaymentTipsMode, PaymentRounding,
+} from './types/payment-methods';
 export type {
   StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, ListOrdersQuery, StoreOrderPage,
 } from './types/orders';
+export type { RegisterInfo } from './types/registers';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 
 export type {
@@ -52,6 +58,7 @@ export type {
   OrderCreateCoupon, OrderCreateCouponInvalidData, OrderCreateTotalMismatchData,
   CommandBatchRequest, CommandBatchResponse, BatchTooLargeBody,
   RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionAlreadyOpenData, RegisterSessionSupersededData,
+  RegisterApprovalRequiredData, RegisterApprovalInvalidData,
   RegisterSessionTransitionPayload,
   RegisterMovementRecordPayload, RegisterMovementVoidPayload, RegisterClosureSubmitPayload,
 } from './types';
