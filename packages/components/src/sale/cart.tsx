@@ -3,14 +3,14 @@ import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
-import { CartColumnHeads, CartLine, CartLineActions, CartPanel, CartTotal } from '../cart';
+import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
 import { cartShowsPrice } from '../cart/cart-columns';
 import { DiscountChips, DiscountForm } from './discount-form';
 import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor, orderActions = true }:
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor, orderActions = true, checkout }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
     /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
@@ -28,6 +28,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     /** Cart's own Order discount and Add charge controls; pass `false` when the app hosts them in its own menu (v2's
      * cart "+" menu). Applied discounts and charges still show and can be removed. */
     orderActions?: boolean;
+    /** Swaps the Cash and Card terminal row for v2's foot, `CartFoot`: "Checkout {total}" calls `onCheckout`, and the
+     * ⋮ menu lists `actions`. Absent: the Cash and Card terminal row. */
+    checkout?: { onCheckout: () => void; actions?: readonly CartFootAction[] };
   }) {
   const { order } = sale;
   const money = (amount: number) => ({ amount, currency: order.currency });
@@ -119,14 +122,15 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
-      <View className="flex-row gap-3">
+      {checkout ? <CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout} actions={checkout.actions}
+        disabled={!order.lineItems.length} /> : <View className="flex-row gap-3">
         <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('cash')} className={pay}>
           <Text className="text-center font-semibold text-primary-foreground">Cash</Text>
         </Pressable>
         <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('external')} className={pay}>
           <Text className="text-center font-semibold text-primary-foreground">Card terminal</Text>
         </Pressable>
-      </View>
+      </View>}
     </View>} />
   </View>;
 }

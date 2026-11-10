@@ -365,3 +365,51 @@ describe('Cart', () => {
     });
   });
 });
+
+describe('Cart checkout', () => {
+  const checkoutButton = () => screen.getByRole('button', { name: /^Checkout / });
+
+  it('keeps Cash and Card terminal, and no Checkout, without the prop', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.getByRole('button', { name: 'Cash' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Card terminal' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Checkout / })).toBeNull();
+  });
+
+  it('swaps Cash and Card terminal for Checkout and the total, which calls onCheckout', () => {
+    const onCheckout = vi.fn();
+    render(<SaleHarness>{(sale) => <Cart sale={sale} checkout={{ onCheckout }} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(checkoutButton().textContent).toBe(`Checkout ${money(sale.order.totalMinor)}`);
+    expect(screen.queryByRole('button', { name: 'Cash' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Card terminal' })).toBeNull();
+    fireEvent.click(checkoutButton());
+    expect(onCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists the host's actions in the ⋮ menu and calls the one pressed", () => {
+    const onPark = vi.fn();
+    const onVoid = vi.fn();
+    render(<SaleHarness>{(sale) => <Cart sale={sale}
+      checkout={{ onCheckout: () => {}, actions: [{ label: 'Park', onPress: onPark }, { label: 'Void', onPress: onVoid, destructive: true }] }} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.queryByRole('menu')).toBeNull();
+    click('More actions');
+    const menu = screen.getByRole('menu', { name: 'More actions' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Park', 'Void']);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Void' }));
+    expect(onVoid).toHaveBeenCalledTimes(1);
+    expect(onPark).not.toHaveBeenCalled();
+  });
+
+  it('follows the sale: a changed line changes the label', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} checkout={{ onCheckout: () => {} }} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    const one = sale.order.totalMinor;
+    expect(checkoutButton().textContent).toBe(`Checkout ${money(one)}`);
+    click('Increase Shirt');
+    expect(sale.order.totalMinor).not.toBe(one);
+    expect(checkoutButton().textContent).toBe(`Checkout ${money(sale.order.totalMinor)}`);
+  });
+});

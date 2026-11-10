@@ -1,5 +1,22 @@
 # @tallyui/pos
 
+## 3.14.0
+
+### Minor Changes
+
+- d544736: Add a customer display that runs in a second window on the same device: a BroadcastChannel transport, a till-side display link that answers the display's hello and returns it to idle after a payment, a `useCustomerDisplay` hook, and the `CustomerDisplayScreen` component.
+- 5f535c8: Adds ESC/POS printing for thermal printers: `encodeEscPos` lays a receipt out in the printer's columns and code page, `escpos` is the command builder it uses, and `createEscPosTransport` sends the bytes to a sink the app supplies (USB, serial, network or Bluetooth) through the print queue.
+- 90463af: Adds what an app needs to confirm a cashier switch, a register switch or a sign-out: `switchWarnings()` lists what the switch leaves behind (unsent sales and till updates, parked sales, a partly paid sale, an open register), and `handoverSlip()` builds the hand-over slip with a printable X-report envelope. In `@tallyui/components`, `SwitchConfirm` asks with WCPOS v2's wording and names each warning, and `HandoverSlip` shows the slip.
+- 1a5af04: The cart line's Price form can show WCPOS v2's quick-discount keys (`quickDiscounts` on `PriceForm` and `Cart`): a key takes its percentage off the line's current price and Apply writes it. The pos app settings gain `cart.quickDiscounts`, defaulting to v2's `[5, 10, 15]` and keeping only percentages above 0 and up to 100.
+- d96bfc2: Add WCPOS v2's catalogue tile details: `InCartBadge` shows how many of a product the cart holds (summed by the new `cartQuantities` from `@tallyui/pos`), `CategoryTile` shows a category's photo full-bleed with an initial fallback, and `ProductFilterBar` brings v2's filter chips with In Stock on by default. `Catalogue` takes `cartLines` and `showFilterBar` to use them.
+
+### Patch Changes
+
+- 5a33bd9: `comparisonRange` now compares period to date, as WCPOS v2 does: this week so far against the same weekdays of the week before, and this month so far against the same days of the month before (1–10 Nov against 1–10 Oct). Pass the selected preset as the new optional third argument so a short running month is still treated as a month.
+- dddbf6a: Ship `@types/mustache` as a dependency, so apps that typecheck `@tallyui/pos` from source no longer fail with TS7016.
+- Updated dependencies [c2319ab]
+  - @tallyui/core@3.14.0
+
 ## 3.13.0
 
 ### Minor Changes
