@@ -1,0 +1,42 @@
+---
+title: CartFoot
+description: The cart's foot from WCPOS v2, a Checkout button with the order total beside a menu of the host's actions
+---
+
+## Import
+
+```tsx
+import { CartFoot } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CartFoot
+  total={{ amount: 3125, currency: 'EUR' }}
+  onCheckout={startCheckout}
+  actions={[
+    { label: 'Order details', onPress: openOrderSheet },
+    { label: 'Void', onPress: voidSale, destructive: true },
+  ]}
+/>
+```
+
+Renders one "Checkout" button that reads the formatted total, with a ⋮ button on its left. The ⋮ opens a menu of the actions the host passes; pressing an item closes the menu and calls its `onPress`. The menu holds no logic of its own, so each app wires its own void, park or note.
+
+WCPOS v2's ⋮ opens its Order details sheet, with Void, Print and Sync order in the sheet's footer. To keep that shape, pass one "Order details" item that opens the app's own sheet.
+
+The ⋮ is a button named "More actions" with `aria-haspopup="menu"` and `aria-expanded`. The open menu has the `menu` role and each item the `menuitem` role. On the web, focus moves to the first item when the menu opens, and Escape closes it and returns focus to the ⋮. The ⋮ is left out when `actions` is empty.
+
+[Cart](/docs/components/cart) renders this foot in place of its Cash and Card terminal buttons when given its `checkout` prop.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `total` | `Money` | required | The order total shown in the Checkout label |
+| `onCheckout` | `() => void` | required | Called when Checkout is pressed |
+| `actions` | `readonly { label: string; onPress: () => void; destructive?: boolean }[]` | `[]` | The ⋮ menu's items; `destructive` shows the label in the destructive colour |
+| `disabled` | `boolean` | `false` | Disables Checkout only; the menu stays usable |
+| `locale` | `string` | --- | Locale passed to `formatMoney` |
+| `className` | `string` | --- | Override container styles |
