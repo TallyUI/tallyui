@@ -1,5 +1,25 @@
 # @tallyui/connector-vendure
 
+## 3.13.0
+
+### Minor Changes
+
+- 135eda4: `CustomerServiceError` now has an optional `status`: the HTTP status the store answered with, or undefined when no response came. The WooCommerce, Medusa and Vendure connectors set it, so a retry can check the status instead of parsing the message.
+- e77573e: The Vendure connector now provides `listOrders` and `getOrders`, so the shared order history and receipt reprint work on Vendure. It maps Vendure's orders to `StoreOrder` (new `toVendureStoreOrder`, `createVendureOrders` and `listVendureOrderDetails`); pass `tallyFields: false` to `createVendureConnector` on a server without the vendurepos plugin.
+- 58c9f24: The Vendure connector can now edit a customer (`updateCustomer`), using Vendure's `updateCustomer` mutation for names, email and phone and its customer address book for the billing and shipping addresses. Company and tax ids are not stored, because Vendure customers have neither.
+
+### Patch Changes
+
+- Updated dependencies [73387ab]
+- Updated dependencies [0bf0072]
+- Updated dependencies [135eda4]
+- Updated dependencies [dfda46e]
+- Updated dependencies [7e12633]
+- Updated dependencies [c31eef8]
+- Updated dependencies [9f04b1b]
+- Updated dependencies [80c7a6b]
+  - @tallyui/core@3.13.0
+
 ## 3.12.0
 
 ### Patch Changes

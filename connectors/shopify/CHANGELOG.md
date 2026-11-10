@@ -1,5 +1,19 @@
 # @tallyui/connector-shopify
 
+## 3.13.0
+
+### Patch Changes
+
+- Updated dependencies [73387ab]
+- Updated dependencies [0bf0072]
+- Updated dependencies [135eda4]
+- Updated dependencies [dfda46e]
+- Updated dependencies [7e12633]
+- Updated dependencies [c31eef8]
+- Updated dependencies [9f04b1b]
+- Updated dependencies [80c7a6b]
+  - @tallyui/core@3.13.0
+
 ## 3.12.0
 
 ### Patch Changes

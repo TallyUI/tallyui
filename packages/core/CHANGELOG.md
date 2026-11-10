@@ -1,5 +1,21 @@
 # @tallyui/core
 
+## 3.13.0
+
+### Minor Changes
+
+- 73387ab: Adds cashier permissions: a connector may describe the signed-in cashier with an optional `cashier()` that returns neutral permissions (`viewReports`, `manageClosures`, `approveVariance`, `refund`, `discount`). In `@tallyui/pos`, `can()` and the `useCashier` hook read them and give the blind-count flag and a Reports gate; a connector without `cashier()` still allows everything, as before.
+- 0bf0072: Add an optional, online-only `updateCustomer(context, id, patch)` connector method with a `CustomerPatch` type, and let `Customer` and `CustomerInput` carry billing and shipping addresses (`CustomerAddress`) and tax ids (`CustomerTaxId`).
+- 135eda4: `CustomerServiceError` now has an optional `status`: the HTTP status the store answered with, or undefined when no response came. The WooCommerce, Medusa and Vendure connectors set it, so a retry can check the status instead of parsing the message.
+- 7e12633: Core now describes a payment method in a backend-neutral way (`PaymentMethodDescriptor`), and a connector may list its methods with an optional `paymentMethods()`. A connector without it still offers cash and the card terminal, through `defaultPaymentMethods()` and `paymentMethodOf()`.
+- c31eef8: Add the core types for register contract 3 (ADR-082): `ServerCapabilities.registerApproval` (the store's approval threshold, read from `/tally/v1/info`), an optional opaque `approval` on the closure payload, and the `register_approval_required` and `register_approval_invalid` conflict codes with their data types.
+- 9f04b1b: Connectors can now offer the store's register directory through an optional `listRegisters`, which returns each register's id, name, default float and expected close time. `@tallyui/pos` adds `suggestFloat`, which suggests a register's opening float: its default float, else the cash counted at the last close.
+- 80c7a6b: A cashier can now add a note to a sale with `useSale().setNote()`; it is kept when the sale is parked and resumed, and cleared by a new sale. The note is sent to the store as `order.create` version 7, only to servers that advertise version 7 (ADR-083).
+
+### Patch Changes
+
+- dfda46e: `SUPPORTED_ORDER_CREATE_VERSIONS` now lists versions 5 and 6, which the till already sends. A new test keeps it in step with the order.create envelope's version type.
+
 ## 3.12.0
 
 ### Minor Changes

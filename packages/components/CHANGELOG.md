@@ -1,5 +1,55 @@
 # @tallyui/components
 
+## 3.13.0
+
+### Minor Changes
+
+- 2b4e31d: Adds `RefundForm` and `RefundModal`. The cashier picks quantities up to what is still refundable, with restock, shipping, a signed adjustment, a destination and a required reason, and the form hands back the `order.refund` payload parts, priced by `priceRefund`, for the caller to send.
+- 31a244c: App settings gain a device-local `ui.theme` (`system`, `light` or `dark`, default `system`). The new `DisplaySettings` component lets the user choose the theme, the UI scale and the font set, and saves each choice through `useAppSettings`.
+- 9beba13: Adds open sales as cart tabs: `useSale` gains `switchSale` (it parks the current sale and opens a parked one, or a new one) and `closeSale`, and `openSales` lists the open sales for `OpenSaleTabs`, which shows each sale's customer or contents, its total and a Partly paid chip. A partly paid sale cannot be switched away from or closed until it is paid or its paid legs are voided.
+- 5cb82ce: `useRegisterSession` now returns `liveAtStore`, `approvalNeeded` and `closureApprovalStatus`, and `actions.reapproveClosure` sends a closure the store refused for its approval again with a new proof; at register contract 3 a close over the threshold on a session live at the store needs the store's proof, not `approvedBy` alone. The closure sheet shows "Approval not yet verified by the store" beside the approver until the store applies the closure with its proof.
+- f52d025: Adds the Reports Sales room (`SalesRoom`, with its hero chart, figure cards and filters bar) to components, and the store-time date presets it uses (`presetRange`, `DATE_PRESETS`) to pos.
+- e4299f5: A reopened refused sale now keeps only the cashier's own note, so the "Refused by the store" text never goes out with `order.create` 7; a sale parked by 3.12.0 that still carries that first line has it dropped when the command is built. New `noteDelivery(order)` tells whether a stored sale's note was sent, and `Receipt` and `OrdersList` show the note and say when it couldn't be sent to the store.
+- ff03391: Add font choices for the `ui.font` setting: the font-family tokens, face list and type sets (system, instrument, grotesk, fraunces, manrope) in `@tallyui/theme`, and a `FontProvider` in `@tallyui/components` that loads the chosen set through an app-supplied loader so `Text` draws its body or numbers face. No font files ship in the packages; each app bundles the OFL files and passes `loadFonts`.
+- 6296a06: Add the UI scale: nine size tokens for each of the compact, regular and spacious steps with Auto picking by window size, pointer floors for controls and rows, an opt-in `@tallyui/theme/scale.css`, and a `ScaleProvider` that applies the stored `ui.scale` setting on native and mirrors it onto the web document root so portals scale too. `Text` now caps the OS text multiplier at `MAX_FONT_SCALE` (1.3) unless a caller overrides it.
+
+### Patch Changes
+
+- Updated dependencies [41fa7bf]
+- Updated dependencies [73387ab]
+- Updated dependencies [0bf0072]
+- Updated dependencies [135eda4]
+- Updated dependencies [31a244c]
+- Updated dependencies [9beba13]
+- Updated dependencies [dfda46e]
+- Updated dependencies [e2d3a2b]
+- Updated dependencies [13f8a3b]
+- Updated dependencies [7e12633]
+- Updated dependencies [c9ca7a2]
+- Updated dependencies [3b32e4c]
+- Updated dependencies [6995e84]
+- Updated dependencies [d4ae385]
+- Updated dependencies [9e0a750]
+- Updated dependencies [53c6dc8]
+- Updated dependencies [5fedc5d]
+- Updated dependencies [d0dc455]
+- Updated dependencies [9b6d07c]
+- Updated dependencies [c31eef8]
+- Updated dependencies [5cb82ce]
+- Updated dependencies [d1c587e]
+- Updated dependencies [9f04b1b]
+- Updated dependencies [4a9f14c]
+- Updated dependencies [f52d025]
+- Updated dependencies [e4299f5]
+- Updated dependencies [80c7a6b]
+- Updated dependencies [09d7140]
+- Updated dependencies [ff03391]
+- Updated dependencies [6296a06]
+  - @tallyui/pos@3.13.0
+  - @tallyui/core@3.13.0
+  - @tallyui/theme@3.13.0
+  - @tallyui/primitives@3.13.0
+
 ## 3.12.0
 
 ### Minor Changes

@@ -1,5 +1,24 @@
 # @tallyui/connector-medusa
 
+## 3.13.0
+
+### Minor Changes
+
+- 135eda4: `CustomerServiceError` now has an optional `status`: the HTTP status the store answered with, or undefined when no response came. The WooCommerce, Medusa and Vendure connectors set it, so a retry can check the status instead of parsing the message.
+- 5707be4: The Medusa admin-user connector can now edit a customer: `updateCustomer` saves the customer's own fields and replaces their default billing and shipping addresses in Medusa's address book. Customers read with their addresses now carry `billing` and `shipping`.
+
+### Patch Changes
+
+- Updated dependencies [73387ab]
+- Updated dependencies [0bf0072]
+- Updated dependencies [135eda4]
+- Updated dependencies [dfda46e]
+- Updated dependencies [7e12633]
+- Updated dependencies [c31eef8]
+- Updated dependencies [9f04b1b]
+- Updated dependencies [80c7a6b]
+  - @tallyui/core@3.13.0
+
 ## 3.12.0
 
 ### Patch Changes
