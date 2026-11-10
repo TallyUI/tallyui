@@ -35,7 +35,7 @@ export { isRxdbRemoteVersionMismatch } from './rxdb-remote-version-mismatch';
 export { errorKind, type ErrorKind, type SyncNotice } from './sync-notice';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
-export { customerTraits, CustomerServiceError, type Customer, type CustomerInput } from './types/customers';
+export { customerTraits, CustomerServiceError, type Customer, type CustomerInput, type CustomerAddress, type CustomerTaxId, type CustomerPatch } from './types/customers';
 export { paymentMethodOf, defaultPaymentMethods } from './types/payment-methods';
 export type {
   PaymentMethodDescriptor, PaymentKind, CaptureMode, CaptureModeEntry, PaymentHardware, PaymentTransport,
