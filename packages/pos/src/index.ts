@@ -118,6 +118,8 @@ export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRo
 export type { Correction, RecordedFigures, ClosureScope } from './register';
 export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact } from './register';
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type UseRegisterSessionOptions } from './register';
+export { roundedDue, tenderRounding } from './tender';
+export type { TenderRounding } from './tender';
 export { suggestFloat, type FloatSuggestion } from './register';
 
 // Reports
