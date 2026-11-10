@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { FailureClass, UpdateRequired } from '@tallyui/core';
+import { ConnectorUnauthorizedError, CustomerServiceError, type FailureClass, type UpdateRequired } from '@tallyui/core';
 
 import {
   createConnectivityTracker, reduceConnectivity, INITIAL_CONNECTIVITY, type ConnectivityEvent, type ConnectivitySnapshot,
@@ -48,6 +48,18 @@ describe('reduceConnectivity', () => {
     expect(run([fail(0), { type: 'link-down' }])).toEqual({ state: 'offline', updateRequired: null, failingSince: null });
   });
 
+  it('any answer from the store ends offline', () => {
+    const answer = (at: number, failure: FailureClass): ConnectivityEvent => ({ type: 'failure', at, failure, answered: true });
+    const confirmed = run([fail(0), fail(30_000)]);
+    const dropped = run([{ type: 'link-down' }]);
+    for (const offline of [confirmed, dropped]) {
+      expect(run([answer(40_000, null)], offline)).toEqual(INITIAL_CONNECTIVITY);
+      expect(run([answer(40_000, 'degraded')], offline).state).toBe('degraded');
+      expect(run([answer(40_000, 'offline')], offline).state).toBe('degraded');
+      expect(reduceConnectivity(offline, fail(40_000, null))).toBe(offline);
+    }
+  });
+
   it('re-anchors the window when the clock goes back', () => {
     expect(run([fail(100_000), fail(50_000), fail(70_000)])).toMatchObject({ state: 'online', failingSince: 50_000 });
   });
@@ -84,8 +96,15 @@ describe('createConnectivityTracker', () => {
 
   it('uses the neutral rule without a connector', () => {
     const tracker = createConnectivityTracker({ now: () => 0 });
-    expect(tracker.recordFailure(new TypeError('Failed to fetch'))).toBe('offline');
+    expect(tracker.recordFailure(new CustomerServiceError('network', 'no answer'))).toBe('offline');
     tracker.linkDown();
     expect(tracker.current().state).toBe('offline');
+  });
+
+  it('reads a status on the error as an answer: a 401 while offline is online', () => {
+    const tracker = createConnectivityTracker({ now: () => 0 });
+    tracker.linkDown();
+    expect(tracker.recordFailure(new ConnectorUnauthorizedError('sign in', 401))).toBeNull();
+    expect(tracker.current()).toEqual(INITIAL_CONNECTIVITY);
   });
 });

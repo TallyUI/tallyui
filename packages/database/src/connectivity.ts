@@ -24,7 +24,8 @@ export interface ConnectivitySnapshot {
 
 export type ConnectivityEvent =
   | { type: 'success'; at: number }
-  | { type: 'failure'; at: number; failure: FailureClass }
+  /** `answered`: the store sent a response (a 401, a 404, a 5xx), so the network is up whatever `failure` says. */
+  | { type: 'failure'; at: number; failure: FailureClass; answered?: boolean }
   /** The OS says the link is down: offline at once, as v2. */
   | { type: 'link-down' }
   | { type: 'reset-update-required' };
@@ -36,8 +37,9 @@ const answered = (snapshot: ConnectivitySnapshot): ConnectivitySnapshot =>
 
 /**
  * v2's rule (`use-online-status.web.tsx`): the first success is online; a failure changes the verdict only once
- * failures have run for the confirmation window. The latch holds across successes, first sight wins, and only a
- * reset (v2: a fresh engine) clears it. Returns the same object when nothing changes.
+ * failures have run for the confirmation window. Any answer from the store ends offline. The latch holds across
+ * successes, first sight wins, and only a reset (v2: a fresh engine, which re-probes) clears it. Returns the same
+ * object when nothing changes.
  */
 export function reduceConnectivity(snapshot: ConnectivitySnapshot, event: ConnectivityEvent): ConnectivitySnapshot {
   switch (event.type) {
@@ -49,7 +51,8 @@ export function reduceConnectivity(snapshot: ConnectivitySnapshot, event: Connec
       return snapshot.updateRequired === null ? snapshot : { ...snapshot, updateRequired: null };
     case 'failure': {
       const { failure, at } = event;
-      if (failure === null) return snapshot;
+      // An answer that says nothing about connectivity (a 401, a 404) still proves the store is reachable.
+      if (failure === null) return event.answered ? answered(snapshot) : snapshot;
       if (typeof failure === 'object') {
         // The store answered with its refusal, so it is reachable.
         const next = answered(snapshot);
@@ -58,7 +61,9 @@ export function reduceConnectivity(snapshot: ConnectivitySnapshot, event: Connec
       // A clock that went back would hold the verdict off for ever: re-anchor instead.
       const failingSince = snapshot.failingSince === null || snapshot.failingSince > at ? at : snapshot.failingSince;
       const confirmed = at - failingSince >= FAILURE_CONFIRMATION_MS - FAILURE_CONFIRMATION_TOLERANCE_MS;
-      const state = confirmed ? failure : snapshot.state;
+      const verdict = confirmed ? failure : snapshot.state;
+      // An answer is never offline: a 5xx while offline is degraded at once.
+      const state = event.answered && verdict === 'offline' ? 'degraded' : verdict;
       return state === snapshot.state && failingSince === snapshot.failingSince ? snapshot : { ...snapshot, state, failingSince };
     }
   }
@@ -69,10 +74,10 @@ export interface ConnectivityTracker {
   readonly snapshot$: Observable<ConnectivitySnapshot>;
   current(): ConnectivitySnapshot;
   recordSuccess(): void;
-  /** Classifies with the tracker's connector, reduces, and returns the class. */
+  /** Classifies with the tracker's connector, reduces, and returns the class. A numeric `status` on the error is an answer. */
   recordFailure(error: unknown): FailureClass;
   linkDown(): void;
-  /** Clears the update-required latch, for a re-probe after the store or the till was updated. */
+  /** Clears the update-required latch once the store or the till was updated; a replication it feeds re-probes. */
   resetUpdateRequired(): void;
 }
 
@@ -92,7 +97,8 @@ export function createConnectivityTracker(
     recordSuccess: () => dispatch({ type: 'success', at: now() }),
     recordFailure: (error) => {
       const failure = classifyFailure(connector, error);
-      dispatch({ type: 'failure', at: now(), failure });
+      const answered = typeof (error as { status?: unknown } | null | undefined)?.status === 'number';
+      dispatch({ type: 'failure', at: now(), failure, answered });
       return failure;
     },
     linkDown: () => dispatch({ type: 'link-down' }),
