@@ -1,0 +1,44 @@
+---
+title: ProductFilterBar
+description: WCPOS v2's always-on product filter chips, with In Stock on by default
+---
+
+## Import
+
+```tsx
+import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+const [filters, setFilters] = useState(DEFAULT_PRODUCT_FILTERS);
+
+<ProductFilterBar
+  value={filters}
+  onChange={setFilters}
+  onTermPress={(chip) => openTermPicker(chip)}
+/>
+```
+
+A horizontal row of chips in WCPOS v2's order: In Stock, Featured, On Sale, Category, Tag and Brand. The first three toggle a field of `ProductFilters`; the term chips call `onTermPress` and render only when it is given. `DEFAULT_PRODUCT_FILTERS` starts with In Stock on, as v2 does. The bar only reports filters; the app or `Catalogue` (`showFilterBar`) applies them.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `ProductFilters` | required | Current filters |
+| `onChange` | `(next: ProductFilters) => void` | required | Receives the filters with the tapped chip toggled |
+| `chips` | `readonly ProductFilterChip[]` | `PRODUCT_FILTER_CHIPS` | Chips to show, in this order |
+| `onTermPress` | `(chip: 'category' \| 'tag' \| 'brand') => void` | — | Opens the app's term picker; term chips are hidden without it |
+| `className` | `string` | — | Override container styles |
+
+### ProductFilters
+
+```ts
+interface ProductFilters {
+  inStock: boolean;
+  featured: boolean;
+  onSale: boolean;
+}
+```
