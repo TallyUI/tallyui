@@ -135,6 +135,106 @@ describe('WooCommerce customers', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  describe('updateCustomer', () => {
+    const uuid = '41871a67-ee96-49c9-98a7-21709b44dccc';
+    const blankBilling = {
+      first_name: '', last_name: '', company: '', address_1: '', address_2: '', city: '', postcode: '', country: '', state: '', email: '', phone: '',
+    };
+    const { email: _noEmail, ...blankShipping } = blankBilling;
+    // Synthetic: the recorded created document with the changed fields, in the push envelope's recorded shape.
+    const updated = (changes: object) => Response.json({ document: { ...created.document, ...changes }, currentRevision: 'sha256:next' });
+    async function update(patch: Parameters<typeof customers.updateCustomer>[2], changes: object = {}) {
+      const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(included)).mockResolvedValueOnce(updated(changes));
+      const result = await customers.updateCustomer(context, '3', patch);
+      return { spy, result, sent: JSON.parse(spy.mock.calls[1]![1]!.body as string) };
+    }
+
+    it('reads the uuid and revision, pushes an update of one scalar and maps the response', async () => {
+      const { spy, result, sent } = await update({ firstName: 'Geo' }, { first_name: 'Geo' });
+      expect(result).toStrictEqual({ ...customer, firstName: 'Geo', name: 'Geo Four' });
+      expect(spy).toHaveBeenNthCalledWith(1, `${context.baseUrl}/customers?include=3&per_page=1&role=all`, {
+        method: 'GET', headers: context.headers, signal: context.signal,
+      });
+      expect(spy).toHaveBeenNthCalledWith(2, `${context.baseUrl}/push/customers`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...context.headers }, signal: context.signal, body: expect.any(String),
+      });
+      expect(sent).toStrictEqual({
+        mutationId: createRequest.mutationId, operation: 'update', collection: 'customers', recordId: uuid,
+        baseRevision: included[0]!._rxdb_revision, payload: { first_name: 'Geo' },
+      });
+    });
+
+    it('sends only the fields given', async () => {
+      const { sent } = await update({ lastName: 'Five', email: 'five@example.invalid', company: 'Five Ltd' });
+      expect(sent.payload).toStrictEqual({ last_name: 'Five', email: 'five@example.invalid', billing: { company: 'Five Ltd' } });
+    });
+
+    it('replaces billing whole, with the scalar phone over it', async () => {
+      const { sent } = await update({ billing: { address1: '1 Main St', city: 'Perth', country: 'AU', phone: '555-0001' }, phone: '555-0100' });
+      expect(sent.payload).toStrictEqual({ billing: { ...blankBilling, address_1: '1 Main St', city: 'Perth', country: 'AU', phone: '555-0100' } });
+    });
+
+    it('replaces shipping whole, without an email key', async () => {
+      const { sent } = await update({ shipping: { firstName: 'Gee', address2: 'Unit 4', postcode: '6000' } });
+      expect(sent.payload).toStrictEqual({ shipping: { ...blankShipping, first_name: 'Gee', address_2: 'Unit 4', postcode: '6000' } });
+    });
+
+    it.each([
+      [[{ type: 'au_abn', value: '51824753556', country: 'AU' }, { type: 'other', value: 'R-1', label: 'Ref' }]],
+      [[]],
+    ])('replaces tax ids with %j', async (taxIds) => {
+      const { sent } = await update({ taxIds });
+      expect(sent.payload).toStrictEqual({ tax_ids: taxIds });
+    });
+
+    it('returns the read customer without a push for an empty patch', async () => {
+      const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(included));
+      await expect(customers.updateCustomer(context, '3', {})).resolves.toStrictEqual(customer);
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['an unknown id', '99', noMatches], ['an id the read leaves out', '99', included],
+    ])('refuses %s as invalid without a push', async (_name, id, body) => {
+      const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(body));
+      await expect(customers.updateCustomer(context, id, { firstName: 'Geo' })).rejects.toMatchObject({ code: 'invalid', message: 'Unknown customer' });
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['a non-numeric id', 'abc', { firstName: 'Geo' }, 'Unknown customer'],
+      ['a shipping email', '3', { shipping: { email: 'ship@example.invalid' } }, 'WooCommerce shipping addresses have no email'],
+    ])('refuses %s without a request', async (_name, id, patch, message) => {
+      const spy = vi.spyOn(globalThis, 'fetch');
+      await expect(customers.updateCustomer(context, id, patch)).rejects.toMatchObject({ code: 'invalid', message });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('refuses a row without a WCPOS uuid as an unexpected response', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json([{ ...included[0], meta_data: [] }]));
+      await expect(customers.updateCustomer(context, '3', { firstName: 'Geo' })).rejects.toMatchObject({ code: 'server', message: 'unexpected response' });
+    });
+
+    it.each([
+      ['a refused patch', Response.json(duplicate, { status: 400 }), { code: 'invalid', message: duplicate.message, status: 400 }],
+      ['a 5xx', Response.json({ message: 'Store error' }, { status: 500 }), { code: 'server', message: 'HTTP 500', status: 500 }],
+      ['a 409 stale revision', Response.json({ current: created.document }, { status: 409 }), { code: 'server', status: 409 }],
+    ])('classifies %s on the push', async (_name, response, error) => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(included)).mockResolvedValueOnce(response);
+      const result = customers.updateCustomer(context, '3', { email: 'taken@example.invalid' });
+      await expect(result).rejects.toBeInstanceOf(CustomerServiceError);
+      await expect(result).rejects.toMatchObject(error);
+    });
+
+    it('classifies a push 401 as unauthorized and a push network failure as network', async () => {
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(Response.json(included)).mockResolvedValueOnce(Response.json({}, { status: 401 }))
+        .mockResolvedValueOnce(Response.json(included)).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      await expect(customers.updateCustomer(context, '3', { firstName: 'Geo' })).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+      await expect(customers.updateCustomer(context, '3', { firstName: 'Geo' })).rejects.toMatchObject({ code: 'network', status: undefined });
+    });
+  });
+
   it('maps billing fallbacks, optional fields and the display-name priority', () => {
     expect(toWooCustomer({ id: 3, first_name: '', last_name: null, email: '', billing: search[0]!.billing })).toStrictEqual(customer);
     expect(toWooCustomer({ id: 3, first_name: 'Top', last_name: 'Level', email: 'top@example.invalid', billing: search[0]!.billing }))
@@ -150,6 +250,7 @@ describe('WooCommerce customers', () => {
     ['get', () => customers.getCustomer(context, '3')],
     ['create', () => customers.createCustomer(context, input)],
     ['email', () => customers.emailReceipt(context, '118', input.email)],
+    ['update', () => customers.updateCustomer(context, '3', { firstName: 'Gee' })],
   ] as const)('%s errors', (_name, call) => {
     it.each([422, 500])('carries HTTP %i as the error status', async (status) => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ message: 'Store error' }, { status }));
@@ -214,9 +315,9 @@ describe('WooCommerce customers', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it('exposes all four customer functions on each connector', () => {
+  it('exposes all five customer functions on each connector', () => {
     const connector = createWooCommerceConnector();
-    for (const key of ['searchCustomers', 'getCustomer', 'createCustomer', 'emailReceipt'] as const) {
+    for (const key of ['searchCustomers', 'getCustomer', 'createCustomer', 'updateCustomer', 'emailReceipt'] as const) {
       expect(connector[key]).toBeTypeOf('function');
     }
   });
