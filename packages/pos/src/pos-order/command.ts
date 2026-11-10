@@ -3,7 +3,7 @@ import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
 import type { PosOrder, PosOrderLine } from './types';
 
 /** The highest order.create version this till sends; pos_orders' sentVersion and downgradedFrom maxima must equal it. */
-export const ORDER_CREATE_MAX_VERSION = 6 as const;
+export const ORDER_CREATE_MAX_VERSION = 7 as const;
 
 export class UnsupportedOrderVersionError extends Error {
   readonly code = 'UNSUPPORTED_ORDER_VERSION';
@@ -73,6 +73,7 @@ export function contentVersion(order: Pick<PosOrder, 'display' | 'taxByRate' | '
  * ADR-065's figures make version 3; otherwise a discounted order is version 2 (ADR-062), else version 1, byte-identical.
  * A version-3 order goes as version 4 (#286) only when `maxVersion` is at least 4 and its `sentVersion` doesn't cap it.
  * Coupon orders need version 6, carrying coupons, stored regular prices, line attributes and receipt coupons.
+ * A sale with a note goes as version 7 when capped at 7 or more and it has figures; otherwise the note is not sent.
  * Orders with Any picks (#495) need version 6 too, carrying a line's `anyAttributes`, and coupons only when they have some.
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
@@ -84,9 +85,12 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   if (content === 6 && cap !== undefined && cap < 6) throw new UnsupportedOrderVersionError(6, cap);
   if (grossMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
   // Version 4 only when the cap allows it (the server advertises 4, and no sentVersion holds the order lower).
-  const version = (content === 3 && cap !== undefined && cap >= 4 ? 4
-    : Math.min(content, cap ?? content)) as OrderCreateEnvelope['version'];
-  const lineDiscounts = order.lines.map((line) => version >= 4 ? netDiscountMinor(line, order.pricesIncludeTax) : line.discountMinor);
+  const base = (content === 3 && cap !== undefined && cap >= 4 ? 4
+    : Math.min(content, cap ?? content)) as 1 | 2 | 3 | 4 | 5 | 6;
+  // Version 7 (ADR-083) is 6 plus the note: only for a sale with one, with figures (3+), when the cap allows 7.
+  // Every other field follows `base`, so a note changes nothing else in the payload.
+  const version = (order.note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
+  const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax) : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
   const email = order.customer?.email;
@@ -104,20 +108,20 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
         ...(line.taxInclusive !== undefined ? { taxInclusive: line.taxInclusive } : {}),
         ...(lineDiscounts[i] > 0 ? { discountMinor: lineDiscounts[i] } : {}),
-        ...(version === 6 && line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
-        ...(version === 6 && line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),
-        ...(version === 6 && line.anyAttributes?.length ? { anyAttributes: [...line.anyAttributes] } : {}),
+        ...(base === 6 && line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
+        ...(base === 6 && line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),
+        ...(base === 6 && line.anyAttributes?.length ? { anyAttributes: [...line.anyAttributes] } : {}),
       })),
-      ...(version >= 5 && order.fees?.length ? { fees: order.fees.map((fee) => ({
+      ...(base >= 5 && order.fees?.length ? { fees: order.fees.map((fee) => ({
         clientFeeId: fee.id, name: fee.name, amountMinor: fee.amountMinor, taxStatus: fee.taxStatus,
         ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(fee.taxMicros)),
       })) } : {}),
-      ...(version >= 5 && order.shipping?.length ? { shipping: order.shipping.map((charge) => ({
+      ...(base >= 5 && order.shipping?.length ? { shipping: order.shipping.map((charge) => ({
         clientShippingId: charge.id, name: charge.name, ...(charge.methodId !== undefined ? { methodId: charge.methodId } : {}),
         amountMinor: charge.amountMinor, taxStatus: charge.taxStatus,
         ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(charge.taxMicros)),
       })) } : {}),
-      ...(version === 6 && order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor }) => ({
+      ...(base === 6 && order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor }) => ({
         code, couponId, discountMinor, discountTaxMinor,
       })) } : {}),
       payments: order.payments.map((payment) => ({
@@ -129,24 +133,25 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       subtotalMinor: order.subtotalMinor,
       ...(discountMinor > 0 ? { discountMinor } : {}),
       taxMinor: order.taxMinor, totalMinor: order.totalMinor,
-      ...(version >= 3 ? {
+      ...(base >= 3 ? {
         display: { ...storedDisplay, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
           clientLineId: lineId, amountMinor, discounts,
         })),
-        ...(version >= 5 && order.display!.fees ? { fees: order.display!.fees.map(({ id, amountMinor }) => ({ clientFeeId: id, amountMinor })) } : {}),
-        ...(version >= 5 && order.display!.shipping ? { shipping: order.display!.shipping.map(({ id, amountMinor }) => ({ clientShippingId: id, amountMinor })) } : {}),
-        ...(version === 6 && order.coupons?.length && order.display!.coupons ? { coupons: order.display!.coupons.map(({ code, amountMinor }) => ({ code, amountMinor })) } : {}),
+        ...(base >= 5 && order.display!.fees ? { fees: order.display!.fees.map(({ id, amountMinor }) => ({ clientFeeId: id, amountMinor })) } : {}),
+        ...(base >= 5 && order.display!.shipping ? { shipping: order.display!.shipping.map(({ id, amountMinor }) => ({ clientShippingId: id, amountMinor })) } : {}),
+        ...(base === 6 && order.coupons?.length && order.display!.coupons ? { coupons: order.display!.coupons.map(({ code, amountMinor }) => ({ code, amountMinor })) } : {}),
         },
         taxByRate: order.taxByRate!.map(({ ratePpm, code, netMinor, amountMinor, grossMinor }) => ({
           ratePpm, ...(code !== undefined ? { code } : {}), netMinor, taxMinor: amountMinor, grossMinor,
         })),
       } : {}),
-      customer: version >= 3
+      customer: base >= 3
         ? (email || customerId ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}) } : null)
         : (email ? { email } : null),
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
-      ...(version >= 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
+      ...(base >= 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
+      ...(version === 7 ? { note: order.note } : {}),
     },
   };
 }
