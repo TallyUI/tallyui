@@ -17,6 +17,15 @@ export type { TaxRateMap, TaxContext } from './tax';
 export { resolveStoreSettings, useStoreSettings, withPricingContext, taxProviderProps } from './store-settings';
 export type { StoreSettingsResolution, ResolveStoreSettingsOptions, StoreSettingsState } from './store-settings';
 
+// App settings
+export {
+  UI_SCALES, APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, appSettingSchema,
+  appSettingCollection, resolveAppSettings, readAppSettings, appSettings$, writeAppSetting, useAppSettings,
+} from './app-settings';
+export type {
+  UiScale, AppSettings, AppSettingKey, AppSettingDefinition, AppSettingDoc, AppSettingCollection,
+} from './app-settings';
+
 // RxDB reads past the query cache, and live lists that can't leave it stale (RxDB 16.21.1 bug 4)
 export { readFresh, countFresh, watchFresh } from './rxdb';
 
