@@ -8,9 +8,21 @@ import { formatMoney } from '@tallyui/core';
 import { Cart } from '../sale/cart';
 import { blue, click, discount, pricing, SaleHarness, sale, totals, traits } from './sale-harness';
 
-const money = (amount: number) => formatMoney({ amount, currency: 'EUR' })!;
+// jsdom has no window size; the Cart sees a tablet so its Price column shows, unless a test sets a phone.
+const tablet = { width: 1024, height: 768, scale: 1, fontScale: 1 };
+let dimensions = tablet;
+vi.mock('react-native', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-native')>()),
+  useWindowDimensions: () => dimensions,
+}));
 
-afterEach(() => cleanup());
+const money = (amount: number) => formatMoney({ amount, currency: 'EUR' })!;
+// The line's Price action, not the Price column head.
+const notHead = { ignore: '[role="columnheader"] *' };
+// A cart line's row: the name's cell, then its row.
+const row = (name: string) => screen.getByText(name).parentElement!.parentElement!;
+
+afterEach(() => { cleanup(); dimensions = tablet; });
 
 describe('Cart', () => {
   it.each([undefined, 1, 2, 3, 4])('hides Add charge below orderCreate 5 (%s)', (orderCreate) => {
@@ -43,7 +55,7 @@ describe('Cart', () => {
     expect(within(fee).getByText(money(sale.order.display.fees![0].amountMinor))).toBeTruthy();
     expect(within(shipping).getByText('Delivery')).toBeTruthy();
     expect(within(shipping).getByText(money(sale.order.display.shipping![0].amountMinor))).toBeTruthy();
-    expect(screen.getByText(`${money(360)} × 1`)).toBeTruthy();
+    expect(within(row('Alteration')).getAllByText(money(360))).toHaveLength(2);
     expect(screen.getByText('Alteration').compareDocumentPosition(fee) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(fee.compareDocumentPosition(shipping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const footer = within(screen.getByTestId('cart-footer'));
@@ -67,7 +79,7 @@ describe('Cart', () => {
     click('Order discount');
     click('Add charge');
     expect(screen.queryByRole('group', { name: 'Order discount' })).toBeNull();
-    fireEvent.click(screen.getByText('Price'));
+    fireEvent.click(screen.getByText('Price', notHead));
     expect(screen.queryByTestId('charge-form')).toBeNull();
     click('Add charge');
     expect(screen.queryByTestId('price-form')).toBeNull();
@@ -105,7 +117,7 @@ describe('Cart', () => {
   it.each([undefined, false])('hides Price without permission (%s)', (canEditPrice) => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice={canEditPrice} />}</SaleHarness>);
     act(() => sale.add(blue, traits));
-    expect(screen.queryByText('Price')).toBeNull();
+    expect(screen.queryByText('Price', notHead)).toBeNull();
     expect(screen.queryByTestId('price-form')).toBeNull();
   });
 
@@ -115,14 +127,16 @@ describe('Cart', () => {
     act(() => { sale.add(blue, traits); sale.add(blue, traits); });
     const lineId = sale.order.lineItems[0].id;
     fireEvent.click(screen.getByText('Discount'));
-    fireEvent.click(screen.getByText('Price'));
+    fireEvent.click(screen.getByText('Price', notHead));
     expect(screen.queryByRole('group', { name: 'Discount on Shirt' })).toBeNull();
     expect(screen.getAllByRole('group')).toHaveLength(1);
     fireEvent.change(screen.getByTestId('price-input'), { target: { value: '10.00' } });
     fireEvent.change(screen.getByTestId('price-reason'), { target: { value: ' Damaged ' } });
     fireEvent.click(screen.getByTestId('price-apply'));
     expect(sale.order.lineItems[0].unitPriceMinor).toBe(1000);
-    expect(screen.getByText(`${money(1000)} × 2`)).toBeTruthy();
+    // A manual price below the regular price shows the regular price struck above it.
+    expect(within(row('Shirt')).getByText(money(1000))).toBeTruthy();
+    expect(screen.getByLabelText(`Regular price ${money(1250)}`)).toBeTruthy();
     expect(screen.getAllByText(money(2000))).toHaveLength(2);
     expect(onPriceChange).toHaveBeenCalledExactlyOnceWith({ lineId, fromMinor: 1250, toMinor: 1000, reason: 'Damaged' });
     expect(screen.queryByTestId('price-form')).toBeNull();
@@ -132,7 +146,7 @@ describe('Cart', () => {
     const onPriceChange = vi.fn();
     const { rerender } = render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice />}</SaleHarness>);
     act(() => sale.add(blue, traits));
-    fireEvent.click(screen.getByText('Price'));
+    fireEvent.click(screen.getByText('Price', notHead));
     expect(screen.queryByTestId('price-quick-discounts')).toBeNull();
     rerender(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice quickDiscounts={[5, 10, 15]} onPriceChange={onPriceChange} />}</SaleHarness>);
     const lineId = sale.order.lineItems[0].id;
@@ -149,13 +163,38 @@ describe('Cart', () => {
     discount('Order discount', 'Amount', '0.50');
     // The line before its discounts (2 × €12.50 = €25.00): CartLine shows the display amount, not the net-after-discount.
     expect(screen.getByText('Shirt')).toBeTruthy();
-    expect(screen.getByText(`${money(1250)} × 2`)).toBeTruthy();
+    expect(within(row('Shirt')).getByText(money(1250))).toBeTruthy();
+    expect(screen.queryByLabelText(/^Regular price/)).toBeNull();
     // The line's display amount (before its own discount) and the footer's Subtotal both read €25.00.
     expect(screen.getAllByText(money(2500))).toHaveLength(2);
     // The line's own 10% discount, shown by its own display amount (10% of €25.00).
     expect(screen.getByText(`10% −${money(250)}`)).toBeTruthy();
     // A single order discount's chip carries order.display.orderDiscountMinor.
     expect(screen.getByText(`Order discount −${money(50)}`)).toBeTruthy();
+  });
+
+  it('shows the column heads', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    expect(screen.getAllByRole('columnheader').map((head) => head.textContent)).toEqual(['Qty', 'Item', 'Price', 'Total']);
+  });
+
+  it('folds the Price head and price cells on a phone window, keeping Total', () => {
+    dimensions = { ...tablet, width: 400, height: 800 };
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.getAllByRole('columnheader').map((head) => head.textContent)).toEqual(['Qty', 'Item', 'Total']);
+    expect(within(row('Shirt')).getAllByText(money(1250))).toHaveLength(1);
+  });
+
+  it('folds the Price column when the cart lays out under 300 wide', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(within(row('Shirt')).getAllByText(money(1250))).toHaveLength(2);
+    // react-native-web keeps a View's onLayout on its node (useElementLayout); jsdom has no ResizeObserver to call it.
+    const wrapper = screen.getByRole('row').parentElement as HTMLElement & { __reactLayoutHandler: (event: unknown) => void };
+    act(() => wrapper.__reactLayoutHandler({ nativeEvent: { layout: { x: 0, y: 0, width: 299, height: 600 } } }));
+    expect(screen.getAllByRole('columnheader').map((head) => head.textContent)).toEqual(['Qty', 'Item', 'Total']);
+    expect(within(row('Shirt')).getAllByText(money(1250))).toHaveLength(1);
   });
 
   it("shows a line's attributes as rows", () => {

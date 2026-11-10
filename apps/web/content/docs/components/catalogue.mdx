@@ -23,7 +23,7 @@ import { Catalogue } from '@tallyui/components';
 />
 ```
 
-Renders a searchable product grid or table with barcode or SKU lookup, variant choices, and stock sync times. Optional category navigation and a view toggle update controlled or internal view state; supplied `items` are displayed in their given order.
+Renders a searchable product grid or table with barcode or SKU lookup, variant choices, and stock sync times. Optional category navigation and a view toggle update controlled or internal view state; supplied `items` are displayed in their given order. With `showFilterBar`, In Stock is on by default and hides out-of-stock and backorder products (a stock the backend did not report stays) unless `items` is supplied; Featured and On Sale are only passed out through `onFiltersChange`, for an app whose connector knows them.
 
 ## Props
 
@@ -52,3 +52,8 @@ Renders a searchable product grid or table with barcode or SKU lookup, variant c
 | `categories` | `ProductCategory[]` | --- | Replaces categories derived from the listed products |
 | `items` | `Doc[]` | --- | App-filtered and sorted list shown as given; `products` still drives scanning and variant choices |
 | `onQueryChange` | `(query: string) => void` | --- | Receives search text on each input change for app-owned filtering |
+| `cartLines` | `readonly CartQuantityLine[]` | --- | The open sale's lines; each grid tile shows an `InCartBadge` with its product's summed quantity, all variants together |
+| `showFilterBar` | `boolean` | `false` | Shows a `ProductFilterBar` under the search box |
+| `filterChips` | `readonly ProductFilterChip[]` | `['inStock']` | Chips the bar shows; Catalogue applies only In Stock itself |
+| `filters` | `ProductFilters` | --- | Controlled filters; uncontrolled state starts at `DEFAULT_PRODUCT_FILTERS` (In Stock on) |
+| `onFiltersChange` | `(filters: ProductFilters) => void` | --- | Receives the cashier's next filters, including requested filters in controlled mode |

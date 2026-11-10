@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
-import { CartLine, CartLineActions, CartPanel, CartTotal } from '../cart';
+import { CartColumnHeads, CartLine, CartLineActions, CartPanel, CartTotal } from '../cart';
+import { cartShowsPrice } from '../cart/cart-columns';
 import { DiscountChips, DiscountForm } from './discount-form';
 import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
@@ -42,23 +43,28 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     ? <DiscountForm key={lineId ?? 'order'} title={title} currency={order.currency} onClose={() => setForm(null)}
       onApply={(discount) => sale.applyDiscount(lineId, discount)} /> : null;
   const pay = `min-h-12 flex-1 justify-center rounded-md bg-primary px-4 py-3 ${!order.lineItems.length ? 'opacity-50' : ''}`;
+  // The Price column folds on a narrow cart or a phone window (v2's rule), in the heads and every line alike.
+  const [cartWidth, setCartWidth] = useState<number>();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const showPrice = cartShowsPrice({ cartWidth, windowWidth, windowHeight });
   const renderItem = (line: typeof order.lineItems[number]) => <>
+    <CartLine name={line.name} attributes={line.attributes} quantity={line.quantity} unitPrice={money(line.unitPriceMinor)}
+      regularUnitPrice={line.regularUnitPriceMinor === undefined ? undefined : money(line.regularUnitPriceMinor)}
+      lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice} />
+    <DiscountChips discounts={line.discounts} amounts={display(line.id).discounts} currency={order.currency} onRemove={sale.removeDiscount} />
     <CartLineActions actions={[
       { id: 'discount', label: 'Discount', color: 'text-primary', onPress: () => setForm({ type: 'discount', lineId: line.id }) },
       ...(canEditPrice ? [{ id: 'price', label: 'Price', color: 'text-primary', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
     ]}>
-      <CartLine name={line.name} attributes={line.attributes} quantity={line.quantity} unitPrice={money(line.unitPriceMinor)}
-        lineTotal={money(display(line.id).amountMinor)} />
+      <View className="flex-row gap-4 px-3 py-2">
+        <Pressable accessibilityRole="button" accessibilityLabel={`Decrease ${line.name}`}
+          onPress={() => sale.setQuantity(line.id, line.quantity - 1)} className="rounded-md border border-border bg-card px-3 py-2 min-h-11 min-w-11 items-center justify-center"><Text className="text-center text-foreground">−</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Increase ${line.name}`}
+          onPress={() => sale.setQuantity(line.id, line.quantity + 1)} className="rounded-md border border-border bg-card px-3 py-2 min-h-11 min-w-11 items-center justify-center"><Text className="text-center text-foreground">+</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${line.name}`}
+          onPress={() => sale.remove(line.id)} className="rounded-md border border-border bg-card px-3 py-2 min-h-11 min-w-11 items-center justify-center"><Text className="text-center text-foreground">Remove</Text></Pressable>
+      </View>
     </CartLineActions>
-    <DiscountChips discounts={line.discounts} amounts={display(line.id).discounts} currency={order.currency} onRemove={sale.removeDiscount} />
-    <View className="flex-row gap-4 px-3 py-2">
-      <Pressable accessibilityRole="button" accessibilityLabel={`Decrease ${line.name}`}
-        onPress={() => sale.setQuantity(line.id, line.quantity - 1)} className="rounded-md border border-border bg-card px-3 py-2 min-h-11 min-w-11 items-center justify-center"><Text className="text-center text-foreground">−</Text></Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Increase ${line.name}`}
-        onPress={() => sale.setQuantity(line.id, line.quantity + 1)} className="rounded-md border border-border bg-card px-3 py-2 min-h-11 min-w-11 items-center justify-center"><Text className="text-center text-foreground">+</Text></Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${line.name}`}
-        onPress={() => sale.remove(line.id)} className="rounded-md border border-border bg-card px-3 py-2 min-h-11 min-w-11 items-center justify-center"><Text className="text-center text-foreground">Remove</Text></Pressable>
-    </View>
     {discountForm(line.id, `Discount on ${line.name}`)}
     {canEditPrice && form?.type === 'price' && form.lineId === line.id ? <PriceForm key={line.id} lineName={line.name}
       currency={order.currency} currentMinor={line.unitPriceMinor} quickDiscounts={quickDiscounts} onClose={() => setForm(null)}
@@ -69,7 +75,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         return refused;
       }} /> : null}
   </>;
-  return <CartPanel dataSet={{ print: 'hide' }} items={order.lineItems} renderItem={renderItem}
+  return <View dataSet={{ print: 'hide' }} className="flex-1 min-h-0" onLayout={(event) => setCartWidth(event.nativeEvent.layout.width)}>
+    <CartColumnHeads showPrice={showPrice} />
+    <CartPanel items={order.lineItems} renderItem={renderItem}
     emptyState={<Text testID="cart-empty" className="px-3 py-2 text-muted-foreground">Scan or tap a product to start a sale.</Text>}
     afterItems={<>
       {(['fees', 'shipping'] as const).map((kind) => order[kind]?.map((charge, index) =>
@@ -114,5 +122,6 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
           <Text className="text-center font-semibold text-primary-foreground">Card terminal</Text>
         </Pressable>
       </View>
-    </View>} />;
+    </View>} />
+  </View>;
 }

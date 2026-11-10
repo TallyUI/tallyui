@@ -33,6 +33,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@types/mustache": "^4.2.6",
     "@xmldom/xmldom": "0.9.12",
     "dompurify": "^3.4.17",
     "mustache": "^4.2.0"
@@ -45,7 +46,6 @@
   },
   "devDependencies": {
     "@tallyui/core": "workspace:*",
-    "@types/mustache": "^4.2.6",
     "@types/react": ">=18",
     "react": "^19.2.4",
     "rxdb": "17.5.0",

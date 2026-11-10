@@ -1,0 +1,34 @@
+---
+title: CategoryTile
+description: Square category tile with a full-bleed photo and the name over it, or an initial when there is no photo
+---
+
+## Import
+
+```tsx
+import { CategoryTile } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CategoryTile
+  name="Clothing"
+  imageUrl="https://example.com/clothing.jpg"
+  count={12}
+  onPress={() => openCategory('clothing')}
+/>
+```
+
+A square tile as WCPOS v2 lays out a category: the photo fills the tile and the name, with the product count under it, sits on a band at the foot. Without `imageUrl` the tile is tinted and shows the name's initial. The app supplies the photo and count, since `ProductCategory` carries only an id and a name.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `name` | `string` | required | Category name, up to two lines |
+| `imageUrl` | `string` | — | Category photo; omitted shows the initial fallback |
+| `count` | `number` | — | Products in the category, shown when above 0 |
+| `onPress` | `() => void` | — | Called when the tile is tapped |
+| `testID` | `string` | — | Test id; the image and fallback use it as a prefix |
+| `className` | `string` | — | Override tile styles, e.g. its width |

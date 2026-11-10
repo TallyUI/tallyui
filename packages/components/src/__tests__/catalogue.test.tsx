@@ -873,3 +873,47 @@ describe('Catalogue Any picks (#495)', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 });
+
+describe('v2 tile details', () => {
+  const soldOut = { id: 'scarf', title: 'Grey Scarf', status: 'published', variants: [
+    { id: 'scarf-one', title: 'One size', sku: 'SCARF', barcode: '333',
+      prices: [{ amount: 15, currency_code: 'eur' }], manage_inventory: true, inventory_quantity: 0, allow_backorder: false },
+  ] };
+
+  it("shows the cart's summed quantity on the product tile and hides it at 0", () => {
+    render(<Catalogue products={products} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null}
+      cartLines={[{ productId: 'shirt', quantity: 2 }, { productId: 'shirt', quantity: 1 }, { productId: 'hat', quantity: 5, custom: true }]} />);
+    expect(screen.getByTestId('in-cart-shirt').textContent).toBe('3');
+    expect(screen.getByLabelText('3 in cart')).toBeTruthy();
+    expect(screen.queryByTestId('in-cart-hat')).toBeNull();
+  });
+
+  it('renders the filter chips with In Stock on and hides out-of-stock products', () => {
+    render(<Catalogue products={[...products, soldOut]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} showFilterBar />);
+    expect(screen.getByTestId('filter-chip-inStock').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByTestId('product-tile-Grey Scarf')).toBeNull();
+    expect(screen.getByTestId('product-tile-Red Shirt')).toBeTruthy();
+  });
+
+  it('toggling In Stock passes the filter out and shows out-of-stock products', () => {
+    const onFiltersChange = vi.fn();
+    render(<Catalogue products={[...products, soldOut]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} showFilterBar
+      onFiltersChange={onFiltersChange} />);
+    fireEvent.click(screen.getByTestId('filter-chip-inStock'));
+    expect(onFiltersChange).toHaveBeenCalledWith({ inStock: false, featured: false, onSale: false });
+    expect(screen.getByTestId('filter-chip-inStock').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByTestId('product-tile-Grey Scarf')).toBeTruthy();
+  });
+
+  it('In Stock hides backorder products by default and shows them once toggled off', () => {
+    const backordered = { id: 'gloves', title: 'Wool Gloves', status: 'published', variants: [
+      { id: 'gloves-one', title: 'One size', sku: 'GLOVES', barcode: '444',
+        prices: [{ amount: 12, currency_code: 'eur' }], manage_inventory: true, inventory_quantity: 0, allow_backorder: true },
+    ] };
+    expect(traits.getStock(backordered).status).toBe('backorder');
+    render(<Catalogue products={[...products, backordered]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} showFilterBar />);
+    expect(screen.queryByTestId('product-tile-Wool Gloves')).toBeNull();
+    fireEvent.click(screen.getByTestId('filter-chip-inStock'));
+    expect(screen.getByTestId('product-tile-Wool Gloves')).toBeTruthy();
+  });
+});

@@ -1,6 +1,6 @@
 ---
 title: CartLine
-description: CartLine displays a product name and unit price with quantity alongside the line total, with a configurable currency symbol.
+description: CartLine shows one cart line in the cart's columns, with the quantity, the name and its attributes, the unit price, and the line total.
 ---
 
 ## Import
@@ -12,27 +12,31 @@ import { CartLine } from '@tallyui/components';
 ## Usage
 
 ```tsx
-<CartLine item={{ doc: productDocument, quantity: 2 }} currencySymbol="$" />
+<CartLine
+  name="Shirt"
+  attributes={{ Size: 'M', Colour: 'Red' }}
+  quantity={2}
+  unitPrice={{ amount: 1500, currency: 'EUR' }}
+  regularUnitPrice={{ amount: 2300, currency: 'EUR' }}
+  lineTotal={{ amount: 3000, currency: 'EUR' }}
+/>
 ```
 
-Horizontal row with product info on the left (name + unit price x quantity) and line total on the right.
+The line sits in the same columns as [CartColumnHeads](/docs/components/cart-column-heads): Qty, Item, Price and Total. The attributes appear on one line under the name, as "Size: M · Colour: Red". A simple line with no attributes shows none. When the regular price is above the unit price, the regular price is shown struck through above it, labelled "Regular price …" for screen readers.
 
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `item` | `CartLineItem` | required | Object with `doc` and `quantity` |
-| `currencySymbol` | `string` | `'$'` | Currency symbol |
-| `className` | `string` | — | Override container styles |
-
-### CartLineItem
-
-```ts
-interface CartLineItem {
-  doc: any;       // RxDB product document
-  quantity: number;
-}
-```
+| `name` | `string` | required | The line's name |
+| `attributes` | `Record<string, string>` | — | The variant's chosen options, shown under the name |
+| `quantity` | `number` | required | The quantity |
+| `unitPrice` | `Money` | required | The unit price |
+| `regularUnitPrice` | `Money` | — | The regular unit price; struck through only when it is above `unitPrice` in the same currency |
+| `lineTotal` | `Money` | required | The line total, shown as given |
+| `showPrice` | `boolean` | `true` | Shows the Price column; pass the same value as CartColumnHeads |
+| `locale` | `string` | — | Locale for money formatting |
+| `className` | `string` | — | Override row styles |
 
 ## Live demo
 
