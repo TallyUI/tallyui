@@ -1,6 +1,6 @@
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import type { RxCollection } from 'rxdb';
-import { BehaviorSubject, type Observable } from 'rxjs';
+import { BehaviorSubject, filter, firstValueFrom, merge, type Observable, type Subscription } from 'rxjs';
 
 import { errorKind, type ReplicationAdapter, type SyncContext, type SyncNotice } from '@tallyui/core';
 
@@ -61,8 +61,9 @@ export interface StartReplicationOptions<RxDocType, CheckpointType = any> {
   /** The backoff's ceiling and a store error's wait, in ms (default: MAX_RETRY_TIME_MS); tests shorten it. */
   maxRetryTimeMs?: number;
   /**
-   * Fed with every pull and push outcome. While its update-required latch is set, the pull pauses and the push throws,
-   * neither calling the adapter (v2 sends nothing once latched). `resume()` keeps the latch: reset it first.
+   * Fed with every pull and push outcome. While its update-required latch is set, the pull returns empty pages and a
+   * push waits, neither calling the adapter (v2 sends nothing once latched). `resetUpdateRequired()` re-probes: the
+   * pull asks the store again and a held push goes. `resume()` keeps the latch.
    */
   connectivity?: ConnectivityTracker;
 }
@@ -127,10 +128,13 @@ export function startReplication<RxDocType, CheckpointType = any>({
     if (state) state.retryTime = ms;
   };
   const pullHandler = async (checkpoint: CheckpointType | undefined, batchSize: number) => {
-    if (tillStopped || connectivity?.current().updateRequired) {
+    if (tillStopped) {
       void state?.pause();
       return { documents: [], checkpoint };
     }
+    // Latched: an empty page, no request, and no pause. A pause while a push is in flight makes RxDB drop that push's
+    // answer and send its rows again after the restart (17.5 replication-protocol/upstream.js), a doubled write.
+    if (connectivity?.current().updateRequired) return { documents: [], checkpoint };
     const wait = storeRetryAt - Date.now();
     if (wait > TIMER_SLACK_MS) {
       setRetryTime(wait);
@@ -188,7 +192,14 @@ export function startReplication<RxDocType, CheckpointType = any>({
       ? {
           handler: async (rows) => {
             if (!connectivity) return adapter.push!.handler(rows, context);
-            if (connectivity.current().updateRequired) throw new Error('update required: push held');
+            // Held, not thrown, while latched: RxDB retries a thrown push every retryTime with one error$ each. The
+            // reset releases it; a cancel ends it. A push already in flight when the latch sets finishes as usual.
+            if (connectivity.current().updateRequired) {
+              const rx = state!;
+              await firstValueFrom(merge(connectivity.snapshot$, rx.canceled$).pipe(
+                filter(() => rx.isStopped() || !connectivity.current().updateRequired)));
+              if (rx.isStopped()) throw new Error('update required: push held');
+            }
             try {
               const conflicts = await adapter.push!.handler(rows, context);
               connectivity.recordSuccess();
@@ -208,7 +219,18 @@ export function startReplication<RxDocType, CheckpointType = any>({
   state = replication;
   // Cancelled or, for a one-shot replication, completed: RxDB cancels it either way.
   const release = watchShared(adapter, collection);
-  replication.canceled$.subscribe((canceled) => { if (canceled) release(); });
+  // The re-probe (v2: a fresh engine re-probes the store, so only it clears the latch; apps/main/lib/create-app-engine.ts):
+  // when the latch is reset, pull again from the checkpoint and re-run the push.
+  let latched = Boolean(connectivity?.current().updateRequired);
+  const probe: Subscription | undefined = connectivity?.snapshot$.subscribe(({ updateRequired }) => {
+    if (latched && !updateRequired && !tillStopped) replication.reSync();
+    latched = updateRequired !== null;
+  });
+  replication.canceled$.subscribe((canceled) => {
+    if (!canceled) return;
+    release();
+    probe?.unsubscribe();
+  });
   const resume = async () => {
     notice$.next(undefined);
     tillStopped = false;

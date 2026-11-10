@@ -33,7 +33,7 @@ export { SignInError } from './sign-in';
 export { ConnectorUnauthorizedError } from './unauthorized';
 export { isRxdbRemoteVersionMismatch } from './rxdb-remote-version-mismatch';
 export { errorKind, type ErrorKind, type SyncNotice } from './sync-notice';
-export { classifyFailure, neutralFailureClass, type ConnectivityState, type FailureClass, type UpdateRequired } from './connectivity';
+export { classifyFailure, neutralFailureClass, noResponse, type ConnectivityState, type FailureClass, type UpdateRequired } from './connectivity';
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
 export { customerTraits, CustomerServiceError, type Customer, type CustomerInput, type CustomerAddress, type CustomerTaxId, type CustomerPatch } from './types/customers';
