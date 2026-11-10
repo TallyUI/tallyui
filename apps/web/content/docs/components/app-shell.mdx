@@ -1,0 +1,43 @@
+---
+title: AppShell
+description: AppShell frames the POS with an icon rail beside the page on wide windows and a slide-over drawer on phones.
+---
+
+## Import
+
+```tsx
+import { AppShell, RegisterBar, type ShellNavItem } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+const navItems: ShellNavItem[] = [
+  { id: 'pos', label: 'POS', icon: <PosIcon size={24} /> },
+  { id: 'orders', label: 'Orders', icon: <OrdersIcon size={24} />, badge: 2 },
+  { id: 'settings', label: 'Settings', icon: <SettingsIcon size={24} />, group: 'bottom' },
+];
+
+<AppShell
+  navItems={navItems}
+  activeId={route}
+  onNavigate={(id) => router.navigate(`/${id}`)}
+  registerBar={<RegisterBar {...barProps} storeName="Main St" />}
+>
+  <PosScreen />
+</AppShell>
+```
+
+A window at least 768 wide and 480 tall gets the `NavRail`. Anything smaller, a phone on its side included, gets the `NavDrawer`, opened by the menu button that a `RegisterBar` inside the shell shows. Routing stays with the app: `onNavigate` receives the pressed item's `id`. The active item carries `aria-current="page"`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `navItems` | `ShellNavItem[]` | required | Navigation entries: `id`, `label`, `icon`, optional `badge`, and `group` (`'top'` or `'bottom'`) |
+| `activeId` | `string` | --- | The `id` of the current page's item |
+| `onNavigate` | `(id: string) => void` | required | Called with the pressed item's `id` |
+| `registerBar` | `ReactNode` | --- | Drawn above the page, usually a `RegisterBar` |
+| `children` | `ReactNode` | --- | The page |
+| `className` | `string` | --- | Override root container styles |
+| `testID` | `string` | `'app-shell'` | Test identifier for the root |

@@ -1,0 +1,29 @@
+---
+title: CustomerDisplayScreen
+description: CustomerDisplayScreen is what the customer sees in a second window on the same device, the store's welcome, the cart with its totals, or the payment card.
+---
+
+## Import
+
+```tsx
+import { CustomerDisplayScreen } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { createBroadcastDisplayTransport, useCustomerDisplay } from '@tallyui/pos';
+import { CustomerDisplayScreen } from '@tallyui/components';
+
+// In the display window. The till drives it with createDisplayLink(transport, { config }) over the same channel.
+const state = useCustomerDisplay(transport);
+<CustomerDisplayScreen state={state} />
+```
+
+Idle shows the store logo or name and `Welcome`. The cart lists the items on the left (quantity, name, attributes, line total) with a panel on the right for the subtotal, fees, shipping, discount, tax and total. During a payment the panel shows the total, `Paid so far` once something is paid, and a card for the payment state: the amount to present, approved, declined, or `Paid in full` with any change. Copy comes from `config.i18n` first, English otherwise.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `state` | `DisplayState` | required | The display's state, from `useCustomerDisplay(transport)` |

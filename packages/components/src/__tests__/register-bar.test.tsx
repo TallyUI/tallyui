@@ -106,3 +106,40 @@ it('leaves the pill a plain badge, not a button, when onPressPill is not given',
   render(<RegisterBar register={stub()} registerId={null} online={false} multiRegister={false} onOpenPanel={vi.fn()} />);
   expect(screen.getByTestId('register-bar-pill').getAttribute('role')).not.toBe('button');
 });
+
+// The app-shell bar (v2 `main` register-bar.tsx): the place, the cashier, the sync slot and the menu.
+it('reads "Store · Register" for multi-register stores and the store alone otherwise', () => {
+  const { rerender } = render(
+    <RegisterBar register={stub()} registerId="r" online multiRegister registerName="Front" storeName="Main St" onOpenPanel={vi.fn()} />,
+  );
+  expect(screen.getByTestId('register-bar-name').textContent).toBe('Main St · Front');
+  rerender(
+    <RegisterBar register={stub()} registerId="r" online multiRegister={false} registerName="Front" storeName="Main St" onOpenPanel={vi.fn()} />,
+  );
+  expect(screen.getByTestId('register-bar-name').textContent).toBe('Main St');
+});
+
+it('renders the cashier and the sync slot it is given', () => {
+  const onPress = vi.fn();
+  render(
+    <RegisterBar register={stub()} registerId="r" online multiRegister={false} onOpenPanel={vi.fn()}
+      cashier={{ name: 'Sam Lee', onPress }} syncStatus={<span data-testid="sync">Synced</span>} />,
+  );
+  const cashier = screen.getByTestId('register-bar-cashier');
+  expect(cashier.getAttribute('aria-label')).toBe('Cashier: Sam Lee');
+  expect(cashier.textContent).toBe('SL');
+  fireEvent.click(cashier);
+  expect(onPress).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId('sync').textContent).toBe('Synced');
+});
+
+it('shows the menu only when given onOpenMenu', () => {
+  const onOpenMenu = vi.fn();
+  const { rerender } = render(
+    <RegisterBar register={stub()} registerId="r" online multiRegister={false} onOpenPanel={vi.fn()} />,
+  );
+  expect(screen.queryByTestId('register-bar-menu')).toBeNull();
+  rerender(<RegisterBar register={stub()} registerId="r" online multiRegister={false} onOpenPanel={vi.fn()} onOpenMenu={onOpenMenu} />);
+  fireEvent.click(screen.getByTestId('register-bar-menu'));
+  expect(onOpenMenu).toHaveBeenCalledTimes(1);
+});
