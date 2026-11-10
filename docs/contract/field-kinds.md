@@ -136,7 +136,7 @@ with one entry for each of `subtotalMinor`, `taxMinor` and
   A field is refused in an earlier version, naming the version it needs
   (ADR-070 decision 1). `order.create` has versions 1, 2 (ADR-062) and 3
   (ADR-065); each `register.*` command versions on its own, and all five
-  are at version 1.
+  are at version 1. `order.refund` has version 1 only (ADR-080).
 - An object or array has its own row, and each field inside it has one
   too. `payload` has no kind of its own: its fields are the rows of each
   command's table.
@@ -145,8 +145,10 @@ with one entry for each of `subtotalMinor`, `taxMinor` and
 
 ## Envelope (every command type)
 
-The same seven fields in `CommandEnvelope` (`order.create`) and
-`RegisterCommandEnvelope` (the five `register.*` types).
+The same seven fields in `CommandEnvelope` (`order.create`),
+`RegisterCommandEnvelope` (the five `register.*` types) and
+`OrderRefundEnvelope` (`order.refund`, whose `type` is `order.refund`
+and `version` is 1: `commands.ts:37–38`).
 
 | Field | Kind | Since |
 |---|---|---|
@@ -747,6 +749,164 @@ subtotal. `taxByRate[0].taxMinor` is 100 and 91, equal to `taxMinor`,
 as in every example here. A single
 line of 0.25 at 10% exclusive has 2.5 cents of tax and sends
 `taxMinor` 3 (half away from zero; half to even would give 2).
+
+## `order.refund`
+
+Version 1 (ADR-080) is an online refund against one order, counted in
+the session that made it. The till sends it alone, as a one-command
+batch, and never puts it on an outbox; the command `id` is the
+idempotency key (ADR-080 decisions 1 and 2, `docs/DECISIONS.md:5363`,
+`:5371`). The payload is `OrderRefundPayload` and each line an
+`OrderRefundLine` (`packages/core/src/types/commands.ts:28–35`). The
+shared shape check is `refundPayloadErrors` in `@tallyui/core/server`
+(`packages/core/src/server/refund-payload-shape.ts`, cited below as
+`refund-payload-shape.ts`); a plugin runs it before any lookup
+(`refund-payload-shape.ts:1`, `docs/DECISIONS.md:5394`).
+
+Amounts are integers in the store's minor units, with tax: the payload
+carries no currency field, and quantities, not prices, for its lines
+(`commands.ts:30–35`, `docs/DECISIONS.md:5396`).
+
+| Field | Kind | Required | Units and values | Since |
+|---|---|---|---|---|
+| `payload.clientRefundId` | identity, instruction (honoured by recording) | yes | string, 1–64 characters | 1 |
+| `payload.orderId` | instruction | yes | string, 1–64 characters: the store's order id | 1 |
+| `payload.clientOrderId` | informational | no | string, 1–64 characters when present | 1 |
+| `payload.lines` | instruction | yes (may be empty) | array, at most 500 | 1 |
+| `payload.lines[].orderLineId` | instruction | yes | string, 1–64 characters: the store's line id, unique in `lines` | 1 |
+| `payload.lines[].quantity` | instruction | yes | integer ≥ 1, units of the line | 1 |
+| `payload.lines[].restock` | instruction | yes | boolean | 1 |
+| `payload.shippingMinor` | instruction | yes | integer ≥ 0, minor units with tax (unsigned) | 1 |
+| `payload.adjustmentMinor` | instruction | yes | integer, minor units with tax (signed) | 1 |
+| `payload.totalMinor` | instruction | yes | integer ≥ 0, minor units with tax (unsigned) | 1 |
+| `payload.destination` | instruction | yes | `original_method` or `cash` | 1 |
+| `payload.reason` | instruction (honoured by recording) | yes | string, non-empty after trim, at most 500 characters | 1 |
+| `payload.registerId` | instruction | yes | string, 1–64 characters | 1 |
+| `payload.sessionId` | instruction | yes | string, 1–64 characters | 1 |
+| `payload.cashierRef` | informational | no | string, 1–64 characters when present | 1 |
+| `payload.createdAt` | informational, client time | yes | ISO 8601 string, the till's clock | 1 |
+
+### What the server checks
+
+The shape check (`refundPayloadErrors`) refuses as `invalid_payload`;
+the rest are the refusal codes of ADR-080 decision 5
+(`OrderRefundRejectionCode`, `commands.ts:46–47`;
+`docs/DECISIONS.md:5408–5418`), each a per-command `rejected` result.
+
+- **The envelope.** `type` `order.refund` passes `validateBatch`
+  (`packages/core/src/server/batch.ts:34`). `precheckCommand` refuses a
+  `version` the server's own `supported.orderRefund` list does not hold
+  as `unsupported_version`, with `data: { orderRefund }` the server's
+  highest version, or 0 and the message "this server takes no refunds"
+  when it lists none (`batch.ts:69–77`). The till's own capability is
+  `SUPPORTED_ORDER_REFUND_VERSIONS = [1]`
+  (`packages/core/src/server/versions.ts:11`).
+- **The payload as a whole.** It must be a plain object, or the only
+  error is `payload: expected an object` (`refund-payload-shape.ts:4–9`).
+  A field outside the table is `<field>: unknown field for order.refund
+  version 1`, and one inside a line is `lines[<i>].<field>: …`
+  (`refund-payload-shape.ts:13–19`, `:35–39`). Every other error reads
+  `<path>: expected <rule>`, and the check stops at 10 errors
+  (`refund-payload-shape.ts:6–8`). Every string must be NUL-free
+  (`refund-payload-shape.ts:10–12`; `docs/DECISIONS.md:5394`).
+- **`clientRefundId`, `orderId`, `registerId`, `sessionId`.** A
+  non-empty string of at most 64 characters (`refund-payload-shape.ts:20–26`).
+  `clientRefundId` is the refund's own identity, minted once by the till,
+  recorded and not an idempotency key (`docs/DECISIONS.md:5381`); the
+  till keys its local `pos_refunds` record by it
+  (`packages/pos/src/refund/submit-order-refund.ts:22`,
+  `packages/pos/src/refund/pos-refund.ts:17`). The vendurepos plugin
+  refuses a new command id whose `clientRefundId` it has already applied,
+  as `invalid_payload` with the message `clientRefundId: <id> is already
+  refund <refundId>` (ADR-080 amendment 3, `docs/DECISIONS.md:5530–5533`).
+  `orderId` is the store's order id, `StoreOrder.id`
+  (`packages/core/src/types/orders.ts:44`). An order the server will not
+  refund is `order_state` with `data: { state }`, and an order the POS
+  did not take is `not_till_order` (`docs/DECISIONS.md:5415–5416`).
+- **`registerId` and `sessionId`.** `sessionId` must be an open session
+  of `registerId` on the store, or the refusal is `no_open_session` with
+  `data: { sessionId }`: unknown, counting, closed or superseded
+  (`docs/DECISIONS.md:5418`; `commands.ts:55`). The session must be
+  open, not counting (`docs/DECISIONS.md:5425`). The refund counts in this session's
+  register figures, never the sale's (`docs/DECISIONS.md:5432–5435`); at
+  the till, `deriveExpected` lowers expected per method by each applied
+  record of the session (`packages/pos/src/register/expected.ts:78–80`).
+- **`clientOrderId` and `cashierRef`.** Optional; when present, a
+  non-empty string of at most 64 characters (`refund-payload-shape.ts:22–25`).
+  ADR-080 gives them no other rule (`docs/DECISIONS.md:5383`, `:5391`).
+- **`lines`.** An array of at most 500, which may be empty when only
+  shipping or an adjustment is refunded (`refund-payload-shape.ts:27`;
+  `docs/DECISIONS.md:5384`). Each line is a plain object
+  (`refund-payload-shape.ts:31–34`):
+  - `orderLineId` is a non-empty string of at most 64 characters, unique
+    in `lines` (`refund-payload-shape.ts:40–46`). It names
+    `StoreOrderLine.id` (`orders.ts:7`).
+  - `quantity` is a safe integer of at least 1
+    (`refund-payload-shape.ts:47`). More than the line's refundable
+    quantity, or a line not on the order, is `quantity_exceeds` with
+    `data: { lines: [{ orderLineId, quantity, refundableQuantity }] }`
+    (`docs/DECISIONS.md:5413`; `commands.ts:49`).
+  - `restock` is a boolean (`refund-payload-shape.ts:48`). The plugin
+    restocks, refunds and records the refund in one unit
+    (`docs/DECISIONS.md:5428–5431`).
+- **`shippingMinor`, `totalMinor`.** A safe integer of at least 0
+  (`refund-payload-shape.ts:50–52`).
+- **`adjustmentMinor`.** A safe integer, either sign
+  (`refund-payload-shape.ts:53`): a manual adjustment, with tax, added to
+  the refund (`docs/DECISIONS.md:5386`).
+- **`totalMinor` against the server's figure.** The server computes its
+  own total and refuses a difference, or a total above the order's
+  refundable money, as `amount_mismatch` with `data: { expectedMinor,
+  serverMinor }` (`docs/DECISIONS.md:5387`, `:5414`; `commands.ts:51`).
+  No lines, no shipping and no adjustment, or a total of 0, is
+  `nothing_to_refund` (`docs/DECISIONS.md:5412`). The shape check
+  accepts a `totalMinor` of 0; the server refuses it with this code.
+- **`destination`.** `original_method` or `cash`
+  (`refund-payload-shape.ts:54`). It decides the tender the store
+  attributes the refund to in the result's `byMethod`: `cash` for a cash
+  destination, else the original payment's method
+  (`docs/DECISIONS.md:5404–5406`).
+- **`reason`.** A string, non-empty after trim, of at most 500
+  characters (`refund-payload-shape.ts:56–57`). The store's refunds, read
+  back, carry a `reason` (`StoreOrderRefund`, `orders.ts:40`).
+- **`createdAt`.** When the cashier confirmed, from the till's clock
+  (`docs/DECISIONS.md:5392`). The shape check asks only for a non-empty
+  string that `Date.parse` can read, or `createdAt: expected a valid
+  date` (`refund-payload-shape.ts:59–60`). That makes it a client-time
+  field, so the format and bounds under "Malformed commands" apply by
+  field kind; core has no shared check for that stage.
+- **Permission.** Credentials without the store's refund permission are
+  `forbidden` (`docs/DECISIONS.md:5417`).
+
+An `applied` result carries `refund: { totalMinor, byMethod, refunds:
+[{ id, paymentId, totalMinor, state }] }`, not `serverRefs`
+(`commands.ts:40–44`, `docs/DECISIONS.md:5400–5407`).
+
+### Amounts
+
+The till sends quantities; the line amounts are the server's. The till
+computes `totalMinor` as each line's share of the store's line total, by
+the plugin's own rule, plus `shippingMinor` and `adjustmentMinor`
+(`docs/DECISIONS.md:5396–5399`). `@tallyui/pos` does not build the
+payload: `submitOrderRefund` and `sendOrderRefund` take a finished
+envelope (`packages/pos/src/refund/submit-order-refund.ts:18–21`,
+`packages/pos/src/refund/send-order-refund.ts:14–16`).
+
+On Vendure the line's share is its cumulative share of
+`proratedLinePriceWithTax` (ADR-080 amendment 2,
+`docs/DECISIONS.md:5516–5528`). With `N` the line's quantity, `T` its
+`proratedLinePriceWithTax`, `r` the quantity already refunded over
+refunds not `Failed`, and `q` the quantity refunded now, the share is
+`round((r + q) × T / N) − round(r × T / N)`, rounding half up
+(`Math.round`). `vendureLineRefundWithTax` computes it, and throws a
+`RangeError` for a quantity that is not an integer from 1 to the line's
+refundable quantity (`connectors/vendure/src/refunds.ts:68–76`).
+Refunding a whole line returns exactly `T`, and partial refunds add up
+to it: three one-unit refunds of a 3-unit line totalling 1249 are 416,
+417 and 416, where `3 × proratedUnitPriceWithTax` would give 1248
+(`docs/DECISIONS.md:5522–5525`). Refundable shipping is
+`shippingWithTax` less the shipping of refunds not `Failed`, at least 0
+(`connectors/vendure/src/refunds.ts:58`).
 
 ## `register.session.open`
 
