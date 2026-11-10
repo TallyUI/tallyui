@@ -73,6 +73,7 @@ describe('server envelope types', () => {
       | 'unknown_variant' | 'invalid_quantity' | 'underpaid' | 'unsupported_currency'
       | 'register_session_already_open' | 'register_session_superseded' | 'register_supersede_forbidden'
       | 'register_session_closed' | 'register_closure_exists' | 'register_closure_number_invalid'
+      | 'register_approval_required' | 'register_approval_invalid'
       | 'nothing_to_refund' | 'quantity_exceeds' | 'amount_mismatch' | 'order_state' | 'not_till_order' | 'forbidden' | 'no_open_session'
     >()
   })
