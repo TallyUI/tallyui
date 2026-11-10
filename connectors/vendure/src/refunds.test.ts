@@ -4,7 +4,7 @@ import { vendureLineRefundWithTax, vendureRefundable } from './refunds';
 
 const line: VendureOrder['lines'][number] = {
   id: 'line-1', quantity: 3, orderPlacedQuantity: 3, proratedUnitPrice: 80, proratedUnitPriceWithTax: 100,
-  proratedLinePriceWithTax: 300,
+  proratedLinePrice: 240, proratedLinePriceWithTax: 300,
   taxRate: 25, productVariant: { id: 'variant-1', name: 'Coffee', sku: 'COFFEE' },
   unitPrice: 100, unitPriceWithTax: 125, linePrice: 300, linePriceWithTax: 375,
   discountedLinePrice: 240, discountedLinePriceWithTax: 300, discounts: [],
