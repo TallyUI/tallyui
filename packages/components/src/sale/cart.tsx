@@ -10,7 +10,7 @@ import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor }:
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor, orderActions = true }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
     /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
@@ -25,6 +25,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * the order's currency, in the display mode. When given, the Discount row shows the other discounts only (the
      * totals' discount minus this) and is hidden when they come to 0. Absent: the Discount row is the whole discount. */
     couponDiscountMinor?: number;
+    /** Cart's own Order discount and Add charge controls; pass `false` when the app hosts them in its own menu (v2's
+     * cart "+" menu). Applied discounts and charges still show and can be removed. */
+    orderActions?: boolean;
   }) {
   const { order } = sale;
   const money = (amount: number) => ({ amount, currency: order.currency });
@@ -39,6 +42,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   // One open form: a line's discount or price, the order's discount (lineId null), or a charge.
   const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' } | null>(null);
   const chargesOffered = (sale.capabilities?.orderCreate ?? 0) >= 5;
+  const showOrderDiscount = order.lineItems.length > 0 && (orderActions || order.discounts.length > 0);
+  const showCharge = orderActions && chargesOffered;
   const discountForm = (lineId: string | null, title: string) => form?.type === 'discount' && form.lineId === lineId
     ? <DiscountForm key={lineId ?? 'order'} title={title} currency={order.currency} onClose={() => setForm(null)}
       onApply={(discount) => sale.applyDiscount(lineId, discount)} /> : null;
@@ -89,15 +94,15 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
             className="rounded-md border border-border bg-card px-3 py-2 min-h-11 items-center justify-center">
             <Text className="text-foreground">Remove</Text></Pressable>
         </View>))}
-      {order.lineItems.length || chargesOffered ? <View className="gap-3 px-3 py-2">
-      {order.lineItems.length ? <>
+      {showOrderDiscount || showCharge ? <View className="gap-3 px-3 py-2">
+      {showOrderDiscount ? <>
       <DiscountChips discounts={order.discounts} amounts={orderAmounts} currency={order.currency} onRemove={sale.removeDiscount}
         prefix="Order discount" />
-      {form?.type === 'discount' && form.lineId === null ? discountForm(null, 'Order discount') : <Pressable accessibilityRole="button"
+      {!orderActions ? null : form?.type === 'discount' && form.lineId === null ? discountForm(null, 'Order discount') : <Pressable accessibilityRole="button"
         onPress={() => setForm({ type: 'discount', lineId: null })} className="self-start rounded-md border border-border bg-card px-4 py-2 min-h-11 justify-center">
         <Text className="text-foreground">Order discount</Text></Pressable>}
       </> : null}
-      {chargesOffered ? form?.type === 'charge' ? <ChargeForm currency={order.currency} lineTax={sale.capabilities?.lineTax}
+      {showCharge ? form?.type === 'charge' ? <ChargeForm currency={order.currency} lineTax={sale.capabilities?.lineTax}
         taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
         onClose={() => setForm(null)} onApply={({ kind, name, amountMinor, taxStatus, taxClass }) => {
           const result = kind === 'custom' ? sale.addCustomLine({ name, priceMinor: amountMinor, taxStatus, taxClass })

@@ -230,6 +230,32 @@ describe('Cart', () => {
     expect(screen.getByRole('button', { name: 'Order discount' })).toBeTruthy();
   });
 
+  it('shows Order discount and Add charge by default', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.getByRole('button', { name: 'Order discount' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add charge' })).toBeTruthy();
+  });
+
+  it('leaves out Order discount and Add charge with orderActions false', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.queryByRole('button', { name: 'Order discount' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add charge' })).toBeNull();
+  });
+
+  it('still shows and removes an applied order discount with orderActions false', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    const chip = `Remove discount Order discount −${money(50)}`;
+    expect(screen.getByRole('button', { name: chip })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Order discount' })).toBeNull();
+    click(chip);
+    expect(sale.order.discounts).toEqual([]);
+    expect(screen.queryByRole('button', { name: chip })).toBeNull();
+  });
+
   it('pads the empty-cart line like the cart rows (px-3 py-2)', () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     expect(screen.getByTestId('cart-empty').textContent).toBe('Scan or tap a product to start a sale.');
