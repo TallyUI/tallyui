@@ -5,9 +5,10 @@ import type { CustomerTraits } from './traits/customer';
 import type { ReplicationAdapter } from './replication';
 import type { CatalogueReconcileAdapter, FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 import type { StoreSettings, StoreSettingsChoice } from './store-settings';
-import type { Customer, CustomerInput } from './customers';
+import type { Customer, CustomerInput, CustomerPatch } from './customers';
 import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
 import type { PaymentMethodDescriptor } from './payment-methods';
+import type { RegisterInfo } from './registers';
 
 /**
  * Authentication configuration for a connector.
@@ -327,6 +328,12 @@ export interface TallyConnector {
   searchCustomers?: (context: SyncContext, query: string, options?: { limit?: number }) => Promise<Customer[]>;
   /** Customer creation: online only; `undefined` when the connector has no customer support. */
   createCustomer?: (context: SyncContext, input: CustomerInput) => Promise<Customer>;
+  /**
+   * Customer edit: online only; resolves the customer as the store now has it. Rejects with
+   * `ConnectorUnauthorizedError` for credentials and `CustomerServiceError` (`invalid` for a refused patch or an id
+   * the store does not have, `server` or `network` otherwise). `undefined` when the connector can't edit customers.
+   */
+  updateCustomer?: (context: SyncContext, id: string, patch: CustomerPatch) => Promise<Customer>;
   /** Customer lookup: online only; `undefined` when the connector has no customer support. */
   getCustomer?: (context: SyncContext, id: string) => Promise<Customer | null>;
   /**
@@ -349,4 +356,9 @@ export interface TallyConnector {
    * read-only; rejects as `listOrders`. `undefined` when the connector has no order history.
    */
   getOrders?: (context: SyncContext, ids: readonly string[]) => Promise<StoreOrder[]>;
+  /**
+   * The store's register directory (v2 parity A4): online only, read-only. Rejects with `ConnectorUnauthorizedError`
+   * for credentials; a connector's own errors otherwise. `undefined` when the connector has no register directory.
+   */
+  listRegisters?: (context: SyncContext) => Promise<RegisterInfo[]>;
 }

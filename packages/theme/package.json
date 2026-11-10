@@ -13,7 +13,8 @@
       "source": "./src/index.ts",
       "default": "./dist/index.js"
     },
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./scale.css": "./src/scale.css"
   },
   "files": [
     "dist",

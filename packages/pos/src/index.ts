@@ -75,8 +75,16 @@ export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, ty
 export { DEFAULT_WEDGE_SETTINGS, DEFAULT_MIN_SCAN_CHARS, WEDGE_END_OF_SCAN_MS, createWedgeState, foldWedgeKey, stripBoundary, replayWedgeDetector, createWedgeDetector, DEFAULT_COOLDOWN_MS, normalizeRetailCode, hasValidRetailCheckDigit, retailCodeTwin, createScanSession, useBarcodeScanner } from './scanner';
 export type { WedgeSettings, WedgeState, TraceKey, WedgeReplayResult, WedgeDetectorOptions, WedgeDetector, ScanRejectReason, ScanOfferResult, ScanSessionOptions, ScanSession, UseBarcodeScannerOptions } from './scanner';
 
+// Payment drivers
+export { createPaymentDriverRegistry, driverForMethod, createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './payment-driver';
+export type {
+  DriverCapabilities, ReaderInfo, DriverStatus, DriverAvailability, CollectInput,
+  CollectOutcome, CollectResult, DriverStatusSource, PaymentDriver, PaymentDriverRegistry,
+  SimulatedReaderId, SimulatedDriverOptions,
+} from './payment-driver';
+
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';
 export type { SaleStage, CatalogueEntry, SaleDiscountCodes, SaleDiscountState } from './sale';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
@@ -91,8 +99,8 @@ export type { BackendNotFound } from './outbox/backend-not-found';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OrderTransportContext, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
 export { sendOrderRefund, type OrderRefundOutcome, posRefundSchema, posRefundCollection, submitOrderRefund, RefundAnswerPendingError, type PosRefund, type PosRefundStatus, type PosRefundCollection, refundableLines, priceRefund } from './refund';
 export type { RefundableOrderLine, EarlierRefund, RefundableLine, PricedRefundLine, PricedRefund } from './refund';
-export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderVoidSchema, tenderVoidCollection } from './tender';
-export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid } from './tender';
+export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderVoidSchema, tenderVoidCollection, legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg } from './tender';
+export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus } from './tender';
 
 // Register
 export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, closureVariance, denominationTotal, varianceText, denominations } from './register';
@@ -110,6 +118,7 @@ export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRo
 export type { Correction, RecordedFigures, ClosureScope } from './register';
 export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact } from './register';
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type UseRegisterSessionOptions } from './register';
+export { suggestFloat, type FloatSuggestion } from './register';
 
 // Reports
 export { salesFigures, marginOf, comparisonRange, daysOf, inRange, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';

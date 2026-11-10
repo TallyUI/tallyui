@@ -1,4 +1,5 @@
 import type { Money, TaxRounding } from '@tallyui/core';
+import type { PaymentLegStatus } from '../tender/payment-legs';
 
 export interface OrderCoupon {
   code: string; // lower-case code
@@ -29,9 +30,9 @@ export interface Order {
   taxMinor: number;           // settlement: rounded once per order, unless taxRounding says otherwise (#287)
   totalMinor: number;         // settlement: what the customer pays
   display: DisplayTotals;
-  paidMinor: number;
-  balanceDueMinor: number;    // max(0, total − paid)
-  changeDueMinor: number;     // max(0, paid − total)
+  paidMinor: number;          // captured legs only
+  balanceDueMinor: number;    // max(0, total − paid), counting captured legs only
+  changeDueMinor: number;     // max(0, paid − total), counting captured legs only
   createdAt: string;
   updatedAt: string;
 }
@@ -135,6 +136,8 @@ export interface AppliedDiscount extends Discount {
 export interface Payment {
   id: string;
   method: string;
+  /** Absent means captured; only captured legs count toward paidMinor. */
+  status?: PaymentLegStatus;
   // For cash, record the full amount tendered here, not the capped amount: `finalizeOrder`
   // caps it at the balance due and writes out `tenderedMinor`/`changeMinor` itself.
   amountMinor: number;
