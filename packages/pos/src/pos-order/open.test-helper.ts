@@ -18,9 +18,16 @@ import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
+/** The version-10 schema: before order.create version 7. */
+export function versionTen(): RxJsonSchema<PosOrder> {
+  const schema = structuredClone(posOrderSchema);
+  schema.properties.sentVersion.maximum = schema.properties.downgradedFrom.maximum = 6;
+  return { ...schema, version: 10 };
+}
+
 /** The version-9 schema: before a line's Any picks. */
 export function versionNine(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
+  const schema = versionTen();
   delete (schema.properties.lines.items as { properties: Record<string, unknown> }).properties.anyAttributes;
   return { ...schema, version: 9 };
 }
@@ -101,12 +108,13 @@ export function versionZero(): RxJsonSchema<PosOrder> {
 }
 
 /** A stored older `pos_orders` version, which `addPosOrderCollection` migrates to the current one. */
-export type Origin = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type Origin = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 /** `pos_orders` as the shipped app at `from` added it: version 1 came with its identity strategy. */
 export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
   addRxPlugin(RxDBMigrationSchemaPlugin);
   const identity = (doc: PosOrder) => doc;
+  if (from === 10) return { schema: versionTen(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity, 8: identity, 9: identity, 10: identity } };
   if (from === 9) return { schema: versionNine(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity, 8: identity, 9: identity } };
   if (from === 8) return { schema: versionEight(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity, 8: identity } };
   if (from === 7) return { schema: versionSeven(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity } };

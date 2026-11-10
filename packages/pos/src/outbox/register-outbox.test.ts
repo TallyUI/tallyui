@@ -110,6 +110,8 @@ describe('register outbox', () => {
       command(1, 'c', { syncStatus: 'rejected', error: { code: 'register_session_abandoned', message: 'abandoned' } }),
       ...['d', 'e'].map((registerId) => command(1, registerId, { type: 'register.session.open', syncStatus: 'rejected',
         error: { code: 'register_session_already_open', message: 'already open' } })),
+      command(1, 'f', { syncStatus: 'rejected', error: { code: 'register_approval_required', message: 'approval required' } }),
+      command(1, 'g', { syncStatus: 'rejected', error: { code: 'register_approval_invalid', message: 'approval invalid' } }),
     ]);
     await db.register_sessions.bulkInsert([
       { id: 'd-1', register_id: 'd', status: 'abandoned', opened_at_gmt: new Date(epoch).toISOString(), counted_float_minor: 0 },
@@ -142,7 +144,7 @@ describe('register outbox', () => {
   });
 
   it.each(['register_session_already_open', 'register_session_closed', 'register_approval_required',
-    'register_closure_exists', 'register_closure_number_invalid', 'register_session_superseded',
+    'register_approval_invalid', 'register_closure_exists', 'register_closure_number_invalid', 'register_session_superseded',
     'register_session_abandoned', 'register_supersede_forbidden', 'idempotency_mismatch'])('requeue leaves a code it must not resend: %s', async (code) => {
     const input = command(1, 'a', { syncStatus: 'rejected', error: { code, message: code } });
     await collection.insert(input);
@@ -322,6 +324,25 @@ describe('register outbox', () => {
     expect(send.mock.calls.flatMap(([batch]) => batch.map(({ id }) => id))).toEqual(inputs.map(({ commandId }) => commandId));
     expect(await stored(inputs[0].key)).toMatchObject({ syncStatus: 'rejected', error });
     for (const input of inputs.slice(1)) expect(await stored(input.key)).toMatchObject({ syncStatus: 'applied' });
+  });
+
+  it.each(['register_approval_required', 'register_approval_invalid'])('a closure refused %s does not block the later movement or the next open, holds the next closure, and other registers go on', async (code) => {
+    const closure1 = command(1, 'a', { type: 'register.closure.submit', key: 'closure.submit:a-1' });
+    const movement = command(2, 'a', { type: 'register.movement.record', key: 'movement.record:a-2' });
+    const open = command(3, 'a', { type: 'register.session.open', key: 'session.open:a-3' });
+    const closure4 = command(4, 'a', { type: 'register.closure.submit', key: 'closure.submit:a-4' });
+    const otherClosure = command(1, 'b', { type: 'register.closure.submit', key: 'closure.submit:b-1' });
+    await collection.bulkInsert([closure1, movement, open, closure4, otherClosure]);
+    const { outbox, send, states } = setup({ batchSize: 1 });
+    send.mockResolvedValueOnce({ kind: 'results', results: [{ id: closure1.commandId, status: 'rejected', error: { code, message: code } }] });
+    await outbox.flush();
+    expect(send.mock.calls.flatMap(([batch]) => batch.map(({ id }) => id))).toEqual([
+      closure1.commandId, otherClosure.commandId, movement.commandId, open.commandId,
+    ]);
+    expect(await stored(closure1.key)).toMatchObject({ syncStatus: 'rejected', error: { code, message: code } });
+    expect(await stored(closure4.key)).toMatchObject({ syncStatus: 'pending' });
+    for (const input of [movement, open, otherClosure]) expect(await stored(input.key)).toMatchObject({ syncStatus: 'applied' });
+    expect(states.at(-1)).toMatchObject({ pending: 1, rejected: 0 });
   });
 
   it('an abandoned rejection does not block the commands behind it', async () => {
@@ -763,6 +784,26 @@ describe('register outbox stuck clock (answered time only, in memory)', () => {
     await at(outbox, 2 * STUCK_AFTER_MS);
     expect(states.at(-1)?.stuck?.commandIds).toEqual([inputs[2].commandId]);
     expect(states.some((state) => state.stuck?.commandIds.includes(inputs[1].commandId))).toBe(false);
+  });
+
+  it('behind a refused approval the movement keeps its clock and becomes stuck; the held closure loses its clock', async () => {
+    const closure1 = command(1, 'a', { type: 'register.closure.submit', key: 'closure.submit:a-1' });
+    const movement = command(2, 'a', { type: 'register.movement.record', key: 'movement.record:a-2' });
+    const closure3 = command(3, 'a', { type: 'register.closure.submit', key: 'closure.submit:a-3' });
+    await collection.bulkInsert([closure1, movement, closure3]);
+    const { outbox, send, states } = setup();
+    send.mockResolvedValue(fail('status_503'));
+    await at(outbox, 0);
+    send.mockImplementation(async (batch) => batch[0].id === closure1.commandId
+      ? { kind: 'results', results: [{ id: closure1.commandId, status: 'rejected',
+        error: { code: 'register_approval_required', message: 'approval required' } }] } : fail('status_503'));
+    await at(outbox, 60_000);
+    await at(outbox, 2 * STUCK_AFTER_MS);
+    expect((await stored(closure1.key)).syncStatus).toBe('rejected');
+    expect((await stored(closure3.key)).syncStatus).toBe('pending');
+    expect(states.at(-1)?.stuck?.commandIds).toEqual([movement.commandId]);
+    expect(states.some((state) => state.stuck?.commandIds.includes(closure3.commandId))).toBe(false);
+    expect(send.mock.calls.at(-1)?.[0].map(({ id }) => id)).toEqual([movement.commandId]);
   });
 
   it('a command behind a superseded rejection keeps its clock and becomes stuck', async () => {

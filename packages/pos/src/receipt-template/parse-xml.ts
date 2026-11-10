@@ -1,0 +1,175 @@
+// Ported from WCPOS v2 packages/receipt-renderer/src/parse-xml.ts (monorepo main 5ac185b0, MIT).
+// Native DOMParser, else @xmldom/xmldom (React Native).
+import { DOMParser as XmlDOMParser } from '@xmldom/xmldom';
+import type { ColNode, DrawerConnector, ReceiptNode, RowNode, ThermalNode } from './types';
+
+/** Parse a thermal XML template string into an AST using the native DOMParser or xmldom. */
+export function parseXml(xml: string): ReceiptNode {
+  const doc = parseXmlDocument(xml);
+  const errorNode = doc.getElementsByTagName('parsererror')[0];
+  if (errorNode) throw new Error(`XML parse error: ${errorNode.textContent}`);
+  const root = doc.documentElement;
+  if (root.tagName !== 'receipt') {
+    throw new Error(`Expected <receipt> root element, got <${root.tagName}>`);
+  }
+  return { type: 'receipt', paperWidth: intAttr(root, 'paper-width', 48), children: parseChildren(root) };
+}
+
+function parseChildren(parent: Element): ThermalNode[] {
+  const nodes: ThermalNode[] = [];
+  for (const child of Array.from(parent.childNodes)) {
+    if (child.nodeType === 3 /* TEXT_NODE */) {
+      const text = child.textContent ?? '';
+      // Skip indentation, but preserve non-empty text so spaces around inline elements survive.
+      if (/\S/.test(text)) nodes.push({ type: 'raw-text', value: text });
+      continue;
+    }
+    if (child.nodeType !== 1 /* ELEMENT_NODE */) continue;
+    const el = child as Element;
+    const tag = el.tagName.toLowerCase();
+    switch (tag) {
+      case 'text':
+        nodes.push({ type: 'text', children: parseChildren(el) });
+        break;
+      case 'bold':
+        nodes.push({ type: 'bold', children: parseChildren(el) });
+        break;
+      case 'underline':
+        nodes.push({ type: 'underline', children: parseChildren(el) });
+        break;
+      case 'invert':
+        nodes.push({ type: 'invert', children: parseChildren(el) });
+        break;
+      case 'size': {
+        const w = intAttr(el, 'width', 1);
+        nodes.push({ type: 'size', width: w, height: intAttr(el, 'height', w), children: parseChildren(el) });
+        break;
+      }
+      case 'align': {
+        const modeAttr = el.getAttribute('mode');
+        const validModes = ['left', 'center', 'right'] as const;
+        const mode = validModes.includes(modeAttr as (typeof validModes)[number])
+          ? (modeAttr as 'left' | 'center' | 'right') : 'left';
+        nodes.push({ type: 'align', mode, children: parseChildren(el) });
+        break;
+      }
+      case 'row':
+        nodes.push({ type: 'row', children: parseRowChildren(el) } as RowNode);
+        break;
+      case 'col':
+        break;
+      case 'line': {
+        const styleAttr = el.getAttribute('style');
+        const validStyles = ['single', 'double', 'dashed', 'dotted'] as const;
+        nodes.push({
+          type: 'line',
+          style: validStyles.includes(styleAttr as (typeof validStyles)[number])
+            ? (styleAttr as (typeof validStyles)[number]) : 'single',
+        });
+        break;
+      }
+      case 'barcode':
+        if (isQrBarcodeType(el.getAttribute('type') ?? 'code128')) {
+          nodes.push({
+            type: 'qrcode', size: heightToQrSize(intAttr(el, 'height', 40)), value: (el.textContent ?? '').trim(),
+          });
+        } else {
+          nodes.push({
+            type: 'barcode', barcodeType: el.getAttribute('type') ?? 'code128',
+            height: intAttr(el, 'height', 40), value: (el.textContent ?? '').trim(),
+          });
+        }
+        break;
+      case 'qrcode':
+        nodes.push({ type: 'qrcode', size: intAttr(el, 'size', 4), value: (el.textContent ?? '').trim() });
+        break;
+      case 'image':
+        nodes.push({ type: 'image', src: el.getAttribute('src') ?? '', width: intAttr(el, 'width', 200) });
+        break;
+      case 'cut': {
+        const cutAttr = el.getAttribute('type');
+        const validCuts = ['full', 'partial'] as const;
+        nodes.push({
+          type: 'cut',
+          cutType: validCuts.includes(cutAttr as (typeof validCuts)[number])
+            ? (cutAttr as 'full' | 'partial') : 'partial',
+        });
+        break;
+      }
+      case 'feed':
+        nodes.push({ type: 'feed', lines: intAttr(el, 'lines', 1) });
+        break;
+      case 'drawer':
+        nodes.push({ type: 'drawer', ...(drawerConnectorAttr(el) ? { connector: drawerConnectorAttr(el) } : {}) });
+        break;
+      default:
+        nodes.push(...parseChildren(el));
+    }
+  }
+  return nodes;
+}
+
+function drawerConnectorAttr(el: Element): DrawerConnector | undefined {
+  const connector = el.getAttribute('connector')?.trim();
+  return connector === 'pin2' || connector === 'pin5' ? connector : undefined;
+}
+
+function isQrBarcodeType(type: string): boolean {
+  return type.trim().toLowerCase() === 'qrcode' || type.trim().toLowerCase() === 'qr';
+}
+
+function heightToQrSize(height: number): number {
+  return Number.isFinite(height) && height > 0 ? Math.max(2, Math.min(10, Math.round(height / 10))) : 4;
+}
+
+function parseRowChildren(row: Element): ColNode[] {
+  const cols: ColNode[] = [];
+  for (const child of Array.from(row.childNodes)) {
+    if (child.nodeType !== 1 /* ELEMENT_NODE */) continue;
+    const el = child as Element;
+    if (el.tagName.toLowerCase() === 'col') {
+      const rawWidth = el.getAttribute('width');
+      const width: number | '*' = rawWidth === '*' ? '*' : intAttr(el, 'width', 12);
+      cols.push({
+        type: 'col', width,
+        align: (['left', 'right'] as const).includes(el.getAttribute('align') as 'left' | 'right')
+          ? (el.getAttribute('align') as 'left' | 'right') : 'left',
+        children: parseChildren(el),
+      });
+    }
+  }
+  return cols;
+}
+
+function parseXmlDocument(xml: string): Document {
+  if (typeof DOMParser !== 'undefined') {
+    return new DOMParser().parseFromString(xml, 'text/xml');
+  }
+
+  const errors: string[] = [];
+  let doc: Document | undefined;
+  try {
+    doc = new XmlDOMParser({
+      onError: (_level: string, message: unknown) => errors.push(String(message)),
+    } as unknown as ConstructorParameters<typeof XmlDOMParser>[0]).parseFromString(
+      xml,
+      'text/xml'
+    ) as unknown as Document;
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+
+  if (errors.length > 0 || !doc) {
+    throw new Error(`XML parse error: ${errors.join('; ') || 'invalid document'}`);
+  }
+
+  return doc;
+}
+
+function intAttr(el: Element, name: string, fallback: number): number {
+  const raw = el.getAttribute(name)?.trim();
+  if (raw == null) return fallback;
+  if (!/^[1-9]\d*$/.test(raw)) return fallback;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) ? n : fallback;
+}

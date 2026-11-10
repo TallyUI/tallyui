@@ -12,11 +12,16 @@ import type { CommandTransport, OutboxState } from './types';
 /** Final rejections that do not stop their register's ledger (ADR-078): the commands behind them are still sent. */
 export const NON_BLOCKING_REJECTIONS: ReadonlySet<string> = new Set(['register_session_superseded', 'register_session_abandoned']);
 
+/** Refused approvals (ADR-082 decision 6). Like NON_BLOCKING_REJECTIONS they do not stop their register's ledger,
+ * but its next `register.closure.submit` and every command after it wait: the store numbers closures in order. */
+export const CLOSURE_HOLDING_REJECTIONS: ReadonlySet<string> = new Set(['register_approval_required', 'register_approval_invalid']);
+
 // Codes the register requeue never resends (ADR-068 decision 5, ADR-078 decisions 4, 6 and 8): the store recorded
 // these business conflicts, so the same id replays the refusal; superseded and abandoned are final; an already-open
 // refusal has its own exits (Take over, Choose another register); idempotency_mismatch means the bytes differ.
+// A refused approval replays at the store for its command id; recovery is a new command id (ADR-082 decisions 6 and 7).
 const REGISTER_NOT_REQUEUEABLE: ReadonlySet<string> = new Set(['register_session_already_open',
-  'register_session_closed', 'register_approval_required', 'register_closure_exists',
+  'register_session_closed', 'register_approval_required', 'register_approval_invalid', 'register_closure_exists',
   'register_closure_number_invalid', 'register_session_superseded', 'register_session_abandoned',
   'register_supersede_forbidden', 'idempotency_mismatch']);
 /** Whether the register outbox's requeue() resends a rejection with this code. */
@@ -94,7 +99,8 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   // pauses every clock (`pausedAt`), and the next answer of any kind resumes them, moving `since` on by the offline
   // gap, so `since` is now minus the answered time. A clock clears when its command is no longer pending under its
   // commandId (applied or rejected), or when a blocking rejected command comes ahead of it in its ledger (it is not being
-  // sent: Front desk, 2026-09-30); commands never sent have none. Nothing is isolated: a stuck command at the head
+  // sent: Front desk, 2026-09-30), or when it is a held closure or comes after one, behind a refused approval in its
+  // ledger (ADR-082 decision 6); commands never sent have none. Nothing is isolated: a stuck command at the head
   // of a register's ledger holds up the commands behind it, by design, since register facts apply in `seq` order.
   // In memory only: a restart starts with no clocks, and the first answered failure after it starts them afresh
   // (accepted: register commands are few, and a restart re-sends at once).
@@ -116,6 +122,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
 
   function isNonBlocking(command: RegisterCommand, abandoned: ReadonlySet<string>): boolean {
     return NON_BLOCKING_REJECTIONS.has(command.error?.code ?? '') ||
+      CLOSURE_HOLDING_REJECTIONS.has(command.error?.code ?? '') ||
       (command.error?.code === 'register_session_already_open' &&
         typeof command.payload.sessionId === 'string' && abandoned.has(command.payload.sessionId));
   }
@@ -129,11 +136,14 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
     // Only commands in a register's sendable prefix (pending, before its first rejected command) keep a clock.
     const sendable = new Set<string>();
     const blocked = new Set<string>();
+    const held = new Set<string>();
     if (clocks.size) for (const command of await readFresh(collection, { selector: { syncStatus: { $in: ['pending', 'rejected'] } },
       sort: [{ seq: 'asc' }, { key: 'asc' }] })) {
       if (command.syncStatus === 'rejected') {
+        if (CLOSURE_HOLDING_REJECTIONS.has(command.error?.code ?? '')) held.add(command.registerId);
         if (!isNonBlocking(command, abandoned)) blocked.add(command.registerId);
-      } else if (!blocked.has(command.registerId)) sendable.add(command.commandId);
+      } else if (held.has(command.registerId) && command.type === 'register.closure.submit') blocked.add(command.registerId);
+      else if (!blocked.has(command.registerId)) sendable.add(command.commandId);
     }
     for (const id of clocks.keys()) if (!sendable.has(id)) clocks.delete(id);
     state$.next({ ...state$.value, ...patch, pending, rejected, stuck: stuckState() });
@@ -164,9 +174,12 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
           sort: [{ seq: 'asc' }, { key: 'asc' }],
         });
         const commands: RegisterCommand[] = [];
+        let held = false;
         for (const command of ledger) {
+          if (command.syncStatus === 'rejected' && CLOSURE_HOLDING_REJECTIONS.has(command.error?.code ?? '')) held = true;
           if (command.syncStatus === 'rejected' && isNonBlocking(command, abandoned)) continue;
           if (command.syncStatus === 'rejected') break;
+          if (held && command.type === 'register.closure.submit') break;
           commands.push(command);
           if (command.type === 'register.session.open' || commands.length >= batchSize) break;
         }

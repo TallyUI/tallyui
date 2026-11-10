@@ -32,15 +32,15 @@ async function customerRequest(url: string, key: 'customers' | 'customer', init:
   }
   if (res.status === 401 || res.status === 403) throw new ConnectorUnauthorizedError(`Medusa rejected the credentials (HTTP ${res.status})`, res.status as 401 | 403);
   if (res.status === 404 && key === 'customer' && init.method === 'GET') return null;
-  if (!res.ok && res.status !== 400) throw new CustomerServiceError('server', `HTTP ${res.status}`);
+  if (!res.ok && res.status !== 400) throw new CustomerServiceError('server', `HTTP ${res.status}`, { status: res.status });
   let body;
   try {
     body = await res.json();
   } catch {
-    throw new CustomerServiceError(res.status === 400 ? 'invalid' : 'server', res.status === 400 ? 'HTTP 400' : 'unexpected response');
+    throw new CustomerServiceError(res.status === 400 ? 'invalid' : 'server', res.status === 400 ? 'HTTP 400' : 'unexpected response', { status: res.status });
   }
-  if (res.status === 400) throw new CustomerServiceError('invalid', body?.message ?? 'HTTP 400');
-  if (key === 'customers' ? !Array.isArray(body?.[key]) : !body?.[key]) throw new CustomerServiceError('server', 'unexpected response');
+  if (res.status === 400) throw new CustomerServiceError('invalid', body?.message ?? 'HTTP 400', { status: res.status });
+  if (key === 'customers' ? !Array.isArray(body?.[key]) : !body?.[key]) throw new CustomerServiceError('server', 'unexpected response', { status: res.status });
   return body[key];
 }
 
