@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
+import { CLOSURE_HOLDING_REJECTIONS } from '../outbox/register-outbox';
 import { safeErrorString } from '../outbox/safe-error';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
@@ -26,7 +27,9 @@ import { readFresh, watchFresh } from '../rxdb';
 import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval, closureVariance } from './register-count.helpers';
-import { abandonSession, adoptRegisterResults, takeOverSession } from './register-adoption';
+import {
+  abandonSession, adoptRegisterResults, closureApprovalStatus, isLiveAtStore, reapproveClosure, takeOverSession, type ClosureApprovalStatus,
+} from './register-adoption';
 import { reconcileRegisterCommands, registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
 import type { CashMovement, Closure, RegisterSession } from './schemas';
@@ -124,8 +127,40 @@ type Reservation = RegisterBucket['closure_reservation'];
 type Snapshot = {
   rows: RegisterSession[]; closureRows: Closure[]; reservation: Reservation;
   entries: CashMovement[]; sales: PosOrder[]; refundRows: PosRefund[];
-  open?: RegisterCommand;
+  /** The register's open and closure command rows (ADR-082 d4, d7, d9). */
+  commandRows: RegisterCommand[];
 };
+
+/** ADR-082 d7: a closure the store refused with either approval code, for the app's "Manager approval needed again" card. */
+export interface ApprovalNeeded {
+  closureId: string; sessionId: string;
+  /** The variance to send to the approval route: the refusal's, else counted minus tillExpected from the row. */
+  variance: Record<string, number>;
+  code: 'register_approval_required' | 'register_approval_invalid';
+  reason?: string;
+  /** `isLiveAtStore` for the refused closure's session: the approval route can be used for it. */
+  liveAtStore: boolean;
+}
+
+const isTenderMap = (value: unknown): value is Record<string, number> => typeof value === 'object' && value !== null
+  && !Array.isArray(value) && Object.values(value).every((figure) => typeof figure === 'number');
+
+/** The lowest-`seq` closure row refused with either approval code; the outbox holds every later closure behind it. */
+function approvalNeededOf(commandRows: readonly RegisterCommand[], sessions: readonly RegisterSession[]): ApprovalNeeded | null {
+  const row = commandRows.filter((command) => command.type === 'register.closure.submit' && command.syncStatus === 'rejected'
+    && CLOSURE_HOLDING_REJECTIONS.has(command.error?.code ?? '')).sort((a, b) => a.seq - b.seq)[0];
+  if (!row) return null;
+  const { closureId, sessionId, counted, tillExpected } = row.payload as { closureId: string; sessionId: string; counted?: unknown; tillExpected?: unknown };
+  const data = row.error?.data;
+  return {
+    closureId, sessionId, code: row.error!.code as ApprovalNeeded['code'],
+    variance: isTenderMap(data?.variance) ? data.variance
+      : closureVariance(isTenderMap(counted) ? counted : {}, isTenderMap(tillExpected) ? tillExpected : {}),
+    ...(typeof data?.reason === 'string' ? { reason: data.reason } : {}),
+    liveAtStore: isLiveAtStore(sessions.find((session) => session.id === sessionId),
+      commandRows.find((command) => command.key === `session.open:${sessionId}`)),
+  };
+}
 
 const reservationOf = (register: RegisterDocument | null, storeKey: string, registerId: string) =>
   register?.stores[storeKey]?.registers?.[registerId]?.closure_reservation;
@@ -198,15 +233,17 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
       watchFresh(sessions, { selector: { register_id: registerId } }),
       watchFresh(closures, { selector: { register_id: registerId } }),
       observeRegister$(register).pipe(map((document) => reservationOf(document, storeKey, registerId))),
-    ]).pipe(switchMap(([rows, closureRows, reservation]) => {
+      commandTarget ? watchFresh(commandTarget.commands, { selector: {
+        registerId, type: { $in: ['register.session.open', 'register.closure.submit'] },
+      } }) : of([] as RegisterCommand[]),
+    ]).pipe(switchMap(([rows, closureRows, reservation, commandRows]) => {
       const current = currentSession(rows, closureRows, reservation);
-      if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [], refundRows: [] } as Snapshot);
+      if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [], refundRows: [], commandRows } as Snapshot);
       return combineLatest([
         watchFresh(movements, { selector: { session_id: current.id } }),
         watchFresh(orders, { selector: { sessionId: current.id } }),
-        commandTarget ? watchFresh(commandTarget.commands, { selector: { key: `session.open:${current.id}` } }) : of([]),
         refunds ? watchFresh(refunds, { selector: { sessionId: current.id } }) : of([]),
-      ]).pipe(map(([entries, sales, opens, refundRows]) => ({ rows, closureRows, reservation, entries, sales, open: opens[0], refundRows })));
+      ]).pipe(map(([entries, sales, refundRows]) => ({ rows, closureRows, reservation, entries, sales, refundRows, commandRows })));
     }));
   }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId, commandTarget, refunds]);
   // A latest-value ref: an `actions` object from an earlier render still sees the current flag.
@@ -278,11 +315,13 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     }
   }, [data, source]);
   const session = data ? currentSession(data.rows, data.closureRows, data.reservation) : null;
-  const refusal = data?.open?.error?.data as RegisterSessionAlreadyOpenData | undefined;
+  const commandRows = data?.commandRows ?? [];
+  const open = session ? commandRows.find((row) => row.key === `session.open:${session.id}`) : undefined;
+  const refusal = open?.error?.data as RegisterSessionAlreadyOpenData | undefined;
   const conflict = session?.status !== 'conflict' || !commandTarget ? undefined
-    : data?.open?.syncStatus === 'pending' && typeof data.open.payload.supersedes === 'string'
-      ? { sessionId: data.open.payload.supersedes, takingOver: true }
-      : data?.open?.syncStatus === 'rejected' && refusal
+    : open?.syncStatus === 'pending' && typeof open.payload.supersedes === 'string'
+      ? { sessionId: open.payload.supersedes, takingOver: true }
+      : open?.syncStatus === 'rejected' && refusal
         ? { sessionId: refusal.sessionId, openedAt: refusal.openedAt, openedBy: refusal.openedBy, deviceName: refusal.deviceName, takingOver: false } : undefined;
   const entries = data?.entries ?? [];
   const sales = data?.sales ?? [];
@@ -340,6 +379,13 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     lastClosed: (data?.rows ?? []).filter((row) => row.status === 'closed')
       .sort((a, b) => (b.closed_at_gmt ?? '').localeCompare(a.closed_at_gmt ?? ''))[0] ?? null,
     varianceThreshold,
+    /** ADR-082 d4: the store holds the current session (`isLiveAtStore`), so the app's approval route can be used. */
+    liveAtStore: isLiveAtStore(session, open),
+    /** ADR-082 d7: a closure the store refused with either approval code, or `null`; recover it with `actions.reapproveClosure`. */
+    approvalNeeded: approvalNeededOf(commandRows, data?.rows ?? []),
+    /** ADR-082 d9: each listed closure's approval status by closure id; show `unverified` beside the approver's name. */
+    closureApprovalStatus: Object.fromEntries((data?.closureRows ?? []).map((closure) => [closure.id, closureApprovalStatus(closure,
+      commandRows.find((row) => row.key === `closure.submit:${closure.id}`), options.capabilities)])) as Record<string, ClosureApprovalStatus>,
     enabled,
     blind: options.blind ?? false,
     /** Pass straight to useSale's `session` option: `complete()` then stamps through `stampSession`. */
@@ -364,6 +410,11 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           reservationOf(await readRegister(commandTarget.host), commandTarget.storeKey, commandTarget.registerId));
         if (row?.status !== 'conflict') throw new RegisterSessionRequiredError();
         await abandonSession({ ...commandTarget, sessionId: row.id });
+      },
+      /** ADR-082 d7: sends `approvalNeeded`'s closure again with a new proof and approver; `RegisterReapproveError` unless it is refused with either approval code at contract 3. */
+      reapproveClosure: async (input: { closureId: string; approval: string; approvedBy: string }) => {
+        if (!commandTarget) throw new RegisterSessionRequiredError();
+        await reapproveClosure({ ...input, commands: commandTarget.commands, registerContract: options.capabilities?.register });
       },
       /**
        * Refuses with `RegisterSessionAlreadyOpenError` while the register has a live session or
@@ -433,7 +484,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
        * `counted` maps each tender to its counted minor units. An interrupted close resumes with
        * the count persisted on the session, not the one passed to the retry (WCPOS uses the retry's).
        * Over `varianceThreshold` (`closeNeedsApproval`, as `RegisterCount`), a close without
-       * `approvedBy` throws `RegisterApprovalRequiredError` before any write, blind or not; a
+       * `approvedBy` throws `RegisterApprovalRequiredError` before any write, blind or not; so does one without
+       * `approval` at contract 3 with the store's `registerApproval` while the session is `liveAtStore` (ADR-082 d5); a
        * resumed close (the stored session already closed) isn't gated again. `approvedBy` reaches the Z
        * (`breakdowns.approved_by`), and `approvedByName` its `approved_by_name`.
        * `approval` is the store's opaque proof (ADR-082): it goes to the session's
@@ -454,15 +506,19 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         // render's snapshot, which can lag a sale or a close that already landed (#168 review).
         const stored = await store.readSession(sessions, open.id);
         if (!stored) throw new RegisterSessionRequiredError();
-        if (stored.status !== 'closed' && (!input.approvedBy || input.approvedVariance)) {
+        // ADR-082 d5: at contract 3 with the store's threshold, a close without the store's proof may still need one.
+        const proofChecked = (options.capabilities?.register ?? 0) >= 3 && options.capabilities?.registerApproval != null && !input.approval;
+        if (stored.status !== 'closed' && (!input.approvedBy || input.approvedVariance || proofChecked)) {
           const fresh = await freshExpected(stored);
-          if (!input.approvedBy && closeNeedsApproval(input.counted.cash ?? 0, fresh.cash ?? 0, varianceThreshold)) throw new RegisterApprovalRequiredError();
+          const over = closeNeedsApproval(input.counted.cash ?? 0, fresh.cash ?? 0, varianceThreshold);
+          if (over && !input.approvedBy) throw new RegisterApprovalRequiredError();
+          // Live at the store, the route can be used, so `approvedBy` alone is not enough. Offline, or before the store
+          // applies the open, it closes with `approvedBy` and the store's refusal is recovered later (decision 7).
+          if (over && proofChecked && commandTarget && isLiveAtStore(stored,
+            (await readFresh(commandTarget.commands, { selector: { key: `session.open:${stored.id}` } }))[0])) throw new RegisterApprovalRequiredError();
           // ADR-082 d5: a sale or a movement since the approval moved the variance the proof is bound to; ask again.
           if (input.approvedVariance && !sameVariance(input.approvedVariance, closureVariance(closedCount(input.counted), fresh))) throw new RegisterApprovalRequiredError();
         }
-        // TODO(ADR-082 unit 4): at register >= 3 with the store's registerApproval, a close over the threshold on a session
-        // live at the store also needs `approval` (decision 5). Until `liveAtStore` exists, `approvedBy` alone closes, as at
-        // contract 2, and the store refuses it register_approval_required for decision 7 to recover.
         // By id, not `open` (plain data): `store.closeSession`'s guard runs again inside
         // `incrementalModify` on the stored document, so a close that already landed keeps its count, time, actor and approver.
         const closed = await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, approvedBy: input.approvedBy, approval: input.approval, timezone });

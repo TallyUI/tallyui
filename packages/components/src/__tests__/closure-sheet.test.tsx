@@ -18,7 +18,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AccessibilityInfo } from 'react-native';
 import { ClosureSheet } from '../register/closure-sheet';
 import { createRegisterDb, RegisterHarness, seedSession, type RegisterDb } from './register-harness';
-import { closeSession, writeClosure, type PosOrder } from '@tallyui/pos';
+import { closeSession, closureCommand, registerCommandCollection, writeClosure, type Closure, type PosOrder, type RegisterCommandCollection } from '@tallyui/pos';
 import type { TaxRounding } from '@tallyui/core';
 
 let db: RegisterDb;
@@ -130,6 +130,26 @@ it('falls back to the approver id without a name', async () => {
   await closeWithCount(10000, {}, { approvedBy: 'mgr-9' });
   await renderClosure();
   expect(screen.getByTestId('closure-approved-by').textContent).toBe('Approved by mgr-9');
+});
+
+it('marks the approver "not yet verified" until the store applies the closure with its proof (ADR-082 d9)', async () => {
+  await db.addCollections({ register_commands: registerCommandCollection() });
+  const commands = (db as unknown as { register_commands: RegisterCommandCollection }).register_commands;
+  const closure = await closeWithCount(9000, {}, { approvedBy: 'mgr-1', approvedByName: 'Morgan Lee' });
+  await renderClosure({ commands, capabilities: { orderCreate: 1, register: 3, registerApproval: { thresholdMinor: 500 } } });
+  await waitFor(() => expect(screen.getByTestId('closure-approval-unverified')).toBeTruthy()); // offline: no row yet
+  const at = '2026-11-10T12:00:00.000Z';
+  await commands.insert({ ...closureCommand(closure.toJSON() as Closure, { registerContract: 3 }), registerId: 'register', seq: 2,
+    commandId: 'closure-command', createdAt: at, updatedAt: at, syncStatus: 'pending' }); // queued
+  expect((await commands.findOne(`closure.submit:${closure.id}`).exec(true)).syncStatus).toBe('pending');
+  await waitFor(() => expect(screen.getByTestId('closure-approval-unverified').textContent).toBe('Approval not yet verified by the store'));
+  expect(screen.getByTestId('closure-approved-by').textContent).toBe('Approved by Morgan Lee');
+  await (await commands.findOne(`closure.submit:${closure.id}`).exec(true)).incrementalModify((doc) => ({
+    ...doc, syncStatus: 'applied', version: 3, payload: { ...doc.payload, approval: 'proof-z' },
+  }));
+  await waitFor(() => expect(screen.queryByTestId('closure-approval-unverified')).toBeNull());
+  expect(screen.getByTestId('closure-approved-by').textContent).toBe('Approved by Morgan Lee');
+  expect(screen.getByTestId('closure-sheet').textContent).not.toContain('proof-z');
 });
 
 it('shows no approved-by line without an approver', async () => {
