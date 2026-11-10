@@ -21,6 +21,10 @@ export type { TaxRateMap, TaxContext } from './tax';
 export { resolveStoreSettings, useStoreSettings, withPricingContext, taxProviderProps } from './store-settings';
 export type { StoreSettingsResolution, ResolveStoreSettingsOptions, StoreSettingsState } from './store-settings';
 
+// Cashier permissions (v2 parity A12)
+export { can, useCashier } from './cashier';
+export type { CashierState } from './cashier';
+
 // App settings
 export {
   UI_SCALES, UI_THEMES, APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, appSettingSchema,
