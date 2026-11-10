@@ -3,6 +3,12 @@
 // Generic UI components
 export * from './ui';
 
+// Scale
+export {
+  ScaleProvider, useScale, usePointer,
+  type ScaleProviderProps, type ScaleScopeProps, type ScaleState,
+} from './scale';
+
 // Product components
 export {
   ProductTitle,
