@@ -15,26 +15,50 @@ export function parsePrice(text: string, currency: string): number | string {
 }
 
 const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center justify-center';
+/** v2's price keypad draws three quick keys (`QUICK_KEYS`, WCPOS `components/src/price-keypad/index.tsx`). */
+const QUICK_KEYS = 3;
+
+/** `currentMinor` less `percent` (to two places), half up at the minor unit, as v2's `draftPrice` rounds. */
+const lessPercent = (currentMinor: number, percent: number) =>
+  Math.round(currentMinor * (10000 - Math.round(percent * 100)) / 10000);
 
 /** `onApply` returns a refusal to show inline, or null once applied. */
-export function PriceForm({ lineName, currency, currentMinor, onApply, onClose }: {
+export function PriceForm({ lineName, currency, currentMinor, onApply, onClose, quickDiscounts = [] }: {
   lineName: string; currency: string; currentMinor: number;
   onApply: (amountMinor: number, reason?: string) => string | null; onClose: () => void;
+  /** Percentages off the current price, as v2's price-keypad keys; the first three valid ones (0 < n ≤ 100) are drawn. */
+  quickDiscounts?: readonly number[];
 }): JSX.Element {
   const [text, setText] = useState('');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // The lit key (v2's reducer): pressing it again puts the current price back; typing starts over.
+  const [percent, setPercent] = useState<number | undefined>();
+  const keys = quickDiscounts.filter((n) => Number.isFinite(n) && n > 0 && n <= 100).slice(0, QUICK_KEYS);
   const title = `Price for ${lineName}`;
+  const current = formatMoney({ amount: currentMinor, currency });
+  const draft = percent === undefined ? undefined : lessPercent(currentMinor, percent);
   function apply() {
-    const parsed = parsePrice(text, currency);
+    const parsed = draft ?? parsePrice(text, currency);
     const refused = typeof parsed === 'string' ? parsed : onApply(parsed, reason.trim() || undefined);
     setError(refused);
     if (refused === null) onClose();
   }
   return <View testID="price-form" role="group" accessibilityLabel={title} className="gap-2 px-3 py-2">
     <Text className="font-semibold text-foreground">{title}</Text>
-    <Text className="text-muted-foreground">{formatMoney({ amount: currentMinor, currency })}</Text>
-    <TextInput testID="price-input" accessibilityLabel="Price value" value={text} onChangeText={setText}
+    {draft === undefined ? <Text className="text-muted-foreground">{current}</Text>
+      : <Text testID="price-quick-draft" className="text-muted-foreground">
+        {`${current} −${percent}% → ${formatMoney({ amount: draft, currency })}`}</Text>}
+    {keys.length ? <View testID="price-quick-discounts" className="flex-row gap-2">
+      {keys.map((key) => <Pressable key={key} testID={`price-discount-${key}`} accessibilityRole="button"
+        accessibilityLabel={`Discount (${key}%)`} accessibilityState={{ selected: key === percent }}
+        aria-selected={key === percent} onPress={() => { setPercent(key === percent ? undefined : key); setText(''); setError(null); }}
+        className={`${button} flex-1 ${key === percent ? 'bg-primary' : 'bg-card'}`}>
+        <Text className={key === percent ? 'text-primary-foreground' : 'text-foreground'}>{`−${key}%`}</Text>
+      </Pressable>)}
+    </View> : null}
+    <TextInput testID="price-input" accessibilityLabel="Price value" value={text}
+      onChangeText={(next) => { setText(next); setPercent(undefined); }}
       onSubmitEditing={apply} inputMode="decimal" placeholder={currency}
       className="min-w-0 rounded-md border border-border bg-background px-3 py-2 text-foreground" />
     <TextInput testID="price-reason" accessibilityLabel="Reason (optional)" placeholder="Reason (optional)"
