@@ -24,6 +24,8 @@ Renders the sale's lines with quantity and removal controls, line and order disc
 
 Pass `orderActions={false}` when the app hosts the Order discount and Add charge controls in its own menu, as WCPOS v2's cart "+" menu does. Applied order discounts, fees and shipping still show with their own Remove controls.
 
+Pass `checkout` to use WCPOS v2's foot, [CartFoot](/docs/components/cart-foot), in place of the Cash and Card terminal buttons: one "Checkout" button that reads the order total and calls `onCheckout`, beside a ⋮ menu of the `actions` the app passes. The label follows the sale as lines change, and Checkout is disabled while the cart is empty, as Cash and Card terminal are. Without `checkout`, the Cash and Card terminal buttons show as before.
+
 The lines sit under [CartColumnHeads](/docs/components/cart-column-heads) (Qty, Item, Price, Total). Each line shows its variant attributes under the name, and its regular price struck through when the line costs less, from the line's `attributes` and `regularUnitPriceMinor`. The Price column is hidden when the cart is under 300 wide, or the window is under 768 wide or 480 tall. The Discount and Price actions sit with each line's quantity buttons.
 
 ## Props
@@ -38,3 +40,4 @@ The lines sit under [CartColumnHeads](/docs/components/cart-column-heads) (Qty, 
 | `quickDiscounts` | `readonly number[]` | --- | Quick-discount keys on each line's [PriceForm](/docs/components/price-form), e.g. the app's `cart.quickDiscounts` setting (default `[5, 10, 15]`); needs `canEditPrice` |
 | `lineEditor` | `'inline' \| 'popover'` | `'inline'` | `popover`: tapping a line's quantity or price opens a [LinePopover](/docs/components/line-popover) keypad, the price one with `quickDiscounts` and only with `canEditPrice` (the Price action stays when the Price column folds). `inline` keeps the − / + buttons and the Price form only |
 | `orderActions` | `boolean` | `true` | Shows Cart's own Order discount button and Add charge control; pass `false` when the app hosts them in its own menu |
+| `checkout` | `{ onCheckout: () => void; actions?: readonly CartFootAction[] }` | --- | Swaps the Cash and Card terminal buttons for [CartFoot](/docs/components/cart-foot)'s Checkout button and ⋮ menu |
