@@ -1,0 +1,37 @@
+---
+title: Keypad
+description: Keypad draws rows of keys with no display or value of its own; each press reports the key's name.
+---
+
+## Import
+
+```tsx
+import { DIGIT_ROWS, Keypad } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Keypad
+  testID="tender-keypad"
+  rows={[...DIGIT_ROWS, [
+    { name: 'clear', label: 'Clear', text: 'C' },
+    { name: '0', label: '0' },
+    { name: 'backspace', label: 'Delete last digit', text: '⌫' },
+  ]]}
+  onPress={(name) => dispatch({ type: 'key', key: name })}
+/>
+```
+
+Ported from WCPOS v2's keypad. `DIGIT_ROWS` holds 1 to 9 in three rows; the caller adds its own last row and owns the entry. [TenderPane](/docs/components/tender-pane) and [LinePopover](/docs/components/line-popover) both draw this keypad.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `rows` | `readonly (readonly KeypadKey[])[]` | required | The rows of keys, top to bottom |
+| `onPress` | `(name: string) => void` | required | Receives the pressed key's `name` |
+| `testID` | `string` | --- | The keypad's test ID; each key is `<testID>-key-<name>` |
+| `className` | `string` | --- | Extra classes for the keypad |
+
+A `KeypadKey` has a `name` (what a press reports), a `label` (its accessible name), an optional `text` (shown in place of the label, e.g. `⌫`) and an optional `span` (the cells it takes in its row, default 1).

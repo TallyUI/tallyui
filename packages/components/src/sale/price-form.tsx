@@ -19,8 +19,23 @@ const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center 
 const QUICK_KEYS = 3;
 
 /** `currentMinor` less `percent` (to two places), half up at the minor unit, as v2's `draftPrice` rounds. */
-const lessPercent = (currentMinor: number, percent: number) =>
+export const lessPercent = (currentMinor: number, percent: number) =>
   Math.round(currentMinor * (10000 - Math.round(percent * 100)) / 10000);
+
+/** The quick keys drawn: the first three valid percentages (0 < n ≤ 100). */
+export const quickKeys = (list: readonly number[] = []) => list.filter((n) => Number.isFinite(n) && n > 0 && n <= 100).slice(0, QUICK_KEYS);
+
+/** v2's quick-discount key row; `percent` is the lit key. Shared by PriceForm and LinePopover. */
+export function QuickDiscountKeys({ keys, percent, onPress }: { keys: readonly number[]; percent?: number; onPress: (key: number) => void }) {
+  return <View testID="price-quick-discounts" className="flex-row gap-2">
+    {keys.map((key) => <Pressable key={key} testID={`price-discount-${key}`} accessibilityRole="button"
+      accessibilityLabel={`Discount (${key}%)`} accessibilityState={{ selected: key === percent }}
+      aria-selected={key === percent} onPress={() => onPress(key)}
+      className={`${button} flex-1 ${key === percent ? 'bg-primary' : 'bg-card'}`}>
+      <Text className={key === percent ? 'text-primary-foreground' : 'text-foreground'}>{`−${key}%`}</Text>
+    </Pressable>)}
+  </View>;
+}
 
 /** `onApply` returns a refusal to show inline, or null once applied. */
 export function PriceForm({ lineName, currency, currentMinor, onApply, onClose, quickDiscounts = [] }: {
@@ -34,7 +49,7 @@ export function PriceForm({ lineName, currency, currentMinor, onApply, onClose, 
   const [error, setError] = useState<string | null>(null);
   // The lit key (v2's reducer): pressing it again puts the current price back; typing starts over.
   const [percent, setPercent] = useState<number | undefined>();
-  const keys = quickDiscounts.filter((n) => Number.isFinite(n) && n > 0 && n <= 100).slice(0, QUICK_KEYS);
+  const keys = quickKeys(quickDiscounts);
   const title = `Price for ${lineName}`;
   const current = formatMoney({ amount: currentMinor, currency });
   const draft = percent === undefined ? undefined : lessPercent(currentMinor, percent);
@@ -49,14 +64,8 @@ export function PriceForm({ lineName, currency, currentMinor, onApply, onClose, 
     {draft === undefined ? <Text className="text-muted-foreground">{current}</Text>
       : <Text testID="price-quick-draft" className="text-muted-foreground">
         {`${current} −${percent}% → ${formatMoney({ amount: draft, currency })}`}</Text>}
-    {keys.length ? <View testID="price-quick-discounts" className="flex-row gap-2">
-      {keys.map((key) => <Pressable key={key} testID={`price-discount-${key}`} accessibilityRole="button"
-        accessibilityLabel={`Discount (${key}%)`} accessibilityState={{ selected: key === percent }}
-        aria-selected={key === percent} onPress={() => { setPercent(key === percent ? undefined : key); setText(''); setError(null); }}
-        className={`${button} flex-1 ${key === percent ? 'bg-primary' : 'bg-card'}`}>
-        <Text className={key === percent ? 'text-primary-foreground' : 'text-foreground'}>{`−${key}%`}</Text>
-      </Pressable>)}
-    </View> : null}
+    {keys.length ? <QuickDiscountKeys keys={keys} percent={percent}
+      onPress={(key) => { setPercent(key === percent ? undefined : key); setText(''); setError(null); }} /> : null}
     <TextInput testID="price-input" accessibilityLabel="Price value" value={text}
       onChangeText={(next) => { setText(next); setPercent(undefined); }}
       onSubmitEditing={apply} inputMode="decimal" placeholder={currency}

@@ -8,9 +8,10 @@ import { cartShowsPrice } from '../cart/cart-columns';
 import { DiscountChips, DiscountForm } from './discount-form';
 import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
+import { LinePopover } from './line-popover';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor, orderActions = true, checkout }:
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor, orderActions = true, checkout, lineEditor = 'inline' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
     /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
@@ -31,6 +32,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     /** Swaps the Cash and Card terminal row for v2's foot, `CartFoot`: "Checkout {total}" calls `onCheckout`, and the
      * ⋮ menu lists `actions`. Absent: the Cash and Card terminal row. */
     checkout?: { onCheckout: () => void; actions?: readonly CartFootAction[] };
+    /** `popover`: tapping a line's quantity or price opens v2's keypad (WCPOS cart cells/quantity-keypad.tsx and
+     * cells/price.tsx), the price one with the quick-discount keys. Default `inline`: the − / + buttons and Price form. */
+    lineEditor?: 'inline' | 'popover';
   }) {
   const { order } = sale;
   const money = (amount: number) => ({ amount, currency: order.currency });
@@ -55,14 +59,27 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const [cartWidth, setCartWidth] = useState<number>();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const showPrice = cartShowsPrice({ cartWidth, windowWidth, windowHeight });
+  // The price popover needs the Price column; on a narrow cart the Price action and form stay.
+  const pricePopover = lineEditor === 'popover' && canEditPrice && showPrice;
+  // A line's price write, from the Price form or the price popover; the reason is passed only to onPriceChange.
+  const applyPrice = (line: typeof order.lineItems[number], amount: number, reason?: string) => {
+    const fromMinor = line.unitPriceMinor;
+    const refused = sale.setUnitPrice(line.id, amount);
+    if (refused === null) onPriceChange?.({ lineId: line.id, fromMinor, toMinor: amount, reason });
+    return refused;
+  };
   const renderItem = (line: typeof order.lineItems[number]) => <>
     <CartLine name={line.name} attributes={line.attributes} quantity={line.quantity} unitPrice={money(line.unitPriceMinor)}
       regularUnitPrice={line.regularUnitPriceMinor === undefined ? undefined : money(line.regularUnitPriceMinor)}
-      lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice} />
+      lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice}
+      quantitySlot={lineEditor === 'popover' ? <LinePopover kind="quantity" lineName={line.name} currency={order.currency}
+        value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} /> : undefined}
+      priceSlot={pricePopover ? <LinePopover kind="price" lineName={line.name} currency={order.currency} value={line.unitPriceMinor}
+        quickDiscounts={quickDiscounts} textClassName="text-right text-muted-foreground" onApply={(amount) => applyPrice(line, amount)} /> : undefined} />
     <DiscountChips discounts={line.discounts} amounts={display(line.id).discounts} currency={order.currency} onRemove={sale.removeDiscount} />
     <CartLineActions actions={[
       { id: 'discount', label: 'Discount', color: 'text-primary', onPress: () => setForm({ type: 'discount', lineId: line.id }) },
-      ...(canEditPrice ? [{ id: 'price', label: 'Price', color: 'text-primary', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
+      ...(canEditPrice && !pricePopover ? [{ id: 'price', label: 'Price', color: 'text-primary', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
     ]}>
       <View className="flex-row gap-4 px-3 py-2">
         <Pressable accessibilityRole="button" accessibilityLabel={`Decrease ${line.name}`}
@@ -74,14 +91,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       </View>
     </CartLineActions>
     {discountForm(line.id, `Discount on ${line.name}`)}
-    {canEditPrice && form?.type === 'price' && form.lineId === line.id ? <PriceForm key={line.id} lineName={line.name}
+    {canEditPrice && !pricePopover && form?.type === 'price' && form.lineId === line.id ? <PriceForm key={line.id} lineName={line.name}
       currency={order.currency} currentMinor={line.unitPriceMinor} quickDiscounts={quickDiscounts} onClose={() => setForm(null)}
-      onApply={(amount, reason) => {
-        const fromMinor = line.unitPriceMinor;
-        const refused = sale.setUnitPrice(line.id, amount);
-        if (refused === null) onPriceChange?.({ lineId: line.id, fromMinor, toMinor: amount, reason });
-        return refused;
-      }} /> : null}
+      onApply={(amount, reason) => applyPrice(line, amount, reason)} /> : null}
   </>;
   return <View dataSet={{ print: 'hide' }} className="flex-1 min-h-0" onLayout={(event) => setCartWidth(event.nativeEvent.layout.width)}>
     <CartColumnHeads showPrice={showPrice} />
