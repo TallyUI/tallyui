@@ -4,6 +4,7 @@ import { addRxPlugin, createRxDatabase } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { Subject } from 'rxjs';
 import { ConnectorUnauthorizedError, type SyncContext, type SyncNotice } from '@tallyui/core';
 
 import { MAX_RETRY_AFTER_MS, MAX_RETRY_TIME_MS, startReplication } from './replication';
@@ -34,7 +35,8 @@ afterEach(async () => {
 
 type Pull = (call: number, checkpoint: unknown) => { documents: any[]; checkpoint: unknown };
 
-async function setup(pull: { current: Pull }, { autoStart = true, ceiling }: { autoStart?: boolean; ceiling?: number } = {}) {
+async function setup(pull: { current: Pull }, { autoStart = true, ceiling, stream$ }:
+  { autoStart?: boolean; ceiling?: number; stream$?: Subject<ReturnType<Pull>> } = {}) {
   const db = await createRxDatabase({
     name: `perm${Date.now()}${Math.random().toString(36).slice(2)}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
@@ -49,6 +51,7 @@ async function setup(pull: { current: Pull }, { autoStart = true, ceiling }: { a
         calls.push(checkpoint);
         return pull.current(calls.length, checkpoint) as any;
       },
+      stream$: stream$?.asObservable(),
     },
   };
   const state = startReplication({
@@ -115,16 +118,17 @@ function fakeDocument() {
 }
 
 describe('startReplication on pull errors, through the real RxDB loop', () => {
-  it('a till-fixed error still pauses until resume(): one request, one notice, then silence', async () => {
+  // A hold, never RxDB's pause(): isPaused() is RxDB's own, read by its loops, so it stays false; notice$ is the signal.
+  it('a till-fixed error holds until resume(): one request, one notice, then silence, and no pause', async () => {
     const { state, calls, notices, errors } = await setup({ current: unauthorized });
-    await until(() => state.isPaused());
+    await until(() => notices.length > 1);
     await sleep(RETRY * 5);
     state.reSync();
     await sleep(RETRY * 5);
     expect(calls).toHaveLength(1);
     expect(notices).toEqual([undefined, tillNotice]);
     expect(errors).toEqual([]);
-    expect(state.isPaused()).toBe(true);
+    expect(state.isPaused()).toBe(false);
   });
 
   it('a 403 emits a forbidden store notice, retries, and clears on success without resume()', async () => {
@@ -149,7 +153,7 @@ describe('startReplication on pull errors, through the real RxDB loop', () => {
     const pull = { current: unauthorized as Pull };
     const { state, products, calls, notices } = await setup(pull);
     expect(page.listeners.size).toBe(1);
-    await until(() => state.isPaused());
+    await until(() => notices.length > 1);
     for (let i = 0; i < 3; i++) {
       page.toggle('hidden');
       page.toggle('visible');
@@ -157,12 +161,26 @@ describe('startReplication on pull errors, through the real RxDB loop', () => {
     }
     expect(calls).toHaveLength(1);
     expect(notices).toEqual([undefined, tillNotice]);
-    await until(() => state.isPaused());
     pull.current = (call, checkpoint) => call === 2 ? widget : empty(call, checkpoint);
     await state.resume();
     await until(() => calls.length >= 2);
     await state.awaitInSync();
     expect(notices).toEqual([undefined, tillNotice, undefined]);
+    expect(await products.find().exec()).toHaveLength(1);
+  });
+
+  it('a stream$ document during a till hold is not written; after resume() the pull brings it', async () => {
+    const stream$ = new Subject<ReturnType<Pull>>();
+    const pull = { current: unauthorized as Pull };
+    const { state, products, calls, notices } = await setup(pull, { stream$ });
+    await until(() => notices.length > 1);
+    stream$.next(widget);
+    await sleep(RETRY * 5);
+    expect(await products.find().exec()).toHaveLength(0);
+    pull.current = (call, checkpoint) => call === 2 ? widget : empty(call, checkpoint);
+    await state.resume();
+    await until(() => calls.length >= 2);
+    await state.awaitInSync();
     expect(await products.find().exec()).toHaveLength(1);
   });
 
@@ -372,7 +390,7 @@ describe('startReplication on pull errors, through the real RxDB loop', () => {
   it('resume() restarts the pull after a till error', async () => {
     const pull = { current: unauthorized as Pull };
     const { state, products, calls, notices } = await setup(pull);
-    await until(() => state.isPaused());
+    await until(() => notices.length > 1);
     pull.current = (call, checkpoint) => call === 2 ? widget : empty(call, checkpoint);
     await state.resume();
     await until(() => calls.length >= 2);
