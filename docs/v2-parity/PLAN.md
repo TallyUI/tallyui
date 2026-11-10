@@ -824,7 +824,30 @@ are independent and run in parallel.
 | `paymentMethods()` for each of Woo, Medusa and Vendure | all three | A2 | 8 | |
 | `cashier()` for each of Woo (WordPress capabilities), Medusa and Vendure | all three | A12 | 30 | |
 | `listRegisters()` for each of Woo (`wcpos/v2/registers`), Medusa and Vendure | all three | A4 | 31 | |
-| Woo transport onto WCPOS 2.0's `wcpos/v2` money endpoints (the payments ledger, `orders/{id}/close`, refunds) instead of 1.10.x push/orders (ADR-073), size L | woocommerce | A2, A5, A7 | Q4 | |
+| Woo transport onto WCPOS 2.0's `wcpos/v2` money endpoints (the payments ledger, `orders/{id}/close`, refunds) instead of 1.10.x push/orders (ADR-073), size L | woocommerce | A2, A5, A7 | Q4 | W |
+| Woo stock reconcile adapter for `@tallyui/database` `startStockReconcile`, for v2's stock numbers on tiles | woocommerce | A6 | — | W |
+| Woo term feeds: categories, tags and brands, with parent, image and count, for v2's Browse by and the brand and featured quick filters | woocommerce | A14 | — | W |
+| Woo customers replicated into a local collection, for v2's offline customer search | woocommerce, database | A14 | — | W |
+| Woo full tax-rate table with locations, plus `tax_based_on`, tax display and `prevent_overselling` on `StoreSettings` | woocommerce, core | A14 | — | W |
+| Woo online barcode and exact-SKU lookup over `wcpos/v2/products` when a scan misses locally | woocommerce | A13 | 12 | W |
+
+### Shared units asked by the apps after the plan (2026-11-10)
+
+These came from the tallyui-woocommerce worker (W) and medusapos (M) on 2026-11-10. They are shared units, in the
+order they will be taken once waves 1 and 2 have room.
+
+| Unit | Package(s) | Area | Size | Door | Asked |
+|---|---|---|---|---|---|
+| Decimal quantities in `OrderBuilder.addLine` and `updateQuantity`, and on `order.create` (the builder rejects non-integers today) | pos, core | A14 | M | one-way (wire) | W |
+| Stock guard in `useSale.add` and `setQuantity`, driven by `preventOverselling` | pos | A14 | S | two-way | W |
+| `useSale.updateLine` (name, SKU, regular price), and `addCustomLine` with SKU, virtual, downloadable and categories | pos | A14 | S | two-way | W |
+| Tax-rate matching by the customer's billing or shipping address, retaxing when the customer changes (`tax_based_on`) | pos | A14 | M | two-way | W |
+| `MovementSheet`: reason chips for pay in and pay out | components | A4 | S | two-way | W |
+| A `status` field (the HTTP status) on `CustomerServiceError`, so a retry need not parse the message | core | A9 | S | two-way | W |
+
+The tender keypad for Woo waits for unit 16. The W worker's test-id spec,
+`~/agent/handoff/tallyui-woo-tender-keypad-spec-2026-11-10.md`, is input to that unit. The sale note (unit 6)
+goes in `order.create` v7, because the medusapos plugin refuses unknown payload fields.
 
 **Open issues this backlog absorbs:** #366, #373 (unit 23); #501 and #495
 (coupons and variation attributes; #495 stays needs-paul); #520 (unit 6);
