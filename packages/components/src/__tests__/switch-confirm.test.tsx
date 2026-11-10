@@ -37,6 +37,12 @@ it.each([
   expect(text('switch-warning-unsentSales')).toBe('2 unsent sales');
 });
 
+it('one unsent sale is enough for "anyway", and its line is singular', () => {
+  show({ kind: 'cashier', warnings: warn('cashier', 1) });
+  expect(text('switch-confirm-confirm')).toBe('Hand over to Sam anyway');
+  expect(text('switch-warning-unsentSales')).toBe('1 unsent sale');
+});
+
 it('cashier and register descriptions name the drawer left open', () => {
   show({ kind: 'cashier', warnings: warn('cashier') });
   expect(text('switch-confirm-description')).toBe('The drawer stays open on Till 1.');

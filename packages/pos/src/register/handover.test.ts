@@ -34,6 +34,10 @@ describe('switchWarnings', () => {
       { code: 'unsentSales', count: 1 }, { code: 'parkedSales', count: 3 }, { code: 'partlyPaidSale' }, { code: 'openSession' },
     ]);
   });
+
+  it('counts a sale as partly paid from one minor unit', () => {
+    expect(switchWarnings({ kind: 'cashier', outbox: outbox(0), parkedSales: 0, paidMinor: 1 }).warnings).toEqual([{ code: 'partlyPaidSale' }]);
+  });
 });
 
 const session: RegisterSession = {
