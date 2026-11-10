@@ -92,8 +92,12 @@ export function createWooCustomers(options?: { newId?: () => string }) {
   return {
     async searchCustomers(context: SyncContext, query: string, options?: { limit?: number }): Promise<Customer[]> {
       const q = query.trim();
-      if (!q) return [];
-      const params = new URLSearchParams({ search: q, role: 'customer', per_page: String(Math.max(1, Math.min(50, options?.limit ?? 20))) });
+      const perPage = String(Math.max(1, Math.min(50, options?.limit ?? 20)));
+      // An empty query lists the first page in WCPOS v2's customer-picker order, last name ascending; the wcpos/v2
+      // customers proxy applies `orderby=last_name` (woocommerce-pos Collection_Rules customer sorts).
+      const params = q
+        ? new URLSearchParams({ search: q, role: 'customer', per_page: perPage })
+        : new URLSearchParams({ role: 'customer', per_page: perPage, orderby: 'last_name', order: 'asc' });
       const { body } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
       if (!Array.isArray(body)) throw new CustomerServiceError('server', 'unexpected response');
       return body.map(toWooCustomer);
