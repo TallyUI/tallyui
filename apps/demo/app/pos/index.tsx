@@ -35,6 +35,7 @@ const screens = [
   // Settings
   { href: '/pos/connector-status', label: 'ConnectorStatus' },
   { href: '/pos/settings-group', label: 'SettingsGroup' },
+  { href: '/pos/display-settings', label: 'DisplaySettings' },
   { href: '/pos/store-settings-choice', label: 'StoreSettingsChoiceScreen' },
 ] as const;
 

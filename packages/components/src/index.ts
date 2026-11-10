@@ -168,6 +168,8 @@ export {
   ConnectorStatus,
   type ConnectorStatusProps,
   type ConnectionStatus,
+  DisplaySettings,
+  type DisplaySettingsProps,
 } from './settings';
 
 // Sale components
