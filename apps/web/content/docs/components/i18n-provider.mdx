@@ -1,0 +1,74 @@
+---
+title: I18nProvider
+description: I18nProvider sets the language of Tally UI's components from the store's locale or the device, with English bundled and other languages passed in by the app; useT reads a string by its key.
+---
+
+## Import
+
+```tsx
+import { I18nProvider, useT, type Catalogues } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { I18nProvider, type Catalogues } from '@tallyui/components';
+import fr from './translations/fr.json';
+
+const resources: Catalogues = { fr };
+
+// storeLocale is the store's locale setting, such as 'fr_CA'. Leave it out to use the device's locale.
+<I18nProvider locale={storeLocale} resources={resources}>
+  <App />
+</I18nProvider>
+```
+
+`I18nProvider` is built on [i18next](https://www.i18next.com), as WCPOS v2's translations are. Wrap the app once, above every Tally UI component. A component with no provider above it shows English, so the provider is optional for an English-only app.
+
+The tender pane ([Tender](/docs/components/tender) and [TenderPane](/docs/components/tender-pane)) reads its strings this way today. Other components still show English text and move over one area at a time.
+
+## Choosing the language
+
+The language is the first of these that is set:
+
+1. The `locale` prop, which the app passes from the store's settings, in either the `fr_CA` or the `fr-CA` form.
+2. The device's locale, from `Intl.DateTimeFormat().resolvedOptions().locale`.
+
+When a key is missing, the string falls back from a regional locale to its base language, then to English. For example, `fr_CA` reads `fr_CA`, then `fr`, then English. Changing `locale` after mount switches the language in place.
+
+## Catalogues
+
+English is bundled with the package. Other languages come from the app in `resources`: an object of catalogues by language code, each mapping a key to its string. The library fetches nothing, so the app loads the catalogues from wherever it keeps them (bundled JSON, its own server, its database) and passes them. A catalogue that arrives after mount is added in place, and the components re-render.
+
+```json
+{
+  "common.total": "Total à payer",
+  "pos_checkout.take_amount_in": "Encaisser {amount} en {method}"
+}
+```
+
+Keys are symbolic, with the dots part of the key, and follow WCPOS v2's catalogue where v2 has the same string. Values interpolate `{name}` placeholders. The English catalogue, `packages/components/src/i18n/locales/en/components.json`, lists every key the components read.
+
+Receipts and register closure documents keep their own label maps (`ClosureContext.i18n` in `@tallyui/pos`).
+
+## useT
+
+```tsx
+import { Text } from 'react-native';
+import { useT } from '@tallyui/components';
+
+function Balance({ amount }: { amount: string }) {
+  const t = useT();
+  return <Text>{t('pos_checkout.rounded_from', { amount })}</Text>;
+}
+```
+
+`useT` returns the `t` function of the nearest `I18nProvider`, or the English one when there is none. It reads only the components' own catalogue: an app's own react-i18next provider does not reach it.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `locale` | `string` | the device's locale | The store's locale, such as `fr_CA` or `fr-CA` |
+| `resources` | `Catalogues` | `{}` | Other languages' catalogues by language code; English is bundled |
+| `children` | `ReactNode` | required | The app |

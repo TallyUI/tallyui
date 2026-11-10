@@ -42,6 +42,8 @@
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
+    "i18next": "^26.7.1",
+    "react-i18next": "^17.1.12",
     "@tallyui/pos": "workspace:*"
   },
   "devDependencies": {

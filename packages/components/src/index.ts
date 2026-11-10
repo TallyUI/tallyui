@@ -227,3 +227,6 @@ export {
 
 // Fonts
 export { FontProvider, useFontType, type FontProviderProps, type FontState, type FontStatus } from './fonts';
+
+// i18n
+export { I18nProvider, useT, type I18nProviderProps, type Catalogues } from './i18n';

@@ -92,6 +92,8 @@
     "nav-drawer",
     "pos-layout",
     "checkout-layout",
-    "settings-layout"
+    "settings-layout",
+    "---Translations---",
+    "i18n-provider"
   ]
 }

@@ -1,7 +1,7 @@
 /**
  * The tender pane, laid out as WCPOS v2's (monorepo main, packages/core/src/screens/main/pos/checkout/tender/):
  * BalanceHeadline and LedgerLegs from ledger-pane.tsx, then the method tiles, entry, quick-cash chips,
- * keypad and commit from tender-pane.tsx's TenderKeypad. Copy is v2's English catalogue. Every figure
+ * keypad and commit from tender-pane.tsx's TenderKeypad. Copy is read with useT, under v2's catalogue keys. Every figure
  * comes from pos (useSale's captured-only totals, tenderRounding, quickTenderedAmounts, planLegs).
  */
 import { useEffect, useState, type JSX } from 'react';
@@ -13,6 +13,7 @@ import {
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { QUICK_CASH_STEPS } from '../checkout/cash-tendered';
+import { useT } from '../i18n';
 import { DIGIT_ROWS, Keypad } from '../input/keypad';
 
 type Sale = ReturnType<typeof useSale>;
@@ -29,17 +30,18 @@ export interface TenderPaneProps {
 
 /** order.create's bound on `payments[].reference`, in UTF-16 units. */
 const REFERENCE_MAX = 255;
-/** v2 labels.ts statusLabel. */
+/** v2 labels.ts statusLabel, as catalogue keys. */
 const STATUS_LABEL: Record<PaymentLegStatus, string> = {
-  pending: 'Pending', authorized: 'Authorized', captured: 'Captured', failed: 'Failed', voided: 'Voided',
+  pending: 'pos_checkout.status_pending', authorized: 'pos_checkout.status_authorized', captured: 'pos_checkout.status_captured',
+  failed: 'pos_checkout.status_failed', voided: 'pos_checkout.status_voided',
 };
 /** v2 labels.ts statusVariant: coloured by what the cashier has to do about the leg. */
 const STATUS_TONE: Record<PaymentLegStatus, string> = {
   pending: 'text-muted-foreground', authorized: 'text-success', captured: 'text-success', failed: 'text-destructive', voided: 'text-muted-foreground',
 };
 /** v2 tender-pane.tsx keypadRows: 123 / 456 / 789, then C, 0, backspace. No decimal key: digits shift in from the right. */
-const KEYPAD_ROWS = [...DIGIT_ROWS,
-  [{ name: 'clear', label: 'Clear', text: 'C' }, { name: '0', label: '0' }, { name: 'backspace', label: 'Delete last digit', text: '⌫' }]];
+const keypadRows = (t: ReturnType<typeof useT>) => [...DIGIT_ROWS,
+  [{ name: 'clear', label: t('pos_checkout.clear_amount'), text: 'C' }, { name: '0', label: '0' }, { name: 'backspace', label: t('common.backspace'), text: '⌫' }]];
 const button = 'min-h-11 justify-center rounded-md border border-border bg-card px-4 py-2';
 
 /** The captured legs since the plan began, as the reducer's `tender-recorded` and `planLegs` read them. */
@@ -48,8 +50,9 @@ const rowsSince = (payments: readonly Leg[], from: number) =>
 
 export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps): JSX.Element | null {
   const { order, stage } = sale;
+  const t = useT();
   const [reference, setReference] = useState('');
-  const [refusal, setRefusal] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState(false);
   const balance = order.balanceDueMinor;
   // The ledger changed (a leg taken or voided) and the entry is untouched: pre-type the next leg or plan share.
   useEffect(() => {
@@ -76,9 +79,9 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
   const [onlyLeg] = order.payments;
   // startTender('external') records the card leg for the total: its reference is edited in place, as before.
   const cardReference = order.payments.length === 1 && onlyLeg.method === 'external' && legStatus(onlyLeg) === 'captured' && balance === 0;
-  const hint = noChange ? `Only ${money(balance)} is due — ${method?.title} can't give change`
-    : entryChange > 0 ? `Change ${money(entryChange)}`
-      : figures.appliedMinor < balance && figures.entryMinor > 0 ? `Part payment · ${money(left)} left after this` : '';
+  const hint = noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
+    : entryChange > 0 ? t('pos_checkout.change_due', { amount: money(entryChange) })
+      : figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
   const canComplete = balance === 0 && !order.payments.some(isInMotion);
   const cannotTake = figures.appliedMinor <= 0 || noChange;
 
@@ -87,22 +90,22 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
     const id = method.id === 'cash'
       ? sale.addTender({ method: 'cash', amountMinor: figures.entryMinor })
       : sale.addTender({ method: 'external', amountMinor: figures.appliedMinor, ...(reference ? { reference } : {}) });
-    if (id === null) { setRefusal("That payment wasn't taken: nothing is due, or the amount isn't valid."); return; }
-    setRefusal(null);
+    if (id === null) { setRefusal(true); return; }
+    setRefusal(false);
     setReference('');
     dispatch({ type: 'tender-started' });
   }
 
   return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
     <View testID="tender-headline" className="gap-1">
-      <Text className="text-sm text-muted-foreground">{order.paidMinor > 0 ? 'Remaining' : 'Total'}</Text>
+      <Text className="text-sm text-muted-foreground">{order.paidMinor > 0 ? t('pos_checkout.remaining') : t('common.total')}</Text>
       <Text testID="tender-balance" className="text-4xl font-bold text-foreground">{money(balance)}</Text>
-      {order.paidMinor > 0 ? <Text testID="tender-paid" className="text-sm text-muted-foreground">{`${money(order.paidMinor)} of ${money(order.totalMinor)} paid`}</Text> : null}
-      {order.changeDueMinor > 0 ? <Text testID="tender-change" className="text-lg font-semibold text-success">{`Change ${money(order.changeDueMinor)}`}</Text> : null}
+      {order.paidMinor > 0 ? <Text testID="tender-paid" className="text-sm text-muted-foreground">{t('pos_checkout.paid_of_total', { paid: money(order.paidMinor), total: money(order.totalMinor) })}</Text> : null}
+      {order.changeDueMinor > 0 ? <Text testID="tender-change" className="text-lg font-semibold text-success">{t('pos_checkout.change_due', { amount: money(order.changeDueMinor) })}</Text> : null}
     </View>
 
     <View testID="tender-ledger" className="gap-1">
-      {order.payments.length === 0 ? <Text className="text-muted-foreground">No payments yet</Text> : order.payments.map((leg) => {
+      {order.payments.length === 0 ? <Text className="text-muted-foreground">{t('pos_checkout.no_payments_yet')}</Text> : order.payments.map((leg) => {
         const status = legStatus(leg);
         const voided = status === 'voided';
         const descriptor = descriptorOf(leg.method);
@@ -110,20 +113,20 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
           <View className="flex-row items-center gap-2">
             <Text className={cn('flex-1 font-semibold text-foreground', voided && 'line-through')}>{descriptor?.title ?? leg.method}</Text>
             <Text className={cn('text-foreground', voided && 'line-through')}>{money(leg.amountMinor)}</Text>
-            <Text testID={`tender-leg-${leg.id}-status`} className={cn('text-sm font-semibold', STATUS_TONE[status])}>{voided ? 'Cancelled' : STATUS_LABEL[status]}</Text>
+            <Text testID={`tender-leg-${leg.id}-status`} className={cn('text-sm font-semibold', STATUS_TONE[status])}>{voided ? t('pos_checkout.cancelled') : t(STATUS_LABEL[status])}</Text>
           </View>
           {leg.reference ? <Text className="text-sm text-muted-foreground">{leg.reference}</Text> : null}
-          {leg === firstPending ? <Text className="text-sm text-muted-foreground">Next</Text> : null}
-          {descriptor && canVoidLeg(leg, descriptor) ? <Pressable testID={`tender-leg-${leg.id}-void`} accessibilityRole="button" accessibilityLabel="Cancel payment"
+          {leg === firstPending ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.next_leg')}</Text> : null}
+          {descriptor && canVoidLeg(leg, descriptor) ? <Pressable testID={`tender-leg-${leg.id}-void`} accessibilityRole="button" accessibilityLabel={t('pos_checkout.cancel_payment')}
             onPress={() => sale.voidTender(leg.id)} className="self-start min-h-11 justify-center px-2">
-            <Text className="text-destructive">Cancel payment</Text>
+            <Text className="text-destructive">{t('pos_checkout.cancel_payment')}</Text>
           </Pressable> : null}
         </View>;
       })}
-      {balance === 0 && settled ? <Text className="text-sm text-success">Paid in full</Text> : null}
+      {balance === 0 && settled ? <Text className="text-sm text-success">{t('pos_checkout.paid_in_full')}</Text> : null}
     </View>
 
-    {cardReference ? <TextInput accessibilityLabel="Terminal reference" placeholder="Terminal reference" maxLength={REFERENCE_MAX}
+    {cardReference ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
       value={onlyLeg.reference ?? ''} onChangeText={(text) => sale.setTender({ method: 'external', amountMinor: onlyLeg.amountMinor, reference: text })}
       className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
 
@@ -135,37 +138,37 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
           <Text className={cn('text-center font-semibold', tile.id === state.methodId ? 'text-primary-foreground' : 'text-foreground')}>{tile.title}</Text>
         </Pressable>)}
       </View>
-      {planned ? <Text testID="tender-plan" className="text-sm text-muted-foreground">{`${planned.label.n} of ${planned.label.ways}`}</Text> : null}
+      {planned ? <Text testID="tender-plan" className="text-sm text-muted-foreground">{t('pos_checkout.n_of_ways', { n: planned.label.n, ways: planned.label.ways })}</Text> : null}
       <Text testID="tender-entry-amount" className={cn('text-3xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
-      {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{`Rounded from ${money(balance)}`}</Text> : null}
+      {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
       <Text testID="tender-entry-hint" className={cn('min-h-6 text-sm', noChange ? 'text-warning' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
-      {method?.id === 'external' ? <TextInput accessibilityLabel="Terminal reference" placeholder="Terminal reference" maxLength={REFERENCE_MAX}
+      {method?.id === 'external' ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
         value={reference} onChangeText={setReference} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
       {chips.length ? <View testID="tender-quick" className="flex-row flex-wrap gap-2">
         {chips.map((minor, index) => <Pressable key={minor} testID={index === 0 ? 'tender-quick-exact' : `tender-quick-${minor}`} accessibilityRole="button"
           onPress={() => dispatch({ type: 'set-entry', minor })} className={cn(button, state.entryDirty && figures.entryMinor === minor && 'border-primary')}>
-          <Text className="font-semibold text-foreground">{index === 0 ? `Exact ${money(minor)}` : money(minor)}</Text>
+          <Text className="font-semibold text-foreground">{index === 0 ? t('pos_checkout.exact_amount', { amount: money(minor) }) : money(minor)}</Text>
         </Pressable>)}
       </View> : null}
-      <Keypad testID="tender-keypad" rows={KEYPAD_ROWS} onPress={(name) => dispatch({ type: 'key', key: name as TenderKey })} />
-      {refusal ? <Text accessibilityRole="alert" className="text-destructive">{refusal}</Text> : null}
+      <Keypad testID="tender-keypad" rows={keypadRows(t)} onPress={(name) => dispatch({ type: 'key', key: name as TenderKey })} />
+      {refusal ? <Text accessibilityRole="alert" className="text-destructive">{t('tender.not_taken')}</Text> : null}
       {method ? <Pressable testID="tender-take" accessibilityRole="button" disabled={cannotTake}
         onPress={take} className={cn('rounded-md bg-primary px-4 py-3', cannotTake && 'opacity-50')}>
-        <Text className="text-center font-semibold text-primary-foreground">{`Take ${money(figures.appliedMinor)} in ${method.title}`}</Text>
+        <Text className="text-center font-semibold text-primary-foreground">{t('pos_checkout.take_amount_in', { amount: money(figures.appliedMinor), method: method.title })}</Text>
       </Pressable> : null}
     </View> : null}
 
     <Pressable testID="tender-complete" accessibilityRole="button" disabled={!canComplete} onPress={sale.complete}
       className={cn('rounded-md bg-primary px-4 py-3', !canComplete && 'opacity-50')}>
-      <Text className="text-center font-semibold text-primary-foreground">Complete sale</Text>
+      <Text className="text-center font-semibold text-primary-foreground">{t('tender.complete_sale')}</Text>
     </Pressable>
     {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
     {sale.canContinue ? <>
-      <Text className="text-foreground">This sale is stored and will be sent. Continue to the next sale.</Text>
+      <Text className="text-foreground">{t('tender.stored_will_send')}</Text>
       <Pressable accessibilityRole="button" onPress={() => sale.continueSale()} className="rounded-md bg-primary px-4 py-3">
-        <Text className="text-center font-semibold text-primary-foreground">Continue</Text>
+        <Text className="text-center font-semibold text-primary-foreground">{t('tender.continue')}</Text>
       </Pressable>
     </> : null}
-    <Pressable accessibilityRole="button" onPress={sale.cancelTender} className={button}><Text className="text-center text-foreground">Back</Text></Pressable>
+    <Pressable accessibilityRole="button" onPress={sale.cancelTender} className={button}><Text className="text-center text-foreground">{t('common.back')}</Text></Pressable>
   </View>;
 }
