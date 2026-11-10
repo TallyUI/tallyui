@@ -47,7 +47,10 @@ export interface ReplicationAdapter<RxDocType, CheckpointType = any> {
   };
 
   /**
-   * A push adapter must accept the same rows twice: a cancel after a send re-sends them.
+   * A push adapter must accept the same rows twice: a cancel after a send re-sends them. A direct RxDB `pause()`
+   * before the first push starts, or RxDB 17.5 pausing a hidden non-leader tab when `multiInstance` is on
+   * (`createTallyDatabase` turns it off and refuses it), still drops the queued rows unsent (#645).
+   * `startReplication`'s own sign-in path holds instead of pausing.
    */
   push?: {
     /**
