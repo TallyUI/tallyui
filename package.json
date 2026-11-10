@@ -13,6 +13,7 @@
     "check:core-dist": "node scripts/check-core-dist.mjs",
     "changelog:docs": "node scripts/build-changelog.mjs",
     "smoke:pack": "node scripts/pack-smoke.mjs",
+    "parity:capture": "node scripts/parity/capture.mjs",
     "lint": "turbo lint && pnpm -s lint:code",
     "lint:code": "eslint packages connectors --max-warnings=0 --pass-on-unpruned-suppressions",
     "knip": "knip",
