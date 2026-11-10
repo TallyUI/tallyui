@@ -53,6 +53,7 @@
     "receipt",
     "parked-sales",
     "open-sale-tabs",
+    "customer-display-screen",
     "orders-list",
     "sync-status",
     "---Order---",
@@ -79,6 +80,9 @@
     "settings-group",
     "connector-status",
     "---Layout---",
+    "app-shell",
+    "nav-rail",
+    "nav-drawer",
     "pos-layout",
     "checkout-layout",
     "settings-layout"

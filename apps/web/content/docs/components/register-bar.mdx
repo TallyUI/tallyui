@@ -1,6 +1,6 @@
 ---
 title: RegisterBar
-description: RegisterBar shows register name and status when applicable, a Register button when a session or last closure exists, and an optional pill press handler.
+description: RegisterBar shows the store or register name, the cashier, the sync and status state, a Register button, and the menu on phones.
 ---
 
 ## Import
@@ -22,7 +22,7 @@ import { RegisterBar } from '@tallyui/components';
 />
 ```
 
-Renders the register name for stores with multiple registers, a status pill when applicable, and a Register button when a session or last closure exists. Supplying `onPressPill` makes the pill a button.
+Renders the place (the store, and the register for stores with more than one), a status pill when applicable, the app's sync state, a Register button when a session or last closure exists, and the cashier. Supplying `onPressPill` makes the pill a button. Inside a phone `AppShell` the bar starts with a menu button that opens the drawer.
 
 ## Props
 
@@ -35,4 +35,8 @@ Renders the register name for stores with multiple registers, a status pill when
 | `multiRegister` | `boolean` | required | Whether the store has multiple registers and needs the register name displayed |
 | `onOpenPanel` | `() => void` | required | Called when the Register panel button is pressed |
 | `onPressPill` | `() => void` | --- | Makes the status pill a button and handles its press |
+| `storeName` | `string` | --- | Store name; with `multiRegister` and a bound register the bar reads "Store · Register" |
+| `cashier` | `{ name: string; onPress?: () => void }` | --- | Signed-in cashier, shown as an initials avatar; pressable when `onPress` is given |
+| `syncStatus` | `ReactNode` | --- | The app's sync state, drawn before the Register button |
+| `onOpenMenu` | `() => void` | --- | Shows a menu button first in the bar; inside a phone `AppShell` the shell supplies it |
 | `className` | `string` | --- | Override status bar container styles |

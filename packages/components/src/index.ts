@@ -182,7 +182,7 @@ export {
   PriceForm, parsePrice,
   ChargeForm, type ChargeFormProps,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, type OrderHistoryRow, orderReference,
-  ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps,
+  ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps, CustomerDisplayScreen,
 } from './sale';
 
 // Layout components
@@ -199,6 +199,11 @@ export {
   StoreSettingsChoiceScreen,
   type StoreSettingsChoiceScreenProps,
 } from './layout';
+
+// App shell
+export {
+  AppShell, type AppShellProps, NavRail, type NavRailProps, NavDrawer, type NavDrawerProps, type ShellNavItem,
+} from './shell';
 
 // Reports components
 export {
