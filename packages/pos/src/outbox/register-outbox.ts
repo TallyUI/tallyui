@@ -11,6 +11,18 @@ import type { CommandTransport, OutboxState } from './types';
 /** Final rejections that do not stop their register's ledger (ADR-078): the commands behind them are still sent. */
 export const NON_BLOCKING_REJECTIONS: ReadonlySet<string> = new Set(['register_session_superseded', 'register_session_abandoned']);
 
+// Codes the register requeue never resends (ADR-068 decision 5, ADR-078 decisions 4, 6 and 8): the store recorded
+// these business conflicts, so the same id replays the refusal; superseded and abandoned are final; an already-open
+// refusal has its own exits (Take over, Choose another register); idempotency_mismatch means the bytes differ.
+const REGISTER_NOT_REQUEUEABLE: ReadonlySet<string> = new Set(['register_session_already_open',
+  'register_session_closed', 'register_approval_required', 'register_closure_exists',
+  'register_closure_number_invalid', 'register_session_superseded', 'register_session_abandoned',
+  'register_supersede_forbidden', 'idempotency_mismatch']);
+/** Whether the register outbox's requeue() resends a rejection with this code. */
+export function isRegisterRequeueable(code: string | undefined): boolean {
+  return !REGISTER_NOT_REQUEUEABLE.has(code ?? '');
+}
+
 export interface RegisterOutboxOptions {
   collection: RxCollection<RegisterCommand>;
   /** The till's `register_sessions`. With it, a refused open (`register_session_already_open`) stops blocking its register
@@ -34,6 +46,10 @@ export interface RegisterOutboxOptions {
 }
 export interface RegisterOutbox {
   flush(): Promise<void>;
+  /** Moves rejected commands (all, or those whose commandId is listed) back to pending in their ledger place, under
+   * the same commandId and payload, then flushes: a refusal the store did not record is weighed again on a resend
+   * of the same id (ADR-068 decision 5). Codes isRegisterRequeueable refuses are left. Resolves to the number requeued. */
+  requeue(commandIds?: string[]): Promise<number>;
   start(): void;
   stop(): void;
   state$: Observable<OutboxState>;
@@ -104,9 +120,11 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   }
 
   async function updateState(patch: Partial<OutboxState> = {}) {
-    const abandoned = new Set(sessions && clocks.size
+    const rejectedRows = await readFresh(collection, { selector: { syncStatus: 'rejected' } });
+    const abandoned = new Set(sessions && (clocks.size || rejectedRows.some((row) => row.error?.code === 'register_session_already_open'))
       ? (await readFresh(sessions, { selector: { status: 'abandoned' } })).map((session) => session.id) : []);
     const pending = await countFresh(collection, { syncStatus: 'pending' });
+    const rejected = rejectedRows.filter((row) => !isNonBlocking(row, abandoned)).length;
     // Only commands in a register's sendable prefix (pending, before its first rejected command) keep a clock.
     const sendable = new Set<string>();
     const blocked = new Set<string>();
@@ -117,7 +135,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
       } else if (!blocked.has(command.registerId)) sendable.add(command.commandId);
     }
     for (const id of clocks.keys()) if (!sendable.has(id)) clocks.delete(id);
-    state$.next({ ...state$.value, ...patch, pending, stuck: stuckState() });
+    state$.next({ ...state$.value, ...patch, pending, rejected, stuck: stuckState() });
   }
   function scheduleRetry(reason: string, retryAfterMs = 0) {
     state$.next({ ...state$.value, lastRetryReason: reason, stuck: stuckState() });
@@ -246,6 +264,27 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   return {
     state$,
     flush,
+    async requeue(commandIds) {
+      const commands = (await readFresh(collection, { selector: { syncStatus: 'rejected',
+        ...(commandIds ? { commandId: { $in: commandIds } } : {}) } }))
+        .filter((row) => isRegisterRequeueable(row.error?.code));
+      let count = 0;
+      for (const command of commands) {
+        let changed = false;
+        await (await collection.findOne(command.key).exec())?.incrementalModify((row) => {
+          changed = row.syncStatus === 'rejected' && row.commandId === command.commandId && isRegisterRequeueable(row.error?.code);
+          if (!changed) return row;
+          row.syncStatus = 'pending';
+          delete row.error;
+          row.updatedAt = new Date(now()).toISOString();
+          return row;
+        });
+        if (changed) count++;
+      }
+      await updateState();
+      if (count && !stopped) flush().catch(() => {});
+      return count;
+    },
     start() {
       stopped = false;
       watchBackendMissing();

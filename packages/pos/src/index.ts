@@ -75,6 +75,14 @@ export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, ty
 export { DEFAULT_WEDGE_SETTINGS, DEFAULT_MIN_SCAN_CHARS, WEDGE_END_OF_SCAN_MS, createWedgeState, foldWedgeKey, stripBoundary, replayWedgeDetector, createWedgeDetector, DEFAULT_COOLDOWN_MS, normalizeRetailCode, hasValidRetailCheckDigit, retailCodeTwin, createScanSession, useBarcodeScanner } from './scanner';
 export type { WedgeSettings, WedgeState, TraceKey, WedgeReplayResult, WedgeDetectorOptions, WedgeDetector, ScanRejectReason, ScanOfferResult, ScanSessionOptions, ScanSession, UseBarcodeScannerOptions } from './scanner';
 
+// Payment drivers
+export { createPaymentDriverRegistry, driverForMethod, createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './payment-driver';
+export type {
+  DriverCapabilities, ReaderInfo, DriverStatus, DriverAvailability, CollectInput,
+  CollectOutcome, CollectResult, DriverStatusSource, PaymentDriver, PaymentDriverRegistry,
+  SimulatedReaderId, SimulatedDriverOptions,
+} from './payment-driver';
+
 // Sale
 export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';
 export type { SaleStage, CatalogueEntry, SaleDiscountCodes, SaleDiscountState } from './sale';
@@ -83,8 +91,9 @@ export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionEr
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions } from './pos-order';
 export { createHttpCommandTransport, createOrderOutbox, isRequeueable, useOrderOutbox, outboxLogger } from './outbox';
-export { createRegisterOutbox, useRegisterOutbox } from './outbox';
+export { createRegisterOutbox, isRegisterRequeueable, useRegisterOutbox, summarizeOutboxHealth, watchOutboxHealth, useOutboxHealth } from './outbox';
 export type { RegisterOutboxOptions, RegisterOutbox, UseRegisterOutboxOptions, UseRegisterOutboxResult } from './outbox';
+export type { OutboxCounts, OutboxHealth, UseOutboxHealthOptions, UseOutboxHealthResult } from './outbox';
 export { createBackendNotFound } from './outbox/backend-not-found';
 export type { BackendNotFound } from './outbox/backend-not-found';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OrderTransportContext, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
@@ -111,3 +120,7 @@ export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDo
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type UseRegisterSessionOptions } from './register';
 export { roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';
+
+// Reports
+export { salesFigures, marginOf, comparisonRange, daysOf, inRange, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';
+export type { StoreDay, DayRange, ReportCategory, ReportLine, ReportPayment, ReportTax, ReportOrder, ReportRefund, LineJoin, Margin, SalesTotals, PaymentRow, GroupRow, TaxRow, DayPoint, SalesFiguresInput, SalesFigures } from './reports';

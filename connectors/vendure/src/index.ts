@@ -13,6 +13,7 @@ import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from '
 import { vendureStoreSettings } from './store-settings';
 import { vendureGlobalStockSettings } from './global-settings';
 import { searchVendureCustomers, createVendureCustomer, getVendureCustomer } from './customers';
+import { createVendureOrders } from './store-orders';
 
 /** Ids per fetchByIds request: it sends the reconcile feed's whole chunk (at most 1,000 ids, ADR-060) in one query. */
 const VENDURE_IDS_PER_REQUEST = 1000;
@@ -39,10 +40,12 @@ const VENDURE_IDS_PER_REQUEST = 1000;
  * and `globalOutOfStockThreshold` are the channel's stock defaults; read them
  * with `vendureGlobalStockSettings` after sign-in, like `pricesIncludeTax`
  * from `storeSettings`.
+ * `tallyFields: false` is for a server without the vendurepos plugin: order history then reads no till ids.
  */
 export const createVendureConnector = (options: {
   barcodeField?: string; stockLocationId?: string; pricesIncludeTax?: boolean; updatedAtSkewMs?: number;
   globalTrackInventory?: boolean; globalOutOfStockThreshold?: number;
+  tallyFields?: boolean;
 } = {}): TallyConnector => {
   // The id reconcile's corrections reach `products` only through this pull adapter (ADR-060).
   const idFeed = createReconcileFeed({ fetchByIds: createFetchByIds(options.barcodeField) });
@@ -92,6 +95,9 @@ export const createVendureConnector = (options: {
     createCustomer: createVendureCustomer,
     getCustomer: getVendureCustomer,
 
+    // Order history (ADR-081): needs the administrator's ReadOrder permission.
+    ...createVendureOrders({ pricesIncludeTax: options.pricesIncludeTax, tallyFields: options.tallyFields }),
+
     // Re-reads a restored session's capabilities; with an API key and no sign-in, the only reader.
     capabilities: (context) => readVendureCapabilities(context.baseUrl, context.headers, { signal: context.signal }),
   };
@@ -114,7 +120,8 @@ export { vendureStockReconcile } from './reconcile/stock';
 export { vendureStoreSettings } from './store-settings';
 export { vendureGlobalStockSettings } from './global-settings';
 export { searchVendureCustomers, createVendureCustomer, getVendureCustomer, toVendureCustomer } from './customers';
-export { listVendureOrders, getVendureOrder, type VendureOrderListOptions, type VendureOrderList, type VendureOrderSummary, type VendureOrder } from './orders';
+export { listVendureOrders, getVendureOrder, listVendureOrderDetails, type VendureOrderListOptions, type VendureOrderList, type VendureOrderSummary, type VendureOrder } from './orders';
+export { createVendureOrders, toVendureStoreOrder } from './store-orders';
 export { vendureRefundable, vendureLineRefundWithTax, type VendureRefundableLine, type VendureRefundable } from './refunds';
 
 export { ConnectorUnauthorizedError } from '@tallyui/core';

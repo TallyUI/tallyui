@@ -35,6 +35,18 @@ afterEach(async () => {
 });
 
 describe('useRegisterOutbox', () => {
+  it('requeue resends a rejected command; without commands it resolves to 0', async () => {
+    const view = renderHook((props: UseRegisterOutboxOptions) => useRegisterOutbox(props), { initialProps: options(null) });
+    expect(await act(() => view.result.current.requeue())).toBe(0);
+    const commands = await collection();
+    const rejected = { ...command(1), syncStatus: 'rejected' as const, error: { code: 'unsupported_version', message: 'x' } };
+    await commands.insert(rejected);
+    send.mockImplementation(async (batch) => ({ kind: 'results', results: batch.map(({ id }) => ({ id, status: 'applied' })) }));
+    view.rerender(options(commands));
+    expect(await act(() => view.result.current.requeue())).toBe(1);
+    await waitFor(async () => expect((await commands.findOne(rejected.key).exec())?.syncStatus).toBe('applied'));
+  });
+
   it("passes sessions through: an abandoned session's refused open does not block", async () => {
     const commands = await collection();
     const { register_sessions: sessions } = await commands.database.addCollections({ register_sessions: registerSessionCreator() });
