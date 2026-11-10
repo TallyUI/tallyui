@@ -368,6 +368,16 @@ take over and supersede are ADR-078.
 - **Superseded sessions don't block the ledger.** Commands naming a superseded
   session get their own final refusal, and the commands behind them still go
   (`NON_BLOCKING_REJECTIONS` in `register-outbox.ts`).
+- **Refused approvals don't block the ledger either** (contract 3). A closure
+  the store refused `register_approval_required` or `register_approval_invalid`
+  holds only the register's next closure. `useRegisterSession` returns it as
+  `approvalNeeded` (with the variance to approve and whether its session is
+  `liveAtStore`); `actions.reapproveClosure` sends it again with a new proof
+  and a new command id. While the session is `liveAtStore`, a close over the
+  threshold needs the store's proof, not `approvedBy` alone. Until the store
+  applies the closure with its proof, `closureApprovalStatus` is `unverified`
+  and the closure sheet shows "Approval not yet verified by the store" beside
+  the approver's name.
 - **The till's name** (`deviceName`, 1 to 64 characters) is sent on the v2 open.
 - `adoptRegisterResults` (same file as `takeOverSession`) reads the server's
   answers back into the local session rows.
@@ -379,8 +389,6 @@ take over and supersede are ADR-078.
   session are not filled (`packages/pos/src/register/use-register-session.ts`
   lists this as not ported).
 - **The closure counters** are not yet adopted from the server as a floor.
-- **A server approval gate.** The reserved `approver_token` field is not
-  filled, and `approve()` does not return a token.
 - **No sale joins a counting session:** a sale at that point still becomes a
   late sale, but no server check backs it.
 

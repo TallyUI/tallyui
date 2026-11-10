@@ -1065,17 +1065,81 @@ describe('the approval gate', () => {
     expect(JSON.stringify(commandLogs)).not.toContain('proof-xyz');
   });
 
-  it('at contract 3 a close with approvedBy alone still closes (unit 4 adds the live-session rule)', async () => {
-    const { session, result } = await counting({ commands: db.register_commands, capabilities: {
-      orderCreate: 1, register: 3, registerApproval: { thresholdMinor: 500 },
-    } });
+  const at3 = () => ({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 3, registerApproval: { thresholdMinor: 500 } } });
+  const row = (key: string) => db.register_commands.findOne(key).exec();
+  const applyOpen = async (id: string) => {
+    await waitFor(async () => expect(await row(`session.open:${id}`)).not.toBeNull());
+    await (await row(`session.open:${id}`))!.incrementalPatch({ syncStatus: 'applied' });
+  };
+
+  it('at contract 3 a close with approvedBy alone closes while the session is not live at the store', async () => {
+    const { session, result } = await counting(at3());
+    expect(result.current.liveAtStore).toBe(false);
     await act(async () => {
       await result.current.actions.closeSession({ counted: { cash: 9000 }, approvedBy: 'mgr-1' });
     });
-    await waitFor(async () => expect(await db.register_commands.findOne(`closure.submit:${session.id}`).exec()).not.toBeNull());
-    const command = (await db.register_commands.findOne(`closure.submit:${session.id}`).exec())!;
+    await waitFor(async () => expect(await row(`closure.submit:${session.id}`)).not.toBeNull());
+    const command = (await row(`closure.submit:${session.id}`))!;
     expect(command.version).toBe(3);
     expect(command.payload).not.toHaveProperty('approval');
+    await waitFor(() => expect(result.current.closureApprovalStatus[session.id]).toBe('unverified'));
+  });
+
+  it('live at the store, a close over the threshold needs the store proof, not approvedBy alone', async () => {
+    const { session, result } = await counting(at3());
+    await applyOpen(session.id);
+    await waitFor(() => expect(result.current.liveAtStore).toBe(true));
+    await expect(result.current.actions.closeSession({ counted: { cash: 9000 }, approvedBy: 'mgr-1' }))
+      .rejects.toBeInstanceOf(RegisterApprovalRequiredError);
+    expect((await db.register_sessions.findOne(session.id).exec())?.status).toBe('counting');
+    expect(await db.closures.find().exec()).toEqual([]);
+    await act(async () => {
+      await result.current.actions.closeSession({ counted: { cash: 9000 }, approvedBy: 'mgr-1', approval: 'proof-live', approvedVariance: { cash: -1000 } });
+    });
+    expect(await db.closures.find().exec()).toHaveLength(1);
+  });
+
+  it('live at the store, a close under the threshold needs no approval', async () => {
+    const { session, result } = await counting(at3());
+    await applyOpen(session.id);
+    await waitFor(() => expect(result.current.liveAtStore).toBe(true));
+    await act(async () => {
+      await result.current.actions.closeSession({ counted: { cash: 9500 } });
+    });
+    expect(await db.closures.find().exec()).toHaveLength(1);
+    await waitFor(() => expect(result.current.closureApprovalStatus[session.id]).toBe('not_required'));
+  });
+
+  it.each(['register_approval_required', 'register_approval_invalid'])('a closure refused %s is approvalNeeded until it is reapproved, then verified once applied', async (code) => {
+    const { session, result } = await counting(at3());
+    await applyOpen(session.id);
+    await waitFor(() => expect(result.current.liveAtStore).toBe(true));
+    await act(async () => {
+      await result.current.actions.closeSession({ counted: { cash: 9000 }, approvedBy: 'mgr-1', approval: 'proof-1', approvedVariance: { cash: -1000 } });
+    });
+    const key = `closure.submit:${session.id}`;
+    await waitFor(async () => expect(await row(key)).not.toBeNull());
+    await waitFor(() => expect(result.current.closureApprovalStatus[session.id]).toBe('unverified'));
+    expect(result.current.approvalNeeded).toBeNull();
+    const data = code === 'register_approval_required' ? { sessionId: session.id, thresholdMinor: 500, variance: { cash: -1000 } } : { reason: 'expired' };
+    await (await row(key))!.incrementalPatch({ syncStatus: 'rejected', error: { code, message: 'Refused', data } });
+    await waitFor(() => expect(result.current.approvalNeeded).toStrictEqual({ closureId: session.id, sessionId: session.id, code,
+      variance: { cash: -1000 }, ...(code === 'register_approval_invalid' ? { reason: 'expired' } : {}), liveAtStore: true }));
+    expect(result.current.closureApprovalStatus[session.id]).toBe('unverified');
+    const refusedId = (await row(key))!.commandId;
+    await act(async () => {
+      await result.current.actions.reapproveClosure({ closureId: session.id, approval: 'proof-2', approvedBy: 'mgr-2' });
+    });
+    await waitFor(() => expect(result.current.approvalNeeded).toBeNull());
+    const requeued = (await row(key))!;
+    expect(requeued.toJSON()).toMatchObject({ syncStatus: 'pending', version: 3, payload: { approval: 'proof-2', approvedBy: 'mgr-2' } });
+    expect(requeued.commandId).not.toBe(refusedId);
+    expect(result.current.closureApprovalStatus[session.id]).toBe('unverified');
+    await requeued.incrementalPatch({ syncStatus: 'applied' });
+    await waitFor(() => expect(result.current.closureApprovalStatus[session.id]).toBe('verified'));
+    expect(result.current.approvalNeeded).toBeNull();
+    for (const sink of [logs, commandLogs]) expect(JSON.stringify(sink)).not.toMatch(/proof-[12]/);
+    expect(JSON.stringify(await db.closures.find().exec())).not.toMatch(/proof-[12]/);
   });
 
   // Revert: drop the hook's gate.

@@ -1,7 +1,9 @@
+import type { ServerCapabilities } from '@tallyui/core';
 import { readFresh } from '../rxdb';
 import { uuidv7 } from '../pos-order/uuidv7';
-import { registerCommandsLogger, type RegisterCommandCollection } from './register-commands';
-import type { RegisterSession } from './schemas';
+import { countVariance, overThreshold } from './register-count.helpers';
+import { registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
+import type { Closure, RegisterSession } from './schemas';
 import { isKnownSessionStatus, RegisterSessionRequiredError, RegisterTakeOverError, type RegisterSessionCollection } from './session-store';
 
 const chains = new WeakMap<RegisterCommandCollection, Promise<void>>();
@@ -99,6 +101,75 @@ export async function abandonSession(input: SessionTarget): Promise<void> {
     const [open] = await readFresh(commands, { selector: { key: `session.open:${sessionId}` } });
     if (open?.syncStatus === 'pending') throw new RegisterTakeOverError('REGISTER_TAKEOVER_PENDING');
     await finishAbandon(input);
+  });
+  chains.set(commands, run.then(() => undefined, () => undefined));
+  return run;
+}
+
+/**
+ * ADR-082 d4: the store holds this session, so the app's approval route can be used for it. Its open row is applied (a
+ * resumed open and an error-free duplicate are recorded applied), and it is not conflict, superseded or abandoned. A
+ * closed session still counts: the route accepts it.
+ */
+export function isLiveAtStore(session: Pick<RegisterSession, 'id' | 'status'> | null | undefined,
+  openRow: Pick<RegisterCommand, 'key' | 'syncStatus'> | null | undefined): boolean {
+  return !!session && openRow?.key === `session.open:${session.id}` && openRow.syncStatus === 'applied'
+    && session.status !== 'conflict' && session.status !== 'superseded' && session.status !== 'abandoned';
+}
+
+/** `verified` once the store has applied a version 3 closure carrying a proof; `not_required` for a close the store does not check. */
+export type ClosureApprovalStatus = 'verified' | 'unverified' | 'not_required';
+
+/**
+ * ADR-082 d9, derived from the closure's `register.closure.submit` row; nothing is stored. A verified approval is
+ * needed at register contract 3 with the store's `registerApproval`, over its threshold on cash (the store's rule).
+ * Until the store applies a version 3 row with a proof, a recorded approver is `unverified`: no row yet, pending,
+ * refused, or a version 1 row the store recorded without checking.
+ */
+export function closureApprovalStatus(closure: Pick<Closure, 'counted' | 'till_expected'>,
+  row: Pick<RegisterCommand, 'syncStatus' | 'version' | 'payload'> | null | undefined,
+  capabilities: Pick<ServerCapabilities, 'register' | 'registerApproval'> | undefined): ClosureApprovalStatus {
+  const threshold = capabilities?.registerApproval?.thresholdMinor;
+  if ((capabilities?.register ?? 0) < 3 || threshold == null
+    || !overThreshold(countVariance(closure.counted.cash ?? 0, closure.till_expected.cash ?? 0), threshold)) return 'not_required';
+  return row?.syncStatus === 'applied' && row.version >= 3 && typeof row.payload.approval === 'string' && row.payload.approval
+    ? 'verified' : 'unverified';
+}
+
+/** The store's two refusals of a closure's approval (ADR-082 decision 6). */
+export const APPROVAL_REFUSALS: ReadonlySet<string> = new Set(['register_approval_required', 'register_approval_invalid']);
+
+/** `reapproveClosure` refused. Its message can be shown to a cashier as it is. */
+export class RegisterReapproveError extends Error {
+  constructor(readonly code: 'REGISTER_REAPPROVE_UNSUPPORTED' | 'REGISTER_REAPPROVE_NOT_REFUSED' | 'REGISTER_REAPPROVE_PROOF_MISSING') {
+    super(code === 'REGISTER_REAPPROVE_UNSUPPORTED' ? 'This store cannot check a manager approval.'
+      : code === 'REGISTER_REAPPROVE_NOT_REFUSED' ? 'This closure is not waiting for a manager approval.'
+        : 'Manager approval needed. Ask a manager to approve.');
+    this.name = 'RegisterReapproveError';
+  }
+}
+
+/**
+ * ADR-082 d7: requeues a closure the store refused with either approval code, in its ledger place (the same key and
+ * `seq`), with a new command id (the store replays a stored refusal for the old one), version 3, the new proof and
+ * approver, and every other payload field as it was. The local closure, its Z and the session are not rewritten.
+ */
+export async function reapproveClosure({ commands, closureId, approval, approvedBy, registerContract, now }: {
+  commands: RegisterCommandCollection; closureId: string; approval: string; approvedBy: string; registerContract?: number; now?: string;
+}): Promise<void> {
+  if ((registerContract ?? 0) < 3) throw new RegisterReapproveError('REGISTER_REAPPROVE_UNSUPPORTED');
+  if (typeof approval !== 'string' || !approval || typeof approvedBy !== 'string' || !approvedBy) {
+    throw new RegisterReapproveError('REGISTER_REAPPROVE_PROOF_MISSING');
+  }
+  const run = (chains.get(commands) ?? Promise.resolve()).then(async () => {
+    const row = await commands.findOne(`closure.submit:${closureId}`).exec();
+    if (!row) throw new RegisterReapproveError('REGISTER_REAPPROVE_NOT_REFUSED');
+    await row.incrementalModify((doc) => {
+      if (doc.syncStatus !== 'rejected' || !APPROVAL_REFUSALS.has(doc.error?.code ?? '')) throw new RegisterReapproveError('REGISTER_REAPPROVE_NOT_REFUSED');
+      const { error: _refusal, ...rest } = doc;
+      return { ...rest, commandId: uuidv7(), version: 3, syncStatus: 'pending',
+        payload: { ...doc.payload, approval, approvedBy }, updatedAt: now ?? new Date().toISOString() };
+    });
   });
   chains.set(commands, run.then(() => undefined, () => undefined));
   return run;

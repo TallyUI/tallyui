@@ -4,8 +4,9 @@ import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { readFresh } from '../rxdb';
-import { abandonSession, adoptRegisterResults, takeOverSession } from './register-adoption';
-import { reconcileRegisterCommands, registerCommandCollection, type RegisterCommandCollection } from './register-commands';
+import { abandonSession, adoptRegisterResults, closureApprovalStatus, isLiveAtStore, reapproveClosure, RegisterReapproveError,
+  takeOverSession } from './register-adoption';
+import { reconcileRegisterCommands, registerCommandCollection, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import { ensureRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
 import { closeSession, openSession, recordMovement, startCounting, RegisterSessionRequiredError, RegisterTakeOverError,
@@ -320,5 +321,105 @@ describe('adoptRegisterResults', () => {
     await adopt();
     expect(await stored(s.id)).toStrictEqual(before);
     expect((await stored(s.id)).status).toBe('later-state');
+  });
+});
+
+describe('ADR-082 unit 4: live at the store, approval status and reapproval', () => {
+  const caps = { register: 3, registerApproval: { thresholdMinor: 500 } };
+  const over = { counted: { cash: 9000 }, till_expected: { cash: 10000 } };
+  const row = (syncStatus: RegisterCommand['syncStatus'], version: number, approval?: string) =>
+    ({ syncStatus, version, payload: approval === undefined ? {} : { approval } });
+
+  it('isLiveAtStore is true for an applied open of an open, counting or closed session', () => {
+    for (const status of ['open', 'counting', 'closed'] as const) {
+      expect(isLiveAtStore({ id: 's1', status }, { key: 'session.open:s1', syncStatus: 'applied' })).toBe(true);
+    }
+  });
+
+  it('isLiveAtStore is false with no open row, a pending or refused one, another session\'s, or a conflict, superseded or abandoned session', () => {
+    expect(isLiveAtStore(null, { key: 'session.open:s1', syncStatus: 'applied' })).toBe(false);
+    expect(isLiveAtStore({ id: 's1', status: 'open' }, undefined)).toBe(false);
+    expect(isLiveAtStore({ id: 's1', status: 'open' }, { key: 'session.open:s1', syncStatus: 'pending' })).toBe(false);
+    expect(isLiveAtStore({ id: 's1', status: 'open' }, { key: 'session.open:s1', syncStatus: 'rejected' })).toBe(false);
+    expect(isLiveAtStore({ id: 's1', status: 'open' }, { key: 'session.open:s2', syncStatus: 'applied' })).toBe(false);
+    for (const status of ['conflict', 'superseded', 'abandoned'] as const) {
+      expect(isLiveAtStore({ id: 's1', status }, { key: 'session.open:s1', syncStatus: 'applied' })).toBe(false);
+    }
+  });
+
+  it('closureApprovalStatus is verified only once the store applies a version 3 row with a proof', () => {
+    expect(closureApprovalStatus(over, null, caps)).toBe('unverified'); // offline: no row yet
+    expect(closureApprovalStatus(over, row('pending', 1), caps)).toBe('unverified'); // queued without a proof
+    expect(closureApprovalStatus(over, row('pending', 3, 'proof'), caps)).toBe('unverified');
+    expect(closureApprovalStatus(over, row('rejected', 3, 'proof'), caps)).toBe('unverified');
+    expect(closureApprovalStatus(over, row('rejected', 1), caps)).toBe('unverified');
+    expect(closureApprovalStatus(over, row('applied', 1), caps)).toBe('unverified'); // recorded without a check
+    expect(closureApprovalStatus(over, row('applied', 1, 'proof'), caps)).toBe('unverified'); // a version 1 row is never checked
+    expect(closureApprovalStatus(over, row('applied', 3, ''), caps)).toBe('unverified');
+    expect(closureApprovalStatus(over, row('applied', 3, 'proof'), caps)).toBe('verified');
+  });
+
+  it('closureApprovalStatus is not_required below the threshold, below contract 3 or without the store\'s registerApproval', () => {
+    const applied = row('applied', 1);
+    expect(closureApprovalStatus({ counted: { cash: 9500 }, till_expected: { cash: 10000 } }, applied, caps)).toBe('not_required');
+    expect(closureApprovalStatus({ counted: { cash: 9499 }, till_expected: { cash: 10000 } }, applied, caps)).toBe('unverified');
+    expect(closureApprovalStatus(over, applied, { register: 2, registerApproval: { thresholdMinor: 500 } })).toBe('not_required');
+    expect(closureApprovalStatus(over, applied, { register: 3 })).toBe('not_required');
+    expect(closureApprovalStatus(over, applied, undefined)).toBe('not_required');
+  });
+
+  describe('reapproveClosure', () => {
+    let db: RxDatabase<{ register_commands: RegisterCommandCollection }>;
+    const now = '2026-11-10T12:00:00.000Z';
+    const key = 'closure.submit:c1';
+    const payload = { closureId: 'c1', sessionId: 's1', registerId: 'register', number: 4, counted: { cash: 9000 },
+      tillExpected: { cash: 10000 }, approvedBy: '8', approval: 'old-proof', orderIds: ['o1'] };
+    beforeEach(async () => {
+      db = await createRxDatabase({ name: `reapprove${Math.random().toString(36).slice(2)}`,
+        storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+      await db.addCollections({ register_commands: registerCommandCollection() });
+    });
+    afterEach(async () => { await db.remove(); });
+    const seed = (patch: Partial<RegisterCommand> = {}) => db.register_commands.insert({ key, registerId: 'register', seq: 7,
+      commandId: 'old-command', type: 'register.closure.submit', version: 3, payload, createdAt: '2026-11-10T09:00:00.000Z',
+      updatedAt: '2026-11-10T10:00:00.000Z', syncStatus: 'rejected',
+      error: { code: 'register_approval_invalid', message: 'Refused', data: { reason: 'expired' } }, ...patch });
+    const reapprove = (input: Partial<Parameters<typeof reapproveClosure>[0]> = {}) => reapproveClosure({ commands: db.register_commands,
+      closureId: 'c1', approval: 'new-proof', approvedBy: '9', registerContract: 3, now, ...input });
+    const current = async () => (await db.register_commands.findOne(key).exec(true)).toJSON();
+
+    for (const code of ['register_approval_required', 'register_approval_invalid']) {
+      it(`requeues a closure refused ${code} in its ledger place with a new command id, version 3 and the new proof`, async () => {
+        const { error: _refused, ...before } = (await seed({ version: 1, error: { code, message: 'Refused' } })).toJSON();
+        await reapprove();
+        const after = await current();
+        expect(after).toStrictEqual({ ...before, commandId: after.commandId, version: 3, syncStatus: 'pending', updatedAt: now,
+          payload: { ...payload, approval: 'new-proof', approvedBy: '9' } });
+        expect(after.commandId).not.toBe('old-command');
+        expect(after).not.toHaveProperty('error');
+        expect(await db.register_commands.find().exec()).toHaveLength(1);
+      });
+    }
+
+    it('refuses below contract 3, without a proof or approver, and for a row the store did not refuse for its approval, writing nothing', async () => {
+      await expect(reapprove()).rejects.toMatchObject({ code: 'REGISTER_REAPPROVE_NOT_REFUSED' }); // no row
+      const before = (await seed()).toJSON();
+      const refusals: Array<[Partial<Parameters<typeof reapproveClosure>[0]>, string]> = [
+        [{ registerContract: 2 }, 'REGISTER_REAPPROVE_UNSUPPORTED'], [{ registerContract: undefined }, 'REGISTER_REAPPROVE_UNSUPPORTED'],
+        [{ approval: '' }, 'REGISTER_REAPPROVE_PROOF_MISSING'], [{ approvedBy: '' }, 'REGISTER_REAPPROVE_PROOF_MISSING'],
+      ];
+      for (const [input, code] of refusals) {
+        const attempt = reapprove(input);
+        await expect(attempt).rejects.toBeInstanceOf(RegisterReapproveError);
+        await expect(attempt).rejects.toMatchObject({ code });
+      }
+      expect(await current()).toStrictEqual(before);
+      for (const patch of [{ error: { code: 'register_session_superseded', message: 'Superseded' } }, { syncStatus: 'pending' as const }]) {
+        await (await db.register_commands.findOne(key).exec(true)).incrementalPatch(patch);
+        const unchanged = await current();
+        await expect(reapprove()).rejects.toMatchObject({ code: 'REGISTER_REAPPROVE_NOT_REFUSED' });
+        expect(await current()).toStrictEqual(unchanged);
+      }
+    });
   });
 });

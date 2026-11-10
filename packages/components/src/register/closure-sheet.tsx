@@ -135,7 +135,17 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
           </View>
         )}
         {/* Not a figure: shows who approved the close even while blind. */}
-        {!!approvedBy && <Text testID="closure-approved-by">Approved by {approvedBy}</Text>}
+        {!!approvedBy && (
+          <View className="flex-row flex-wrap gap-x-2">
+            <Text testID="closure-approved-by">Approved by {approvedBy}</Text>
+            {/* ADR-082 d9: the store has not yet applied this closure with its proof. */}
+            {register.closureApprovalStatus[closure.id] === 'unverified' && (
+              <Text testID="closure-approval-unverified" className="text-muted-foreground">
+                Approval not yet verified by the store
+              </Text>
+            )}
+          </View>
+        )}
         {/* Not a figure either (#287). The wording is approved by the Front desk, 2026-09-30. */}
         {closure.breakdowns.tax_rounding_mixed === true && (
           <Text testID="closure-tax-rounding-mixed" className="text-muted-foreground">
