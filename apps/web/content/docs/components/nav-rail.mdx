@@ -1,0 +1,28 @@
+---
+title: NavRail
+description: NavRail is the wide layout's permanent icon column, with a label on hover or keyboard focus.
+---
+
+## Import
+
+```tsx
+import { NavRail } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<NavRail items={navItems} activeId="pos" onNavigate={(id) => router.navigate(`/${id}`)} />
+```
+
+`AppShell` renders it on wide windows, so most apps never use it directly. It is a `navigation` landmark labelled "Main". Items with `group: 'bottom'` sit at the foot of the column. Each item is icon-only, and its label shows to the right on hover or keyboard focus. The rail is 16 spacing units wide, so it follows the scale step.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `items` | `ShellNavItem[]` | required | Navigation entries |
+| `activeId` | `string` | --- | The `id` of the item marked `aria-current="page"` |
+| `onNavigate` | `(id: string) => void` | required | Called with the pressed item's `id` |
+| `className` | `string` | --- | Override column styles |
+| `testID` | `string` | `'nav-rail'` | Test identifier; items are `nav-item-<id>` |

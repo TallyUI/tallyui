@@ -1,4 +1,4 @@
-// Guards sale and register component exports against missing docs pages and sidebar entries.
+// Guards sale, register and shell component exports against missing docs pages and sidebar entries.
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const docsDir = path.join(repoRoot, 'apps/web/content/docs/components');
 const { pages } = JSON.parse(readFileSync(path.join(docsDir, 'meta.json'), 'utf8'));
-const names = ['sale', 'register'].flatMap((group) => {
+const names = ['sale', 'register', 'shell'].flatMap((group) => {
   const source = readFileSync(path.join(repoRoot, `packages/components/src/${group}/index.ts`), 'utf8');
   return [...source.matchAll(/export\s*\{([^}]+)\}\s*from\s/g)].flatMap((match) =>
     match[1].split(',').map((name) => name.trim())

@@ -200,6 +200,11 @@ export {
   type StoreSettingsChoiceScreenProps,
 } from './layout';
 
+// App shell
+export {
+  AppShell, type AppShellProps, NavRail, type NavRailProps, NavDrawer, type NavDrawerProps, type ShellNavItem,
+} from './shell';
+
 // Reports components
 export {
   SalesRoom, type SalesRoomProps, SalesHero, type SalesHeroProps, SalesCards, type SalesCardsProps, type SalesCardId,
