@@ -206,11 +206,15 @@ the error's class sets `fixedBy` to that value and a string `code`, and
 | Transient | nobody: it passes | anything without the marker: network errors, timeouts, 5xx, 429 | Retries with a doubling delay |
 
 - **Till (including only a 401 `ConnectorUnauthorizedError`):** the pull makes that one request, sets `notice$` once to
-  `{ code, since, fixedBy: 'till' }`, and pauses. The error does not
-  appear on `error$`. Until `resume()`, every pull returns an empty page
-  without a request, whatever restarts the loop: `reSync()`, `stream$`, or
-  RxDB's own `start()` when the page becomes visible again. Call
-  `resume()` after sign-in; an app restart starts afresh anyway.
+  `{ code, since, fixedBy: 'till' }`, and holds the replication. The error
+  does not appear on `error$`. Until `resume()`, every pull returns an empty
+  page without a request, whatever restarts the loop: `reSync()`, `stream$`,
+  or RxDB's own `start()` when the page becomes visible again. A `stream$`
+  document is dropped, and a push waits without sending; nothing is lost.
+  The hold is not RxDB's pause, so `isPaused()` stays `false`: watch
+  `notice$` instead. Call `resume()` after sign-in; it sends the waiting
+  pushes and pulls again from the stored checkpoint. An app restart starts
+  afresh anyway.
 - **Store:** the pull sets `notice$` once to `{ code, since, fixedBy:
   'store' }` (a repeat keeps the first `since`), emits the error on
   `error$`, and waits 5 minutes (`maxRetryTimeMs`) before the next
