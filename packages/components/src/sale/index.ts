@@ -12,3 +12,4 @@ export { injectPrintStyle } from './print-style';
 export { SyncStatus } from './sync-status';
 export { OrdersList, type OrderHistoryRow } from './orders-list';
 export { ParkedSales, type ParkedSalesProps } from './parked-sales';
+export { CustomerDisplayScreen } from './customer-display-screen';

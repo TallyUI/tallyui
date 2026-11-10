@@ -16,6 +16,7 @@ const screens = [
   // Checkout
   { href: '/pos/cash-tendered', label: 'CashTendered' },
   { href: '/pos/change-display', label: 'ChangeDisplay' },
+  { href: '/pos/customer-display', label: 'Customer display' },
   // Order
   { href: '/pos/order-status-badge', label: 'OrderStatusBadge' },
   { href: '/pos/order-card', label: 'OrderCard' },

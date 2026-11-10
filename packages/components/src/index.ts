@@ -178,7 +178,7 @@ export {
   PriceForm, parsePrice,
   ChargeForm, type ChargeFormProps,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, type OrderHistoryRow, orderReference,
-  ParkedSales, type ParkedSalesProps,
+  ParkedSales, type ParkedSalesProps, CustomerDisplayScreen,
 } from './sale';
 
 // Layout components
