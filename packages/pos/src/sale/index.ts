@@ -1,4 +1,6 @@
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, saleLogger } from './use-sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, saleLogger } from './use-sale';
+export { openSales, isPartlyPaid } from './open-sales';
+export type { OpenSale } from './open-sales';
 export type { SaleStage } from './use-sale';
 export { COUPONS_UNSUPPORTED } from './discount-codes';
 export type { SaleDiscountCodes, SaleDiscountState } from './discount-codes';
