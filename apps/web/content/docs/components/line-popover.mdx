@@ -1,0 +1,41 @@
+---
+title: LinePopover
+description: LinePopover shows a cart line's quantity or price and opens a keypad that edits it, as WCPOS v2's cart cells do.
+---
+
+## Import
+
+```tsx
+import { LinePopover } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<LinePopover
+  kind="price"
+  lineName={line.name}
+  currency={sale.order.currency}
+  value={line.unitPriceMinor}
+  quickDiscounts={[5, 10, 15]}
+  onApply={(amountMinor) => sale.setUnitPrice(line.id, amountMinor)}
+/>
+```
+
+The trigger shows the value; tapping it opens a dialog named "Quantity for …" or "Price for …" with a [Keypad](/docs/components/keypad), and focus moves into it. On the web the number keys, Backspace and (for a price) `.` or `,` type too. Apply passes the new value to `onApply`; a refusal it returns shows in the dialog, which stays open. Cancel, Escape or a press outside close without writing, and so does Apply when nothing was typed or the value is unchanged.
+
+A quantity takes whole numbers only and has no decimal key. A price takes the currency's decimal places, and with `quickDiscounts` the first three valid percentages are keys, as on [PriceForm](/docs/components/price-form): a key sets the price that much off `value`, rounded half up to the minor unit. [Cart](/docs/components/cart) draws these with `lineEditor="popover"`.
+
+The popover renders through a portal, so the app renders a `PortalHost` from `@tallyui/primitives`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `kind` | `'quantity' \| 'price'` | required | What the popover edits |
+| `lineName` | `string` | required | The line's name, used in the trigger's and the dialog's accessible names |
+| `currency` | `string` | required | The order's currency: the price's format and decimal places |
+| `value` | `number` | required | The stored quantity, or the unit price in minor units |
+| `onApply` | `(value: number) => string \| null` | required | Writes the new value; return a refusal to show, or `null` once applied |
+| `quickDiscounts` | `readonly number[]` | --- | Price only: percentages off `value` drawn as keys; values outside 0 < n ≤ 100 are dropped and only the first three are drawn |
+| `textClassName` | `string` | --- | Classes for the trigger's text, e.g. the cell's alignment |

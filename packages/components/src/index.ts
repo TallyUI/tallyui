@@ -76,6 +76,10 @@ export {
   type ChipItem,
   QuantityStepper,
   type QuantityStepperProps,
+  Keypad,
+  DIGIT_ROWS,
+  type KeypadKey,
+  type KeypadProps,
 } from './input';
 
 // Customer components
@@ -185,7 +189,7 @@ export {
 // Sale components
 export {
   Cart, CartBar, Tender, SplitTender, TenderPane, type TenderPaneProps, DiscountForm, DiscountChips, parseDiscount, discountLabel,
-  PriceForm, parsePrice,
+  PriceForm, parsePrice, LinePopover, type LinePopoverProps,
   ChargeForm, type ChargeFormProps,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, type OrderHistoryRow, orderReference,
   ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps, CustomerDisplayScreen,

@@ -35,6 +35,8 @@ The line sits in the same columns as [CartColumnHeads](/docs/components/cart-col
 | `regularUnitPrice` | `Money` | — | The regular unit price; struck through only when it is above `unitPrice` in the same currency |
 | `lineTotal` | `Money` | required | The line total, shown as given |
 | `showPrice` | `boolean` | `true` | Shows the Price column; pass the same value as CartColumnHeads |
+| `quantitySlot` | `ReactNode` | — | Replaces the quantity's text, e.g. a [LinePopover](/docs/components/line-popover) |
+| `priceSlot` | `ReactNode` | — | Replaces the unit price's text; the struck regular price stays above it |
 | `locale` | `string` | — | Locale for money formatting |
 | `className` | `string` | — | Override row styles |
 

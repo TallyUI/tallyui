@@ -13,6 +13,7 @@ import {
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { QUICK_CASH_STEPS } from '../checkout/cash-tendered';
+import { DIGIT_ROWS, Keypad } from '../input/keypad';
 
 type Sale = ReturnType<typeof useSale>;
 type Leg = Sale['order']['payments'][number];
@@ -37,10 +38,8 @@ const STATUS_TONE: Record<PaymentLegStatus, string> = {
   pending: 'text-muted-foreground', authorized: 'text-success', captured: 'text-success', failed: 'text-destructive', voided: 'text-muted-foreground',
 };
 /** v2 tender-pane.tsx keypadRows: 123 / 456 / 789, then C, 0, backspace. No decimal key: digits shift in from the right. */
-const KEYPAD_ROWS: { key: TenderKey; label: string; name?: string }[][] = [
-  ...['123', '456', '789'].map((row) => [...row].map((digit) => ({ key: digit as TenderKey, label: digit }))),
-  [{ key: 'clear', label: 'C', name: 'Clear' }, { key: '0', label: '0' }, { key: 'backspace', label: '⌫', name: 'Delete last digit' }],
-];
+const KEYPAD_ROWS = [...DIGIT_ROWS,
+  [{ name: 'clear', label: 'Clear', text: 'C' }, { name: '0', label: '0' }, { name: 'backspace', label: 'Delete last digit', text: '⌫' }]];
 const button = 'min-h-11 justify-center rounded-md border border-border bg-card px-4 py-2';
 
 /** The captured legs since the plan began, as the reducer's `tender-recorded` and `planLegs` read them. */
@@ -148,14 +147,7 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
           <Text className="font-semibold text-foreground">{index === 0 ? `Exact ${money(minor)}` : money(minor)}</Text>
         </Pressable>)}
       </View> : null}
-      <View testID="tender-keypad" className="gap-2">
-        {KEYPAD_ROWS.map((row) => <View key={row[0].key} className="flex-row gap-2">
-          {row.map(({ key, label, name }) => <Pressable key={key} accessibilityRole="button" accessibilityLabel={name ?? label}
-            onPress={() => dispatch({ type: 'key', key })} className={cn(button, 'flex-1 items-center')}>
-            <Text className="text-xl font-semibold text-foreground">{label}</Text>
-          </Pressable>)}
-        </View>)}
-      </View>
+      <Keypad testID="tender-keypad" rows={KEYPAD_ROWS} onPress={(name) => dispatch({ type: 'key', key: name as TenderKey })} />
       {refusal ? <Text accessibilityRole="alert" className="text-destructive">{refusal}</Text> : null}
       {method ? <Pressable testID="tender-take" accessibilityRole="button" disabled={cannotTake}
         onPress={take} className={cn('rounded-md bg-primary px-4 py-3', cannotTake && 'opacity-50')}>

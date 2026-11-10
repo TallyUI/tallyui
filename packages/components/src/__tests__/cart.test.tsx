@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'react-native';
 import { formatMoney } from '@tallyui/core';
+import { PortalHost } from '@tallyui/primitives';
 import { Cart } from '../sale/cart';
 import { blue, click, discount, pricing, SaleHarness, sale, totals, traits } from './sale-harness';
 
@@ -154,6 +155,41 @@ describe('Cart', () => {
     fireEvent.click(screen.getByTestId('price-apply'));
     expect(sale.order.lineItems[0].unitPriceMinor).toBe(1125);
     expect(onPriceChange).toHaveBeenCalledExactlyOnceWith({ lineId, fromMinor: 1250, toMinor: 1125, reason: undefined });
+  });
+
+  it('keeps the inline editors by default: no line popovers, and Price opens the inline form', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.queryByRole('button', { name: 'Edit quantity of Shirt' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit price of Shirt' })).toBeNull();
+    fireEvent.click(screen.getByText('Price', notHead));
+    expect(screen.getByTestId('price-form')).toBeTruthy();
+  });
+
+  it("lineEditor popover: the quantity keypad sets the quantity and the price one's quick key goes through the price path", () => {
+    const onPriceChange = vi.fn();
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" quickDiscounts={[5, 10, 15]}
+      onPriceChange={onPriceChange} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    const lineId = sale.order.lineItems[0].id;
+    expect(screen.queryByText('Price', notHead)).toBeNull();
+    click('Edit quantity of Shirt');
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Quantity for Shirt' })).getByRole('button', { name: '3' }));
+    click('Apply');
+    expect(sale.order.lineItems[0].quantity).toBe(3);
+    click('Edit price of Shirt');
+    click('Discount (10%)');
+    click('Apply');
+    expect(sale.order.lineItems[0].unitPriceMinor).toBe(1125);
+    expect(onPriceChange).toHaveBeenCalledExactlyOnceWith({ lineId, fromMinor: 1250, toMinor: 1125, reason: undefined });
+  });
+
+  it('lineEditor popover without canEditPrice: the quantity popover only, and no Price action', () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} lineEditor="popover" />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    expect(screen.getByRole('button', { name: 'Edit quantity of Shirt' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Edit price of Shirt' })).toBeNull();
+    expect(screen.queryByText('Price', notHead)).toBeNull();
   });
 
   it('renders lines with their display amount, each discount chip with its own display amount, and the order chip with orderDiscountMinor', () => {
