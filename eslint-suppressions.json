@@ -797,11 +797,6 @@
       "count": 5
     }
   },
-  "packages/pos/src/register/export-csv.ts": {
-    "no-control-regex": {
-      "count": 1
-    }
-  },
   "packages/pos/src/register/open.test-helper.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 6

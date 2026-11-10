@@ -2,6 +2,10 @@
 export { createLogger, consoleSink, callbackSink } from './logging';
 export type { Logger, LogSink, LogEntry, LogLevel } from './logging';
 
+// CSV
+export { csvCell, csvFromCells, toCsv } from './csv';
+export type { CsvColumn } from './csv';
+
 // Currency
 export { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './currency';
 export type { CurrencyProviderProps } from './currency';
