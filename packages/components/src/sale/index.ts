@@ -1,7 +1,7 @@
 export { Cart } from './cart';
 export { CartBar } from './cart-bar';
-export { Tender } from './tender';
-export { SplitTender } from './split-tender';
+export { Tender, SplitTender } from './tender';
+export { TenderPane, type TenderPaneProps } from './tender-pane';
 export { DiscountForm, DiscountChips, parseDiscount, discountLabel } from './discount-form';
 export { PriceForm, parsePrice } from './price-form';
 export { ChargeForm, type ChargeFormProps } from './charge-form';

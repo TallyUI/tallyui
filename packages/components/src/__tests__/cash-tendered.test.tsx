@@ -7,7 +7,7 @@ const total = { amount: 3451, currency: 'EUR' };
 describe('CashTendered', () => {
   it('renders sorted, deduplicated quick amounts', () => {
     const { container } = render(<CashTendered total={total} locale="en" />);
-    expect(Array.from(container.querySelectorAll('[tabindex="0"]'), (button) => button.textContent)).toEqual(['€34.51', '€35.00', '€40.00']);
+    expect(Array.from(container.querySelectorAll('[tabindex="0"]'), (button) => button.textContent)).toEqual(['€34.51', '€35.00', '€40.00', '€50.00']);
     expect(screen.getByRole('textbox').getAttribute('value')).toBe('34.51');
   });
 

@@ -1,6 +1,6 @@
 ---
 title: Tender
-description: Tender shows cash amount, change, and balance or card terminal reference during a sale's tender stage, with completion and error controls.
+description: Tender is the sale's tender pane, laid out as WCPOS v2's, with a balance headline, payment legs with their status and void, a keypad, quick-cash chips and completion.
 ---
 
 ## Import
@@ -20,10 +20,13 @@ const sale = useSale(settings, { registerId, cashierRef });
 <Tender sale={sale} />
 ```
 
-Renders only during the sale's tender stage. Cash payments show an amount input, change, and any balance due; card terminal payments show the total and a reference input. Includes completion, error, continuation, and Back controls as the sale state requires.
+Renders only during the sale's tender stage. The headline shows the total, or what remains once money is paid (pending legs never count), and any change. Each payment leg shows its method, amount and status, with Cancel payment where the method can void it. While a balance remains, the cashier picks Cash or Card terminal, types the amount on the keypad or presses a quick-cash chip (the exact amount, then the next 5, 10 and 50), and takes each leg in turn, so a sale can be split across several payments. Complete sale is enabled once nothing is due and no leg is in motion. Error, continuation and Back controls show as the sale state requires.
+
+[TenderPane](/docs/components/tender-pane) is the same pane for a host that owns the tender reducer (`tenderReducer` from `@tallyui/pos`): it takes `sale`, `state` and `dispatch`.
 
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |
+| `methods` | `PaymentMethodDescriptor[]` | `defaultPaymentMethods()` | The methods offered; only `cash` and `external` are shown |

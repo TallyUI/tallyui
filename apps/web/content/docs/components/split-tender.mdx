@@ -1,6 +1,6 @@
 ---
 title: SplitTender
-description: SplitTender adds or removes cash and card terminal payments during tender, showing total, paid, remaining, and change amounts.
+description: SplitTender is deprecated and renders Tender; split payments are legs on the one tender pane.
 ---
 
 ## Import
@@ -20,7 +20,7 @@ const sale = useSale(settings, { registerId, cashierRef });
 <SplitTender sale={sale} />
 ```
 
-Renders only during the tender stage, with controls to add or remove cash and card terminal payments. Shows total, paid, remaining, and any change; completion is disabled while a balance remains or there are no payments.
+`SplitTender` is deprecated: it renders [Tender](/docs/components/tender) with the same props, so use `Tender`. A sale is split by taking several legs in turn, each in Cash or Card terminal; a leg is cancelled with Cancel payment where its method allows a void.
 
 ## Props
 
