@@ -3,6 +3,7 @@ import { resolvePrice, woocommerceTax, type woocommerceCoupons, type ProductTrai
 import type { TaxContext } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
+import { capturedMinor, canMoveLeg, legStatus, type PaymentLegStatus } from '../tender/payment-legs';
 import { allocateOrderDiscount } from './allocate-order-discount';
 import { woocommerceLine, woocommerceTotals, woocommerceCouponReplay } from './woocommerce-tax';
 import type {
@@ -105,6 +106,7 @@ export interface OrderBuilder {
   applyOrderDiscount(discount: Discount): void;
   removeDiscount(discountId: string): void;
   addPayment(payment: Omit<Payment, 'id'>): string;
+  setPaymentStatus(paymentId: string, status: PaymentLegStatus): boolean;
   removePayment(paymentId: string): void;
   setCustomer(customer: CustomerSummary | null): void;
   setNote(note: string): void;
@@ -301,7 +303,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       ...(fees.length ? { fees: displayFees } : {}),
       ...(shipping.length ? { shipping: displayShipping } : {}),
     };
-    const paidMinor = payments.reduce((sum, p) => sum + p.amountMinor, 0);
+    const paidMinor = capturedMinor(payments);
     const balanceDueMinor = Math.max(0, totalMinor - paidMinor);
     const changeDueMinor = Math.max(0, paidMinor - totalMinor);
 
@@ -562,6 +564,14 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       payments = [...payments, { ...payment, id }];
       emit();
       return id;
+    },
+
+    setPaymentStatus(paymentId, status) {
+      const payment = payments.find((p) => p.id === paymentId);
+      if (!payment || !canMoveLeg(legStatus(payment), status)) return false;
+      payments = payments.map((p) => p.id === paymentId ? { ...p, status } : p);
+      emit();
+      return true;
     },
 
     removePayment(paymentId) {

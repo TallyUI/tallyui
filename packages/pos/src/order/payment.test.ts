@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { firstValueFrom } from 'rxjs';
 import { createOrderBuilder } from './order-builder';
+import { restoreOrderDraft } from './order-drafts';
 import type { ProductTraits } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
 
@@ -28,6 +29,58 @@ const traits: ProductTraits = {
 };
 
 const taxContext: TaxContext = { getTaxRatePpm: () => 0, pricesIncludeTax: false };
+
+describe('payment leg status', () => {
+  it('counts only captured legs and updates the balance on capture', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct({ id: 'p1', name: 'Item', price: 3550 }, traits);
+    const pendingId = builder.addPayment({ method: 'external', amountMinor: 1000, status: 'pending' });
+    builder.addPayment({ method: 'cash', amountMinor: 500, status: 'captured' });
+    expect(builder.getSnapshot()).toMatchObject({ paidMinor: 500, balanceDueMinor: 3050, changeDueMinor: 0 });
+    expect(builder.setPaymentStatus(pendingId, 'captured')).toBe(true);
+    expect(builder.getSnapshot()).toMatchObject({ paidMinor: 1500, balanceDueMinor: 2050 });
+  });
+
+  it('keeps the same snapshot for a refused move or unknown payment', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct({ id: 'p1', name: 'Item', price: 3550 }, traits);
+    const capturedId = builder.addPayment({ method: 'cash', amountMinor: 500, status: 'captured' });
+    const before = builder.getSnapshot();
+    expect(builder.setPaymentStatus(capturedId, 'pending')).toBe(false);
+    expect(builder.getSnapshot()).toBe(before);
+    expect(builder.setPaymentStatus('nope', 'voided')).toBe(false);
+    expect(builder.getSnapshot()).toBe(before);
+  });
+
+  it('keeps a voided leg in the ledger without counting it', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct({ id: 'p1', name: 'Item', price: 3550 }, traits);
+    const id = builder.addPayment({ method: 'cash', amountMinor: 3550, status: 'captured' });
+    expect(builder.setPaymentStatus(id, 'voided')).toBe(true);
+    expect(builder.getSnapshot()).toMatchObject({
+      paidMinor: 0, balanceDueMinor: 3550, payments: [{ id, amountMinor: 3550, status: 'voided' }],
+    });
+    expect(builder.getSnapshot().payments).toHaveLength(1);
+  });
+
+  it('does not add a status property to a legacy leg', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct({ id: 'p1', name: 'Item', price: 3550 }, traits);
+    builder.addPayment({ method: 'cash', amountMinor: 3550 });
+    expect(builder.getSnapshot().payments[0]).not.toHaveProperty('status');
+    expect(builder.getSnapshot().paidMinor).toBe(3550);
+  });
+
+  it('restores a voided leg without counting it', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addProduct({ id: 'p1', name: 'Item', price: 3550 }, traits);
+    const id = builder.addPayment({ method: 'cash', amountMinor: 3550 });
+    builder.setPaymentStatus(id, 'voided');
+    const restored = restoreOrderDraft(builder.getSnapshot(), { currency: 'USD', taxContext });
+    expect(restored.getSnapshot().payments[0].status).toBe('voided');
+    expect(restored.getSnapshot().paidMinor).toBe(0);
+  });
+});
 
 describe('payment splitting', () => {
   it.each([

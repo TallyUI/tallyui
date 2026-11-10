@@ -55,6 +55,8 @@ export interface VendureOrder extends VendureOrderSummary {
     proratedUnitPrice: number;
     /** Vendure's per-unit refund value, rounded per unit: for display, never multiplied by a quantity for `order.refund`'s `totalMinor` (ADR-080 amendment 2). */
     proratedUnitPriceWithTax: number;
+    /** The line's total without tax after order-level discounts. */
+    proratedLinePrice: number;
     /** The line's total with tax after order-level discounts; a refund's line amount is its share of this (vendurepos ADR 0007, decision 4.9). */
     proratedLinePriceWithTax: number;
     taxRate: number;
@@ -74,7 +76,7 @@ export interface VendureOrder extends VendureOrderSummary {
       tallyClientLineId: string | null;
     };
   }[];
-  shippingLines: { shippingMethod: { name: string }; price: number; priceWithTax: number }[];
+  shippingLines: { shippingMethod: { name: string }; price: number; priceWithTax: number; discountedPrice: number; discountedPriceWithTax: number }[];
   surcharges: { description: string; sku: string; price: number; priceWithTax: number }[];
   subTotal: number;
   subTotalWithTax: number;
@@ -112,11 +114,11 @@ const ORDER_DETAIL_FIELDS_START = `
   customer { id firstName lastName emailAddress }
   lines {`;
 const ORDER_DETAIL_FIELDS_END = `
-    id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax proratedLinePriceWithTax taxRate productVariant { id name sku }
+    id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax proratedLinePriceWithTax proratedLinePrice taxRate productVariant { id name sku }
     unitPrice unitPriceWithTax linePrice linePriceWithTax discountedLinePrice discountedLinePriceWithTax
     discounts { description amount amountWithTax }
   }
-  shippingLines { shippingMethod { name } price priceWithTax }
+  shippingLines { shippingMethod { name } price priceWithTax discountedPrice discountedPriceWithTax }
   surcharges { description sku price priceWithTax }
   subTotal subTotalWithTax shipping shippingWithTax total totalWithTax
   taxSummary { description taxRate taxBase taxTotal }
@@ -138,6 +140,10 @@ const CUSTOMER_LIST_QUERY = `query CustomerOrders($customerId: ID!, $options: Or
   customer(id: $customerId) { orders(options: $options) { items { ${ORDER_ROW_FIELDS} } totalItems } }
 }`;
 const TALLY_CUSTOMER_LIST_QUERY = CUSTOMER_LIST_QUERY.replace(ORDER_ROW_FIELDS, TALLY_ORDER_ROW_FIELDS);
+const DETAIL_LIST_QUERY = LIST_QUERY.replace(ORDER_ROW_FIELDS, ORDER_DETAIL_FIELDS);
+const TALLY_DETAIL_LIST_QUERY = LIST_QUERY.replace(ORDER_ROW_FIELDS, TALLY_ORDER_DETAIL_FIELDS);
+const CUSTOMER_DETAIL_LIST_QUERY = CUSTOMER_LIST_QUERY.replace(ORDER_ROW_FIELDS, ORDER_DETAIL_FIELDS);
+const TALLY_CUSTOMER_DETAIL_LIST_QUERY = CUSTOMER_LIST_QUERY.replace(ORDER_ROW_FIELDS, TALLY_ORDER_DETAIL_FIELDS);
 const DETAIL_QUERY = `query Order($id: ID!) {
   order(id: $id) { ${ORDER_DETAIL_FIELDS} }
 }`;
@@ -146,6 +152,18 @@ const TALLY_DETAIL_QUERY = `query Order($id: ID!) {
 }`;
 
 export async function listVendureOrders(context: SyncContext, options: VendureOrderListOptions = {}): Promise<VendureOrderList<VendureOrderSummary>> {
+  return listOrders(context, options, LIST_QUERY, TALLY_LIST_QUERY, CUSTOMER_LIST_QUERY, TALLY_CUSTOMER_LIST_QUERY);
+}
+
+/** As listVendureOrders, with each row's full detail (the getVendureOrder fields): one request per page. */
+export async function listVendureOrderDetails(context: SyncContext, options: VendureOrderListOptions = {}): Promise<VendureOrderList<VendureOrder>> {
+  return listOrders(context, options, DETAIL_LIST_QUERY, TALLY_DETAIL_LIST_QUERY, CUSTOMER_DETAIL_LIST_QUERY, TALLY_CUSTOMER_DETAIL_LIST_QUERY);
+}
+
+async function listOrders<T>(
+  context: SyncContext, options: VendureOrderListOptions,
+  listQuery: string, tallyListQuery: string, customerListQuery: string, tallyCustomerListQuery: string,
+): Promise<VendureOrderList<T>> {
   const skip = Math.max(0, Math.trunc(Number.isFinite(options.skip) ? options.skip! : 0));
   const take = Math.max(1, Math.min(100, Math.trunc(Number.isFinite(options.take) ? options.take! : 25)));
   const date = options.orderPlacedAt;
@@ -167,8 +185,8 @@ export async function listVendureOrders(context: SyncContext, options: VendureOr
     ...(options.customerId ? { customerId: options.customerId } : {}),
   };
   const query = options.customerId
-    ? (options.tallyFields === false ? CUSTOMER_LIST_QUERY : TALLY_CUSTOMER_LIST_QUERY)
-    : (options.tallyFields === false ? LIST_QUERY : TALLY_LIST_QUERY);
+    ? (options.tallyFields === false ? customerListQuery : tallyCustomerListQuery)
+    : (options.tallyFields === false ? listQuery : tallyListQuery);
   const body = await gql(context, query, variables);
   if (options.customerId && body?.data?.customer === null) return { items: [], totalItems: 0 };
   const result = options.customerId ? body?.data?.customer?.orders : body?.data?.orders;

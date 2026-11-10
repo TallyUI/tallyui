@@ -1,8 +1,9 @@
 import * as React from 'react';
 import { Text as RNText } from 'react-native';
 import { Slot, TextClassContext } from '@tallyui/primitives';
-import { cn } from '@tallyui/theme';
+import { cn, MAX_FONT_SCALE } from '@tallyui/theme';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { withFont } from './font-text';
 
 const textVariants = cva('text-foreground web:select-text text-base', {
   variants: {
@@ -21,12 +22,12 @@ type TextProps = React.ComponentPropsWithoutRef<typeof RNText> &
     asChild?: boolean;
   };
 
-function Text({ className, variant, asChild = false, children, ...props }: TextProps) {
+function Text({ className, variant, asChild = false, children, maxFontSizeMultiplier = MAX_FONT_SCALE, ...props }: TextProps) {
   const textClass = React.useContext(TextClassContext);
-  const Component = asChild ? Slot : RNText;
+  const Component = withFont(asChild ? Slot : RNText);
 
   return (
-    <Component className={cn(textVariants({ variant }), textClass, className)} {...props}>
+    <Component className={cn(textVariants({ variant }), textClass, className)} {...props} maxFontSizeMultiplier={maxFontSizeMultiplier}>
       {children}
     </Component>
   );
