@@ -182,6 +182,23 @@ describe('startReplication with a connectivity tracker', () => {
     expect(accepted).toEqual(['a', 'b']);
   });
 
+  it('a held push released while paused sends nothing until resume, then sends once', async () => {
+    const tracker = createConnectivityTracker({ connector: gate });
+    tracker.recordFailure(refusal());
+    const { state, collection, accepted, calls } = await pushSetup(() => undefined, tracker);
+    await insert(collection, 'a');
+    await sleep(100);
+    expect(calls()).toBe(0);
+    await state.pause();
+    tracker.resetUpdateRequired();
+    await sleep(100);
+    expect(calls()).toBe(0);
+    await state.start();
+    await until(() => accepted.length >= 1);
+    await sleep(100);
+    expect(accepted).toEqual(['a']);
+  });
+
   it('flapping offline, online, offline, online loses and doubles no write, and ends online', async () => {
     let down = true;
     const { collection, accepted, states, tracker } = await pushSetup(() => (down ? unreachable() : undefined));

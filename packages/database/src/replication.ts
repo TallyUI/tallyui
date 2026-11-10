@@ -194,11 +194,13 @@ export function startReplication<RxDocType, CheckpointType = any>({
             if (!connectivity) return adapter.push!.handler(rows, context);
             // Held, not thrown, while latched: RxDB retries a thrown push every retryTime with one error$ each. The
             // reset releases it; a cancel ends it. A push already in flight when the latch sets finishes as usual.
+            // Paused at release: throw, not send. RxDB drops a paused push's answer and sends its rows again after
+            // resume (17.5 replication-protocol/upstream.js); a thrown one ends its retry loop and goes once on resume.
             if (connectivity.current().updateRequired) {
               const rx = state!;
               await firstValueFrom(merge(connectivity.snapshot$, rx.canceled$).pipe(
                 filter(() => rx.isStopped() || !connectivity.current().updateRequired)));
-              if (rx.isStopped()) throw new Error('update required: push held');
+              if (rx.isStoppedOrPaused()) throw new Error('update required: push held');
             }
             try {
               const conflicts = await adapter.push!.handler(rows, context);
