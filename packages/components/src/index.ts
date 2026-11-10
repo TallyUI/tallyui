@@ -57,6 +57,8 @@ export {
   CartLineActions,
   type CartLineActionsProps,
   type CartAction,
+  CartColumnHeads,
+  type CartColumnHeadsProps,
 } from './cart';
 
 // Input components

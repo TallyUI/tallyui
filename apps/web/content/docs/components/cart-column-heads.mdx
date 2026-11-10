@@ -1,0 +1,26 @@
+---
+title: CartColumnHeads
+description: The cart table's header row, Qty, Item, Price and Total, in the widths CartLine uses.
+---
+
+## Import
+
+```tsx
+import { CartColumnHeads } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CartColumnHeads showPrice={showPrice} />
+<CartLine showPrice={showPrice} {...line} />
+```
+
+Renders the header row above the cart's lines, with the labels Qty, Item, Price and Total in the same column widths as [CartLine](/docs/components/cart-line). The [Cart](/docs/components/cart) hides the Price column when the cart is under 300 wide, or the window is under 768 wide or 480 tall, as the WCPOS cart does. Pass the same `showPrice` to the heads and to every line.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `showPrice` | `boolean` | `true` | Shows the Price head |
+| `className` | `string` | — | Override row styles |
