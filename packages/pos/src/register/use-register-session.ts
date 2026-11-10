@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
+import { safeErrorString } from '../outbox/safe-error';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
@@ -76,13 +77,6 @@ const subscribeClosing = (listener: () => void) => {
 };
 // Closures whose `session-closed` fact is logged, so a double-tapped close logs it once.
 const closedFacts = new Set<string>();
-
-// An RxError's message carries its parameters, which can hold a payload with the approval proof.
-function logSafeError(error: unknown): string {
-  return (error as { rxdb?: unknown })?.rxdb === true
-    ? (error as Error).name
-    : String(error);
-}
 
 export interface UseRegisterSessionOptions {
   /** `register_sessions`, created with `addRegisterSessionCollection`; `null` while it opens. */
@@ -184,7 +178,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     if (!target) return;
     void reconcileRegisterCommands({ ...target, observed: row ? [row] : undefined }).catch((error: unknown) => {
       try {
-        registerCommandsLogger.error('Register command reconcile failed', { context: { registerId: target.registerId, error: logSafeError(error) } });
+        registerCommandsLogger.error('Register command reconcile failed', { context: { registerId: target.registerId, error: safeErrorString(error) } });
       } catch {
         // A failing log sink must not affect a register action either.
       }
