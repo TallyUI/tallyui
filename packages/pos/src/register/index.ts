@@ -18,6 +18,8 @@ export {
 } from './session-store';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './session-store';
 export { deriveSettled } from './settled-figures';
+export { suggestFloat } from './float-suggestion';
+export type { FloatSuggestion } from './float-suggestion';
 export type { Correction, RecordedFigures } from './settled-figures';
 export { exportCsv } from './export-csv';
 export { labelKeys } from './document-labels';

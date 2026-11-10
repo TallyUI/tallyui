@@ -4,3 +4,5 @@ export { tenderVoidSchema, tenderVoidCollection } from './tender-void';
 export type { TenderVoid } from './tender-void';
 export { roundedDue, tenderRounding } from './cash-rounding';
 export type { TenderRounding } from './cash-rounding';
+export { legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg } from './payment-legs';
+export type { PaymentLegStatus } from './payment-legs';

@@ -1,5 +1,8 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
+import type { CommandResult, RegisterApprovalRequiredData, RegisterApprovalInvalidData } from '../types'
+import type { RegisterConflictCode } from './register-outcome'
+import type { CommandRejectionCode } from './rejection-codes'
 import { parseCommandResult } from './command-result'
 import { internalErrorResult, platformErrorResult } from './rejection-codes'
 
@@ -29,4 +32,16 @@ it('round-trips internal_error through parseCommandResult unchanged, since it is
   const result = internalErrorResult('cmd-1', 'corr-1')
   // mirrors a ledger read: the result was serialised to storage and back
   expect(parseCommandResult(JSON.parse(JSON.stringify(result)))).toStrictEqual(result)
+})
+
+it('round-trips register approval rejections with their typed data', () => {
+  const required = { sessionId: 's', thresholdMinor: 500, variance: { cash: -600, external: 0 } } satisfies RegisterApprovalRequiredData
+  const invalid = { reason: 'variance_mismatch' } satisfies RegisterApprovalInvalidData
+  const results = [
+    { id: 'cmd-1', status: 'rejected', error: { code: 'register_approval_required' satisfies CommandRejectionCode, message: 'approval required', data: { ...required } } },
+    { id: 'cmd-2', status: 'rejected', error: { code: 'register_approval_invalid' satisfies RegisterConflictCode, message: 'approval invalid', data: { ...invalid } } },
+  ] satisfies CommandResult[]
+  for (const result of results) {
+    expect(parseCommandResult(JSON.parse(JSON.stringify(result)))).toStrictEqual(result)
+  }
 })
