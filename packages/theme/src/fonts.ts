@@ -9,14 +9,14 @@ export const THEME_FONT_FAMILIES = {
 } as const;
 export type ThemeFontFamily = (typeof THEME_FONT_FAMILIES)[keyof typeof THEME_FONT_FAMILIES];
 
-export interface FontFace { file: string; weight: number; style?: 'italic' }
+export interface ThemeFontFace { file: string; weight: number; style?: 'italic' }
 
 /**
  * Faces an app must bundle (Google Fonts, SIL OFL 1.1), with v2's file names.
  * Map each to an app asset, e.g. expo-font:
  * { path: require('./assets/fonts/DMSans-400.ttf'), weight: 400, style, display: 'swap' }.
  */
-export const FONT_FACES: Record<ThemeFontFamily, readonly FontFace[]> = {
+export const FONT_FACES: Record<ThemeFontFamily, readonly ThemeFontFace[]> = {
   [THEME_FONT_FAMILIES.dmSans]: [
     { file: 'DMSans-400.ttf', weight: 400 },
     { file: 'DMSans-500.ttf', weight: 500 },
