@@ -1,0 +1,51 @@
+---
+title: OpenSaleTabs
+description: OpenSaleTabs shows the till's open sales as cart tabs, one cell per sale with who and the total or a partly paid chip, plus a + cell for a new sale.
+---
+
+## Import
+
+```tsx
+import { OpenSaleTabs } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { openSales, useParkedSales, useSale } from '@tallyui/pos';
+import { OpenSaleTabs } from '@tallyui/components';
+
+// Inside a component under TaxProvider; switchSale needs the drafts option.
+const sale = useSale(settings, { registerId, cashierRef, drafts });
+const { parked } = useParkedSales(drafts);
+<OpenSaleTabs
+  sales={openSales(sale.order, parked)}
+  currency={settings.currency}
+  onSelect={(id) => void sale.switchSale(id).then(showRefusal)}
+  onNew={() => void sale.switchSale(null).then(showRefusal)}
+/>
+```
+
+Renders a horizontal strip with one tab per open sale: the current sale and each parked draft. A tab reads who the sale is for: the customer's name, or for a guest `Guest · ` and the single item's name or the item count (an empty guest sale reads `Guest`). Under it is the sale's total, or, once a leg took money and a balance is still due, `Partly paid · {amount} due`. On tabs other than the current one that line is a chip; the current tab keeps it as plain muted text. The current tab is underlined, even when it is the only one.
+
+The + cell at the end opens a new sale. A blank cart is no tab, so while the till is on one the + cell is its tab: it is underlined, reads `New`, and pressing it does nothing.
+
+## Open sales
+
+`openSales(order, parked)` from `@tallyui/pos` builds the `sales` prop. It merges the current sale, when it has lines, fees or shipping, with the parked summaries from `useParkedSales(drafts)`, skipping a draft that has the current sale's id. Tabs are sorted by id with numeric collation, so a tab keeps its place across switches. Each entry carries `id`, `customerName`, `itemCount`, `firstItem`, `totalMinor`, `paidMinor`, `balanceDueMinor` and `current`.
+
+`useSale` has two methods for the tabs:
+
+- `switchSale(draftId)` parks the current sale when it has lines, fees or shipping, then opens the parked draft `draftId`, or an empty sale for `null`. It resolves to `null`, or a refusal message, and changes nothing when refused: while the sale is saving, for a partly paid sale (`SALE_PARTLY_PAID`), with a payment in motion, or in the tender stage (`SALE_IN_TENDER`). A finished sale on its receipt is not parked. It throws when `useSale` was given no `drafts` collection.
+- `closeSale()` discards the current sale without parking it and starts an empty one. It returns `null`, or a refusal: while saving, when a leg of an unfinished sale took or holds money, or in the tender stage.
+
+A parked draft whose legs took money keeps the prices it was paid against when it is resumed.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `sales` | `OpenSale[]` | required | The open sales, from `openSales(sale.order, parked)` |
+| `currency` | `string` | required | Currency used to format totals and the balance due |
+| `onSelect` | `(id: string) => void` | required | Called with a tab's sale id when it is pressed; call `sale.switchSale(id)` |
+| `onNew` | `() => void` | required | Called when + is pressed while the till is not on a blank cart; call `sale.switchSale(null)` |
