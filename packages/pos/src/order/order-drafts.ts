@@ -111,6 +111,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       tenderedMinor: payment.tenderedMinor,
       changeMinor: payment.changeMinor,
       reference: payment.reference,
+      ...(payment.status !== undefined ? { status: payment.status } : {}),
     });
   }
   return builder;

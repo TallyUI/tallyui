@@ -28,6 +28,13 @@ function discountedSale() {
 }
 
 describe('finalizeOrder', () => {
+  it.each(['pending', 'authorized', 'failed', 'voided'] as const)('rejects a %s payment leg', (status) => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 3451 });
+    builder.addPayment({ method: 'external', amountMinor: 100, status });
+    expect(() => finalizeOrder(builder.getSnapshot())).toThrow(`finalize: the external payment is ${status}, not captured`);
+  });
+
   it('stores coupon ids and regular prices from a fully paid WooCommerce sale', () => {
     const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
       pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
