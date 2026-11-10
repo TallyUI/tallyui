@@ -22,7 +22,7 @@ const sale = useSale(settings, { registerId, cashierRef });
 
 Renders only during the sale's tender stage. The headline shows the total, or what remains once money is paid (pending legs never count), and any change. Each payment leg shows its method, amount and status, with Cancel payment where the method can void it. While a balance remains, the cashier picks Cash or Card terminal, types the amount on the keypad or presses a quick-cash chip (the exact amount, then the next 5, 10 and 50), and takes each leg in turn, so a sale can be split across several payments. Complete sale is enabled once nothing is due and no leg is in motion. Error, continuation and Back controls show as the sale state requires.
 
-`TenderPane` is the same pane for a host that owns the tender reducer (`tenderReducer` from `@tallyui/pos`): it takes `sale`, `state` and `dispatch`.
+[TenderPane](/docs/components/tender-pane) is the same pane for a host that owns the tender reducer (`tenderReducer` from `@tallyui/pos`): it takes `sale`, `state` and `dispatch`.
 
 ## Props
 

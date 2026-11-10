@@ -1,0 +1,40 @@
+---
+title: TenderPane
+description: TenderPane is the tender pane for a host that owns the tender reducer, with the balance headline, payment legs, method tiles, keypad, quick-cash chips, Take and Complete sale.
+---
+
+## Import
+
+```tsx
+import { TenderPane } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useReducer } from 'react';
+import { initTenderState, tenderReducer, useSale } from '@tallyui/pos';
+import { TenderPane } from '@tallyui/components';
+
+// Inside a component under TaxProvider, while sale.stage.kind is 'tender'.
+const sale = useSale(settings, { registerId, cashierRef });
+const [state, dispatch] = useReducer(tenderReducer, { methodId: 'cash', balanceMinor: sale.order.balanceDueMinor }, initTenderState);
+<TenderPane sale={sale} state={state} dispatch={dispatch} />
+```
+
+`TenderPane` is the pane inside [Tender](/docs/components/tender), laid out as WCPOS v2's. Use `Tender` unless the host keeps the tender reducer itself. It renders nothing outside the tender stage.
+
+The headline shows the total, or what remains once money is paid (pending legs never count), the amount paid so far and any change. Each payment leg shows its method, amount and status, the next pending leg is marked Next, and Cancel payment shows where the method can void the leg.
+
+While a balance remains, the cashier picks Cash or Card terminal and sets the entry on the keypad, where digits shift in from the right, or, for cash, with a quick-cash chip: the exact amount, then the next 5, 10 and 50. A chip or a keypad press only sets the entry. A hint under it reads the change, what is left after a part payment, or that the method can't give change. `Take {amount} in {method}` records the leg with `sale.addTender`, and the entry is pre-typed with the next leg's amount. Card terminal also takes a terminal reference.
+
+Complete sale is enabled once nothing is due and no leg is in motion, and calls `sale.complete`. Back calls `sale.cancelTender`. The sale's error and its Continue control show as the sale state requires.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |
+| `state` | `TenderState` | required | The tender reducer's state, from `tenderReducer` in `@tallyui/pos` |
+| `dispatch` | `(action: TenderAction) => void` | required | The reducer's dispatch; the pane sends method picks, keypad keys, entries and recorded legs |
+| `methods` | `PaymentMethodDescriptor[]` | `defaultPaymentMethods()` | The methods offered; only `cash` and `external` are shown |

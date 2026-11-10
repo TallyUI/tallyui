@@ -12,6 +12,12 @@ const money = (amount: number) => formatMoney({ amount, currency: 'EUR' }) ?? ''
 const text = (testID: string) => screen.getByTestId(testID).textContent;
 const disabled = (testID: string) => screen.getByTestId(testID).getAttribute('aria-disabled') === 'true';
 const leg = (index: number) => sale.order.payments[index].id;
+/**
+ * Presses a keypad key by its label, within the keypad. Not `click()`, whose getByRole checks the accessible name
+ * and visibility of every button in the pane on each call: with six keypad presses through it, the keypad test
+ * took 3.8 s locally and 8.7 s on a loaded CI runner, past the 5 s test timeout.
+ */
+const press = (label: string) => fireEvent.click(within(screen.getByTestId('tender-keypad')).getByLabelText(label));
 function start(priceMinor: number, method: 'cash' | 'external' = 'cash', methods?: Parameters<typeof Tender>[0]['methods']) {
   render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} methods={methods} />}</SaleHarness>);
   act(() => sale.add(blue, traits));
@@ -58,8 +64,8 @@ describe('Tender', () => {
 
   it('types on the keypad, takes a part payment, then pre-types the balance for the next leg', () => {
     start(2250);
-    for (const key of ['1', '0', '0', '0', '0']) click(key);
-    click('Delete last digit');
+    for (const key of ['1', '0', '0', '0', '0']) press(key);
+    press('Delete last digit');
     expect(text('tender-entry-amount')).toBe(money(1000));
     expect(text('tender-entry-hint')).toBe(`Part payment · ${money(1250)} left after this`);
     click(`Take ${money(1000)} in Cash`);
