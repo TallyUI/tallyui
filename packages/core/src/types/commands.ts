@@ -7,8 +7,9 @@ export interface CommandEnvelope<P = unknown> {
   type: CommandType;
   /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1;
    *  4 is 3 with every `discountMinor` tax-exclusive, built only when capped at 4 or more (#286).
-   *  5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one. */
-  version: 1 | 2 | 3 | 4 | 5 | 6;
+   *  5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
+   *  7 is 6 plus the sale's `note` (ADR-083), sent only for an order that has one. */
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -54,8 +55,9 @@ export interface OrderRefundOrderStateData { state: string }
 /** The session that is not open on the refunding register (ADR-080). */
 export interface OrderRefundNoOpenSessionData { sessionId: string }
 
-/** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one. */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 };
+/** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
+ * 7 is 6 plus the sale's note (ADR-083). */
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -383,6 +385,8 @@ export interface OrderCreatePayload {
   locationId?: string;
   /** Version 3+: the register session the sale was taken for, stamped or late (ADR-032). A late sale names the session that refused its stamp; the server tells the two apart by the session's closure `orderIds`. Absent when the sale had no session. */
   sessionId?: string;
+  /** Version 7 (ADR-083): the sale's note, 1 to ORDER_NOTE_MAX UTF-16 units; omitted when the sale has none. */
+  note?: string;
 }
 
 /** Batch of commands submitted to the server. */

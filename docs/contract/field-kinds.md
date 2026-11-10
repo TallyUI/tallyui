@@ -235,6 +235,7 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 | `payload.cashierRef` | informational | 1 |
 | `payload.locationId` | instruction | 1 |
 | `payload.sessionId` | instruction (honoured by recording) | 3 |
+| `payload.note` | informational (ADR-083) | 7 |
 
 - A discount, on the order or a line, is the cashier's price decision:
   the server honours it by applying or recording it, or refuses it.

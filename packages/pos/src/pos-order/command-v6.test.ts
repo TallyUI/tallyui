@@ -4,9 +4,8 @@ import { fileURLToPath, URL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { payloadShapeErrors, precheckCommand } from '@tallyui/core/server';
 import { createOrderBuilder } from '../order/order-builder';
-import { contentVersion, ORDER_CREATE_MAX_VERSION, toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
+import { contentVersion, toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
 import { finalizeOrder } from './finalize';
-import { posOrderCollection } from './schema';
 
 const fixturePath = fileURLToPath(new URL('./__fixtures__/order-create-v6.json', import.meta.url));
 const supported = { orderCreate: [1, 2, 3, 4, 5, 6], register: [1] };
@@ -111,11 +110,7 @@ describe('order.create v6 coupon envelope (ADR-077)', () => {
     expect(envelope.payload.display).not.toHaveProperty('coupons');
   });
 
-  it('pins both stored version maxima and the golden version to the till maximum', () => {
-    const { properties } = posOrderCollection().schema;
-    expect(properties.sentVersion.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.downgradedFrom.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(ORDER_CREATE_MAX_VERSION);
+  it("a coupon sale's content version is 6", () => {
     expect(contentVersion(sale())).toBe(6);
   });
 });

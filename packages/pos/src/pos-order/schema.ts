@@ -28,9 +28,10 @@ import type { PosOrder } from './types';
  * `finalizeOrder` writes a line's `attributes`; the order.create envelope sends them only at version 6.
  * Its migration is the identity. It is one-way like version 8.
  * Version 10 adds a line's `anyAttributes` (#495 c/d) and changes nothing else. Its migration is the identity. It is one-way like version 9.
+ * Version 11 lets `sentVersion` and `downgradedFrom` be 7 (order.create version 7, ADR-083), and changes nothing else. Its migration is the identity. It is one-way like version 10.
  */
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 10, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 11, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -116,8 +117,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       roundAtSubtotal: { type: 'boolean' },
       mode: { type: 'string', enum: ['half_away_from_zero', 'half_up'] },
     }, required: ['granularity'] },
-    sentVersion: { type: 'integer', minimum: 1, maximum: 6 },
-    downgradedFrom: { type: 'integer', minimum: 1, maximum: 6 },
+    sentVersion: { type: 'integer', minimum: 1, maximum: 7 },
+    downgradedFrom: { type: 'integer', minimum: 1, maximum: 7 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
     display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
@@ -181,5 +182,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity } };
 }
