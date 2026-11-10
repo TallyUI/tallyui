@@ -63,6 +63,9 @@ export {
   type CartAction,
   CartColumnHeads,
   type CartColumnHeadsProps,
+  CartFoot,
+  type CartFootProps,
+  type CartFootAction,
 } from './cart';
 
 // Input components
