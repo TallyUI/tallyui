@@ -92,7 +92,8 @@ jobs:
         run: xargs pnpm --filter @tallyui/web links:check --check-fragments < /tmp/link-seeds.txt
 
   e2e-web:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, where `playwright install` has no Chromium (2026-11-10).
+    runs-on: ubuntu-24.04
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
