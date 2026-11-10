@@ -1,0 +1,42 @@
+---
+title: HandoverSlip
+description: HandoverSlip shows the hand-over slip a cashier leaves for the next one, built by handoverSlip from @tallyui/pos.
+---
+
+## Import
+
+```tsx
+import { HandoverSlip } from '@tallyui/components';
+import { handoverSlip } from '@tallyui/pos';
+```
+
+## Usage
+
+```tsx
+const slip = handoverSlip({
+  session,
+  cashier,
+  registerName: 'Till 1',
+  salesCount: register.salesCount,
+  expected: register.expected,
+  blind: register.blind,
+  outbox: health,
+  context,
+});
+
+<HandoverSlip slip={slip} currency="EUR" />
+```
+
+## Behaviour
+
+- **Contents:** the register, when its session opened and who opened it, the cashier handing over, and the number of sales.
+- **Expected figures:** one line per tender. They are hidden while blind.
+- **Unsent work:** unsent sales and unsent till updates are listed when there are any.
+- **Printing:** the component only shows the slip on screen and has no dialog of its own. To print, send `slip.document`, an X-report envelope marked as a hand-over, through the existing report print path.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `slip` | `Omit<HandoverSlipData, 'document'>` | required | The result of `handoverSlip(...)` from `@tallyui/pos` |
+| `currency` | `string` | required | ISO 4217 code used for the expected figures |

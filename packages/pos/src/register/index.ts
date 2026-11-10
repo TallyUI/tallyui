@@ -37,3 +37,5 @@ export {
 } from './register-adoption';
 export type { ClosureApprovalStatus } from './register-adoption';
 export type { RegisterCommand, RegisterCommandCollection } from './register-commands';
+export { switchWarnings, handoverSlip } from './handover';
+export type { SwitchKind, SwitchWarning, SwitchWarningInput, SwitchWarnings, HandoverSlipInput, HandoverSlipData } from './handover';

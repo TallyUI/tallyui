@@ -72,6 +72,8 @@
     "register-count",
     "movement-sheet",
     "closure-sheet",
+    "switch-confirm",
+    "handover-slip",
     "---Settings---",
     "settings-row",
     "settings-group",
