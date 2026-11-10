@@ -29,23 +29,25 @@ describe('app settings', () => {
   });
 
   it('reads the defaults from an empty collection', async () => {
-    expect(await readAppSettings(collection)).toEqual({ 'ui.scale': 'auto', 'ui.font': 'auto' });
+    expect(await readAppSettings(collection)).toEqual({ 'ui.theme': 'system', 'ui.scale': 'auto', 'ui.font': 'auto' });
   });
 
   it('writes a setting and reads it back', async () => {
     await writeAppSetting(collection, 'ui.scale', 'compact');
     await writeAppSetting(collection, 'ui.font', 'manrope');
-    expect(await readAppSettings(collection)).toEqual({ 'ui.scale': 'compact', 'ui.font': 'manrope' });
+    expect(await readAppSettings(collection)).toEqual({ 'ui.theme': 'system', 'ui.scale': 'compact', 'ui.font': 'manrope' });
     await writeAppSetting(collection, 'ui.scale', 'spacious');
-    expect(await readAppSettings(collection)).toEqual({ 'ui.scale': 'spacious', 'ui.font': 'manrope' });
+    await writeAppSetting(collection, 'ui.theme', 'dark');
+    expect(await readAppSettings(collection)).toEqual({ 'ui.theme': 'dark', 'ui.scale': 'spacious', 'ui.font': 'manrope' });
     expect(await collection.find({ selector: { key: 'ui.scale' } }).exec()).toHaveLength(1);
   });
 
   it('falls back to the default for invalid stored values', async () => {
     await collection.insert({ key: 'ui.scale', value: '"huge"' });
+    await collection.insert({ key: 'ui.theme', value: '"ocean"' });
     for (const value of ['not json', '""', '42', JSON.stringify('x'.repeat(65))]) {
       const doc = await collection.insert({ key: 'ui.font', value });
-      expect(await readAppSettings(collection)).toEqual({ 'ui.scale': 'auto', 'ui.font': 'auto' });
+      expect(await readAppSettings(collection)).toEqual({ 'ui.theme': 'system', 'ui.scale': 'auto', 'ui.font': 'auto' });
       await doc.remove();
     }
   });
@@ -53,7 +55,7 @@ describe('app settings', () => {
   it('ignores unknown keys', async () => {
     await collection.insert({ key: 'ui.unknown', value: '"x"' });
     await collection.insert({ key: 'toString', value: '"x"' });
-    expect(await readAppSettings(collection)).toEqual({ 'ui.scale': 'auto', 'ui.font': 'auto' });
+    expect(await readAppSettings(collection)).toEqual({ 'ui.theme': 'system', 'ui.scale': 'auto', 'ui.font': 'auto' });
   });
 
   it('rejects an invalid value and writes nothing', async () => {
@@ -71,7 +73,7 @@ describe('app settings', () => {
     const subscription = appSettings$(collection).subscribe((settings) => emissions.push(settings));
     try {
       await writeAppSetting(collection, 'ui.scale', 'regular');
-      await vi.waitFor(() => expect(emissions).toContainEqual({ 'ui.scale': 'regular', 'ui.font': 'auto' }));
+      await vi.waitFor(() => expect(emissions).toContainEqual({ 'ui.theme': 'system', 'ui.scale': 'regular', 'ui.font': 'auto' }));
     } finally {
       subscription.unsubscribe();
     }
