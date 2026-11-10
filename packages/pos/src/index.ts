@@ -106,8 +106,8 @@ export type {
 } from './print';
 
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';
-export type { SaleStage, CatalogueEntry, SaleDiscountCodes, SaleDiscountState } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';
+export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscountState } from './sale';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
@@ -148,5 +148,5 @@ export { switchWarnings, handoverSlip } from './register';
 export type { SwitchKind, SwitchWarning, SwitchWarningInput, SwitchWarnings, HandoverSlipInput, HandoverSlipData } from './register';
 
 // Reports
-export { salesFigures, marginOf, comparisonRange, daysOf, inRange, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';
-export type { StoreDay, DayRange, ReportCategory, ReportLine, ReportPayment, ReportTax, ReportOrder, ReportRefund, LineJoin, Margin, SalesTotals, PaymentRow, GroupRow, TaxRow, DayPoint, SalesFiguresInput, SalesFigures } from './reports';
+export { salesFigures, marginOf, comparisonRange, daysOf, inRange, presetRange, DATE_PRESETS, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';
+export type { StoreDay, DayRange, ReportCategory, ReportLine, ReportPayment, ReportTax, ReportOrder, ReportRefund, LineJoin, Margin, SalesTotals, PaymentRow, GroupRow, TaxRow, DayPoint, SalesFiguresInput, SalesFigures, DatePreset } from './reports';
