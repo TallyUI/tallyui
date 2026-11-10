@@ -1,4 +1,5 @@
 import { minorUnitDigits, woocommerceTax, type StoreOrder } from '@tallyui/core';
+import { noteDelivery } from '../pos-order/note-delivery';
 import type { PosOrder } from '../pos-order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import type { ReceiptConfig, ReceiptData, ReceiptLineItem } from './types';
@@ -99,7 +100,7 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
       },
     payments: order.payments.map((p) => ({ method: p.method, amountMinor: p.tenderedMinor ?? p.amountMinor, reference: p.reference })),
     changeDueMinor: sum(order.payments.map((p) => p.changeMinor ?? 0)),
-    footer: { note: order.note || undefined, barcode: order.id },
+    footer: { note: order.note || undefined, ...(noteDelivery(order) === 'not_sent' ? { noteNotSent: true as const } : {}), barcode: order.id },
     currency: order.currency,
   };
 }

@@ -9,6 +9,7 @@ import type { Order } from '../order/types';
 import { registerSessionCreator } from '../register/schemas';
 import type { RegisterSessionCollection } from '../register/session-store';
 import type { TaxContext } from '../tax/types';
+import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
 import { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './reopen';
 import { posOrderCollection } from './schema';
@@ -79,7 +80,7 @@ it.each([
     method, amountMinor, ...(reference !== undefined ? { reference } : {}),
   })));
   expect(order.payments[0].changeMinor).toBeGreaterThan(0);
-  expect(saved.note).toBe(`Refused by the store: ${error.message}\nKeep the receipt`);
+  expect(saved.note).toBe('Keep the receipt');
   expect(saved.customer).toEqual(order.customer);
   expect(saved.lineItems[0]).toMatchObject({ productId: '11', variantId: '12', name: 'Shirt', sku: 'SHIRT',
     quantity: 2, unitPriceMinor: 1200, regularUnitPriceMinor: 1500, taxClass: 'standard' });
@@ -320,6 +321,24 @@ it.each([null, { name: 'No id' }, { id: '42' }, { id: 'bad\u0000id', name: 'Bad 
   const order = { ...storedOrder(), customer };
   await db.pos_orders.insert(order);
   expect((await draft(await reopenRefusedOrder(order.id, deps()))).customer).toBeNull();
+});
+
+it.each([
+  ['keeps the note', 'Keep the receipt', undefined],
+  ['changes the note', 'Keep the receipt', 'Leave at the door'],
+  ['had no note', undefined, undefined],
+] as const)('sends no refusal prefix at order.create 7 when the cashier %s (ADR-083 condition 1)', async (_name, note, edited) => {
+  const { note: _note, ...order } = storedOrder();
+  await db.pos_orders.insert(note === undefined ? order : { ...order, note });
+  const restored = restoreOrderDraft(await draft(await reopenRefusedOrder(order.id, deps())), { currency: order.currency, taxContext });
+  if (edited !== undefined) restored.setNote(edited);
+  const envelope = toOrderCreateEnvelope(finalizeOrder(restored.getSnapshot(), { capabilities: { orderCreate: 7 } }),
+    'device', 1, { maxVersion: 7 });
+  expect(JSON.stringify(envelope)).not.toContain('Refused by the store');
+  expect(JSON.stringify(envelope)).not.toContain('does not exist');
+  const sent = edited ?? note;
+  expect(envelope.version === 7).toBe(sent !== undefined);
+  expect((envelope.payload as { note?: string }).note).toBe(sent);
 });
 
 it('exports only the two reopenable refusal codes', () => {
