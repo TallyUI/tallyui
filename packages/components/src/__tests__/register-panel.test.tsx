@@ -279,3 +279,26 @@ it('coalesces same-tick movement taps before React renders saving state', async 
   await waitFor(async () => expect(await db.cash_movements.count().exec()).toBe(2)); // seeded row + one new
   expect(await db.cash_movements.count().exec()).toBe(2);
 });
+
+it('shows a thrown error by its message alone, without its class name', async () => {
+  class FooError extends Error {
+    name = 'FooError';
+  }
+  render(
+    <RegisterHarness db={db}>
+      {(register) => (
+        <RegisterPanel
+          register={{ ...register, actions: { ...register.actions, startCounting: () => Promise.reject(new FooError('Finish first')) } }}
+          currency="EUR"
+          registerName="Front"
+          open
+          onOpenChange={() => {}}
+        />
+      )}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect((screen.getByTestId('register-panel-close') as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByTestId('register-panel-close'));
+  await waitFor(() => expect(screen.getByText('Finish first')).toBeTruthy());
+  expect(screen.queryByText(/FooError/)).toBeNull();
+});

@@ -3,6 +3,7 @@ import type { MovementType, useRegisterSession } from '@tallyui/pos';
 import { movementFieldError, normalizeAmount, parseMinor } from '@tallyui/pos';
 
 import { currencySymbol, minorUnitDigits } from '@tallyui/core';
+import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
 import { Input } from '../ui/input';
@@ -63,7 +64,7 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
       if (type === 'no_sale') onOpenDrawer?.();
       onOpenChange(false);
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     } finally {
       busyRef.current = false;
       setBusy(false);

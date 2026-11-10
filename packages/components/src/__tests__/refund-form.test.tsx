@@ -146,6 +146,18 @@ it('calls onConfirm once for a double tap and shows a thrown refusal', async () 
   await waitFor(() => expect(screen.getByTestId('refund-error').textContent).toContain('no_open_session'));
 });
 
+it('shows a thrown error by its message alone, without its class name', async () => {
+  class FooError extends Error {
+    name = 'FooError';
+  }
+  renderForm({ onConfirm: vi.fn(() => Promise.reject(new FooError('Finish first'))) });
+  plus('line-b');
+  fireEvent.change(screen.getByTestId('refund-reason'), { target: { value: 'Damaged' } });
+  fireEvent.click(screen.getByTestId('refund-submit'));
+  fireEvent.click(screen.getByTestId('refund-confirm'));
+  await waitFor(() => expect(screen.getByTestId('refund-error').textContent).toBe('Finish first'));
+});
+
 it('RefundModal titles the order and closes from Cancel', () => {
   const onOpenChange = vi.fn();
   render(<>

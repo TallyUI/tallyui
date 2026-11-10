@@ -4,6 +4,7 @@ import type { useRegisterSession } from '@tallyui/pos';
 import { countVariance, TAX_ROUNDING_MIXED_NOTE, varianceText } from '@tallyui/pos';
 
 import { formatMoney, minorUnitDigits } from '@tallyui/core';
+import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
 import { Text } from '../ui/text';
@@ -81,7 +82,7 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
     try {
       await onPrint();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

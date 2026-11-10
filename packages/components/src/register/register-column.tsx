@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
 
+import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Text } from '../ui/text';
 import { OpenRegisterCard } from './open-register-card';
@@ -96,7 +97,7 @@ function FinishClose({ register, busy, setBusy }: { register: ReturnType<typeof 
       // ignored for a session already closed), and the approval gate doesn't run again.
       await register.actions.closeSession({ counted: register.session?.counted ?? {} });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
