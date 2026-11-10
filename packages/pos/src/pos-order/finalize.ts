@@ -1,4 +1,4 @@
-import { minorUnitDigits, type ServerCapabilities, type TaxRounding } from '@tallyui/core';
+import { minorUnitDigits, ORDER_NOTE_MAX, type ServerCapabilities, type TaxRounding } from '@tallyui/core';
 import type { Order, SentOrder } from '../order/types';
 import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
@@ -28,7 +28,7 @@ export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
   const customer: SentOrder['customer'] = order.customer && { ...order.customer };
   if (customer && posOrder.customer?.email === undefined) delete customer.email;
   if (customer && posOrder.customer?.id === undefined) delete customer.id;
-  return { ...order, customer,
+  return { ...order, customer, note: posOrder.note ?? order.note,
     lineItems: order.lineItems.map((line, i) => ({ ...line, name: posOrder.lines[i].name })),
     ...(order.fees ? { fees: order.fees.map((fee, i) => ({ ...fee, name: posOrder.fees![i].name })) } : {}),
     ...(order.shipping ? { shipping: order.shipping.map((charge, i) => ({ ...charge, name: posOrder.shipping![i].name })) } : {}),
@@ -45,6 +45,8 @@ export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
 /** Bounds apply when the sent form is frozen; the outbox freezes older tills' stored orders before their first send. */
 export function freezeSentForm(order: PosOrder): PosOrder {
   let changed = false;
+  const note = order.note === undefined ? undefined : cutText(order.note, ORDER_NOTE_MAX);
+  changed ||= note !== order.note;
   const lines = order.lines.map((line) => {
     const name = cutText(line.name, PAYLOAD_STRING_MAX);
     changed ||= name !== line.name;
@@ -85,7 +87,7 @@ export function freezeSentForm(order: PosOrder): PosOrder {
       if (!localWarnings.some((warning) => warning.code === 'customer_omitted' && warning.field === field)) localWarnings.push({ code: 'customer_omitted', field });
     }
   }
-  return changed ? { ...order, lines, payments, customer, ...(charges.fees ? { fees: charges.fees } : {}),
+  return changed ? { ...order, lines, payments, customer, ...(note !== undefined ? { note } : {}), ...(charges.fees ? { fees: charges.fees } : {}),
     ...(charges.shipping ? { shipping: charges.shipping } : {}), ...(display ? { display } : {}), ...(localWarnings.length ? { localWarnings } : {}) } : order;
 }
 

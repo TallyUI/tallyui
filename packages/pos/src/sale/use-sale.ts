@@ -408,6 +408,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       applied.current.delete(normalized);
       return null;
     },
+    /** The sale's note, kept on the open sale (parked and resumed with it, cleared by newSale) and sent as order.create v7's note (ADR-083). */
+    setNote(note: string) { if (!locked()) builderNow.current.setNote(note); },
     /** the picked customer reaches the server as order.create v3's customer.customerId */
     setCustomer(customer: CustomerSummary | null) {
       if (locked()) return;
