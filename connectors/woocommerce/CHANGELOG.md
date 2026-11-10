@@ -1,5 +1,16 @@
 # @tallyui/connector-woocommerce
 
+## 3.14.0
+
+### Minor Changes
+
+- add0b19: `searchCustomers` now lists a first page of customers, by last name as WCPOS v2's customer picker does, when the query is empty or whitespace, so a customer dropdown can show customers as soon as it opens.
+
+### Patch Changes
+
+- Updated dependencies [c2319ab]
+  - @tallyui/core@3.14.0
+
 ## 3.13.0
 
 ### Minor Changes

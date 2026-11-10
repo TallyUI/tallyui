@@ -1,5 +1,35 @@
 # @tallyui/components
 
+## 3.14.0
+
+### Minor Changes
+
+- d28e6ea: Adds the app shell from WCPOS v2: `AppShell` puts a `NavRail` beside the page on windows at least 768 wide and 480 tall, and a `NavDrawer` on phones, with `aria-current` on the active item and a focus-trapped drawer that closes on Escape or a backdrop press. `RegisterBar` gains optional `storeName`, `cashier`, `syncStatus` and `onOpenMenu` props, and shows the menu button on its own inside a phone shell.
+- 01580b8: `Cart` gains an optional `orderActions` prop, `true` by default. Pass `false` when the app hosts the Order discount and Add charge controls in its own menu, as WCPOS v2's cart "+" menu does; applied order discounts, fees and shipping still show with their Remove controls.
+- d544736: Add a customer display that runs in a second window on the same device: a BroadcastChannel transport, a till-side display link that answers the display's hello and returns it to idle after a payment, a `useCustomerDisplay` hook, and the `CustomerDisplayScreen` component.
+- 90463af: Adds what an app needs to confirm a cashier switch, a register switch or a sign-out: `switchWarnings()` lists what the switch leaves behind (unsent sales and till updates, parked sales, a partly paid sale, an open register), and `handoverSlip()` builds the hand-over slip with a printable X-report envelope. In `@tallyui/components`, `SwitchConfirm` asks with WCPOS v2's wording and names each warning, and `HandoverSlip` shows the slip.
+- 1a5af04: The cart line's Price form can show WCPOS v2's quick-discount keys (`quickDiscounts` on `PriceForm` and `Cart`): a key takes its percentage off the line's current price and Apply writes it. The pos app settings gain `cart.quickDiscounts`, defaulting to v2's `[5, 10, 15]` and keeping only percentages above 0 and up to 100.
+- 30cfc94: `RegisterCount`'s `approve` now receives the count and may return the store's `approval` and the `approvedVariance`, which go to `closeSession`, so a store-verified manager approval works through the shared component; a count edited during approval asks again, and zero-argument `approve` callers keep working. `RegisterPanel` shows an "Approval needed" card for a closure the store refused, and its new `reapprove` prop sends a new approval through `reapproveClosure`.
+- f68c1d9: `Tender` is redrawn as WCPOS v2's tender pane, with a balance headline that counts captured payments only, each payment leg with its status and Cancel payment where the method can void it, a keypad, and quick-cash chips for the exact amount and the next 5, 10 and 50; `TenderPane` is the same pane for a host that owns the tender reducer. `SplitTender` is now the same component as `Tender`, and `CashTendered`'s default quick amounts round up to 5, 10 and 50.
+- cdac1c6: The cart now has WCPOS v2's column heads (Qty, Item, Price, Total) through the new `CartColumnHeads`, and hides the Price column on a narrow cart or a phone. `CartLine` shows a variation's attributes under its name and, with the new `regularUnitPrice` prop, the regular price struck through when the line costs less.
+- d96bfc2: Add WCPOS v2's catalogue tile details: `InCartBadge` shows how many of a product the cart holds (summed by the new `cartQuantities` from `@tallyui/pos`), `CategoryTile` shows a category's photo full-bleed with an initial fallback, and `ProductFilterBar` brings v2's filter chips with In Stock on by default. `Catalogue` takes `cartLines` and `showFilterBar` to use them.
+
+### Patch Changes
+
+- 0648b18: The register, parked-sales and refund screens now show a thrown error by its message alone, so a cashier reads "Finish or cancel the sale in progress first." rather than "RegisterTenderInProgressError: Finish or cancel…". An error with no message shows "Something went wrong".
+- Updated dependencies [c2319ab]
+- Updated dependencies [d544736]
+- Updated dependencies [5f535c8]
+- Updated dependencies [90463af]
+- Updated dependencies [1a5af04]
+- Updated dependencies [5a33bd9]
+- Updated dependencies [dddbf6a]
+- Updated dependencies [d96bfc2]
+  - @tallyui/core@3.14.0
+  - @tallyui/pos@3.14.0
+  - @tallyui/primitives@3.14.0
+  - @tallyui/theme@3.14.0
+
 ## 3.13.0
 
 ### Minor Changes
