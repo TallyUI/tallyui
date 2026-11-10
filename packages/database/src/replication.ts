@@ -82,7 +82,8 @@ export function retryAfter(error: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
-type ProtocolEvents = NonNullable<RxReplicationState<any, any>['internalReplicationState']>['events'];
+/** The two subjects of RxDB's protocol state a hold reads (17.5 types/replication-protocol.d.ts 200, 205). */
+type ProtocolEvents = { paused: BehaviorSubject<boolean>; canceled: BehaviorSubject<boolean> };
 
 /**
  * Resolves once `ready()` holds or the replication is cancelled, waking on a pause change, the cancel and `wake$`.
@@ -210,8 +211,8 @@ export function startReplication<RxDocType, CheckpointType = any>({
           // with nothing sent.
           handler: async (rows) => {
             const events = state!.internalReplicationState!.events;
-            const latched = () => Boolean(connectivity?.current().updateRequired);
-            await hold(events, () => !latched() && !events.paused.getValue(), connectivity?.snapshot$);
+            const isLatched = () => Boolean(connectivity?.current().updateRequired);
+            await hold(events, () => !isLatched() && !events.paused.getValue(), connectivity?.snapshot$);
             if (events.canceled.getValue()) return [];
             const conflicts = await adapter.push!.handler(rows, context).catch((error: unknown) => {
               connectivity?.recordFailure(error);
