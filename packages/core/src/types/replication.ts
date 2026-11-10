@@ -46,6 +46,11 @@ export interface ReplicationAdapter<RxDocType, CheckpointType = any> {
     stream$?: Observable<RxReplicationPullStreamItem<RxDocType, CheckpointType>>;
   };
 
+  /**
+   * GUARD: no connector implements `push` until TallyUI/tallyui#645 is fixed. A pause before the first push starts
+   * (startReplication's own pause on a sign-in error) makes RxDB 17.5 drop the queued pages unsent and store the
+   * checkpoint past them. A push adapter must also accept the same rows twice: a cancel after a send re-sends them.
+   */
   push?: {
     /**
      * Push local changes to the remote API.
