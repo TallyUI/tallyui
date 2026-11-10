@@ -77,6 +77,13 @@ const subscribeClosing = (listener: () => void) => {
 // Closures whose `session-closed` fact is logged, so a double-tapped close logs it once.
 const closedFacts = new Set<string>();
 
+// An RxError's message carries its parameters, which can hold a payload with the approval proof.
+function logSafeError(error: unknown): string {
+  return (error as { rxdb?: unknown })?.rxdb === true
+    ? (error as Error).name
+    : String(error);
+}
+
 export interface UseRegisterSessionOptions {
   /** `register_sessions`, created with `addRegisterSessionCollection`; `null` while it opens. */
   sessions: RegisterSessionCollection | null;
@@ -177,7 +184,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     if (!target) return;
     void reconcileRegisterCommands({ ...target, observed: row ? [row] : undefined }).catch((error: unknown) => {
       try {
-        registerCommandsLogger.error('Register command reconcile failed', { context: { registerId: target.registerId, error: String(error) } });
+        registerCommandsLogger.error('Register command reconcile failed', { context: { registerId: target.registerId, error: logSafeError(error) } });
       } catch {
         // A failing log sink must not affect a register action either.
       }

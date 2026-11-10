@@ -43,7 +43,7 @@
 //   the close test below checks the names it persists.
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
+import { createRxDatabase, newRxError, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { LogEntry } from '../logging';
@@ -478,6 +478,21 @@ describe('register commands', () => {
     })));
     expect(await ledger()).toStrictEqual([]);
     expect(await readFresh(db.register_sessions, { selector: { status: 'open' } })).toHaveLength(1);
+  });
+
+  it('a failing reconcile logs an RxDB error by its code, never its parameters', async () => {
+    const error = newRxError('SNH', { document: { payload: { approval: 'proof-secret' } } });
+    expect(String(error)).toContain('proof-secret');
+    vi.spyOn(db.register_commands, 'insert').mockRejectedValue(error);
+    const { result } = render({ commands: db.register_commands, capabilities: { orderCreate: 1, register: 1 } });
+    await act(async () => {
+      await expect(result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 }))
+        .resolves.toMatchObject({ status: 'open', counted_float_minor: 10000, opening_variance_minor: 0 });
+    });
+    await waitFor(() => expect(commandLogs.find((entry) => entry.message === 'Register command reconcile failed')).toMatchObject({
+      data: { context: { error: 'RxError (SNH)' } },
+    }));
+    expect(JSON.stringify(commandLogs)).not.toContain('proof-secret');
   });
 
   it('a stranded movement still gets its command', async () => {
