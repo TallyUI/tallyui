@@ -23,7 +23,8 @@ export interface OutboxState {
   pending: number;
   /** The order outbox's count of `pos_orders` the store refused (`syncStatus: 'rejected'`), read with `pending`. Each
    * stays until requeue() sends it again. The register outbox's count of rejected `register_commands` that stop their
-   * register's ledger (superseded, abandoned and an abandoned session's already-open refusal are left out, ADR-078). */
+   * register's ledger (superseded, abandoned and an abandoned session's already-open refusal are left out, ADR-078, and so
+   * are the two refused closure approvals, which hold only their register's next closure, ADR-082 decision 6). */
   rejected?: number;
   sending: boolean;
   lastRetryReason?: string;

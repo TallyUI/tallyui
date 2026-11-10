@@ -9,6 +9,7 @@ import type { Customer, CustomerInput, CustomerPatch } from './customers';
 import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
 import type { PaymentMethodDescriptor } from './payment-methods';
 import type { RegisterInfo } from './registers';
+import type { Cashier } from './cashier';
 
 /**
  * Authentication configuration for a connector.
@@ -361,4 +362,11 @@ export interface TallyConnector {
    * for credentials; a connector's own errors otherwise. `undefined` when the connector has no register directory.
    */
   listRegisters?: (context: SyncContext) => Promise<RegisterInfo[]>;
+  /**
+   * The signed-in cashier and their neutral POS permissions (v2 parity A12), mapped from the platform's own roles or
+   * capabilities. Read-only. `null` when the connector has no cashier to describe; `undefined` (no method) when the
+   * connector has no permission model: the till then allows everything, as before (`can` in `@tallyui/pos`).
+   * Permission names outside `CashierPermission` are dropped by `useCashier` (`cashierPermissions`).
+   */
+  cashier?: (context: SyncContext) => Promise<Cashier | null>;
 }

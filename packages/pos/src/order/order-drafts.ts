@@ -2,6 +2,7 @@ import { map, type Observable } from 'rxjs';
 import type { RxCollection, RxJsonSchema } from 'rxdb';
 import type { TaxContext } from '../tax/types';
 import { customerRefusal } from '../pos-order/command';
+import { capturedMinor } from '../tender/payment-legs';
 import { createOrderBuilder, type OrderBuilder } from './order-builder';
 import type { Order } from './types';
 
@@ -30,6 +31,19 @@ export interface ParkedOrderSummary {
   totalMinor: number;
   parkedAt: string;
   source: 'local' | 'server';
+  /** Read from the draft's data (open-sale tabs, u19): the captured money, the balance still due and the first line's name. */
+  paidMinor?: number;
+  balanceDueMinor?: number;
+  firstItem?: string;
+}
+
+function draftExtras(data: unknown): Pick<ParkedOrderSummary, 'paidMinor' | 'balanceDueMinor' | 'firstItem'> {
+  try {
+    const saved = JSON.parse(String(data)) as Partial<Order>;
+    return { paidMinor: capturedMinor(saved.payments ?? []), balanceDueMinor: saved.balanceDueMinor, firstItem: saved.lineItems?.[0]?.name };
+  } catch {
+    return {}; // an unreadable draft still lists, without these figures
+  }
 }
 
 export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Promise<string> {
@@ -129,6 +143,7 @@ export function parkedOrderSummaries$(drafts: RxCollection): Observable<ParkedOr
           totalMinor: json.total ?? 0,
           parkedAt: json.parkedAt ?? '',
           source: 'local' as const,
+          ...draftExtras(json.data),
         };
       }),
     ),

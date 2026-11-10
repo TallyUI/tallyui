@@ -30,7 +30,10 @@ export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUN
 export type { ClosureContext } from './closure-document';
 export { registerFactsLogger, recordRegisterFact, type Actor, type RegisterFact } from './facts';
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError } from './use-register-session';
-export type { UseRegisterSessionOptions } from './use-register-session';
+export type { ApprovalNeeded, UseRegisterSessionOptions } from './use-register-session';
 export { registerCommandSchema, registerCommandCollection, registerCommandsLogger, sessionOpenCommand, sessionTransitionCommand, movementCommand, closureCommand, reconcileRegisterCommands } from './register-commands';
-export { adoptRegisterResults, takeOverSession, abandonSession } from './register-adoption';
+export {
+  adoptRegisterResults, takeOverSession, abandonSession, isLiveAtStore, closureApprovalStatus, reapproveClosure, RegisterReapproveError,
+} from './register-adoption';
+export type { ClosureApprovalStatus } from './register-adoption';
 export type { RegisterCommand, RegisterCommandCollection } from './register-commands';

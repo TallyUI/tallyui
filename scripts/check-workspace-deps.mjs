@@ -54,6 +54,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // the tender pane (plan unit 16): the pure tender reducer, plan, rounding, quick-cash and leg-status maths the pane shows, never a hook or the store.
   'tenderReducer', 'initTenderState', 'activePlan', 'planLegs', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
   'legStatus', 'countsTowardPaid', 'isInMotion', 'canVoidLeg',
+  // the Sales room (plan unit 25): the pure store-day date presets its filters bar offers, never a hook or the store.
+  'presetRange', 'DATE_PRESETS',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

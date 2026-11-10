@@ -178,7 +178,7 @@ export {
   PriceForm, parsePrice,
   ChargeForm, type ChargeFormProps,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, type OrderHistoryRow, orderReference,
-  ParkedSales, type ParkedSalesProps,
+  ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps,
 } from './sale';
 
 // Layout components
@@ -195,6 +195,12 @@ export {
   StoreSettingsChoiceScreen,
   type StoreSettingsChoiceScreenProps,
 } from './layout';
+
+// Reports components
+export {
+  SalesRoom, type SalesRoomProps, SalesHero, type SalesHeroProps, SalesCards, type SalesCardsProps, type SalesCardId,
+  SalesFiltersBar, type SalesFiltersBarProps, type SalesFilters, type SalesOption,
+} from './reports';
 
 // Fonts
 export { FontProvider, useFontType, type FontProviderProps, type FontState, type FontStatus } from './fonts';
