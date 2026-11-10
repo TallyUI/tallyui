@@ -144,6 +144,8 @@ export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlrea
 export { roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';
 export { suggestFloat, type FloatSuggestion } from './register';
+export { switchWarnings, handoverSlip } from './register';
+export type { SwitchKind, SwitchWarning, SwitchWarningInput, SwitchWarnings, HandoverSlipInput, HandoverSlipData } from './register';
 
 // Reports
 export { salesFigures, marginOf, comparisonRange, daysOf, inRange, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';
