@@ -41,10 +41,19 @@ describe('WooCommerce customers', () => {
     expect(Object.fromEntries(url.searchParams)).toStrictEqual({ search: 'Gee & Four', role: 'customer', per_page: String(perPage) });
   });
 
-  it('does not request a blank query', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch');
-    await expect(customers.searchCustomers(context, ' \t\n ')).resolves.toStrictEqual([]);
-    expect(spy).not.toHaveBeenCalled();
+  it.each([['an empty', ''], ['a whitespace', ' \t\n ']])('lists the first page by last name for %s query', async (_, query) => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(search));
+    await expect(customers.searchCustomers(context, query)).resolves.toStrictEqual([customer]);
+    expect(spy).toHaveBeenCalledExactlyOnceWith(`${context.baseUrl}/customers?role=customer&per_page=20&orderby=last_name&order=asc`, {
+      method: 'GET', headers: context.headers, signal: context.signal,
+    });
+  });
+
+  it.each([[500, 50], [0, 1]])('clamps limit %i to %i for an empty query', async (limit, perPage) => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(noMatches));
+    await customers.searchCustomers(context, ' ', { limit });
+    const url = new URL(spy.mock.calls[0]![0] as string);
+    expect(Object.fromEntries(url.searchParams)).toStrictEqual({ role: 'customer', per_page: String(perPage), orderby: 'last_name', order: 'asc' });
   });
 
   it('returns the recorded empty search result', async () => {

@@ -326,7 +326,11 @@ export interface TallyConnector {
    * the store. `undefined` when the connector has none of its own: the till offers `defaultPaymentMethods()`.
    */
   paymentMethods?: (context: SyncContext) => Promise<PaymentMethodDescriptor[]>;
-  /** Customer search: online only; `undefined` when the connector has no customer support. */
+  /**
+   * Customer search: online only. An empty or whitespace query may list a first page of the store's customers
+   * (recent ones, or in the store's own picker order); a connector that cannot list them returns `[]`.
+   * `undefined` when the connector has no customer support.
+   */
   searchCustomers?: (context: SyncContext, query: string, options?: { limit?: number }) => Promise<Customer[]>;
   /** Customer creation: online only; `undefined` when the connector has no customer support. */
   createCustomer?: (context: SyncContext, input: CustomerInput) => Promise<Customer>;
