@@ -7,6 +7,7 @@ import type { CatalogueReconcileAdapter, FingerprintReconcileAdapter, IdReconcil
 import type { StoreSettings, StoreSettingsChoice } from './store-settings';
 import type { Customer, CustomerInput } from './customers';
 import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
+import type { PaymentMethodDescriptor } from './payment-methods';
 
 /**
  * Authentication configuration for a connector.
@@ -298,6 +299,11 @@ export interface TallyConnector {
    * `unauthorized` or `invalid_credentials` means sign in again), never on its class.
    */
   capabilities?: (context: SyncContext) => Promise<ServerCapabilities | undefined>;
+  /**
+   * The payment methods the till may offer, in the order it shows them (v2 parity A2). Read-only, never writes to
+   * the store. `undefined` when the connector has none of its own: the till offers `defaultPaymentMethods()`.
+   */
+  paymentMethods?: (context: SyncContext) => Promise<PaymentMethodDescriptor[]>;
   /** Customer search: online only; `undefined` when the connector has no customer support. */
   searchCustomers?: (context: SyncContext, query: string, options?: { limit?: number }) => Promise<Customer[]>;
   /** Customer creation: online only; `undefined` when the connector has no customer support. */
