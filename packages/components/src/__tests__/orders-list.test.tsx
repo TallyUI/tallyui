@@ -35,6 +35,29 @@ function historyRow(id: string, overrides: Partial<OrderHistoryRow> = {}): Order
 const formatDate = (iso: string) => `date:${iso.slice(0, 10)}`;
 const headers = () => screen.getAllByRole('heading').map((heading) => heading.textContent);
 
+describe('OrdersList sale note (ADR-083 condition 2)', () => {
+  it.each<[string, Partial<PosOrder>, boolean]>([
+    ['capped below 7', { note: 'Deliver after 5', sentVersion: 6, syncStatus: 'applied' }, true],
+    ['downgraded from 7', { note: 'Deliver after 5', sentVersion: 6, downgradedFrom: 7 }, true],
+    ['sent at 7', { note: 'Deliver after 5', sentVersion: 7, syncStatus: 'applied' }, false],
+    ['not sent yet', { note: 'Deliver after 5' }, false],
+    ['without a note', { sentVersion: 6 }, false],
+  ])('says the note was not sent only when it went below 7 (%s)', (_name, overrides, notSent) => {
+    render(<OrdersList orders={[order('o1', overrides)]} onRetry={async () => 0} />);
+    expect(screen.queryByTestId('order-note-not-sent-o1')?.textContent ?? null)
+      .toBe(notSent ? "The note couldn't be sent to the store." : null);
+  });
+
+  it('shows the note in the expanded order', () => {
+    render(<OrdersList orders={[order('o1', { note: 'Deliver after 5' }), order('o2')]} onRetry={async () => 0} />);
+    expect(screen.queryByTestId('order-note-o1')).toBeNull();
+    fireEvent.click(screen.getByTestId('order-row-o1'));
+    fireEvent.click(screen.getByTestId('order-row-o2'));
+    expect(screen.getByTestId('order-note-o1').textContent).toBe('Note: Deliver after 5');
+    expect(screen.queryByTestId('order-note-o2')).toBeNull();
+  });
+});
+
 describe('OrdersList onOpen', () => {
   it('renders no Open buttons when onOpen is absent', () => {
     render(<OrdersList orders={[order('o1')]} history={[historyRow('h1')]} onRetry={async () => 0} />);

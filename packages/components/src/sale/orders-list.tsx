@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { formatMoney, knownWarnings } from '@tallyui/core';
-import { isRequeueable, needsAttention, type OutboxState, type PosOrder } from '@tallyui/pos';
-import { orderReference } from './order-reference';
+import { isRequeueable, needsAttention, noteDelivery, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { NOTE_NOT_SENT, orderReference } from './order-reference';
 import { sinceText } from './since-text';
 
 /** One order from the store's own history (ADR-052 amendment 1), mapped by the app from its platform. */
@@ -113,6 +113,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               {order.payments.map((payment) => <Text key={payment.id} className="text-muted-foreground">
                 {`${payment.method === 'cash' ? 'Cash' : 'Card terminal'} ${formatMoney({ amount: payment.amountMinor, currency: order.currency })}${payment.reference ? ` · ${payment.reference}` : ''}`}
               </Text>)}
+              {order.note ? <Text testID={`order-note-${order.id}`} className="text-foreground">{`Note: ${order.note}`}</Text> : null}
             </View> : null}
             {stuckEntry ? <Text className="text-destructive">
               {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}
@@ -127,6 +128,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
                 ? `The customer's ${warning.field} couldn't be sent to the store, so the order isn't linked to them.`
                 : "The terminal's payment reference couldn't be kept; the payment is recorded without it."}
             </Text>)}
+            {noteDelivery(order) === 'not_sent' ? <Text testID={`order-note-not-sent-${order.id}`} className="text-foreground">{NOTE_NOT_SENT}</Text> : null}
             {/* Retry is offered only for a code the outbox resends (isRequeueable). */}
             {section.title === 'Needs attention' && order.syncStatus === 'rejected' && isRequeueable(order.error?.code)
               ? <Pressable accessibilityRole="button" disabled={retryingIds.has(order.id)} onPress={async () => {

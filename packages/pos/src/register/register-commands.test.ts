@@ -107,6 +107,32 @@ describe('movementCommand', () => {
   });
 });
 describe('closureCommand', () => {
+  const v1Payload = {
+    closureId: 'closure', sessionId: 'session', registerId: 'register', number: 2,
+    openedAt, closedAt: closure.closed_at, tillExpected: { cash: 9300 }, counted: { cash: 9400 },
+    periodSalesTotalMinor: 100, periodRefundsTotalMinor: 0, perpetualSalesTotalMinor: 500, perpetualRefundsTotalMinor: 0,
+    unsyncedCount: 1, unsyncedTotalMinor: 100, softwareVersion: '1.0.0', orderIds: ['order'], movementIds: ['movement'],
+  };
+
+  it.each([undefined, 0, 1, 2])('keeps version 1 and its bytes at contract %s, even with approval', (registerContract) => {
+    const command = closureCommand(closure, { registerContract, approval: 'proof' });
+    expect(command).toStrictEqual({ key: 'closure.submit:closure', type: 'register.closure.submit',
+      version: 1, payload: { ...v1Payload, approvedBy: 'manager' } });
+    expect(JSON.stringify(command)).toBe(JSON.stringify(closureCommand(closure)));
+  });
+
+  it.each([3, 4])('carries approval at version 3 for contract %s', (registerContract) => {
+    const command = closureCommand(closure, { registerContract, approval: 'proof' });
+    expect(command.version).toBe(3);
+    expect(command.payload).toStrictEqual({ ...v1Payload, approvedBy: 'manager', approval: 'proof' });
+  });
+
+  it.each([undefined, null, ''])('omits approval %s at contract 3', (approval) => {
+    const command = closureCommand(closure, { registerContract: 3, approval });
+    expect(command.version).toBe(3);
+    expect(command.payload).not.toHaveProperty('approval');
+  });
+
   it("builds each command's payload from its row, omitting null fields", () => {
     const payload = {
       closureId: 'closure', sessionId: 'session', registerId: 'register', number: 2,
@@ -150,6 +176,35 @@ describe('register command ledger', () => {
   const ledger = async () => (await readFresh(db.register_commands, { selector: {} })).sort((a, b) => a.seq - b.seq);
   const write = (closed: RegisterSession) => writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store',
     session: closed, counted: 8600, otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0' });
+
+  it("a contract 3 closure carries the session's approval", async () => {
+    const s = await open();
+    const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 8600 }, approval: 'proof' });
+    const z = await write(closed);
+    await reconcile(undefined, undefined, { registerContract: 3 });
+    const rows = await ledger();
+    const row = rows.find((row) => row.key === `closure.submit:${z.id}`)!;
+    expect(row.version).toBe(3);
+    // As JSON: `z` is an RxDocument, whose nested values are not plain objects to toStrictEqual.
+    const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
+    expect(plain(row.payload)).toStrictEqual(plain({ ...closureCommand(z).payload, approval: 'proof' }));
+    for (const other of rows.filter((other) => other.key !== row.key)) {
+      expect(other.version).toBe(other.type === 'register.session.open' ? 2 : 1);
+    }
+  });
+
+  it('a closure queued at contract 2 stays version 1 when the store later says 3', async () => {
+    const s = await open();
+    const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 8600 }, approval: 'proof' });
+    const z = await write(closed);
+    await reconcile(undefined, undefined, { registerContract: 2 });
+    const before = (await ledger()).find((row) => row.key === `closure.submit:${z.id}`)!;
+    await reconcile(undefined, undefined, { registerContract: 3 });
+    const row = (await ledger()).find((row) => row.key === `closure.submit:${z.id}`)!;
+    expect(row).toStrictEqual(before);
+    expect(row.version).toBe(1);
+    expect(row.payload).not.toHaveProperty('approval');
+  });
 
   it('reconcile appends nothing for an abandoned session', async () => {
     const s = await open();

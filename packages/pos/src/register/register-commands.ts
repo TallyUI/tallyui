@@ -38,7 +38,7 @@ export const registerCommandSchema: RxJsonSchema<RegisterCommand> = {
 };
 export const registerCommandCollection = () => ({ schema: registerCommandSchema });
 
-type BuiltCommand = Pick<RegisterCommand, 'key' | 'type' | 'payload'> & { version: 1 | 2 };
+type BuiltCommand = Pick<RegisterCommand, 'key' | 'type' | 'payload'> & { version: 1 | 2 | 3 };
 
 /** ADR-078: 1 to 64 characters after trim. */
 export function deviceNameOf(name: string | null | undefined): string | undefined {
@@ -82,8 +82,10 @@ export function movementCommand(m: CashMovement): BuiltCommand {
         payload: { ...common, type: m.type, amountMinor: m.amountMinor, reason: m.reason } satisfies RegisterMovementRecordPayload };
 }
 
-export function closureCommand(c: Closure): BuiltCommand {
-  return { key: `closure.submit:${c.id}`, type: 'register.closure.submit', version: 1, payload: {
+/** ADR-082 d1: version 3 with the store's opaque approval at register contract 3; below 3 or unknown, version 1 and today's bytes. */
+export function closureCommand(c: Closure, v3: { registerContract?: number; approval?: string | null } = {}): BuiltCommand {
+  const at3 = (v3.registerContract ?? 0) >= 3;
+  return { key: `closure.submit:${c.id}`, type: 'register.closure.submit', version: at3 ? 3 : 1, payload: {
     closureId: c.id, sessionId: c.session_id, registerId: c.register_id, number: c.number,
     openedAt: c.opened_at, closedAt: c.closed_at,
     ...(c.business_day == null ? {} : { businessDay: c.business_day }),
@@ -94,6 +96,7 @@ export function closureCommand(c: Closure): BuiltCommand {
     perpetualSalesTotalMinor: c.perpetual_sales_total_minor, perpetualRefundsTotalMinor: c.perpetual_refunds_total_minor,
     unsyncedCount: c.unsynced_count, unsyncedTotalMinor: c.unsynced_total_minor, softwareVersion: c.software_version,
     orderIds: c.order_ids, movementIds: c.movement_ids,
+    ...(at3 && v3.approval ? { approval: v3.approval } : {}),
   } satisfies RegisterClosureSubmitPayload };
 }
 
@@ -133,7 +136,7 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
         ...entries.filter((entry) => entry.type === 'void').map(movementCommand));
       if (session.status_at != null && sentStatus(session)) events.push(sessionTransitionCommand({ ...session, status_at: session.status_at }));
       return { session, number: closureRows[0]?.number, built: [(registerContract ?? 0) >= 2 ? sessionOpenCommand(session, { deviceName }) : sessionOpenCommand(session), ...events,
-        ...closureRows.map((closure) => closureCommand(closure))] };
+        ...closureRows.map((closure) => closureCommand(closure, { registerContract, approval: session.approver_token }))] };
     }));
     facts.sort((a, b) => Number(a.session.status !== 'closed') - Number(b.session.status !== 'closed')
       || (a.number ?? Infinity) - (b.number ?? Infinity)

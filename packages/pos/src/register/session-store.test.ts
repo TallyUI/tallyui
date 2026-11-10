@@ -345,6 +345,29 @@ it('writes approvedBy in the close, and the Z carries it as breakdowns.approved_
   expect(closure.breakdowns.approved_by).toBe('mgr-1');
 });
 
+it('stores the first close approval on the session without putting it on the Z', async () => {
+  await ensureRegister(db.register_sessions, 'web');
+  const doc = await openSession(db.register_sessions, input);
+  const closed = await closeSession(db.register_sessions, doc.id, {
+    counted: { cash: 9000 }, closedBy: '7', approvedBy: 'mgr-1', approval: 'proof-1',
+  });
+  expect(closed.approver_token).toBe('proof-1');
+  expect(closed.approved_by).toBe('mgr-1');
+  const again = await closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, approval: 'proof-2' });
+  expect(again.approver_token).toBe('proof-1');
+  const closure = await writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 9000,
+    otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0',
+  });
+  expect(JSON.stringify(closure.toJSON())).not.toContain('proof-1');
+});
+
+it('leaves approver_token null when the close has no approval', async () => {
+  const doc = await openSession(db.register_sessions, input);
+  const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 } });
+  expect(closed.approver_token).toBeNull();
+});
+
 it.each(['pending', 'discarded', 'different sale', 'finalized'])('counts refused cash once with a %s draft', async (state) => {
   await ensureRegister(db.register_sessions, 'web');
   const session = await openSession(db.register_sessions, input);

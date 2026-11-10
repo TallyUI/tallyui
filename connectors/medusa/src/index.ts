@@ -1,7 +1,7 @@
-import { combinePullAdapters, createReconcileFeed, SignInError, type ConnectorAuth, type CustomerInput, type ServerCapabilities, type SyncContext, type TallyConnector } from '@tallyui/core';
+import { combinePullAdapters, createReconcileFeed, SignInError, type ConnectorAuth, type CustomerInput, type CustomerPatch, type ServerCapabilities, type SyncContext, type TallyConnector } from '@tallyui/core';
 
 import { readCapabilities } from './capabilities';
-import { searchMedusaCustomers, createMedusaCustomer, getMedusaCustomer } from './customers';
+import { searchMedusaCustomers, createMedusaCustomer, getMedusaCustomer, updateMedusaCustomer } from './customers';
 import { medusaProductSchema } from './schemas/products';
 import { medusaProductTraits } from './traits/product';
 import { medusaProductSync } from './sync/products';
@@ -76,6 +76,8 @@ export const medusaCreateCustomer = (context: SyncContext, input: CustomerInput)
   createMedusaCustomer(context.baseUrl, context.headers, input, { signal: context.signal });
 export const medusaGetCustomer = (context: SyncContext, id: string) =>
   getMedusaCustomer(context.baseUrl, context.headers, id, { signal: context.signal });
+export const medusaUpdateCustomer = (context: SyncContext, id: string, patch: CustomerPatch) =>
+  updateMedusaCustomer(context.baseUrl, context.headers, id, patch, { signal: context.signal });
 
 // The JWT from Medusa's emailpass sign-in (POST /auth/user/emailpass) is stored as token.
 // email and password are only sign-in form fields and are never sent as headers.
@@ -164,7 +166,7 @@ const medusaConnectorParts = {
 /** Medusa connector using an admin user's Bearer JWT; like createMedusaConnector(), one per store session with its own feed. */
 export const createMedusaAdminUserConnector = (): TallyConnector => ({
   ...createMedusaConnector(), auth: medusaAdminUserAuth, capabilities: medusaCapabilities,
-  searchCustomers: medusaSearchCustomers, createCustomer: medusaCreateCustomer, getCustomer: medusaGetCustomer,
+  searchCustomers: medusaSearchCustomers, createCustomer: medusaCreateCustomer, getCustomer: medusaGetCustomer, updateCustomer: medusaUpdateCustomer,
 });
 
 /**
@@ -187,7 +189,7 @@ export { medusaProductReplication } from './replication/products';
 export { createMedusaVariantFeedReplication } from './replication/variant-feed';
 export { medusaStockReconcile } from './reconcile/stock';
 export { medusaStoreSettings } from './store-settings';
-export { searchMedusaCustomers, createMedusaCustomer, getMedusaCustomer, toCustomer } from './customers';
+export { searchMedusaCustomers, createMedusaCustomer, getMedusaCustomer, updateMedusaCustomer, toCustomer } from './customers';
 export { withCalculatedPrices } from './pricing/calculated';
 export { MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS } from './reconcile/calculated-prices';
 export type { MedusaCalculatedPrice, MedusaProductDocument, MedusaVariantDocument } from './schemas/products';

@@ -1,4 +1,6 @@
-import { ConnectorUnauthorizedError, CustomerServiceError, type Customer, type CustomerInput, type SyncContext } from '@tallyui/core';
+import {
+  ConnectorUnauthorizedError, CustomerServiceError, type Customer, type CustomerAddress, type CustomerInput, type CustomerPatch, type SyncContext,
+} from '@tallyui/core';
 import { gql, VendureApiError } from './replication/products';
 
 // The vendurepos plugin's walk-in customer is never a person to attach to a sale.
@@ -22,6 +24,22 @@ const CREATE_QUERY = `mutation Create($input: CreateCustomerInput!) {
 }`;
 const GET_QUERY = `query One($id: ID!) {
   customer(id: $id) { id firstName lastName emailAddress phoneNumber }
+}`;
+const UPDATE_QUERY = `mutation Update($input: UpdateCustomerInput!) {
+  updateCustomer(input: $input) {
+    __typename
+    ... on Customer { id firstName lastName emailAddress phoneNumber }
+    ... on ErrorResult { errorCode message }
+  }
+}`;
+const ADDRESSES_QUERY = `query Addresses($id: ID!) {
+  customer(id: $id) { id firstName lastName emailAddress phoneNumber addresses { id defaultShippingAddress defaultBillingAddress } }
+}`;
+const CREATE_ADDRESS_QUERY = `mutation CreateAddress($customerId: ID!, $input: CreateAddressInput!) {
+  createCustomerAddress(customerId: $customerId, input: $input) { id }
+}`;
+const UPDATE_ADDRESS_QUERY = `mutation UpdateAddress($input: UpdateAddressInput!) {
+  updateCustomerAddress(input: $input) { id }
 }`;
 
 export function toVendureCustomer(raw: { id: string; firstName?: string | null; lastName?: string | null; emailAddress?: string | null; phoneNumber?: string | null }): Customer {
@@ -56,6 +74,66 @@ export async function createVendureCustomer(context: SyncContext, input: Custome
   if (result?.__typename === 'Customer') return toVendureCustomer(result);
   if (result?.__typename && result.message) throw new CustomerServiceError('invalid', result.message);
   throw new CustomerServiceError('server', 'unexpected response');
+}
+
+type VendureAddressRef = { id: string; defaultShippingAddress?: boolean | null; defaultBillingAddress?: boolean | null };
+const SCALARS = [['firstName', 'firstName'], ['lastName', 'lastName'], ['email', 'emailAddress'], ['phone', 'phoneNumber']] as const;
+// gql hands back only a 2xx body, and Vendure's recorded ErrorResult refusal (fixture 2b) came with HTTP 200.
+const GRAPHQL_STATUS = { status: 200 };
+
+/** A CustomerAddress as Vendure's address input; the patch replaces the stored address whole, so an absent field is ''. */
+function toVendureAddressInput(address: CustomerAddress) {
+  return {
+    fullName: [address.firstName, address.lastName].filter(Boolean).join(' '), company: address.company ?? '',
+    streetLine1: address.address1 ?? '', streetLine2: address.address2 ?? '', city: address.city ?? '',
+    province: address.state ?? '', postalCode: address.postcode ?? '', countryCode: address.country ?? '',
+    phoneNumber: address.phone ?? '',
+  };
+}
+
+/**
+ * Edits the customer through Vendure's own mutations: `updateCustomer` for its fields, then the address book, where
+ * billing and shipping are the addresses flagged `defaultBillingAddress` / `defaultShippingAddress`. A default shared by
+ * both kinds is never rewritten for one kind: that kind gets a new default address instead. Vendure stores no customer
+ * company or tax ids and no address email, so those are dropped, as `createVendureCustomer` drops them.
+ */
+export async function updateVendureCustomer(context: SyncContext, id: string, patch: CustomerPatch): Promise<Customer> {
+  const kinds = ([['billing', 'defaultBillingAddress', 'defaultShippingAddress'], ['shipping', 'defaultShippingAddress', 'defaultBillingAddress']] as const)
+    .filter(([kind]) => patch[kind] !== undefined);
+  if (kinds.some(([kind]) => !patch[kind]?.address1 || !patch[kind]?.country)) {
+    throw new CustomerServiceError('invalid', 'Vendure addresses need address1 and country');
+  }
+  const current = (await customerGql(context, ADDRESSES_QUERY, { id }))?.data?.customer;
+  if (current === null) throw new CustomerServiceError('invalid', 'unknown customer', GRAPHQL_STATUS);
+  if (typeof current?.id !== 'string') throw new CustomerServiceError('server', 'unexpected response');
+
+  let saved = current;
+  const fields = SCALARS.filter(([key]) => patch[key] !== undefined);
+  if (fields.length) {
+    const input = Object.fromEntries([['id', id], ...fields.map(([key, field]) => [field, patch[key]])]);
+    const result = (await customerGql(context, UPDATE_QUERY, { input }))?.data?.updateCustomer;
+    if (result?.__typename !== 'Customer') {
+      if (result?.__typename && result.message) throw new CustomerServiceError('invalid', result.message, GRAPHQL_STATUS);
+      throw new CustomerServiceError('server', 'unexpected response');
+    }
+    saved = result;
+  }
+
+  const addresses: VendureAddressRef[] = Array.isArray(current.addresses) ? current.addresses : [];
+  for (const [kind, flag, other] of kinds) {
+    const address = toVendureAddressInput(patch[kind]!);
+    const existing = addresses.find((entry) => entry[flag]);
+    if (existing && !existing[other]) {
+      await customerGql(context, UPDATE_ADDRESS_QUERY, { input: { id: existing.id, ...address } });
+      continue;
+    }
+    await customerGql(context, CREATE_ADDRESS_QUERY, { customerId: id, input: { ...address, [flag]: true } });
+    if (existing) {
+      await customerGql(context, UPDATE_ADDRESS_QUERY, { input: { id: existing.id, [flag]: false } });
+      existing[flag] = false;
+    }
+  }
+  return toVendureCustomer(saved);
 }
 
 async function customerGql(context: SyncContext, query: string, variables: Record<string, unknown>): Promise<any> {
