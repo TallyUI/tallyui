@@ -11,9 +11,14 @@ import { map, type Observable } from 'rxjs';
 
 export const UI_SCALES = ['auto', 'compact', 'regular', 'spacious'] as const;
 export type UiScale = (typeof UI_SCALES)[number];
+/** v2's first three themes (`core/screens/main/settings/theme.tsx`); TallyUI's tokens define light and dark. */
+export const UI_THEMES = ['system', 'light', 'dark'] as const;
+export type UiTheme = (typeof UI_THEMES)[number];
 
 /** The typed key map. Add a key here and in APP_SETTING_DEFINITIONS; no schema change is needed. */
 export interface AppSettings {
+  /** The app applies it (e.g. Uniwind's setTheme); this store only records it. */
+  'ui.theme': UiTheme;
   'ui.scale': UiScale;
   /** A font id; `'auto'` follows the theme. Not an enum: the font list lives in the UI layer. */
   'ui.font': string;
@@ -26,6 +31,7 @@ export interface AppSettingDefinition<T> {
   parse: (value: unknown) => T | undefined;
 }
 export const APP_SETTING_DEFINITIONS: { [K in AppSettingKey]: AppSettingDefinition<AppSettings[K]> } = {
+  'ui.theme': { default: 'system', parse: (value) => UI_THEMES.find((theme) => theme === value) },
   'ui.scale': { default: 'auto', parse: (value) => UI_SCALES.find((scale) => scale === value) },
   'ui.font': {
     default: 'auto',
@@ -33,6 +39,7 @@ export const APP_SETTING_DEFINITIONS: { [K in AppSettingKey]: AppSettingDefiniti
   },
 };
 export const DEFAULT_APP_SETTINGS: AppSettings = {
+  'ui.theme': APP_SETTING_DEFINITIONS['ui.theme'].default,
   'ui.scale': APP_SETTING_DEFINITIONS['ui.scale'].default,
   'ui.font': APP_SETTING_DEFINITIONS['ui.font'].default,
 };

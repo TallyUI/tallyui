@@ -23,11 +23,11 @@ export type { StoreSettingsResolution, ResolveStoreSettingsOptions, StoreSetting
 
 // App settings
 export {
-  UI_SCALES, APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, appSettingSchema,
+  UI_SCALES, UI_THEMES, APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, appSettingSchema,
   appSettingCollection, resolveAppSettings, readAppSettings, appSettings$, writeAppSetting, useAppSettings,
 } from './app-settings';
 export type {
-  UiScale, AppSettings, AppSettingKey, AppSettingDefinition, AppSettingDoc, AppSettingCollection,
+  UiScale, UiTheme, AppSettings, AppSettingKey, AppSettingDefinition, AppSettingDoc, AppSettingCollection,
 } from './app-settings';
 
 // RxDB reads past the query cache, and live lists that can't leave it stale (RxDB 16.21.1 bug 4)
@@ -86,6 +86,16 @@ export type {
   CollectOutcome, CollectResult, DriverStatusSource, PaymentDriver, PaymentDriverRegistry,
   SimulatedReaderId, SimulatedDriverOptions,
 } from './payment-driver';
+
+// Printing
+export {
+  PrintError, toPrintError, createPrintQueue, SYSTEM_PRINTER_ID, PRINTER_PROFILES_COLLECTION, printerProfileSchema,
+  printerProfileCollection, addPrinterProfileCollection, createSystemPrintTransport, SYSTEM_PRINT_TIMING,
+} from './print';
+export type {
+  PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
+  PrinterProfile, PrinterProfileCollection, SystemPrintTransportOptions,
+} from './print';
 
 // Sale
 export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';

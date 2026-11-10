@@ -1,4 +1,6 @@
-import { CustomerServiceError, type Customer, type CustomerInput, type SyncContext } from '@tallyui/core';
+import {
+  CustomerServiceError, type Customer, type CustomerAddress, type CustomerInput, type CustomerPatch, type SyncContext,
+} from '@tallyui/core';
 import { checkResponse } from './replication/products';
 
 type WooCustomerRow = {
@@ -10,7 +12,39 @@ type WooCustomerRow = {
     first_name?: string | null; last_name?: string | null; email?: string | null;
     phone?: string | null; company?: string | null;
   } | null;
+  meta_data?: { key?: string; value?: unknown }[];
+  _rxdb_revision?: unknown;
 };
+
+// Woo's address keys and the CustomerAddress field each comes from; shipping has no email.
+const WOO_ADDRESS = [
+  ['first_name', 'firstName'], ['last_name', 'lastName'], ['company', 'company'], ['address_1', 'address1'],
+  ['address_2', 'address2'], ['city', 'city'], ['postcode', 'postcode'], ['country', 'country'], ['state', 'state'],
+  ['email', 'email'], ['phone', 'phone'],
+] as const;
+
+/** The whole Woo address, '' for an absent field, so a patch replaces the stored address rather than merging into it. */
+function toWooAddress(address: CustomerAddress, kind: 'billing' | 'shipping'): Record<string, string> {
+  return Object.fromEntries(WOO_ADDRESS.filter(([key]) => kind === 'billing' || key !== 'email')
+    .map(([key, field]) => [key, address[field] ?? '']));
+}
+
+function toWooPatch(patch: CustomerPatch): Record<string, unknown> {
+  const contact = {
+    ...(patch.phone !== undefined ? { phone: patch.phone } : {}), ...(patch.company !== undefined ? { company: patch.company } : {}),
+  };
+  const billing = patch.billing ? { ...toWooAddress(patch.billing, 'billing'), ...contact } : contact;
+  return {
+    ...(patch.firstName !== undefined ? { first_name: patch.firstName } : {}),
+    ...(patch.lastName !== undefined ? { last_name: patch.lastName } : {}),
+    ...(patch.email !== undefined ? { email: patch.email } : {}),
+    ...(Object.keys(billing).length > 0 ? { billing } : {}),
+    ...(patch.shipping ? { shipping: toWooAddress(patch.shipping, 'shipping') } : {}),
+    ...(patch.taxIds ? { tax_ids: patch.taxIds.map(({ type, value, country, label }) => ({
+      type, value, ...(country !== undefined ? { country } : {}), ...(label !== undefined ? { label } : {}),
+    })) } : {}),
+  };
+}
 
 export function toWooCustomer(raw: WooCustomerRow): Customer {
   const customer: Customer = { id: String(raw.id), name: String(raw.id) };
@@ -92,6 +126,31 @@ export function createWooCustomers(options?: { newId?: () => string }) {
         }),
       });
       if ((status !== 200 && status !== 201) || !body?.document) throw new CustomerServiceError('server', 'unexpected response');
+      return toWooCustomer(body.document);
+    },
+
+    // WCPOS's own write surface, as WCPOS v2's customer edit uses it: an `update` push of the changed Woo REST fields,
+    // keyed by the record's uuid and current revision, which only the customer read carries.
+    async updateCustomer(context: SyncContext, id: string, patch: CustomerPatch): Promise<Customer> {
+      if (!/^\d+$/.test(id)) throw new CustomerServiceError('invalid', 'Unknown customer');
+      if (patch.shipping?.email) throw new CustomerServiceError('invalid', 'WooCommerce shipping addresses have no email');
+      const params = new URLSearchParams({ include: id, per_page: '1', role: 'all' });
+      const { body: rows } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
+      if (!Array.isArray(rows)) throw new CustomerServiceError('server', 'unexpected response');
+      const row: WooCustomerRow | undefined = rows.find((raw: WooCustomerRow) => String(raw.id) === id);
+      if (!row) throw new CustomerServiceError('invalid', 'Unknown customer');
+      const uuid = row.meta_data?.find((entry) => entry.key === '_woocommerce_pos_uuid')?.value;
+      if (typeof uuid !== 'string' || !uuid) throw new CustomerServiceError('server', 'unexpected response');
+      const payload = toWooPatch(patch);
+      if (Object.keys(payload).length === 0) return toWooCustomer(row);
+      const { status, body } = await customerRequest(context, 'push/customers', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mutationId: newId(), operation: 'update', collection: 'customers', recordId: uuid,
+          baseRevision: typeof row._rxdb_revision === 'string' ? row._rxdb_revision : null, payload,
+        }),
+      });
+      if (status !== 200 || !body?.document) throw new CustomerServiceError('server', 'unexpected response');
       return toWooCustomer(body.document);
     },
 
