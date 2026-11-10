@@ -72,6 +72,10 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, Rece
 export { parseXml, renderHtml, sanitizeHtml, renderReceiptTemplate, renderLogiclessTemplate, renderThermalPreview, receiptTemplateData, DEFAULT_RECEIPT_TEMPLATES, PAPER_COLUMNS, renderReceiptHtml } from './receipt-template';
 export type { ThermalNode, ReceiptNode, SanitizeHtmlOptions, RenderSanitizeOptions, ReceiptTemplateRow, ReceiptTemplateLine, ReceiptTemplateData, ReceiptTemplateOptions, ReceiptPaper, RenderReceiptOptions } from './receipt-template';
 
+// Customer display
+export { DISPLAY_PROTOCOL_VERSION, DISPLAY_ACTIONS, makeEnvelope, displayCart, decode as decodeDisplayMessage, encode as encodeDisplayMessage, messageBytes, MAX_MESSAGE_BYTES, displayReducer, initialDisplayState } from './customer-display';
+export type { PaymentPhase, DisplayTemplate, DisplayCart, DisplayPayment, DisplayConfig, DisplayPayloads, DisplayAction, DisplayEnvelope, DecodeRefusal, DecodeResult, DisplayView, DisplayState } from './customer-display';
+
 // Product
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
 
