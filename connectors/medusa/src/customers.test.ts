@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, CustomerServiceError } from '@tallyui/core';
-import { createMedusaCustomer, getMedusaCustomer, searchMedusaCustomers, toCustomer } from './customers';
-import { medusaAdminUserConnector, medusaConnector, medusaCreateCustomer, medusaGetCustomer, medusaSearchCustomers } from './index';
+import { createMedusaCustomer, getMedusaCustomer, searchMedusaCustomers, toCustomer, updateMedusaCustomer } from './customers';
+import { medusaAdminUserConnector, medusaConnector, medusaCreateCustomer, medusaGetCustomer, medusaSearchCustomers, medusaUpdateCustomer } from './index';
 import fixture from './customers.fixture.json';
 
 const baseUrl = 'https://medusa.test';
@@ -18,6 +18,7 @@ const calls = [
   ['search', () => searchMedusaCustomers(baseUrl, headers, 'smith')],
   ['create', () => createMedusaCustomer(baseUrl, headers, input)],
   ['get', () => getMedusaCustomer(baseUrl, headers, expected[0].id)],
+  ['update', () => updateMedusaCustomer(baseUrl, headers, expected[0].id, { phone: '+45 11223344' })],
 ] as const;
 
 describe('Medusa customers', () => {
@@ -169,6 +170,8 @@ describe('Medusa customers', () => {
     expect(medusaConnector.searchCustomers).toBeUndefined();
     expect(medusaConnector.createCustomer).toBeUndefined();
     expect(medusaConnector.getCustomer).toBeUndefined();
+    expect(medusaConnector.updateCustomer).toBeUndefined();
+    expect(medusaAdminUserConnector.updateCustomer).toBe(medusaUpdateCustomer);
     expect(medusaAdminUserConnector.searchCustomers).toBe(medusaSearchCustomers);
     expect(medusaAdminUserConnector.createCustomer).toBe(medusaCreateCustomer);
     expect(medusaAdminUserConnector.getCustomer).toBe(medusaGetCustomer);
@@ -200,5 +203,102 @@ describe('Medusa customers', () => {
     expect(globalFetch).not.toHaveBeenCalled();
     expect(injectedFetch).toHaveBeenCalledTimes(3);
     for (const [, request] of injectedFetch.mock.calls) expect(request?.signal).toBe(init.signal);
+  });
+});
+
+describe('Medusa customer update', () => {
+  afterEach(() => vi.restoreAllMocks());
+  const id = fixture.update.body.customer.id;
+  const shared = fixture.updateShared.body.customer;
+  const json = { ...headers, 'Content-Type': 'application/json' };
+  const sent = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map(([url, init]) => [url, (init as RequestInit).method, JSON.parse((init as RequestInit).body as string)]);
+  const blank = { company: null, address_2: null, province: null, phone: null };
+  const billing = { firstName: 'Bill', lastName: 'Payer', address1: '1 Main St', city: 'Copenhagen', postcode: '1050', country: 'DK' };
+  const shipping = { firstName: 'Ship', lastName: 'Here', address1: '2 Dock Rd', city: 'Aarhus', postcode: '8000', country: 'DK' };
+  const billingBody = { ...blank, first_name: 'Bill', last_name: 'Payer', address_1: '1 Main St', city: 'Copenhagen', postal_code: '1050', country_code: 'dk' };
+  const shippingBody = { ...blank, first_name: 'Ship', last_name: 'Here', address_1: '2 Dock Rd', city: 'Aarhus', postal_code: '8000', country_code: 'dk' };
+  const updated = { id, name: 'Update Fixture', firstName: 'Update', lastName: 'Fixture', email: fixture.update.body.customer.email, phone: '+45 11223344', company: 'Fixture Co' };
+
+  it('sends only the given scalar fields, and maps the response', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response(fixture.update));
+    await expect(updateMedusaCustomer(baseUrl, headers, id, { phone: '+45 11223344', company: 'Fixture Co' })).resolves.toStrictEqual(updated);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenLastCalledWith(`${baseUrl}/admin/customers/${id}?fields=*addresses`, expect.objectContaining({ method: 'POST', headers: json }));
+    expect(sent(spy)[0][2]).toStrictEqual({ phone: '+45 11223344', company_name: 'Fixture Co' });
+  });
+
+  it('an empty string clears a field; taxIds are not sent (Medusa has no customer tax ids)', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response(fixture.update));
+    await updateMedusaCustomer(baseUrl, headers, id, { lastName: '', email: undefined, taxIds: [{ type: 'eu_vat', value: 'DK12345678' }] });
+    expect(sent(spy)).toStrictEqual([[`${baseUrl}/admin/customers/${id}?fields=*addresses`, 'POST', { last_name: null }]]);
+  });
+
+  it('billing and shipping on a customer with no addresses create the two default addresses', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response(fixture.update))
+      .mockResolvedValueOnce(response(fixture.addressCreateBilling))
+      .mockResolvedValueOnce(response(fixture.addressCreateShipping));
+    await expect(updateMedusaCustomer(baseUrl, headers, id, { billing: { ...billing, email: 'bill@tally.test' }, shipping })).resolves.toStrictEqual({ ...updated, billing, shipping });
+    expect(sent(spy)).toStrictEqual([
+      [`${baseUrl}/admin/customers/${id}?fields=*addresses`, 'POST', {}],
+      [`${baseUrl}/admin/customers/${id}/addresses?fields=*addresses`, 'POST', { ...billingBody, is_default_billing: true }],
+      [`${baseUrl}/admin/customers/${id}/addresses?fields=*addresses`, 'POST', { ...shippingBody, is_default_shipping: true }],
+    ]);
+  });
+
+  it('a billing patch replaces the default billing address in place, whole', async () => {
+    const billingId = fixture.updateWithAddresses.body.customer.addresses.find((address) => address.is_default_billing)!.id;
+    const spy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response(fixture.updateWithAddresses))
+      .mockResolvedValueOnce(response(fixture.addressUpdateBilling));
+    const replaced = { firstName: 'Bill', lastName: 'Payer', company: 'Fixture Co', address1: '3 Market Sq', city: 'Odense', postcode: '5000', country: 'DK', phone: '+45 99887766' };
+    await expect(updateMedusaCustomer(baseUrl, headers, id, { billing: replaced })).resolves.toStrictEqual({ ...updated, billing: replaced, shipping });
+    expect(sent(spy)[1]).toStrictEqual([`${baseUrl}/admin/customers/${id}/addresses/${billingId}?fields=*addresses`, 'POST', {
+      first_name: 'Bill', last_name: 'Payer', company: 'Fixture Co', address_1: '3 Market Sq', address_2: null, city: 'Odense',
+      province: null, postal_code: '5000', country_code: 'dk', phone: '+45 99887766',
+    }]);
+  });
+
+  it('splits an address that is both defaults instead of editing it for one of them', async () => {
+    const sharedId = shared.addresses[0].id;
+    const spy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response(fixture.updateShared))
+      .mockResolvedValueOnce(response(fixture.addressCreateFromShared));
+    const result = await updateMedusaCustomer(baseUrl, headers, shared.id, { shipping });
+    expect(result).toMatchObject({ billing: { firstName: 'Shared', address1: '1 Main St' }, shipping });
+    expect(sent(spy)[1]).toStrictEqual([`${baseUrl}/admin/customers/${shared.id}/addresses?fields=*addresses`, 'POST', { ...shippingBody, is_default_shipping: true }]);
+
+    spy.mockClear().mockResolvedValueOnce(response(fixture.updateShared)).mockResolvedValueOnce(response(fixture.addressCreateFromShared));
+    await updateMedusaCustomer(baseUrl, headers, shared.id, { billing });
+    expect(sent(spy)[1]).toStrictEqual([`${baseUrl}/admin/customers/${shared.id}/addresses?fields=*addresses`, 'POST', { ...billingBody, is_default_billing: true }]);
+
+    spy.mockClear().mockResolvedValueOnce(response(fixture.updateShared)).mockResolvedValueOnce(response(fixture.updateShared)).mockResolvedValueOnce(response(fixture.addressCreateFromShared));
+    await updateMedusaCustomer(baseUrl, headers, shared.id, { billing, shipping });
+    expect(sent(spy).slice(1)).toStrictEqual([
+      [`${baseUrl}/admin/customers/${shared.id}/addresses/${sharedId}?fields=*addresses`, 'POST', billingBody],
+      [`${baseUrl}/admin/customers/${shared.id}/addresses?fields=*addresses`, 'POST', { ...shippingBody, is_default_shipping: true }],
+    ]);
+  });
+
+  it('an unknown id is invalid with status 404, and nothing else is sent', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response(fixture.updateMissing));
+    const result = updateMedusaCustomer(baseUrl, headers, 'cus_does_not_exist', { phone: '+45 11223344', billing });
+    await expect(result).rejects.toBeInstanceOf(CustomerServiceError);
+    await expect(result).rejects.toMatchObject({ code: 'invalid', status: 404, message: 'Customer with id "cus_does_not_exist" not found' });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refused patch is invalid with its status and the server message', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response(fixture.updateInvalid));
+    await expect(updateMedusaCustomer(baseUrl, headers, id, { email: 'not-an-email' })).rejects.toMatchObject({
+      name: 'CustomerServiceError', code: 'invalid', status: 400, message: 'Invalid request: Invalid email address',
+    });
+  });
+
+  it('the admin-user connector passes the context headers and signal', async () => {
+    const context = { connectorId: 'medusa', baseUrl, headers, signal: new AbortController().signal };
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response(fixture.update));
+    await expect(medusaAdminUserConnector.updateCustomer!(context, id, { phone: '+45 11223344' })).resolves.toStrictEqual(updated);
+    expect(spy.mock.lastCall?.[1]).toMatchObject({ signal: context.signal, headers: json });
   });
 });

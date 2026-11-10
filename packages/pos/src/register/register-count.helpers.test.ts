@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   closeNeedsApproval,
+  closureVariance,
   countVariance,
   denominationTotal,
   overThreshold,
@@ -43,6 +44,11 @@ it.each([
   [1, 10000, null, false],
 ])('closeNeedsApproval(%s counted, %s expected, threshold %s) is %s', (counted, expected, threshold, result) => {
   expect(closeNeedsApproval(counted, expected, threshold)).toBe(result);
+});
+
+it('derives closure variance for exactly the counted tender keys', () => {
+  expect(closureVariance({ cash: 9000, card: 500 }, { cash: 10000 })).toStrictEqual({ cash: -1000, card: 500 });
+  expect(closureVariance({ cash: 1 }, { cash: 0, card: 5 })).toStrictEqual({ cash: 1 });
 });
 
 it('totals denominations in minor units', () => {

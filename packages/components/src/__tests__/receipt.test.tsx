@@ -88,6 +88,24 @@ describe('Receipt', () => {
     expect(screen.getByText(formatDate(posOrder.createdAt))).toBeTruthy();
   });
 
+  it.each([[6, true], [7, false], [undefined, false]] as const)('shows the note, and says it was not sent at version %s: %s (ADR-083)', (sentVersion, notSent) => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    const note = 'Deliver after 5';
+    const posOrder = { id: '0192aaaa-bbbb-7ccc-8ddd-eeee12345678', createdAt: '2026-10-06T12:12:46.000Z', note, sentVersion } as PosOrder;
+    render(<Receipt order={{ ...sale.order, note }} posOrder={posOrder} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    expect(screen.getByTestId('receipt-note').textContent).toContain(note);
+    const label = screen.queryByTestId('receipt-note-not-sent');
+    expect(label?.textContent ?? null).toBe(notSent ? "The note couldn't be sent to the store." : null);
+    if (label) expect(label.closest('[data-print="hide"]')).not.toBeNull();
+  });
+
+  it('shows no note row without a note', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    render(<Receipt order={{ ...sale.order, note: '' }} posOrder={{ id: 'x', createdAt: '2026-10-06T12:12:46.000Z', sentVersion: 6 } as PosOrder}
+      store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
+    expect(screen.queryByTestId('receipt-note')).toBeNull();
+  });
+
   it('marks a receipt rendered before finalize as a draft', () => {
     render(<SaleHarness>{() => null}</SaleHarness>);
     render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
@@ -278,6 +296,12 @@ describe('Receipt with a prebuilt receipt', () => {
     expect(screen.getByLabelText(`Change: ${formatMoney({ amount: 14, currency: 'USD' })}`)).toBeTruthy();
     expect(screen.getByText('Cashier: Bob')).toBeTruthy();
     expect(screen.getByText('New sale')).toBeTruthy();
+  });
+
+  it.each([true, false])('reads the not-sent flag from a prebuilt receipt: %s (ADR-083)', (notSent) => {
+    render(<Receipt receipt={{ ...receipt, footer: { note: 'Deliver after 5', ...(notSent ? { noteNotSent: true } : {}) } }} newSale={() => {}} />);
+    expect(screen.getByTestId('receipt-note').textContent).toContain('Deliver after 5');
+    expect(screen.queryByTestId('receipt-note-not-sent') !== null).toBe(notSent);
   });
 
   it('uses orderReference with a posOrder in the receipt form', () => {

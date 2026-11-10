@@ -9,4 +9,5 @@ export { getDeviceId } from './device-id';
 export { needsAttention } from './needs-attention';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './reopen';
 export { isReopened, replacedOrderIds } from './reopened';
+export { noteDelivery, type NoteDelivery } from './note-delivery';
 export { sameSale, OrderContentMismatchError } from './same-sale';

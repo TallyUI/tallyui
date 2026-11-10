@@ -4,3 +4,6 @@ export function orderReference(order: { id: string; serverRefs?: { displayId?: s
   const local = order.id.slice(-8);
   return order.serverRefs?.displayId ? `${local} · #${order.serverRefs.displayId}` : local;
 }
+
+/** The receipt and Orders say this under a note that went below order.create 7 (ADR-083 condition 2). */
+export const NOTE_NOT_SENT = "The note couldn't be sent to the store.";

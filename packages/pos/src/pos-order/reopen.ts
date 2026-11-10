@@ -81,8 +81,9 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       builder.setCustomer({ id: order.customer.id, name: order.customer.name,
         ...(order.customer.email !== undefined ? { email: order.customer.email } : {}) });
     }
-    const prefix = `Refused by the store: ${order.error!.message}`;
-    builder.setNote(prefix + (order.note ? '\n' + order.note : ''));
+    // ADR-083 condition 1: the note holds only the cashier's own note, since order.create 7 sends it. The refusal stays
+    // on this refused row (`error`), the till's record of it; the draft's id is this row's id.
+    if (order.note) builder.setNote(order.note);
     await writeOrderDraft(deps.drafts, builder.getSnapshot());
   }
   const document = await deps.orders.findOne(orderId).exec();
