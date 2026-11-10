@@ -12,7 +12,7 @@
  * - Refund parents and the close-time wait: a refund's record is the app's optional `refunds` collection, and one still pending at close is listed on the Z instead (ADR-080 amendment 1).
  * - Anchor invalidation, `server_expected` and `server_sales_count`: no server figures (c2).
  * - `unsyncedCount` and the `sync_status` filters: nothing is sent (c2).
- * - The binding (`useRegisterBinding`) and `blind` from WooCommerce capabilities: app inputs.
+ * - The binding (`useRegisterBinding`): an app input. `blind` is an app input too: `useCashier(...).blind`.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { combineLatest, map, of, switchMap } from 'rxjs';
@@ -113,7 +113,7 @@ export interface UseRegisterSessionOptions {
   varianceThreshold?: number;
   /** `'HH:mm'` on the device's clock; an open session after it is `overdue`. */
   expectedCloseTime?: string;
-  /** The cashier may not see expected figures while counting. */
+  /** The cashier may not see expected figures while counting: pass `useCashier(connector, context).blind` (no `viewReports`). */
   blind?: boolean;
   /** The closure's register name, and a person id's display name. */
   labels?: { registerName?: string; resolveCashierName?: (id: string) => string };

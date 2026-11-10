@@ -45,6 +45,7 @@ export type {
   StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, ListOrdersQuery, StoreOrderPage,
 } from './types/orders';
 export type { RegisterInfo } from './types/registers';
+export { CASHIER_PERMISSIONS, cashierPermissions, isCashierPermission, type Cashier, type CashierPermission } from './types/cashier';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 
 export type {
