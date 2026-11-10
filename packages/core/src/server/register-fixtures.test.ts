@@ -51,6 +51,16 @@ const envelopes = [
     unsyncedCount: 2, unsyncedTotalMinor: 1200, softwareVersion: 'preview',
     orderIds: ['01926f3a-7c00-7000-8000-000000000041'], movementIds: ['01926f3a-7c00-7000-8000-000000000021'],
   } satisfies RegisterClosureSubmitPayload),
+  envelope('register.closure.submit', '01926f3a-7c00-7000-8000-000000000019', {
+    closureId: '01926f3a-7c00-7000-8000-000000000031', sessionId, registerId, number: 42, businessDay: '2026-09-11',
+    openedAt: '2026-09-11T08:00:00.000Z', closedAt: '2026-09-11T17:00:00.000Z', closedBy: '1', approvedBy: '2',
+    tillExpected: { cash: 18000, card: 12000 }, counted: { cash: 17800, card: 12000 },
+    periodSalesTotalMinor: 25000, periodRefundsTotalMinor: 5000,
+    perpetualSalesTotalMinor: 525000, perpetualRefundsTotalMinor: 25000,
+    unsyncedCount: 2, unsyncedTotalMinor: 1200, softwareVersion: 'preview',
+    orderIds: ['01926f3a-7c00-7000-8000-000000000041'], movementIds: ['01926f3a-7c00-7000-8000-000000000021'],
+    approval: 'opaque-approval-proof',
+  } satisfies RegisterClosureSubmitPayload, 3),
 ]
 
 it('covers every register command type', () => {

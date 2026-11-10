@@ -2,6 +2,10 @@
 export { createLogger, consoleSink, callbackSink } from './logging';
 export type { Logger, LogSink, LogEntry, LogLevel } from './logging';
 
+// CSV
+export { csvCell, csvFromCells, toCsv } from './csv';
+export type { CsvColumn } from './csv';
+
 // Currency
 export { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './currency';
 export type { CurrencyProviderProps } from './currency';
@@ -16,6 +20,15 @@ export type { TaxRateMap, TaxContext } from './tax';
 // Store settings
 export { resolveStoreSettings, useStoreSettings, withPricingContext, taxProviderProps } from './store-settings';
 export type { StoreSettingsResolution, ResolveStoreSettingsOptions, StoreSettingsState } from './store-settings';
+
+// App settings
+export {
+  UI_SCALES, APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, appSettingSchema,
+  appSettingCollection, resolveAppSettings, readAppSettings, appSettings$, writeAppSetting, useAppSettings,
+} from './app-settings';
+export type {
+  UiScale, AppSettings, AppSettingKey, AppSettingDefinition, AppSettingDoc, AppSettingCollection,
+} from './app-settings';
 
 // RxDB reads past the query cache, and live lists that can't leave it stale (RxDB 16.21.1 bug 4)
 export { readFresh, countFresh, watchFresh } from './rxdb';
@@ -58,22 +71,36 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, Rece
 // Product
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
 
+// Scanner
+export { DEFAULT_WEDGE_SETTINGS, DEFAULT_MIN_SCAN_CHARS, WEDGE_END_OF_SCAN_MS, createWedgeState, foldWedgeKey, stripBoundary, replayWedgeDetector, createWedgeDetector, DEFAULT_COOLDOWN_MS, normalizeRetailCode, hasValidRetailCheckDigit, retailCodeTwin, createScanSession, useBarcodeScanner } from './scanner';
+export type { WedgeSettings, WedgeState, TraceKey, WedgeReplayResult, WedgeDetectorOptions, WedgeDetector, ScanRejectReason, ScanOfferResult, ScanSessionOptions, ScanSession, UseBarcodeScannerOptions } from './scanner';
+
+// Payment drivers
+export { createPaymentDriverRegistry, driverForMethod, createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './payment-driver';
+export type {
+  DriverCapabilities, ReaderInfo, DriverStatus, DriverAvailability, CollectInput,
+  CollectOutcome, CollectResult, DriverStatusSource, PaymentDriver, PaymentDriverRegistry,
+  SimulatedReaderId, SimulatedDriverOptions,
+} from './payment-driver';
+
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';
 export type { SaleStage, CatalogueEntry, SaleDiscountCodes, SaleDiscountState } from './sale';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions } from './pos-order';
 export { createHttpCommandTransport, createOrderOutbox, isRequeueable, useOrderOutbox, outboxLogger } from './outbox';
-export { createRegisterOutbox, useRegisterOutbox } from './outbox';
+export { createRegisterOutbox, isRegisterRequeueable, useRegisterOutbox, summarizeOutboxHealth, watchOutboxHealth, useOutboxHealth } from './outbox';
 export type { RegisterOutboxOptions, RegisterOutbox, UseRegisterOutboxOptions, UseRegisterOutboxResult } from './outbox';
+export type { OutboxCounts, OutboxHealth, UseOutboxHealthOptions, UseOutboxHealthResult } from './outbox';
 export { createBackendNotFound } from './outbox/backend-not-found';
 export type { BackendNotFound } from './outbox/backend-not-found';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OrderTransportContext, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
-export { sendOrderRefund, type OrderRefundOutcome, posRefundSchema, posRefundCollection, submitOrderRefund, RefundAnswerPendingError, type PosRefund, type PosRefundStatus, type PosRefundCollection } from './refund';
-export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderVoidSchema, tenderVoidCollection } from './tender';
-export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid } from './tender';
+export { sendOrderRefund, type OrderRefundOutcome, posRefundSchema, posRefundCollection, submitOrderRefund, RefundAnswerPendingError, type PosRefund, type PosRefundStatus, type PosRefundCollection, refundableLines, priceRefund } from './refund';
+export type { RefundableOrderLine, EarlierRefund, RefundableLine, PricedRefundLine, PricedRefund } from './refund';
+export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderVoidSchema, tenderVoidCollection, legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg } from './tender';
+export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus } from './tender';
 
 // Register
 export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, denominationTotal, varianceText, denominations } from './register';
@@ -91,3 +118,7 @@ export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRo
 export type { Correction, RecordedFigures, ClosureScope } from './register';
 export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact } from './register';
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type UseRegisterSessionOptions } from './register';
+
+// Reports
+export { salesFigures, marginOf, comparisonRange, daysOf, inRange, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';
+export type { StoreDay, DayRange, ReportCategory, ReportLine, ReportPayment, ReportTax, ReportOrder, ReportRefund, LineJoin, Margin, SalesTotals, PaymentRow, GroupRow, TaxRow, DayPoint, SalesFiguresInput, SalesFigures } from './reports';

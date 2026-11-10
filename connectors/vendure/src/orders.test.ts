@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError } from '@tallyui/core';
-import { getVendureOrder, listVendureOrders, type VendureOrder, type VendureOrderSummary } from './index';
+import { getVendureOrder, listVendureOrderDetails, listVendureOrders, type VendureOrder, type VendureOrderSummary } from './index';
 
 const context = {
   connectorId: 'vendure', baseUrl: 'https://vendure.test',
@@ -24,6 +24,7 @@ const detail: VendureOrder = {
   lines: [{
     id: 'line-1', quantity: 2, taxRate: 20, productVariant: { id: 'variant-1', name: 'Coffee', sku: 'COFFEE' },
     orderPlacedQuantity: 2, proratedUnitPrice: 500, proratedUnitPriceWithTax: 600, proratedLinePriceWithTax: 1200,
+    proratedLinePrice: 1000,
     unitPrice: 600, unitPriceWithTax: 720, linePrice: 1200, linePriceWithTax: 1440,
     discountedLinePrice: 1000, discountedLinePriceWithTax: 1200,
     discounts: [{ description: 'Promotion', amount: -200, amountWithTax: -240 }],
@@ -32,7 +33,7 @@ const detail: VendureOrder = {
       tallyPriceIncludesTax: false, tallyClientLineId: 'client-line-1',
     },
   }],
-  shippingLines: [{ shippingMethod: { name: 'Collection' }, price: 0, priceWithTax: 0 }],
+  shippingLines: [{ shippingMethod: { name: 'Collection' }, price: 0, priceWithTax: 0, discountedPrice: 0, discountedPriceWithTax: 0 }],
   surcharges: [{ description: 'Service', sku: 'SERVICE', price: 0, priceWithTax: 0 }],
   taxSummary: [{ description: 'Standard', taxRate: 20, taxBase: 1000, taxTotal: 200 }],
   discounts: [{ description: 'Promotion', amount: -200, amountWithTax: -240 }],
@@ -175,11 +176,11 @@ describe('Vendure orders', () => {
       id code state active orderPlacedAt updatedAt currencyCode totalQuantity
       customer { id firstName lastName emailAddress }
       lines {
-        id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax proratedLinePriceWithTax taxRate productVariant { id name sku }
+        id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax proratedLinePriceWithTax proratedLinePrice taxRate productVariant { id name sku }
         unitPrice unitPriceWithTax linePrice linePriceWithTax discountedLinePrice discountedLinePriceWithTax
         discounts { description amount amountWithTax }
       }
-      shippingLines { shippingMethod { name } price priceWithTax }
+      shippingLines { shippingMethod { name } price priceWithTax discountedPrice discountedPriceWithTax }
       surcharges { description sku price priceWithTax }
       subTotal subTotalWithTax shipping shippingWithTax total totalWithTax
       taxSummary { description taxRate taxBase taxTotal }
@@ -199,6 +200,43 @@ describe('Vendure orders', () => {
     expect(sent.query.replace(/\s+/g, ' ').trim()).toContain('refunds { id total items shipping adjustment state reason metadata lines { orderLineId quantity } }');
     expect(sent.query).toMatch(/lines\s*{\s*customFields\s*{ tallyCustomName tallyCustomSku tallyUnitPrice tallyPriceIncludesTax tallyClientLineId }/);
     expect(sent.query).toContain('customFields { tallyClientOrderId tallySaleAt tallyRegisterId tallySessionId tallyCashierRef tallyRejected tallyRejectedClientOrderId tallyPayments tallySnapshot tallyShipping }');
+  });
+
+  it('lists order details with the detail fields on the list and customer routes', async () => {
+    const orders = { items: [detail], totalItems: 1 };
+    const spy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ data: { orders } }))
+      .mockResolvedValueOnce(Response.json({ data: { orders } }))
+      .mockResolvedValueOnce(Response.json({ data: { customer: { orders } } }))
+      .mockResolvedValueOnce(Response.json({ data: { orders } }));
+    await expect(listVendureOrderDetails(context)).resolves.toStrictEqual({ items: [detail], totalItems: 1 });
+    await listVendureOrderDetails(context, { tallyFields: false });
+    const sent = JSON.parse(spy.mock.calls[0]![1]!.body as string);
+    const plain = JSON.parse(spy.mock.calls[1]![1]!.body as string);
+    const expected = `query Orders($options: OrderListOptions) { orders(options: $options) { items {
+      id code state active orderPlacedAt updatedAt currencyCode totalQuantity
+      customer { id firstName lastName emailAddress }
+      lines {
+        id quantity orderPlacedQuantity proratedUnitPrice proratedUnitPriceWithTax proratedLinePriceWithTax proratedLinePrice taxRate productVariant { id name sku }
+        unitPrice unitPriceWithTax linePrice linePriceWithTax discountedLinePrice discountedLinePriceWithTax
+        discounts { description amount amountWithTax }
+      }
+      shippingLines { shippingMethod { name } price priceWithTax discountedPrice discountedPriceWithTax }
+      surcharges { description sku price priceWithTax }
+      subTotal subTotalWithTax shipping shippingWithTax total totalWithTax
+      taxSummary { description taxRate taxBase taxTotal }
+      discounts { description amount amountWithTax }
+      couponCodes
+      payments { id method amount state transactionId createdAt metadata refunds { id total items shipping adjustment state reason metadata lines { orderLineId quantity } } }
+      fulfillments { id state method trackingCode }
+    } totalItems } }`;
+    expect(plain.query.replace(/\s+/g, ' ').trim()).toBe(expected.replace(/\s+/g, ' ').trim());
+    expect(sent.query).toContain('tallySnapshot');
+    expect(sent.query).toContain('proratedLinePrice');
+    await expect(listVendureOrderDetails(context, { customerId: '1' })).resolves.toStrictEqual(orders);
+    expect(JSON.parse(spy.mock.calls[2]![1]!.body as string).query).toContain('customer(id: $customerId)');
+    await listVendureOrders(context);
+    expect(JSON.parse(spy.mock.calls[3]![1]!.body as string).query).not.toContain('proratedLinePrice');
   });
 
   it('returns detail results unchanged or null and rejects malformed orders', async () => {
