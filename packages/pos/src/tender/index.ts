@@ -2,3 +2,5 @@ export { tenderReducer, initTenderState, initialTenderState, appliedMinor, chang
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg } from './tender-state';
 export { tenderVoidSchema, tenderVoidCollection } from './tender-void';
 export type { TenderVoid } from './tender-void';
+export { roundedDue, tenderRounding } from './cash-rounding';
+export type { TenderRounding } from './cash-rounding';
