@@ -1,15 +1,21 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest';
-import { addRxPlugin, createRxDatabase } from 'rxdb';
+import { addRxPlugin, createRxDatabase, getLastCheckpointDoc } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { ConnectorUnauthorizedError, neutralFailureClass, type SyncContext, type TallyConnector } from '@tallyui/core';
+import {
+  ConnectorUnauthorizedError, neutralFailureClass, type SyncContext, type SyncNotice, type TallyConnector,
+} from '@tallyui/core';
 
 import { createConnectivityTracker, type ConnectivityTracker } from './connectivity';
 import { startReplication } from './replication';
 
 addRxPlugin(RxDBDevModePlugin);
+// RxDB's own hook before a push page enters its push loop (17.5 plugins/replication/index.js 203): a test parks the
+// first page here, so that a sign-in error lands before any push starts.
+let pushStart: Promise<void> | undefined;
+addRxPlugin({ name: 'test-push-start', rxdb: true, hooks: { preReplicationMasterWrite: { after: () => pushStart } } });
 
 const context: SyncContext = { connectorId: 'test', baseUrl: 'https://example.com', headers: {} };
 const schema = {
@@ -27,6 +33,7 @@ async function until(check: () => boolean, ms = 2000) {
 }
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
+  pushStart = undefined;
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
@@ -332,7 +339,9 @@ describe('startReplication with a connectivity tracker', () => {
       ...pages, rows: seven, retryTime: 100,
       pull: async call => (call === 1 ? until(() => pushed).then(() => new ConnectorUnauthorizedError('x', 401)) : undefined),
     });
-    await until(() => state.isPaused());
+    let notice: SyncNotice | undefined;
+    state.notice$.subscribe((next) => { notice = next; });
+    await until(() => notice?.fixedBy === 'till');
     await sleep(300);
     expect(accepted).toEqual([]);
     expect(errors).toHaveLength(1);
@@ -340,6 +349,48 @@ describe('startReplication with a connectivity tracker', () => {
     await settle(() => accepted.length >= seven.length);
     await sleep(100);
     expect([...accepted].sort()).toEqual(seven);
+  });
+
+  // #645: RxDB 17.5 drops a push page unsent when the replication is paused before its first push starts, and the
+  // pages queued behind it store the up checkpoint (upstream.js 211, 287). A sign-in error holds instead of pausing.
+  it('a sign-in error before the first push holds the queue: no checkpoint past unsent rows, each row once after resume', async () => {
+    let release!: () => void;
+    pushStart = new Promise<void>((resolve) => { release = resolve; });
+    const { state, accepted, calls } = await pushSetup(() => undefined, undefined, {
+      ...pages, rows: seven, pull: call => (call === 1 ? new ConnectorUnauthorizedError('x', 401) : undefined),
+    });
+    let notice: SyncNotice | undefined;
+    state.notice$.subscribe((next) => { notice = next; });
+    await until(() => notice?.fixedBy === 'till');
+    await sleep(50);
+    release();
+    await sleep(200);
+    expect(calls()).toBe(0);
+    const held = await getLastCheckpointDoc(state.internalReplicationState!, 'up');
+    await state.resume();
+    await settle(() => accepted.length >= seven.length);
+    await sleep(100);
+    expect(accepted).toHaveLength(seven.length);
+    expect([...accepted].sort()).toEqual(seven);
+    // Nothing went during the hold, so no up checkpoint was stored past the unsent rows.
+    expect(held).toBeUndefined();
+  });
+
+  it('a sign-in hold is not a pause, asks the store nothing until resume(), then the pull asks it again', async () => {
+    let pulls = 0;
+    const { state } = await pushSetup(() => undefined, undefined, {
+      ...pages, rows: seven, pull: () => (++pulls === 1 ? new ConnectorUnauthorizedError('x', 401) : undefined),
+    });
+    let notice: SyncNotice | undefined;
+    state.notice$.subscribe((next) => { notice = next; });
+    await until(() => notice?.fixedBy === 'till');
+    state.reSync();
+    await sleep(100);
+    expect(state.isPaused()).toBe(false);
+    expect(pulls).toBe(1);
+    await state.resume();
+    await until(() => pulls >= 2);
+    expect(notice).toBeUndefined();
   });
 
   // Known limit (RxDB 17.5): a push sent while paused and then cancelled is never recorded (upstream.js 287), and its

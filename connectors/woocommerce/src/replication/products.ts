@@ -44,7 +44,7 @@ export async function checkResponse(response: Response) {
 export class WooTillUpdateRequiredError extends Error {
   name = 'WooTillUpdateRequiredError';
   readonly code = 'till_update_required' as const;
-  /** Only updating this till fixes it, so the pull pauses until resume() (`errorKind`). */
+  /** Only updating this till fixes it, so the pull holds until resume() (`errorKind`). */
   readonly fixedBy = 'till' as const;
 
   /** The body's `code`, kept for diagnostics. */
