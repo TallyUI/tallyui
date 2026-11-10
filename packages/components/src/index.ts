@@ -174,7 +174,7 @@ export {
 
 // Sale components
 export {
-  Cart, CartBar, Tender, SplitTender, DiscountForm, DiscountChips, parseDiscount, discountLabel,
+  Cart, CartBar, Tender, SplitTender, TenderPane, type TenderPaneProps, DiscountForm, DiscountChips, parseDiscount, discountLabel,
   PriceForm, parsePrice,
   ChargeForm, type ChargeFormProps,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, type OrderHistoryRow, orderReference,
