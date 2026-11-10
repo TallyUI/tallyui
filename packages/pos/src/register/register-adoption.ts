@@ -1,4 +1,5 @@
 import type { ServerCapabilities } from '@tallyui/core';
+import { CLOSURE_HOLDING_REJECTIONS } from '../outbox/register-outbox';
 import { readFresh } from '../rxdb';
 import { uuidv7 } from '../pos-order/uuidv7';
 import { countVariance, overThreshold } from './register-count.helpers';
@@ -136,9 +137,6 @@ export function closureApprovalStatus(closure: Pick<Closure, 'counted' | 'till_e
     ? 'verified' : 'unverified';
 }
 
-/** The store's two refusals of a closure's approval (ADR-082 decision 6). */
-export const APPROVAL_REFUSALS: ReadonlySet<string> = new Set(['register_approval_required', 'register_approval_invalid']);
-
 /** `reapproveClosure` refused. Its message can be shown to a cashier as it is. */
 export class RegisterReapproveError extends Error {
   constructor(readonly code: 'REGISTER_REAPPROVE_UNSUPPORTED' | 'REGISTER_REAPPROVE_NOT_REFUSED' | 'REGISTER_REAPPROVE_PROOF_MISSING') {
@@ -165,7 +163,7 @@ export async function reapproveClosure({ commands, closureId, approval, approved
     const row = await commands.findOne(`closure.submit:${closureId}`).exec();
     if (!row) throw new RegisterReapproveError('REGISTER_REAPPROVE_NOT_REFUSED');
     await row.incrementalModify((doc) => {
-      if (doc.syncStatus !== 'rejected' || !APPROVAL_REFUSALS.has(doc.error?.code ?? '')) throw new RegisterReapproveError('REGISTER_REAPPROVE_NOT_REFUSED');
+      if (doc.syncStatus !== 'rejected' || !CLOSURE_HOLDING_REJECTIONS.has(doc.error?.code ?? '')) throw new RegisterReapproveError('REGISTER_REAPPROVE_NOT_REFUSED');
       const { error: _refusal, ...rest } = doc;
       return { ...rest, commandId: uuidv7(), version: 3, syncStatus: 'pending',
         payload: { ...doc.payload, approval, approvedBy }, updatedAt: now ?? new Date().toISOString() };

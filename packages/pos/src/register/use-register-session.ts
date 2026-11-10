@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { combineLatest, map, of, switchMap } from 'rxjs';
 import type { RxCollection } from 'rxdb';
 import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
+import { CLOSURE_HOLDING_REJECTIONS } from '../outbox/register-outbox';
 import { safeErrorString } from '../outbox/safe-error';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
@@ -27,7 +28,7 @@ import { deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval, closureVariance } from './register-count.helpers';
 import {
-  abandonSession, adoptRegisterResults, APPROVAL_REFUSALS, closureApprovalStatus, isLiveAtStore, reapproveClosure, takeOverSession, type ClosureApprovalStatus,
+  abandonSession, adoptRegisterResults, closureApprovalStatus, isLiveAtStore, reapproveClosure, takeOverSession, type ClosureApprovalStatus,
 } from './register-adoption';
 import { reconcileRegisterCommands, registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import { observeRegister$, readRegister, type RegisterBucket, type RegisterDocument, type RegisterHost } from './register-document';
@@ -147,7 +148,7 @@ const isTenderMap = (value: unknown): value is Record<string, number> => typeof 
 /** The lowest-`seq` closure row refused with either approval code; the outbox holds every later closure behind it. */
 function approvalNeededOf(commandRows: readonly RegisterCommand[], sessions: readonly RegisterSession[]): ApprovalNeeded | null {
   const row = commandRows.filter((command) => command.type === 'register.closure.submit' && command.syncStatus === 'rejected'
-    && APPROVAL_REFUSALS.has(command.error?.code ?? '')).sort((a, b) => a.seq - b.seq)[0];
+    && CLOSURE_HOLDING_REJECTIONS.has(command.error?.code ?? '')).sort((a, b) => a.seq - b.seq)[0];
   if (!row) return null;
   const { closureId, sessionId, counted, tillExpected } = row.payload as { closureId: string; sessionId: string; counted?: unknown; tillExpected?: unknown };
   const data = row.error?.data;
