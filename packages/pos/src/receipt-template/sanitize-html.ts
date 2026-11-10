@@ -1,5 +1,8 @@
 // Ported from WCPOS v2 packages/receipt-renderer/src/sanitize-html.ts (monorepo main 5ac185b0, MIT).
-// DOM walk retained; DOMPurify and xmldom paths omitted.
+// All three runtime paths ported: DOMPurify, DOM walk, xmldom.
+import { DOMParser as XmlDOMParser, XMLSerializer as XmlSerializer } from '@xmldom/xmldom';
+import createDOMPurify from 'dompurify';
+
 export interface SanitizeHtmlOptions {
   /** Additional tag names to allow beyond DOMPurify's default HTML profile. */
   addTags?: string[];
@@ -8,16 +11,41 @@ export interface SanitizeHtmlOptions {
 }
 
 /**
- * Sanitize receipt HTML by walking the parsed DOM (v2's jsdom/SSR path).
- * v2's DOMPurify browser path and xmldom React Native path are not ported.
- * Without a global DOMParser, return escaped text.
+ * Sanitize rendered receipt HTML before it is inserted into an admin/browser DOM
+ * (or a native WebView via `srcDoc`).
+ *
+ * The default profile deliberately excludes SVG/MathML and strips scripts,
+ * event handlers, and unsafe URL protocols while preserving normal receipt HTML.
+ *
+ * Three execution paths, in priority order:
+ *   1. Browser/DOM with `window.document` → DOMPurify (the strongest profile).
+ *   2. A runtime that exposes a global `DOMParser` (e.g. jsdom/SSR) → DOM walk.
+ *   3. React Native, which has neither → parse via `@xmldom/xmldom` and walk.
+ *
+ * The xmldom fallback mirrors `parse-xml.ts`, which already uses xmldom on
+ * native. Without it, native runtimes hit the escaped-text last resort and the
+ * receipt preview renders raw HTML markup as visible text instead of HTML.
  */
 export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): string {
-  if (typeof DOMParser === 'undefined') return escapeHtml(html);
-  const doc = new DOMParser().parseFromString(`<!doctype html><html><body>${html}</body></html>`, 'text/html');
-  const body = doc.body;
-  sanitizeParsedBody(body, options);
-  return body.innerHTML;
+  const win = globalThis.window;
+
+  if (win?.document) {
+    const purify = createDOMPurify(win);
+    return purify.sanitize(html, {
+      USE_PROFILES: { html: true },
+      ADD_TAGS: options.addTags,
+      ADD_ATTR: options.addAttributes,
+    });
+  }
+
+  const parsed = parseHtmlForSanitize(html);
+  if (!parsed) {
+    // Last-resort non-DOM fallback for SSR/build tooling: return escaped text instead of unsafe markup.
+    return escapeHtml(html);
+  }
+
+  sanitizeParsedBody(parsed.body, options);
+  return parsed.serialize();
 }
 
 const URL_BEARING_ATTRIBUTES = new Set(['href', 'src', 'action', 'formaction', 'xlink:href']);
@@ -27,10 +55,67 @@ const DANGEROUS_TAGS = new Set([
   'script', 'iframe', 'object', 'embed', 'style', 'link', 'meta', 'base', 'svg', 'math',
 ]);
 
+const XHTML_NAMESPACE_ATTR = / xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/g;
+
 function hasUnsafeProtocol(raw: string): boolean {
   // eslint-disable-next-line no-control-regex -- Strip control characters before checking URL protocols, as in v2.
   const normalized = raw.replace(/[\u0000-\u001F\u007F\s]+/g, '').toLowerCase();
   return normalized.startsWith('javascript:') || normalized.startsWith('vbscript:') || normalized.startsWith('data:');
+}
+
+interface ParsedHtml {
+  body: Element;
+  serialize: () => string;
+}
+
+/**
+ * Parse `html` into a DOM `<body>` and return a serializer for its inner HTML.
+ * Uses the native `DOMParser` when present, and falls back to `@xmldom/xmldom`
+ * for React Native runtimes that do not provide browser DOM globals. Returns
+ * `null` when no parser can produce a document (callers escape as a last resort).
+ */
+function parseHtmlForSanitize(html: string): ParsedHtml | null {
+  const source = `<!doctype html><html><body>${html}</body></html>`;
+
+  if (typeof DOMParser !== 'undefined') {
+    const doc = new DOMParser().parseFromString(source, 'text/html');
+    const body = doc.body ?? doc.getElementsByTagName('body')[0];
+    if (!body) return null;
+    return { body, serialize: () => body.innerHTML };
+  }
+
+  try {
+    const errors: string[] = [];
+    const doc = new XmlDOMParser({
+      onError: (_level: string, message: unknown) => errors.push(String(message)),
+    } as unknown as ConstructorParameters<typeof XmlDOMParser>[0]).parseFromString(
+      source,
+      'text/html'
+    ) as unknown as Document;
+
+    const body = doc.getElementsByTagName('body')[0] as unknown as Element | undefined;
+    if (!body) return null;
+
+    const serializer = new XmlSerializer();
+    return {
+      body,
+      serialize: () => {
+        let inner = '';
+        for (const child of Array.from(body.childNodes)) {
+          inner += serializer.serializeToString(
+            child as unknown as Parameters<typeof serializer.serializeToString>[0]
+          );
+        }
+        // xmldom annotates serialized HTML nodes with the XHTML namespace; the
+        // attribute is inert in a WebView but noisy, so drop it.
+        // codeql[js/unsafe-html] Safe because sanitizeParsedBody() removes dangerous
+        // elements, event handlers, and unsafe URL protocols before serialize() runs.
+        return inner.replace(XHTML_NAMESPACE_ATTR, '');
+      },
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Remove dangerous elements, event-handler attributes, and unsafe-protocol URLs from the parsed body. */

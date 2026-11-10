@@ -1,8 +1,9 @@
 // Ported from WCPOS v2 packages/receipt-renderer/src/parse-xml.ts (monorepo main 5ac185b0, MIT).
-// Parsing logic unchanged; requires global DOMParser instead of the xmldom fallback.
+// Native DOMParser, else @xmldom/xmldom (React Native).
+import { DOMParser as XmlDOMParser } from '@xmldom/xmldom';
 import type { ColNode, DrawerConnector, ReceiptNode, RowNode, ThermalNode } from './types';
 
-/** Parse a thermal XML template string into an AST using the global DOMParser. */
+/** Parse a thermal XML template string into an AST using the native DOMParser or xmldom. */
 export function parseXml(xml: string): ReceiptNode {
   const doc = parseXmlDocument(xml);
   const errorNode = doc.getElementsByTagName('parsererror')[0];
@@ -141,8 +142,28 @@ function parseRowChildren(row: Element): ColNode[] {
 }
 
 function parseXmlDocument(xml: string): Document {
-  if (typeof DOMParser === 'undefined') throw new Error('XML parse error: no DOMParser in this runtime');
-  return new DOMParser().parseFromString(xml, 'text/xml');
+  if (typeof DOMParser !== 'undefined') {
+    return new DOMParser().parseFromString(xml, 'text/xml');
+  }
+
+  const errors: string[] = [];
+  let doc: Document | undefined;
+  try {
+    doc = new XmlDOMParser({
+      onError: (_level: string, message: unknown) => errors.push(String(message)),
+    } as unknown as ConstructorParameters<typeof XmlDOMParser>[0]).parseFromString(
+      xml,
+      'text/xml'
+    ) as unknown as Document;
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+
+  if (errors.length > 0 || !doc) {
+    throw new Error(`XML parse error: ${errors.join('; ') || 'invalid document'}`);
+  }
+
+  return doc;
 }
 
 function intAttr(el: Element, name: string, fallback: number): number {

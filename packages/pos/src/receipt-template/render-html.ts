@@ -64,7 +64,7 @@ function renderNode(node: ThermalNode, widthChars: number): string {
       return '<div style="border-top: 1px dashed #ccc; margin: 12px 0; position: relative">' +
         '<span style="position: absolute; top: -8px; left: -4px; font-size: 14px">&#9986;</span></div>';
     case 'feed':
-      return `<div style="height: ${safeInteger(node.lines, 1, 1, 50) * 1.4}em"></div>`;
+      return `<div style="height: ${(safeInteger(node.lines, 1, 1, 50) * 1.4).toFixed(1)}em"></div>`;
     case 'drawer':
       return '';
     case 'receipt':

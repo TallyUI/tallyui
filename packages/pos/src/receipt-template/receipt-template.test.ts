@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReceiptData } from '../receipt/types';
 import { parseXml, renderLogiclessTemplate, renderReceiptHtml, renderThermalPreview, sanitizeHtml } from './index';
+
+afterEach(() => vi.unstubAllGlobals());
 
 const fixture: ReceiptData = {
   schemaVersion: '1.4.0',
@@ -65,6 +67,7 @@ describe('receipt templates', () => {
     const html = renderReceiptHtml(fixture, { ...options, paper: '58mm' });
     expect(html).toContain('width: 32ch');
     expect(rows(html)).toContain('Total | EUR 11.55');
+    expect(html).toContain('height: 4.2em');
   });
 
   it('prints a missing field as empty, never undefined', () => {
@@ -104,5 +107,46 @@ describe('receipt templates', () => {
   it('rejects XML that is not a receipt', () => {
     expect(() => parseXml('<ticket />')).toThrow(/Expected <receipt> root element/);
     expect(() => parseXml('<receipt><text>')).toThrow(/XML parse error/);
+  });
+
+  it('sanitizes with DOMPurify when a browser DOM is present', () => {
+    const html = sanitizeHtml(
+      '<p>a</p><a href="javascript:alert(1)">x</a><iframe src="https://x"></iframe>' +
+      '<form><button formaction="javascript:alert(1)">b</button></form>',
+    );
+    expect(html).not.toContain('javascript:');
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain('<a>x</a>');
+    expect(html).toContain('<button>b</button>');
+  });
+
+  it('walks the DOM when DOMParser has no window (SSR)', () => {
+    vi.stubGlobal('window', undefined);
+    const html = sanitizeHtml(
+      '<p onclick="steal()">Hi</p><script>alert(1)</script><a href="javascript:alert(1)">x</a>',
+    );
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('onclick');
+    expect(html).not.toContain('javascript:');
+    expect(html).toContain('<p>Hi</p>');
+  });
+
+  it('parses and sanitizes with xmldom when there is no DOMParser (React Native)', () => {
+    vi.stubGlobal('window', undefined);
+    vi.stubGlobal('DOMParser', undefined);
+    expect(parseXml('<receipt paper-width="32"><text>Hi</text></receipt>')).toEqual({
+      type: 'receipt', paperWidth: 32, children: [{ type: 'text', children: [{ type: 'raw-text', value: 'Hi' }] }],
+    });
+    expect(() => parseXml('<receipt><text>')).toThrow(/XML parse error/);
+    const html = sanitizeHtml('<p onclick="steal()">Hi</p><script>alert(1)</script>');
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('onclick');
+    expect(html).not.toContain('xmlns');
+    expect(html).toContain('Hi');
+    expect(html).toContain('<p');
+    const receipt = renderReceiptHtml(fixture, options);
+    expect(receipt).toContain('width: 48ch');
+    expect(receipt).toContain('Total');
+    expect(receipt).not.toContain('<script');
   });
 });
