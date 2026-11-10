@@ -21,7 +21,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PosOrderPayment } from '@tallyui/pos';
-import { RegisterCount } from '../register/register-count';
+import { APPROVAL_REQUIRED_TEXT, RegisterCount, type RegisterCountProps } from '../register/register-count';
 import { createRegisterDb, RegisterHarness, seedSession, type RegisterDb } from './register-harness';
 
 let db: RegisterDb;
@@ -234,4 +234,140 @@ it('shows RegisterTenderInProgressError as its own message on Close', async () =
     expect(screen.getByTestId('count-error').textContent).toBe('Finish or cancel the sale in progress first.'),
   );
   expect(await db.register_sessions.find({ selector: { status: 'closed' } }).exec()).toHaveLength(0);
+});
+
+// ADR-082: `approve` gets the count and returns the store's proof, which RegisterCount carries to
+// `closeSession`. `closeSession` is spied, delegating to the hook's, so the real gate still runs.
+type Register = RegisterCountProps['register'];
+type CloseInput = Parameters<Register['actions']['closeSession']>[0];
+let liveRegister: Register | undefined;
+let countingId = '';
+async function renderSpied(approve: RegisterCountProps['approve']) {
+  const closeSession = vi.fn<(input: CloseInput) => void>();
+  const session = await seedSession(db, 10000);
+  countingId = session.id;
+  await (await db.register_sessions.findOne(session.id).exec())?.incrementalPatch({ status: 'counting' });
+  render(
+    <RegisterHarness db={db} overrides={{ varianceThreshold: 500 }}>
+      {(register) => {
+        liveRegister = register;
+        const actions = {
+          ...register.actions,
+          closeSession: (input: CloseInput) => {
+            closeSession(input);
+            return register.actions.closeSession(input);
+          },
+        };
+        return <RegisterCount register={{ ...register, actions }} currency="EUR" approve={approve} />;
+      }}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(screen.getByTestId('register-count')).toBeTruthy());
+  return { session, closeSession };
+}
+const closedRows = async () => (await db.register_sessions.find({ selector: { status: 'closed' } }).exec()).length;
+
+it('closes as before for an old zero-argument approve', async () => {
+  const oldShape: RegisterCountProps['approve'] = async () => ({ approvedBy: 'm1' });
+  const { session, closeSession } = await renderSpied(oldShape);
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(async () => expect(await db.closures.findOne(session.id).exec()).not.toBeNull());
+  expect(closeSession).toHaveBeenCalledTimes(1);
+  expect(closeSession.mock.calls[0]![0]).toStrictEqual({ counted: { cash: 100 }, approvedBy: 'm1', approvedByName: undefined });
+  const row = await db.register_sessions.findOne(session.id).exec();
+  expect(row?.approved_by).toBe('m1');
+  expect(row?.approver_token ?? null).toBeNull();
+});
+
+it('calls approve with the count typed, cash and other tenders in minor units', async () => {
+  const approve = vi.fn(async (_input: { counted: Record<string, number> }) => null);
+  const { session } = await renderSpied(approve);
+  await sale('order-1', session.id, [{ method: 'external', amountMinor: 2200 }]);
+  await waitFor(() => expect(screen.getByTestId('count-tender-external')).toBeTruthy());
+  enter('1.00');
+  fireEvent.change(screen.getByTestId('count-tender-external'), { target: { value: '21.50' } });
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(approve).toHaveBeenCalledTimes(1));
+  expect(approve).toHaveBeenCalledWith({ counted: { cash: 100, external: 2150 } });
+});
+
+it("passes approve()'s approval and approvedVariance to closeSession, and the close lands", async () => {
+  const granted: { approvedVariance?: Record<string, number> } = {};
+  const approve = vi.fn(async ({ counted }: { counted: Record<string, number> }) => {
+    granted.approvedVariance = await liveRegister!.actions.closureVariance(counted);
+    return { approvedBy: 'mgr-1', approval: 'proof-1', approvedVariance: granted.approvedVariance };
+  });
+  const { session, closeSession } = await renderSpied(approve);
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(async () => expect(await db.closures.findOne(session.id).exec()).not.toBeNull());
+  expect(closeSession).toHaveBeenCalledTimes(1);
+  expect(granted.approvedVariance).toBeDefined();
+  expect(closeSession.mock.calls[0]![0]).toMatchObject({
+    counted: { cash: 100 }, approvedBy: 'mgr-1', approval: 'proof-1', approvedVariance: granted.approvedVariance,
+  });
+  expect((await db.register_sessions.findOne(session.id).exec())?.approver_token).toBe('proof-1');
+});
+
+it('keeps the not-granted copy and never calls closeSession when approve resolves null', async () => {
+  const { closeSession } = await renderSpied(async () => null);
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(() =>
+    expect(screen.getByTestId('count-manager-line').textContent).toBe('Approval was not granted. The count is unchanged.'),
+  );
+  await waitFor(() => expect(closeButton().disabled).toBe(false));
+  expect(closeSession).not.toHaveBeenCalled();
+  expect(await closedRows()).toBe(0);
+});
+
+// The count inputs stay editable while the host's approval is open: an approval for the old count
+// must not close the register on it.
+it('asks again, and does not close, when the count is edited while approve is pending', async () => {
+  let grant: (value: { approvedBy: string }) => void = () => {};
+  const approve = vi.fn(
+    (_input: { counted: Record<string, number> }) =>
+      new Promise<{ approvedBy: string } | null>((resolve) => {
+        grant = resolve;
+      }),
+  );
+  const { closeSession } = await renderSpied(approve);
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(approve).toHaveBeenCalledTimes(1));
+  enter('2.00');
+  await act(async () => grant({ approvedBy: 'mgr-1' }));
+  await waitFor(() => expect(screen.getByTestId('count-manager-line').textContent).toBe(APPROVAL_REQUIRED_TEXT));
+  await waitFor(() => expect(closeButton().disabled).toBe(false));
+  expect(closeSession).not.toHaveBeenCalled();
+  expect(await closedRows()).toBe(0);
+  approve.mockResolvedValueOnce({ approvedBy: 'mgr-1' });
+  fireEvent.click(closeButton());
+  await waitFor(async () => expect(await closedRows()).toBe(1));
+  expect(approve).toHaveBeenCalledTimes(2);
+  expect(approve).toHaveBeenLastCalledWith({ counted: { cash: 200 } });
+  expect(closeSession.mock.calls[0]![0].counted).toEqual({ cash: 200 });
+});
+
+// ADR-082 d5: a sale between the approval and the close moves the variance the proof is bound to;
+// the hook's gate refuses, and the next Close asks again.
+it("asks again when a sale lands after the approval's variance, which the hook's gate refuses", async () => {
+  let asked = 0;
+  const approve = vi.fn(async ({ counted }: { counted: Record<string, number> }) => {
+    const approvedVariance = await liveRegister!.actions.closureVariance(counted);
+    asked += 1;
+    if (asked === 1) await sale('late-sale', countingId, [{ method: 'cash', amountMinor: 500 }]);
+    return { approvedBy: 'mgr-1', approvedVariance };
+  });
+  await renderSpied(approve);
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(screen.getByTestId('count-manager-line').textContent).toBe(APPROVAL_REQUIRED_TEXT));
+  await waitFor(() => expect(closeButton().disabled).toBe(false));
+  expect(screen.queryByTestId('count-error')).toBeNull();
+  expect(await closedRows()).toBe(0);
+  fireEvent.click(closeButton());
+  await waitFor(async () => expect(await closedRows()).toBe(1));
+  expect(approve).toHaveBeenCalledTimes(2);
 });

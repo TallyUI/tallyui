@@ -15,11 +15,13 @@ import { RegisterCount } from '@tallyui/components';
 <RegisterCount
   register={register}
   currency="EUR"
-  approve={() => requestApproval()}
+  approve={({ counted }) => requestApproval(counted)}
 />
 ```
 
 Renders denomination tiles or a typed cash count, other tender inputs, and Back to selling and Close register buttons. Non-blind counts show expected cash and variance; closing above the variance threshold requires approval, and no session renders nothing.
+
+`approve` receives the count Close would use. For a store-verified approval (ADR-082), return the store's opaque `approval` and the `approvedVariance` your approval route was given (read it with `register.actions.closureVariance(counted)`); both go to `closeSession`, whose gate refuses a close whose variance has moved since. If the count is edited while `approve` is pending, or the gate refuses, Close shows `APPROVAL_REQUIRED_TEXT` and asks again on the next press. A zero-argument `approve` still works.
 
 ## Props
 
@@ -27,5 +29,5 @@ Renders denomination tiles or a typed cash count, other tender inputs, and Back 
 |------|------|---------|-------------|
 | `register` | `ReturnType<typeof useRegisterSession>` | required | Session, expected amounts, blind state, variance threshold, and back-to-selling and close actions |
 | `currency` | `string` | required | ISO 4217 code used for denomination faces, parsing, and display |
-| `approve` | `() => Promise<{ approvedBy: string; approvedByName?: string } \| null>` | --- | Requested above `register.varianceThreshold`; `null` refuses without changing the count, omission refuses with `APPROVAL_REQUIRED_TEXT`, and approval fields are passed to `closeSession` |
+| `approve` | `(input: { counted: Record<string, number> }) => Promise<{ approvedBy: string; approvedByName?: string; approval?: string; approvedVariance?: Record<string, number> } \| null>` | --- | Requested above `register.varianceThreshold` with the count; `null` refuses without changing the count, omission refuses with `APPROVAL_REQUIRED_TEXT`, and the approval fields are passed to `closeSession` |
 | `className` | `string` | --- | Override container styles |

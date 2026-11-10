@@ -28,7 +28,8 @@
 //   report capabilities navigable, but hides blind amounts (%j)'.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { RegisterPanel } from '../register/register-panel';
+import type { ApprovalNeeded } from '@tallyui/pos';
+import { RegisterPanel, type RegisterPanelProps } from '../register/register-panel';
 import { createRegisterDb, RegisterHarness, seedMovement, seedSession, type RegisterDb } from './register-harness';
 
 let db: RegisterDb;
@@ -301,4 +302,63 @@ it('shows a thrown error by its message alone, without its class name', async ()
   fireEvent.click(screen.getByTestId('register-panel-close'));
   await waitFor(() => expect(screen.getByText('Finish first')).toBeTruthy());
   expect(screen.queryByText(/FooError/)).toBeNull();
+});
+
+// ADR-082 d7: the card for a closure the store refused. `approvalNeeded` comes from command rows
+// this harness has no collection for, so it is set on the register value, with
+// `reapproveClosure` spied; the hook's own tests cover building it and requeueing the row.
+const needed: ApprovalNeeded = {
+  closureId: 'closure-1', sessionId: 'session-1', variance: { cash: -700 },
+  code: 'register_approval_invalid', reason: 'expired', liveAtStore: true,
+};
+async function renderReapproval(approvalNeeded: ApprovalNeeded | null, reapprove?: RegisterPanelProps['reapprove']) {
+  const reapproveClosure = vi.fn(async (_input: { closureId: string; approval: string; approvedBy: string }) => {});
+  render(
+    <RegisterHarness db={db}>
+      {(register) => (
+        <RegisterPanel
+          register={{ ...register, approvalNeeded, actions: { ...register.actions, reapproveClosure } }}
+          currency="EUR"
+          open
+          onOpenChange={() => {}}
+          reapprove={reapprove}
+        />
+      )}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(screen.getByTestId('register-panel-paid-in')).toBeTruthy());
+  return reapproveClosure;
+}
+
+it('shows no re-approval card without approvalNeeded', async () => {
+  await renderReapproval(null, async () => ({ approvedBy: 'mgr-2', approval: 'proof-2' }));
+  expect(screen.queryByTestId('register-panel-reapproval')).toBeNull();
+});
+
+it('shows the re-approval card from approvalNeeded, with no button without reapprove', async () => {
+  await renderReapproval(needed);
+  const card = screen.getByTestId('register-panel-reapproval');
+  expect(card.textContent).toBe(
+    "Approval neededThe store refused this closure's manager approval. A manager must approve it again.",
+  );
+  expect(screen.queryByTestId('register-panel-reapprove')).toBeNull();
+});
+
+it("sends reapprove's proof and approver to reapproveClosure", async () => {
+  const reapprove = vi.fn(async (_needed: ApprovalNeeded) => ({ approvedBy: 'mgr-2', approval: 'proof-2' }));
+  const reapproveClosure = await renderReapproval(needed, reapprove);
+  fireEvent.click(screen.getByTestId('register-panel-reapprove'));
+  await waitFor(() => expect(reapproveClosure).toHaveBeenCalledTimes(1));
+  expect(reapprove).toHaveBeenCalledWith(needed);
+  expect(reapproveClosure).toHaveBeenCalledWith({ closureId: 'closure-1', approval: 'proof-2', approvedBy: 'mgr-2' });
+});
+
+it('changes nothing when reapprove resolves null', async () => {
+  const reapprove = vi.fn(async (_needed: ApprovalNeeded) => null);
+  const reapproveClosure = await renderReapproval(needed, reapprove);
+  fireEvent.click(screen.getByTestId('register-panel-reapprove'));
+  await waitFor(() => expect(reapprove).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect((screen.getByTestId('register-panel-reapprove') as HTMLButtonElement).disabled).toBe(false));
+  expect(reapproveClosure).not.toHaveBeenCalled();
+  expect(screen.getByTestId('register-panel-reapproval')).toBeTruthy();
 });
