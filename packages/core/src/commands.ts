@@ -8,6 +8,8 @@ export const PROTOCOL_HEADER = 'X-Tally-Protocol';
 export const PROTOCOL_VERSION = 1;
 /** The ADR-038 batch limit; a server answers more with 413 and a BatchTooLargeBody. */
 export const MAX_COMMANDS_PER_BATCH = 50;
+/** The longest order.create `note` (version 7, ADR-083), in UTF-16 code units. WCPOS v2's order note has no cap; this bounds the wire. */
+export const ORDER_NOTE_MAX = 1000;
 
 /**
  * True if `value` has the shape of a CommandBatchResponse: an object with a
