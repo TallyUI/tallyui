@@ -61,6 +61,12 @@ export interface ServerCapabilities {
    * coupon. WooCommerce: true only when the woocommerce-pos plugin reports 1.9.0 or later.
    */
   coupons?: boolean;
+  /**
+   * The store's register approval threshold (ADR-082 d3), from the top level of `/tally/v1/info`. With
+   * `register >= 3`, a close whose absolute cash variance is over `thresholdMinor` needs the store's approval.
+   * Absent means the store sets none, and the app's own threshold applies.
+   */
+  registerApproval?: { thresholdMinor: number };
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */
@@ -116,6 +122,16 @@ export function parseLineTax(value: unknown, warn?: (reason: string) => void): {
   return undefined;
 }
 
+function parseRegisterApproval(value: unknown, warn?: (reason: string) => void): { thresholdMinor: number } | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const { thresholdMinor } = value as { thresholdMinor?: unknown };
+    if (typeof thresholdMinor === 'number' && Number.isSafeInteger(thresholdMinor) && thresholdMinor >= 0) return { thresholdMinor };
+  }
+  warn?.('ignoring a malformed registerApproval');
+  return undefined;
+}
+
 const maxVersion = (list: unknown): number | undefined => {
   const valid = Array.isArray(list) ? list.filter((v): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0) : [];
   return valid.length > 0 ? Math.max(...valid) : undefined;
@@ -125,6 +141,7 @@ const maxVersion = (list: unknown): number | undefined => {
  * Reads a 2xx body of `GET /tally/v1/info` (ADR-062): `orderCreate` is the max of
  * `contracts["order.create"]`, or 1 when it's missing or malformed; `register` is the max of
  * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287); malformed `lineTax` is ignored.
+ * malformed `registerApproval` is ignored (ADR-082).
  * `orderRefund` is the max of `contracts["order.refund"]` when valid, otherwise absent (ADR-080).
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
  * A non-object body is also unknown, not a statement of the store's defaults.
@@ -134,7 +151,7 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     warn?.('non-object info body: capabilities unknown');
     return undefined;
   }
-  const { contracts, taxRounding, lineTax } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown };
+  const { contracts, taxRounding, lineTax, registerApproval } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown };
   const register = maxVersion(contracts?.register);
   const orderRefund = maxVersion(contracts?.['order.refund']);
   const rounding = parseTaxRounding(taxRounding);
@@ -143,10 +160,12 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     return undefined;
   }
   const parsedLineTax = parseLineTax(lineTax, warn);
+  const parsed = parseRegisterApproval(registerApproval, warn);
   return { orderCreate: maxVersion(contracts?.['order.create']) ?? 1,
     ...(orderRefund !== undefined ? { orderRefund } : {}),
     ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}),
-    ...(parsedLineTax ? { lineTax: parsedLineTax } : {}) };
+    ...(parsedLineTax ? { lineTax: parsedLineTax } : {}),
+    ...(parsed ? { registerApproval: parsed } : {}) };
 }
 
 export interface AuthField {

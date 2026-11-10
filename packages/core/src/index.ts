@@ -57,6 +57,7 @@ export type {
   OrderCreateCoupon, OrderCreateCouponInvalidData, OrderCreateTotalMismatchData,
   CommandBatchRequest, CommandBatchResponse, BatchTooLargeBody,
   RegisterCommandResult, RegisterSessionOpenPayload, RegisterSessionAlreadyOpenData, RegisterSessionSupersededData,
+  RegisterApprovalRequiredData, RegisterApprovalInvalidData,
   RegisterSessionTransitionPayload,
   RegisterMovementRecordPayload, RegisterMovementVoidPayload, RegisterClosureSubmitPayload,
 } from './types';
