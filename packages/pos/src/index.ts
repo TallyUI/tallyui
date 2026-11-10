@@ -68,6 +68,10 @@ export type {
 export { buildReceiptData, buildReceiptDataFromPosOrder, buildReceiptDataFromStoreOrder, RECEIPT_SCHEMA_VERSION } from './receipt';
 export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, ReceiptRegister, ReceiptFiscal } from './receipt';
 
+// Receipt templates
+export { parseXml, renderHtml, sanitizeHtml, renderReceiptTemplate, renderLogiclessTemplate, renderThermalPreview, receiptTemplateData, DEFAULT_RECEIPT_TEMPLATES, PAPER_COLUMNS, renderReceiptHtml } from './receipt-template';
+export type { ThermalNode, ReceiptNode, SanitizeHtmlOptions, RenderSanitizeOptions, ReceiptTemplateRow, ReceiptTemplateLine, ReceiptTemplateData, ReceiptTemplateOptions, ReceiptPaper, RenderReceiptOptions } from './receipt-template';
+
 // Product
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
 
