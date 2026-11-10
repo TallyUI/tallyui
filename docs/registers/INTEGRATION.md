@@ -21,15 +21,18 @@ configured variance threshold needs manager approval before it can be
 written. "Blind" mode hides the expected figure from the cashier while
 counting, so the count isn't just typed back from the screen.
 
-Sessions, movements and closures are local to the till: nothing is sent to a
-server yet (see [what registers c2 will add](#what-registers-c2-will-add)).
+Sessions, movements and closures are written on the till first. When the
+store advertises the `register` contract, each fact is also queued as a
+`register.*` command and sent to the server (see
+[how registers reach the server](#how-registers-reach-the-server)). Against a
+store that does not advertise it, registers stay local, as before.
 Full detail, including every edge case below, is in
 [`DECISIONS.md#adr-032-how-wcpos-code-reaches-tallyui-plan-d3`](../DECISIONS.md#adr-032-how-wcpos-code-reaches-tallyui-plan-d3)
 ("ADR-032").
 
 ## The collections
 
-Registers add three local-only collections to the app's per-backend
+Registers add four local-only collections to the app's per-backend
 database, alongside the `pos_orders` collection every TallyUI app already
 opens:
 
@@ -40,8 +43,12 @@ opens:
   "register host".
 - `cash_movements` — paid-in, paid-out, no-sale and void rows.
 - `closures` — one row per Z report.
+- `register_commands` — the command ledger, created with
+  `registerCommandCollection()` (`packages/pos/src/register/register-commands.ts`).
+  It is both the send queue and the record of what was sent. See
+  [how registers reach the server](#how-registers-reach-the-server).
 
-All three are local and never replicated. This isn't a shortcut: writing
+All four are local and never replicated. This isn't a shortcut: writing
 locally into a collection that *is* replicated from a server loses the next
 pulled version of that document, because the local write is never sent back
 (the `#53` rule). Registers avoid the problem by not replicating at all.
@@ -51,7 +58,7 @@ migrations run before anything reads from it.
 
 ```ts
 import {
-  registerSessionCollection, cashMovementSchema, closureSchema, ensureRegister, addPosOrderCollection,
+  registerSessionCollection, cashMovementSchema, closureSchema, registerCommandCollection, ensureRegister, addPosOrderCollection,
 } from '@tallyui/pos';
 
 declare const db: /* the app's per-backend RxDatabase */ any;
@@ -63,6 +70,7 @@ await db.addCollections({
   register_sessions: registerSessionCollection(),
   cash_movements: { schema: cashMovementSchema },
   closures: { schema: closureSchema },
+  register_commands: registerCommandCollection(),
 });
 
 // The register host is the register_sessions collection. ensureRegister mints the till's
@@ -73,7 +81,9 @@ await ensureRegister(register, platform);
 
 Expose `register_sessions`, `cash_movements`, `closures` and `orders`
 alongside wherever the app already exposes its other collections — a
-`useRegisterSession` caller needs all four plus the register host.
+`useRegisterSession` caller needs all four plus the register host. To sync,
+also pass `register_commands` (the hook's `commands` option, `null` while it
+opens).
 
 TallyUI databases are single-instance: one tab, one database, no leader
 election to coordinate (ADR-061). Registers add no multi-tab concerns of
@@ -82,8 +92,9 @@ their own.
 ## `useRegisterSession`
 
 `useRegisterSession` is the till's register session as React state, plus its
-actions. The app supplies every input; there's no context and nothing is
-sent to a server.
+actions. The app supplies every input; there's no context. The hook records
+register commands in `register_commands` but never sends them; the register
+outbox does (see [how registers reach the server](#how-registers-reach-the-server)).
 
 ### Options
 
@@ -313,27 +324,65 @@ See ADR-032 for the exact windows these come from, and
 [ADR-052](../DECISIONS.md#adr-052-neutral-pos-app-pieces-move-from-medusaposapp-into-tallyui)
 for how `useSale`'s idempotent completion and Retry/Continue work in general.
 
-## What registers c2 will add
+## How registers reach the server
 
-None of this is built yet: sessions are entirely local today, and a server knows nothing about them. So nothing stops two tills opening the same drawer, and nothing on a server checks a close. The server side ("registers c2") is designed and queued. Plan on:
+Register facts ride the same neutral `POST /tally/v1/commands` transport as
+`order.create`. The design is ADR-068 in
+[`DECISIONS.md`](../DECISIONS.md#adr-068-registers-sync-to-the-server-as-register-commands-on-the-command-outbox);
+take over and supersede are ADR-078.
 
-- **Register commands** over the same neutral `POST /tally/v1/commands` transport as `order.create`:
-  - session open;
-  - a status transition;
-  - a movement recorded or voided;
-  - a closure submitted.
+- **Five commands:** `register.session.open`, `register.session.transition`,
+  `register.movement.record`, `register.movement.void` and
+  `register.closure.submit`. The builders and the ledger schema are in
+  `packages/pos/src/register/register-commands.ts`.
+- **A capability gates it.** A store advertises `contracts.register` on
+  `GET /tally/v1/info`; core reads it as `ServerCapabilities.register`
+  (`packages/core/src/types/connector.ts`). Version 1 is ADR-068. Version 2
+  adds the take-over open (ADR-078). With no `register` contract, nothing is
+  recorded or sent.
+- **A local command ledger.** `reconcileRegisterCommands` appends each fact to
+  `register_commands` with a fixed key, a per-register `seq` and fixed bytes,
+  so a retry sends the same command. The ledger is never pruned.
+- **A sender that goes strictly in order.** `createRegisterOutbox` and
+  `useRegisterOutbox` (`packages/pos/src/outbox/register-outbox.ts`) send each
+  register's commands in `seq` order and stop at the first one the server does
+  not apply. The app creates it with a `CommandTransport`, the till's
+  `deviceId`, and the `register_commands` collection, and starts it behind the
+  capability.
+- **`order.create` version 3 carries the sale's `sessionId`**
+  (`packages/pos/src/pos-order/command.ts`), see
+  [ADR-065](../DECISIONS.md#adr-065-ordercreate-version-3-carries-the-receipts-figures-on-every-sale-pos_orders-goes-to-schema-version-2).
 
-  A store turns them on by advertising a `register` contract on `GET /tally/v1/info`, the same way `order.create` versions are advertised (`capabilities.orderCreate`). Without it, nothing changes.
-- **A local command ledger** that records each register fact as a command with fixed bytes, and a sender that sends each register's commands strictly in order. The app adds one more local collection and starts the sender behind the capability.
-- **`order.create` version 3 carrying the sale's `sessionId`,** so the server can derive each session's expected cash and sales count from its own records.
-- **Server anchoring:** `expected` and `salesCount` come from the server whenever nothing of the session is still waiting to sync. The session's reserved `server_expected` and `server_sales_count` fields hold them.
-- **The register's closure counters** adopted from the server as a floor, never lowered.
-- **A server approval gate:** the server checks the variance on its own figures. Approval arrives as a signed, session-bound approver token from a connector call, which is what the reserved `approver_token` field is for. `approve()`'s contract grows to return it.
-- **No sale can join a session once it's counting:** such a sale becomes a late sale.
+### Take over and supersede (ADR-078)
 
-See ADR-032's c2 notes and
-[ADR-065](../DECISIONS.md#adr-065-ordercreate-version-3-carries-the-receipts-figures-on-every-sale-pos_orders-goes-to-schema-version-2)
-for the `order.create` version 3 work this builds on.
+- **One live session per register.** If another till already holds the
+  register, the server refuses the open with `register_session_already_open`.
+  The local session becomes `conflict`, and the cashier chooses.
+- **Take over** sends the open again with `supersedes` set to the live
+  session. The server marks that session `superseded` and opens the new one.
+  `useRegisterSession` exposes it, and `takeOverSession` is in
+  `packages/pos/src/register/register-adoption.ts`.
+- **Choose another register** abandons the conflict session (`abandonSession`).
+- **Same device, same register:** an open from the live session's own device
+  resumes it. The local row keeps its own id and records `server_session_id`.
+- **Superseded sessions don't block the ledger.** Commands naming a superseded
+  session get their own final refusal, and the commands behind them still go
+  (`NON_BLOCKING_REJECTIONS` in `register-outbox.ts`).
+- **The till's name** (`deviceName`, 1 to 64 characters) is sent on the v2 open.
+- `adoptRegisterResults` (same file as `takeOverSession`) reads the server's
+  answers back into the local session rows.
+
+### Not built yet
+
+- **Server anchoring.** `expected` and `salesCount` are still worked out on the
+  till. The reserved `server_expected` and `server_sales_count` fields on the
+  session are not filled (`packages/pos/src/register/use-register-session.ts`
+  lists this as not ported).
+- **The closure counters** are not yet adopted from the server as a floor.
+- **A server approval gate.** The reserved `approver_token` field is not
+  filled, and `approve()` does not return a token.
+- **No sale joins a counting session:** a sale at that point still becomes a
+  late sale, but no server check backs it.
 
 ## Gotchas
 
