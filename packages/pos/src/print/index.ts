@@ -8,3 +8,5 @@ export {
 export type { PrinterProfile, PrinterProfileCollection } from './printer-profiles';
 export { createSystemPrintTransport, SYSTEM_PRINT_TIMING } from './system-transport';
 export type { SystemPrintTransportOptions } from './system-transport';
+export { escpos, encodeEscPos, createEscPosTransport, ESCPOS_CODE_PAGES } from './escpos';
+export type { EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions } from './escpos';

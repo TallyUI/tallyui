@@ -3,6 +3,8 @@
  * `PrinterTransport` has `printRaw(bytes)` and `printHtml(html)`; here one `print(job)` takes a job that
  * carries HTML, bytes or both, and each transport prints what it can.
  */
+import type { ReceiptData } from '../receipt/types';
+
 export type PrintJobKind = 'receipt' | 'report' | 'test';
 
 export interface PrintJob {
@@ -12,6 +14,8 @@ export interface PrintJob {
   html?: string;
   /** Pre-encoded printer bytes (ESC/POS and the like), for a raw transport. */
   bytes?: Uint8Array;
+  /** The receipt itself, for a transport that lays it out (`createEscPosTransport`). */
+  receipt?: ReceiptData;
 }
 
 /** `unsupported`: this transport cannot print the job; `unavailable`: the platform has no way to print; `failed`: the print went wrong. */
