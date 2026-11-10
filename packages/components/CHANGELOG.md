@@ -1,5 +1,20 @@
 # @tallyui/components
 
+## 3.15.0
+
+### Minor Changes
+
+- 233cf61: Adds `CartFoot`, WCPOS v2's cart foot: a "Checkout {total}" button beside a ⋮ menu of actions the app passes as `{ label, onPress, destructive? }` items. `Cart` gains an optional `checkout` prop that shows this foot in place of its Cash and Card terminal buttons; without it, Cart is unchanged.
+- 77f3612: Cart can now open WCPOS v2's keypad from a line's quantity or price with `lineEditor="popover"`, and the price keypad carries the quick-discount keys. The keypad is a new shared `Keypad` component, also used by the tender pane, and `LinePopover` is exported for apps that build their own lines.
+
+### Patch Changes
+
+- Updated dependencies [c2319ab]
+  - @tallyui/core@3.15.0
+  - @tallyui/pos@3.15.0
+  - @tallyui/primitives@3.15.0
+  - @tallyui/theme@3.15.0
+
 ## 3.14.0
 
 ### Minor Changes
