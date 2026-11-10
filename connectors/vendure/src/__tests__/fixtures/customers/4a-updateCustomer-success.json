@@ -1,0 +1,23 @@
+{
+  "source": "Written from the Vendure 3 Admin API reference (UpdateCustomerInput, UpdateCustomerResult) with the recorded customer 2 of 2a; not recorded.",
+  "query": "mutation Update($input: UpdateCustomerInput!) {\n  updateCustomer(input: $input) {\n    __typename\n    ... on Customer { id firstName lastName emailAddress phoneNumber }\n    ... on ErrorResult { errorCode message }\n  }\n}",
+  "variables": {
+    "input": {
+      "id": "2",
+      "phoneNumber": "+44 20 7946 0002"
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "data": {
+      "updateCustomer": {
+        "__typename": "Customer",
+        "id": "2",
+        "firstName": "Ada",
+        "lastName": "Lovelace",
+        "emailAddress": "ada.fixture@example.com",
+        "phoneNumber": "+44 20 7946 0002"
+      }
+    }
+  }
+}
