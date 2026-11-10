@@ -4,7 +4,7 @@ import { addRxPlugin, createRxDatabase } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { neutralFailureClass, type SyncContext, type TallyConnector } from '@tallyui/core';
+import { ConnectorUnauthorizedError, neutralFailureClass, type SyncContext, type TallyConnector } from '@tallyui/core';
 
 import { createConnectivityTracker, type ConnectivityTracker } from './connectivity';
 import { startReplication } from './replication';
@@ -73,17 +73,26 @@ const settle = (check: () => boolean, ms?: number) => until(check, ms).catch(() 
 /**
  * A push-only store: `answer` runs per push call (an Error rejects it, a promise holds it); `accepted` lists each row
  * id the store took, in order. The tracker's clock moves 30 s per push call. `rows` are in the collection before the
- * replication starts, so RxDB's initial upstream sync sends them in `batchSize` pages.
+ * replication starts, so RxDB's initial upstream sync sends them in `batchSize` pages. `pull` runs per pull call the
+ * same way (an Error rejects it).
  */
 async function pushSetup(answer: (call: number) => unknown, tracker?: ConnectivityTracker,
-  { batchSize, rows = [], retryTime = 10 }: { batchSize?: number; rows?: string[]; retryTime?: number } = {}) {
+  { batchSize, rows = [], retryTime = 10, pull }:
+  { batchSize?: number; rows?: string[]; retryTime?: number; pull?: (call: number) => unknown } = {}) {
   const collection = await products();
   await insert(collection, ...rows);
   let calls = 0;
   const connectivity = tracker ?? createConnectivityTracker({ connector: gate, now: () => calls * 30_000 });
   const accepted: string[] = [];
+  let pulls = 0;
   const adapter = {
-    pull: { handler: async (checkpoint: unknown) => ({ documents: [], checkpoint }) },
+    pull: {
+      handler: async (checkpoint: unknown) => {
+        const result = await pull?.(++pulls);
+        if (result instanceof Error) throw result;
+        return { documents: [], checkpoint };
+      },
+    },
     push: {
       handler: async (rows: { newDocumentState: { id: string } }[]) => {
         const result = await answer(++calls);
@@ -100,7 +109,7 @@ async function pushSetup(answer: (call: number) => unknown, tracker?: Connectivi
   state.error$.subscribe(error => errors.push(error));
   const states: string[] = [];
   connectivity.snapshot$.subscribe(snapshot => states.push(snapshot.updateRequired ? 'update-required' : snapshot.state));
-  return { state, collection, tracker: connectivity, accepted, errors, states, calls: () => calls };
+  return { state, collection, adapter, tracker: connectivity, accepted, errors, states, calls: () => calls };
 }
 
 function insert(collection: Awaited<ReturnType<typeof products>>, ...ids: string[]) {
@@ -289,10 +298,9 @@ describe('startReplication with a connectivity tracker', () => {
     expect([...accepted].sort()).toEqual(seven);
   });
 
-  // Known limit (RxDB 17.5): after a thrown push, RxDB's retry wait runs outside the handler, so nothing can hold it.
-  // Ending while paused, its push loop returns [] unsent (plugins/replication/index.js 240, 269), the queued pages store
-  // the up checkpoint (upstream.js 211), and these rows never go. Flips to a pass if RxDB fixes it.
-  it.fails('known limit: a retry wait after a thrown push that ends while paused loses the queued pages', async () => {
+  // RxDB 17.5's own push retry wait, ending while paused, returns [] unsent (plugins/replication/index.js 266, 269), and
+  // the queued pages then store the up checkpoint (upstream.js 211): every row lost. The handler retries itself instead.
+  it('a retry wait after a thrown push that ends while paused loses no row, and sends each once after start', async () => {
     const { state, accepted, calls } = await pushSetup(call => (call === 1 ? unreachable() : undefined), undefined,
       { ...pages, rows: seven, retryTime: 100 });
     await until(() => calls() === 1);
@@ -302,6 +310,44 @@ describe('startReplication with a connectivity tracker', () => {
     await settle(() => accepted.length >= seven.length);
     await sleep(100);
     expect([...accepted].sort()).toEqual(seven);
+  });
+
+  it('a sign-in error on the pull while a thrown push waits to retry loses no row: each goes once after resume', async () => {
+    let pushed = false;
+    const { state, accepted, errors } = await pushSetup((call) => {
+      pushed = true;
+      return call === 1 ? unreachable() : undefined;
+    }, undefined, {
+      ...pages, rows: seven, retryTime: 100,
+      pull: async call => (call === 1 ? until(() => pushed).then(() => new ConnectorUnauthorizedError('x', 401)) : undefined),
+    });
+    await until(() => state.isPaused());
+    await sleep(300);
+    expect(accepted).toEqual([]);
+    expect(errors).toHaveLength(1);
+    await state.resume();
+    await settle(() => accepted.length >= seven.length);
+    await sleep(100);
+    expect([...accepted].sort()).toEqual(seven);
+  });
+
+  // Known limit (RxDB 17.5): a push sent while paused and then cancelled is never recorded (upstream.js 287), and its
+  // up checkpoint is not stored, so the next replication sends those rows again. No connector has a push handler today.
+  it('known limit: a cancel while a sent push is held for a pause sends its rows again on the next start', async () => {
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => { finish = resolve; });
+    const { state, collection, adapter, accepted, calls } = await pushSetup(call => (call === 1 ? held : undefined),
+      undefined, { rows: ['a'] });
+    await until(() => calls() === 1);
+    await state.pause();
+    finish();
+    await until(() => accepted.length === 1);
+    await state.cancel();
+    const next = startReplication({ collection, adapter: adapter as never, context, retryTime: 10 });
+    cleanup.push(() => next.cancel());
+    await settle(() => accepted.length >= 2);
+    await sleep(100);
+    expect(accepted).toEqual(['a', 'a']);
   });
 
   it('flapping offline, online, offline, online loses and doubles no write, and ends online', async () => {
