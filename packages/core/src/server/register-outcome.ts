@@ -7,6 +7,8 @@ export type RegisterConflictCode =
   | 'register_session_closed'
   | 'register_closure_exists'
   | 'register_closure_number_invalid'
+  | 'register_approval_required'
+  | 'register_approval_invalid'
 
 export type RegisterOutcome =
   | { kind: 'ok'; register: RegisterCommandResult }
