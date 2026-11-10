@@ -13,7 +13,6 @@ describe('RegisterInfo types', () => {
       id: string;
       name: string;
       defaultFloatMinor?: number;
-      varianceThresholdMinor?: number;
       expectedCloseTime?: string;
     }>();
   });
