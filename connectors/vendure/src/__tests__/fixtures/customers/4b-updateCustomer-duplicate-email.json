@@ -1,0 +1,20 @@
+{
+  "source": "Written from the Vendure 3 Admin API reference (UpdateCustomerResult = Customer | EmailAddressConflictError) with the recorded error of 2b; not recorded.",
+  "query": "mutation Update($input: UpdateCustomerInput!) {\n  updateCustomer(input: $input) {\n    __typename\n    ... on Customer { id firstName lastName emailAddress phoneNumber }\n    ... on ErrorResult { errorCode message }\n  }\n}",
+  "variables": {
+    "input": {
+      "id": "2",
+      "emailAddress": "adam.fixture@example.com"
+    }
+  },
+  "httpStatus": 200,
+  "response": {
+    "data": {
+      "updateCustomer": {
+        "__typename": "EmailAddressConflictError",
+        "errorCode": "EMAIL_ADDRESS_CONFLICT_ERROR",
+        "message": "The email address is not available."
+      }
+    }
+  }
+}

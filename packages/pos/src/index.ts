@@ -91,6 +91,16 @@ export type {
   SimulatedReaderId, SimulatedDriverOptions,
 } from './payment-driver';
 
+// Printing
+export {
+  PrintError, toPrintError, createPrintQueue, SYSTEM_PRINTER_ID, PRINTER_PROFILES_COLLECTION, printerProfileSchema,
+  printerProfileCollection, addPrinterProfileCollection, createSystemPrintTransport, SYSTEM_PRINT_TIMING,
+} from './print';
+export type {
+  PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
+  PrinterProfile, PrinterProfileCollection, SystemPrintTransportOptions,
+} from './print';
+
 // Sale
 export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED } from './sale';
 export type { SaleStage, CatalogueEntry, SaleDiscountCodes, SaleDiscountState } from './sale';
@@ -111,7 +121,7 @@ export { tenderReducer, initTenderState, initialTenderState, appliedMinor, chang
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus } from './tender';
 
 // Register
-export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, denominationTotal, varianceText, denominations } from './register';
+export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, closureVariance, denominationTotal, varianceText, denominations } from './register';
 export type { MovementType, LedgerRow, Movement } from './register';
 export { registerSessionSchema, registerSessionCollection, cashMovementSchema, closureSchema } from './register';
 export { addRegisterSessionCollection, RegisterSessionOpenClosedError, registerSessionsLogger, REGISTER_SESSION_MIGRATION_CLOSE_WAIT_MS } from './register';

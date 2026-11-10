@@ -1,5 +1,5 @@
 {
-  "_recorded": "Medusa 2.21.0 admin API, local dev store, 2026-09-28. Seed data is synthetic. Each entry is the exact HTTP status and body.",
+  "_recorded": "Medusa 2.21.0 admin API, local dev store, 2026-09-28 (the update and address entries 2026-11-10). Seed data is synthetic. Each entry is the exact HTTP status and body.",
   "search": {
     "request": "GET /admin/customers?q=smith&limit=3",
     "status": 200,
@@ -34,5 +34,50 @@
     "request": "GET /admin/customers?q=smith (no Authorization header)",
     "status": 401,
     "body": {"message":"Unauthorized"}
+  },
+  "update": {
+    "request": "POST /admin/customers/cus_01M72N38GQW277SEH0ARJ0ZF6N?fields=*addresses {\"phone\":\"+45 11223344\",\"company_name\":\"Fixture Co\"}",
+    "status": 200,
+    "body": {"customer":{"id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","company_name":"Fixture Co","first_name":"Update","last_name":"Fixture","email":"tally-update-1794311823@tally.test","phone":"+45 11223344","metadata":null,"has_account":false,"created_by":"user_01M35QZP0JZGKG7ENH22NKJWHZ","created_at":"2026-11-10T11:57:03.895Z","updated_at":"2026-11-10T11:57:03.904Z","deleted_at":null,"addresses":[]}}
+  },
+  "updateWithAddresses": {
+    "request": "POST /admin/customers/cus_01M72N38GQW277SEH0ARJ0ZF6N?fields=*addresses {}",
+    "status": 200,
+    "body": {"customer":{"id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","company_name":"Fixture Co","first_name":"Update","last_name":"Fixture","email":"tally-update-1794311823@tally.test","phone":"+45 11223344","metadata":null,"has_account":false,"created_by":"user_01M35QZP0JZGKG7ENH22NKJWHZ","created_at":"2026-11-10T11:57:03.895Z","updated_at":"2026-11-10T11:57:03.904Z","deleted_at":null,"addresses":[{"id":"cuaddr_01M72N38HG5MKG9GK8RGV4P2VE","address_name":null,"is_default_shipping":false,"is_default_billing":true,"company":null,"first_name":"Bill","last_name":"Payer","address_1":"1 Main St","address_2":null,"city":"Copenhagen","country_code":"dk","province":null,"postal_code":"1050","phone":null,"metadata":null,"customer_id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","created_at":"2026-11-10T11:57:03.920Z","updated_at":"2026-11-10T11:57:03.920Z","deleted_at":null},{"id":"cuaddr_01M72N38HSB06D41REFNZCGS2S","address_name":null,"is_default_shipping":true,"is_default_billing":false,"company":null,"first_name":"Ship","last_name":"Here","address_1":"2 Dock Rd","address_2":null,"city":"Aarhus","country_code":"dk","province":null,"postal_code":"8000","phone":null,"metadata":null,"customer_id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","created_at":"2026-11-10T11:57:03.929Z","updated_at":"2026-11-10T11:57:03.929Z","deleted_at":null}]}}
+  },
+  "updateShared": {
+    "request": "POST /admin/customers/cus_01M72N38JCSRWYV37XMDBFFMZ5?fields=*addresses {}",
+    "status": 200,
+    "body": {"customer":{"id":"cus_01M72N38JCSRWYV37XMDBFFMZ5","company_name":null,"first_name":"Shared","last_name":"Fixture","email":"tally-update-shared-1794311823@tally.test","phone":null,"metadata":null,"has_account":false,"created_by":"user_01M35QZP0JZGKG7ENH22NKJWHZ","created_at":"2026-11-10T11:57:03.948Z","updated_at":"2026-11-10T11:57:03.948Z","deleted_at":null,"addresses":[{"id":"cuaddr_01M72N38JKSHPNMG6TJ6H64G4W","address_name":null,"is_default_shipping":true,"is_default_billing":true,"company":null,"first_name":"Shared","last_name":"Fixture","address_1":"1 Main St","address_2":null,"city":"Copenhagen","country_code":"dk","province":null,"postal_code":"1050","phone":null,"metadata":null,"customer_id":"cus_01M72N38JCSRWYV37XMDBFFMZ5","created_at":"2026-11-10T11:57:03.955Z","updated_at":"2026-11-10T11:57:03.955Z","deleted_at":null}]}}
+  },
+  "addressCreateBilling": {
+    "request": "POST /admin/customers/cus_01M72N38GQW277SEH0ARJ0ZF6N/addresses?fields=*addresses {\"first_name\":\"Bill\",\"last_name\":\"Payer\",\"company\":null,\"address_1\":\"1 Main St\",\"address_2\":null,\"city\":\"Copenhagen\",\"province\":null,\"postal_code\":\"1050\",\"country_code\":\"dk\",\"phone\":null,\"is_default_billing\":true}",
+    "status": 200,
+    "body": {"customer":{"id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","company_name":"Fixture Co","first_name":"Update","last_name":"Fixture","email":"tally-update-1794311823@tally.test","phone":"+45 11223344","metadata":null,"has_account":false,"created_by":"user_01M35QZP0JZGKG7ENH22NKJWHZ","created_at":"2026-11-10T11:57:03.895Z","updated_at":"2026-11-10T11:57:03.904Z","deleted_at":null,"addresses":[{"id":"cuaddr_01M72N38HG5MKG9GK8RGV4P2VE","address_name":null,"is_default_shipping":false,"is_default_billing":true,"company":null,"first_name":"Bill","last_name":"Payer","address_1":"1 Main St","address_2":null,"city":"Copenhagen","country_code":"dk","province":null,"postal_code":"1050","phone":null,"metadata":null,"customer_id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","created_at":"2026-11-10T11:57:03.920Z","updated_at":"2026-11-10T11:57:03.920Z","deleted_at":null}]}}
+  },
+  "addressCreateShipping": {
+    "request": "POST /admin/customers/cus_01M72N38GQW277SEH0ARJ0ZF6N/addresses?fields=*addresses {\"first_name\":\"Ship\",\"last_name\":\"Here\",\"company\":null,\"address_1\":\"2 Dock Rd\",\"address_2\":null,\"city\":\"Aarhus\",\"province\":null,\"postal_code\":\"8000\",\"country_code\":\"dk\",\"phone\":null,\"is_default_shipping\":true}",
+    "status": 200,
+    "body": {"customer":{"id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","company_name":"Fixture Co","first_name":"Update","last_name":"Fixture","email":"tally-update-1794311823@tally.test","phone":"+45 11223344","metadata":null,"has_account":false,"created_by":"user_01M35QZP0JZGKG7ENH22NKJWHZ","created_at":"2026-11-10T11:57:03.895Z","updated_at":"2026-11-10T11:57:03.904Z","deleted_at":null,"addresses":[{"id":"cuaddr_01M72N38HG5MKG9GK8RGV4P2VE","address_name":null,"is_default_shipping":false,"is_default_billing":true,"company":null,"first_name":"Bill","last_name":"Payer","address_1":"1 Main St","address_2":null,"city":"Copenhagen","country_code":"dk","province":null,"postal_code":"1050","phone":null,"metadata":null,"customer_id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","created_at":"2026-11-10T11:57:03.920Z","updated_at":"2026-11-10T11:57:03.920Z","deleted_at":null},{"id":"cuaddr_01M72N38HSB06D41REFNZCGS2S","address_name":null,"is_default_shipping":true,"is_default_billing":false,"company":null,"first_name":"Ship","last_name":"Here","address_1":"2 Dock Rd","address_2":null,"city":"Aarhus","country_code":"dk","province":null,"postal_code":"8000","phone":null,"metadata":null,"customer_id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","created_at":"2026-11-10T11:57:03.929Z","updated_at":"2026-11-10T11:57:03.929Z","deleted_at":null}]}}
+  },
+  "addressUpdateBilling": {
+    "request": "POST /admin/customers/cus_01M72N38GQW277SEH0ARJ0ZF6N/addresses/cuaddr_01M72N38HG5MKG9GK8RGV4P2VE?fields=*addresses {\"first_name\":\"Bill\",\"last_name\":\"Payer\",\"company\":\"Fixture Co\",\"address_1\":\"3 Market Sq\",\"address_2\":null,\"city\":\"Odense\",\"province\":null,\"postal_code\":\"5000\",\"country_code\":\"dk\",\"phone\":\"+45 99887766\"}",
+    "status": 200,
+    "body": {"customer":{"id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","company_name":"Fixture Co","first_name":"Update","last_name":"Fixture","email":"tally-update-1794311823@tally.test","phone":"+45 11223344","metadata":null,"has_account":false,"created_by":"user_01M35QZP0JZGKG7ENH22NKJWHZ","created_at":"2026-11-10T11:57:03.895Z","updated_at":"2026-11-10T11:57:03.904Z","deleted_at":null,"addresses":[{"id":"cuaddr_01M72N38HG5MKG9GK8RGV4P2VE","address_name":null,"is_default_shipping":false,"is_default_billing":true,"company":"Fixture Co","first_name":"Bill","last_name":"Payer","address_1":"3 Market Sq","address_2":null,"city":"Odense","country_code":"dk","province":null,"postal_code":"5000","phone":"+45 99887766","metadata":null,"customer_id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","created_at":"2026-11-10T11:57:03.920Z","updated_at":"2026-11-10T11:57:03.943Z","deleted_at":null},{"id":"cuaddr_01M72N38HSB06D41REFNZCGS2S","address_name":null,"is_default_shipping":true,"is_default_billing":false,"company":null,"first_name":"Ship","last_name":"Here","address_1":"2 Dock Rd","address_2":null,"city":"Aarhus","country_code":"dk","province":null,"postal_code":"8000","phone":null,"metadata":null,"customer_id":"cus_01M72N38GQW277SEH0ARJ0ZF6N","created_at":"2026-11-10T11:57:03.929Z","updated_at":"2026-11-10T11:57:03.929Z","deleted_at":null}]}}
+  },
+  "addressCreateFromShared": {
+    "request": "POST /admin/customers/cus_01M72N38JCSRWYV37XMDBFFMZ5/addresses?fields=*addresses {\"first_name\":\"Ship\",\"last_name\":\"Here\",\"company\":null,\"address_1\":\"2 Dock Rd\",\"address_2\":null,\"city\":\"Aarhus\",\"province\":null,\"postal_code\":\"8000\",\"country_code\":\"dk\",\"phone\":null,\"is_default_shipping\":true}",
+    "status": 200,
+    "body": {"customer":{"id":"cus_01M72N38JCSRWYV37XMDBFFMZ5","company_name":null,"first_name":"Shared","last_name":"Fixture","email":"tally-update-shared-1794311823@tally.test","phone":null,"metadata":null,"has_account":false,"created_by":"user_01M35QZP0JZGKG7ENH22NKJWHZ","created_at":"2026-11-10T11:57:03.948Z","updated_at":"2026-11-10T11:57:03.948Z","deleted_at":null,"addresses":[{"id":"cuaddr_01M72N38JKSHPNMG6TJ6H64G4W","address_name":null,"is_default_shipping":false,"is_default_billing":true,"company":null,"first_name":"Shared","last_name":"Fixture","address_1":"1 Main St","address_2":null,"city":"Copenhagen","country_code":"dk","province":null,"postal_code":"1050","phone":null,"metadata":null,"customer_id":"cus_01M72N38JCSRWYV37XMDBFFMZ5","created_at":"2026-11-10T11:57:03.955Z","updated_at":"2026-11-10T11:57:03.967Z","deleted_at":null},{"id":"cuaddr_01M72N38K1HNCFT14RV46HMV08","address_name":null,"is_default_shipping":true,"is_default_billing":false,"company":null,"first_name":"Ship","last_name":"Here","address_1":"2 Dock Rd","address_2":null,"city":"Aarhus","country_code":"dk","province":null,"postal_code":"8000","phone":null,"metadata":null,"customer_id":"cus_01M72N38JCSRWYV37XMDBFFMZ5","created_at":"2026-11-10T11:57:03.969Z","updated_at":"2026-11-10T11:57:03.969Z","deleted_at":null}]}}
+  },
+  "updateInvalid": {
+    "request": "POST /admin/customers/cus_01M72N38GQW277SEH0ARJ0ZF6N?fields=*addresses {\"email\":\"not-an-email\"}",
+    "status": 400,
+    "body": {"type":"invalid_data","message":"Invalid request: Invalid email address"}
+  },
+  "updateMissing": {
+    "request": "POST /admin/customers/cus_does_not_exist?fields=*addresses {\"phone\":\"+45 11223344\"}",
+    "status": 404,
+    "body": {"type":"not_found","message":"Customer with id \"cus_does_not_exist\" not found"}
   }
 }
