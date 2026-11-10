@@ -196,5 +196,11 @@ export {
   type StoreSettingsChoiceScreenProps,
 } from './layout';
 
+// Reports components
+export {
+  SalesRoom, type SalesRoomProps, SalesHero, type SalesHeroProps, SalesCards, type SalesCardsProps, type SalesCardId,
+  SalesFiltersBar, type SalesFiltersBarProps, type SalesFilters, type SalesOption,
+} from './reports';
+
 // Fonts
 export { FontProvider, useFontType, type FontProviderProps, type FontState, type FontStatus } from './fonts';

@@ -146,5 +146,5 @@ export type { TenderRounding } from './tender';
 export { suggestFloat, type FloatSuggestion } from './register';
 
 // Reports
-export { salesFigures, marginOf, comparisonRange, daysOf, inRange, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';
-export type { StoreDay, DayRange, ReportCategory, ReportLine, ReportPayment, ReportTax, ReportOrder, ReportRefund, LineJoin, Margin, SalesTotals, PaymentRow, GroupRow, TaxRow, DayPoint, SalesFiguresInput, SalesFigures } from './reports';
+export { salesFigures, marginOf, comparisonRange, daysOf, inRange, presetRange, DATE_PRESETS, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';
+export type { StoreDay, DayRange, ReportCategory, ReportLine, ReportPayment, ReportTax, ReportOrder, ReportRefund, LineJoin, Margin, SalesTotals, PaymentRow, GroupRow, TaxRow, DayPoint, SalesFiguresInput, SalesFigures, DatePreset } from './reports';
