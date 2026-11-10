@@ -48,7 +48,7 @@ it('re-exports WooTillUpdateRequiredError from the index', () => {
   expect(ExportedError).toBe(WooTillUpdateRequiredError);
 });
 
-it('a 426 on the mark request pauses the pull with one till notice, and resume() pulls again once the till is updated, through the real replication loop', async () => {
+it('a 426 on the mark request holds the pull with one till notice, and resume() pulls again once the till is updated, through the real replication loop', async () => {
   const page = fakeDocument();
   const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => gate());
   const db = await createRxDatabase({
@@ -64,7 +64,9 @@ it('a 426 on the mark request pauses the pull with one till notice, and resume()
   state.error$.subscribe((error) => errors.push(error));
 
   expect(page.listeners.size).toBe(1);
-  await until(() => state.isPaused());
+  await until(() => notices.at(-1)?.fixedBy === 'till');
+  // Before the toggle too: RxDB's start() on 'visible' would clear a pause.
+  expect(state.isPaused()).toBe(false);
   expect(String(fetchSpy.mock.calls[0][0])).toContain('orderby=modified');
   page.toggle('hidden');
   page.toggle('visible');
@@ -75,14 +77,14 @@ it('a 426 on the mark request pauses the pull with one till notice, and resume()
   expect(fetchSpy).toHaveBeenCalledTimes(1);
   expect(notices).toEqual([undefined, { code: 'till_update_required', since: expect.any(Number), fixedBy: 'till' }]);
   expect(errors).toEqual([]);
-  expect(state.isPaused()).toBe(true);
+  // A hold, never RxDB's pause(): isPaused() stays false (#645).
+  expect(state.isPaused()).toBe(false);
 
   // The till was updated: the store now answers, and resume() restarts the pull.
   const product = { id: 1, uuid: 'u1', name: 'Product 1', status: 'publish', date_modified_gmt: '2026-01-01T08:00:01' };
   fetchSpy.mockImplementation(async () => new Response(JSON.stringify([product]), { headers: { 'X-WP-Total': '1' } }));
   await state.resume();
   await until(() => fetchSpy.mock.calls.length > 1);
-  await until(() => !state.isPaused());
   await state.awaitInSync();
   expect((await products.find().exec()).map((doc) => doc.uuid)).toEqual(['u1']);
   expect(notices).toEqual([undefined, { code: 'till_update_required', since: expect.any(Number), fixedBy: 'till' }, undefined]);
