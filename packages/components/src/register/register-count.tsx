@@ -112,11 +112,20 @@ export interface RegisterCountProps {
   /** ISO 4217 code: denomination faces, parsing and display. */
   currency: string;
   /**
-   * Above `register.varianceThreshold`, Close asks for this first. `null` refuses and the count
-   * stays; without it, Close refuses outright with `APPROVAL_REQUIRED_TEXT`. Its `approvedBy`
-   * and `approvedByName` go to `closeSession`, which enforces the same gate and puts them on the Z.
+   * Above `register.varianceThreshold`, Close asks for this first, with the count it would close
+   * on. `null` refuses and the count stays; without it, Close refuses outright with
+   * `APPROVAL_REQUIRED_TEXT`. Its `approvedBy`, `approvedByName`, `approval` (the store's opaque
+   * proof, ADR-082) and `approvedVariance` (from `actions.closureVariance`) go to `closeSession`,
+   * which enforces the same gate and puts the approver on the Z. A count edited while this is
+   * pending, or a variance that moved since (the hook's gate), asks again on the next Close.
+   * A zero-argument function still fits.
    */
-  approve?: () => Promise<{ approvedBy: string; approvedByName?: string } | null>;
+  approve?: (input: { counted: Record<string, number> }) => Promise<{
+    approvedBy: string;
+    approvedByName?: string;
+    approval?: string;
+    approvedVariance?: Record<string, number>;
+  } | null>;
   className?: string;
 }
 
@@ -169,6 +178,9 @@ export function RegisterCount({ register, currency, approve, className }: Regist
     cash: amountMinor,
     ...Object.fromEntries(otherCounted.map(([method, value]) => [method, parseMinor(value, digits)])),
   };
+  // The count on screen now, for an approval that resolves after the cashier edited it.
+  const shownCount = useRef('');
+  shownCount.current = JSON.stringify(counted);
 
   const attempt = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -194,13 +206,23 @@ export function RegisterCount({ register, currency, approve, className }: Regist
       return;
     }
     if (needsApproval) {
+      const asked = shownCount.current;
       void attempt(async () => {
-        const result = await approve!();
+        const result = await approve!({ counted });
         if (!result) {
           setRefusal('Approval was not granted. The count is unchanged.');
           return;
         }
-        await actions.closeSession({ counted, approvedBy: result.approvedBy, approvedByName: result.approvedByName });
+        // The approval is for the count it was asked with; one edited meanwhile asks again.
+        if (shownCount.current !== asked) {
+          setRefusal(APPROVAL_REQUIRED_TEXT);
+          return;
+        }
+        const { approvedBy, approvedByName, approval, approvedVariance } = result;
+        await actions.closeSession({
+          counted, approvedBy, approvedByName,
+          ...(approval ? { approval } : {}), ...(approvedVariance ? { approvedVariance } : {}),
+        });
       });
       return;
     }

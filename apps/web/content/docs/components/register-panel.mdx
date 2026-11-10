@@ -23,6 +23,8 @@ import { RegisterPanel } from '@tallyui/components';
 
 Renders a register dialog with session sales count, movement actions, an expandable movement list with Undo, and Close register. Expected amounts and movement details are hidden during blind counting; nothing renders without a session or last closure.
 
+When the store refused a closure's manager approval (`register.approvalNeeded`), the panel shows an "Approval needed" card. With `reapprove`, its Approve button asks the host for a new approval and sends it with `register.actions.reapproveClosure`; without it, the card explains and has no button.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -32,4 +34,5 @@ Renders a register dialog with session sales count, movement actions, an expanda
 | `registerName` | `string` | --- | Panel title; the heading reads “Register” when omitted |
 | `open` | `boolean` | required | Whether the dialog is open |
 | `onOpenChange` | `(open: boolean) => void` | required | Receives dialog visibility changes, including `false` after starting the closing count |
+| `reapprove` | `(needed: ApprovalNeeded) => Promise<{ approvedBy: string; approval: string } \| null>` | --- | The host's approval for a refused closure; gets `register.approvalNeeded`, and its result goes to `reapproveClosure`. `null` leaves the closure as it is |
 | `className` | `string` | --- | Additional styles for the dialog content |

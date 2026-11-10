@@ -22,6 +22,8 @@ const sale = useSale(settings, { registerId, cashierRef });
 
 Renders the sale's lines with quantity and removal controls, line and order discounts, totals, and cash or card terminal actions. Price editing appears when permitted, and the charge form appears when the sale's capabilities support it.
 
+Pass `orderActions={false}` when the app hosts the Order discount and Add charge controls in its own menu, as WCPOS v2's cart "+" menu does. Applied order discounts, fees and shipping still show with their own Remove controls.
+
 The lines sit under [CartColumnHeads](/docs/components/cart-column-heads) (Qty, Item, Price, Total). Each line shows its variant attributes under the name, and its regular price struck through when the line costs less, from the line's `attributes` and `regularUnitPriceMinor`. The Price column is hidden when the cart is under 300 wide, or the window is under 768 wide or 480 tall. The Discount and Price actions sit with each line's quantity buttons.
 
 ## Props
@@ -34,3 +36,4 @@ The lines sit under [CartColumnHeads](/docs/components/cart-column-heads) (Qty, 
 | `canEditPrice` | `boolean` | `false` | Shows a Price action on each line; pass the till's price-edit permission |
 | `onPriceChange` | `(change: { lineId: string; fromMinor: number; toMinor: number; reason?: string }) => void` | --- | Called after a price is applied for the app's audit log; the reason is kept only in this callback |
 | `quickDiscounts` | `readonly number[]` | --- | Quick-discount keys on each line's [PriceForm](/docs/components/price-form), e.g. the app's `cart.quickDiscounts` setting (default `[5, 10, 15]`); needs `canEditPrice` |
+| `orderActions` | `boolean` | `true` | Shows Cart's own Order discount button and Add charge control; pass `false` when the app hosts them in its own menu |

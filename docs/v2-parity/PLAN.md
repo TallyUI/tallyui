@@ -797,6 +797,9 @@ are independent and run in parallel.
 | 32 | Recount: `register.closure.recount` v1 correction records, with the settled figure shown beside the recorded one | core, pos | A4 | M | 13 | all | **one-way** (ADR) | |
 | 33 | Handover slip and `SwitchConfirm` (cashier, register and sign-out switches; warns about unsent sales) | pos, components | A4, A12 | S | 30 | all | two-way | |
 | 34 | Connectivity `online/offline/degraded` and an update-required latch per connector (each maps its own refusal) | core, database | A6 | M | Q1 | all | two-way | |
+| 34a | **Gate before any app wires the tracker:** each connector tags fetch rejections with `fetch().catch(noResponse)`, so a browser network failure reads as offline again (#636 deviation) | connectors | A6 | S each | 34 | all | two-way | |
+| 34b | **Gate before any app wires the tracker:** link-up handling, so the OS reporting the link back clears `offline` without waiting for the next store answer | core, database | A6 | S | 34 | all | two-way | |
+| 34c | **Gate before any app wires the tracker:** an idle replication probes the store after `linkDown()`, so `offline` cannot linger for up to RxDB's 5 min backoff | database | A6 | S | 34 | all | two-way | |
 | 35 | i18n foundation: i18next provider, `useT`, English catalogue; tender strings first | components | A15 | M | 16 | all | two-way | |
 
 ### Wave 4: devices and the long tail
