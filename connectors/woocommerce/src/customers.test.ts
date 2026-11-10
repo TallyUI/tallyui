@@ -151,6 +151,18 @@ describe('WooCommerce customers', () => {
     ['create', () => customers.createCustomer(context, input)],
     ['email', () => customers.emailReceipt(context, '118', input.email)],
   ] as const)('%s errors', (_name, call) => {
+    it.each([422, 500])('carries HTTP %i as the error status', async (status) => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ message: 'Store error' }, { status }));
+      await expect(call()).rejects.toMatchObject({ status });
+    });
+
+    it('a network failure has no status', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      const error = await call().catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(CustomerServiceError);
+      expect((error as CustomerServiceError).status).toBeUndefined();
+    });
+
     it.each([401, 403])('preserves unauthorized status %i', async (status) => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({}, { status }));
       const result = call();

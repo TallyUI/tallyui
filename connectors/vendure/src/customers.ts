@@ -1,5 +1,5 @@
 import { ConnectorUnauthorizedError, CustomerServiceError, type Customer, type CustomerInput, type SyncContext } from '@tallyui/core';
-import { gql } from './replication/products';
+import { gql, VendureApiError } from './replication/products';
 
 // The vendurepos plugin's walk-in customer is never a person to attach to a sale.
 const WALK_IN_EMAIL = 'walk-in@vendurepos.local';
@@ -63,7 +63,7 @@ async function customerGql(context: SyncContext, query: string, variables: Recor
     return await gql(context, query, variables);
   } catch (error) {
     if (error instanceof ConnectorUnauthorizedError) throw error;
-    throw new CustomerServiceError(error instanceof Error && error.message.startsWith('Vendure ') ? 'server' : 'network', error instanceof Error ? error.message : String(error));
+    throw new CustomerServiceError(error instanceof Error && error.message.startsWith('Vendure ') ? 'server' : 'network', error instanceof Error ? error.message : String(error), { status: error instanceof VendureApiError ? error.status : undefined });
   }
 }
 

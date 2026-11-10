@@ -107,6 +107,18 @@ describe('Medusa customers', () => {
     await expect(result).rejects.toMatchObject({ status: 403, message: 'Medusa rejected the credentials (HTTP 403)' });
   });
 
+  it.each(calls)('a refused request carries its HTTP status: %s', async (_name, call) => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('server failed', { status: 500 }))
+      .mockResolvedValueOnce(response(fixture.createInvalid))
+      .mockRejectedValueOnce(new Error('offline'));
+    await expect(call()).rejects.toMatchObject({ code: 'server', status: 500 });
+    await expect(call()).rejects.toMatchObject({ code: 'invalid', status: 400 });
+    const error = await call().catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(CustomerServiceError);
+    expect((error as CustomerServiceError).status).toBeUndefined();
+  });
+
   it.each(calls)('a 500, a network failure or an unexpected body is CustomerServiceError: %s', async (_name, call) => {
     const spy = vi.spyOn(globalThis, 'fetch');
     const cases = [

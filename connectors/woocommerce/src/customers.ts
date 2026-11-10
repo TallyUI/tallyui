@@ -48,7 +48,7 @@ export async function customerRequest(context: SyncContext, route: string, init:
   const body = await response.json().catch(() => undefined);
   if (!response.ok) {
     const invalid = [400, 404, 422].includes(response.status);
-    throw new CustomerServiceError(invalid ? 'invalid' : 'server', invalid ? body?.message ?? `HTTP ${response.status}` : `HTTP ${response.status}`);
+    throw new CustomerServiceError(invalid ? 'invalid' : 'server', invalid ? body?.message ?? `HTTP ${response.status}` : `HTTP ${response.status}`, { status: response.status });
   }
   return { status: response.status, body, headers: response.headers };
 }

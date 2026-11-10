@@ -22,5 +22,11 @@ export const customerTraits: CustomerTraits<Customer> = {
 
 /** A customer call that failed for a reason other than credentials (credentials throw ConnectorUnauthorizedError). */
 export class CustomerServiceError extends Error {
-  constructor(readonly code: 'network' | 'server' | 'invalid', message: string) { super(message); this.name = 'CustomerServiceError'; }
+  /** The HTTP status the store answered with, when the connector has it; undefined for a network failure (no response). */
+  readonly status?: number;
+  constructor(readonly code: 'network' | 'server' | 'invalid', message: string, options?: { status?: number }) {
+    super(message);
+    this.name = 'CustomerServiceError';
+    this.status = options?.status;
+  }
 }

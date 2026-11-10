@@ -59,6 +59,11 @@ const PRODUCT_MARK_QUERY = `
   }
 `;
 
+/** A Vendure Admin API failure, with the HTTP status of the response (200 for GraphQL errors, which Vendure answers with HTTP 200). */
+export class VendureApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 /**
  * Helper to execute a GraphQL query against the Vendure Admin API.
  */
@@ -83,12 +88,12 @@ export async function gql(
     const message = body?.errors?.[0]?.message;
     // Vendure answers FORBIDDEN with HTTP 200; an HTTP 401/403 comes from a proxy or firewall and is taken at face value.
     if (res.status === 401 || res.status === 403) throw new ConnectorUnauthorizedError(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`, res.status as 401 | 403);
-    throw new Error(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`);
+    throw new VendureApiError(`Vendure API error: ${res.status}${message ? `: ${message}` : ''}`, res.status);
   }
   const body = await res.json() as GqlBody;
   const forbidden = body.errors?.filter((error) => error.extensions?.code === 'FORBIDDEN') ?? [];
   if (forbidden.length) throw await forbiddenError(context, forbidden);
-  if (body.errors?.length) throw new Error(`Vendure GraphQL error: ${body.errors[0].message}`);
+  if (body.errors?.length) throw new VendureApiError(`Vendure GraphQL error: ${body.errors[0].message}`, res.status);
   return body;
 }
 
