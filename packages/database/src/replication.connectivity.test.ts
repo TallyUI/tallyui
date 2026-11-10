@@ -272,6 +272,17 @@ describe('startReplication with a connectivity tracker', () => {
     expect(rejections).toEqual([]);
   });
 
+  it('a cancel cuts short the retry wait after a thrown push: the handler returns at once and sends nothing more', async () => {
+    const { state, calls } = await pushSetup(() => unreachable(), undefined, { rows: ['a'], retryTime: 60_000 });
+    await until(() => calls() === 1);
+    await sleep(50);
+    await state.cancel();
+    // RxDB's cancel() does not wait for the push (it awaits the checkpoint queue), so watch the upstream queue settle.
+    const queue = state.internalReplicationState!.streamQueue.up.then(() => 'settled');
+    expect(await Promise.race([queue, sleep(1000).then(() => 'still waiting')])).toBe('settled');
+    expect(calls()).toBe(1);
+  });
+
   it('a pause during a push in flight keeps its answer: the row is marked pushed and not sent again after start', async () => {
     let finish!: () => void;
     const held = new Promise<void>((resolve) => { finish = resolve; });
