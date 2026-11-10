@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { comparisonRange, daysOf, inRange, marginOf, salesFigures } from './sales-figures';
+import type { DatePreset } from './presets';
 import type { ReportLine, ReportOrder, ReportRefund } from './types';
 
 const range = { from: '2026-11-10', to: '2026-11-10' };
@@ -102,6 +103,52 @@ it('shifts comparison ranges by day, week and month', () => {
   expect(comparisonRange(range, 'week')).toEqual({ from: '2026-11-03', to: '2026-11-03' });
   expect(comparisonRange({ from: '2024-03-01', to: '2024-03-31' }, 'previous')).toEqual({ from: '2024-02-01', to: '2024-02-29' });
   expect(comparisonRange({ from: '2026-01-01', to: '2026-01-31' }, 'previous')).toEqual({ from: '2025-12-01', to: '2025-12-31' });
+});
+
+// [from, to] → [from, to] of the comparison, as `YYYY-MM-DD` pairs.
+const compared = (pairs: [string, string, string, string][], mode: 'previous' | 'week', preset?: DatePreset) => {
+  for (const [from, to, expectedFrom, expectedTo] of pairs) {
+    expect(comparisonRange({ from, to }, mode, preset), `${from}…${to}`).toEqual({ from: expectedFrom, to: expectedTo });
+  }
+};
+
+it('compares a running week with the same weekdays of the week before', () => {
+  compared([
+    ['2026-11-09', '2026-11-11', '2026-11-02', '2026-11-04'],
+    ['2026-11-09', '2026-11-15', '2026-11-02', '2026-11-08'],
+    ['2026-11-09', '2026-11-09', '2026-11-02', '2026-11-02'],
+    ['2024-02-26', '2024-02-29', '2024-02-19', '2024-02-22'],
+  ], 'previous', 'thisWeek');
+});
+
+it('compares a running month with the same days of the month before', () => {
+  compared([
+    ['2026-11-01', '2026-11-10', '2026-10-01', '2026-10-10'],
+    ['2026-11-01', '2026-11-01', '2026-10-01', '2026-10-01'],
+    ['2026-04-01', '2026-04-03', '2026-03-01', '2026-03-03'],
+    ['2026-10-01', '2026-10-31', '2026-09-01', '2026-09-30'],
+    ['2024-03-01', '2024-03-31', '2024-02-01', '2024-02-29'],
+    ['2024-02-01', '2024-02-29', '2024-01-01', '2024-01-31'],
+    ['2026-03-01', '2026-03-30', '2026-02-01', '2026-03-02'],
+  ], 'previous', 'thisMonth');
+  compared([['2026-12-01', '2026-12-31', '2026-11-01', '2026-11-30']], 'previous', 'lastMonth');
+});
+
+it('compares a custom range by its length', () => {
+  compared([
+    ['2026-11-04', '2026-11-06', '2026-10-28', '2026-10-30'],
+    ['2026-01-15', '2026-02-28', '2025-12-15', '2026-01-28'],
+    ['2026-01-02', '2026-03-01', '2025-12-02', '2026-01-29'],
+    ['2024-03-31', '2024-04-10', '2024-02-29', '2024-03-10'],
+    ['2026-09-01', '2026-09-30', '2026-08-01', '2026-08-31'],
+  ], 'previous');
+});
+
+it('compares today and yesterday with the day before or the same weekday last week', () => {
+  compared([['2026-11-10', '2026-11-10', '2026-11-09', '2026-11-09'], ['2024-03-01', '2024-03-01', '2024-02-29', '2024-02-29']], 'previous', 'today');
+  compared([['2026-11-10', '2026-11-10', '2026-11-03', '2026-11-03']], 'week', 'today');
+  compared([['2026-11-09', '2026-11-09', '2026-11-08', '2026-11-08']], 'previous', 'yesterday');
+  compared([['2026-11-09', '2026-11-09', '2026-11-02', '2026-11-02']], 'week', 'yesterday');
 });
 
 it('groups products, categories and taxes', () => {

@@ -48,7 +48,7 @@ export default function SalesRoomScreen() {
     const oneDay = filters.preset === 'today' || filters.preset === 'yesterday';
     return salesFigures({
       orders, refunds: REFUNDS.filter((refund) => ids.has(refund.orderId)), range: filters.range, timezone: TIMEZONE,
-      compare: comparisonRange(filters.range, oneDay ? filters.compare : 'previous'),
+      compare: comparisonRange(filters.range, oneDay ? filters.compare : 'previous', filters.preset),
     });
   }, [filters]);
 
