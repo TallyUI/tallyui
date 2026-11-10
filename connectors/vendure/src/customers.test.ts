@@ -125,6 +125,18 @@ describe('Vendure customers', () => {
     ['get', () => getVendureCustomer(context, '2')],
   ] as const;
   describe.each(calls)('%s errors', (_name, call) => {
+    it('carries the HTTP status', async () => {
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(Response.json({}, { status: 500 }))
+        .mockResolvedValueOnce(Response.json({ errors: [{ message: 'Server failed' }] }))
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      await expect(call()).rejects.toMatchObject({ code: 'server', status: 500 });
+      await expect(call()).rejects.toMatchObject({ code: 'server', status: 200 });
+      const error = await call().catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(CustomerServiceError);
+      expect((error as CustomerServiceError).status).toBeUndefined();
+    });
+
     it.each([401, 403])('preserves HTTP %i as an authorization error', async (status) => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({}, { status }));
       const result = call();
