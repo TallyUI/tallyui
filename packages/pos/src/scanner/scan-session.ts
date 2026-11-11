@@ -7,6 +7,9 @@ export interface ScanSessionOptions {
   onAccept: (code: string, symbology?: string) => void;
   cooldownMs?: number;
   now?: () => number;
+  /** A camera sees one item many times while it rests in view: when true, a refused repeat also restarts that
+   * code's cooldown, so the item is accepted again only cooldownMs after it was last seen (v2 scan-session.ts:156-162). */
+  continuous?: boolean;
 }
 export interface ScanSession {
   offer: (code: string, symbology?: string) => ScanOfferResult;
@@ -74,6 +77,7 @@ export function createScanSession(options: ScanSessionOptions): ScanSession {
     }
     const lastAt = cooldownFrom.get(code);
     if (lastAt !== undefined && at - lastAt < cooldownMs) {
+      if (options.continuous) cooldownFrom.set(code, at);
       return { accepted: false, reason: 'cooldown' };
     }
     cooldownFrom.set(code, at);

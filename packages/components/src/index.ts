@@ -44,6 +44,16 @@ export {
   type InCartBadgeProps,
   CategoryTile,
   type CategoryTileProps,
+  CameraScanButton,
+  type CameraScanButtonProps,
+  CameraScannerPanel,
+  FLASH_DURATION_MS,
+  SCANNER_MIN_HEIGHT,
+  SCANNER_MAX_HEIGHT,
+  SCANNER_DEFAULT_HEIGHT,
+  type CameraScannerPanelProps,
+  ScannerViewfinder,
+  type ViewfinderProps,
 } from './product';
 
 // Cart components
