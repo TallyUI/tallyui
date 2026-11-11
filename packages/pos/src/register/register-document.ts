@@ -9,6 +9,7 @@
  * module-level snapshots (`getRegisterSnapshot`, `getRegisterId`, `getCurrentBoundRegisterId`)
  * are not ported: callers pass the host and read the document explicitly.
  */
+import type { RegisterCommandResult } from '@tallyui/core';
 import type { RxLocalDocumentMutation } from 'rxdb';
 import { map } from 'rxjs';
 import type { Closure } from './schemas';
@@ -220,6 +221,28 @@ export async function mintClosureNumber(
     });
   });
   return number;
+}
+
+export type StoreCounters = NonNullable<RegisterCommandResult['counters']>;
+const STORE_COUNTERS = [['last_closure_number', 'lastClosureNumber'], ['perpetual_sales_total_minor', 'perpetualSalesTotalMinor'],
+  ['perpetual_refunds_total_minor', 'perpetualRefundsTotalMinor']] as const;
+
+/**
+ * Raises the register's counters to the store's (`RegisterCommandResult.counters`, #651), each field on its own: the
+ * store's figure is a floor, so a counter only rises, and one the till is ahead on (closures not yet sent) stays. A field
+ * that isn't a safe non-negative integer is ignored. A reserved closure keeps its number and totals.
+ */
+export function adoptStoreCounters(host: RegisterHost, storeKey: string, registerId: string,
+  counters: ReadonlyArray<Partial<StoreCounters> | undefined>) {
+  return modifyStore(host, storeKey, (store) => {
+    const register = store?.registers?.[registerId] ?? {};
+    const raised: Partial<RegisterCounters> = {};
+    for (const [local, remote] of STORE_COUNTERS) for (const entry of counters) {
+      const value: unknown = entry?.[remote];
+      if (typeof value === 'number' && Number.isSafeInteger(value) && value > (raised[local] ?? register[local] ?? 0)) raised[local] = value;
+    }
+    return Object.keys(raised).length ? withRegister(store, registerId, { ...register, ...raised }) : undefined;
+  });
 }
 
 /**

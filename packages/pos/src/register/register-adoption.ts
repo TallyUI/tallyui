@@ -3,6 +3,7 @@ import { CLOSURE_HOLDING_REJECTIONS } from '../outbox/register-outbox';
 import { readFresh } from '../rxdb';
 import { uuidv7 } from '../pos-order/uuidv7';
 import { countVariance, overThreshold } from './register-count.helpers';
+import { adoptStoreCounters, type RegisterHost } from './register-document';
 import { registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import type { Closure, RegisterSession } from './schemas';
 import { isKnownSessionStatus, RegisterSessionRequiredError, RegisterTakeOverError, type RegisterSessionCollection } from './session-store';
@@ -14,10 +15,12 @@ type SessionTarget = { commands: RegisterCommandCollection; sessions: RegisterSe
  * Applied opens fill a missing resume id; refused opens make open/counting sessions conflict.
  * Superseded rejections make open/counting sessions terminal; a conflict session leaves only by an applied open or abandon (ADR-078 decision 9); terminal/unknown states stay untouched.
  * Applied conflict opens restore the latest transition's counting state, otherwise open; pending rows do nothing.
+ * Given `host` and `storeKey`, applied rows also raise the register's counters to the store's (#651, `adoptStoreCounters`).
  * Answers are walked in seq/key order; adoption is idempotent and safe to run at any time.
  */
-export async function adoptRegisterResults({ commands, sessions, registerId }: {
+export async function adoptRegisterResults({ commands, sessions, registerId, host, storeKey }: {
   commands: RegisterCommandCollection; sessions: RegisterSessionCollection; registerId: string;
+  host?: RegisterHost; storeKey?: string;
 }): Promise<void> {
   const run = (chains.get(commands) ?? Promise.resolve()).then(async () => {
     const [answers, transitions, rows] = await Promise.all([
@@ -54,6 +57,8 @@ export async function adoptRegisterResults({ commands, sessions, registerId }: {
       const row = await sessions.findOne(session.id).exec();
       if (row) await row.incrementalModify(modify);
     }
+    const counters = answers.filter((answer) => answer.syncStatus === 'applied' && answer.result?.counters).map((answer) => answer.result?.counters);
+    if (host && storeKey && counters.length) await adoptStoreCounters(host, storeKey, registerId, counters);
   }).catch((error: unknown) => {
     registerCommandsLogger.error('Register result adoption failed', { context: { registerId, error: String(error) } });
   });

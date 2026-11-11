@@ -7,7 +7,7 @@ import { readFresh } from '../rxdb';
 import { abandonSession, adoptRegisterResults, closureApprovalStatus, isLiveAtStore, reapproveClosure, RegisterReapproveError,
   takeOverSession } from './register-adoption';
 import { reconcileRegisterCommands, registerCommandCollection, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
-import { ensureRegister } from './register-document';
+import { advancePerpetual, ensureRegister, mintClosureNumber, readRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
 import { closeSession, openSession, recordMovement, startCounting, RegisterSessionRequiredError, RegisterTakeOverError,
   type CashMovementCollection, type ClosureCollection, type RegisterSessionCollection } from './session-store';
@@ -321,6 +321,63 @@ describe('adoptRegisterResults', () => {
     await adopt();
     expect(await stored(s.id)).toStrictEqual(before);
     expect((await stored(s.id)).status).toBe('later-state');
+  });
+
+  describe("the store's counters (#651)", () => {
+    const adoptWithCounters = () => adoptRegisterResults({ commands: db.register_commands, sessions: db.register_sessions,
+      registerId: 'register', host: db.register_sessions, storeKey: 'store' });
+    const bucket = async () => (await readRegister(db.register_sessions))?.stores.store?.registers?.register;
+    const mint = () => mintClosureNumber(db.register_sessions, 'store', 'register');
+    const counters = (lastClosureNumber: number, perpetualSalesTotalMinor: number, perpetualRefundsTotalMinor: number) =>
+      ({ counters: { lastClosureNumber, perpetualSalesTotalMinor, perpetualRefundsTotalMinor } });
+    const answer = async (type: RegisterCommand['type'], patch: Partial<RegisterCommand>) => {
+      const [row] = await readFresh(db.register_commands, { selector: { type } });
+      await (await db.register_commands.findOne(row.key).exec(true)).incrementalPatch(patch);
+    };
+
+    it("fresh storage takes the store's counters from an applied open, and numbers its next closure after them", async () => {
+      await open();
+      await reconcile();
+      await answer('register.session.open', { syncStatus: 'applied', result: counters(41, 500000, 2000) });
+      await adoptWithCounters();
+      expect(await bucket()).toMatchObject({ last_closure_number: 41, perpetual_sales_total_minor: 500000, perpetual_refunds_total_minor: 2000 });
+      expect(await mint()).toBe(42);
+    });
+
+    it('never lowers a counter, and raises each one on its own, from any applied row', async () => {
+      for (let i = 0; i < 5; i++) await mint();
+      await advancePerpetual(db.register_sessions, 'store', 'register', { salesMinor: 1000, refundsMinor: 0 });
+      const s = await open();
+      await startCounting(db.register_sessions, s.id);
+      await reconcile();
+      await answer('register.session.open', { syncStatus: 'applied' });
+      await answer('register.session.transition', { syncStatus: 'applied', result: counters(3, 500, 300) });
+      await adoptWithCounters();
+      expect(await bucket()).toMatchObject({ last_closure_number: 5, perpetual_sales_total_minor: 1000, perpetual_refunds_total_minor: 300 });
+      expect(await mint()).toBe(6);
+    });
+
+    it('is idempotent, a stale duplicate regresses nothing, and malformed or rejected counters are ignored', async () => {
+      const s = await open();
+      await recordMovement(db.register_sessions, db.cash_movements, db.closures,
+        { sessionId: s.id, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: '7' });
+      await startCounting(db.register_sessions, s.id);
+      await reconcile();
+      await answer('register.session.open', { syncStatus: 'applied', result: counters(41, 500000, 2000) });
+      // A duplicate replays the counters recorded when its command was applied: older than the open's here.
+      await answer('register.session.transition', { syncStatus: 'applied', result: counters(2, 10, 0) });
+      await answer('register.movement.record', { syncStatus: 'rejected',
+        error: { code: 'register_session_closed', message: 'Closed', data: counters(99, 900000, 9000) } });
+      await adoptWithCounters();
+      const first = await readRegister(db.register_sessions);
+      expect(await bucket()).toMatchObject({ last_closure_number: 41, perpetual_sales_total_minor: 500000, perpetual_refunds_total_minor: 2000 });
+      await adoptWithCounters();
+      expect(await readRegister(db.register_sessions)).toStrictEqual(first);
+      await answer('register.session.transition', { syncStatus: 'applied', result: { counters: { lastClosureNumber: 100.5,
+        perpetualSalesTotalMinor: '900000', perpetualRefundsTotalMinor: Number.MAX_SAFE_INTEGER + 2 } } as unknown as RegisterCommand['result'] });
+      await adoptWithCounters();
+      expect(await readRegister(db.register_sessions)).toStrictEqual(first);
+    });
   });
 });
 
