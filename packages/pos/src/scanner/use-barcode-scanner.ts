@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { createWedgeDetector, DEFAULT_MIN_SCAN_CHARS, DEFAULT_WEDGE_SETTINGS } from './wedge-detector';
+import { merge, Subject } from 'rxjs';
+import { dedupeScans, SCAN_DEDUP_WINDOW_MS, scanTimeOf } from './scan-dedup';
+import type { ScanEvent } from './scan-events';
+import { useScanHub } from './scan-hub-context';
+import { createWedgeDetector, DEFAULT_MIN_SCAN_CHARS, DEFAULT_WEDGE_SETTINGS, type WedgeScanMeta } from './wedge-detector';
 
 export interface UseBarcodeScannerOptions {
   onScan: (code: string) => void;
@@ -9,9 +13,13 @@ export interface UseBarcodeScannerOptions {
   prefix?: string;
   suffix?: string;
   minChars?: number;
+  /** Called with each accepted scan event (wedge or device) after cross-source de-duplication,
+   * before onScan. */
+  onScanEvent?: (event: ScanEvent) => void;
 }
 
-/** Listen for keyboard-wedge scans outside INPUT/TEXTAREA, with a minimum length gate.
+/** Listen for keyboard-wedge scans outside INPUT/TEXTAREA, with a minimum length gate. Inside a ScanHubProvider the
+ * hub's device scans (serial, HID-POS) join them, and a copy of one physical scan from a second source is dropped.
  * Ported from WCPOS v2 packages/core/src/screens/main/hooks/barcodes/use-barcode-detection.ts (monorepo 5ac185b0).
  * @example
  * useBarcodeScanner({ onScan: (code) => {
@@ -26,17 +34,26 @@ export function useBarcodeScanner(options: UseBarcodeScannerOptions): void {
   const latest = useRef(options);
   latest.current = options;
   const enabled = options.enabled ?? true;
+  const hub = useScanHub();
   useEffect(() => {
     if (!enabled) return;
+    const wedge$ = new Subject<ScanEvent>();
+    const subscription = merge(wedge$, hub.events$)
+      .pipe(dedupeScans(SCAN_DEDUP_WINDOW_MS, scanTimeOf))
+      .subscribe((event) => {
+        latest.current.onScanEvent?.(event);
+        latest.current.onScan(event.code);
+      });
     const detectorOptions = {
       getSettings: () => ({
         threshold: latest.current.threshold ?? DEFAULT_WEDGE_SETTINGS.threshold,
         prefix: latest.current.prefix ?? '',
         suffix: latest.current.suffix ?? '',
       }),
-      onScan: (code: string) => {
+      onScan: (code: string, meta: WedgeScanMeta) => {
         if (code.length >= (latest.current.minChars ?? DEFAULT_MIN_SCAN_CHARS)) {
-          latest.current.onScan(code);
+          // v2's toWedgeScanEvent: timed from the burst's first key, the physical scan.
+          wedge$.next({ code, source: { kind: 'wedge' }, timestamp: meta.startedAtMs });
         }
       },
     };
@@ -56,6 +73,7 @@ export function useBarcodeScanner(options: UseBarcodeScannerOptions): void {
     return () => {
       window.removeEventListener('keydown', handler, { capture: true });
       detector.dispose();
+      subscription.unsubscribe();
     };
-  }, [enabled]);
+  }, [enabled, hub]);
 }

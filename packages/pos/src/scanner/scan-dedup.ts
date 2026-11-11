@@ -39,3 +39,10 @@ export function dedupeScans(
       );
     });
 }
+
+/** A wedge copy is timed from its burst's first key (the physical scan); every other source is
+ * timed at receipt, because sources stamp on different clocks. Pass it to dedupeScans.
+ * Ported from WCPOS v2 use-barcode-detection.ts (monorepo 85ecbd43f, #2263). */
+export function scanTimeOf(event: ScanEvent): number {
+  return event.source.kind === 'wedge' ? event.timestamp : Date.now();
+}
