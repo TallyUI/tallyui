@@ -23,6 +23,8 @@ import { ChargeForm } from '@tallyui/components';
 
 Renders a fee, shipping, or custom item selector with name and amount inputs, available tax choices, and Apply and Cancel buttons. A missing name, invalid amount, or refusal from `onApply` is shown inline; successful application calls `onClose`.
 
+Pass `kind` to open the form on one kind without the selector, as WCPOS v2's cart "+" menu does with its separate Add Fee, Add Shipping, and Add Miscellaneous Product entries.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -31,5 +33,6 @@ Renders a fee, shipping, or custom item selector with name and amount inputs, av
 | `lineTax` | `{ none: boolean; classes: boolean }` | --- | Enables the No tax switch and tax class choices when shipping tax is not taken from the store |
 | `taxClasses` | `ReadonlyArray<{ id: string; label: string }>` | --- | Tax class choices shown when `lineTax.classes` is enabled and the list is nonempty |
 | `shippingTaxFromStore` | `boolean` | --- | For shipping, replaces tax controls with a store tax class notice and omits tax overrides from the submitted charge |
+| `kind` | `'fee' \| 'shipping' \| 'custom'` | --- | Fixes the form to one kind, hides the kind selector, and names the form Add fee, Add shipping, or Add custom item; without it the form opens on Fee with the selector |
 | `onApply` | `(charge: { kind: 'fee' \| 'shipping' \| 'custom'; name: string; amountMinor: number; taxStatus?: 'none'; taxClass?: string }) => string \| null` | required | Receives the charge with a trimmed name and amount in minor units; return a refusal or `null` once applied |
 | `onClose` | `() => void` | required | Called on Cancel or after `onApply` returns `null` |
