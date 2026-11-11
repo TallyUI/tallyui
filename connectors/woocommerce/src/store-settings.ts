@@ -5,6 +5,9 @@ import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/co
 export const WOO_ORDER_CREATE_VERSION = 5;
 /** Version 7 is version 6 plus the sale note (ADR-083), mapped to WooCommerce's customer_note; a store takes it wherever it takes 6. Version 6 is version 5 plus coupons: it needs both order_create_v5 and the coupons gate. */
 export const WOO_NOTE_ORDER_CREATE_VERSION = 7;
+/** Version 8 is version 7 plus the tax address and the customer's addresses (#722), sent as WCPOS's `_woocommerce_pos_tax_based_on`
+ *  meta with the order's billing and shipping, which push/orders already passes through; a store takes it wherever it takes 7. */
+export const WOO_TAX_ADDRESS_ORDER_CREATE_VERSION = 8;
 // The order.create version a store gets unless /status lists order_create_v5, which only the TallyUI fork of the plugin advertises.
 const WOO_BASE_ORDER_CREATE_VERSION = 3;
 // The first woocommerce-pos release whose coupon recalculation keeps the POS price (ADR-077 amendment 4, R2: 1.9.0, 2026-05-15).
@@ -106,7 +109,8 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
     const text = (value: unknown): string => (typeof value === 'string' ? value : '');
     const baseTaxAddress = { country: text(address.country), state: text(address.state), city: text(address.city), postcode: text(address.postcode) };
     if (baseTaxAddress.country) settings.baseTaxAddress = baseTaxAddress;
-    // No taxRateTable: the server taxes POS orders on this base until order.create carries the basis and the customer's addresses (#722 step 2).
+    // The whole table, for re-taxing a sale on the customer's address: order.create 8 tells the server which address it was (#722).
+    if (baseTaxAddress.country) settings.taxRateTable = rates;
     const matched = woocommerceTax.filterTaxRates(rates, address.country, address.state, address.postcode, address.city);
     for (const rate of matched) {
       const slug = woocommerceTax.normalizeTaxClass(rate.class);
@@ -170,7 +174,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       coupons = false;
     }
     const orderCreate = capabilities.includes('order_create_v5')
-      ? (coupons ? WOO_NOTE_ORDER_CREATE_VERSION : WOO_ORDER_CREATE_VERSION) : WOO_BASE_ORDER_CREATE_VERSION;
+      ? (coupons ? WOO_TAX_ADDRESS_ORDER_CREATE_VERSION : WOO_ORDER_CREATE_VERSION) : WOO_BASE_ORDER_CREATE_VERSION;
     return {
       orderCreate,
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },

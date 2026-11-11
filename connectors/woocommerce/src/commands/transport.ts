@@ -1,5 +1,5 @@
 // ADR-073; M3-spike-paid-push.md proves paid order pushes against WCPOS 1.10.20.
-import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, type CommandResult, type OrderCreateEnvelope } from '@tallyui/core';
+import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
 
 export type WooTransportOutcome =
   | { kind: 'results'; results: CommandResult[] }
@@ -61,6 +61,14 @@ function decodeCouponMessage(message: unknown): string {
         parseInt(entity.slice(entity[1].toLowerCase() === 'x' ? 2 : 1), entity[1].toLowerCase() === 'x' ? 16 : 10)))
     .replace(/[<>]/g, '')
     .replace(/\s+/g, ' ').trim() || 'status_400';
+}
+
+// order.create 8's address keys and wc/v3's names for them (#722).
+const WOO_ADDRESS_KEYS = [['firstName', 'first_name'], ['lastName', 'last_name'], ['company', 'company'], ['address1', 'address_1'],
+  ['address2', 'address_2'], ['city', 'city'], ['state', 'state'], ['postcode', 'postcode'], ['country', 'country'], ['phone', 'phone']] as const;
+
+function wooAddress(address: OrderAddress | undefined): Record<string, string> {
+  return Object.fromEntries(WOO_ADDRESS_KEYS.flatMap(([ours, theirs]) => typeof address?.[ours] === 'string' ? [[theirs, address[ours]]] : []));
 }
 
 export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLocalOrder, options?: { paymentsList?: boolean }): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
@@ -154,6 +162,10 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
       ...(payment.method === 'cash' && payment.changeMinor !== undefined ? { change: major(payment.changeMinor) } : {}),
     }))) });
   }
+  // Version 8 (#722): WCPOS taxes the order on the address its meta names (billing, or shipping with no fallback), else the base.
+  if (p.taxAddress) meta_data.push({ key: '_woocommerce_pos_tax_based_on', value: p.taxAddress });
+  const billing = { ...(p.customer?.email ? { email: p.customer.email } : {}), ...(p.taxAddress ? wooAddress(p.customer?.billing) : {}) };
+  const shipping = p.taxAddress && p.customer?.shipping ? wooAddress(p.customer.shipping) : undefined;
   return { payload: {
     status: 'completed', set_paid: true, currency: p.currency,
     payment_method: cash ? 'pos_cash' : 'pos_card', payment_method_title: cash ? 'Cash' : 'Card',
@@ -163,7 +175,8 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     ...(p.coupons?.length ? { coupon_lines: p.coupons.map(({ code }) => ({ code })) } : {}),
     meta_data,
     ...(p.customer?.customerId && /^\d+$/.test(p.customer.customerId) ? { customer_id: Number(p.customer.customerId) } : {}),
-    ...(p.customer?.email ? { billing: { email: p.customer.email } } : {}),
+    ...(Object.keys(billing).length ? { billing } : {}),
+    ...(shipping ? { shipping } : {}),
     // Version 7 (ADR-083): the till froze and cut the note already, and wc/v3 sanitises it; no note, no key.
     ...(typeof p.note === 'string' && p.note.length > 0 ? { customer_note: p.note } : {}),
   } };

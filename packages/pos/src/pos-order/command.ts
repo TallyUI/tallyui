@@ -3,7 +3,10 @@ import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
 import type { PosOrder, PosOrderLine } from './types';
 
 /** The highest order.create version this till sends; pos_orders' sentVersion and downgradedFrom maxima must equal it. */
-export const ORDER_CREATE_MAX_VERSION = 7 as const;
+export const ORDER_CREATE_MAX_VERSION = 8 as const;
+/** order.create 8 (#722) tells the server which customer address the sale was taxed on (`taxAddress`) and carries the
+ *  addresses; below it a server taxes on the store's base, so `saleTaxContexts` re-taxes by address only from here. */
+export const TAX_ADDRESS_ORDER_CREATE_VERSION = 8 as const;
 
 export class UnsupportedOrderVersionError extends Error {
   readonly code = 'UNSUPPORTED_ORDER_VERSION';
@@ -88,6 +91,9 @@ function wireNote(note: string | undefined): string | undefined {
  * A version-3 order goes as version 4 (#286) only when `maxVersion` is at least 4 and its `sentVersion` doesn't cap it.
  * Coupon orders need version 6, carrying coupons, stored regular prices, line attributes and receipt coupons.
  * A sale with a note goes as version 7 when capped at 7 or more and it has figures; otherwise the note is not sent.
+ * A sale taxed on the customer's address (`taxAddress`, #722) needs version 8 and never downgrades: below 8 the server
+ * taxes on the base, so a lower cap throws UnsupportedOrderVersionError(8). At 8 it carries the note, `taxAddress` and
+ * the stored addresses; every other field follows the version its content makes, as at 7.
  * Orders with Any picks (#495) need version 6 too, carrying a line's `anyAttributes`, and coupons only when they have some.
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
@@ -98,13 +104,19 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   if (content === 5 && cap !== undefined && cap < 5) throw new UnsupportedOrderVersionError(5, cap);
   if (content === 6 && cap !== undefined && cap < 6) throw new UnsupportedOrderVersionError(6, cap);
   if (grossMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
+  const taxAddress = order.taxAddress;
+  if (taxAddress && cap !== undefined && cap < TAX_ADDRESS_ORDER_CREATE_VERSION) {
+    throw new UnsupportedOrderVersionError(TAX_ADDRESS_ORDER_CREATE_VERSION, cap);
+  }
   // Version 4 only when the cap allows it (the server advertises 4, and no sentVersion holds the order lower).
   const base = (content === 3 && cap !== undefined && cap >= 4 ? 4
     : Math.min(content, cap ?? content)) as 1 | 2 | 3 | 4 | 5 | 6;
   // Version 7 (ADR-083) is 6 plus the note: only for a sale with one, with figures (3+), when the cap allows 7.
   // Every other field follows `base`, so a note changes nothing else in the payload.
   const note = wireNote(order.note);
-  const version = (note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
+  if (taxAddress && base < 3) throw new Error(`Order ${order.id} is taxed on the customer's ${taxAddress} address but has no figures`);
+  const version = (taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
+    : note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
   const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax) : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
@@ -113,6 +125,8 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   // These are the pre-#222 customerId and sessionId checks, kept byte-exact so stored orders resend older tills' bytes; don't replace with sendable.
   const customerId = typeof id === 'string' && id.length > 0 && id.length <= 64 ? id : undefined;
   const sessionId = order.sessionId ?? order.lateSessionId;
+  const { billing, shipping } = order.customer ?? {};
+  const addresses = version === 8 ? { ...(billing ? { billing: { ...billing } } : {}), ...(shipping ? { shipping: { ...shipping } } : {}) } : {};
   const { fees: _fees, shipping: _shipping, coupons: _coupons, ...storedDisplay } = { ...order.display! };
   return {
     id: order.commandId, type: 'order.create', version, createdAt: order.createdAt, deviceId, attempt,
@@ -161,12 +175,13 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         })),
       } : {}),
       customer: base >= 3
-        ? (email || customerId ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}) } : null)
+        ? (email || customerId || version === 8 ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}), ...addresses } : null)
         : (email ? { email } : null),
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
       ...(base >= 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
-      ...(version === 7 ? { note } : {}),
+      ...(version >= 7 && note ? { note } : {}),
+      ...(version === 8 ? { taxAddress } : {}),
     },
   };
 }

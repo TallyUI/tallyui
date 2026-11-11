@@ -5,9 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { ORDER_NOTE_MAX } from '@tallyui/core';
 import { payloadBoundErrors, precheckCommand } from '@tallyui/core/server';
 import { createOrderBuilder } from '../order/order-builder';
-import { ORDER_CREATE_MAX_VERSION, toOrderCreateEnvelope } from './command';
+import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder, freezeSentForm } from './finalize';
-import { posOrderCollection } from './schema';
 
 const fixturePath = fileURLToPath(new URL('./__fixtures__/order-create-v7.json', import.meta.url));
 const supported = { orderCreate: [1, 2, 3, 4, 5, 6, 7], register: [1] };
@@ -138,10 +137,7 @@ describe('order.create v7 sale note (ADR-083)', () => {
     expect(freezeSentForm(order)).toBe(order);
   });
 
-  it('pins both stored version maxima and the golden version to the till maximum', () => {
-    const { properties } = posOrderCollection().schema;
-    expect(properties.sentVersion.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.downgradedFrom.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(ORDER_CREATE_MAX_VERSION);
+  it("a note sale's golden version is 7", () => {
+    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(7);
   });
 });

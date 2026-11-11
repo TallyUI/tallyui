@@ -1,4 +1,5 @@
-import { minorUnitDigits, ORDER_NOTE_MAX, type ServerCapabilities, type TaxRounding } from '@tallyui/core';
+import { minorUnitDigits, ORDER_NOTE_MAX, type CustomerAddress, type OrderAddress, type ServerCapabilities, type TaxRounding,
+  type woocommerceTax } from '@tallyui/core';
 import type { Order, SentOrder } from '../order/types';
 import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
@@ -18,6 +19,18 @@ export interface FinalizeOptions {
   newId?: () => string;
   /** The store's `order.create` capability (ADR-062); `undefined` is treated as 1. */
   capabilities?: ServerCapabilities;
+  /** The address the sale's tax context matched (#722, `saleTaxContexts`). A customer's billing or shipping address
+   *  stores `taxAddress` and the customer's addresses, sent at order.create 8; the base, or absent, stores neither. */
+  taxLocation?: woocommerceTax.ResolvedTaxLocation;
+}
+
+/** OrderAddress's keys: a CustomerAddress without its email (#722). */
+const ORDER_ADDRESS_KEYS = ['firstName', 'lastName', 'company', 'address1', 'address2', 'city', 'state', 'postcode', 'country', 'phone'] as const;
+
+/** A customer's address as order.create 8 carries it: the ten keys, non-empty strings only; undefined when none is. */
+function orderAddress(address: CustomerAddress | undefined): OrderAddress | undefined {
+  const entries = ORDER_ADDRESS_KEYS.flatMap((key) => typeof address?.[key] === 'string' && address[key] ? [[key, address[key]]] : []);
+  return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
 /** A line name in a refusal message: 60 UTF-16 units of it plus '…' at most, so a cashier-facing message stays short. */
@@ -80,6 +93,11 @@ export function freezeSentForm(order: PosOrder): PosOrder {
     return { ...payment, reference };
   });
   const customer = order.customer && { ...order.customer };
+  for (const kind of ['billing', 'shipping'] as const) if (customer?.[kind]) {
+    const address: OrderAddress = Object.fromEntries(Object.entries(customer[kind]).map(([key, value]) => [key, cutText(value, PAYLOAD_STRING_MAX)]));
+    changed ||= Object.entries(address).some(([key, value]) => value !== customer[kind]![key as keyof OrderAddress]);
+    customer[kind] = address;
+  }
   const localWarnings = [...(order.localWarnings ?? [])];
   for (const [field, max] of [['email', 254], ['id', 64]] as const) {
     if (customer && field in customer && !sendable(customer[field], max)) {
@@ -251,6 +269,10 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const taxRounding: TaxRounding = rounding.granularity === 'custom' ? { granularity: 'custom' }
     : rounding.granularity === 'woocommerce' ? { granularity: 'woocommerce', roundAtSubtotal: rounding.roundAtSubtotal }
     : { granularity: rounding.granularity, mode: rounding.mode };
+  const used = options.taxLocation?.addressUsed;
+  const taxAddress = used === 'billing' || used === 'shipping' ? used : undefined;
+  const addresses = { billing: orderAddress(order.customer?.billing), shipping: orderAddress(order.customer?.shipping) };
+  if (taxAddress && !addresses[taxAddress]?.country) throw new Error(`finalize: the sale was taxed on the customer's ${taxAddress} address, which it does not have`);
   const now = (options.now ?? new Date()).toISOString();
   return freezeSentForm({
     id, saleId: order.id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
@@ -262,8 +284,11 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       ({ code, couponId, discountMinor, discountTaxMinor })) } : {}),
     ...(display && taxByRate ? { display, taxByRate } : {}),
     customer: order.customer ? { id: order.customer.id, name: order.customer.name,
-      ...(order.customer.email !== undefined ? { email: order.customer.email } : {}) } : null,
+      ...(order.customer.email !== undefined ? { email: order.customer.email } : {}),
+      ...(taxAddress && addresses.billing ? { billing: addresses.billing } : {}),
+      ...(taxAddress && addresses.shipping ? { shipping: addresses.shipping } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),
+    ...(taxAddress ? { taxAddress } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),
     ...(localWarnings?.length ? { localWarnings } : {}),

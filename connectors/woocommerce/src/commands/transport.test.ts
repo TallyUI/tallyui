@@ -803,3 +803,56 @@ describe('the sale note as customer_note (ADR-083)', () => {
     expect((fetch.mock.calls[0][1]!.body as string).split('"customer_note":"Deliver after 5"')).toHaveLength(2);
   });
 });
+
+describe('the tax address as WCPOS meta with billing and shipping (#722, order.create v8)', () => {
+  const billing = { firstName: 'Ann', lastName: 'Lee', company: 'Lee & Co', address1: '1 Main St', address2: 'Floor 2',
+    city: 'Albany', state: 'NY', postcode: '12207', country: 'US', phone: '555-0100' };
+  function taxed(taxAddress: 'billing' | 'shipping', customer: NonNullable<OrderCreateEnvelope['payload']['customer']>) {
+    const envelope = order();
+    envelope.version = 8;
+    envelope.payload = { ...envelope.payload, customer, taxAddress };
+    return envelope;
+  }
+  function mapped(envelope: OrderCreateEnvelope) {
+    const result = toWooOrderPayload(envelope, undefined, { paymentsList: true });
+    if (!('payload' in result)) throw new Error(result.error.message);
+    return result.payload;
+  }
+
+  it('sends the meta after the uuid and payments entries, and billing with the email and every address field', () => {
+    const envelope = taxed('billing', { email: 'ann@example.com', customerId: '7', billing });
+    envelope.payload.payments = [{ clientPaymentId: 'p1', method: 'cash', amountMinor: 100 }, { clientPaymentId: 'p2', method: 'external', amountMinor: 200 }];
+    const payload = mapped(envelope);
+    expect((payload.meta_data as { key: string }[]).map(({ key }) => key))
+      .toEqual(['_woocommerce_pos_uuid', '_woocommerce_pos_payments', '_woocommerce_pos_tax_based_on']);
+    expect((payload.meta_data as unknown[])[2]).toStrictEqual({ key: '_woocommerce_pos_tax_based_on', value: 'billing' });
+    expect(JSON.stringify(payload.billing)).toBe(JSON.stringify({ email: 'ann@example.com', first_name: 'Ann', last_name: 'Lee',
+      company: 'Lee & Co', address_1: '1 Main St', address_2: 'Floor 2', city: 'Albany', state: 'NY', postcode: '12207',
+      country: 'US', phone: '555-0100' }));
+    expect(payload).not.toHaveProperty('shipping');
+    expect(payload).not.toHaveProperty('created_via');
+    expect(payload.customer_id).toBe(7);
+  });
+
+  it('sends shipping without an email, and only the fields present', () => {
+    const payload = mapped(taxed('shipping', { email: 'ann@example.com', billing: { country: 'US', state: 'NY' },
+      shipping: { firstName: 'Bo', city: 'Portland', state: 'OR', country: 'US' } }));
+    expect((payload.meta_data as unknown[]).at(-1)).toStrictEqual({ key: '_woocommerce_pos_tax_based_on', value: 'shipping' });
+    expect(payload.billing).toStrictEqual({ email: 'ann@example.com', state: 'NY', country: 'US' });
+    expect(JSON.stringify(payload.shipping)).toBe('{"first_name":"Bo","city":"Portland","state":"OR","country":"US"}');
+  });
+
+  it('sends billing without an email key when the customer has none', () => {
+    expect(mapped(taxed('billing', { billing: { country: 'US', state: 'NY' } })).billing).toStrictEqual({ state: 'NY', country: 'US' });
+  });
+
+  it('keeps the version 7 payload bytes without a tax address: one meta entry, billing with the email only, no shipping', () => {
+    const envelope = order();
+    envelope.version = 7;
+    envelope.payload = { ...envelope.payload, customer: { email: 'ann@example.com', customerId: '7' }, note: 'Hi' };
+    const bytes = JSON.stringify(mapped(envelope));
+    expect(bytes).toContain('"meta_data":[{"key":"_woocommerce_pos_uuid","value":"019965af-0000-7000-8000-000000000003"}],'
+      + '"customer_id":7,"billing":{"email":"ann@example.com"},"customer_note":"Hi"}');
+    expect(bytes).not.toContain('"shipping":');
+  });
+});

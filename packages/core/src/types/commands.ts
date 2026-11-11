@@ -8,8 +8,9 @@ export interface CommandEnvelope<P = unknown> {
   /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1;
    *  4 is 3 with every `discountMinor` tax-exclusive, built only when capped at 4 or more (#286).
    *  5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
-   *  7 is 6 plus the sale's `note` (ADR-083), sent only for an order that has one. */
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+   *  7 is 6 plus the sale's `note` (ADR-083), sent only for an order that has one.
+   *  8 is 7 plus `taxAddress` and the customer's addresses (#722), sent only for a sale taxed on the customer's address. */
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -56,8 +57,8 @@ export interface OrderRefundOrderStateData { state: string }
 export interface OrderRefundNoOpenSessionData { sessionId: string }
 
 /** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
- * 7 is 6 plus the sale's note (ADR-083). */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 };
+ * 7 is 6 plus the sale's note (ADR-083). 8 is 7 plus `taxAddress` and the customer's addresses (#722). */
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -388,7 +389,14 @@ export interface OrderCreatePayload {
     email?: string;
     /** Version 3+: the platform's id for the customer picked at the till, a soft reference of at most 64 characters. Absent for a guest sale, or when no customer was picked. */
     customerId?: string;
+    /** Version 8 (#722): the customer's billing address, sent only with `taxAddress`. */
+    billing?: OrderAddress;
+    /** Version 8 (#722): the customer's shipping address, sent only with `taxAddress`. */
+    shipping?: OrderAddress;
   } | null;
+  /** Version 8 (#722): the customer address the till taxed the sale on; always present at 8, and that address has a
+   *  non-empty `country`. Absent: the store's base address. */
+  taxAddress?: 'billing' | 'shipping';
   registerId?: string;
   cashierRef?: string;
   locationId?: string;
@@ -396,6 +404,21 @@ export interface OrderCreatePayload {
   sessionId?: string;
   /** Version 7 (ADR-083): the sale's note, 1 to ORDER_NOTE_MAX UTF-16 units; omitted when the sale has none. */
   note?: string;
+}
+
+/** A customer's address on order.create v8 (#722): each field a string of at most 255 UTF-16 units; no email, which
+ *  `customer.email` carries. */
+export interface OrderAddress {
+  firstName?: string;
+  lastName?: string;
+  company?: string;
+  address1?: string;
+  address2?: string;
+  city?: string;
+  state?: string;
+  postcode?: string;
+  country?: string;
+  phone?: string;
 }
 
 /** Batch of commands submitted to the server. */

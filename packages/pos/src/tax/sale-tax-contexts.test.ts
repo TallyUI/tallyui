@@ -26,7 +26,8 @@ const billsInNz: CustomerSummary = { id: '8', name: 'Aroha', billing: nz };
 const inAu: CustomerSummary = { id: '9', name: 'Matt', shipping: { country: 'AU', state: 'VIC' } };
 
 describe('saleTaxContexts', () => {
-  const contextFor = saleTaxContexts(auNzSettings);
+  // order.create 8 is what lets it re-match by address (#722).
+  const contextFor = saleTaxContexts(auNzSettings, { orderCreateVersion: 8 });
 
   it('taxes no customer at the shop base', () => {
     const { taxContext, location } = contextFor(null);
@@ -58,15 +59,33 @@ describe('saleTaxContexts', () => {
 
   it("gives everyone the store's own context without a rate table", () => {
     const { taxRateTable: _table, ...noTable } = auNzSettings;
-    const storeFor = saleTaxContexts(noTable);
+    const storeFor = saleTaxContexts(noTable, { orderCreateVersion: 8 });
     const store = storeFor(null);
     expect(storeFor(shipsToNz).taxContext).toBe(store.taxContext);
     expect(storeFor(billsInNz).taxContext).toBe(store.taxContext);
     expect(store.taxContext.getTaxRates?.()).toEqual([AU]);
     expect(storeFor(shipsToNz).location).toEqual({ taxBasedOn: 'shipping', addressUsed: 'base', location: auNzSettings.baseTaxAddress });
     const { baseTaxAddress: _base, ...noBase } = auNzSettings;
-    const noBaseFor = saleTaxContexts(noBase);
+    const noBaseFor = saleTaxContexts(noBase, { orderCreateVersion: 8 });
     expect(noBaseFor(shipsToNz).taxContext).toBe(noBaseFor(null).taxContext);
     expect(noBaseFor(shipsToNz).location.location).toEqual({ country: '', state: '', city: '', postcode: '' });
+  });
+
+  it.each([
+    ['no option', undefined],
+    ['order.create 7', { orderCreateVersion: 7 }],
+  ])("gives everyone the store's own context with the table but %s: the server taxes below 8 on the base", (_label, options) => {
+    const storeFor = saleTaxContexts(auNzSettings, options);
+    const store = storeFor(null);
+    expect(storeFor(shipsToNz).taxContext).toBe(store.taxContext);
+    expect(storeFor(billsInNz).taxContext).toBe(store.taxContext);
+    expect(store.taxContext.getTaxRates?.()).toEqual([AU]);
+    expect(storeFor(shipsToNz).location).toEqual({ taxBasedOn: 'shipping', addressUsed: 'base', location: auNzSettings.baseTaxAddress });
+  });
+
+  it('re-matches by address from order.create 8', () => {
+    const at8 = saleTaxContexts(auNzSettings, { orderCreateVersion: 8 })(shipsToNz);
+    expect(at8.taxContext.getTaxRates?.()).toEqual([NZ]);
+    expect(at8.location.addressUsed).toBe('shipping');
   });
 });

@@ -18,7 +18,9 @@ export interface StoreSettings {
   taxBasedOn?: TaxBasedOn;
   /** The shop base address, as WooCommerce resolves it for `base` (store country, state, city, postcode). */
   baseTaxAddress?: TaxAddress;
-  /** The store's whole WooCommerce rate table, unfiltered, for re-matching by address. Absent: `taxRates` is final. */
+  /** The store's whole WooCommerce rate table, unfiltered, for re-matching by address. Absent: `taxRates` is final.
+   *  `saleTaxContexts` (@tallyui/pos) re-matches only when the app passes the connector's `orderCreate` capability and it
+   *  is 8 or more, since only order.create 8 tells the server which address the sale was taxed on (#722). */
   taxRateTable?: WooTaxRate[];
   /** Every tax rate the store defines, wherever it applies, for an app's "all tax rates" table (#669). Display only: the cart reads `taxRatesPpm` and `taxRates`, never this. Absent when the connector did not read the list. */
   allTaxRates?: StoreTaxRate[];

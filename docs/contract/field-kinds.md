@@ -233,11 +233,16 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 | `payload.customer` | instruction | 1 |
 | `payload.customer.email` | instruction | 1 |
 | `payload.customer.customerId` | instruction | 3 |
+| `payload.customer.billing` | informational (#722) | 8 |
+| `payload.customer.billing.*` | informational (#722) | 8 |
+| `payload.customer.shipping` | informational (#722) | 8 |
+| `payload.customer.shipping.*` | informational (#722) | 8 |
 | `payload.registerId` | informational | 1 |
 | `payload.cashierRef` | informational | 1 |
 | `payload.locationId` | instruction | 1 |
 | `payload.sessionId` | instruction (honoured by recording) | 3 |
 | `payload.note` | informational (ADR-083) | 7 |
+| `payload.taxAddress` | instruction, amount-bearing (#722): the address the sale was taxed on | 8 |
 
 - A discount, on the order or a line, is the cashier's price decision:
   the server honours it by applying or recording it, or refuses it.
@@ -251,6 +256,14 @@ must equal the order's tax mode when charges are present; subtotal excludes char
   A `customerId` the store cannot resolve (unknown, deleted or in another
   channel) is one sale's own reference, so the sale is kept as a guest
   sale with `customer_ignored`, never refused.
+- `payload.taxAddress` (`billing` or `shipping`) names the customer
+  address the till taxed the sale on, so the server taxes the order on
+  the same address; it decides the tax, so a server that cannot honour it
+  refuses the version. Absent means the store's base address. Version 8
+  always carries it, with a non-empty `country` on that address; the
+  addresses (`firstName`, `lastName`, `company`, `address1`, `address2`,
+  `city`, `state`, `postcode`, `country`, `phone`, each at most 255
+  characters) travel only at 8.
 - `payload.sessionId` is the session the server's register figures count
   the sale in (ADR-068 decision 13), and `payload.registerId` is the
   till's device id, never the drawer (ADR-068 decision 7a). A server

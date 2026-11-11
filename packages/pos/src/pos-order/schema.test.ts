@@ -163,7 +163,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(11);
+  expect(posOrderSchema.version).toBe(12);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -181,7 +181,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   }
 });
 
-it('stores sentVersion and downgradedFrom, and refuses values outside 1–7', async () => {
+it('stores sentVersion and downgradedFrom, and refuses values outside 1–8', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -201,9 +201,32 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–7', as
     const v7 = { ...order, id: uuidv7(), sentVersion: 7 as const, downgradedFrom: 7 as const };
     await pos_orders.insert(v7);
     expect((await pos_orders.findOne(v7.id).exec())?.toJSON()).toStrictEqual(v7);
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 8 as 7 })).rejects.toThrow();
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 8 as 7 })).rejects.toThrow();
+    const v8 = { ...order, id: uuidv7(), sentVersion: 8 as const, downgradedFrom: 8 as const };
+    await pos_orders.insert(v8);
+    expect((await pos_orders.findOne(v8.id).exec())?.toJSON()).toStrictEqual(v8);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 9 as 8 })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 9 as 8 })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 0 as 1 })).rejects.toThrow();
+  } finally {
+    await db.remove();
+  }
+});
+
+it("stores the tax address and the customer's addresses (#722), and refuses another basis or an unknown address key", async () => {
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 100, currency: 'USD' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const order = finalizeOrder(builder.getSnapshot());
+    const customer = { id: '7', billing: { firstName: 'Ann', city: 'Albany', state: 'NY', country: 'US' }, shipping: { country: 'US', state: 'OR' } };
+    const taxed = { ...order, taxAddress: 'shipping' as const, customer };
+    await pos_orders.insert(taxed);
+    expect((await pos_orders.findOne(taxed.id).exec())?.toJSON()).toStrictEqual(taxed);
+    await expect(pos_orders.insert({ ...taxed, id: uuidv7(), taxAddress: 'base' as 'billing' })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...taxed, id: uuidv7(), customer: { billing: { country: 'US', email: 'a@b.c' } as never } })).rejects.toThrow();
   } finally {
     await db.remove();
   }
