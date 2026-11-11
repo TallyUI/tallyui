@@ -12,6 +12,8 @@ import type { ReceiptTemplate, ReceiptTemplateKind } from './receipt-templates';
 import type { RegisterInfo } from './registers';
 import type { Cashier } from './cashier';
 import type { FailureClass } from '../connectivity';
+import type { DisplayAdvertisement, DisplaySignalling } from './display-signalling';
+import { parseDisplayAdvertisement } from '../customer-display/advertisement';
 
 /**
  * Authentication configuration for a connector.
@@ -72,6 +74,11 @@ export interface ServerCapabilities {
    * Absent means the store sets none, and the app's own threshold applies.
    */
   registerApproval?: { thresholdMinor: number };
+  /**
+   * A store whose plugin signals second-device customer displays (ADR-085), from `/tally/v1/info`'s top-level
+   * `customerDisplay`. Absent means no second-device display.
+   */
+  customerDisplay?: DisplayAdvertisement;
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */
@@ -148,6 +155,7 @@ const maxVersion = (list: unknown): number | undefined => {
  * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287); malformed `lineTax` is ignored.
  * malformed `registerApproval` is ignored (ADR-082). `coupons` is true only when the body says `coupons: true` (#709).
  * `orderRefund` is the max of `contracts["order.refund"]` when valid, otherwise absent (ADR-080).
+ * `customerDisplay` is present only when `parseDisplayAdvertisement` accepts it; a malformed one warns (ADR-085).
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
  * A non-object body is also unknown, not a statement of the store's defaults.
  */
@@ -156,7 +164,7 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     warn?.('non-object info body: capabilities unknown');
     return undefined;
   }
-  const { contracts, taxRounding, lineTax, registerApproval, coupons } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown; coupons?: unknown };
+  const { contracts, taxRounding, lineTax, registerApproval, coupons, customerDisplay } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown; coupons?: unknown; customerDisplay?: unknown };
   const register = maxVersion(contracts?.register);
   const orderRefund = maxVersion(contracts?.['order.refund']);
   const rounding = parseTaxRounding(taxRounding);
@@ -166,11 +174,13 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
   }
   const parsedLineTax = parseLineTax(lineTax, warn);
   const parsed = parseRegisterApproval(registerApproval, warn);
+  const display = parseDisplayAdvertisement(customerDisplay, warn);
   return { orderCreate: maxVersion(contracts?.['order.create']) ?? 1,
     ...(orderRefund !== undefined ? { orderRefund } : {}),
     ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}),
     ...(parsedLineTax ? { lineTax: parsedLineTax } : {}),
-    ...(parsed ? { registerApproval: parsed } : {}), ...(coupons === true ? { coupons: true } : {}) };
+    ...(parsed ? { registerApproval: parsed } : {}), ...(coupons === true ? { coupons: true } : {}),
+    ...(display ? { customerDisplay: display } : {}) };
 }
 
 export interface AuthField {
@@ -397,4 +407,9 @@ export interface TallyConnector {
    * method may also call for the failures it does not map.
    */
   classifyFailure?: (error: unknown) => FailureClass;
+  /**
+   * Signalling for a customer display on a second device (ADR-085 d2). Absent means no second-device display; the
+   * same-device display still works.
+   */
+  displaySignalling?: DisplaySignalling;
 }
