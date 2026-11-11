@@ -291,8 +291,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     saving,
     /** The failed save's order is confirmed stored (see `isStored`): the UI also offers Continue (`continueSale()`). */
     canContinue,
-    add(entry: CatalogueEntry<any>, traits: ProductTraits<any>) {
-      if (locked()) return;
+    /** Adds the entry, as a new line or one more on its line; returns that line's id, or the refusal `error` now shows. */
+    add(entry: CatalogueEntry<any>, traits: ProductTraits<any>): { lineId: string } | string {
+      if (locked()) return SALE_SAVING;
       const builder = builderNow.current;
       try {
         const known = new Set(builder.getSnapshot().lineItems.map((line) => line.id));
@@ -310,11 +311,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const refused = line && [line.variantId !== undefined ? referenceError(`${name}: the variant id`, line.variantId)
           : referenceError(`${name}: the product id`, line.productId),
         ...taxLines.map((tax) => referenceError(`${name}: the tax code`, tax.code))].find((message) => message !== null);
-        if (refused) { builder.removeItem(lineId); return setError(refused); }
+        if (refused) { builder.removeItem(lineId); setError(refused); return refused; }
         setError(null);
+        return { lineId };
       } catch (error) {
         if (!(error instanceof CartError)) throw error;
         setError(error.message);
+        return error.message;
       }
     },
     setQuantity(lineId: string, quantity: number) { if (!locked()) builderNow.current.updateQuantity(lineId, quantity); },
