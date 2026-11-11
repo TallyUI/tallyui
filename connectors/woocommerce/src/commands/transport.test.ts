@@ -771,3 +771,35 @@ describe('Any picks as line meta (#495)', () => {
     expect(JSON.stringify(pickedLine)).toBe(JSON.stringify(plainLines[0]));
   });
 });
+
+describe('the sale note as customer_note (ADR-083)', () => {
+  function versioned(version: OrderCreateEnvelope['version'], note?: string) {
+    const envelope = order();
+    envelope.version = version;
+    if (note !== undefined) envelope.payload.note = note;
+    return envelope;
+  }
+  function mapped(envelope: OrderCreateEnvelope) {
+    const result = toWooOrderPayload(envelope);
+    if (!('payload' in result)) throw new Error(result.error.message);
+    return result.payload;
+  }
+
+  it('maps a version 7 note to customer_note as the last key', () => {
+    const payload = mapped(versioned(7, 'Deliver after 5'));
+    expect(payload.customer_note).toBe('Deliver after 5');
+    expect(Object.keys(payload).at(-1)).toBe('customer_note');
+  });
+
+  it.each([undefined, ''])('sends no customer_note for note %j, byte for byte the version 6 payload', (note) => {
+    const payload = mapped(versioned(7, note));
+    expect(payload).not.toHaveProperty('customer_note');
+    expect(JSON.stringify(payload)).toBe(JSON.stringify(mapped(versioned(6))));
+  });
+
+  it('posts the note once in the request body', async () => {
+    const { transport, fetch } = setup(response());
+    await transport.send([versioned(7, 'Deliver after 5')]);
+    expect((fetch.mock.calls[0][1]!.body as string).split('"customer_note":"Deliver after 5"')).toHaveLength(2);
+  });
+});
