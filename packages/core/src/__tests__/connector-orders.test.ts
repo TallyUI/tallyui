@@ -1,8 +1,31 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type { SyncContext, TallyConnector } from '../types/connector';
 import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from '../index';
+import type { OrderFilterField } from '../index';
 
 describe('TallyConnector order history types', () => {
+  it('makes orderFilters optional and readonly', () => {
+    expectTypeOf<Omit<TallyConnector, 'orderFilters'>>().toExtend<TallyConnector>();
+    expectTypeOf<TallyConnector['orderFilters']>().toEqualTypeOf<readonly OrderFilterField[] | undefined>();
+  });
+
+  it('names exactly the eight order filter fields', () => {
+    expectTypeOf<OrderFilterField>().toEqualTypeOf<
+      'status' | 'customerId' | 'cashierId' | 'registerId' | 'paymentMethod' | 'storeId' | 'createdVia' | 'dateRange'
+    >();
+  });
+
+  it('accepts every filter field on ListOrdersQuery', () => {
+    const query = {
+      page: 2, perPage: 25, search: 'x', status: 'completed', customerId: '0', cashierId: '3', registerId: 'reg-1',
+      paymentMethod: 'pos_cash', storeId: '2', createdVia: 'woocommerce-pos',
+      dateRange: { after: '2026-11-01T00:00:00.000Z', before: '2026-11-02T00:00:00.000Z' },
+    } satisfies Required<ListOrdersQuery>;
+    expectTypeOf(query).toExtend<ListOrdersQuery>();
+    expectTypeOf<{ dateRange: { after: string } }>().toExtend<ListOrdersQuery>();
+    expectTypeOf<{ dateRange: { before: string } }>().toExtend<ListOrdersQuery>();
+  });
+
   it('accepts a connector without listOrders or getOrders', () => {
     expectTypeOf<Omit<TallyConnector, 'listOrders' | 'getOrders'>>().toExtend<TallyConnector>();
     expectTypeOf<undefined>().toExtend<TallyConnector['listOrders']>();

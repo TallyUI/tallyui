@@ -87,6 +87,12 @@ All styled sub-components accept a `className` prop that gets merged via `cn()`,
 | `open` | `boolean` | --- | Controlled open state |
 | `onOpenChange` | `(open: boolean) => void` | --- | Called when open state changes |
 
+### SelectTrigger
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `chevron` | `boolean` | `true` | Draws a down chevron (`ChevronDownIcon`) at the right. Pass `false` when the children draw their own, or for a trigger that needs none. Not drawn under `asChild` |
+
 ### SelectItem
 
 | Prop | Type | Default | Description |

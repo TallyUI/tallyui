@@ -11,6 +11,7 @@ import { XIcon } from '../ui/icon/x-icon';
 import { Text } from '../ui/text';
 import { MovementSheet } from './movement-sheet';
 import { tenderLabel } from './register-count';
+import { RegisterSideFooter, RegisterSideHeader, RegisterSideHero, RegisterSideLedger } from './register-side-sheet';
 
 /** Margin kept clear above and below the dialog (LEDGER-free layout fix, 2026-09-28 review):
  * a phone-height viewport must never let the panel's top go under the page header. */
@@ -32,19 +33,34 @@ export interface RegisterPanelProps {
    */
   reapprove?: (needed: ApprovalNeeded) => Promise<{ approvedBy: string; approval: string } | null>;
   className?: string;
+  /**
+   * `'dialog'` (the default) is the centred panel; `'side'` is WCPOS v2's right-hand sheet (Paul,
+   * 2026-10-30: "Cashier and Register modal come from the right"): the cash expected, session
+   * sales, the drawer ledger, Other tenders, and a Print X-report / Close register footer.
+   */
+  presentation?: 'dialog' | 'side';
+  /** `'side'`: the store's name, first in the header line. */
+  storeName?: string;
+  /** `'side'`: builds and prints the X-report (`buildXReportDocument`); a rejection shows "Printing failed. Try again.". Without it, there is no button. */
+  onPrintXReport?: () => void | Promise<void>;
+  /** `'side'`: the clock for the session's age; defaults to `new Date()`. */
+  now?: () => Date;
 }
 
 /**
  * The register's drawer panel: expected figures, cash movements with Undo, and Close register.
  * Port provenance (ADR-032 amendment 1): WCPOS `next` `3b5331b5c` `register-panel.tsx` (LEDGER
- * 54, 56, 58).
+ * 54, 56, 58); `presentation="side"` follows WCPOS v2's side sheet (TallyUI#716).
  *
  * Leaves out (registers job c2 or a later job, per `useRegisterSession`'s own "Not ported"
  * note): refused-movement Retry and "Unsynced" (no outbox here to refuse a movement), the
- * X-report, Z and print/reprint, and the Reports deep link.
+ * Z, reprint and the print sheet, the last-closure badge, and the Reports deep link.
  */
-export function RegisterPanel({ register, currency, registerName, open, onOpenChange, reapprove, className }: RegisterPanelProps) {
-  const { session, expected, salesCount, blind, movements, lastClosure, approvalNeeded, actions } = register;
+export function RegisterPanel({
+  register, currency, registerName, open, onOpenChange, reapprove, className, presentation = 'dialog', storeName, onPrintXReport, now,
+}: RegisterPanelProps) {
+  const { session, expected, salesCount, blind, movements, lastClosure, approvalNeeded, actions, terms } = register;
+  const side = presentation === 'side';
   const [reapproving, setReapproving] = useState(false);
   const otherTenders = Object.entries(expected).filter(([method, amount]) => method !== 'cash' && amount !== 0);
   const { height: windowHeight } = useWindowDimensions();
@@ -67,25 +83,36 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
   const activeMovements = movements.filter(
     (row) => row.type !== 'void' && !row.voided_by && !movements.some((entry) => entry.voids === row.id),
   );
+  const closeRegister = () =>
+    attempt(async () => {
+      await actions.startCounting();
+      onOpenChange(false);
+    });
+  // The side sheet is full height, so it needs no cap; its header and footer stay put, and only the body scrolls.
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         testID="register-panel"
+        side={side ? 'right' : 'center'}
         className={`flex-col overflow-hidden ${className ?? ''}`}
-        style={{ maxHeight }}
+        style={side ? undefined : { maxHeight }}
       >
         {/* The heading stays visible; a phone-height viewport must never push it under the page
             header (the Front desk review, 2026-09-28) — only the body below it scrolls. */}
         <View className="flex-row items-center justify-between gap-2">
-          <DialogTitle testID="register-panel-amount">{registerName ?? 'Register'}</DialogTitle>
+          {side ? (
+            <RegisterSideHeader session={session} registerName={registerName} storeName={storeName} now={now} />
+          ) : (
+            <DialogTitle testID="register-panel-amount">{registerName ?? 'Register'}</DialogTitle>
+          )}
           <DialogClose asChild>
             <IconButton variant="ghost" size="sm" testID="register-panel-dismiss" accessibilityLabel="Close panel">
               <XIcon size={16} />
             </IconButton>
           </DialogClose>
         </View>
-        <Text testID="register-panel-sales-count">{salesCount} sale{salesCount === 1 ? '' : 's'} this session</Text>
-        <ScrollView testID="register-panel-body" className="flex-1" contentContainerClassName="gap-3">
+        {!side && <Text testID="register-panel-sales-count">{salesCount} sale{salesCount === 1 ? '' : 's'} this session</Text>}
+        <ScrollView testID="register-panel-body" className="flex-1" contentContainerClassName={side ? 'gap-4' : 'gap-3'}>
           {/* Here, not in RegisterCount: a refused closure's session is already closed, and the
               panel is what still shows once a closure exists. Title and button: WCPOS v2's
               `register.approval_needed` and `register.approve` (monorepo core.json:2974-2976). */}
@@ -119,6 +146,7 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
               )}
             </View>
           )}
+          {side && <RegisterSideHero terms={terms} blind={blind} currency={currency} salesCount={salesCount} />}
           <View className="flex-row gap-2">
             {(['paid_in', 'paid_out', 'no_sale'] as const).map((type) => (
               <Button
@@ -133,7 +161,8 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
               </Button>
             ))}
           </View>
-          {!blind && (
+          {side && <RegisterSideLedger terms={terms} blind={blind} currency={currency} />}
+          {!side && !blind && (
             <View testID="register-panel-expected" className="gap-1">
               <Text className="text-muted-foreground text-sm font-semibold">Expected in the drawer</Text>
               {Object.entries(expected).filter(([method]) => method === 'cash').map(([method, amount]) => (
@@ -144,7 +173,7 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
               ))}
             </View>
           )}
-          {!blind && otherTenders.length > 0 && (
+          {!side && !blind && otherTenders.length > 0 && (
             <View testID="register-panel-other-tenders" className="gap-1">
               <Text className="text-muted-foreground text-sm font-semibold">Other tenders</Text>
               {otherTenders.map(([method, amount]) => (
@@ -182,21 +211,15 @@ export function RegisterPanel({ register, currency, registerName, open, onOpenCh
               </View>
             ))}
           {!!error && <Text className="text-destructive">{error}</Text>}
-          <Button
-            testID="register-panel-close"
-            disabled={!session}
-            variant="outline"
-            className="min-h-14"
-            onPress={() =>
-              attempt(async () => {
-                await actions.startCounting();
-                onOpenChange(false);
-              })
-            }
-          >
-            <Text>Close register</Text>
-          </Button>
+          {!side && (
+            <Button testID="register-panel-close" disabled={!session} variant="outline" className="min-h-14" onPress={closeRegister}>
+              <Text>Close register</Text>
+            </Button>
+          )}
         </ScrollView>
+        {side && (
+          <RegisterSideFooter canPrint={!blind && !!session} onPrintXReport={onPrintXReport} canClose={!!session} onClose={closeRegister} />
+        )}
         {movementType && (
           <MovementSheet
             register={register}

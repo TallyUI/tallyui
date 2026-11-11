@@ -12,3 +12,5 @@ export {
 	resolveInheritedShippingTaxClass, NO_SHIPPING_TAX, STANDARD_TAX_CLASS,
 } from './tax-class';
 export type { WooTaxRate, CalculateTaxesInput, CalculateTaxesResult, ItemizedTax } from './types';
+export { orderTaxLocation, normalizeTaxBasedOn, TAX_BASED_ON_META_KEY } from './tax-location';
+export type { TaxBasedOn, TaxAddress, TaxLocationOrder, ResolvedTaxLocation } from './tax-location';

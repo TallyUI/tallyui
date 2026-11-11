@@ -69,6 +69,15 @@ export interface StoreOrder {
   refunds: StoreOrderRefund[];
 }
 
+/** The filter fields a connector may support on listOrders. */
+export type OrderFilterField =
+  | 'status' | 'customerId' | 'cashierId' | 'registerId' | 'paymentMethod' | 'storeId' | 'createdVia' | 'dateRange';
+
+/**
+ * One page of order history, filtered on the server (#721). A connector maps each filter field its own way; a field the
+ * connector does not list in `TallyConnector.orderFilters` is refused with `UnsupportedOrderFilterError`
+ * (`assertOrderFiltersSupported`), never dropped.
+ */
 export interface ListOrdersQuery {
   /** 1-based; default 1. */
   page?: number;
@@ -76,6 +85,20 @@ export interface ListOrdersQuery {
   perPage?: number;
   /** The platform's own order search. */
   search?: string;
+  /** The platform's own status word, as StoreOrder.status carries it. */
+  status?: string;
+  /** Store ids, as strings like every id in TallyUI. `'0'` is WooCommerce's guest. */
+  customerId?: string;
+  cashierId?: string;
+  registerId?: string;
+  /** A payment method or gateway id, as the platform records it. */
+  paymentMethod?: string;
+  /** The store (outlet) the order was rung at. */
+  storeId?: string;
+  /** Where the order was created, in the platform's own words (WooCommerce: `woocommerce-pos`, `checkout`, `admin`). */
+  createdVia?: string;
+  /** Created at or after `after` and before `before`: ISO 8601 instants in UTC with a `Z` (`2026-11-11T00:00:00.000Z`). Either end may be absent. */
+  dateRange?: { after?: string; before?: string };
 }
 
 export interface StoreOrderPage { orders: StoreOrder[]; hasMore: boolean }
