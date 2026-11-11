@@ -61,7 +61,10 @@ interface Slot {
   id: string;
   record: DisplayRecord;
   config: DisplayConfig;
-  /** The snapshot `seq`: one per link made for this display. */
+  /**
+   * The snapshot `seq`: the first link's is the time the display was listed, and each later link's one more. A display
+   * ignores a `seq` below the highest it applied (U5a), so it must not start again from 1 when the till reloads.
+   */
   seq: number;
   link: PeerLink | null;
   view: DisplayLink | null;
@@ -228,7 +231,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
       },
     });
     const slot: Slot = {
-      id, record, config: configFor(record), seq: 0, link: null, view: null, deliver: null, connectTimer: null, event: null, sender,
+      id, record, config: configFor(record), seq: clock.now() - 1, link: null, view: null, deliver: null, connectTimer: null, event: null, sender,
     };
     slots.set(id, slot);
     return slot;

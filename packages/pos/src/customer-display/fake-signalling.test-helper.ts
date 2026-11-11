@@ -25,6 +25,7 @@ export class FakeSignalling implements DisplaySignalling {
   readonly displayInbox = new Map<string, SignalMessage[]>();
   private readonly failures = new Map<TillMethod, { code: DisplaySignallingErrorCode; displayId?: string }>();
   private readonly displayListeners = new Map<string, Set<(message: SignalMessage) => void>>();
+  private held: Promise<void> | null = null;
 
   /** Fails `method` (for one display only, when given) with `code` until `heal`. */
   fail(method: TillMethod, code: DisplaySignallingErrorCode, displayId?: string) {
@@ -50,9 +51,19 @@ export class FakeSignalling implements DisplaySignalling {
     }
   }
 
+  /** The next `list` reads the displays when called, but answers only once the returned function runs. */
+  holdNextList(): () => void {
+    let release = () => {};
+    this.held = new Promise<void>((resolve) => { release = resolve; });
+    return release;
+  }
   async list() {
     await this.enter({ method: 'list' });
-    return this.displays.map((display) => ({ ...display }));
+    const answer = this.displays.map((display) => ({ ...display }));
+    const held = this.held;
+    this.held = null;
+    await held;
+    return answer;
   }
   async sendSignal(_ctx: unknown, _deviceId: string, displayId: string, message: SignalMessage) {
     await this.enter({ method: 'sendSignal', displayId });

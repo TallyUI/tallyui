@@ -5,7 +5,7 @@ import { FakeSignalling, record } from './fake-signalling.test-helper';
 import { line, receiptWith } from './fixture.test-helper';
 import { makeEnvelope, type DisplayConfig, type DisplayEnvelope } from './protocol';
 import { createSaleDisplayPublisher } from './sale-display';
-import { SNAPSHOT_MIN_INTERVAL_MS } from './snapshot-fallback';
+import { SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS } from './snapshot-fallback';
 import {
   CONNECT_TIMEOUT_MS, LIST_POLL_MS, SIGNAL_POLL_MS, createTillDisplayService, type TillDisplayService,
 } from './till-display-service';
@@ -32,6 +32,7 @@ function setup(options: { displays?: DisplayRecord[]; snapshot?: boolean; contex
   const network = new FakeNetwork();
   let context = options.context === undefined ? ctx : options.context;
   const errors: unknown[] = [];
+  const listedAt = Date.now(); // The time of the list that adds the displays: the first link's snapshot seq.
   /** A display device: its peer link over the fake's display mailbox, and everything it heard. */
   const side = (id: string) => {
     const link: PeerLink = createDisplayPeerLink({ signal: signalling.displayPort(id), iceServers: [], createPeer: network.createPeer });
@@ -47,7 +48,7 @@ function setup(options: { displays?: DisplayRecord[]; snapshot?: boolean; contex
   });
   services.push(service);
   const linkOf = (id: string) => service.displays.find((entry) => entry.display.displayId === id)?.link;
-  return { signalling, network, service, errors, side, sideOf, linkOf, setContext: (next: SyncContext | null) => { context = next; } };
+  return { signalling, network, service, errors, listedAt, side, sideOf, linkOf, setContext: (next: SyncContext | null) => { context = next; } };
 }
 
 describe('createTillDisplayService', () => {
@@ -96,18 +97,18 @@ describe('createTillDisplayService', () => {
     expect(late.heard[1].payload).toMatchObject({ receipt: { lineItems: [{ name: 'Tea' }] } });
   });
 
-  it('4: replaces a dropped link at the next list with seq 2, and a link stuck connecting past 30 s', async () => {
+  it('4: replaces a dropped link at the next list with seq one up, and a link stuck connecting past 30 s', async () => {
     const s = setup({ displays: [record('d1')], snapshot: true, sides: [] });
     s.service.showCart(receipt);
     await wait(SNAPSHOT_MIN_INTERVAL_MS);
-    expect(s.signalling.snapshots('d1').map((body) => body.seq)).toEqual([1]);
+    expect(s.signalling.snapshots('d1').map((body) => body.seq)).toEqual([s.listedAt]);
     s.network.peers[0].setConnectionState('failed');
     expect(s.linkOf('d1')).toBe('closed');
     await wait(LIST_POLL_MS);
     expect(s.network.peers).toHaveLength(2);
     expect(s.linkOf('d1')).toBe('connecting');
     await wait(SNAPSHOT_MIN_INTERVAL_MS);
-    expect(s.signalling.snapshots('d1').at(-1)?.seq).toBe(2);
+    expect(s.signalling.snapshots('d1').at(-1)?.seq).toBe(s.listedAt + 1);
     await wait(CONNECT_TIMEOUT_MS + LIST_POLL_MS);
     expect(s.network.peers).toHaveLength(3);
     expect(s.network.peers[1].connectionState).toBe('closed');
@@ -135,7 +136,7 @@ describe('createTillDisplayService', () => {
     s.service.showCart(receipt);
     await wait(SNAPSHOT_MIN_INTERVAL_MS);
     expect(s.signalling.snapshots('d1')).toEqual([
-      expect.objectContaining({ seq: 1, config: expect.objectContaining({ display: { id: 'd1', name: 'Display d1' } }), event: expect.objectContaining({ action: 'cart.updated' }) }),
+      expect.objectContaining({ seq: s.listedAt, config: expect.objectContaining({ display: { id: 'd1', name: 'Display d1' } }), event: expect.objectContaining({ action: 'cart.updated' }) }),
     ]);
     s.side('d1');
     await wait(OPEN_MS);
@@ -192,7 +193,7 @@ describe('createTillDisplayService', () => {
     expect(s.network.peers).toHaveLength(peers + 1);
     expect(s.linkOf('d2')).toBe('connecting');
     await wait(SNAPSHOT_MIN_INTERVAL_MS);
-    expect(s.signalling.snapshots('d2').at(-1)).toMatchObject({ seq: 2, event: { action: 'cart.updated' } });
+    expect(s.signalling.snapshots('d2').at(-1)).toMatchObject({ seq: s.listedAt + 1, event: { action: 'cart.updated' } });
   });
 
   it('9: forbidden pauses every call until refresh(), and a null context makes no call', async () => {
@@ -261,5 +262,69 @@ describe('createTillDisplayService', () => {
     await wait(10);
     expect(s.sideOf.d1.actions()).toEqual(['cart.updated', 'display.idle']);
     expect(s.sideOf.d1.heard[0].payload).toMatchObject({ receipt: { lineItems: [{ name: 'Tea' }] } });
+  });
+
+  it('13: a till reloaded later posts each display a seq above the last one it posted (U5a keeps the highest)', async () => {
+    const first = setup({ displays: [record('d1')], snapshot: true, sides: [] });
+    first.service.showCart(receipt);
+    await wait(SNAPSHOT_MIN_INTERVAL_MS);
+    first.network.peers[0].setConnectionState('failed');
+    await wait(LIST_POLL_MS + SNAPSHOT_MIN_INTERVAL_MS);
+    const last = first.signalling.snapshots('d1').at(-1)!.seq;
+    expect(last).toBe(first.listedAt + 1);
+    first.service.close();
+    const reloaded = setup({ displays: [record('d1')], snapshot: true, sides: [] });
+    reloaded.service.showCart(receipt);
+    await wait(SNAPSHOT_MIN_INTERVAL_MS);
+    expect(reloaded.signalling.snapshots('d1')[0].seq).toBeGreaterThan(last);
+  });
+
+  it('14: a list that settles after a newer one is ignored', async () => {
+    const s = setup({ displays: [record('d1')] });
+    await wait(OPEN_MS);
+    const release = s.signalling.holdNextList();
+    await wait(LIST_POLL_MS);
+    expect(s.signalling.called('list')).toHaveLength(2);
+    s.signalling.displays = [record('d1'), record('d2')];
+    await s.service.refresh();
+    release();
+    await wait(10);
+    expect(s.service.displays.map((entry) => entry.display.displayId)).toEqual(['d1', 'd2']);
+  });
+
+  it('15: a snapshot held back while paused or offline is retried, never logged', async () => {
+    const paused = setup({ displays: [record('d1')], snapshot: true, sides: [] });
+    await wait(10);
+    paused.setContext(null);
+    paused.service.showCart(receipt);
+    await wait(SNAPSHOT_MIN_INTERVAL_MS);
+    expect(paused.service.status).toBe('paused');
+    expect(paused.signalling.called('postSnapshot')).toEqual([]);
+    expect(paused.errors).toEqual([]);
+
+    const offline = setup({ displays: [record('d1')], snapshot: true, sides: [] });
+    offline.service.showCart(receipt);
+    await wait(SNAPSHOT_MIN_INTERVAL_MS);
+    offline.signalling.fail('list', 'network');
+    await wait(LIST_POLL_MS);
+    expect(offline.service.status).toBe('offline');
+    offline.service.showCart(null);
+    await wait(SNAPSHOT_RESEND_MS * 2);
+    expect(offline.signalling.snapshots('d1').map((body) => body.event.action)).toEqual(['cart.updated']);
+    expect(offline.errors.filter((error) => String((error as Error).message).startsWith('not sent'))).toEqual([]);
+    offline.signalling.heal('list');
+    await wait(LIST_POLL_MS);
+    expect(offline.signalling.snapshots('d1').map((body) => body.event.action).slice(0, 2)).toEqual(['cart.updated', 'display.idle']);
+  });
+
+  it('16: close() leaves no timer pending, with a link connecting and a list due', async () => {
+    const s = setup({ displays: [record('d1')], snapshot: true, sides: [] });
+    await wait(10);
+    expect(s.linkOf('d1')).toBe('connecting');
+    s.service.close();
+    // The one timer left is U3's FakeChannel.close(), which closes on a 0 ms tick as a browser's channel closes later.
+    expect(vi.getTimerCount()).toBe(1);
+    await wait(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
