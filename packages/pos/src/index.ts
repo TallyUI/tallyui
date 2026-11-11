@@ -13,7 +13,7 @@ export { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './curre
 export type { CurrencyFormat, CurrencyProviderProps } from './currency';
 
 // Tax
-export { TaxProvider, useTax, taxLogger } from './tax';
+export { TaxProvider, useTax, taxLogger, taxSettingsForLocation } from './tax';
 export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, computeOrderTax, taxLinesByRate } from './tax';
 export type { TaxLineInput, OrderTaxTotals, RateTaxLine } from './tax';
 export type { TaxProviderProps } from './tax';
