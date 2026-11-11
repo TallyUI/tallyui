@@ -30,6 +30,15 @@ Switch is a pre-styled wrapper around `Switch.Root` and `Switch.Thumb` from `@ta
 | Thumb | Off | `translate-x-0` |
 | Thumb | On | `translate-x-5` |
 
+## Sizes
+
+Both sizes keep `border-2 border-transparent`; only the track, thumb and checked travel change.
+
+| Size | Track | Thumb | Thumb On |
+|------|-------|-------|----------|
+| `default` | `h-6 w-11` | `h-5 w-5` | `translate-x-5` |
+| `sm` | `h-5 w-9` | `h-4 w-4` | `translate-x-4` |
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -38,6 +47,7 @@ Switch is a pre-styled wrapper around `Switch.Root` and `Switch.Thumb` from `@ta
 | `defaultChecked` | `boolean` | `false` | Initial state (uncontrolled) |
 | `onCheckedChange` | `(checked: boolean) => void` | --- | Called when state changes |
 | `disabled` | `boolean` | `false` | Prevents interaction and applies `opacity-50` |
+| `size` | `'default' \| 'sm'` | `'default'` | `sm` is a 20 px track for dense rows such as settings lists |
 | `className` | `string` | --- | Additional NativeWind classes for the track, merged via `cn()` |
 
 Plus all React Native `PressableProps`.
@@ -63,6 +73,12 @@ function NotificationsToggle() {
     </View>
   );
 }
+```
+
+### Small
+
+```tsx
+<Switch size="sm" checked={enabled} onCheckedChange={setEnabled} />
 ```
 
 ### Disabled

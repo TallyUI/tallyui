@@ -8,6 +8,7 @@ export default function SwitchScreen() {
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [analytics, setAnalytics] = useState(true);
+  const [small, setSmall] = useState(true);
 
   return (
     <>
@@ -44,6 +45,21 @@ export default function SwitchScreen() {
               checked={darkMode}
               onCheckedChange={setDarkMode}
               nativeID="dark-mode"
+            />
+          </View>
+        </VStack>
+
+        <VStack className="gap-3">
+          <Text className="text-lg font-bold">Small</Text>
+          <View className="flex-row items-center justify-between">
+            <Label nativeID="small">
+              <Text>Compact row</Text>
+            </Label>
+            <Switch
+              size="sm"
+              checked={small}
+              onCheckedChange={setSmall}
+              nativeID="small"
             />
           </View>
         </VStack>
