@@ -86,6 +86,8 @@ export { DISPLAY_CHANNEL, createBroadcastDisplayTransport, createDisplayLink, us
 export type { DisplayTransport, BroadcastChannelLike, DisplayLink, DisplayClock } from './customer-display';
 export { createSaleDisplayPublisher, derivePaymentEvent, useSaleDisplay } from './customer-display';
 export type { SaleDisplayOptions, SaleDisplayInput, SaleDisplayPublisher } from './customer-display';
+export { createDisplayClient, COLLECT_POLL_MS, SIGNAL_POLL_MS, OPEN_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS, useDisplayClient } from './customer-display';
+export type { DisplayClient, DisplayClientOptions, DisplayClientPhase, DisplayClientError, DisplayTokenStore, DisplayClientView } from './customer-display';
 
 // Product
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
