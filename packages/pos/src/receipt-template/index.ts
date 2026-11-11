@@ -13,3 +13,11 @@ export type {
 } from './template-data';
 export type { ReceiptPaper } from './default-templates';
 export type { RenderReceiptOptions } from './render-receipt';
+export { wcposReceiptData, formatWcposReceiptData, formatWcposMoney, WCPOS_DEFAULT_I18N, WCPOS_TAX_ID_LABELS } from './wcpos';
+export { wcposSourceFromSentOrder, wcposSourceFromPosOrder, wcposSourceFromStoreOrder, wcposReceiptContext } from './wcpos';
+export { renderStoreReceiptTemplate } from './render-store-template';
+export type { PrintableSale, StoreTemplateContext } from './render-store-template';
+export type {
+  FormatWcposReceiptOptions, WcposMoneyOptions, WcposReceiptSource, WcposReceiptStore, WcposReceiptOptions,
+  WcposReceiptData, WcposReceiptView, WcposTaxId, WcposReceiptDate, WcposReceiptLine, WcposLineView,
+} from './wcpos';

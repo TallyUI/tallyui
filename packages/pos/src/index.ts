@@ -79,6 +79,10 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, Rece
 // Receipt templates
 export { parseXml, renderHtml, sanitizeHtml, renderReceiptTemplate, renderLogiclessTemplate, renderThermalPreview, receiptTemplateData, DEFAULT_RECEIPT_TEMPLATES, PAPER_COLUMNS, renderReceiptHtml } from './receipt-template';
 export type { ThermalNode, ReceiptNode, SanitizeHtmlOptions, RenderSanitizeOptions, ReceiptTemplateRow, ReceiptTemplateLine, ReceiptTemplateData, ReceiptTemplateOptions, ReceiptPaper, RenderReceiptOptions } from './receipt-template';
+export { wcposReceiptData, formatWcposReceiptData, formatWcposMoney, WCPOS_DEFAULT_I18N, WCPOS_TAX_ID_LABELS } from './receipt-template';
+export { wcposSourceFromSentOrder, wcposSourceFromPosOrder, wcposSourceFromStoreOrder, wcposReceiptContext, renderStoreReceiptTemplate } from './receipt-template';
+export type { PrintableSale, StoreTemplateContext } from './receipt-template';
+export type { FormatWcposReceiptOptions, WcposMoneyOptions, WcposReceiptSource, WcposReceiptStore, WcposReceiptOptions, WcposReceiptData, WcposReceiptView, WcposTaxId, WcposReceiptDate, WcposReceiptLine, WcposLineView } from './receipt-template';
 
 // Customer display
 export { DISPLAY_PROTOCOL_VERSION, DISPLAY_ACTIONS, makeEnvelope, displayCart, decode as decodeDisplayMessage, encode as encodeDisplayMessage, messageBytes, MAX_MESSAGE_BYTES, displayReducer, initialDisplayState } from './customer-display';
@@ -89,12 +93,12 @@ export { createSaleDisplayPublisher, derivePaymentEvent, useSaleDisplay } from '
 export type { SaleDisplayOptions, SaleDisplayInput, SaleDisplayPublisher } from './customer-display';
 export { createTillPeerLink, createDisplayPeerLink } from './customer-display';
 export type { SignalPort, PeerLink, PeerLinkState, PeerLinkOptions, PeerFactory, RTCPeerConnectionLike, RTCDataChannelLike, SessionDescriptionLike } from './customer-display';
+export { createDisplayClient, COLLECT_POLL_MS, DISPLAY_SIGNAL_POLL_MS, OPEN_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS, useDisplayClient } from './customer-display';
+export type { DisplayClient, DisplayClientOptions, DisplayClientPhase, DisplayClientError, DisplayTokenStore, DisplayClientView } from './customer-display';
 export { createTillDisplayService, SIGNAL_POLL_MS, LIST_POLL_MS, CONNECT_TIMEOUT_MS, createSnapshotSender, SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS, SNAPSHOT_LIFETIME_MS } from './customer-display';
 export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayEntry, ServiceClock, SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './customer-display';
 export { createTillPairing, PENDING_POLL_MS, useTillPairing, useTillDisplays } from './customer-display';
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError, TillPairingView, TillDisplaysView } from './customer-display';
-export { createDisplayClient, COLLECT_POLL_MS, DISPLAY_SIGNAL_POLL_MS, OPEN_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS, useDisplayClient } from './customer-display';
-export type { DisplayClient, DisplayClientOptions, DisplayClientPhase, DisplayClientError, DisplayTokenStore, DisplayClientView } from './customer-display';
 
 // Product
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
