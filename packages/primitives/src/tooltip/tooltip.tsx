@@ -54,7 +54,13 @@ function useRootContext(): RootContextType {
 // Root
 // ---------------------------------------------------------------------------
 
-function Root({ open: openProp, defaultOpen, onOpenChange: onOpenChangeProp, children }: RootProps) {
+function Root({
+  open: openProp,
+  defaultOpen,
+  onOpenChange: onOpenChangeProp,
+  delayDuration = 0,
+  children,
+}: RootProps) {
   const nativeID = React.useId();
   const [open = false, onOpenChange] = useControllableState({
     prop: openProp,
@@ -70,6 +76,7 @@ function Root({ open: openProp, defaultOpen, onOpenChange: onOpenChangeProp, chi
         value={{
           open,
           onOpenChange,
+          delayDuration,
           triggerPosition,
           setTriggerPosition,
           contentLayout,
@@ -88,11 +95,41 @@ Root.displayName = 'TooltipRoot';
 // Trigger
 // ---------------------------------------------------------------------------
 
+type HandlerEvent<K extends keyof TriggerProps> =
+  Parameters<Extract<TriggerProps[K], (...args: never[]) => unknown>>[0];
+
+/**
+ * Opens on hover (after `delayDuration`) and on focus no press caused; closes on leave and blur.
+ * A press only closes it unless `openOnPress` is set, which touch (no hover) needs to open it.
+ * `onLongPress` is left to the caller: binding it makes react-native-web drop a slow press.
+ */
 const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
-  { asChild, onPress: onPressProp, disabled, ...props },
+  {
+    asChild,
+    openOnPress = false,
+    onPress: onPressProp,
+    onPressOut: onPressOutProp,
+    onPointerDown: onPointerDownProp,
+    onPointerUp: onPointerUpProp,
+    onHoverIn: onHoverInProp,
+    onHoverOut: onHoverOutProp,
+    onFocus: onFocusProp,
+    onBlur: onBlurProp,
+    disabled,
+    ...props
+  },
   ref
 ) {
-  const { open, onOpenChange, setTriggerPosition } = useRootContext();
+  const { open, onOpenChange, delayDuration, setTriggerPosition } = useRootContext();
+  const delayTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearDelay = React.useCallback(() => {
+    if (delayTimer.current !== null) clearTimeout(delayTimer.current);
+    delayTimer.current = null;
+  }, []);
+
+  // A hover delay still pending at unmount must not open, or report opening, a gone tooltip.
+  React.useEffect(() => clearDelay, [clearDelay]);
 
   const augmentedRef = useAugmentedRef<View>({
     ref,
@@ -110,16 +147,108 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
     },
   });
 
+  const show = React.useCallback(() => {
+    clearDelay();
+    if (disabled) return;
+    augmentedRef.current?.measure?.((_x, _y, width, height, pageX, pageY) => {
+      setTriggerPosition({ width, pageX, pageY, height });
+    });
+    onOpenChange(true);
+  }, [augmentedRef, clearDelay, disabled, onOpenChange, setTriggerPosition]);
+
+  const hide = React.useCallback(() => {
+    if (!open) return;
+    setTriggerPosition(null);
+    onOpenChange(false);
+  }, [onOpenChange, open, setTriggerPosition]);
+
+  const handleHoverIn = (ev: HandlerEvent<'onHoverIn'>) => {
+    clearDelay();
+    if (delayDuration > 0) {
+      delayTimer.current = setTimeout(show, delayDuration);
+    } else {
+      show();
+    }
+    onHoverInProp?.(ev);
+  };
+
+  const handleHoverOut = (ev: HandlerEvent<'onHoverOut'>) => {
+    clearDelay();
+    hide();
+    onHoverOutProp?.(ev);
+  };
+
+  // react-native-web's Pressable binds its pointerleave listener when the hover starts, so the
+  // handlers it gets must read the latest render, not the one the hover began in (open === false).
+  const hoverHandlers = React.useRef({ handleHoverIn, handleHoverOut });
+  React.useLayoutEffect(() => {
+    hoverHandlers.current = { handleHoverIn, handleHoverOut };
+  });
+  const onHoverIn = React.useCallback(
+    (ev: HandlerEvent<'onHoverIn'>) => hoverHandlers.current.handleHoverIn(ev),
+    []
+  );
+  const onHoverOut = React.useCallback(
+    (ev: HandlerEvent<'onHoverOut'>) => hoverHandlers.current.handleHoverOut(ev),
+    []
+  );
+
+  // A mouse press focuses the trigger before onPressIn fires; pointerdown comes first, so mark it.
+  const pressing = React.useRef(false);
+
+  const onPointerDown = React.useCallback(
+    (ev: HandlerEvent<'onPointerDown'>) => {
+      pressing.current = true;
+      onPointerDownProp?.(ev);
+    },
+    [onPointerDownProp]
+  );
+
+  const onPointerUp = React.useCallback(
+    (ev: HandlerEvent<'onPointerUp'>) => {
+      pressing.current = false;
+      onPointerUpProp?.(ev);
+    },
+    [onPointerUpProp]
+  );
+
+  const onPressOut = React.useCallback(
+    (ev: GestureResponderEvent) => {
+      pressing.current = false;
+      onPressOutProp?.(ev);
+    },
+    [onPressOutProp]
+  );
+
+  const onFocus = React.useCallback(
+    (ev: HandlerEvent<'onFocus'>) => {
+      if (!pressing.current) show();
+      onFocusProp?.(ev);
+    },
+    [onFocusProp, show]
+  );
+
+  const onBlur = React.useCallback(
+    (ev: HandlerEvent<'onBlur'>) => {
+      pressing.current = false; // a press cancelled without pointerup or onPressOut ends here
+      hide();
+      onBlurProp?.(ev);
+    },
+    [hide, onBlurProp]
+  );
+
   const onPress = React.useCallback(
     (ev: GestureResponderEvent) => {
-      if (disabled) return;
-      augmentedRef.current?.measure?.((_x, _y, width, height, pageX, pageY) => {
-        setTriggerPosition({ width, pageX, pageY, height });
-      });
-      onOpenChange(!open);
+      // A press during the hover delay cancels it: a press never opens without openOnPress.
+      clearDelay();
+      if (openOnPress && !open) {
+        show();
+      } else {
+        hide();
+      }
       onPressProp?.(ev);
     },
-    [augmentedRef, disabled, onOpenChange, onPressProp, open, setTriggerPosition]
+    [clearDelay, hide, onPressProp, open, openOnPress, show]
   );
 
   const Component = asChild ? Slot : Pressable;
@@ -130,6 +259,13 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
       role="button"
       aria-disabled={disabled || undefined}
       onPress={onPress}
+      onPressOut={onPressOut}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      onFocus={onFocus}
+      onBlur={onBlur}
       disabled={disabled || undefined}
       {...props}
     />

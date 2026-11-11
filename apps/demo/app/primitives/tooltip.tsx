@@ -11,7 +11,7 @@ export default function TooltipScreen() {
         {/* ---- Basic Tooltip ---- */}
         <Text style={s.heading}>Basic Tooltip</Text>
         <Text style={s.info}>
-          On web this opens on hover. On native, tap the trigger to toggle.
+          On web this opens on hover or focus. On native, it opens only with openOnPress.
         </Text>
 
         <Tooltip.Root>
