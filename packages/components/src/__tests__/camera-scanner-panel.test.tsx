@@ -44,6 +44,7 @@ describe('CameraScannerPanel', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     Reflect.deleteProperty(navigator, 'mediaDevices');
   });
 
@@ -148,5 +149,44 @@ describe('CameraScannerPanel', () => {
     await act(async () => { resolve({ getTracks: () => [late] }); });
     expect(late.stop).toHaveBeenCalledTimes(1);
     expect(onStatus).toHaveBeenLastCalledWith('initializing');
+  });
+
+  it('reports decoder-error and never scanning when the browser has no decoder', async () => {
+    vi.stubGlobal('BarcodeDetector', undefined);
+    stubMediaDevices(() => Promise.resolve({ getTracks: () => [] }));
+    const onStatus = vi.fn();
+    render(<ScannerViewfinder onDetected={vi.fn()} onStatus={onStatus} />);
+    await vi.waitFor(() => expect(onStatus).toHaveBeenLastCalledWith('decoder-error'));
+    expect(onStatus.mock.calls).toEqual([['initializing'], ['decoder-error']]);
+    cleanup();
+    renderInHub(<CameraScannerPanel onClose={vi.fn()} />);
+    expect(await screen.findByText('Barcode decoding is failing — close the scanner and try again.')).toBeTruthy();
+  });
+
+  it('follows a web pointer drag and reports the height once, only when it changed', () => {
+    const onHeightChange = vi.fn();
+    renderInHub(<CameraScannerPanel onClose={vi.fn()} viewfinder={FakeViewfinder} onHeightChange={onHeightChange} />);
+    const handle = screen.getByTestId('camera-scanner-resize-handle');
+    const panelHeight = () => screen.getByTestId('camera-scanner-panel').style.height;
+    expect(panelHeight()).toBe('176px');
+    fireEvent.pointerDown(handle, { clientY: 100 });
+    fireEvent.pointerMove(window, { clientY: 140 });
+    expect(panelHeight()).toBe('216px');
+    fireEvent.pointerUp(window, { clientY: 140 });
+    expect(onHeightChange.mock.calls).toEqual([[216]]);
+    expect(panelHeight()).toBe('216px');
+    // The listeners went with the pointerup.
+    fireEvent.pointerMove(window, { clientY: 300 });
+    expect(panelHeight()).toBe('216px');
+    expect(onHeightChange).toHaveBeenCalledTimes(1);
+
+    // A drag that ends where it started reports nothing.
+    fireEvent.pointerDown(handle, { clientY: 100 });
+    fireEvent.pointerMove(window, { clientY: 140 });
+    expect(panelHeight()).toBe('256px');
+    fireEvent.pointerMove(window, { clientY: 100 });
+    fireEvent.pointerUp(window, { clientY: 100 });
+    expect(panelHeight()).toBe('216px');
+    expect(onHeightChange).toHaveBeenCalledTimes(1);
   });
 });
