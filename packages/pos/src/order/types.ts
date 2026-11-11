@@ -4,7 +4,7 @@ import type { PaymentLegStatus } from '../tender/payment-legs';
 export interface OrderCoupon {
   code: string; // lower-case code
   couponId: string; // the connector's coupon id, as a string
-  discountMinor: number; // WooCommerce coupon discount, ex tax, in integer minor units
+  discountMinor: number; // the coupon's discount (WooCommerce's replay, or the store's own prices, #709), ex tax, in integer minor units
   discountTaxMinor: number; // its tax, in integer minor units
 }
 
@@ -15,8 +15,10 @@ export interface Order {
   fees?: FeeLine[];
   shipping?: ShippingLine[];
   discounts: AppliedDiscount[];
-  /** Present only after coupon replay; discountMinor excludes coupons, which are carried here. */
+  /** Present only when coupons are set, by WooCommerce's replay or at the store's prices (#709); discountMinor excludes coupons, which are carried here. */
   coupons?: OrderCoupon[];
+  /** TallyUI#709: present (true) only when store-priced coupons are set and couponPricingBasis(order) no longer equals their basis. */
+  couponPricesStale?: true;
   payments: Payment[];
   customer: CustomerSummary | null;
   note: string;
@@ -90,7 +92,7 @@ export interface LineItem {
   discounts: AppliedDiscount[];
   discountMinor: number;      // line discounts + orderDiscountMinor, in the line's own mode
   orderDiscountMinor: number; // this line's allocated share of the order discounts (ADR-062)
-  netMinor: number;           // unitPriceMinor × quantity − discountMinor; under WooCommerce, the rounded exclusive net
+  netMinor: number;           // unitPriceMinor × quantity − discountMinor − any coupons; under WooCommerce, the rounded exclusive net
   taxMicros: string;          // Σ taxLines[].taxMicros, decimal string of a bigint
   taxInclusive: boolean;      // the price's own tax mode; the order's when the price has none
   /** Set only when the price's tax mode differs from the order's; named price mode → order mode. */

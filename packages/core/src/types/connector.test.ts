@@ -210,3 +210,19 @@ describe('parseInfoCapabilities registerApproval (ADR-082)', () => {
     expect(warn).toHaveBeenCalledExactlyOnceWith('ignoring a malformed registerApproval');
   });
 });
+
+describe('parseInfoCapabilities coupons (#709)', () => {
+  it('reads coupons: true', () => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1, 2, 3, 4, 5, 6] }, coupons: true }, warn))
+      .toStrictEqual({ orderCreate: 6, coupons: true });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([[false], ['true'], [1], [undefined]])('gives no coupons key, without warning, for %j', (coupons) => {
+    const warn = vi.fn();
+    const body = { contracts: { 'order.create': [1, 2, 3, 4, 5, 6] }, ...(coupons !== undefined ? { coupons } : {}) };
+    expect(parseInfoCapabilities(body, warn)).toStrictEqual({ orderCreate: 6 });
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

@@ -81,6 +81,29 @@ export interface OrderCouponContext {
   calcDiscountsSequentially: boolean;
 }
 
+/** One code's amounts as the store priced them (TallyUI#709): per line, in that line's own tax mode. */
+export interface StorePricedCoupon {
+  couponId: string; // the store's id for the code, non-empty
+  lines: ReadonlyArray<{ lineId: string; amountMinor: number }>; // safe integers >= 0, each lineId at most once
+}
+
+/** Coupons priced by the store (TallyUI#709): the till applies the amounts and never computes a coupon's value. */
+export interface StorePricedCouponContext {
+  kind: 'store-priced';
+  priced: ReadonlyMap<string, StorePricedCoupon>; // lower-case code to its priced amounts
+  /** couponPricingBasis(order) of the order the store priced. */
+  basis: string;
+}
+
+/** What a store-priced coupon's amounts depend on (TallyUI#709). A price is good only while this is unchanged. */
+export function couponPricingBasis(order: Order): string {
+  // Inputs only, never a computed figure, so applying or removing coupons can't change it.
+  return JSON.stringify([order.currency, order.customer?.id ?? null,
+    order.lineItems.map((li) => [li.id, li.productId, li.variantId ?? null, li.quantity, li.unitPriceMinor, li.taxInclusive,
+      li.taxClass ?? null, li.taxStatus ?? null, li.discounts.map((d) => [d.type, d.value])]),
+    order.discounts.map((d) => [d.type, d.value])]);
+}
+
 export interface OrderBuilderOptions {
   currency: string;
   taxContext: TaxContext;
@@ -111,14 +134,14 @@ export interface OrderBuilder {
   setCustomer(customer: CustomerSummary | null): void;
   setNote(note: string): void;
   /** Replaces the coupon codes with their trimmed, lower-case, deduplicated list; a given context replaces the builder's coupon context. */
-  setCoupons(codes: readonly string[], context?: OrderCouponContext): void;
+  setCoupons(codes: readonly string[], context?: OrderCouponContext | StorePricedCouponContext): void;
   clear(): void;
   getSnapshot(): Order;
 }
 
 export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const { taxContext } = options;
-  let { couponContext } = options;
+  let couponContext: OrderCouponContext | StorePricedCouponContext | undefined = options.couponContext;
   const currency = options.currency.toUpperCase();
   const orderId = options.id ?? uid();
   const woo = taxContext.rounding?.granularity === 'woocommerce' && taxContext.getTaxRates ? taxContext.rounding : undefined;
@@ -143,7 +166,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const subject = new BehaviorSubject<Order>(buildOrder());
 
   /** Stored lines carry no order share; buildOrder recalculates each with its allocated share (ADR-062). */
-  function recalculateLine(line: LineItem, orderDiscountMinor = 0): LineItem {
+  function recalculateLine(line: LineItem, orderDiscountMinor = 0, couponMinor = 0): LineItem {
     const grossMinor = line.unitPriceMinor * line.quantity;
 
     // Each amount is what that discount actually removed, capped at what's left, matching buildOrder's order-discount path (ADR-062).
@@ -157,7 +180,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // The order share never exceeds what the line discounts leave (allocateOrderDiscount's bound).
     const lineDiscountMinor = Math.min(grossMinor, recalcedDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const discountMinor = lineDiscountMinor + orderDiscountMinor;
-    const netMinor = grossMinor - discountMinor;
+    // Store-priced coupons (#709) come off what the discounts leave, capped there; discountMinor never includes them (v6).
+    const netMinor = grossMinor - discountMinor - Math.max(0, Math.min(couponMinor, grossMinor - discountMinor));
     if (woo) return { ...line, discounts: recalcedDiscounts, discountMinor, orderDiscountMinor,
       ...wooLine(netMinor, line.taxClass, line.taxInclusive, line.taxStatus === 'none') };
     const combinedRate = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
@@ -212,17 +236,40 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     });
     const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const displaySourceLines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
-    const replay = woo && couponCodes.length ? woocommerceCouponReplay(displaySourceLines, couponCodes, couponContext!,
-      taxContext.getTaxRates!, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
-    const lines = replay?.lines ?? displaySourceLines;
+    const store = couponContext && 'kind' in couponContext ? couponContext : undefined;
+    const replay = woo && couponCodes.length && !store ? woocommerceCouponReplay(displaySourceLines, couponCodes,
+      couponContext as OrderCouponContext, taxContext.getTaxRates!, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
+    let lines = replay?.lines ?? displaySourceLines;
 
     if (woo) shipping = shipping.map((charge) => ({ ...charge, ...recalculateCharge(charge.id, charge, true) }));
-    const wooTotals = woo ? woocommerceTotals(lines, fees, shipping, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
-    const { subtotalMinor } = wooTotals ?? sumLines(lines, taxContext.rounding);
     const charges = [...fees, ...shipping];
-    const taxedLines = [...lines, ...charges.map((charge) => ({ ...charge, taxInclusive: taxContext.pricesIncludeTax,
-      taxMicros: charge.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n).toString() }))];
-    const { taxMinor, totalMinor } = wooTotals ?? sumLines(taxedLines, taxContext.rounding);
+    const taxedCharges = charges.map((charge) => ({ ...charge, taxInclusive: taxContext.pricesIncludeTax,
+      taxMicros: charge.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n).toString() }));
+    const settle = (items: LineItem[]) => woo ? woocommerceTotals(items, fees, shipping, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax)
+      : { ...sumLines([...items, ...taxedCharges], taxContext.rounding), subtotalMinor: sumLines(items, taxContext.rounding).subtotalMinor };
+    let totals = settle(lines);
+    let coupons = replay?.coupons;
+    const displayBasis = (t: typeof totals) => taxContext.pricesIncludeTax ? t.totalMinor : t.totalMinor - t.taxMinor;
+    const storeDisplayRows: number[] = [];
+    if (store && couponCodes.length) {
+      // #709: each code's amounts come off its lines in code order; its figures are what it took off the settlement
+      // totals, so they telescope: Σ discountMinor = S₀ − S and Σ discountTaxMinor = T₀ − T exactly.
+      const taken = new Map<string, number>();
+      coupons = couponCodes.map((code) => {
+        const priced = store.priced.get(code);
+        for (const { lineId, amountMinor } of priced?.lines ?? []) taken.set(lineId, (taken.get(lineId) ?? 0) + amountMinor);
+        lines = lineItems.map((li, index) => taken.has(li.id) ? recalculateLine(li, shares[index], taken.get(li.id)) : displaySourceLines[index]);
+        const before = totals;
+        totals = settle(lines);
+        storeDisplayRows.push(displayBasis(before) - displayBasis(totals));
+        // A settlement subtotal is a difference of separately rounded sums (lines total less order-rounded tax), so a
+        // rounding cent could in principle move it against a coupon; a coupon never shows as raising the price.
+        return { code, couponId: priced?.couponId ?? '', discountMinor: Math.max(0, before.subtotalMinor - totals.subtotalMinor),
+          discountTaxMinor: Math.max(0, before.taxMinor - totals.taxMinor) };
+      });
+    }
+    const { subtotalMinor, taxMinor, totalMinor } = totals;
+    const taxedLines = [...lines, ...taxedCharges];
     if (taxContext.rounding?.granularity === 'per_rate_group_items' && taxedLines.some((li) => li.taxInclusive) && !perRateGroupWarned.has(taxContext)) {
       perRateGroupWarned.add(taxContext);
       taxLogger.warn('per_rate_group_items with inclusive lines: using per_order figures until the display has a rounding row (#287, #310)');
@@ -249,8 +296,10 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     });
     const displayLines = figures.map((f) => f.line);
     const orderDiscountDisplay = figures.reduce((sum, f) => sum + f.shareMinor, 0);
-    const displayCoupons = replay?.coupons.map(({ code, discountMinor, discountTaxMinor }) =>
-      ({ code, amountMinor: discountMinor + (taxInclusive ? discountTaxMinor : 0) }));
+    // A store-priced row (#709) is the drop it caused in the figure the display subtotal is derived from: the
+    // order-rounded tax over lines and charges can put discountMinor + discountTaxMinor a cent off it, and the display must add up.
+    const displayCoupons = coupons?.map(({ code, discountMinor, discountTaxMinor }, k) =>
+      ({ code, amountMinor: store ? storeDisplayRows[k] : discountMinor + (taxInclusive ? discountTaxMinor : 0) }));
     const displayDiscount = displayLines.reduce(
       (sum, line) => line.discounts.reduce((lineSum, d) => lineSum + d.amountMinor, sum), orderDiscountDisplay)
       + (displayCoupons?.reduce((sum, row) => sum + row.amountMinor, 0) ?? 0);
@@ -288,6 +337,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // Checked here, not only in tests: every figure >= 0, and no line shows less than its own rows and share (lines
     // with a non-negative gross; a return line's negative amount is its own).
     if (displayDiscount < 0) throw new Error(`Display discount ${displayDiscount} is negative (ADR-063)`);
+    const negativeCoupon = displayCoupons?.find((row) => row.amountMinor < 0);
+    if (negativeCoupon) throw new Error(`Display coupon ${negativeCoupon.code} is negative (ADR-063)`);
     for (const { line, shareMinor, returned } of figures) {
       if (returned && line.discounts.length > 0) throw new Error(`Return line ${line.lineId} shows discount rows (ADR-063)`);
       if (returned || woo) continue;
@@ -307,11 +358,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const balanceDueMinor = Math.max(0, totalMinor - paidMinor);
     const changeDueMinor = Math.max(0, paidMinor - totalMinor);
 
-    return {
+    const order: Order = {
       id: orderId,
       status: 'draft',
       lineItems: lines,
-      ...(replay ? { coupons: replay.coupons } : {}),
+      ...(coupons ? { coupons } : {}),
       ...(fees.length ? { fees: [...fees] } : {}),
       ...(shipping.length ? { shipping: [...shipping] } : {}),
       discounts: recalcedOrderDiscounts,
@@ -332,6 +383,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       createdAt: now,
       updatedAt: new Date().toISOString(),
     };
+    // #709: the store's amounts still apply while stale, so the cart shows the last known prices; finalize refuses it.
+    if (store && couponCodes.length && couponPricingBasis(order) !== store.basis) order.couponPricesStale = true;
+    return order;
   }
 
   function emit() {
@@ -594,6 +648,17 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       const normalized = [...new Set(codes.map((code) => code.trim().toLowerCase()))];
       if (normalized.length && !nextContext) throw new Error('Coupon context is required');
       for (const code of normalized) {
+        if (nextContext && 'kind' in nextContext) {
+          const priced = nextContext.priced.get(code);
+          if (!priced) throw new RangeError(`Unknown coupon ${code}`);
+          if (!priced.couponId) throw new RangeError(`Coupon ${code} has no id`);
+          const ids = priced.lines.map((line) => line.lineId);
+          if (new Set(ids).size !== ids.length || priced.lines.some((line) => !Number.isSafeInteger(line.amountMinor) || line.amountMinor < 0))
+            throw new RangeError(`Coupon ${code} has an invalid amount`);
+          if (ids.some((id) => !lineItems.some((li) => li.id === id && li.unitPriceMinor >= 0)))
+            throw new RangeError(`Coupon ${code} prices a line not on the sale`);
+          continue;
+        }
         const config = nextContext!.configs.get(code);
         if (!config) throw new RangeError(`Unknown coupon ${code}`);
         // The engine needs the regular price as WCPOS pos_data to find sale lines, which would also reset manual price cuts; lifting this waits (ADR-077 d3).
@@ -615,6 +680,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       customer = null;
       note = '';
       couponCodes = [];
+      if (couponContext && 'kind' in couponContext) couponContext = undefined;
       emit();
     },
 
