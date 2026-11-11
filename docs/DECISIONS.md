@@ -5979,3 +5979,107 @@ interface OrderCreatePayload {
   - Unit 37 is unblocked.
   - The Woo transport unit starts when the tallyui-woocommerce worker asks for it. The worker asked on 2026-11-10.
   - Door: one-way for Q4 (the order wire to Woo stores). Q1-Q3 are two-way.
+
+## ADR-085 The LAN customer display: WebRTC, signalled by each backend's plugin (amends ADR-084 d3)
+
+- **Date:** 2026-11-11 · **Status:** Proposed (for the front desk's ruling; one-way) · **Amends:** ADR-084 decision 3
+  · **Relates to:** #684, `docs/v2-parity/PLAN.md` A10, A11, Q3 and units 36-37, ADR-084 decision 4 (the plugin fork)
+- **Context:**
+  - **What ADR-084 d3 leaves open.** It says LAN pairing comes "through each backend's own server-plugin signalling"
+    and "does not copy v2's WordPress/Pro WebRTC path". It does not say:
+    - whether that rules out WebRTC itself, or only v2's signalling and page;
+    - who serves the display page;
+    - how a display device, which has no cashier login, authenticates;
+    - where the registry of paired displays lives;
+    - which ICE servers the peers use.
+  - **What exists.** Units 36 and 37 built the display protocol (the envelope and the snapshot) and the same-device
+    BroadcastChannel transport. No connector, capability or type in core concerns a display.
+  - **What changed in v2.** PLAN A11 records v2 with `iceServers: []`. That was true when the plan was read
+    (`5ac185b0e`), but no longer: monorepo commit `51e7c4351` (2026-11-10, #3482) changed it.
+    - **The reason given in the commit:** "With iceServers: [] the only candidates were mDNS .local host names, which
+      fail when the Wi-Fi blocks multicast between clients (the display then shows 'can't reach the POS on this
+      network')." Browsers hide a peer's local address behind an mDNS `.local` name, so on a shop network that does not
+      pass multicast between clients, LAN-only ICE finds no route.
+    - **The fix:** the POS offerer now defaults to two operators' public STUN servers
+      (`services/customer-display/ice-servers.ts`, `DEFAULT_ICE_SERVERS`):
+      `stun:stun.cloudflare.com:3478` and `stun:stun.l.google.com:19302`. Two operators mean one outage does not cost
+      the candidate.
+    - **The store can replace the list.** The store's display advertisement may carry `iceServers`, which replaces the
+      default; `[]` is LAN-only. `parseIceServers` refuses a URL that is not `stun:`, `stuns:`, `turn:` or `turns:`, and
+      a TURN entry without both username and credential, because `RTCPeerConnection` throws on either. A refused list
+      falls back to the default.
+    - **The snapshot fallback.** The same commit added a REST fallback for when no data channel opens. The display
+      session posts `{ v: 1, seq, config, event }` snapshots through the signalling mailbox whenever its channel to
+      that display is not open: after the first offer, and again after a drop, with a `seq` bump. Its rules
+      (`display-session.ts`, `snapshot.ts`):
+      - at most one POST per second, trailing edge, with one in flight;
+      - the identical body re-sent every 20 s, because the server serves a snapshot for 60 s;
+      - a body refused with 400 or 413 is not re-sent;
+      - each message capped at 200 KiB, with the note truncated first;
+      - displays the registry reports offline are skipped;
+      - snapshots stop once the channel opens.
+
+      An advertisement of `snapshot: 1` turns this on.
+- **Decision:**
+  1. **Transport: WebRTC for the sale data.**
+     - The till offers and each display answers, over one ordered data channel per display. Units 36 and 37's
+       envelope and snapshot are carried unchanged.
+     - The server carries signalling only (offers, answers, ICE candidates), plus the snapshot fallback in 6.
+     - d3's "does not copy v2's path" means v2's WordPress/Pro signalling routes and its WordPress-served page. It
+       does not rule out WebRTC. PLAN A11 already names WebRTC.
+  2. **Signalling: each backend's own server plugin.**
+     - For Woo, that is TallyUI's fork of woocommerce-pos, never `wcpos/woocommerce-pos` or `-pro` (ADR-084 d4). For
+       the other two, the medusapos and vendurepos plugins.
+     - Core gets one optional, platform-neutral signalling seam on the connector (unit U2), and a display
+       advertisement in `ServerCapabilities`. A connector without it has no LAN display, and the same-device display
+       keeps working.
+     - Each plugin implements the routes its own way, as its platform does: its auth, its storage, its route style.
+       The seam fixes only what core needs: mint a code, claim a code, list displays, a signal mailbox, forget.
+  3. **The display page comes from each app's own web build,** at `/customer-display`. The till shows that URL, as
+     v2 shows its page URL. The plugin serves no UI. The plugin units find out what each plugin needs for the app's
+     origin to call its signalling routes (CORS, for example).
+  4. **Pairing and display auth.**
+     - The till asks the server for a single-use pairing code with a short expiry, shown with its expiry as v2 does.
+     - The display exchanges the code once for a per-display token. The token is scoped to signalling for the one
+       till device that minted the code, and to nothing else in the store.
+     - Forget deletes the display on the server, which revokes its token. A forgotten display can pair again only
+       with a new code.
+     - The code length, expiry and token format are fixed per plugin in its unit, and recorded there.
+  5. **The registry lives on the server:** display id, name, last seen and connected, as in v2. The till keeps no
+     replicated copy. Device-local state goes in a local collection that is never replicated (CLAUDE.md), as the
+     #682 scanner profiles do: the till's device id, and the display token on the display device.
+  6. **ICE: what connects on an ordinary shop network,** following v2's finding above.
+     - The default list is v2's two public STUN servers.
+     - The STUN list is a store setting, sent in the display advertisement. `none` (an empty list) is allowed, for a
+       store whose network passes multicast or that will not contact third-party hosts.
+     - The list is validated as v2's `parseIceServers` does, and a refused list falls back to the default.
+     - Privacy: STUN sees only the till's and the display's public addresses. No sale data passes through it.
+  7. **The snapshot fallback is carried over** with v2's rules above, and is advertised the same way. While the peer
+     link is down, the display still shows the sale. The cost: in that state, the sale snapshot passes through the
+     store's server, bounded by the 200 KiB cap and the 60 s lifetime.
+  8. **Web first.** The web till and the web display come first. A native till follows as its own unit, with an
+     injected peer factory (v2's `peer.native.ts` pattern), and adds a native dependency.
+  9. **Several displays per till.** The till fans each envelope out to every connected display.
+  10. **Naming.** The settings screen is `CustomerDisplaySettings`. The existing `DisplaySettings` (theme, scale and
+      fonts) keeps its name.
+- **Consequences:**
+  - #684's units, in order. U1 comes after #683 and needs nothing from this ADR. U2 and later start only after the parity list's
+    remaining items and A1/B9 (#694, #695) are merged.
+
+    | Unit | What it builds | Package | Door |
+    |---|---|---|---|
+    | U1 | The live-sale publisher | pos | two-way |
+    | U2 | The signalling seam and the advertisement | core | two-way |
+    | U3 | The WebRTC transport | pos | two-way |
+    | U4 | The till display service, with fan-out and the snapshot fallback | pos | two-way |
+    | U5 | `CustomerDisplaySettings` and the display's enter-code screen | components | two-way |
+    | U6 | The two-device proof against a reference signalling server, in Playwright Chromium | e2e | two-way |
+    | U7 | Woo signalling: routes in TallyUI's fork, plus the connector | Woo connector | one-way |
+    | U8 | App wiring | tallyui-woocommerce | two-way |
+
+  - U6 must include the failure case: with the peer link blocked, the display still shows the sale through the
+    snapshot fallback.
+  - Medusa and Vendure each need their own U7, in their own lanes. None is needed for the Woo display.
+  - PLAN A11's `iceServers: []` line is superseded by decision 6.
+  - Door: **one-way**, because it fixes a plugin contract and a device-auth model across three backends. The units
+    are two-way except U7.
