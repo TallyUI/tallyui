@@ -93,6 +93,8 @@ export { createSaleDisplayPublisher, derivePaymentEvent, useSaleDisplay } from '
 export type { SaleDisplayOptions, SaleDisplayInput, SaleDisplayPublisher } from './customer-display';
 export { createTillPeerLink, createDisplayPeerLink } from './customer-display';
 export type { SignalPort, PeerLink, PeerLinkState, PeerLinkOptions, PeerFactory, RTCPeerConnectionLike, RTCDataChannelLike, SessionDescriptionLike } from './customer-display';
+export { createDisplayClient, COLLECT_POLL_MS, DISPLAY_SIGNAL_POLL_MS, OPEN_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS, useDisplayClient } from './customer-display';
+export type { DisplayClient, DisplayClientOptions, DisplayClientPhase, DisplayClientError, DisplayTokenStore, DisplayClientView } from './customer-display';
 export { createTillDisplayService, SIGNAL_POLL_MS, LIST_POLL_MS, CONNECT_TIMEOUT_MS, createSnapshotSender, SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS, SNAPSHOT_LIFETIME_MS } from './customer-display';
 export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayEntry, ServiceClock, SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './customer-display';
 export { createTillPairing, PENDING_POLL_MS, useTillPairing, useTillDisplays } from './customer-display';
