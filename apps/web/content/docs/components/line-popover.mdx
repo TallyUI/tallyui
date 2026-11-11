@@ -26,6 +26,8 @@ The trigger shows the value; tapping it opens a dialog named "Quantity for …" 
 
 A quantity takes whole numbers only and has no decimal key. A price takes the currency's decimal places, and with `quickDiscounts` the first three valid percentages are keys, as on [PriceForm](/docs/components/price-form): a key sets the price that much off `value`, rounded half up to the minor unit. [Cart](/docs/components/cart) draws these with `lineEditor="popover"`.
 
+A price with `regularValue` above `value` shows the regular price struck through above the value, as a line on sale does in [CartLine](/docs/components/cart-line). `actions` draws a row of buttons above Apply and Cancel, such as the cart line's Discount and Remove; pressing one closes the popover, then calls its `onPress`.
+
 The popover renders through a portal, so the app renders a `PortalHost` from `@tallyui/primitives`.
 
 ## Props
@@ -39,3 +41,5 @@ The popover renders through a portal, so the app renders a `PortalHost` from `@t
 | `onApply` | `(value: number) => string \| null` | required | Writes the new value; return a refusal to show, or `null` once applied |
 | `quickDiscounts` | `readonly number[]` | --- | Price only: percentages off `value` drawn as keys; values outside 0 < n ≤ 100 are dropped and only the first three are drawn |
 | `textClassName` | `string` | --- | Classes for the trigger's text, e.g. the cell's alignment |
+| `regularValue` | `number` | --- | Price only: the regular unit price in minor units, shown struck through above the value when it is above `value` |
+| `actions` | `ReadonlyArray<{ id: string; label: string; onPress: () => void; destructive?: boolean }>` | --- | Buttons in the open panel above Apply and Cancel; pressing one closes the popover, then calls its `onPress`. `destructive` draws it in the destructive colour |

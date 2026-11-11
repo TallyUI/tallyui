@@ -33,7 +33,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * ⋮ menu lists `actions`. Absent: the Cash and Card terminal row. */
     checkout?: { onCheckout: () => void; actions?: readonly CartFootAction[] };
     /** `popover`: tapping a line's quantity or price opens v2's keypad (WCPOS cart cells/quantity-keypad.tsx and
-     * cells/price.tsx), the price one with the quick-discount keys. Default `inline`: the − / + buttons and Price form. */
+     * cells/price.tsx), the price one with the quick-discount keys and the struck regular price. Popover mode draws no
+     * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
+     * price popover. Default `inline`: the − / + buttons and Price form. */
     lineEditor?: 'inline' | 'popover';
   }) {
   const { order } = sale;
@@ -73,11 +75,16 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       regularUnitPrice={line.regularUnitPriceMinor === undefined ? undefined : money(line.regularUnitPriceMinor)}
       lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice}
       quantitySlot={lineEditor === 'popover' ? <LinePopover kind="quantity" lineName={line.name} currency={order.currency}
-        value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} /> : undefined}
+        value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} actions={[
+          ...(!pricePopover ? [{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }] : []),
+          ...(canEditPrice && !pricePopover ? [{ id: 'price', label: 'Price', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
+          { id: 'remove', label: 'Remove', destructive: true, onPress: () => sale.remove(line.id) },
+        ]} /> : undefined}
       priceSlot={pricePopover ? <LinePopover kind="price" lineName={line.name} currency={order.currency} value={line.unitPriceMinor}
+        regularValue={line.regularUnitPriceMinor} actions={[{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }]}
         quickDiscounts={quickDiscounts} textClassName="text-right text-muted-foreground" onApply={(amount) => applyPrice(line, amount)} /> : undefined} />
     <DiscountChips discounts={line.discounts} amounts={display(line.id).discounts} currency={order.currency} onRemove={sale.removeDiscount} />
-    <CartLineActions actions={[
+    {lineEditor === 'inline' ? <CartLineActions actions={[
       { id: 'discount', label: 'Discount', color: 'text-primary', onPress: () => setForm({ type: 'discount', lineId: line.id }) },
       ...(canEditPrice && !pricePopover ? [{ id: 'price', label: 'Price', color: 'text-primary', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
     ]}>
@@ -89,7 +96,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${line.name}`}
           onPress={() => sale.remove(line.id)} className="rounded-md border border-border bg-card px-3 py-2 min-h-11 min-w-11 items-center justify-center"><Text className="text-center text-foreground">Remove</Text></Pressable>
       </View>
-    </CartLineActions>
+    </CartLineActions> : null}
     {discountForm(line.id, `Discount on ${line.name}`)}
     {canEditPrice && !pricePopover && form?.type === 'price' && form.lineId === line.id ? <PriceForm key={line.id} lineName={line.name}
       currency={order.currency} currentMinor={line.unitPriceMinor} quickDiscounts={quickDiscounts} onClose={() => setForm(null)}

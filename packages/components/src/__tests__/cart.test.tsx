@@ -192,6 +192,51 @@ describe('Cart', () => {
     expect(screen.queryByText('Price', notHead)).toBeNull();
   });
 
+  // The actions a line's open popover lists, by their accessible names.
+  const popoverActions = (dialog: string) => within(screen.getByRole('dialog', { name: dialog })).getAllByRole('button')
+    .map((button) => button.getAttribute('aria-label')).filter((name) => / Shirt$/.test(name ?? ''));
+
+  it('lineEditor popover: the line is one row, and the quantity popover removes it', () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    for (const name of ['Increase Shirt', 'Decrease Shirt', 'Remove Shirt']) expect(screen.queryByRole('button', { name })).toBeNull();
+    expect(screen.queryByText('Discount')).toBeNull();
+    click('Edit quantity of Shirt');
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove Shirt' }));
+    expect(sale.order.lineItems).toEqual([]);
+  });
+
+  it("lineEditor popover: the price popover's Discount opens the line's discount form, and its chip can be removed", () => {
+    render(<><SaleHarness capabilities={{ orderCreate: 2 }}>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('Edit price of Shirt');
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Price for Shirt' })).getByRole('button', { name: 'Discount Shirt' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Discount on Shirt' })).toBeTruthy();
+    click('Percent');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Discount value' }), { target: { value: '10' } });
+    click('Apply');
+    expect(sale.order.lineItems[0].discounts).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /^Remove discount/ })).toBeTruthy();
+  });
+
+  it('lineEditor popover without canEditPrice: the quantity popover lists Discount and Remove, no Price', () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} lineEditor="popover" />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('Edit quantity of Shirt');
+    expect(popoverActions('Quantity for Shirt')).toEqual(['Discount Shirt', 'Remove Shirt']);
+  });
+
+  it('lineEditor popover on a phone: the quantity popover lists Discount, Price and Remove, and Price opens the price form', () => {
+    dimensions = { ...tablet, width: 400, height: 800 };
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('Edit quantity of Shirt');
+    expect(popoverActions('Quantity for Shirt')).toEqual(['Discount Shirt', 'Price Shirt', 'Remove Shirt']);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Price Shirt' }));
+    expect(screen.getByTestId('price-form')).toBeTruthy();
+  });
+
   it('renders lines with their display amount, each discount chip with its own display amount, and the order chip with orderDiscountMinor', () => {
     render(<SaleHarness capabilities={{ orderCreate: 2 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     act(() => { sale.add(blue, traits); sale.add(blue, traits); });
