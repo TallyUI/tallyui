@@ -92,7 +92,7 @@ export { DEFAULT_WEDGE_SETTINGS, DEFAULT_MIN_SCAN_CHARS, WEDGE_END_OF_SCAN_MS, c
 export type { WedgeSettings, WedgeState, TraceKey, WedgeReplayResult, WedgeDetectorOptions, WedgeDetector, ScanRejectReason, ScanOfferResult, ScanSessionOptions, ScanSession, UseBarcodeScannerOptions } from './scanner';
 
 // Payment drivers
-export { createPaymentDriverRegistry, driverForMethod, createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './payment-driver';
+export { createPaymentDriverRegistry, driverForMethod, methodDrivers, methodForProvider, createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './payment-driver';
 export type {
   DriverCapabilities, ReaderInfo, DriverStatus, DriverAvailability, CollectInput,
   CollectOutcome, CollectResult, DriverStatusSource, PaymentDriver, PaymentDriverRegistry,

@@ -66,3 +66,27 @@ it('Apply with nothing typed writes nothing; a refusal shows and the popover sta
   expect(refusing).toHaveBeenCalledExactlyOnceWith(3);
   expect(within(screen.getByRole('dialog')).getByRole('alert').textContent).toBe('No');
 });
+
+it('a price above its regular price shows the regular one struck through; equal, or a quantity, shows none', () => {
+  const regular = `Regular price ${formatMoney({ amount: 1250, currency: 'EUR' })}`;
+  open({ kind: 'price', value: 1000, regularValue: 1250 });
+  expect(within(screen.getByRole('dialog')).getByLabelText(regular)).toBeTruthy();
+  cleanup();
+  open({ kind: 'price', value: 1000, regularValue: 1000 });
+  expect(screen.queryByLabelText(/^Regular price/)).toBeNull();
+  cleanup();
+  open({ kind: 'quantity', regularValue: 1250 });
+  expect(screen.queryByLabelText(/^Regular price/)).toBeNull();
+});
+
+it('an action closes the popover, then calls its onPress, and writes nothing', () => {
+  const onPress = vi.fn();
+  const onApply = vi.fn(() => null);
+  render(<><LinePopover kind="quantity" lineName="Coffee" currency="EUR" value={1} onApply={onApply}
+    actions={[{ id: 'remove', label: 'Remove', destructive: true, onPress }]} /><PortalHost /></>);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit quantity of Coffee' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove Coffee' }));
+  expect(onPress).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply).not.toHaveBeenCalled();
+});

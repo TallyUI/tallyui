@@ -1,4 +1,4 @@
-export { createPaymentDriverRegistry, driverForMethod } from './registry';
+export { createPaymentDriverRegistry, driverForMethod, methodDrivers, methodForProvider } from './registry';
 export { createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './simulated-driver';
 export type {
   DriverCapabilities, ReaderInfo, DriverStatus, DriverAvailability, CollectInput,

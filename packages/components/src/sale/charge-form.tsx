@@ -7,6 +7,9 @@ export interface ChargeFormProps {
   lineTax?: { none: boolean; classes: boolean };
   taxClasses?: ReadonlyArray<{ id: string; label: string }>;
   shippingTaxFromStore?: boolean;
+  /** Given, the form is that kind only and the kind row is not shown (v2's separate Add Fee / Add Shipping /
+   * Add Miscellaneous Product entries); absent, the form opens on Fee with the row. */
+  kind?: 'fee' | 'shipping' | 'custom';
   onApply: (charge: { kind: 'fee' | 'shipping' | 'custom'; name: string; amountMinor: number;
     taxStatus?: 'none'; taxClass?: string }) => string | null;
   onClose: () => void;
@@ -15,8 +18,11 @@ export interface ChargeFormProps {
 const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center justify-center';
 
 /** `onApply` returns a refusal to show inline, or null once applied. */
-export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, onApply, onClose }: ChargeFormProps) {
-  const [kind, setKind] = useState<'fee' | 'shipping' | 'custom'>('fee');
+export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, kind: fixedKind, onApply, onClose }: ChargeFormProps) {
+  const [stateKind, setKind] = useState<'fee' | 'shipping' | 'custom'>('fee');
+  const kind = fixedKind ?? stateKind;
+  const title = fixedKind === undefined ? 'Add charge'
+    : fixedKind === 'fee' ? 'Add fee' : fixedKind === 'shipping' ? 'Add shipping' : 'Add custom item';
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [noTax, setNoTax] = useState(false);
@@ -33,16 +39,16 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
     setError(refused);
     if (refused === null) onClose();
   }
-  return <View testID="charge-form" role="group" accessibilityLabel="Add charge" className="gap-2 px-3 py-2">
-    <Text className="font-semibold text-foreground">Add charge</Text>
-    <View className="flex-row gap-2">
+  return <View testID="charge-form" role="group" accessibilityLabel={title} className="gap-2 px-3 py-2">
+    <Text className="font-semibold text-foreground">{title}</Text>
+    {fixedKind === undefined ? <View className="flex-row gap-2">
       {(['fee', 'shipping', 'custom'] as const).map((option) => <Pressable key={option} accessibilityRole="button"
         accessibilityState={{ selected: kind === option }} aria-selected={kind === option} onPress={() => setKind(option)}
         className={`${button} ${kind === option ? 'bg-primary' : 'bg-card'}`}>
         <Text className={kind === option ? 'text-primary-foreground' : 'text-foreground'}>
           {option === 'fee' ? 'Fee' : option === 'shipping' ? 'Shipping' : 'Custom item'}</Text>
       </Pressable>)}
-    </View>
+    </View> : null}
     <TextInput accessibilityLabel="Name" placeholder="Name" value={name} onChangeText={setName}
       className="min-w-0 rounded-md border border-border bg-background px-3 py-2 text-foreground" />
     <TextInput accessibilityLabel="Amount" value={text} onChangeText={setText} onSubmitEditing={apply}

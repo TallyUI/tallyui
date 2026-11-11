@@ -38,13 +38,19 @@ export interface LinePopoverProps {
   quickDiscounts?: readonly number[];
   /** The trigger's text classes (the cell's alignment and tone). */
   textClassName?: string;
+  /** Price only: the regular unit price in minor units; shown struck through above the value when it is above `value`. */
+  regularValue?: number;
+  /** Buttons drawn in the open panel above Apply / Cancel, e.g. the cart line's Discount and Remove. Pressing one closes
+   * the popover, then calls its `onPress`. `destructive` draws it in the destructive colour. */
+  actions?: ReadonlyArray<{ id: string; label: string; onPress: () => void; destructive?: boolean }>;
 }
 
 /**
  * A cart line's quantity or price that opens v2's keypad: the cashier types (or picks a quick discount),
  * Apply writes through `onApply`, and Cancel, Escape or a press outside close without writing.
  */
-export function LinePopover({ kind, lineName, currency, value, onApply, quickDiscounts, textClassName }: LinePopoverProps) {
+export function LinePopover({ kind, lineName, currency, value, onApply, quickDiscounts, textClassName, regularValue,
+  actions }: LinePopoverProps) {
   const [open, setOpen] = useState(false);
   // v2's entry: the typed buffer (`.` as its separator), or the lit quick key, a percentage off `value`.
   const [entry, setEntry] = useState<{ buffer: string; percent?: number }>({ buffer: '' });
@@ -54,6 +60,7 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
   const places = price ? minorUnitDigits(currency) : 0;
   const format = (amount: number) => price ? formatMoney({ amount, currency }) ?? '—' : String(amount);
   const keys = price ? quickKeys(quickDiscounts) : [];
+  const regular = price && regularValue !== undefined && regularValue > value ? format(regularValue) : null;
   const { buffer, percent } = entry;
   // A lone `0.` is not typing, so a stray tap never zeroes the line (v2's draftPrice); a typed 0 quantity writes nothing.
   const typed = buffer === '0.' ? '' : buffer.replace(/\.$/, '');
@@ -102,6 +109,8 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
         <Panel onKey={onKey}>
           <Text nativeID={titleId} className="font-semibold text-popover-foreground">{title}</Text>
           <View className="items-end">
+            {regular ? <Text accessibilityLabel={`Regular price ${regular}`} style={{ textDecorationLine: 'line-through' }}
+              className="text-sm tabular-nums text-muted-foreground line-through">{regular}</Text> : null}
             {percent !== undefined ? <Text className="text-sm text-muted-foreground">{`${format(value)} −${percent}%`}</Text> : null}
             <Text testID={`${kind}-popover-value`} numberOfLines={1} className="text-2xl font-semibold tabular-nums text-popover-foreground">
               {buffer || format(typeof draft === 'number' ? draft : value)}</Text>
@@ -109,6 +118,13 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
           {keys.length ? <QuickDiscountKeys keys={keys} percent={percent} onPress={quick} /> : null}
           <Keypad testID={`${kind}-popover-keypad`} rows={rows} onPress={press} />
           {error ? <Text accessibilityRole="alert" className="text-destructive">{error}</Text> : null}
+          {actions?.length ? <View className="flex-row flex-wrap gap-2">
+            {actions.map((action) => <Pressable key={action.id} testID={`${kind}-popover-action-${action.id}`}
+              accessibilityRole="button" accessibilityLabel={`${action.label} ${lineName}`}
+              onPress={() => { setOpen(false); action.onPress(); }} className={`${button} bg-card`}>
+              <Text className={action.destructive ? 'text-destructive' : 'text-foreground'}>{action.label}</Text>
+            </Pressable>)}
+          </View> : null}
           <View className="flex-row gap-2">
             <Pressable testID={`${kind}-popover-apply`} accessibilityRole="button" onPress={apply} className={`${button} bg-primary`}>
               <Text className="font-semibold text-primary-foreground">Apply</Text></Pressable>

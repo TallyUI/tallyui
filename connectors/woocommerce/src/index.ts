@@ -11,6 +11,7 @@ import { createWooCouponFeed, wooCouponReconcile } from './reconcile/coupons';
 import { createWooCustomers } from './customers';
 import { createWooOrders } from './orders';
 import { wooStoreSettings, readWooCapabilities } from './store-settings';
+import { wooPaymentMethods } from './payment-methods';
 import { wooReceiptTemplates } from './receipt-templates';
 import { version } from '../package.json';
 
@@ -77,6 +78,7 @@ const wooConnectorParts = {
   description: 'Connect to WooCommerce stores via the REST API',
   icon: undefined, // TODO: WooCommerce logo
   storeSettings: wooStoreSettings,
+  paymentMethods: wooPaymentMethods,
   capabilities: readWooCapabilities,
   receiptTemplates: wooReceiptTemplates,
 
