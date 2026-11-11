@@ -59,13 +59,22 @@ function DialogFooter({ className, ...props }: React.ComponentPropsWithoutRef<ty
   );
 }
 
+const TITLE_CLASS = 'text-lg font-semibold leading-none text-foreground';
+
+/** tailwind-merge drops `leading-none` when a caller passes a text size; put it back unless the caller set a leading. */
+function titleClass(className?: string) {
+  const merged = cn(TITLE_CLASS, className);
+  return /\bleading-/.test(merged) ? merged : `${merged} leading-none`;
+}
+
 const DialogTitle = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(function DialogTitle({ className, ...props }, ref) {
+  const merged = titleClass(className);
   return (
-    <TextClassContext.Provider value="text-lg font-semibold leading-none text-foreground">
-      <DialogPrimitive.Title ref={ref} className={cn('text-lg font-semibold leading-none text-foreground', className)} {...props} />
+    <TextClassContext.Provider value={merged}>
+      <DialogPrimitive.Title ref={ref} className={merged} {...props} />
     </TextClassContext.Provider>
   );
 });
