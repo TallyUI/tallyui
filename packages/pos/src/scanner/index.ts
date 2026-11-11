@@ -18,3 +18,7 @@ export type { WedgeScanMeta } from './wedge-detector';
 export { createScanHub, createScanBus, inertScanHub } from './scan-events';
 export type { ScanSourceKind, ScanSource, ScanEvent, ScanBus, ScanHub } from './scan-events';
 export { dedupeScans, SCAN_DEDUP_WINDOW_MS } from './scan-dedup';
+export { scannerProfileStore, createDeviceScannerStateCell } from './device-scanner';
+export type { ScannerProfileStore, DeviceScannerSettings, DeviceScannerState, DeviceScannerErrorPhase, DeviceScannerErrorHandler, DeviceScannerStateCell, DeviceScanner } from './device-scanner';
+export { createSerialScanner, serialPortIdentity, DEFAULT_SERIAL_BAUD_RATE, STANDARD_SPP_SERVICE_CLASS_ID } from './serial-scanner';
+export type { SerialPortInfoLike, SerialPortLike, SerialLike, SerialScannerOptions } from './serial-scanner';
