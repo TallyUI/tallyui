@@ -402,6 +402,25 @@ describe('register commands', () => {
       closure_reservation: { applied: true, row: { id, number: 42, perpetual_sales_total_minor: 500000 } } });
   });
 
+  it('a closure the store refuses for its number is renumbered from the refusal and requeued, and the till shows the new number (#655)', async () => {
+    const { result } = render(commandsOn());
+    let id = '';
+    await act(async () => { id = (await result.current.actions.openSession({ expectedFloatMinor: 10000, countedFloatMinor: 10000 })).id; });
+    await act(async () => { await result.current.actions.closeSession({ counted: { cash: 10000 } }); });
+    await waitFor(async () => expect(await keys()).toContain(`closure.submit:${id}`));
+    const row = () => db.register_commands.findOne(`closure.submit:${id}`).exec(true);
+    const refused = (await row()).toJSON();
+    expect(refused.payload).toMatchObject({ number: 1 });
+    await act(async () => {
+      await (await row()).incrementalPatch({ syncStatus: 'rejected', error: { code: 'register_closure_number_invalid', message: 'Number',
+        data: { counters: { lastClosureNumber: 41, perpetualSalesTotalMinor: 500000, perpetualRefundsTotalMinor: 2000 } } } });
+    });
+    await waitFor(async () => expect((await row()).toJSON()).toMatchObject({ syncStatus: 'pending',
+      payload: { number: 42, perpetualSalesTotalMinor: 500000, perpetualRefundsTotalMinor: 2000 } }));
+    expect((await row()).commandId).not.toBe(refused.commandId);
+    await waitFor(() => expect(result.current.lastClosure).toMatchObject({ id, number: 42, number_retried: true }));
+  });
+
   it('a restart over a refused open derives conflict from the stored rows', async () => {
     const s = await db.register_sessions.insert({ id: 'restart', register_id: 'register', status: 'open',
       opened_at_gmt: '2026-09-28T08:00:00.000Z', counted_float_minor: 10000 });

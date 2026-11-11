@@ -1,26 +1,86 @@
 import type { ServerCapabilities } from '@tallyui/core';
-import { CLOSURE_HOLDING_REJECTIONS } from '../outbox/register-outbox';
+import { CLOSURE_HOLDING_REJECTIONS, NON_BLOCKING_REJECTIONS } from '../outbox/register-outbox';
 import { readFresh } from '../rxdb';
 import { uuidv7 } from '../pos-order/uuidv7';
 import { countVariance, overThreshold } from './register-count.helpers';
-import { adoptStoreCounters, type RegisterHost } from './register-document';
+import { adoptStoreCounters, renumberClosures, type RegisterHost } from './register-document';
 import { registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import type { Closure, RegisterSession } from './schemas';
-import { isKnownSessionStatus, RegisterSessionRequiredError, RegisterTakeOverError, type RegisterSessionCollection } from './session-store';
+import { isKnownSessionStatus, RegisterSessionRequiredError, RegisterTakeOverError, type ClosureCollection,
+  type RegisterSessionCollection } from './session-store';
 
 const chains = new WeakMap<RegisterCommandCollection, Promise<void>>();
+const figure = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined);
+type Counted = { number: number; sales: number; refunds: number };
+const counted = (number: unknown, sales: unknown, refunds: unknown): Counted | undefined => {
+  const [n, s, r] = [figure(number), figure(sales), figure(refunds)];
+  return n === undefined || s === undefined || r === undefined ? undefined : { number: n, sales: s, refunds: r };
+};
+
+/**
+ * The store takes a closure only as its last number plus one; it refuses any other `register_closure_number_invalid`
+ * with its counters (ADR-068 d5). The register's first refused closure submit, past the outbox's non-blocking
+ * refusals, is the one: when the store refused it for its number, every unsent closure of this register and store
+ * (closed since, its submit missing, pending or refused for its number) is renumbered in one pass, in closed order,
+ * consecutively from the store's counter, the truth, with chained totals. Only the refused closure spends its retry
+ * (`number_retried`). The register document, the closure rows and the command rows are rewritten in that order, the
+ * refused closure's last, and each changed command is requeued under a new command id (ADR-068 d6). Any other
+ * refusal, a second refusal of a renumbered closure, or malformed counters writes nothing.
+ */
+async function renumberRefused(commands: RegisterCommandCollection, closures: ClosureCollection, host: RegisterHost,
+  storeKey: string, registerId: string) {
+  const [submits, local] = await Promise.all([
+    readFresh(commands, { selector: { registerId, type: 'register.closure.submit' }, sort: [{ seq: 'asc' }, { key: 'asc' }] }),
+    readFresh(closures, { selector: { register_id: registerId } }),
+  ]);
+  const refused = submits.find((submit) => submit.syncStatus === 'rejected' && !NON_BLOCKING_REJECTIONS.has(submit.error?.code ?? ''));
+  const row = local.find(({ id, store_key }) => id === refused?.payload.closureId && (store_key ?? null) === storeKey);
+  if (refused?.error?.code !== 'register_closure_number_invalid' || !row) return;
+  const sent = new Map(submits.map((submit) => [submit.payload.closureId, submit]));
+  const unsent = (closure: Closure) => {
+    const submit = sent.get(closure.id);
+    return (closure.store_key ?? null) === storeKey && closure.closed_at >= row.closed_at && (!submit || submit.syncStatus === 'pending'
+      || (submit.syncStatus === 'rejected' && submit.error?.code === 'register_closure_number_invalid'));
+  };
+  let queued = local.filter(unsent).sort((a, b) => a.closed_at.localeCompare(b.closed_at) || a.id.localeCompare(b.id));
+  if (!row.number_retried) {
+    const store = (refused.error.data?.counters ?? {}) as Record<string, unknown>;
+    const base = counted(store.lastClosureNumber, store.perpetualSalesTotalMinor, store.perpetualRefundsTotalMinor);
+    if (!base) return;
+    let { number, sales, refunds } = base;
+    queued = queued.map((closure) => ({ ...closure, number: ++number, perpetual_sales_total_minor: sales += closure.period_sales_total_minor,
+      perpetual_refunds_total_minor: refunds += closure.period_refunds_total_minor, number_retried: closure.number_retried || closure.id === row.id }));
+    await renumberClosures(host, storeKey, registerId, queued);
+  } else if (refused.payload.number === row.number) return;
+  // The refused closure goes last, so a crash part way leaves it refused and unretried, or retried with a stale command.
+  for (const closure of [...queued.filter(({ id }) => id !== row.id), ...queued.filter(({ id }) => id === row.id)]) {
+    const { number, perpetual_sales_total_minor: sales, perpetual_refunds_total_minor: refunds, number_retried } = closure;
+    if (!row.number_retried) await (await closures.findOne(closure.id).exec(true)).incrementalPatch({ number,
+      perpetual_sales_total_minor: sales, perpetual_refunds_total_minor: refunds, number_retried });
+    const submit = sent.get(closure.id);
+    if (!submit || (submit.syncStatus === 'pending' && submit.payload.number === number
+      && submit.payload.perpetualSalesTotalMinor === sales && submit.payload.perpetualRefundsTotalMinor === refunds)) continue;
+    await (await commands.findOne(submit.key).exec())?.incrementalModify((doc) => {
+      if (doc.commandId !== submit.commandId || doc.syncStatus !== submit.syncStatus) return doc;
+      const { error: _refusal, ...rest } = doc;
+      return { ...rest, commandId: uuidv7(), syncStatus: 'pending', updatedAt: new Date().toISOString(), payload: { ...doc.payload,
+        number, perpetualSalesTotalMinor: sales, perpetualRefundsTotalMinor: refunds } };
+    });
+  }
+}
 type SessionTarget = { commands: RegisterCommandCollection; sessions: RegisterSessionCollection; sessionId: string; now?: string };
 
 /**
  * Applied opens fill a missing resume id; refused opens make open/counting sessions conflict.
  * Superseded rejections make open/counting sessions terminal; a conflict session leaves only by an applied open or abandon (ADR-078 decision 9); terminal/unknown states stay untouched.
  * Applied conflict opens restore the latest transition's counting state, otherwise open; pending rows do nothing.
- * Given `host` and `storeKey`, applied rows also raise the register's counters to the store's (#651, `adoptStoreCounters`).
+ * Given `host` and `storeKey`, applied rows also raise the register's counters to the store's (#651, `adoptStoreCounters`),
+ * and given `closures` too, a closure refused for its number is renumbered once and requeued (#655, `renumberRefused`).
  * Answers are walked in seq/key order; adoption is idempotent and safe to run at any time.
  */
-export async function adoptRegisterResults({ commands, sessions, registerId, host, storeKey }: {
+export async function adoptRegisterResults({ commands, sessions, registerId, host, storeKey, closures }: {
   commands: RegisterCommandCollection; sessions: RegisterSessionCollection; registerId: string;
-  host?: RegisterHost; storeKey?: string;
+  host?: RegisterHost; storeKey?: string; closures?: ClosureCollection;
 }): Promise<void> {
   const run = (chains.get(commands) ?? Promise.resolve()).then(async () => {
     const [answers, transitions, rows] = await Promise.all([
@@ -59,6 +119,7 @@ export async function adoptRegisterResults({ commands, sessions, registerId, hos
     }
     const counters = answers.filter((answer) => answer.syncStatus === 'applied' && answer.result?.counters).map((answer) => answer.result?.counters);
     if (host && storeKey && counters.length) await adoptStoreCounters(host, storeKey, registerId, counters);
+    if (host && storeKey && closures) await renumberRefused(commands, closures, host, storeKey, registerId);
   }).catch((error: unknown) => {
     registerCommandsLogger.error('Register result adoption failed', { context: { registerId, error: String(error) } });
   });

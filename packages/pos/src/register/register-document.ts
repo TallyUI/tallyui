@@ -246,6 +246,28 @@ export function adoptStoreCounters(host: RegisterHost, storeKey: string, registe
 }
 
 /**
+ * Records the closures renumbered after a refusal (#655), in number order: the register's last number and totals are
+ * set outright to the last one's, the store's counter plus this till's unsent closures (no max: on a refusal the
+ * store's counter is the truth), and a reservation holding one of them takes its new row, keeping `applied`. Each
+ * field is set, not added, so a repeat changes nothing.
+ */
+export function renumberClosures(host: RegisterHost, storeKey: string, registerId: string, rows: Closure[]) {
+  const last = rows[rows.length - 1];
+  return modifyStore(host, storeKey, (store) => {
+    const register = store?.registers?.[registerId] ?? {};
+    const reservation = register.closure_reservation;
+    const row = rows.find(({ id }) => id === reservation?.row.id);
+    return withRegister(store, registerId, {
+      ...register,
+      last_closure_number: last.number,
+      perpetual_sales_total_minor: last.perpetual_sales_total_minor,
+      perpetual_refunds_total_minor: last.perpetual_refunds_total_minor,
+      ...(reservation && row ? { closure_reservation: { ...reservation, row } } : {}),
+    });
+  });
+}
+
+/**
  * Adds a closed period to the register's perpetual totals. With `closureId`, it applies that
  * reserved closure once: the totals become the reservation's, and a repeat does nothing.
  */
