@@ -785,10 +785,10 @@ describe('the sale note as customer_note (ADR-083)', () => {
     return result.payload;
   }
 
-  it('maps a version 7 note to customer_note as the last key', () => {
+  it('maps a version 7 note to customer_note', () => {
     const payload = mapped(versioned(7, 'Deliver after 5'));
     expect(payload.customer_note).toBe('Deliver after 5');
-    expect(Object.keys(payload).at(-1)).toBe('customer_note');
+    expect(payload).toEqual({ ...mapped(versioned(6)), customer_note: 'Deliver after 5' });
   });
 
   it.each([undefined, ''])('sends no customer_note for note %j, byte for byte the version 6 payload', (note) => {

@@ -45,7 +45,7 @@ describe('OrdersList sale note (ADR-083 condition 2)', () => {
   ])('says the note was not sent only when it went below 7 (%s)', (_name, overrides, notSent) => {
     render(<OrdersList orders={[order('o1', overrides)]} onRetry={async () => 0} />);
     expect(screen.queryByTestId('order-note-not-sent-o1')?.textContent ?? null)
-      .toBe(notSent ? "The note couldn't be sent to the store." : null);
+      .toBe(notSent ? "The customer note couldn't be sent to the store." : null);
   });
 
   it('shows the note in the expanded order', () => {
@@ -53,7 +53,7 @@ describe('OrdersList sale note (ADR-083 condition 2)', () => {
     expect(screen.queryByTestId('order-note-o1')).toBeNull();
     fireEvent.click(screen.getByTestId('order-row-o1'));
     fireEvent.click(screen.getByTestId('order-row-o2'));
-    expect(screen.getByTestId('order-note-o1').textContent).toBe('Note: Deliver after 5');
+    expect(screen.getByTestId('order-note-o1').textContent).toBe('Customer note: Deliver after 5');
     expect(screen.queryByTestId('order-note-o2')).toBeNull();
   });
 });

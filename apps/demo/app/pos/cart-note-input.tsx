@@ -17,7 +17,7 @@ export default function CartNoteInputScreen() {
             <CartNoteInput value={note} onChangeText={setNote} />
           </View>
           {note.length > 0 && (
-            <Text className="text-sm text-muted-foreground">Note: {note}</Text>
+            <Text className="text-sm text-muted-foreground">Customer note: {note}</Text>
           )}
         </View>
 

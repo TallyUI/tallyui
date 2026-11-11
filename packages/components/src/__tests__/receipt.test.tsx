@@ -95,7 +95,7 @@ describe('Receipt', () => {
     render(<Receipt order={{ ...sale.order, note }} posOrder={posOrder} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} />);
     expect(screen.getByTestId('receipt-note').textContent).toContain(note);
     const label = screen.queryByTestId('receipt-note-not-sent');
-    expect(label?.textContent ?? null).toBe(notSent ? "The note couldn't be sent to the store." : null);
+    expect(label?.textContent ?? null).toBe(notSent ? "The customer note couldn't be sent to the store." : null);
     if (label) expect(label.closest('[data-print="hide"]')).not.toBeNull();
   });
 

@@ -113,7 +113,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               {order.payments.map((payment) => <Text key={payment.id} className="text-muted-foreground">
                 {`${payment.method === 'cash' ? 'Cash' : 'Card terminal'} ${formatMoney({ amount: payment.amountMinor, currency: order.currency })}${payment.reference ? ` · ${payment.reference}` : ''}`}
               </Text>)}
-              {order.note ? <Text testID={`order-note-${order.id}`} className="text-foreground">{`Note: ${order.note}`}</Text> : null}
+              {order.note ? <Text testID={`order-note-${order.id}`} className="text-foreground">{`Customer note: ${order.note}`}</Text> : null}
             </View> : null}
             {stuckEntry ? <Text className="text-destructive">
               {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}

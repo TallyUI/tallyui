@@ -6,4 +6,4 @@ export function orderReference(order: { id: string; serverRefs?: { displayId?: s
 }
 
 /** The receipt and Orders say this under a note that went below order.create 7 (ADR-083 condition 2). */
-export const NOTE_NOT_SENT = "The note couldn't be sent to the store.";
+export const NOTE_NOT_SENT = "The customer note couldn't be sent to the store.";

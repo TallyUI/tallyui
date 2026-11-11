@@ -6,6 +6,12 @@ import { cn } from '@tallyui/theme';
 export interface CartNoteInputProps extends Omit<ViewProps, 'children'> {
   value: string;
   onChangeText: (text: string) => void;
+  /**
+   * The note's name, shown by the collapsed link, the input's placeholder and
+   * its accessibility label. WooCommerce sends the note as `customer_note`, so
+   * the customer sees it.
+   */
+  label?: string;
   placeholder?: string;
   className?: string;
 }
@@ -13,7 +19,8 @@ export interface CartNoteInputProps extends Omit<ViewProps, 'children'> {
 export function CartNoteInput({
   value,
   onChangeText,
-  placeholder = 'Order note...',
+  label = 'Customer note',
+  placeholder = label,
   className,
   ...viewProps
 }: CartNoteInputProps) {
@@ -26,7 +33,7 @@ export function CartNoteInput({
         className={cn('flex-row items-center gap-1.5 px-3 py-2', className)}
         {...viewProps}
       >
-        <Text className="text-xs text-primary">Add note</Text>
+        <Text className="text-xs text-primary">{`Add ${label.toLowerCase()}`}</Text>
       </Pressable>
     );
   }
@@ -37,6 +44,7 @@ export function CartNoteInput({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
+        accessibilityLabel={label}
         placeholderTextColorClassName="accent-muted-foreground"
         multiline
         className="min-h-[3rem] rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
