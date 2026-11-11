@@ -5980,13 +5980,17 @@ interface OrderCreatePayload {
   - The Woo transport unit starts when the tallyui-woocommerce worker asks for it. The worker asked on 2026-11-10.
   - Door: one-way for Q4 (the order wire to Woo stores). Q1-Q3 are two-way.
 
-## ADR-085 The LAN customer display: WebRTC, signalled by each backend's plugin (amends ADR-084 d3)
+## ADR-085 The customer display on a second device: WebRTC, signalled by each backend's plugin (amends ADR-084 d3)
 
-- **Date:** 2026-11-11 · **Status:** Proposed (for the front desk's ruling; one-way) · **Amends:** ADR-084 decision 3
+- **Date:** 2026-11-11 · **Status:** Accepted in direction by the front desk on 2026-11-11 (one-way). The security floor and the
+  pairing rules below were added at its ruling. · **Amends:** ADR-084 decision 3
   · **Relates to:** #684, `docs/v2-parity/PLAN.md` A10, A11, Q3 and units 36-37, ADR-084 decision 4 (the plugin fork)
+- **Name:** this ADR does not say "LAN" in its title. The display page loads from the app's web origin, and STUN can
+  find a route between two networks, so the display is not limited to the shop's network. "Second device" means
+  the display is a different device from the till. The same-device display (units 36-37) stays as it is.
 - **Context:**
-  - **What ADR-084 d3 leaves open.** It says LAN pairing comes "through each backend's own server-plugin signalling"
-    and "does not copy v2's WordPress/Pro WebRTC path". It does not say:
+  - **What ADR-084 d3 leaves open.** It says pairing comes "through each backend's own server-plugin signalling" and
+    "does not copy v2's WordPress/Pro WebRTC path". It does not say:
     - whether that rules out WebRTC itself, or only v2's signalling and page;
     - who serves the display page;
     - how a display device, which has no cashier login, authenticates;
@@ -6024,62 +6028,100 @@ interface OrderCreatePayload {
   1. **Transport: WebRTC for the sale data.**
      - The till offers and each display answers, over one ordered data channel per display. Units 36 and 37's
        envelope and snapshot are carried unchanged.
-     - The server carries signalling only (offers, answers, ICE candidates), plus the snapshot fallback in 6.
+     - The server carries signalling only (offers, answers, ICE candidates), plus the snapshot fallback in 7.
      - d3's "does not copy v2's path" means v2's WordPress/Pro signalling routes and its WordPress-served page. It
        does not rule out WebRTC. PLAN A11 already names WebRTC.
   2. **Signalling: each backend's own server plugin.**
      - For Woo, that is TallyUI's fork of woocommerce-pos, never `wcpos/woocommerce-pos` or `-pro` (ADR-084 d4). For
        the other two, the medusapos and vendurepos plugins.
      - Core gets one optional, platform-neutral signalling seam on the connector (unit U2), and a display
-       advertisement in `ServerCapabilities`. A connector without it has no LAN display, and the same-device display
-       keeps working.
+       advertisement in `ServerCapabilities`. A connector without it has no second-device display, and the
+       same-device display keeps working.
      - Each plugin implements the routes its own way, as its platform does: its auth, its storage, its route style.
-       The seam fixes only what core needs: mint a code, claim a code, list displays, a signal mailbox, forget.
+       The seam fixes what core needs (mint a code, claim a code, list displays, a signal mailbox, forget) and the
+       security floor in 4 and 5. Every plugin must meet that floor; it may be stricter.
   3. **The display page comes from each app's own web build,** at `/customer-display`. The till shows that URL, as
      v2 shows its page URL. The plugin serves no UI. The plugin units find out what each plugin needs for the app's
      origin to call its signalling routes (CORS, for example).
-  4. **Pairing and display auth.**
-     - The till asks the server for a single-use pairing code with a short expiry, shown with its expiry as v2 does.
-     - The display exchanges the code once for a per-display token. The token is scoped to signalling for the one
-       till device that minted the code, and to nothing else in the store.
-     - Forget deletes the display on the server, which revokes its token. A forgotten display can pair again only
-       with a new code.
-     - The code length, expiry and token format are fixed per plugin in its unit, and recorded there.
-  5. **The registry lives on the server:** display id, name, last seen and connected, as in v2. The till keeps no
-     replicated copy. Device-local state goes in a local collection that is never replicated (CLAUDE.md), as the
-     #682 scanner profiles do: the till's device id, and the display token on the display device.
-  6. **ICE: what connects on an ordinary shop network,** following v2's finding above.
+  4. **Pairing and display auth: the security floor, fixed in the core seam (U2).** U2 states these as the seam's
+     contract and ships a shared contract suite. Each plugin's connector runs that suite against its own routes in its
+     U7.
+     - **Who may mint.** Minting a code needs a logged-in cashier session that holds the named capability
+       `customer_display.pair`. Each platform maps that capability onto its own roles. A request without it is refused,
+       and no code is made.
+     - **Codes.** A code is single use: the first successful claim spends it. It expires 10 minutes after it is minted,
+       or sooner. It is at least 6 digits from a cryptographic random source, and the till shows it with its expiry,
+       as v2 does. Claims are rate limited per source address: at most 10 failed claims a minute. Mints are rate
+       limited per till device: at most 5 unspent codes at once. A refused claim does not say whether the code
+       exists, has expired or was spent.
+     - **Tokens.** A successful claim returns a per-display token: 128 bits from a cryptographic random source. It is
+       shown to the display once, in that response, and the server stores only its SHA-256 hash. The token is scoped
+       to that one display: its signalling mailbox and its snapshot read. It gives no other access to the store.
+     - **The snapshot read is gated by the same token.** A read without the display's token is refused, so a snapshot
+       is never readable by display id alone.
+     - **Forget** deletes the registry row and the token hash at once, so the token stops working on its next call. A
+       forgotten display can pair again only with a new code.
+  5. **The till device, the cashier and who owns a display.**
+     - **The till device id** is the till's own id, generated once and kept in a local collection that is never
+       replicated (CLAUDE.md), as the #682 scanner profiles are. The display token is kept the same way on the display
+       device.
+     - **Binding to the cashier's session.** The till sends its device id on every signalling call it makes, and the
+       server accepts a device id only on a request authenticated by a cashier session that holds
+       `customer_display.pair`. At mint, the server records the device id and the cashier who minted the code. The
+       claimed display's registry row records the owning till device id and that cashier. When the cashier logs out,
+       the till's signalling stops. The display stays paired, and the till picks it up again when a cashier with the
+       capability logs in on the same device.
+     - **One display belongs to one till.** A display that claims a code from a second till moves to that till: the
+       server deletes its old row and old token, then makes the new ones, in one step. The first till sees it gone at
+       its next list. One till may own several displays (9).
+  6. **The registry lives on the server:** display id, name, owning till device id, the cashier who paired it, last
+     seen and connected, as in v2. The till keeps no replicated copy.
+     - **Pruning.** Unspent codes are deleted when they expire. A registry row whose display has not been seen for 30
+       days is deleted with its token hash, and that display must pair again.
+  7. **ICE: what connects on an ordinary shop network,** following v2's finding above.
      - The default list is v2's two public STUN servers.
      - The STUN list is a store setting, sent in the display advertisement. `none` (an empty list) is allowed, for a
        store whose network passes multicast or that will not contact third-party hosts.
      - The list is validated as v2's `parseIceServers` does, and a refused list falls back to the default.
      - Privacy: STUN sees only the till's and the display's public addresses. No sale data passes through it.
-  7. **The snapshot fallback is carried over** with v2's rules above, and is advertised the same way. While the peer
-     link is down, the display still shows the sale. The cost: in that state, the sale snapshot passes through the
-     store's server, bounded by the 200 KiB cap and the 60 s lifetime.
-  8. **Web first.** The web till and the web display come first. A native till follows as its own unit, with an
-     injected peer factory (v2's `peer.native.ts` pattern), and adds a native dependency.
-  9. **Several displays per till.** The till fans each envelope out to every connected display.
-  10. **Naming.** The settings screen is `CustomerDisplaySettings`. The existing `DisplaySettings` (theme, scale and
+  8. **The snapshot fallback is carried over** with v2's rules above, and is advertised the same way. While the peer
+     link is down, the display still shows the sale.
+     - **Retention.** The server keeps only the latest snapshot for each display, and for at most 60 s; then it deletes
+       it. Forget deletes it at once.
+     - **Clearing.** When the sale goes idle, the till sends an idle snapshot in place of the cart, so the customer's
+       name and the cart leave the server at once, not after 60 s. On idle, and when its token is refused (it was
+       forgotten), the display clears the customer name and the cart from its screen and memory. A forgotten display
+       then shows the enter-code screen.
+     - The cost: while the peer link is down, the sale snapshot passes through the store's server, bounded by the
+       200 KiB cap and the 60 s lifetime.
+  9. **Several displays per till.** The till fans each envelope out to every connected display it owns.
+  10. **Web first.** The web till and the web display come first. A native till follows as its own unit, with an
+      injected peer factory (v2's `peer.native.ts` pattern), and adds a native dependency.
+  11. **When the till loses the server.** A data channel that is already open carries on, because sale data goes
+      peer to peer. Pairing, list and forget wait for the server. A display whose channel drops reconnects only
+      once the server is back, and the snapshot fallback stops until then.
+  12. **WCPOS Pro displays are parked.** Driving WCPOS Pro's own WebRTC displays (its advertisement and its pairing
+      mailbox) is out of scope (#684, rescoped 2026-11-11). The parity notice lists it as a known difference.
+  13. **Naming.** The settings screen is `CustomerDisplaySettings`. The existing `DisplaySettings` (theme, scale and
       fonts) keeps its name.
 - **Consequences:**
-  - #684's units, in order. U1 comes after #683 and needs nothing from this ADR. U2 and later start only after the parity list's
-    remaining items and A1/B9 (#694, #695) are merged.
+  - #684's units, in order. U1 comes after #683 and needs nothing from this ADR; the front desk cleared it to start
+    on 2026-11-11. U2 and later start only after the parity list's remaining items and A1/B9 (#694, #695) are
+    merged. Every unit's PR carries the tests in its row.
 
-    | Unit | What it builds | Package | Door |
-    |---|---|---|---|
-    | U1 | The live-sale publisher | pos | two-way |
-    | U2 | The signalling seam and the advertisement | core | two-way |
-    | U3 | The WebRTC transport | pos | two-way |
-    | U4 | The till display service, with fan-out and the snapshot fallback | pos | two-way |
-    | U5 | `CustomerDisplaySettings` and the display's enter-code screen | components | two-way |
-    | U6 | The two-device proof against a reference signalling server, in Playwright Chromium | e2e | two-way |
-    | U7 | Woo signalling: routes in TallyUI's fork, plus the connector | Woo connector | one-way |
-    | U8 | App wiring | tallyui-woocommerce | two-way |
+    | Unit | What it builds | Package | Door | Acceptance (tests in the unit's PR) |
+    |---|---|---|---|---|
+    | U1 | The live-sale publisher | pos | two-way | Unit tests against a recording display link. The cart gives `cart.updated`. Tender gives `payment.state` started. Each leg change gives approved, declined or complete, as v2's `derivePaymentEvent` does. The receipt gives complete, then idle after `afterCompleteMs`. An empty new sale gives idle. The same state twice is sent once. |
+    | U2 | The signalling seam, the advertisement and the contract suite | core | two-way | The seam's types. A contract suite of the floor in 4–6, run against an in-memory reference server: mint without the capability refused; code reuse, expiry and rate limits refused; token stored hashed; snapshot read without the token refused; Forget revokes the token; a claim from a second till moves the display; expired codes and dead rows pruned. |
+    | U3 | The WebRTC transport | pos | two-way | Unit tests with a fake `RTCPeerConnection` that refuses what Chromium refuses. A Playwright Chromium proof: two pages open a data channel through an in-memory relay and carry an envelope both ways. |
+    | U4 | The till display service, with fan-out and the snapshot fallback | pos | two-way | Unit tests: fan-out to every owned display; each fallback rule in 8 (rate, 20 s re-send, no re-send after 400 or 413, the 200 KiB cap with the note cut first, offline displays skipped, stop on open); the idle snapshot that clears; offline behaviour in 11. |
+    | U5 | `CustomerDisplaySettings` and the display's enter-code screen | components | two-way | Component tests: list, pair with the code and its expiry, forget, each refusal shown; the display clears and shows enter-code when its token is refused. |
+    | U6 | The two-device proof against the U2 reference server, in Playwright Chromium | e2e | two-way | Two browser contexts: pair, a sale shows on the display, Forget clears it. With the peer link blocked, the display still shows the sale through the snapshot fallback. |
+    | U7 | Woo signalling: routes in TallyUI's fork, plus the connector | Woo connector | one-way | The U2 contract suite passes against the fork's routes on the local Woo dev store, plus the fork's own PHP tests. |
+    | U8 | App wiring | tallyui-woocommerce | two-way | An e2e test on the tally-woo app against the local Woo store: a paired display shows a real sale. D8 moves to done only on this test. |
 
-  - U6 must include the failure case: with the peer link blocked, the display still shows the sale through the
-    snapshot fallback.
-  - Medusa and Vendure each need their own U7, in their own lanes. None is needed for the Woo display.
-  - PLAN A11's `iceServers: []` line is superseded by decision 6.
+  - Medusa and Vendure each need their own U7, in their own lanes, and run the same contract suite. None is needed for
+    the Woo display.
+  - PLAN A11's `iceServers: []` line is superseded by decision 7.
   - Door: **one-way**, because it fixes a plugin contract and a device-auth model across three backends. The units
     are two-way except U7.
