@@ -1,9 +1,9 @@
 import type { ServerCapabilities } from '@tallyui/core';
-import { CLOSURE_HOLDING_REJECTIONS } from '../outbox/register-outbox';
+import { CLOSURE_HOLDING_REJECTIONS, NON_BLOCKING_REJECTIONS } from '../outbox/register-outbox';
 import { readFresh } from '../rxdb';
 import { uuidv7 } from '../pos-order/uuidv7';
 import { countVariance, overThreshold } from './register-count.helpers';
-import { adoptStoreCounters, renumberClosure, type RegisterHost } from './register-document';
+import { adoptStoreCounters, renumberClosures, type RegisterHost } from './register-document';
 import { registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import type { Closure, RegisterSession } from './schemas';
 import { isKnownSessionStatus, RegisterSessionRequiredError, RegisterTakeOverError, type ClosureCollection,
@@ -19,11 +19,13 @@ const counted = (number: unknown, sales: unknown, refunds: unknown): Counted | u
 
 /**
  * The store takes a closure only as its last number plus one; it refuses any other `register_closure_number_invalid`
- * with its counters (ADR-068 d5). Walking the register's closures in ledger order, a refused closure is renumbered
- * once (`number_retried`) after the refusal's counters, or after a closure ahead of it in the ledger that numbers
- * higher, its totals re-derived as those plus its own period; the register document, the closure row and the command
- * row are rewritten in that order, and the command is requeued in its place under a new command id (ADR-068 d6). Any
- * other refusal, a second refusal of a renumbered closure, or malformed counters stays refused and ends the walk.
+ * with its counters (ADR-068 d5). The register's first refused closure submit, past the outbox's non-blocking
+ * refusals, is the one: when the store refused it for its number, every unsent closure of this register and store
+ * (closed since, its submit missing, pending or refused for its number) is renumbered in one pass, in closed order,
+ * consecutively from the store's counter, the truth, with chained totals. Only the refused closure spends its retry
+ * (`number_retried`). The register document, the closure rows and the command rows are rewritten in that order, the
+ * refused closure's last, and each changed command is requeued under a new command id (ADR-068 d6). Any other
+ * refusal, a second refusal of a renumbered closure, or malformed counters writes nothing.
  */
 async function renumberRefused(commands: RegisterCommandCollection, closures: ClosureCollection, host: RegisterHost,
   storeKey: string, registerId: string) {
@@ -31,43 +33,39 @@ async function renumberRefused(commands: RegisterCommandCollection, closures: Cl
     readFresh(commands, { selector: { registerId, type: 'register.closure.submit' }, sort: [{ seq: 'asc' }, { key: 'asc' }] }),
     readFresh(closures, { selector: { register_id: registerId } }),
   ]);
-  let ahead: Counted | undefined;
-  for (const submit of submits) {
-    const { payload, error } = submit;
-    if (submit.syncStatus !== 'rejected') {
-      const sent = counted(payload.number, payload.perpetualSalesTotalMinor, payload.perpetualRefundsTotalMinor);
-      if (sent && sent.number > (ahead?.number ?? -1)) ahead = sent;
-      continue;
-    }
-    let row = local.find(({ id }) => id === payload.closureId);
-    if (error?.code !== 'register_closure_number_invalid' || !row) return;
-    if (!row.number_retried) {
-      const store = (error.data?.counters ?? {}) as Record<string, unknown>;
-      const refused = counted(store.lastClosureNumber, store.perpetualSalesTotalMinor, store.perpetualRefundsTotalMinor);
-      if (!refused) return;
-      const base = ahead && ahead.number > refused.number ? ahead : refused;
-      const closedAt = row.closed_at;
-      row = { ...row, number: base.number + 1, number_retried: true, perpetual_sales_total_minor: base.sales + row.period_sales_total_minor,
-        perpetual_refunds_total_minor: base.refunds + row.period_refunds_total_minor };
-      // Closures made after it are behind it in the ledger, so the store lacks them and the register keeps them, and
-      // their numbers: each renumbers after this one, so the next close mints after all of them.
-      const later = local.filter((closure) => closure.closed_at > closedAt);
-      await renumberClosure(host, storeKey, registerId, row, { lastClosureNumber: row.number + later.length,
-        salesMinor: later.reduce((sum, closure) => sum + closure.period_sales_total_minor, row.perpetual_sales_total_minor),
-        refundsMinor: later.reduce((sum, closure) => sum + closure.period_refunds_total_minor, row.perpetual_refunds_total_minor),
-      });
-      await (await closures.findOne(row.id).exec(true)).incrementalPatch({ number: row.number, number_retried: true,
-        perpetual_sales_total_minor: row.perpetual_sales_total_minor, perpetual_refunds_total_minor: row.perpetual_refunds_total_minor });
-    } else if (payload.number === row.number) return;
-    const renumbered = row;
+  const refused = submits.find((submit) => submit.syncStatus === 'rejected' && !NON_BLOCKING_REJECTIONS.has(submit.error?.code ?? ''));
+  const row = local.find(({ id, store_key }) => id === refused?.payload.closureId && (store_key ?? null) === storeKey);
+  if (refused?.error?.code !== 'register_closure_number_invalid' || !row) return;
+  const sent = new Map(submits.map((submit) => [submit.payload.closureId, submit]));
+  const unsent = (closure: Closure) => {
+    const submit = sent.get(closure.id);
+    return (closure.store_key ?? null) === storeKey && closure.closed_at >= row.closed_at && (!submit || submit.syncStatus === 'pending'
+      || (submit.syncStatus === 'rejected' && submit.error?.code === 'register_closure_number_invalid'));
+  };
+  let queued = local.filter(unsent).sort((a, b) => a.closed_at.localeCompare(b.closed_at) || a.id.localeCompare(b.id));
+  if (!row.number_retried) {
+    const store = (refused.error.data?.counters ?? {}) as Record<string, unknown>;
+    const base = counted(store.lastClosureNumber, store.perpetualSalesTotalMinor, store.perpetualRefundsTotalMinor);
+    if (!base) return;
+    let { number, sales, refunds } = base;
+    queued = queued.map((closure) => ({ ...closure, number: ++number, perpetual_sales_total_minor: sales += closure.period_sales_total_minor,
+      perpetual_refunds_total_minor: refunds += closure.period_refunds_total_minor, number_retried: closure.number_retried || closure.id === row.id }));
+    await renumberClosures(host, storeKey, registerId, queued);
+  } else if (refused.payload.number === row.number) return;
+  // The refused closure goes last, so a crash part way leaves it refused and unretried, or retried with a stale command.
+  for (const closure of [...queued.filter(({ id }) => id !== row.id), ...queued.filter(({ id }) => id === row.id)]) {
+    const { number, perpetual_sales_total_minor: sales, perpetual_refunds_total_minor: refunds, number_retried } = closure;
+    if (!row.number_retried) await (await closures.findOne(closure.id).exec(true)).incrementalPatch({ number,
+      perpetual_sales_total_minor: sales, perpetual_refunds_total_minor: refunds, number_retried });
+    const submit = sent.get(closure.id);
+    if (!submit || (submit.syncStatus === 'pending' && submit.payload.number === number
+      && submit.payload.perpetualSalesTotalMinor === sales && submit.payload.perpetualRefundsTotalMinor === refunds)) continue;
     await (await commands.findOne(submit.key).exec())?.incrementalModify((doc) => {
-      if (doc.commandId !== submit.commandId || doc.syncStatus !== 'rejected') return doc;
+      if (doc.commandId !== submit.commandId || doc.syncStatus !== submit.syncStatus) return doc;
       const { error: _refusal, ...rest } = doc;
       return { ...rest, commandId: uuidv7(), syncStatus: 'pending', updatedAt: new Date().toISOString(), payload: { ...doc.payload,
-        number: renumbered.number, perpetualSalesTotalMinor: renumbered.perpetual_sales_total_minor,
-        perpetualRefundsTotalMinor: renumbered.perpetual_refunds_total_minor } };
+        number, perpetualSalesTotalMinor: sales, perpetualRefundsTotalMinor: refunds } };
     });
-    ahead = { number: row.number, sales: row.perpetual_sales_total_minor, refunds: row.perpetual_refunds_total_minor };
   }
 }
 type SessionTarget = { commands: RegisterCommandCollection; sessions: RegisterSessionCollection; sessionId: string; now?: string };

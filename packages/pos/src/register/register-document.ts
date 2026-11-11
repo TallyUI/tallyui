@@ -246,22 +246,23 @@ export function adoptStoreCounters(host: RegisterHost, storeKey: string, registe
 }
 
 /**
- * Records a closure the store renumbered (#655): the register's totals are set to `counters`, its last number is
- * raised to `counters.lastClosureNumber` (the closure's, plus those still behind it, which renumber after it), and a
- * reservation holding this closure takes the new row, keeping `applied`. Each field is set, not added, so a repeat
- * changes nothing.
+ * Records the closures renumbered after a refusal (#655), in number order: the register's last number and totals are
+ * set outright to the last one's, the store's counter plus this till's unsent closures (no max: on a refusal the
+ * store's counter is the truth), and a reservation holding one of them takes its new row, keeping `applied`. Each
+ * field is set, not added, so a repeat changes nothing.
  */
-export function renumberClosure(host: RegisterHost, storeKey: string, registerId: string, row: Closure,
-  counters: { lastClosureNumber: number; salesMinor: number; refundsMinor: number }) {
+export function renumberClosures(host: RegisterHost, storeKey: string, registerId: string, rows: Closure[]) {
+  const last = rows[rows.length - 1];
   return modifyStore(host, storeKey, (store) => {
     const register = store?.registers?.[registerId] ?? {};
     const reservation = register.closure_reservation;
+    const row = rows.find(({ id }) => id === reservation?.row.id);
     return withRegister(store, registerId, {
       ...register,
-      last_closure_number: Math.max(register.last_closure_number ?? 0, counters.lastClosureNumber),
-      perpetual_sales_total_minor: counters.salesMinor,
-      perpetual_refunds_total_minor: counters.refundsMinor,
-      ...(reservation?.row.id === row.id ? { closure_reservation: { ...reservation, row } } : {}),
+      last_closure_number: last.number,
+      perpetual_sales_total_minor: last.perpetual_sales_total_minor,
+      perpetual_refunds_total_minor: last.perpetual_refunds_total_minor,
+      ...(reservation && row ? { closure_reservation: { ...reservation, row } } : {}),
     });
   });
 }
