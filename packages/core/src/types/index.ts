@@ -13,7 +13,7 @@ export type { ReplicationAdapter } from './replication';
 
 export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 
-export type { StoreSettings, StoreSettingsChoice } from './store-settings';
+export type { StoreSettings, StoreSettingsChoice, StoreTaxRate, StoreTaxRateLocation } from './store-settings';
 
 export type { ProductTraits, TraitContext, VariantSummary, VariantOptionGroup, ProductCategory } from './traits/product';
 

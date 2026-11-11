@@ -48,6 +48,7 @@ describe('wooStoreSettings', () => {
       taxClassSlugs: ['standard', 'reduced-rate', 'zero-rate'],
       taxRatesPpm: { default: 106250, 'reduced-rate': 55000, 'zero-rate': 0 },
       taxRates: expect.any(Object),
+      allTaxRates: expect.any(Array),
     });
     expect(settings.taxRates!.standard.map((rate) => rate.id)).toEqual([1, 2, 4]);
     expect(settings.taxRates!['reduced-rate'].map((rate) => rate.id)).toEqual([3]);
@@ -103,6 +104,7 @@ describe('wooStoreSettings', () => {
     const settings = await wooStoreSettings(context);
     expect(settings.taxRates).toStrictEqual({});
     expect(settings.taxRatesPpm).toStrictEqual({ default: 0 });
+    expect(settings).not.toHaveProperty('allTaxRates');
     expect(settings.taxClassSlugs).toEqual(['standard', 'reduced-rate', 'zero-rate']);
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       `${context.baseUrl}/stores`, `${context.baseUrl}/taxes/classes`,
@@ -137,6 +139,57 @@ describe('wooStoreSettings', () => {
       id: 1, code: 'TAX-1', label: '', rate: '7.2500', priority: 1, compound: false, shipping: true,
     }]);
     expect(settings.taxRatesPpm).toStrictEqual({ default: 72500 });
+  });
+
+  // #669: every rate, with its location, for an app's "View all tax rates" table (v2 tax-rates/rate-table.tsx).
+  const listedRates = [
+    { ...taxes[1], postcodes: ['94105', '94107'], cities: ['SAN FRANCISCO', 'OAKLAND'] },
+    { ...taxes[0], id: 6, country: '', state: '', name: 'Everywhere', rate: '1.0000', priority: 4 },
+    taxes[3],
+    taxes[2],
+    { ...taxes[0], id: 7, country: 'GB', state: '', name: 'VAT', rate: '20.0000' },
+  ];
+
+  it('lists every rate with its location, matched by the tax address or not', async () => {
+    taxesBody = listedRates;
+    const settings = await wooStoreSettings(context);
+    expect(settings.allTaxRates).toStrictEqual([
+      {
+        id: '2', name: 'SF District', rate: '1.3750', taxClass: 'standard', priority: 2, compound: false, shipping: true,
+        location: { country: 'US', region: 'CA', postcodes: ['94105', '94107'], cities: ['SAN FRANCISCO', 'OAKLAND'] },
+      },
+      { id: '6', name: 'Everywhere', rate: '1.0000', taxClass: 'standard', priority: 4, compound: false, shipping: true, location: {} },
+      {
+        id: '4', name: 'Compound Test', rate: '2.0000', taxClass: 'standard', priority: 3, compound: true, shipping: false,
+        location: { country: 'US', region: 'CA' },
+      },
+      {
+        id: '3', name: 'CA Reduced', rate: '5.5000', taxClass: 'reduced-rate', priority: 1, compound: false, shipping: false,
+        location: { country: 'US', region: 'CA' },
+      },
+      { id: '7', name: 'VAT', rate: '20.0000', taxClass: 'standard', priority: 1, compound: false, shipping: true, location: { country: 'GB' } },
+    ]);
+  });
+
+  it('lists the empty class as standard and leaves missing location lists out', async () => {
+    const { postcodes: _postcodes, cities: _cities, ...rate } = taxes[0];
+    taxesBody = [{ ...rate, class: '' }];
+    expect((await wooStoreSettings(context)).allTaxRates).toStrictEqual([
+      { id: '1', name: 'CA State', rate: '7.2500', taxClass: 'standard', priority: 1, compound: false, shipping: true, location: { country: 'US', region: 'CA' } },
+    ]);
+  });
+
+  it('keeps the filtered rates the cart reads byte-identical', async () => {
+    taxesBody = listedRates;
+    const { taxRates, taxRatesPpm } = await wooStoreSettings(context);
+    // Captured from origin/main f498b201, before `allTaxRates` existed.
+    expect(JSON.stringify({ taxRates, taxRatesPpm })).toBe(
+      '{"taxRates":{"standard":[{"id":2,"code":"US-CA-SF DISTRICT-2","label":"SF District","rate":"1.3750","priority":2,"compound":false,"shipping":true},'
+      + '{"id":4,"code":"US-CA-COMPOUND TEST-3","label":"Compound Test","rate":"2.0000","priority":3,"compound":true,"shipping":false},'
+      + '{"id":6,"code":"EVERYWHERE-4","label":"Everywhere","rate":"1.0000","priority":4,"compound":false,"shipping":true}],'
+      + '"reduced-rate":[{"id":3,"code":"US-CA-CA REDUCED-1","label":"CA Reduced","rate":"5.5000","priority":1,"compound":false,"shipping":false}]},'
+      + '"taxRatesPpm":{"default":43750,"reduced-rate":55000}}',
+    );
   });
 
   it('uppercases currency, reads yes flags and omits a non-string shipping class', async () => {

@@ -25,6 +25,8 @@ export type {
   StockStatus,
   StoreSettings,
   StoreSettingsChoice,
+  StoreTaxRate,
+  StoreTaxRateLocation,
 } from './types';
 export type { SignInResult, ServerCapabilities, TaxRounding } from './types/connector';
 export type { CatalogueReconcileAdapter, CatalogueReconcileEntry } from './types/reconcile';
