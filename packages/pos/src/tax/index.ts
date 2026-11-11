@@ -7,3 +7,5 @@ export { taxSettingsForLocation } from './location-rates';
 export { createTaxContext } from './tax-context';
 export { saleTaxContexts } from './sale-tax-contexts';
 export type { SaleTaxContext } from './sale-tax-contexts';
+export { taxDerivation } from './tax-derivation';
+export type { TaxDerivation, TaxDerivationClass, TaxDerivationRate, TaxRateWhy, SaleTaxLocation } from './tax-derivation';

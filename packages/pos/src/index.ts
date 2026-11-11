@@ -13,11 +13,12 @@ export { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './curre
 export type { CurrencyFormat, CurrencyProviderProps } from './currency';
 
 // Tax
-export { TaxProvider, useTax, taxLogger, taxSettingsForLocation, createTaxContext, saleTaxContexts } from './tax';
+export { TaxProvider, useTax, taxLogger, taxSettingsForLocation, createTaxContext, saleTaxContexts, taxDerivation } from './tax';
 export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, computeOrderTax, taxLinesByRate } from './tax';
 export type { TaxLineInput, OrderTaxTotals, RateTaxLine } from './tax';
 export type { TaxProviderProps } from './tax';
 export type { TaxRateMap, TaxContext, SaleTaxContext } from './tax';
+export type { TaxDerivation, TaxDerivationClass, TaxDerivationRate, TaxRateWhy, SaleTaxLocation } from './tax';
 
 // Store settings
 export { resolveStoreSettings, useStoreSettings, withPricingContext, taxProviderProps } from './store-settings';

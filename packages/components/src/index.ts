@@ -203,7 +203,12 @@ export {
   type ConnectionStatus,
   DisplaySettings,
   type DisplaySettingsProps,
+  TaxCalculationSettings,
+  type TaxCalculationSettingsProps,
 } from './settings';
+
+// Tax components
+export { TaxBasedOn, type TaxBasedOnProps } from './tax';
 
 // Sale components
 export {
