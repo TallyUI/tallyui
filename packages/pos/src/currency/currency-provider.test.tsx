@@ -3,6 +3,7 @@ import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { formatMoney } from '@tallyui/core';
 import { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './currency-provider';
+import type { CurrencyFormat } from './format-money-with';
 
 function wrapper(currency: string, locale?: string) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -60,6 +61,21 @@ describe('CurrencyProvider + useCurrencyFormatter', () => {
     });
     expect(result.current({ amount: 123450, currency: 'EUR' })).toBe('1.234,50 €');
     expect(result.current({ amount: 3451, currency: 'XXX' })).toBe('3451 XXX');
+  });
+
+  it('picks up a format that arrives after mount', () => {
+    let format: CurrencyFormat | undefined;
+    const { result, rerender } = renderHook(() => useCurrencyFormatter(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <CurrencyProvider currencyCode="EUR" locale="en" format={format}>
+          {children}
+        </CurrencyProvider>
+      ),
+    });
+    expect(result.current({ amount: 123450, currency: 'EUR' })).toBe('€1,234.50');
+    format = { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',' };
+    rerender();
+    expect(result.current({ amount: 123450, currency: 'EUR' })).toBe('1.234,50 €');
   });
 
   it('provides the default currency code', () => {
