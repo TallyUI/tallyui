@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
 import { paymentMethodOf } from '@tallyui/core';
@@ -7,7 +7,7 @@ import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInpu
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
-import { useTax } from '../tax';
+import { useTax, type SaleTaxContext, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
 import type { CatalogueEntry } from './catalogue';
@@ -82,9 +82,21 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   isStored?: (posOrder: PosOrder) => Promise<boolean>;
   /** Tests only: overrides HUNG_SAVE_CHECK_MS, so a test can shrink the hung-save poll's interval. */
   hungSaveCheckMs?: number;
+  /**
+   * #722: the tax context for a customer's address (`saleTaxContexts(settings)`, memoized). Each new sale is taxed for its
+   * customer, and `setCustomer` re-taxes a cart whose new customer moves the matched rates; tender and receipt keep theirs.
+   * Without it, every sale is taxed by `useTax()`.
+   */
+  taxContextFor?: (customer: CustomerSummary | null) => SaleTaxContext;
 }) {
   const taxContext = useTax();
-  const madeWith = useRef({ taxContext, currency: settings.currency });
+  // The store's context and the settings the sale started with, for the idle reset; the sale's own context is `taxNow`.
+  const madeWith = useRef({ taxContext, currency: settings.currency, taxContextFor: opts.taxContextFor });
+  function contextFor(customer: CustomerSummary | null): TaxContext {
+    return opts.taxContextFor ? opts.taxContextFor(customer).taxContext : taxContext;
+  }
+  // The live builder's tax context: the store's, or its customer's (#722).
+  const taxNow = useRef<TaxContext>(taxContext);
   // The default customer for a new sale, unless the server would refuse it: then the sale starts on guest.
   function defaulted(): CustomerSummary | null {
     const customer = opts.defaultCustomer ?? null;
@@ -93,8 +105,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const defaultKey = opts.defaultCustomer ? JSON.stringify([opts.defaultCustomer.id, opts.defaultCustomer.name, opts.defaultCustomer.email]) : '';
   const defaultSeen = useRef(defaultKey);
   const [rendered, setBuilder] = useState(() => {
-    const first = createOrderBuilder({ currency: settings.currency, taxContext });
     const customer = defaulted();
+    taxNow.current = contextFor(customer);
+    const first = createOrderBuilder({ currency: settings.currency, taxContext: taxNow.current });
     if (customer) first.setCustomer(customer);
     return first;
   });
@@ -206,7 +219,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   /** startTender's and complete()'s check: the live order's coupon prices are stale or being priced again. */
   function couponsUnpriced() { return !!(builderNow.current.getSnapshot().couponPricesStale || repricing.current); }
   // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale()`, on the default customer.
-  function resetSale(customer: CustomerSummary | null = defaulted(), restored?: OrderBuilder) {
+  function resetSale(customer: CustomerSummary | null = defaulted(), restored?: OrderBuilder, restoredTax?: TaxContext) {
     if (inFlight.current && !pending.current) return setError(SALE_SAVING);
     if (pending.current && confirmed.current !== pending.current) {
       if (inFlight.current) checkStored(pending.current);
@@ -217,10 +230,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     tenderSession.current = null;
     droppedReferences.current.clear();
     setSaving(false);
-    madeWith.current = { taxContext, currency: settings.currency };
-    const next = restored ?? createOrderBuilder({ currency: settings.currency, taxContext });
+    madeWith.current = { taxContext, currency: settings.currency, taxContextFor: opts.taxContextFor };
+    const tax = restoredTax ?? contextFor(customer);
+    const next = restored ?? createOrderBuilder({ currency: settings.currency, taxContext: tax });
     if (customer !== null) next.setCustomer(customer);
     builderNow.current = next;
+    taxNow.current = tax;
     applied.current.clear();
     appliedWith.current = null;
     generation.current++;
@@ -252,8 +267,38 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const liveIdle = stageNow.current.kind === 'cart' && !live.lineItems.length && !live.fees?.length && !live.shipping?.length && !inFlight.current && !pending.current;
     const newDefault = defaultSeen.current !== defaultKey;
     defaultSeen.current = defaultKey;
-    if (liveIdle && (newDefault || madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency)) resetSale(newDefault ? undefined : live.customer ?? null);
+    if (liveIdle && (newDefault || madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency
+      || madeWith.current.taxContextFor !== opts.taxContextFor)) resetSale(newDefault ? undefined : live.customer ?? null);
   });
+  /**
+   * #722: the cart rebuilt on `next`, its customer's context, as resume() restores a draft: the order id, lines, discounts,
+   * fees, shipping and note are kept, line taxes re-derived from the new rates, and the applied codes put back (store-priced
+   * ones go stale and price again, as the basis has the customer). `applied`, the error and the stage are kept.
+   */
+  function retax(customer: CustomerSummary | null, next: TaxContext) {
+    const snapshot = { ...builderNow.current.getSnapshot(), customer };
+    const rebuilt = restoreOrderDraft(snapshot, { currency: snapshot.currency, taxContext: next });
+    if (appliedWith.current && applied.current.size) appliedWith.current.apply(rebuilt, discountState(rebuilt.getSnapshot(), applied.current));
+    builderNow.current = rebuilt;
+    taxNow.current = next;
+    setBuilder(rebuilt);
+    setOrder(rebuilt.getSnapshot());
+  }
+  /**
+   * #722, v2's rule: a cart is re-taxed for `customer` when that customer moves its rates and no money is live (tender,
+   * receipt, a paid or moving leg finish on their rates). setCustomer's and cancelTender's check; true when it re-taxed.
+   */
+  function retaxFor(customer: CustomerSummary | null): boolean {
+    const next = opts.taxContextFor?.(customer).taxContext;
+    const { payments } = builderNow.current.getSnapshot();
+    if (!next || next === taxNow.current || stageNow.current.kind !== 'cart' || busy()
+      || capturedMinor(payments) !== 0 || payments.some(isInMotion)) return false;
+    retax(customer, next);
+    return true;
+  }
+  const liveCustomer = order.customer, taxContextFor = opts.taxContextFor;
+  const taxLocation = useMemo(() => taxContextFor
+    ? { ...taxContextFor(liveCustomer).location, hasCustomer: liveCustomer !== null } : undefined, [liveCustomer, taxContextFor]);
   // A screen that unmounts (medusapos: Sign out) mid-save must still leave a trace of the loss.
   useEffect(() => () => {
     clearHungSaveTimer();
@@ -363,6 +408,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
 
   const result = {
     order, stage, error, idle,
+    /** #722: the address the sale's customer is taxed by (WooCommerce's `tax_based_on`), for a "Tax based on" panel; undefined without `taxContextFor`. */
+    taxLocation,
     /** The store's capabilities as passed in: a component offers fees, shipping and custom lines
      * only when `orderCreate >= 5`, and their tax status and class only as `lineTax` allows. */
     capabilities: opts.capabilities,
@@ -530,7 +577,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       // A searched customer's email or id the server would refuse never reaches the sale; the customer stays as it was.
       const refused = customer && customerRefusal(customer);
       if (refused) return setError(refused);
-      builderNow.current.setCustomer(customer);
+      if (!retaxFor(customer)) builderNow.current.setCustomer(customer);
       setError((current) => current !== null && CUSTOMER_REFUSALS.includes(current) ? null : current); // any other error stays
     },
     /**
@@ -588,7 +635,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (locked()) return;
       setTender(null);
       tenderSession.current = null;
-      setStage({ kind: 'cart' });
+      stageNow.current = { kind: 'cart' };
+      setStage(stageNow.current);
+      // #722: a customer set during tender is taxed for once the cart is back, unless money was taken.
+      retaxFor(builderNow.current.getSnapshot().customer ?? null);
     },
     /**
      * Finalizes the tender, stamps the session (see `session`), hands the order to `onSaleCompleted`,
@@ -694,7 +744,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (!doc) return 'That parked sale is no longer there';
       const saved: Order = JSON.parse(doc.toJSON().data);
       if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
-      const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext });
+      // Taxed for the customer the draft restores (a refused one isn't).
+      const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
+      const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax });
       let n = 0;
       // A draft whose legs took money keeps the prices it was paid against (u19).
       if (opts.currentPrice && !options?.keepParkedPrices && capturedMinor(saved.payments ?? []) === 0) {
@@ -732,7 +784,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         await writeOrderDraft(opts.drafts, saved);
         return 'The sale changed while it was being resumed; resume it again';
       }
-      resetSale(null, builder);
+      resetSale(null, builder, restoredTax);
       if (builderNow.current === builder) {
         applied.current = kept;
         appliedWith.current = kept.size ? codes : null;
