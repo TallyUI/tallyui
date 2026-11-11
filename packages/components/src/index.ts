@@ -44,6 +44,8 @@ export {
   type InCartBadgeProps,
   CategoryTile,
   type CategoryTileProps,
+  VariationPicker,
+  type VariationPickerProps,
 } from './product';
 
 // Cart components

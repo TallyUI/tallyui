@@ -58,6 +58,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'presetRange', 'DATE_PRESETS',
   // the catalogue tiles (unit ucat): the pure per-product cart quantity the in-cart badge shows, never a hook or the store.
   'cartQuantities',
+  // the variations popover (#719): the pure attribute-to-variant match and unavailable-option test the picker shows, never a hook or the store.
+  'matchVariant', 'disabledOptions',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
