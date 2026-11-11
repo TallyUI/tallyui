@@ -1,5 +1,28 @@
 # @tallyui/connector-woocommerce
 
+## 3.19.0
+
+### Minor Changes
+
+- a3387fc: Customers carry an optional `createdAt`, and the optional connector method `searchCustomersPage` returns a page of a customer search with the store's total (`CustomerPage`); the WooCommerce connector fills both, from `date_created_gmt` and the `X-WP-Total` header (#680).
+- f819768: `receiptTemplates()` lists the store's renderable print templates; WooCommerce reads them from the WCPOS templates route and labels them with the `wcpos` data model.
+- 3a6eb07: `SyncContext` takes an optional `fetch`, resolved per request and defaulting to `globalThis.fetch`, so a host can pass a wrapper such as `meteredFetch` to count requests.
+  The WooCommerce connector sends every pull, reconcile, settings, payment-methods, receipt-templates and customers request through `context.fetch` when it is set.
+- 5ebdb30: The WooCommerce connector's `paymentMethods` lists the store's POS-enabled payment gateways from WCPOS's `wcpos/v2/payment-methods` route, with money limits and cash rounding in minor units, and falls back to cash and the card terminal on a plugin older than 2.0.0 (#679).
+- be21652: A sale's note reaches the WooCommerce order as its customer note (order.create 7, ADR-083), on stores that take coupon orders; on other stores the till shows the note as not sent.
+
+### Patch Changes
+
+- 369b380: Variable products from WCPOS 1.10.20 and later no longer fail validation in dev builds: a product's stored `meta_data` now keeps only the entries with string values, so object meta such as `_woocommerce_pos_variable_prices` is dropped (#713).
+- Updated dependencies [a3387fc]
+- Updated dependencies [1af7329]
+- Updated dependencies [a15835f]
+- Updated dependencies [f819768]
+- Updated dependencies [2e691f2]
+- Updated dependencies [3a6eb07]
+- Updated dependencies [41aa864]
+  - @tallyui/core@3.19.0
+
 ## 3.18.0
 
 ### Minor Changes

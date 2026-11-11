@@ -1,5 +1,62 @@
 # @tallyui/components
 
+## 3.19.0
+
+### Minor Changes
+
+- d6c93e9: A camera barcode scanner (#720, v2's scan button and inline camera panel). `Catalogue` takes `cameraScan` (default false) and `cameraScanner`; with both it puts a `CameraScanButton` beside the search box that opens a `CameraScannerPanel`. The panel calls no pos hook: the app owns `useCameraScan` (inside its `ScanHubProvider`) and passes `{ onDetected: camera.offer, onOpen: camera.reset, scanCount: camera.scanCount }`, so accepted decodes go to the scan hub as `{ source: { kind: 'camera' } }` and the app's `useBarcodeScanner` receives them like device scans. The panel shows v2's status copy, a permission card for native apps, a flash on each `scanCount` change, and a resize handle with increment and decrement actions and a web pointer drag, reporting the height through `onHeightChange`. On the web, `ScannerViewfinder` streams `getUserMedia` into a `<video>` and decodes with the `BarcodeDetector` global when present, or with an injected `decoder` of the same `detect` shape; native apps pass their own `viewfinder`. `@tallyui/pos` adds `useCameraScan` (returning `CameraScan`: `offer`, `reset`, `scanCount`), the pure `startDecodeLoop`, `nativeBarcodeDetector`, `cameraErrorStatus`, `detectorFormatToSymbology` and their constants, and `createScanSession` takes `continuous`, under which a refused repeat restarts its cooldown, so an item resting in view is scanned once.
+- 44e9e5f: `Cart` takes `columns`, v2's Cart Settings › Columns (#695): each of Qty, Image, Item, SKU, Price and Total has a `show` switch, `quantity.split` adds a Split link under a quantity above 1, and `name.sku` puts the SKU under the name. The defaults keep today's cart (Qty, Item, Price folding as before, Total). `CartColumnHeads` and `CartLine` take the same `columns`, and `CartLine` takes `sku`, `imageUrl` and `onSplit`; `cartColumnIds` gives the visible columns. `OrderBuilder.splitLine` and `useSale().splitLine` turn a line of quantity N into N lines of 1, refusing a line with a fixed discount (`SPLIT_FIXED_DISCOUNT`). `cartColumnIds` and `CartColumnSettings` are exported from the `@tallyui/components` root.
+- 44faba9: An empty `Cart` now shows v2's empty state: a centred cart icon over one line, and no column heads, totals, Cash and Card terminal row or Checkout foot. A sale error on an empty cart shows under the line. The default line changed from "Scan or tap a product to start a sale." to v2's "Tap a product to start a sale"; `emptyText` and `emptyIcon` (`null` for none) replace them. A cart with only a fee or shipping row keeps its heads and foot and shows no empty line. Adds `ShoppingCartIcon`.
+- 259398e: In `lineEditor="popover"` mode the cart line is one row with Discount, Price and Remove in its popovers, and the price popover shows the regular price struck through; `LinePopover` takes `actions` and `regularValue`.
+- d6d37ba: ChargeForm takes `kind` to open on one kind without the kind row, for apps that host WCPOS v2's cart "+" menu.
+- f256a99: Add `Calendar` (single and range modes, `min`/`max`, a week start; a plain month grid with no new dependency) and the pure month helpers it uses, and `DateRangeMenu`, the Reports period menu with the date presets beside the calendar (WCPOS v2's date button). The Sales room's period control is now that menu, so a custom range can be picked; `SalesFiltersBar` takes an optional `earliestDay`. `SalesFilters.preset` widens from `DatePreset` to `DatePreset | 'custom'`, so code that reads it must handle `'custom'`. The separate `sales-filter-dates` text is gone: the menu's trigger shows the dates.
+- 062e6a2: The second-device customer display's two screens (ADR-085 U5, #684). `CustomerDisplaySettings` is the till's Settings › Customer display: it takes `useTillPairing(pairing)` and `useTillDisplays(service)` and lists the paired displays with their state (Connected, Connecting…, Waiting for the display, Offline), forgets one after an `AlertDialog` confirm, mints a code with its expiry, and shows each "wants to pair" claim with its check code and Confirm and Decline (#705). Every pairing and forget refusal, and the offline and paused statuses, show a line. `CustomerDisplayPairing` is the display device's screen: it takes `useDisplayClient(client)`, enters the code and the display's name, shows the check code while the cashier confirms, then shows the sale through `CustomerDisplayScreen` with a small Offline notice when the store can't be reached. A forgotten display goes back to enter-code with its message.
+- 61c02b9: Add `OrderFilterBar`, WCPOS v2's row of order filter pills (Status, Payment Method, Customer, Cashier, Store / Created via, Register, Date range) with Clear all. It is presentational: the app passes the value, the connector's `orderFilters` and every option list, and a pill shows only when its field is supported. pos adds `OrderFilterValue` and `orderFiltersQuery(value, timezone)`, which turns the bar's value into `ListOrdersQuery` filter fields, with the store-day range as UTC instants (`before` exclusive).
+- e2be8d1: `RegisterPanel` takes `presentation="side"`, WCPOS v2's right-hand register sheet (#716): a header with the store, "open since", the session's age and the opener; the cash expected in large type "in the drawer"; Session sales with the sales count; the Paid in, Paid out and No sale tiles; the drawer ledger (Float, Cash sales, Cash refunds, Paid in, Paid out and No sale, each with its count, then Expected in the drawer); Other tenders; and a footer with Print X-report and Close register. Blind counting hides every figure. The new `storeName`, `onPrintXReport` and `now` props serve the side sheet; the default `presentation="dialog"` is unchanged. `DialogContent` takes `side="right"`. `deriveDrawerTerms` gives `deriveExpected`'s figures term by term with row counts and session sales, and `useRegisterSession` returns them as `terms`.
+- 1c44032: `SelectTrigger` now draws a down chevron at its right by default, the v2 way (#717). An app that passes its own chevron as a child must either remove it or pass `chevron={false}`, or it will show two. `Avatar` takes `tone` (`'muted'`, the default and today's look, or `'primary'`, v2's light initials on a solid primary circle) (#718). `CustomerSelect` takes `showAvatar` (off by default) to draw an initials avatar before each row and the selected summary, and `avatarTone` (default `'primary'`) (#714). Adds `ChevronDownIcon` and `avatarInitials`.
+- 23ee429: The sale shows how its tax was worked out. `@tallyui/pos` adds `taxDerivation(settings, location)`, a pure function that explains the sale's tax rates: the "tax based on" setting, the address it used (and any fallback, such as shipping to billing), and each tax class with its effective rate (compound rates included) and the rates that matched, with the reason for each match (postcode, city, state, country or anywhere). When nothing matches, it says why: the order has no address, or the store has no rate for this country or address. `SaleTaxLocation` types the sale's `taxLocation`.
+
+  `@tallyui/components` adds `TaxBasedOn`, the "Tax based on" trigger and popover that shows that derivation in three steps (setting, address, rates), with optional "Change in Settings › Tax" and "View all tax rates" links. It also adds `TaxCalculationSettings`, the Settings › Tax "Calculation" group with a "Calculate tax based on" select and read-only rows for prices entered with tax, the shipping tax class and rounding at subtotal, which are set in WooCommerce.
+
+- 4fef712: `Catalogue` takes `variationsStyle`, v2's Product settings › Variations (#719). The default `'list'` keeps the variant list chooser; `'popover'` opens a grid tile's popover for a product with option groups, where the cashier picks one value per group (values no variant allows are dimmed), sees the matched variant's stock, and presses "Add to Cart: {price}". A full match never adds on its own, and the popover closes after Add. A product without option groups, and the table view, keep the list chooser. Adds `VariationPicker` to `@tallyui/components`, and `variantFits`, `matchVariant`, `disabledOptions` and `OptionPicks` to `@tallyui/pos`.
+
+### Patch Changes
+
+- 9dda986: `CartNoteInput` now calls the sale note "Customer note", since WooCommerce sends it as `customer_note` and it prints on the customer's emails and receipts. The default link reads "Add customer note" (was "Add note") and the default placeholder is "Customer note" (was "Order note..."). A new `label` prop names the note for the link, the placeholder and the input's accessibility label. Apps passing their own `placeholder` keep it. Orders now labels the note "Customer note: …" (was "Note: …"), and the line under a note the store could not take reads "The customer note couldn't be sent to the store." on the receipt and in Orders.
+- Updated dependencies [d6c93e9]
+- Updated dependencies [44e9e5f]
+- Updated dependencies [a3387fc]
+- Updated dependencies [fab0922]
+- Updated dependencies [1af7329]
+- Updated dependencies [b05db01]
+- Updated dependencies [6a4529b]
+- Updated dependencies [61c02b9]
+- Updated dependencies [a15835f]
+- Updated dependencies [94040f9]
+- Updated dependencies [f819768]
+- Updated dependencies [e2be8d1]
+- Updated dependencies [edeadc3]
+- Updated dependencies [8352f75]
+- Updated dependencies [5afa4d2]
+- Updated dependencies [d3495c4]
+- Updated dependencies [5cd2720]
+- Updated dependencies [1ce3343]
+- Updated dependencies [fa69171]
+- Updated dependencies [2e691f2]
+- Updated dependencies [73caa25]
+- Updated dependencies [3a6eb07]
+- Updated dependencies [23ee429]
+- Updated dependencies [41aa864]
+- Updated dependencies [b3924e8]
+- Updated dependencies [b0901ea]
+- Updated dependencies [4fef712]
+- Updated dependencies [375a8ce]
+- Updated dependencies [152277c]
+  - @tallyui/pos@3.19.0
+  - @tallyui/core@3.19.0
+  - @tallyui/primitives@3.19.0
+  - @tallyui/theme@3.19.0
+
 ## 3.18.0
 
 ### Patch Changes
