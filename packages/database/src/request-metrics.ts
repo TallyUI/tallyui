@@ -83,7 +83,7 @@ export function createRequestMetrics(options: { now?: () => number } = {}): Requ
       // Guard against a malformed byte count leaking in from any caller: a single NaN or negative value would
       // otherwise corrupt this bucket's running total.
       if (Number.isFinite(bytes) && bytes >= 0) bucket.bytes += bytes;
-      bucket.durationTotalMs += durationMs;
+      bucket.durationTotalMs += Math.max(0, durationMs); // A clock that stepped back must not make the hour unwritable.
       bucket.durationCount += 1;
       if (failed) bucket.errors += 1;
       commit();

@@ -109,6 +109,12 @@ describe('request metrics buckets', () => {
     expect(metrics.buckets()).toEqual([bucketAt(HOUR_MS, { requests: 2, durationTotalMs: 10, durationCount: 2 })]);
   });
 
+  it('counts a request with a negative duration but adds no duration', () => {
+    const metrics = createRequestMetrics();
+    metrics.record({ atMs: HOUR_MS, durationMs: -50, bytes: 0, failed: false });
+    expect(metrics.buckets()).toEqual([bucketAt(HOUR_MS, { requests: 1, durationCount: 1 })]);
+  });
+
   it('ignores a non-finite server load without emitting', () => {
     const metrics = createRequestMetrics({ now: () => HOUR_MS });
     const emissions = track(metrics);

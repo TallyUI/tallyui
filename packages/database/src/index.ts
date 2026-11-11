@@ -47,3 +47,8 @@ export {
   REQUEST_METRICS_HOUR_MS, REQUEST_METRICS_MAX_BUCKETS, createRequestMetrics, isRequestMetricsBucket, meteredFetch,
 } from './request-metrics';
 export type { RequestMetricsBucket, RequestAttempt, RequestMetrics, MeteredFetchOptions } from './request-metrics';
+export {
+  REQUEST_METRICS_COLLECTION, REQUEST_METRICS_PERSIST_INTERVAL_MS, requestMetricsSchema, requestMetricsCollection,
+  addRequestMetricsCollection, persistRequestMetrics,
+} from './request-metrics-store';
+export type { RequestMetricsDoc, RequestMetricsCollection, RequestMetricsPersistence } from './request-metrics-store';
