@@ -28,8 +28,9 @@
 //   report capabilities navigable, but hides blind amounts (%j)'.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { ApprovalNeeded } from '@tallyui/pos';
+import type { ApprovalNeeded, RegisterSession } from '@tallyui/pos';
 import { RegisterPanel, type RegisterPanelProps } from '../register/register-panel';
+import { describeSession } from '../register/register-side-sheet';
 import { createRegisterDb, RegisterHarness, seedMovement, seedSession, type RegisterDb } from './register-harness';
 
 // react-native-web turns nativewind classes into generated ones, so the sheet's placement is read
@@ -487,6 +488,25 @@ it('side: the header line holds the store, open since, the age and the opener', 
   await renderSide({ storeName: 'Main Street', now: () => new Date(opened.getTime() + 75 * 60_000) });
   expect(screen.getByTestId('register-panel-title').textContent).toBe('Front');
   expect(screen.getByTestId('register-panel-description').textContent).toBe(`Main Street · open since ${time} · 1 h 15 m · Cashier`);
+});
+
+// `describeSession` alone: the age at the hour boundary, and a closed session's age to its close.
+// Times are local wall-clock values, as the header shows them.
+const at = (hours: number, minutes: number) => new Date(2026, 9, 20, hours, minutes);
+const headerSession = (fields: Partial<RegisterSession>) =>
+  ({ status: 'open', opened_at_gmt: at(9, 0).toISOString(), ...fields }) as RegisterSession;
+
+it('side: an open session exactly 60 minutes old reads 1 h 0 m', () => {
+  expect(describeSession(headerSession({}), undefined, at(10, 0))).toBe('open since 09:00 · 1 h 0 m · Cashier');
+});
+
+it('side: an open session 59 minutes old reads 59 m', () => {
+  expect(describeSession(headerSession({}), undefined, at(9, 59))).toBe('open since 09:00 · 59 m · Cashier');
+});
+
+it('side: a closed session reads its close time and its age to the close, not to now', () => {
+  const closed = headerSession({ status: 'closed', closed_at_gmt: at(10, 30).toISOString() });
+  expect(describeSession(closed, undefined, at(15, 0))).toBe('closed 10:30 · 1 h 30 m · Cashier');
 });
 
 it('side: renders a right-hand sheet, its footer outside the scrolling body', async () => {
