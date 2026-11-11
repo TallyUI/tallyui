@@ -44,6 +44,7 @@ export type {
   PaymentMethodDescriptor, PaymentKind, CaptureMode, CaptureModeEntry, PaymentHardware, PaymentTransport,
   PaymentOfflineMode, PaymentTipsMode, PaymentRounding,
 } from './types/payment-methods';
+export type { ReceiptTemplate, ReceiptTemplateKind } from './types/receipt-templates';
 export type {
   StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, ListOrdersQuery, StoreOrderPage,
 } from './types/orders';
