@@ -31,3 +31,13 @@ export { startFingerprintReconcile, isFingerprintResultCurrent } from './fingerp
 export type { StartFingerprintReconcileOptions, FingerprintReconcileResult, FingerprintReconcileState } from './fingerprint-reconcile';
 export { STOCK_LEVELS_COLLECTION, STOCK_LEVELS_LAST_PASS, stockLevelsCollection, stockLevelsSchema } from './stock-levels';
 export type { StockLevelRow } from './stock-levels';
+export {
+  SYNC_CADENCE_PRESETS, DEFAULT_SYNC_CADENCE_PRESET, SYNC_CADENCE_LIMITS, isSyncCadencePreset, clampSyncCadence,
+  syncCadencePresetFor, syncCadencePresetBudget, requestsPerHour,
+} from './sync-cadence';
+export type { SyncCadence, SyncCadencePreset, SyncCadenceChoice } from './sync-cadence';
+export {
+  SYNC_CADENCE_COLLECTION, SYNC_CADENCE_DOC_ID, syncCadenceSchema, syncCadenceCollection, addSyncCadenceCollection,
+  readSyncCadence, syncCadence$, setSyncCadence, resetSyncCadence,
+} from './sync-cadence-store';
+export type { SyncCadenceDoc, SyncCadenceCollection, SyncCadenceProfile } from './sync-cadence-store';
