@@ -32,6 +32,8 @@ export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before 
  */
 export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the payment or void the paid legs first.';
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
+/** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
+export const COUPONS_REPRICING = 'Coupon prices are being checked; try again in a moment';
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
 const REFERENCE_DROPPED = "The terminal's payment reference couldn't be kept";
 /**
@@ -152,10 +154,57 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   stageNow.current = stage;
   /** True, with SALE_SAVING shown, from complete()'s entry (inFlight) through a pending retry: the sale can't change. */
   function locked() {
-    const active = !!(inFlight.current || pending.current);
+    const active = busy();
     if (active) setError(SALE_SAVING);
     return active;
   }
+  /** locked() without its error. */
+  function busy() { return !!(inFlight.current || pending.current); }
+  // TallyUI#710: the coupon re-price in flight (at most one), the count of coupon changes that discards its result,
+  // and the order snapshot a transient refusal or a throw stopped it on, with that reason.
+  const repricing = useRef<Promise<string | null> | null>(null);
+  const [couponsRepricing, setCouponsRepricing] = useState(false);
+  const generation = useRef(0);
+  const stopped = useRef<{ order: Order; reason: string } | null>(null);
+  /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
+  function reprice(): Promise<string | null> {
+    if (repricing.current) return repricing.current;
+    const b = builderNow.current, codes = appliedWith.current!, at = generation.current;
+    let asked = b.getSnapshot();
+    // A transient refusal or a throw stops the re-price, changing nothing; the effect skips the snapshot it stopped on.
+    const stop = (reason: string) => {
+      stopped.current = { order: asked, reason };
+      if (builderNow.current === b && generation.current === at) setError(reason);
+      return reason;
+    };
+    const run = (async () => {
+      try {
+        const kept = new Map<string, unknown>(), messages: string[] = [];
+        for (const code of [...applied.current.keys()]) {
+          asked = b.getSnapshot();
+          const result = await codes.find(code, discountState(asked, kept));
+          if ('refusal' in result && result.transient) return stop(result.refusal);
+          const reason = 'refusal' in result ? result.refusal : codes.check(code, result.found, discountState(b.getSnapshot(), kept));
+          if (reason === null) kept.set(code, (result as { found: unknown }).found);
+          else messages.push(`Coupon ${code} was removed: ${reason}.`);
+        }
+        if (builderNow.current !== b || generation.current !== at) return null;
+        asked = b.getSnapshot();
+        codes.apply(b, discountState(asked, kept));
+        applied.current = kept;
+        if (!kept.size) appliedWith.current = null;
+        const message = messages.length ? messages.join(' ') : null;
+        // A refusal only a re-price could have set goes once the codes are priced.
+        setError((current) => message ?? (current === COUPONS_REPRICING || current === stopped.current?.reason ? null : current));
+        return message;
+      } catch (error) { return stop(error instanceof Error ? error.message : String(error)); }
+    })().finally(() => { repricing.current = null; setCouponsRepricing(false); });
+    repricing.current = run;
+    setCouponsRepricing(true);
+    return run;
+  }
+  /** startTender's and complete()'s check: the live order's coupon prices are stale or being priced again. */
+  function couponsUnpriced() { return !!(builderNow.current.getSnapshot().couponPricesStale || repricing.current); }
   // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale()`, on the default customer.
   function resetSale(customer: CustomerSummary | null = defaulted(), restored?: OrderBuilder) {
     if (inFlight.current && !pending.current) return setError(SALE_SAVING);
@@ -174,6 +223,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     builderNow.current = next;
     applied.current.clear();
     appliedWith.current = null;
+    generation.current++;
     setBuilder(next);
     setOrder(next.getSnapshot());
     // Live at once, so a resume() in the same tick (switchSale) sees the cart before the next render.
@@ -185,6 +235,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const subscription = rendered.order$.subscribe(setOrder);
     return () => subscription.unsubscribe();
   }, [rendered]);
+  // TallyUI#710: a rendered order whose store-priced coupons went stale prices them again, one re-price at a time. Checked
+  // on every render, so it runs again when one ends (the sale may have changed meanwhile), never on a snapshot one stopped on.
+  useEffect(() => {
+    if (order.couponPricesStale && appliedWith.current && applied.current.size > 0 && !repricing.current
+      && stageNow.current.kind !== 'receipt' && !busy() && stopped.current?.order !== order) void reprice();
+  });
   // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
   // a sale in progress (lines, tender or receipt) finishes on the settings it started with (a money rule).
   const idle = stage.kind === 'cart' && !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
@@ -437,6 +493,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       catch (error) { if (error instanceof Error) return error.message; throw error; }
       applied.current.set(normalized, result.found);
       appliedWith.current = codes;
+      generation.current++;
       setError(null);
       return null;
     },
@@ -448,7 +505,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const remaining = new Map(applied.current); remaining.delete(normalized);
       appliedWith.current!.apply(builderNow.current, discountState(builderNow.current.getSnapshot(), remaining));
       applied.current.delete(normalized);
+      generation.current++;
       return null;
+    },
+    /** TallyUI#710: true while the sale prices its store-priced coupons again; tender is refused with COUPONS_REPRICING meanwhile. */
+    couponsRepricing,
+    /** Prices the sale's coupons again now, as Retry after a transient refusal; resolves to the refusal or error it set, or null. */
+    async repriceCoupons(): Promise<string | null> {
+      if (locked()) return SALE_SAVING;
+      if (!appliedWith.current || !applied.current.size || stageNow.current.kind === 'receipt') return null;
+      return reprice();
     },
     /** The sale's note, kept on the open sale (parked and resumed with it, cleared by newSale) and sent as order.create v7's note (ADR-083). */
     setNote(note: string) { if (!locked()) builderNow.current.setNote(note); },
@@ -470,6 +536,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (locked()) return;
       const current = builderNow.current.getSnapshot();
       if (!current.lineItems.length) return;
+      if (couponsUnpriced()) return setError(COUPONS_REPRICING);
       tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
       setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
       setStage({ kind: 'tender', method });
@@ -539,6 +606,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       setSaving(true);
       const snapshot = builderNow.current.getSnapshot();
       if (snapshot.payments.some(isInMotion)) { setSaving(false); setError(PAYMENT_IN_MOTION); return; }
+      if (couponsUnpriced()) { setSaving(false); setError(COUPONS_REPRICING); return; }
       // Failed and voided legs stay on the screen's ledger but are never sent: only captured money is the sale's.
       const current = { ...snapshot, payments: snapshot.payments.filter(countsTowardPaid) };
       const localWarnings = current.payments.filter((payment) => droppedReferences.current.has(payment.id))
@@ -662,6 +730,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (builderNow.current === builder) {
         applied.current = kept;
         appliedWith.current = kept.size ? codes : null;
+        generation.current++;
       }
       if (messages.length) setError(messages.join(' '));
       return null;

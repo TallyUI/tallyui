@@ -3,6 +3,8 @@ import type { Order, OrderBuilder } from '../order';
 
 /** applyCoupon's refusal when the store cannot take coupons (ADR-077 R2, R3). */
 export const COUPONS_UNSUPPORTED = "This store's plugin does not support coupons yet";
+/** A store-priced code's transient refusal (TallyUI#710): the store could not be asked, so the code was neither priced nor refused. */
+export const COUPONS_NEED_CONNECTION = 'Coupons need a connection to the store';
 
 /** What a platform's discount codes see of the sale (ADR-077 amendment 3). */
 export interface SaleDiscountState<Accepted> {
@@ -23,8 +25,11 @@ export interface SaleDiscountState<Accepted> {
 export interface SaleDiscountCodes<Accepted = unknown> {
   /** Whether this store can take codes in this tax context; `useSale` also requires `capabilities.coupons` and `orderCreate >= 6`. */
   supports(store: { capabilities?: ServerCapabilities; rounding?: TaxRounding }): boolean;
-  /** Looks up a trimmed, lower-case code: what was found, or the refusal to show. */
-  find(code: string, sale: SaleDiscountState<Accepted>): Promise<{ found: Accepted } | { refusal: string }>;
+  /**
+   * Looks up a trimmed, lower-case code: what was found, or the refusal to show. `transient: true` means the store
+   * could not be asked (no connection, say), not that it refused the code; the WooCommerce codes never set it.
+   */
+  find(code: string, sale: SaleDiscountState<Accepted>): Promise<{ found: Accepted } | { refusal: string; transient?: true }>;
   /** Checks a found code against the sale; the refusal to show, or null when it may be applied. */
   check(code: string, found: Accepted, sale: SaleDiscountState<Accepted>): string | null;
   /** Puts `sale.accepted`'s codes, in order, on the builder; throws an Error whose message is the refusal. */
