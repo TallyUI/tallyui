@@ -1,5 +1,11 @@
 # @tallyui/core
 
+## 3.18.0
+
+### Minor Changes
+
+- 455c39f: `StoreSettings` gains an optional `allTaxRates`: every tax rate the store defines, with where it applies, for an app's "View all tax rates" table (`StoreTaxRate`, `StoreTaxRateLocation`). The WooCommerce connector fills it from the `/taxes` rates it already reads; the filtered `taxRates` and `taxRatesPpm` the cart uses are unchanged (#669).
+
 ## 3.17.0
 
 ## 3.16.0
