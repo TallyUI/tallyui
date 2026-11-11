@@ -11,3 +11,6 @@ export type { DisplayTransport, BroadcastChannelLike } from './transport';
 export { createDisplayLink } from './display-link';
 export type { DisplayLink, DisplayClock } from './display-link';
 export { useCustomerDisplay, DISPLAY_TEMPLATE, HELLO_RETRY_MS } from './use-customer-display';
+export { createSaleDisplayPublisher, derivePaymentEvent } from './sale-display';
+export type { SaleDisplayOptions, SaleDisplayInput, SaleDisplayPublisher } from './sale-display';
+export { useSaleDisplay } from './use-sale-display';
