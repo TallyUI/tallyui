@@ -49,6 +49,13 @@ export default defineConfig({
       use: { ...devices['Desktop Safari'], baseURL: `http://localhost:${ports.sqlite}` },
       dependencies: ['server-identity'],
     },
+    // The customer display's WebRTC transport (ADR-085 U3): its spec bundles and routes its own page, so no server.
+    {
+      name: 'webrtc',
+      testDir: './e2e/webrtc',
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['server-identity'],
+    },
   ],
 
   webServer: [

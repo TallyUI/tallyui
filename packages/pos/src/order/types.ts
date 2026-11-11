@@ -1,4 +1,4 @@
-import type { Money, TaxRounding } from '@tallyui/core';
+import type { CustomerAddress, Money, TaxRounding } from '@tallyui/core';
 import type { PaymentLegStatus } from '../tender/payment-legs';
 
 export interface OrderCoupon {
@@ -152,6 +152,9 @@ export interface CustomerSummary {
   id: string;
   name: string;
   email?: string;
+  /** A picked customer's addresses (a `Customer` carries them): kept on the open sale for its tax location (#722), never sent. */
+  billing?: CustomerAddress;
+  shipping?: CustomerAddress;
 }
 
 export interface PaymentMethod {

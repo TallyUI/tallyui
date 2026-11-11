@@ -60,4 +60,28 @@ describe('scan session', () => {
     time += 1;
     expect(custom.offer('ABC')).toEqual({ accepted: true });
   });
+
+  it('restarts the cooldown on each refused repeat in continuous mode', () => {
+    let time = 0;
+    const onAccept = vi.fn();
+    const session = createScanSession({ onAccept, continuous: true, now: () => time });
+    expect(session.offer('ABC')).toEqual({ accepted: true });
+    time = 1000;
+    expect(session.offer('ABC')).toEqual({ accepted: false, reason: 'cooldown' });
+    time = 2100;
+    expect(session.offer('ABC')).toEqual({ accepted: false, reason: 'cooldown' });
+    time = 3400;
+    expect(session.offer('ABC')).toEqual({ accepted: true });
+    expect(onAccept).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the cooldown from the accepted read when not continuous', () => {
+    let time = 0;
+    const session = createScanSession({ onAccept: vi.fn(), now: () => time });
+    expect(session.offer('ABC')).toEqual({ accepted: true });
+    time = 1000;
+    expect(session.offer('ABC')).toEqual({ accepted: false, reason: 'cooldown' });
+    time = 1300;
+    expect(session.offer('ABC')).toEqual({ accepted: true });
+  });
 });

@@ -14,3 +14,12 @@ export { useCustomerDisplay, DISPLAY_TEMPLATE, HELLO_RETRY_MS } from './use-cust
 export { createSaleDisplayPublisher, derivePaymentEvent } from './sale-display';
 export type { SaleDisplayOptions, SaleDisplayInput, SaleDisplayPublisher } from './sale-display';
 export { useSaleDisplay } from './use-sale-display';
+export { createTillPeerLink, createDisplayPeerLink } from './webrtc';
+export type {
+  SignalPort, PeerLink, PeerLinkState, PeerLinkOptions, PeerFactory, RTCPeerConnectionLike, RTCDataChannelLike,
+  SessionDescriptionLike,
+} from './webrtc';
+export { createSnapshotSender, SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS, SNAPSHOT_LIFETIME_MS } from './snapshot-fallback';
+export type { SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './snapshot-fallback';
+export { createTillDisplayService, SIGNAL_POLL_MS, LIST_POLL_MS, CONNECT_TIMEOUT_MS } from './till-display-service';
+export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayEntry, ServiceClock } from './till-display-service';
