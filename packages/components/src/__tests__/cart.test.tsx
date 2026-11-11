@@ -256,6 +256,7 @@ describe('Cart', () => {
 
   it('shows the column heads', () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
     expect(screen.getAllByRole('columnheader').map((head) => head.textContent)).toEqual(['Qty', 'Item', 'Price', 'Total']);
   });
 
@@ -337,18 +338,19 @@ describe('Cart', () => {
     expect(screen.queryByRole('button', { name: chip })).toBeNull();
   });
 
-  it('pads the empty-cart line like the cart rows (px-3 py-2)', () => {
+  it("centres the empty cart's icon and line in the cart, as v2 does", () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
-    expect(screen.getByTestId('cart-empty').textContent).toBe('Scan or tap a product to start a sale.');
+    expect(screen.getByTestId('cart-empty-text').textContent).toBe('Tap a product to start a sale');
     const here = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(here, '../sale/cart.tsx'), 'utf8');
-    expect(source).toContain('testID="cart-empty" className="px-3 py-2 text-muted-foreground"');
+    expect(source).toContain('testID="cart-empty" className="flex-1 items-center justify-center gap-3 px-3 py-6"');
+    expect(source).toContain('testID="cart-empty-text" className="text-center text-muted-foreground"');
   });
 
-  it('disables Cash and Card terminal on an empty cart, and enables them once it has lines', () => {
+  it('has no Cash or Card terminal on an empty cart, and enabled ones once it has lines', () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
-    expect(screen.getByRole('button', { name: 'Cash' }).getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Card terminal' }).getAttribute('aria-disabled')).toBe('true');
+    expect(screen.queryByRole('button', { name: 'Cash' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Card terminal' })).toBeNull();
     act(() => sale.add(blue, traits));
     expect(screen.getByRole('button', { name: 'Cash' }).getAttribute('aria-disabled')).not.toBe('true');
     expect(screen.getByRole('button', { name: 'Card terminal' }).getAttribute('aria-disabled')).not.toBe('true');
@@ -492,5 +494,86 @@ describe('Cart checkout', () => {
     click('Increase Shirt');
     expect(sale.order.totalMinor).not.toBe(one);
     expect(checkoutButton().textContent).toBe(`Checkout ${money(sale.order.totalMinor)}`);
+  });
+});
+
+describe('Cart empty state (v2)', () => {
+  const heads = () => screen.queryAllByRole('columnheader');
+  const expectFull = () => {
+    expect(heads().map((head) => head.textContent)).toEqual(['Qty', 'Item', 'Price', 'Total']);
+    expect(within(screen.getByTestId('cart-footer')).getByText('Subtotal')).toBeTruthy();
+    expect(within(screen.getByTestId('cart-footer')).getByText('Total')).toBeTruthy();
+    expect(screen.queryByTestId('cart-empty')).toBeNull();
+  };
+
+  it('shows an icon and the default line, and no heads, totals, Cash, Card terminal or Checkout', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    const empty = screen.getByTestId('cart-empty');
+    expect(within(empty).getByTestId('cart-empty-text').textContent).toBe('Tap a product to start a sale');
+    const svg = empty.querySelector('svg');
+    expect(svg?.getAttribute('width')).toBe('48');
+    expect(svg?.closest('[aria-hidden="true"]')).toBeTruthy();
+    expect(heads()).toEqual([]);
+    expect(screen.queryByTestId('cart-footer')).toBeNull();
+    expect(screen.queryByText('Subtotal')).toBeNull();
+    expect(screen.queryByText('Total')).toBeNull();
+    for (const name of ['Cash', 'Card terminal']) expect(screen.queryByRole('button', { name })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Checkout/ })).toBeNull();
+  });
+
+  it('shows no Checkout on an empty cart, and the heads, totals and an enabled Checkout once it has a line', () => {
+    const onCheckout = vi.fn();
+    render(<SaleHarness>{(sale) => <Cart sale={sale} checkout={{ onCheckout }} />}</SaleHarness>);
+    expect(screen.queryByRole('button', { name: /^Checkout/ })).toBeNull();
+    act(() => sale.add(blue, traits));
+    expectFull();
+    const checkout = screen.getByRole('button', { name: /^Checkout / });
+    expect(checkout.getAttribute('aria-disabled')).not.toBe('true');
+    fireEvent.click(checkout);
+    expect(onCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes emptyText and emptyIcon in place of the defaults, and null for no icon', () => {
+    const { rerender } = render(<SaleHarness>{(sale) => <Cart sale={sale} emptyText="Scan to begin"
+      emptyIcon={<Text testID="my-icon">*</Text>} />}</SaleHarness>);
+    const empty = () => screen.getByTestId('cart-empty');
+    expect(within(empty()).getByTestId('cart-empty-text').textContent).toBe('Scan to begin');
+    expect(within(empty()).getByTestId('my-icon')).toBeTruthy();
+    expect(empty().querySelector('svg')).toBeNull();
+    rerender(<SaleHarness>{(sale) => <Cart sale={sale} emptyIcon={null} />}</SaleHarness>);
+    expect(within(empty()).getByTestId('cart-empty-text').textContent).toBe('Tap a product to start a sale');
+    expect(empty().querySelector('svg')).toBeNull();
+    expect(empty().children).toHaveLength(1);
+  });
+
+  it('shows a sale error on an empty cart as an alert', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    // A variant id finalize refuses: the add is refused and the cart stays empty.
+    act(() => { sale.add({ ...blue, variant: { ...blue.variant, id: 'v'.repeat(256) } }, traits); });
+    expect(sale.order.lineItems).toEqual([]);
+    expect(sale.error).toMatch(/too long/);
+    expect(within(screen.getByTestId('cart-empty')).getByRole('alert').textContent).toBe(sale.error);
+  });
+
+  it.each(['Fee', 'Shipping'])('keeps the heads and totals, and no empty line, for a cart with only a %s row', (kind) => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    click('Add charge');
+    click(kind);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Extra' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '1' } });
+    click('Apply');
+    expect(sale.order.lineItems).toEqual([]);
+    expectFull();
+    expect(screen.queryByText('Tap a product to start a sale')).toBeNull();
+  });
+
+  it('returns to the empty state when the last line is removed', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expectFull();
+    click('Remove Shirt');
+    expect(screen.getByTestId('cart-empty')).toBeTruthy();
+    expect(heads()).toEqual([]);
+    expect(screen.queryByTestId('cart-footer')).toBeNull();
   });
 });

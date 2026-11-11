@@ -9,9 +9,11 @@ import { DiscountChips, DiscountForm } from './discount-form';
 import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
 import { LinePopover } from './line-popover';
+import { ShoppingCartIcon } from '../ui';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor, orderActions = true, checkout, lineEditor = 'inline' }:
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor, orderActions = true, checkout, lineEditor = 'inline',
+  emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
     /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
@@ -37,8 +39,15 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
      * price popover. Default `inline`: the − / + buttons and Price form. */
     lineEditor?: 'inline' | 'popover';
+    /** The empty cart's icon, centred above `emptyText` and hidden from screen readers. Default: v2's cart icon in the
+     * muted colour. Pass `null` for no icon. */
+    emptyIcon?: ReactNode;
+    /** The empty cart's line. Default: v2's "Tap a product to start a sale". */
+    emptyText?: string;
   }) {
   const { order } = sale;
+  // v2's empty cart: an icon and a line, no heads and no foot. A fee or shipping row alone keeps the cart.
+  const empty = !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
   const money = (amount: number) => ({ amount, currency: order.currency });
   // order.display's figures (TallyUI ADR-063), with its tax split by rate; never app arithmetic (medusapos ADR 0008).
   const { totals } = buildReceiptData(order, { storeName: '' });
@@ -103,9 +112,15 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       onApply={(amount, reason) => applyPrice(line, amount, reason)} /> : null}
   </>;
   return <View dataSet={{ print: 'hide' }} className="flex-1 min-h-0" onLayout={(event) => setCartWidth(event.nativeEvent.layout.width)}>
-    <CartColumnHeads showPrice={showPrice} />
+    {empty ? null : <CartColumnHeads showPrice={showPrice} />}
     <CartPanel items={order.lineItems} renderItem={renderItem}
-    emptyState={<Text testID="cart-empty" className="px-3 py-2 text-muted-foreground">Scan or tap a product to start a sale.</Text>}
+    emptyState={empty ? <View testID="cart-empty" className="flex-1 items-center justify-center gap-3 px-3 py-6">
+      {emptyIcon === null ? null : <View aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+        className="text-muted-foreground">{emptyIcon}</View>}
+      <Text testID="cart-empty-text" className="text-center text-muted-foreground">{emptyText}</Text>
+      {/* The footer is gone, so a resume or coupon message on an empty cart shows here. */}
+      {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
+    </View> : undefined}
     afterItems={<>
       {(['fees', 'shipping'] as const).map((kind) => order[kind]?.map((charge, index) =>
         <View key={charge.id} testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`} className="flex-row items-center gap-3 px-3 py-2">
@@ -135,7 +150,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         className="self-start rounded-md border border-border bg-card px-4 py-2 min-h-11 justify-center">
         <Text className="text-foreground">Add charge</Text></Pressable> : null}
     </View> : null}</>}
-    footer={<View testID="cart-footer" className="gap-3 pb-4">
+    footer={empty ? undefined : <View testID="cart-footer" className="gap-3 pb-4">
       {/* Exclusive: subtotal − discount + tax = total. Inclusive: subtotal − discount = total, the tax "incl.", not added. */}
       <CartTotal subtotal={money(totals.subtotalMinor)} total={money(totals.totalMinor)}
         discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
