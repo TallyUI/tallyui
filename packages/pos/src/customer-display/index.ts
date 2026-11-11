@@ -14,3 +14,8 @@ export { useCustomerDisplay, DISPLAY_TEMPLATE, HELLO_RETRY_MS } from './use-cust
 export { createSaleDisplayPublisher, derivePaymentEvent } from './sale-display';
 export type { SaleDisplayOptions, SaleDisplayInput, SaleDisplayPublisher } from './sale-display';
 export { useSaleDisplay } from './use-sale-display';
+export { createTillPeerLink, createDisplayPeerLink } from './webrtc';
+export type {
+  SignalPort, PeerLink, PeerLinkState, PeerLinkOptions, PeerFactory, RTCPeerConnectionLike, RTCDataChannelLike,
+  SessionDescriptionLike,
+} from './webrtc';
