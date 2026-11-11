@@ -2097,3 +2097,63 @@ describe('a tender change clears the stale sale error (#650)', () => {
     expect(result.current.order.payments).toEqual(before);
   });
 });
+
+describe('add() returns the line or the refusal (#662)', () => {
+  function added(result: { current: ReturnType<typeof useSale> }, entry: (typeof entries)[number]) {
+    let returned: unknown;
+    act(() => { returned = result.current.add(entry, traits); });
+    return returned;
+  }
+
+  it('returns the new line, and the same line again when a repeat add bumps its quantity', () => {
+    const { result } = renderSale(pricing);
+    const first = added(result, entries[0]);
+    expect(first).toEqual({ lineId: result.current.order.lineItems[0].id });
+    expect(result.current.error).toBeNull();
+    expect(added(result, entries[0])).toEqual(first);
+    expect(result.current.order.lineItems).toEqual([expect.objectContaining({ variantId: 'blue', quantity: 2 })]);
+    const second = added(result, entries[1]);
+    expect(second).toEqual({ lineId: result.current.order.lineItems[1].id });
+    expect(second).not.toEqual(first);
+  });
+
+  it('returns SALE_SAVING while a completion is pending, with error set and the order unchanged', async () => {
+    let saved!: () => void;
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: () => new Promise<void>((resolve) => { saved = resolve; }) }));
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    const before = result.current.order;
+    let completion!: Promise<void>;
+    act(() => { completion = result.current.complete(); });
+    expect(added(result, entries[1])).toBe(SALE_SAVING);
+    expect(result.current.error).toBe(SALE_SAVING);
+    expect(result.current.order).toEqual(before);
+    await act(async () => { saved(); await completion; });
+  });
+
+  it('returns the CartError message, the same one error shows, and adds no line', () => {
+    const { result } = renderSale(pricing);
+    expect(added(result, { ...entries[0], variant: { ...entries[0].variant, prices: [] } })).toBe('No EUR price for Shirt · Blue');
+    expect(result.current.error).toBe('No EUR price for Shirt · Blue');
+    expect(result.current.order.lineItems).toEqual([]);
+  });
+
+  it('returns the product id refusal, the same one error shows, and takes the line off', () => {
+    const [mug] = catalogueEntries([{ id: 'mug\u00001', title: 'Mug', status: 'published',
+      variants: [{ id: 'only', title: 'Only', sku: 'M', prices: [{ amount: 1, currency_code: 'eur' }] }] }], traits);
+    const { result } = renderSale(pricing);
+    const message = '"Mug": the product id contains a NUL character';
+    // A line with no variant id has its product id checked instead.
+    expect(added(result, { ...mug, variant: { ...mug.variant, id: undefined as unknown as string } })).toBe(message);
+    expect(result.current.error).toBe(message);
+    expect(result.current.order.lineItems).toEqual([]);
+  });
+
+  it('returns the v3 tax code refusal, the same one error shows, and takes the line off', () => {
+    const { result } = renderSale({ ...pricing, taxRateCodes: { default: 'VAT\u0000' } }, saleOpts({ capabilities: { orderCreate: 3 } }));
+    const message = '"Shirt · Blue": the tax code contains a NUL character';
+    expect(added(result, entries[0])).toBe(message);
+    expect(result.current.error).toBe(message);
+    expect(result.current.order.lineItems).toEqual([]);
+  });
+});
