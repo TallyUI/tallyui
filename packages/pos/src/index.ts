@@ -86,6 +86,8 @@ export { DISPLAY_CHANNEL, createBroadcastDisplayTransport, createDisplayLink, us
 export type { DisplayTransport, BroadcastChannelLike, DisplayLink, DisplayClock } from './customer-display';
 export { createSaleDisplayPublisher, derivePaymentEvent, useSaleDisplay } from './customer-display';
 export type { SaleDisplayOptions, SaleDisplayInput, SaleDisplayPublisher } from './customer-display';
+export { createTillDisplayService, SIGNAL_POLL_MS, LIST_POLL_MS, CONNECT_TIMEOUT_MS, createSnapshotSender, SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS, SNAPSHOT_LIFETIME_MS } from './customer-display';
+export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayEntry, ServiceClock, SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './customer-display';
 
 // Product
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
