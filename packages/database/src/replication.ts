@@ -68,6 +68,11 @@ export interface StartReplicationOptions<RxDocType, CheckpointType = any> {
    * pull asks the store again and a held push goes. `resume()` keeps the latch, and the reset keeps a sign-in hold.
    */
   connectivity?: ConnectivityTracker;
+  /**
+   * The pull page size, overriding adapter.pull.batchSize (for example the sync cadence profile's pullBatchSize).
+   * RxDB fixes it when the replication starts.
+   */
+  pullBatchSize?: number;
 }
 
 /** RxDB's replication state plus the pull notice and a way to restart after a till error. */
@@ -134,6 +139,7 @@ export function startReplication<RxDocType, CheckpointType = any>({
   autoStart = true,
   maxRetryTimeMs = MAX_RETRY_TIME_MS,
   connectivity,
+  pullBatchSize,
 }: StartReplicationOptions<RxDocType, CheckpointType>): TallyReplicationState<RxDocType, CheckpointType> {
   // Pull errors fall in three classes by who can fix them (errorKind):
   // - till (sign in again): one notice and an empty page (RxDB stores no
@@ -212,7 +218,7 @@ export function startReplication<RxDocType, CheckpointType = any>({
     pull: {
       handler: pullHandler,
       stream$: adapter.pull.stream$?.pipe(filter(event => event === 'RESYNC' || !tillHeld$.getValue())),
-      batchSize: adapter.pull.batchSize,
+      batchSize: pullBatchSize ?? adapter.pull.batchSize,
     },
     push: adapter.push
       ? {

@@ -3,9 +3,11 @@ import { createRxDatabase, addRxPlugin } from 'rxdb';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { of } from 'rxjs';
 
 import { connectorCollection } from './connector-collection';
 import { startReplication } from './replication';
+import { startSyncCadence } from './sync-cadence-runner';
 import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
 
 addRxPlugin(RxDBDevModePlugin);
@@ -82,6 +84,27 @@ describe('startReplication', () => {
     const state = startReplication({ collection: db.products, adapter, context });
     await state.awaitInSync();
     expect(handler.mock.calls[0][1]).toBe(7);
+    await state.cancel();
+  });
+
+  it('pullBatchSize overrides adapter.pull.batchSize', async () => {
+    const handler = vi.fn().mockResolvedValue({ documents: [], checkpoint: {} });
+    const adapter = { pull: { batchSize: 7, handler } };
+    const state = startReplication({ collection: db.products, adapter, context, pullBatchSize: 33 });
+    await state.awaitInSync();
+    expect(handler.mock.calls[0][1]).toBe(33);
+    await state.cancel();
+  });
+
+  it('a sync cadence runner tick pulls a live replication again', async () => {
+    const handler = vi.fn().mockResolvedValue({ documents: [], checkpoint: {} });
+    const state = startReplication({ collection: db.products, adapter: { pull: { handler } }, context });
+    await state.awaitInSync();
+    expect(handler).toHaveBeenCalledTimes(1);
+    const runner = startSyncCadence({ targets: [state], cadence$: of({ checkIntervalMs: 60_000, pullBatchSize: 50 }) });
+    runner.tickNow();
+    await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(2));
+    runner.stop();
     await state.cancel();
   });
 
