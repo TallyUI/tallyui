@@ -96,6 +96,8 @@ export type { WedgeSettings, WedgeState, TraceKey, WedgeReplayResult, WedgeDetec
 export type { ScannerProfileStore, DeviceScannerSettings, DeviceScannerState, DeviceScannerErrorPhase, DeviceScannerErrorHandler, DeviceScannerStateCell, DeviceScanner, SerialPortInfoLike, SerialPortLike, SerialLike, SerialScannerOptions } from './scanner';
 export { createHidScanner, HID_POS_USAGE_PAGE } from './scanner';
 export type { HidInputReportEventLike, HidDeviceLike, HidLike, HidScannerOptions } from './scanner';
+export { ScanHubProvider, useScanHub, useDeviceScanControls, inertDeviceScanControls, scanTimeOf } from './scanner';
+export type { DeviceScanControl, DeviceScanControls, ScanHubProviderProps } from './scanner';
 
 // Payment drivers
 export { createPaymentDriverRegistry, driverForMethod, methodDrivers, methodForProvider, createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './payment-driver';

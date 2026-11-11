@@ -1,7 +1,9 @@
 import { type Observable, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, vi } from 'vitest';
 
 import { dedupeScans, SCAN_DEDUP_WINDOW_MS } from './scan-dedup';
+import { scanTimeOf } from './scan-dedup';
 
 import type { ScanEvent } from './scan-events';
 
@@ -130,5 +132,35 @@ describe('dedupeScans', () => {
     source$.next(deviceScan);
 
     expect(received).toEqual([serialScan]);
+  });
+});
+
+describe('scanTimeOf', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(10_000); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('times a wedge copy from its burst start and every other source at receipt', () => {
+    expect(scanTimeOf({ ...scan, timestamp: 1234 })).toBe(1234);
+    expect(scanTimeOf({ ...scan, source: { kind: 'serial' }, timestamp: 1234 })).toBe(10_000);
+  });
+
+  // v2 #2263: the wedge emits WEDGE_END_OF_SCAN_MS after its LAST key, so on a long code its receipt lands outside
+  // the window although the physical scan was the same.
+  it('drops a wedge copy received 700 ms after a serial scan whose burst started 100 ms after it', () => {
+    const serialScan: ScanEvent = { ...scan, source: { kind: 'serial' }, timestamp: 0 };
+    const wedgeCopy: ScanEvent = { ...scan, timestamp: 10_100 };
+    const run = (scanTime?: (event: ScanEvent) => number) => {
+      vi.setSystemTime(10_000);
+      const source$ = new Subject<ScanEvent>();
+      const received: ScanEvent[] = [];
+      source$.pipe(dedupeScans(SCAN_DEDUP_WINDOW_MS, scanTime)).subscribe((event) => received.push(event));
+      source$.next(serialScan);
+      vi.setSystemTime(10_700);
+      source$.next(wedgeCopy);
+      return received;
+    };
+
+    expect(run(scanTimeOf)).toEqual([serialScan]);
+    expect(run()).toEqual([serialScan, wedgeCopy]);
   });
 });
