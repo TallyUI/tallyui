@@ -14,3 +14,7 @@ export { isWebSerialSupported, isWebHidSupported } from './capabilities';
 export { isChooserCancel } from './chooser-cancel';
 export { SCANNER_PROFILES_COLLECTION, scannerProfileSchema, scannerProfileCollection, addScannerProfileCollection, scannerProfiles$, readScannerProfiles, saveScannerProfile, removeScannerProfile } from './scanner-profiles';
 export type { ScannerProfile, ScannerProfileCollection } from './scanner-profiles';
+export type { WedgeScanMeta } from './wedge-detector';
+export { createScanHub, createScanBus, inertScanHub } from './scan-events';
+export type { ScanSourceKind, ScanSource, ScanEvent, ScanBus, ScanHub } from './scan-events';
+export { dedupeScans, SCAN_DEDUP_WINDOW_MS } from './scan-dedup';
