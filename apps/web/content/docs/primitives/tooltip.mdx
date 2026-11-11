@@ -42,9 +42,12 @@ Manages the open/closed state with an optional delay. Does not render a DOM elem
 
 The element that activates the tooltip on hover or focus.
 
+A press does not open the tooltip, so a tooltip-wrapped button does only its own job; a press closes an open tooltip. Set `openOnPress` to make a press toggle the tooltip, for a trigger that does nothing else. On touch there is no hover, so the tooltip opens there only with `openOnPress`.
+
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
+| `openOnPress` | `boolean` | `false` | Toggle the tooltip on press as well, for a trigger that does nothing else |
 
 Plus all React Native `PressableProps`.
 
