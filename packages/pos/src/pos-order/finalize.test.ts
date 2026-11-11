@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import { resolveCapabilities, type TaxRounding } from '@tallyui/core';
 import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
-import { createOrderBuilder } from '../order/order-builder';
+import { couponPricingBasis, createOrderBuilder } from '../order/order-builder';
 import { taxLinesByRate } from '../tax/exact';
 import type { LogEntry } from '../logging';
 import { outboxLogger } from '../outbox/logger';
@@ -95,6 +95,35 @@ describe('finalizeOrder', () => {
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     expect(() => finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } }))
       .toThrow("finalize: coupons need the store to accept order.create version 6; update the store's TallyUI plugin");
+  });
+
+  function storePricedSale() {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
+    const line = builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.addLine({ productId: 'p2', name: 'Item 2', unitPrice: { amount: 500, currency: 'EUR' } });
+    builder.setCoupons(['save'], { kind: 'store-priced', basis: couponPricingBasis(builder.getSnapshot()),
+      priced: new Map([['save', { couponId: 'promo_1', lines: [{ lineId: line, amountMinor: 250 }] }]]) });
+    return { builder, line };
+  }
+
+  it("refuses a store-priced coupon sale whose prices are out of date (#709)", () => {
+    const { builder, line } = storePricedSale();
+    builder.updateQuantity(line, 2);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    expect(builder.getSnapshot().couponPricesStale).toBe(true);
+    expect(() => finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 6 } }))
+      .toThrow("finalize: the coupons' prices are out of date; price the coupons again before finalizing");
+  });
+
+  it('finalizes a fresh store-priced coupon sale into the v6 coupons shape (#709)', () => {
+    const { builder } = storePricedSale();
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const snapshot = builder.getSnapshot();
+    expect(snapshot.coupons).toEqual([{ code: 'save', couponId: 'promo_1', discountMinor: 250, discountTaxMinor: 47 }]);
+    const envelope = toOrderCreateEnvelope(finalizeOrder(snapshot, { capabilities: { orderCreate: 6 } }), 'device1', 1, { maxVersion: 6 });
+    expect(envelope.version).toBe(6);
+    expect(envelope.payload.coupons).toEqual(snapshot.coupons);
+    expect(envelope.payload).toMatchObject({ subtotalMinor: snapshot.subtotalMinor, taxMinor: snapshot.taxMinor });
   });
 
   it('omits coupons and regular prices when absent from the sale', () => {

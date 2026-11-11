@@ -62,7 +62,8 @@ export interface ServerCapabilities {
   lineTax?: { none: boolean; classes: boolean };
   /**
    * Whether the store accepts an order's coupons (ADR-077). Absent means it does not: the till refuses to apply a
-   * coupon. WooCommerce: true only when the woocommerce-pos plugin reports 1.9.0 or later.
+   * coupon. WooCommerce: true only when the woocommerce-pos plugin reports 1.9.0 or later. Other platforms report it as
+   * `/tally/v1/info`'s `coupons: true` (#709).
    */
   coupons?: boolean;
   /**
@@ -145,7 +146,7 @@ const maxVersion = (list: unknown): number | undefined => {
  * Reads a 2xx body of `GET /tally/v1/info` (ADR-062): `orderCreate` is the max of
  * `contracts["order.create"]`, or 1 when it's missing or malformed; `register` is the max of
  * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287); malformed `lineTax` is ignored.
- * malformed `registerApproval` is ignored (ADR-082).
+ * malformed `registerApproval` is ignored (ADR-082). `coupons` is true only when the body says `coupons: true` (#709).
  * `orderRefund` is the max of `contracts["order.refund"]` when valid, otherwise absent (ADR-080).
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
  * A non-object body is also unknown, not a statement of the store's defaults.
@@ -155,7 +156,7 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     warn?.('non-object info body: capabilities unknown');
     return undefined;
   }
-  const { contracts, taxRounding, lineTax, registerApproval } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown };
+  const { contracts, taxRounding, lineTax, registerApproval, coupons } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown; coupons?: unknown };
   const register = maxVersion(contracts?.register);
   const orderRefund = maxVersion(contracts?.['order.refund']);
   const rounding = parseTaxRounding(taxRounding);
@@ -169,7 +170,7 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     ...(orderRefund !== undefined ? { orderRefund } : {}),
     ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}),
     ...(parsedLineTax ? { lineTax: parsedLineTax } : {}),
-    ...(parsed ? { registerApproval: parsed } : {}) };
+    ...(parsed ? { registerApproval: parsed } : {}), ...(coupons === true ? { coupons: true } : {}) };
 }
 
 export interface AuthField {

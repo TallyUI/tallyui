@@ -122,6 +122,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   if (order.coupons?.length && (options.capabilities?.orderCreate ?? 1) < 6) {
     throw new Error("finalize: coupons need the store to accept order.create version 6; update the store's TallyUI plugin");
   }
+  if (order.couponPricesStale) {
+    throw new Error("finalize: the coupons' prices are out of date; price the coupons again before finalizing");
+  }
   if (order.lineItems.some((line) => line.anyAttributes?.length) && (options.capabilities?.orderCreate ?? 1) < 6) {
     throw new Error("finalize: picked options need the store to accept order.create version 6; update the store's TallyUI plugin");
   }
