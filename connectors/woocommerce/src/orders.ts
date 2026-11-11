@@ -1,4 +1,7 @@
-import { CustomerServiceError, minorUnitDigits, type PaymentMethodKind, type StoreOrder, type StoreOrderLine, type SyncContext, type TallyConnector } from '@tallyui/core';
+import {
+  assertOrderFiltersSupported, CustomerServiceError, minorUnitDigits,
+  type OrderFilterField, type PaymentMethodKind, type StoreOrder, type StoreOrderLine, type SyncContext, type TallyConnector,
+} from '@tallyui/core';
 import { customerRequest } from './customers';
 import { wooMinorFromDecimal } from './commands/transport';
 
@@ -133,15 +136,43 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
 
 const wholeNumber = (value: number | undefined, fallback: number) => (value === undefined || !Number.isFinite(value) ? fallback : Math.trunc(value));
 
+/** The ListOrdersQuery filters `wcpos/v2/orders` honours; it has no payment-method or register filter (it ignores both). */
+export const WOO_ORDER_FILTERS: readonly OrderFilterField[] = ['status', 'customerId', 'cashierId', 'storeId', 'createdVia', 'dateRange'];
+
+/** A validated UTC instant, rounded up to the whole second and shifted by `shiftSeconds`, as `YYYY-MM-DDTHH:MM:SS` in UTC. */
+const wooGmtSecond = (instant: string, shiftSeconds: number) =>
+  new Date((Math.ceil(Date.parse(instant) / 1000) + shiftSeconds) * 1000).toISOString().slice(0, 19);
+
 /** WCPOS `wcpos/v2/orders`: order history, read-only (ADR-081). */
 export function createWooOrders(): Required<Pick<TallyConnector, 'listOrders' | 'getOrders'>> {
   return {
+    /**
+     * Filters on the server: status, customerId (customer), cashierId (pos_cashier), storeId (pos_store), createdVia
+     * (created_via) and dateRange; any other filter field is refused. An id that is not all digits, or an empty status
+     * or createdVia, matches no order, so it resolves an empty page without a request. dateRange is sent in GMT (dates_are_gmt): WooCommerce compares
+     * whole seconds strictly, so the inclusive `after` goes as its instant rounded up to the second minus one second,
+     * and the exclusive `before` as its instant rounded up to the second.
+     */
     async listOrders(context: SyncContext, query = {}) {
+      assertOrderFiltersSupported(query, WOO_ORDER_FILTERS);
+      if (query.status === '' || query.createdVia === '') return { orders: [], hasMore: false };
       const page = Math.max(1, wholeNumber(query.page, 1));
       const perPage = Math.max(1, Math.min(MAX_PER_PAGE, wholeNumber(query.perPage, 25)));
       const params = new URLSearchParams({ page: String(page), per_page: String(perPage), orderby: 'date', order: 'desc' });
       const search = query.search?.trim();
       if (search) params.set('search', search);
+      if (query.status !== undefined) params.set('status', query.status);
+      const ids = [['customer', query.customerId], ['pos_cashier', query.cashierId], ['pos_store', query.storeId]] as const;
+      for (const [param, id] of ids) {
+        if (id === undefined) continue;
+        if (!/^\d+$/.test(id)) return { orders: [], hasMore: false };
+        params.set(param, id);
+      }
+      if (query.createdVia !== undefined) params.set('created_via', query.createdVia);
+      const { after, before } = query.dateRange ?? {};
+      if (after !== undefined || before !== undefined) params.set('dates_are_gmt', 'true');
+      if (after !== undefined) params.set('after', wooGmtSecond(after, -1));
+      if (before !== undefined) params.set('before', wooGmtSecond(before, 0));
       const { body, headers } = await customerRequest(context, `orders?${params}`, { method: 'GET' });
       if (!Array.isArray(body)) throw unexpected();
       const orders = body.map(toWooStoreOrder);

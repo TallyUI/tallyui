@@ -9,7 +9,7 @@ import { wooCatalogueReconcile } from './reconcile/catalogue';
 import { createWooReconcileFeed, MAX_IDS_PER_REQUEST } from './reconcile/feed';
 import { createWooCouponFeed, wooCouponReconcile } from './reconcile/coupons';
 import { createWooCustomers } from './customers';
-import { createWooOrders } from './orders';
+import { createWooOrders, WOO_ORDER_FILTERS } from './orders';
 import { wooStoreSettings, readWooCapabilities } from './store-settings';
 import { wooPaymentMethods } from './payment-methods';
 import { wooReceiptTemplates } from './receipt-templates';
@@ -56,6 +56,7 @@ export function createWooCommerceConnector(): TallyConnector {
     ...customers,
     // WCPOS wcpos/v2/orders: order history (ADR-081).
     ...createWooOrders(),
+    orderFilters: WOO_ORDER_FILTERS,
     replication: {
       // One replication per collection; the reconcile feed is last, so its fetch wins duplicates;
       // duplicates are matched by uuid, the primary key, not the store id (#331). legacyKey
