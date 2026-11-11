@@ -74,6 +74,12 @@ export {
 // Popover
 export { Popover, PopoverTrigger, PopoverContent } from './popover';
 
+// Calendar
+export { Calendar, type CalendarProps } from './calendar';
+export {
+  monthGrid, monthOf, addMonths, compareDays, pressRangeDay, type Month, type WeekDay, type GridDay,
+} from './calendar/month-grid';
+
 // Tooltip
 export { Tooltip, TooltipTrigger, TooltipContent } from './tooltip';
 
