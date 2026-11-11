@@ -6038,7 +6038,8 @@ interface OrderCreatePayload {
        advertisement in `ServerCapabilities`. A connector without it has no second-device display, and the
        same-device display keeps working.
      - Each plugin implements the routes its own way, as its platform does: its auth, its storage, its route style.
-       The seam fixes what core needs (mint a code, claim a code, list displays, a signal mailbox, forget) and the
+       The seam fixes what core needs (mint a code, claim a code, confirm or decline a claim, collect the token, list
+       displays, a signal mailbox, forget) and the
        security floor in 4 and 5. Every plugin must meet that floor; it may be stricter.
   3. **The display page comes from each app's own web build,** at `/customer-display`. The till shows that URL, as
      v2 shows its page URL. The plugin serves no UI. The plugin units find out what each plugin needs for the app's
@@ -6049,13 +6050,29 @@ interface OrderCreatePayload {
      - **Who may mint.** Minting a code needs a logged-in cashier session that holds the named capability
        `customer_display.pair`. Each platform maps that capability onto its own roles. A request without it is refused,
        and no code is made.
-     - **Codes.** A code is single use: the first successful claim spends it. It expires 10 minutes after it is minted,
-       or sooner. It is at least 6 digits from a cryptographic random source, and the till shows it with its expiry,
-       as v2 does. Claims are rate limited per source address: at most 10 failed claims a minute. Mints are rate
-       limited per till device: at most 5 unspent codes at once. A refused claim does not say whether the code
-       exists, has expired or was spent.
-     - **Tokens.** A successful claim returns a per-display token: 128 bits from a cryptographic random source. It is
-       shown to the display once, in that response, and the server stores only its SHA-256 hash. The token is scoped
+     - **Codes.** A code is single use. The first claim that names it spends it, and no later claim can use it. A code
+       expires 10 minutes after it is minted, or sooner. It is at least 6 digits from a cryptographic random source,
+       and the till shows it with its expiry, as v2 does. Mints are limited per till device to at most 5 unspent codes
+       at once. A refused claim does not say whether the code exists, has expired or was spent.
+     - **The till confirms every claim.** A claim does not issue a token.
+       - The claim records a pending pairing with the display's name. It returns a claim secret to the display: 128
+         bits, stored only as a hash.
+       - The till that minted the code shows "<name> wants to pair". The cashier who has just minted the code is
+         standing at it and confirms or declines.
+       - Only a confirm, made by a cashier session that holds `customer_display.pair` on that till device, issues the
+         token. The display collects the token once, by presenting its claim secret.
+       - A decline, or a claim not confirmed before the code expires, deletes the pending pairing. Nothing is issued.
+
+       So a guessed code yields nothing without the cashier.
+     - **Guessing is bounded before confirmation as well.** A wrong guess names no code, so it spends nothing, and two
+       limits apply:
+       - **Per source.** At most 10 failed claims a minute from one source. An IPv4 address is one source. An IPv6
+         address counts by its /64 prefix, because one host can hold a whole /64.
+       - **Store-wide.** At most 100 failed claims in a 10-minute window, across all sources. When the cap is reached,
+         every claim is refused for the rest of that window. An attacker can trigger this pause on purpose, but it
+         only delays pairing: it exposes nothing and blocks nothing else.
+     - **Tokens.** A confirmed pairing issues a per-display token: 128 bits from a cryptographic random source. The
+       display receives it once, when it collects it, and the server stores only its SHA-256 hash. The token is scoped
        to that one display: its signalling mailbox and its snapshot read. It gives no other access to the store.
      - **The snapshot read is gated by the same token.** A read without the display's token is refused, so a snapshot
        is never readable by display id alone.
@@ -6068,16 +6085,17 @@ interface OrderCreatePayload {
      - **Binding to the cashier's session.** The till sends its device id on every signalling call it makes, and the
        server accepts a device id only on a request authenticated by a cashier session that holds
        `customer_display.pair`. At mint, the server records the device id and the cashier who minted the code. The
-       claimed display's registry row records the owning till device id and that cashier. When the cashier logs out,
+       confirmed display's registry row records the owning till device id and that cashier. When the cashier logs out,
        the till's signalling stops. The display stays paired, and the till picks it up again when a cashier with the
        capability logs in on the same device.
-     - **One display belongs to one till.** A display that claims a code from a second till moves to that till: the
-       server deletes its old row and old token, then makes the new ones, in one step. The first till sees it gone at
-       its next list. One till may own several displays (9).
+     - **One display belongs to one till.** A display whose pairing with a second till is confirmed moves to that
+       till: at the confirm, the server deletes its old row and old token, then makes the new ones, in one step. The
+       first till sees it gone at its next list. One till may own several displays (9).
   6. **The registry lives on the server:** display id, name, owning till device id, the cashier who paired it, last
      seen and connected, as in v2. The till keeps no replicated copy.
-     - **Pruning.** Unspent codes are deleted when they expire. A registry row whose display has not been seen for 30
-       days is deleted with its token hash, and that display must pair again.
+     - **Pruning.** Unspent codes, and pending pairings that were never confirmed, are deleted when the code expires.
+       A registry row whose display has not been seen for 30 days is deleted with its token hash, and that display
+       must pair again.
   7. **ICE: what connects on an ordinary shop network,** following v2's finding above.
      - The default list is v2's two public STUN servers.
      - The STUN list is a store setting, sent in the display advertisement. `none` (an empty list) is allowed, for a
@@ -6112,11 +6130,11 @@ interface OrderCreatePayload {
     | Unit | What it builds | Package | Door | Acceptance (tests in the unit's PR) |
     |---|---|---|---|---|
     | U1 | The live-sale publisher | pos | two-way | Unit tests against a recording display link. The cart gives `cart.updated`. Tender gives `payment.state` started. Each leg change gives approved, declined or complete, as v2's `derivePaymentEvent` does. The receipt gives complete, then idle after `afterCompleteMs`. An empty new sale gives idle. The same state twice is sent once. |
-    | U2 | The signalling seam, the advertisement and the contract suite | core | two-way | The seam's types. A contract suite of the floor in 4–6, run against an in-memory reference server: mint without the capability refused; code reuse, expiry and rate limits refused; token stored hashed; snapshot read without the token refused; Forget revokes the token; a claim from a second till moves the display; expired codes and dead rows pruned. |
+    | U2 | The signalling seam, the advertisement and the contract suite | core | two-way | The seam's types. A contract suite of the floor in 4–6, run against an in-memory reference server: mint without the capability refused; code reuse and expiry refused; a claim issues no token until the minting till's cashier confirms, a decline or expiry issues none, and a confirm without the capability or from another till is refused; 10 failed claims a minute per source refused, with two addresses in one IPv6 /64 counted as one source; the store-wide 100 failed claims per 10 minutes pauses every claim until the window ends; token and claim secret stored hashed; snapshot read without the token refused; Forget revokes the token; a confirmed pairing with a second till moves the display; expired codes and dead rows pruned. |
     | U3 | The WebRTC transport | pos | two-way | Unit tests with a fake `RTCPeerConnection` that refuses what Chromium refuses. A Playwright Chromium proof: two pages open a data channel through an in-memory relay and carry an envelope both ways. |
     | U4 | The till display service, with fan-out and the snapshot fallback | pos | two-way | Unit tests: fan-out to every owned display; each fallback rule in 8 (rate, 20 s re-send, no re-send after 400 or 413, the 200 KiB cap with the note cut first, offline displays skipped, stop on open); the idle snapshot that clears; offline behaviour in 11. |
-    | U5 | `CustomerDisplaySettings` and the display's enter-code screen | components | two-way | Component tests: list, pair with the code and its expiry, forget, each refusal shown; the display clears and shows enter-code when its token is refused. |
-    | U6 | The two-device proof against the U2 reference server, in Playwright Chromium | e2e | two-way | Two browser contexts: pair, a sale shows on the display, Forget clears it. With the peer link blocked, the display still shows the sale through the snapshot fallback. |
+    | U5 | `CustomerDisplaySettings` and the display's enter-code screen | components | two-way | Component tests: list, pair with the code and its expiry, the till's "wants to pair" prompt with confirm and decline, forget, each refusal shown; the display clears and shows enter-code when its token is refused. |
+    | U6 | The two-device proof against the U2 reference server, in Playwright Chromium | e2e | two-way | Two browser contexts: pair, with the cashier confirming on the till, a sale shows on the display, Forget clears it. With the peer link blocked, the display still shows the sale through the snapshot fallback. |
     | U7 | Woo signalling: routes in TallyUI's fork, plus the connector | Woo connector | one-way | The U2 contract suite passes against the fork's routes on the local Woo dev store, plus the fork's own PHP tests. |
     | U8 | App wiring | tallyui-woocommerce | two-way | An e2e test on the tally-woo app against the local Woo store: a paired display shows a real sale. D8 moves to done only on this test. |
 
