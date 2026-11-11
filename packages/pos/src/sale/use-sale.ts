@@ -7,7 +7,7 @@ import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInpu
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
-import { useTax, type SaleTaxContext, type TaxContext } from '../tax';
+import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
 import type { CatalogueEntry } from './catalogue';
@@ -297,7 +297,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     return true;
   }
   const liveCustomer = order.customer, taxContextFor = opts.taxContextFor;
-  const taxLocation = useMemo(() => taxContextFor
+  const taxLocation = useMemo<SaleTaxLocation | undefined>(() => taxContextFor
     ? { ...taxContextFor(liveCustomer).location, hasCustomer: liveCustomer !== null } : undefined, [liveCustomer, taxContextFor]);
   // A screen that unmounts (medusapos: Sign out) mid-save must still leave a trace of the loss.
   useEffect(() => () => {
