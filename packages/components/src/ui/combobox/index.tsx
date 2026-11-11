@@ -13,7 +13,7 @@ const ComboboxTrigger = React.forwardRef<
     <ComboboxPrimitive.Trigger
       ref={ref}
       className={cn(
-        'flex h-10 w-full flex-row items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm web:ring-offset-background web:focus:outline-none web:focus:ring-2 web:focus:ring-ring web:focus:ring-offset-2',
+        'flex h-10 w-full flex-row items-center justify-between rounded-md border border-input bg-card px-3 py-2 text-sm web:ring-offset-background web:focus:outline-none web:focus:ring-2 web:focus:ring-ring web:focus:ring-offset-2',
         className,
       )}
       {...props}

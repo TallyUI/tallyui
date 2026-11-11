@@ -30,7 +30,7 @@ const InputRoot = React.forwardRef<View, InputRootProps>(
         <View
           ref={ref}
           className={cn(
-            'flex h-10 flex-row items-center rounded-md border border-input bg-background px-3',
+            'flex h-10 flex-row items-center rounded-md border border-input bg-card px-3',
             focused && 'ring-2 ring-ring ring-offset-2',
             disabled && 'opacity-50',
             className,
