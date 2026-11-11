@@ -1,6 +1,6 @@
 ---
 title: CartNoteInput
-description: CartNoteInput expands from an Add note link into a multiline cart or order note field, with controlled text and a customizable placeholder.
+description: CartNoteInput expands from an Add customer note link into a multiline customer note field, with controlled text, a customizable label and placeholder.
 ---
 
 ## Import
@@ -16,7 +16,7 @@ const [note, setNote] = useState('');
 <CartNoteInput value={note} onChangeText={setNote} />
 ```
 
-Starts as a compact "Add note" link. Tapping it expands into a multiline text input. If the value already has content, the input starts expanded.
+Starts as a compact "Add customer note" link. Tapping it expands into a multiline text input. If the value already has content, the input starts expanded. WooCommerce sends the note as `customer_note`, so it shows on the customer's emails and receipts.
 
 ## Props
 
@@ -24,7 +24,8 @@ Starts as a compact "Add note" link. Tapping it expands into a multiline text in
 |------|------|---------|-------------|
 | `value` | `string` | required | Current note text |
 | `onChangeText` | `(text: string) => void` | required | Callback when text changes |
-| `placeholder` | `string` | `'Order note...'` | Placeholder text for the input |
+| `label` | `string` | `'Customer note'` | The note's name: the link reads "Add" plus the label in lower case, and the input uses it as its placeholder and accessibility label |
+| `placeholder` | `string` | the `label` | Placeholder text for the input |
 | `className` | `string` | — | Override container styles |
 
 ## Live demo
