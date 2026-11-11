@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "contract": "1.3",
+  "methods": [
+    {
+      "schema": 1,
+      "id": "pos_cash",
+      "title": "Cash",
+      "kind": "cash",
+      "pos_enabled": true,
+      "order": 0,
+      "capture": { "mode": "manual", "provider": null, "hardware": null, "webview_available": false, "modes": [] },
+      "capabilities": {
+        "amount": { "partial": true },
+        "change": true,
+        "refunds": { "via": "manual", "partial": true },
+        "tips": "none",
+        "offline": "record",
+        "void": true
+      },
+      "defaults": { "order_status": "completed", "rounding": { "increment": "0.05", "mode": "nearest" }, "open_drawer": true },
+      "provider_data": {}
+    },
+    {
+      "schema": 1,
+      "id": "pos_card",
+      "title": "Card",
+      "kind": "card",
+      "pos_enabled": true,
+      "order": 1,
+      "capture": { "mode": "manual", "provider": null, "hardware": null, "webview_available": false, "modes": [] },
+      "capabilities": {
+        "amount": { "partial": true },
+        "change": false,
+        "refunds": { "via": "manual", "partial": true },
+        "tips": "none",
+        "offline": "record",
+        "void": true
+      },
+      "defaults": { "order_status": "completed", "rounding": null, "open_drawer": false },
+      "provider_data": {}
+    },
+    {
+      "schema": 1,
+      "id": "stripe_terminal",
+      "title": "Stripe Terminal",
+      "kind": "card",
+      "pos_enabled": true,
+      "order": 2,
+      "capture": {
+        "mode": "device",
+        "provider": "stripe",
+        "hardware": {
+          "discovery": "server",
+          "readers": [{ "id": "tmr_1", "label": "Front counter", "status": "online", "default": true }],
+          "default_reader": "tmr_1",
+          "lock_to_default": false
+        },
+        "webview_available": true,
+        "modes": [
+          {
+            "mode": "device",
+            "provider": "stripe",
+            "hardware": {
+              "discovery": "server",
+              "readers": [{ "id": "tmr_1", "label": "Front counter", "status": "online", "default": true }],
+              "default_reader": "tmr_1",
+              "lock_to_default": false
+            },
+            "capabilities": { "amount": { "partial": false } },
+            "provider_data": { "location": "tml_1" }
+          }
+        ]
+      },
+      "capabilities": {
+        "amount": { "partial": false, "min": "0.50", "max": "10000" },
+        "change": false,
+        "refunds": { "via": "provider", "partial": true },
+        "tips": "on_reader",
+        "offline": "none",
+        "void": false
+      },
+      "defaults": { "order_status": "processing", "rounding": null, "open_drawer": false },
+      "provider_data": { "location": "tml_1" }
+    },
+    {
+      "schema": 1,
+      "id": "cheque",
+      "title": "Check payments",
+      "kind": "other",
+      "pos_enabled": false,
+      "order": 3,
+      "capture": { "mode": "webview", "provider": null, "hardware": null, "webview_available": true, "modes": [] },
+      "capabilities": {
+        "amount": { "partial": false },
+        "change": false,
+        "refunds": { "via": "none", "partial": false },
+        "tips": "none",
+        "offline": "none",
+        "void": false
+      },
+      "defaults": { "order_status": "on-hold", "rounding": null, "open_drawer": false },
+      "provider_data": {}
+    },
+    {
+      "schema": 1,
+      "id": "bacs",
+      "title": "Direct bank transfer",
+      "kind": "bank_transfer",
+      "pos_enabled": true,
+      "order": 5,
+      "capture": { "mode": "webview", "provider": null, "hardware": null, "webview_available": true, "modes": [] },
+      "capabilities": {
+        "amount": { "partial": false },
+        "change": false,
+        "refunds": { "via": "none", "partial": false },
+        "tips": "none",
+        "offline": "none",
+        "void": false
+      },
+      "defaults": { "order_status": "on-hold", "rounding": null, "open_drawer": false },
+      "provider_data": {},
+      "fields": { "account_name": "Example Store" }
+    }
+  ]
+}

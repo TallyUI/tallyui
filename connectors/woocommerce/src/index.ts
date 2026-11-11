@@ -11,6 +11,7 @@ import { createWooCouponFeed, wooCouponReconcile } from './reconcile/coupons';
 import { createWooCustomers } from './customers';
 import { createWooOrders } from './orders';
 import { wooStoreSettings, readWooCapabilities } from './store-settings';
+import { wooPaymentMethods } from './payment-methods';
 import { version } from '../package.json';
 
 /** One part of X-WCPOS-Client as WCPOS keeps it: lowercase [a-z0-9._-], at most 32 characters. */
@@ -76,6 +77,7 @@ const wooConnectorParts = {
   description: 'Connect to WooCommerce stores via the REST API',
   icon: undefined, // TODO: WooCommerce logo
   storeSettings: wooStoreSettings,
+  paymentMethods: wooPaymentMethods,
   capabilities: readWooCapabilities,
 
   auth: {
