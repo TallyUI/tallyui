@@ -220,6 +220,9 @@ export interface SyncContext {
   pricingContext?: Record<string, string>;
   /** The store's contract capabilities (ADR-062), copied from the sign-in result. */
   capabilities?: ServerCapabilities;
+  /** The fetch the connector sends its requests with; defaults to globalThis.fetch. A host passes a wrapper
+   * here, for example @tallyui/database meteredFetch, to count requests. Resolved per request. */
+  fetch?: typeof globalThis.fetch;
 }
 
 /**

@@ -9,7 +9,7 @@ import type { CollectionSync, SyncContext, RemoteIdEntry } from '@tallyui/core';
  */
 export const wooProductSync: CollectionSync = {
   async fetchAllIds(context: SyncContext): Promise<RemoteIdEntry[]> {
-    const response = await fetch(`${context.baseUrl}/products`, {
+    const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/products`, {
       headers: {
         ...context.headers,
         'Content-Type': 'application/json',
@@ -31,7 +31,7 @@ export const wooProductSync: CollectionSync = {
   async fetchByIds(ids: string[], context: SyncContext): Promise<any[]> {
     // WooCommerce supports ?include=1,2,3 for bulk fetching
     const include = ids.join(',');
-    const response = await fetch(
+    const response = await (context.fetch ?? globalThis.fetch)(
       `${context.baseUrl}/products?include=${include}&per_page=${ids.length}`,
       {
         headers: {
@@ -55,7 +55,7 @@ export const wooProductSync: CollectionSync = {
       dates_are_gmt: 'true',
       per_page: '100',
     });
-    const response = await fetch(
+    const response = await (context.fetch ?? globalThis.fetch)(
       `${context.baseUrl}/products?${params}`,
       {
         headers: {

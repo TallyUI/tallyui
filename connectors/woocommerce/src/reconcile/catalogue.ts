@@ -19,7 +19,7 @@ export const wooReconcileFingerprint = (p: { date_modified_gmt?: string | null; 
   [p.date_modified_gmt ?? '', p.stock_quantity ?? '', p.stock_status ?? ''].join('|');
 
 async function get(path: string, context: SyncContext): Promise<any> {
-  const response = await fetch(`${context.baseUrl}${path}`, {
+  const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}${path}`, {
     headers: { ...context.headers, 'Content-Type': 'application/json' },
     signal: context.signal,
   });

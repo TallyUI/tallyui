@@ -25,7 +25,7 @@ export function wooPluginSupportsCoupons(version: unknown): boolean {
 export async function wooStoreSettings(context: SyncContext): Promise<StoreSettings> {
   try {
     const init = { method: 'GET', headers: context.headers, signal: context.signal };
-    const storesResponse = await fetch(`${context.baseUrl}/stores`, init);
+    const storesResponse = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/stores`, init);
     if (storesResponse.status === 401 || storesResponse.status === 403) {
       throw new ConnectorUnauthorizedError(`WooCommerce stores: HTTP ${storesResponse.status}`, storesResponse.status);
     }
@@ -39,7 +39,7 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
       console.warn(`WooCommerce price_num_decimals is ${store.price_num_decimals}; the till rounds ${currency} to ${digits} digits`);
     }
 
-    const classesResponse = await fetch(`${context.baseUrl}/taxes/classes`, init);
+    const classesResponse = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/taxes/classes`, init);
     if (classesResponse.status === 401 || classesResponse.status === 403) {
       throw new ConnectorUnauthorizedError(`WooCommerce tax classes: HTTP ${classesResponse.status}`, classesResponse.status);
     }
@@ -64,7 +64,7 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
 
     const rates: woocommerceTax.WooTaxRate[] = [];
     for (let page = 1; page <= 100; page++) {
-      const response = await fetch(`${context.baseUrl}/taxes?per_page=100&page=${page}&orderby=order&order=asc`, init);
+      const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/taxes?per_page=100&page=${page}&orderby=order&order=asc`, init);
       if (response.status === 401 || response.status === 403) {
         throw new ConnectorUnauthorizedError(`WooCommerce taxes: HTTP ${response.status}`, response.status);
       }
@@ -125,7 +125,7 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
 
 export async function readWooCapabilities(context: SyncContext): Promise<ServerCapabilities | undefined> {
   try {
-    const response = await fetch(`${context.baseUrl}/stores`, {
+    const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/stores`, {
       method: 'GET', headers: context.headers, signal: context.signal,
     });
     if (response.status === 401 || response.status === 403) {
@@ -137,7 +137,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
     let multiplePayments = false;
     let capabilities: unknown[] = [];
     try {
-      const status = await fetch(`${context.baseUrl}/status`, {
+      const status = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/status`, {
         method: 'GET', headers: context.headers, signal: context.signal,
       });
       if (status.status === 401 || status.status === 403) {
@@ -153,7 +153,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
     }
     let coupons = false;
     try {
-      const site = await fetch(`${context.baseUrl}/site`, {
+      const site = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/site`, {
         method: 'GET', headers: context.headers, signal: context.signal,
       });
       if (site.ok) {
