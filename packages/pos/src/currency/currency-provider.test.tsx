@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { formatMoney } from '@tallyui/core';
 import { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './currency-provider';
+import type { CurrencyFormat } from './format-money-with';
 
 function wrapper(currency: string, locale?: string) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -33,6 +35,47 @@ describe('CurrencyProvider + useCurrencyFormatter', () => {
   it('falls back to the minor-unit amount and code for XXX', () => {
     const { result } = renderHook(() => useCurrencyFormatter(), { wrapper: wrapper('EUR', 'en') });
     expect(result.current({ amount: 3451, currency: 'XXX' })).toBe('3451 XXX');
+  });
+
+  it('without a format, reads exactly as formatMoney does', () => {
+    for (const locale of ['en', 'de-DE', 'es', 'sv-SE', undefined]) {
+      const { result } = renderHook(() => useCurrencyFormatter(), { wrapper: wrapper('EUR', locale) });
+      for (const money of [
+        { amount: 123450, currency: 'EUR' },
+        { amount: -123450, currency: 'USD' },
+        { amount: 1200, currency: 'JPY' },
+      ]) {
+        expect(result.current(money)).toBe(formatMoney(money, locale));
+      }
+    }
+  });
+
+  it("formats with the store's format when one is given", () => {
+    const format = { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',', decimals: 2 } as const;
+    const { result } = renderHook(() => useCurrencyFormatter(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <CurrencyProvider currencyCode="EUR" locale="en" format={format}>
+          {children}
+        </CurrencyProvider>
+      ),
+    });
+    expect(result.current({ amount: 123450, currency: 'EUR' })).toBe('1.234,50 €');
+    expect(result.current({ amount: 3451, currency: 'XXX' })).toBe('3451 XXX');
+  });
+
+  it('picks up a format that arrives after mount', () => {
+    const store: { format?: CurrencyFormat } = {};
+    const { result, rerender } = renderHook(() => useCurrencyFormatter(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <CurrencyProvider currencyCode="EUR" locale="en" format={store.format}>
+          {children}
+        </CurrencyProvider>
+      ),
+    });
+    expect(result.current({ amount: 123450, currency: 'EUR' })).toBe('€1,234.50');
+    store.format = { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',' };
+    rerender();
+    expect(result.current({ amount: 123450, currency: 'EUR' })).toBe('1.234,50 €');
   });
 
   it('provides the default currency code', () => {
