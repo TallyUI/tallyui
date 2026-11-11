@@ -22,6 +22,30 @@ describe('ChargeForm', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it.each([['fee', 'Add fee'], ['shipping', 'Add shipping'], ['custom', 'Add custom item']] as const)(
+    'with kind %s, applies that kind without the kind row', (kind, name) => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind={kind} onApply={onApply} onClose={() => {}} />);
+      for (const label of ['Fee', 'Shipping', 'Custom item']) expect(screen.queryByRole('button', { name: label })).toBeNull();
+      expect(screen.getByRole('group', { name })).toBeTruthy();
+      input('Name', 'Wrapping');
+      input('Amount', '1');
+      click('Apply');
+      expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind, name: 'Wrapping', amountMinor: 100,
+        taxStatus: undefined, taxClass: undefined });
+    });
+
+  it('shows the store shipping tax notice for kind shipping', () => {
+    render(<ChargeForm currency="EUR" kind="shipping" shippingTaxFromStore onApply={() => null} onClose={() => {}} />);
+    expect(screen.getByText("Shipping is taxed at the store's shipping tax class.")).toBeTruthy();
+  });
+
+  it('without kind, is named Add charge and shows the kind row', () => {
+    render(<ChargeForm currency="EUR" onApply={() => null} onClose={() => {}} />);
+    expect(screen.getByRole('group', { name: 'Add charge' })).toBeTruthy();
+    for (const label of ['Fee', 'Shipping', 'Custom item']) expect(screen.getByRole('button', { name: label })).toBeTruthy();
+  });
+
   it.each([
     [' ', '1', 'Enter a name.'], ['Bag', '', 'Enter a price.'], ['Bag', 'abc', 'Enter a number.'],
     ['Bag', '-1', 'Enter a price of 0 or more.'], ['Bag', '1.234', 'Use at most 2 decimal places.'],
