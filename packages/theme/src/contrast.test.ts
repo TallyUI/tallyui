@@ -52,11 +52,13 @@ describe.each([['base', base], ['light', light]] as const)('%s theme contrast', 
     ['price', 'card', 4.5],
     ['sale', 'card', 4.5],
     ['success', 'muted', 3.0],
-    ['input', 'background', 3.0],
-    ['input', 'card', 3.0],
-    ['input', 'muted', 3.0],
   ] as const)('%s on %s meets %s:1', (foreground, background, minimum) => {
     expect(contrast(colors[foreground], colors[background])).toBeGreaterThanOrEqual(minimum);
+  });
+
+  // Light control borders match WCPOS v2 (#756): lighter than 3:1, but still stronger than the plain border.
+  it.each(['background', 'card', 'muted'] as const)('input stands out more than border on %s', (bg) => {
+    expect(contrast(colors.input, colors[bg])).toBeGreaterThan(contrast(colors.border, colors[bg]));
   });
 });
 

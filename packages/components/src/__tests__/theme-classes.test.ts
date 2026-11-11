@@ -70,6 +70,22 @@ it('gives quick-tender buttons an input border', () => {
   expect(readFileSync(join(root, 'checkout/cash-tendered.tsx'), 'utf8')).toContain('border-input');
 });
 
+it('bordered controls fill with the card', () => {
+  const classes = [
+    readFileSync(join(root, 'ui/button/index.tsx'), 'utf8').match(/outline: '([^']*)'/)?.[1],
+    readFileSync(join(root, 'ui/icon-button/index.tsx'), 'utf8').match(/outline: '([^']*)'/)?.[1],
+    readFileSync(join(root, 'ui/select/index.tsx'), 'utf8').match(/<SelectPrimitive\.Trigger[\s\S]*?cn\(\s*'([^']*)'/)?.[1],
+    readFileSync(join(root, 'ui/input/index.tsx'), 'utf8').match(/<View[\s\S]*?cn\(\s*'([^']*)'/)?.[1],
+    readFileSync(join(root, 'ui/textarea/index.tsx'), 'utf8').match(/<TextInput[\s\S]*?cn\(\s*'([^']*)'/)?.[1],
+    readFileSync(join(root, 'ui/combobox/index.tsx'), 'utf8').match(/<ComboboxPrimitive\.Trigger[\s\S]*?cn\(\s*'([^']*)'/)?.[1],
+  ];
+  for (const value of classes) {
+    expect(value).toMatch(/\bbg-card\b/);
+    expect(value).toMatch(/\bborder-input\b/);
+    expect(value).not.toMatch(/\bbg-background\b/);
+  }
+});
+
 it('has no undefined danger classes', () => {
   expect(sources.filter(({ source }) => /\b(bg|text|border)-danger\b/.test(source)).map(({ file }) => file)).toEqual([]);
 });

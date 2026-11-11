@@ -11,7 +11,7 @@ const iconButtonVariants = cva(
       variant: {
         default: 'bg-primary active:opacity-90',
         destructive: 'bg-destructive active:opacity-90',
-        outline: 'border border-input bg-background active:bg-accent',
+        outline: 'border border-input bg-card active:bg-accent',
         secondary: 'bg-secondary active:opacity-80',
         ghost: 'active:bg-accent',
       },
