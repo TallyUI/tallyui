@@ -1,5 +1,13 @@
 # @tallyui/pos
 
+## 3.16.0
+
+### Patch Changes
+
+- 325a540: A till with fresh storage now numbers its next closure after the store's, instead of starting again at 1. The register's closure number and perpetual totals rise to the store's counters, each one on its own, and never go down.
+- 89973e5: Adding, voiding or removing a tender now clears a stale sale error, such as an underpaid refusal, once the payment is corrected. A refused call leaves the error as it was, and a dropped terminal reference still shows its own message.
+  - @tallyui/core@3.16.0
+
 ## 3.15.0
 
 ### Patch Changes
