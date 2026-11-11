@@ -56,6 +56,13 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['server-identity'],
     },
+    // The two-device customer display (ADR-085 U6): its spec bundles its own page and runs the signalling server in Node.
+    {
+      name: 'customer-display',
+      testDir: './e2e/customer-display',
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['server-identity'],
+    },
   ],
 
   webServer: [
