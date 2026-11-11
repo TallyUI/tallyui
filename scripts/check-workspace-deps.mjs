@@ -60,6 +60,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'cartQuantities',
   // the camera scanner (#720): the getUserMedia constraints, error-to-status map, BarcodeDetector lookup and decode loop the web viewfinder runs, never a hook or the store.
   'CAMERA_CONSTRAINTS', 'cameraErrorStatus', 'nativeBarcodeDetector', 'startDecodeLoop',
+  // the Reports hero (#715): the pure store-day list a custom range's comparison is sized by, never a hook or the store.
+  'daysOf',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

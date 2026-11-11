@@ -29,6 +29,12 @@ export type {
   StoreTaxRateLocation,
 } from './types';
 export type { SignInResult, ServerCapabilities, TaxRounding } from './types/connector';
+export type {
+  DisplaySignalling, DisplaySignallingContext, DisplaySignallingErrorCode, DisplayAdvertisement, IceServer,
+  PendingPairing, DisplayRecord, SignalMessage,
+} from './types';
+export { DisplaySignallingError, DISPLAY_PAIR_CAPABILITY } from './types/display-signalling';
+export { DEFAULT_ICE_SERVERS, parseDisplayAdvertisement, rateLimitSource } from './customer-display';
 export type { CatalogueReconcileAdapter, CatalogueReconcileEntry } from './types/reconcile';
 export { parseInfoCapabilities, parseTaxRounding, parseLineTax, resolveCapabilities } from './types/connector';
 export { SignInError } from './sign-in';
@@ -46,8 +52,9 @@ export type {
 } from './types/payment-methods';
 export type { ReceiptTemplate, ReceiptTemplateKind } from './types/receipt-templates';
 export type {
-  StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, ListOrdersQuery, StoreOrderPage,
+  StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, ListOrdersQuery, StoreOrderPage, OrderFilterField,
 } from './types/orders';
+export { ORDER_FILTER_FIELDS, UnsupportedOrderFilterError, orderFilterFields, assertOrderFiltersSupported, assertOrderDateRange } from './order-filters';
 export type { RegisterInfo } from './types/registers';
 export { CASHIER_PERMISSIONS, cashierPermissions, isCashierPermission, type Cashier, type CashierPermission } from './types/cashier';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
