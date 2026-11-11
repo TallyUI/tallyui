@@ -140,6 +140,10 @@ export {
   type RefundFormValue,
   RefundModal,
   type RefundModalProps,
+  OrderFilterBar,
+  type OrderFilterBarProps,
+  type OrderFilterOption,
+  type PaymentMethodKind,
 } from './order';
 
 // Register components

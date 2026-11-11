@@ -13,3 +13,5 @@ export type { CatalogueEntry } from './catalogue';
 export { cartQuantities } from './in-cart';
 export { SPLIT_FIXED_DISCOUNT } from '../order/order-builder';
 export type { CartQuantityLine } from './in-cart';
+export { orderFiltersQuery } from './order-filters-query';
+export type { OrderFilterValue } from './order-filters-query';
