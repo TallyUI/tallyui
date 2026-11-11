@@ -61,6 +61,8 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
       taxRatesPpm,
     };
     if (store.calc_taxes !== 'yes') return settings;
+    // The per-store basis WCPOS v2's till reads, not WooCommerce's woocommerce_tax_based_on option.
+    settings.taxBasedOn = woocommerceTax.normalizeTaxBasedOn(store.tax_based_on);
 
     const rates: woocommerceTax.WooTaxRate[] = [];
     for (let page = 1; page <= 100; page++) {
@@ -101,6 +103,10 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
       console.warn('WooCommerce has no tax or store country; matching tax rates with an empty address');
       address = {};
     }
+    const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+    const baseTaxAddress = { country: text(address.country), state: text(address.state), city: text(address.city), postcode: text(address.postcode) };
+    if (baseTaxAddress.country) settings.baseTaxAddress = baseTaxAddress;
+    // No taxRateTable: the server taxes POS orders on this base until order.create carries the basis and the customer's addresses (#722 step 2).
     const matched = woocommerceTax.filterTaxRates(rates, address.country, address.state, address.postcode, address.city);
     for (const rate of matched) {
       const slug = woocommerceTax.normalizeTaxClass(rate.class);
