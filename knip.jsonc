@@ -15,8 +15,8 @@
   },
   "workspaces": {
     ".": {
-      // e2e setup, node tests and the storage-sqlite test page, which knip does not discover.
-      "entry": ["e2e/server-identity.setup.ts", "e2e/*.test.mjs", "e2e/storage-sqlite/page/index.ts"],
+      // e2e setup, node tests and the storage-sqlite and webrtc test pages, which knip does not discover.
+      "entry": ["e2e/server-identity.setup.ts", "e2e/*.test.mjs", "e2e/storage-sqlite/page/index.ts", "e2e/webrtc/page/index.ts"],
       "ignoreDependencies": [
         // Used through a vitest alias.
         "react-native-web",
