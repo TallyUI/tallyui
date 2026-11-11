@@ -79,6 +79,8 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, Rece
 export { parseXml, renderHtml, sanitizeHtml, renderReceiptTemplate, renderLogiclessTemplate, renderThermalPreview, receiptTemplateData, DEFAULT_RECEIPT_TEMPLATES, PAPER_COLUMNS, renderReceiptHtml } from './receipt-template';
 export type { ThermalNode, ReceiptNode, SanitizeHtmlOptions, RenderSanitizeOptions, ReceiptTemplateRow, ReceiptTemplateLine, ReceiptTemplateData, ReceiptTemplateOptions, ReceiptPaper, RenderReceiptOptions } from './receipt-template';
 export { wcposReceiptData, formatWcposReceiptData, formatWcposMoney, WCPOS_DEFAULT_I18N, WCPOS_TAX_ID_LABELS } from './receipt-template';
+export { wcposSourceFromSentOrder, wcposSourceFromPosOrder, wcposSourceFromStoreOrder, wcposReceiptContext, renderStoreReceiptTemplate } from './receipt-template';
+export type { PrintableSale, StoreTemplateContext } from './receipt-template';
 export type { FormatWcposReceiptOptions, WcposMoneyOptions, WcposReceiptSource, WcposReceiptStore, WcposReceiptOptions, WcposReceiptData, WcposReceiptView, WcposTaxId, WcposReceiptDate, WcposReceiptLine, WcposLineView } from './receipt-template';
 
 // Customer display

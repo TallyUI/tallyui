@@ -1,9 +1,10 @@
-import { minorUnitDigits, woocommerceTax, type StoreOrder } from '@tallyui/core';
+import type { StoreOrder } from '@tallyui/core';
 import { noteDelivery } from '../pos-order/note-delivery';
 import type { PosOrder } from '../pos-order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import type { ReceiptConfig, ReceiptData, ReceiptLineItem } from './types';
 import { RECEIPT_SCHEMA_VERSION } from './types';
+import { wooGrossMinor } from './woo-gross';
 
 /**
  * The blocks every reprint shares with `buildReceiptData`. `fiscal.reprint_count` is this reprint's ordinal, starting
@@ -32,18 +33,10 @@ const sum = (amounts: number[]) => amounts.reduce((total, amount) => total + amo
 export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptConfig): ReceiptData {
   const { header, ...blocks } = reprintBlocks(config, order.customer);
   const { display, taxRounding: rounding } = order;
-  const dp = minorUnitDigits(order.currency), factor = 10 ** dp;
-  // A WooCommerce line's rounded gross (its builder `totalMinor`), as woocommerce-tax.ts lineAmounts computes it from
-  // the 6dp net and per-rate taxes, read back from the stored micros as woocommerceTotals reads them (ADR-076).
-  const wooGrossMinor = (line: PosOrder['lines'][number], roundAtSubtotal: boolean) => {
-    const tax = line.taxLines.reduce((sum, row) => sum + (roundAtSubtotal ? Number(row.taxMicros) / (factor * 1e6)
-      : woocommerceTax.roundTaxTotal(Number(row.taxMicros) / (factor * 1e6), dp, order.pricesIncludeTax)), 0);
-    return Math.round(woocommerceTax.roundHalfUp(Number(line.netMicros) / (factor * 1e6) + tax, dp) * factor);
-  };
   const lineTaxMicros = (line: PosOrder['lines'][number]) => line.taxLines.reduce((total, row) => total + BigInt(row.taxMicros), 0n);
   let taxSoFar = order.pricesIncludeTax ? 0n : order.lines.reduce((total, line) => line.taxInclusive === undefined ? total + lineTaxMicros(line) : total, 0n);
   const lineTotals = order.lines.map((line) => {
-    if (rounding.granularity === 'woocommerce' && line.netMicros !== undefined) return order.pricesIncludeTax ? wooGrossMinor(line, rounding.roundAtSubtotal) : line.netMinor;
+    if (rounding.granularity === 'woocommerce' && line.netMicros !== undefined) return order.pricesIncludeTax ? wooGrossMinor(line, order, rounding.roundAtSubtotal) : line.netMinor;
     if (line.taxInclusive === undefined) return line.netMinor;
     const share = roundMicrosToMinor(taxSoFar + lineTaxMicros(line)) - roundMicrosToMinor(taxSoFar);
     taxSoFar += lineTaxMicros(line);
