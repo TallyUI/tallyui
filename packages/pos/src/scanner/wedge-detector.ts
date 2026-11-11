@@ -1,4 +1,4 @@
-// Ported from WCPOS v2 packages/scanner/src/wedge-detector.ts (monorepo 5ac185b0).
+// Ported from WCPOS v2 packages/scanner/src/wedge-detector.ts (monorepo 85ecbd43f) (meta only).
 /** The wedge detector distinguishes scanner bursts from typing using a folded
  * running average of inter-key gaps. Live and replay paths share the reducer. */
 export interface WedgeSettings {
@@ -22,10 +22,14 @@ export interface WedgeState {
   detecting: boolean;
   stack: string[];
   lastTimeMs: number | null;
+  /** Time of the first key of the current burst's stack. */
+  startedAtMs: number | null;
+  /** An Enter/Tab arrived during the burst — the signature of a scanner terminator. */
+  sawTerminator: boolean;
 }
 
 export function createWedgeState(): WedgeState {
-  return { avg: 0, detecting: false, stack: [], lastTimeMs: null };
+  return { avg: 0, detecting: false, stack: [], lastTimeMs: null, startedAtMs: null, sawTerminator: false };
 }
 
 /** Fold one key, mutating and returning state. Kept bug-for-bug with v2:
@@ -44,6 +48,7 @@ export function foldWedgeKey(state: WedgeState, key: string, timeMs: number, thr
     state.avg = 0;
     state.stack = [key];
   }
+  if (state.stack.length === 1) state.startedAtMs = timeMs;
   state.lastTimeMs = timeMs;
   return state;
 }
@@ -73,11 +78,19 @@ export function replayWedgeDetector(keys: TraceKey[], settings: WedgeSettings): 
   return { detectedAsScan: true, code: stripBoundary(state.stack, settings) };
 }
 
+export interface WedgeScanMeta {
+  /** The burst ended with an Enter/Tab terminator — scanners send one, typists rarely do. */
+  terminated: boolean;
+  /** When the burst's first key arrived (the detector's clock): the physical scan time.
+   * The emit itself is WEDGE_END_OF_SCAN_MS after the LAST key. */
+  startedAtMs: number;
+}
+
 export interface WedgeDetectorOptions {
   /** Read current settings per keystroke so live changes apply. */
   getSettings: () => WedgeSettings;
   /** A completed burst, prefix/suffix already stripped. */
-  onScan: (code: string) => void;
+  onScan: (code: string, meta: WedgeScanMeta) => void;
   /** Injectable clock/timers so hosts and tests control time. */
   now?: () => number;
   setTimeout?: (fn: () => void, ms: number) => unknown;
@@ -108,8 +121,15 @@ export function createWedgeDetector(options: WedgeDetectorOptions): WedgeDetecto
     const time = timeMs ?? now();
     const sinceLastMs = state.lastTimeMs === null ? Number.POSITIVE_INFINITY : time - state.lastTimeMs;
     if (key.length !== 1) {
-      // Non-printable keys never advance the burst; only its terminator is consumed.
-      return (key === 'Enter' || key === 'Tab') && state.detecting && sinceLastMs <= WEDGE_END_OF_SCAN_MS;
+      const inBurst = state.detecting && sinceLastMs <= WEDGE_END_OF_SCAN_MS;
+      // Non-printable keys never advance the burst, but an Enter/Tab landing
+      // inside one is the scanner-terminator signature — remember it so the
+      // emit can tell a real (mis-configured) scan from fast typing.
+      if ((key === 'Enter' || key === 'Tab') && inBurst) {
+        state.sawTerminator = true;
+        return true;
+      }
+      return false;
     }
     const settings = options.getSettings();
     foldWedgeKey(state, key, time, settings.threshold);
@@ -120,11 +140,13 @@ export function createWedgeDetector(options: WedgeDetectorOptions): WedgeDetecto
       const current = options.getSettings();
       if (state.detecting && now() - (state.lastTimeMs || 0) > current.threshold) {
         const code = stripBoundary(state.stack, current);
+        const terminated = state.sawTerminator;
+        const startedAtMs = state.startedAtMs;
         // Reset for the next burst, deliberately keeping lastTimeMs.
         const lastTimeMs = state.lastTimeMs;
         state = createWedgeState();
         state.lastTimeMs = lastTimeMs;
-        options.onScan(code);
+        options.onScan(code, { terminated, startedAtMs: startedAtMs ?? now() });
       } else if (state.detecting) {
         // A threshold at or above the settle window must not latch forever.
         timer = schedule(settle, WEDGE_END_OF_SCAN_MS);
