@@ -23,3 +23,7 @@ export { createSnapshotSender, SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS, SNA
 export type { SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './snapshot-fallback';
 export { createTillDisplayService, SIGNAL_POLL_MS, LIST_POLL_MS, CONNECT_TIMEOUT_MS } from './till-display-service';
 export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayEntry, ServiceClock } from './till-display-service';
+export { createTillPairing, PENDING_POLL_MS } from './till-pairing';
+export type { TillPairing, TillPairingOptions, PairingPhase, PairingError } from './till-pairing';
+export { useTillPairing, useTillDisplays } from './use-till-pairing';
+export type { TillPairingView, TillDisplaysView } from './use-till-pairing';
