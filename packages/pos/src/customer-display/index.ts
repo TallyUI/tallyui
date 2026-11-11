@@ -19,7 +19,7 @@ export type {
   SignalPort, PeerLink, PeerLinkState, PeerLinkOptions, PeerFactory, RTCPeerConnectionLike, RTCDataChannelLike,
   SessionDescriptionLike,
 } from './webrtc';
-export { createDisplayClient, COLLECT_POLL_MS, SIGNAL_POLL_MS, OPEN_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS } from './display-client';
+export { createDisplayClient, COLLECT_POLL_MS, DISPLAY_SIGNAL_POLL_MS, OPEN_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS } from './display-client';
 export type { DisplayClient, DisplayClientOptions, DisplayClientPhase, DisplayClientError, DisplayTokenStore } from './display-client';
 export { useDisplayClient } from './use-display-client';
 export type { DisplayClientView } from './use-display-client';

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SignalPort } from './webrtc';
 import {
-  COLLECT_POLL_MS, OPEN_SIGNAL_POLL_MS, SIGNAL_POLL_MS, SNAPSHOT_POLL_MS, createDisplayClient, type DisplayClient,
+  COLLECT_POLL_MS, OPEN_SIGNAL_POLL_MS, DISPLAY_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS, createDisplayClient, type DisplayClient,
   type DisplayClientPhase,
 } from './display-client';
 import { createDisplayLink } from './display-link';
@@ -70,8 +70,8 @@ async function linkedUp(options: { snapshot?: boolean; answer?: boolean } = {}) 
   const s = setup(options);
   await advance(0);
   const t = till(s, options);
-  await advance(SIGNAL_POLL_MS);
-  await advance(SIGNAL_POLL_MS);
+  await advance(DISPLAY_SIGNAL_POLL_MS);
+  await advance(DISPLAY_SIGNAL_POLL_MS);
   expect(paired(s.client).link).toBe('open');
   return { ...s, t };
 }
@@ -194,7 +194,7 @@ describe('createDisplayClient: the peer link', () => {
     const s = await linkedUp();
     const t2 = till(s);
     await advance(OPEN_SIGNAL_POLL_MS);
-    await advance(SIGNAL_POLL_MS);
+    await advance(DISPLAY_SIGNAL_POLL_MS);
     expect(s.network.peers).toHaveLength(4);
     expect(s.network.peers[1].connectionState).toBe('closed');
     expect(s.t.link.state).toBe('closed');
@@ -234,7 +234,7 @@ describe('createDisplayClient: the snapshot fallback', () => {
     await advance(0);
     // A till that never hears the answer, so the display's link stays connecting.
     till(s, { answer: false, signal: { send: (message) => void s.fake.displayInbox.push(message), onSignal: () => () => {} } });
-    await advance(SIGNAL_POLL_MS);
+    await advance(DISPLAY_SIGNAL_POLL_MS);
     expect(paired(s.client).link).toBe('connecting');
     s.fake.snapshot = body(1, teaCart);
     await advance(SNAPSHOT_POLL_MS);

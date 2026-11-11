@@ -10,7 +10,7 @@ import { createDisplayPeerLink, type PeerFactory, type PeerLink, type PeerLinkSt
 /** TallyUI's choice: how often a waiting display asks whether the cashier has confirmed. */
 export const COLLECT_POLL_MS = 2000;
 /** TallyUI's choice: how often a paired display drains its inbox while no link is open. */
-export const SIGNAL_POLL_MS = 1000;
+export const DISPLAY_SIGNAL_POLL_MS = 1000;
 /** TallyUI's choice: how often it drains its inbox while a link is open, so a re-linking till's offer is still seen. */
 export const OPEN_SIGNAL_POLL_MS = 5000;
 /** TallyUI's choice: how often it reads the snapshot fallback while no link is open. */
@@ -212,7 +212,7 @@ export function createDisplayClient(options: DisplayClientOptions): DisplayClien
       if (inboxTimer !== null) {
         clock.clearTimeout(inboxTimer);
         timers.delete(inboxTimer);
-        inboxTimer = after(SIGNAL_POLL_MS, () => void pollInbox(session, paired));
+        inboxTimer = after(DISPLAY_SIGNAL_POLL_MS, () => void pollInbox(session, paired));
       }
     });
     patchPaired({ link: peer.state });
@@ -228,7 +228,7 @@ export function createDisplayClient(options: DisplayClientOptions): DisplayClien
       if (message.type === 'offer') openLink(session, paired, message);
       else if (message.type === 'ice') link?.deliver(message);
     }
-    inboxTimer = after(linkOpen() ? OPEN_SIGNAL_POLL_MS : SIGNAL_POLL_MS, () => void pollInbox(session, paired));
+    inboxTimer = after(linkOpen() ? OPEN_SIGNAL_POLL_MS : DISPLAY_SIGNAL_POLL_MS, () => void pollInbox(session, paired));
   }
 
   const applySnapshot = (body: unknown) => {
