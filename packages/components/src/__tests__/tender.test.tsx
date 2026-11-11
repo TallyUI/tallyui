@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney, paymentMethodOf } from '@tallyui/core';
-import type { useSale } from '@tallyui/pos';
+import { CUSTOMER_RETAX_REFUSED, type useSale } from '@tallyui/pos';
 import { Tender } from '../sale/tender';
 import { blue, click, pricing, SaleHarness, sale, traits } from './sale-harness';
 
@@ -130,6 +130,12 @@ describe('Tender', () => {
       click('Continue');
       expect(sale.continueSale).toHaveBeenCalledTimes(1);
       expect(sale.complete).not.toHaveBeenCalled();
+    });
+
+    // Reuses the stub above (tender stage) with the #722 refusal as its error.
+    it('shows the cashier the re-tax refusal', () => {
+      render(<Tender sale={{ ...stub(false), error: CUSTOMER_RETAX_REFUSED }} />);
+      expect(screen.getByRole('alert').textContent).toBe(CUSTOMER_RETAX_REFUSED);
     });
   });
 
