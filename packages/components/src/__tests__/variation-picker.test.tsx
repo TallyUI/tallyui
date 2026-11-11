@@ -78,6 +78,18 @@ it('a group whose values are long renders a Select with its placeholder, not chi
   expect(onAdd).toHaveBeenCalledExactlyOnceWith(cotton, {});
 });
 
+it('switches to a Select when the values join to exactly 15 characters, and keeps chips at 14', () => {
+  const fifteen = { name: 'Fit', values: ['Extra', 'Large', 'Small'] };
+  mount({ groups: [fifteen], variants: fifteen.values.map((value) => variant(value, { Fit: value }, 1000)) });
+  expect(screen.getByTestId('variation-select-Fit')).toBeTruthy();
+  expect(screen.queryByTestId('variation-option-Extra')).toBeNull();
+  cleanup();
+  const fourteen = { name: 'Fit', values: ['Extra', 'Large', 'Tiny'] };
+  mount({ groups: [fourteen], variants: fourteen.values.map((value) => variant(value, { Fit: value }, 1000)) });
+  expect(screen.getByTestId('variation-option-Extra')).toBeTruthy();
+  expect(screen.queryByTestId('variation-select-Fit')).toBeNull();
+});
+
 it('preventOverselling disables Add for an out-of-stock match', () => {
   const onAdd = mount({ preventOverselling: true });
   press('M');

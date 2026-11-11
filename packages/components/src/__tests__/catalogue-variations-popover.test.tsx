@@ -65,6 +65,15 @@ it('falls back to the list chooser for a product with no option groups', () => {
   expect(screen.queryByTestId('variation-popover')).toBeNull();
 });
 
+it('selects a product with one variant entry at once, even one with options, and opens no popover', () => {
+  const solo = { ...tee, id: 100, name: 'Solo', variation_docs: [{ ...tee.variation_docs[0], id: 101 }] };
+  const { onSelect } = mount({ variationsStyle: 'popover', products: [solo] });
+  expect(variants(solo)[0].options).toEqual({ Size: 'M', Colour: 'Red' });
+  press('product-tile-Solo');
+  expect(screen.queryByTestId('variation-popover')).toBeNull();
+  expect(onSelect).toHaveBeenCalledExactlyOnceWith({ product: solo, variant: variants(solo)[0] });
+});
+
 it('with pickAnyOptions, Add on the Any variant passes its picks with no "Choose options" step', () => {
   const { onSelect } = mount({ variationsStyle: 'popover', pickAnyOptions: true });
   press('product-tile-Tee');

@@ -31,6 +31,12 @@ describe('matchVariant', () => {
     expect(matchVariant([sAny, sRed], groups, { Size: 'S', Colour: 'Red' })).toBe(sRed);
     expect(matchVariant([sAny, sRed], groups, { Size: 'S', Colour: 'Blue' })).toBe(sAny);
   });
+
+  it('gives a tie to the first variant in order', () => {
+    const lAnyToo = variant('l-any-too', { Size: 'L' });
+    expect(matchVariant([lAny, lAnyToo], groups, { Size: 'L', Colour: 'Blue' })).toBe(lAny);
+    expect(matchVariant([lAnyToo, lAny], groups, { Size: 'L', Colour: 'Blue' })).toBe(lAnyToo);
+  });
 });
 
 describe('disabledOptions', () => {
