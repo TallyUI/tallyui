@@ -207,6 +207,8 @@ export {
   type DisplaySettingsProps,
   TaxCalculationSettings,
   type TaxCalculationSettingsProps,
+  CustomerDisplaySettings,
+  type CustomerDisplaySettingsProps,
 } from './settings';
 
 // Tax components
@@ -219,6 +221,7 @@ export {
   ChargeForm, type ChargeFormProps,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, OrdersList, type OrderHistoryRow, orderReference,
   ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps, CustomerDisplayScreen,
+  CustomerDisplayPairing, type CustomerDisplayPairingProps,
   ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters,
 } from './sale';
 

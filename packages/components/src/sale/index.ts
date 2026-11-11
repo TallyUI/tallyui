@@ -16,3 +16,4 @@ export { ParkedSales, type ParkedSalesProps } from './parked-sales';
 export { OpenSaleTabs, type OpenSaleTabsProps } from './open-sale-tabs';
 export { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
 export { CustomerDisplayScreen } from './customer-display-screen';
+export { CustomerDisplayPairing, type CustomerDisplayPairingProps } from './customer-display-pairing';

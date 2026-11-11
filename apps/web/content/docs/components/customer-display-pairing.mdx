@@ -1,0 +1,34 @@
+---
+title: CustomerDisplayPairing
+description: CustomerDisplayPairing is the whole screen of a customer display on its own device, pairing it with a till by code and then showing the sale.
+---
+
+## Import
+
+```tsx
+import { CustomerDisplayPairing } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { createDisplayClient, useDisplayClient } from '@tallyui/pos';
+import { CustomerDisplayPairing } from '@tallyui/components';
+
+// On the display device. The connector supplies the signalling; the store's info supplies the advertisement.
+const client = createDisplayClient({ signalling, context, tokens, advertisement });
+const view = useDisplayClient(client);
+<CustomerDisplayPairing client={view} onClaim={(code, name) => client.claim(code, name)} onCancel={() => client.cancel()} />
+```
+
+While the client starts, the screen shows a loader. Enter-code asks for the till's code and the display's name, and Pair stays disabled until both have text. A refused claim, a declined or expired code, a display forgotten by its till, or a network or server failure each shows its own message above Pair. Claiming keeps the form with its fields and Pair disabled. Waiting shows the check code large, for the cashier to match on the till before confirming, with Cancel to go back. Paired shows the sale through `CustomerDisplayScreen`, with a small `Offline` notice in a corner while the store can't be reached.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `client` | `{ phase: DisplayClientPhase; state: DisplayState }` | required | The client's view, from `useDisplayClient(client)` |
+| `onClaim` | `(code: string, displayName: string) => void` | required | Called by Pair with the trimmed code and name |
+| `onCancel` | `() => void` | required | Called by Cancel while waiting for the cashier's confirm |
+| `defaultName` | `string` | `"Customer display"` | The name field's starting value, e.g. the last name used |
+| `className` | `string` | — | Extra classes for the screen's root |
