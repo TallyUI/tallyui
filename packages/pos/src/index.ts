@@ -10,7 +10,7 @@ export type { CsvColumn } from './csv';
 
 // Currency
 export { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './currency';
-export type { CurrencyProviderProps } from './currency';
+export type { CurrencyFormat, CurrencyProviderProps } from './currency';
 
 // Tax
 export { TaxProvider, useTax, taxLogger } from './tax';
