@@ -1,0 +1,6 @@
+---
+'@tallyui/pos': minor
+'@tallyui/components': minor
+---
+
+A camera barcode scanner (#720, v2's scan button and inline camera panel). `Catalogue` takes `cameraScan` (default false) to put a `CameraScanButton` beside the search box; it opens a `CameraScannerPanel`, configured through `cameraScanner`, whose accepted decodes go to the scan hub as `{ source: { kind: 'camera' } }`, so the app's `useBarcodeScanner` receives them like device scans (this needs a `ScanHubProvider`). The panel shows v2's status copy, a permission card for native apps, a flash on each camera scan, and a resize handle with increment and decrement actions and a web pointer drag, reporting the height through `onHeightChange`. On the web, `ScannerViewfinder` streams `getUserMedia` into a `<video>` and decodes with the `BarcodeDetector` global when present, or with an injected `decoder` of the same `detect` shape; native apps pass their own `viewfinder`. `@tallyui/pos` adds `useCameraScan`, the pure `startDecodeLoop`, `nativeBarcodeDetector`, `cameraErrorStatus`, `detectorFormatToSymbology` and their constants, and `createScanSession` takes `continuous`, under which a refused repeat restarts its cooldown, so an item resting in view is scanned once.

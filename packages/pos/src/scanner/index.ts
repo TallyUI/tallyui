@@ -27,3 +27,7 @@ export { createHidScanner, HID_POS_USAGE_PAGE } from './hid-scanner';
 export type { HidInputReportEventLike, HidDeviceLike, HidLike, HidScannerOptions } from './hid-scanner';
 export { ScanHubProvider, useScanHub, useDeviceScanControls, inertDeviceScanControls } from './scan-hub-context';
 export type { DeviceScanControl, DeviceScanControls, ScanHubProviderProps } from './scan-hub-context';
+export { CAMERA_BARCODE_TYPES, DETECTOR_FORMATS, detectorFormatToSymbology, nativeBarcodeDetector, DEFAULT_DECODE_INTERVAL_MS, DECODER_ERROR_THRESHOLD, startDecodeLoop, cameraErrorStatus, CAMERA_CONSTRAINTS } from './camera-scan';
+export type { DetectedBarcode, CameraDecoder, ViewfinderStatus, DecodeLoopOptions } from './camera-scan';
+export { useCameraScan } from './use-camera-scan';
+export type { UseCameraScanOptions } from './use-camera-scan';
