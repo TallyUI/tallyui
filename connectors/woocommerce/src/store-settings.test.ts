@@ -49,6 +49,7 @@ describe('wooStoreSettings', () => {
       taxRatesPpm: { default: 106250, 'reduced-rate': 55000, 'zero-rate': 0 },
       taxRates: expect.any(Object),
       allTaxRates: expect.any(Array),
+      taxBasedOn: 'base', baseTaxAddress: { country: 'US', state: 'CA', city: 'San Francisco', postcode: '94105' },
     });
     expect(settings.taxRates!.standard.map((rate) => rate.id)).toEqual([1, 2, 4]);
     expect(settings.taxRates!['reduced-rate'].map((rate) => rate.id)).toEqual([3]);
@@ -190,6 +191,59 @@ describe('wooStoreSettings', () => {
       + '"reduced-rate":[{"id":3,"code":"US-CA-CA REDUCED-1","label":"CA Reduced","rate":"5.5000","priority":1,"compound":false,"shipping":false}]},'
       + '"taxRatesPpm":{"default":43750,"reduced-rate":55000}}',
     );
+  });
+
+  // #722 step 1: the basis and base address are display only; no taxRateTable, so the cart keeps the store's own rates.
+  it.each([
+    ['billing', 'billing'], ['shipping', 'shipping'], ['base', 'base'], ['bogus', 'base'], [undefined, 'base'],
+  ] as const)('reads tax_based_on %s as %s when taxes are on', async (taxBasedOn, expected) => {
+    const { tax_based_on: _basis, ...store } = stores[0];
+    storesBody = [taxBasedOn === undefined ? store : { ...store, tax_based_on: taxBasedOn }];
+    const settings = await wooStoreSettings(context);
+    expect(settings.taxBasedOn).toBe(expected);
+    expect(settings).not.toHaveProperty('taxRateTable');
+  });
+
+  it('takes the base tax address from a tax address that has a country', async () => {
+    storesBody = [{ ...stores[0], tax_address: { country: 'US', state: 'CA', postcode: '90001', city: 'Los Angeles' } }];
+    const settings = await wooStoreSettings(context);
+    expect(settings.baseTaxAddress).toStrictEqual({ country: 'US', state: 'CA', city: 'Los Angeles', postcode: '90001' });
+    expect(settings.taxRates!.standard.map((rate) => rate.id)).toEqual([1, 4]);
+    expect(settings).not.toHaveProperty('taxRateTable');
+  });
+
+  it('takes the base tax address from the store fields when the tax address is absent', async () => {
+    const { tax_address: _address, ...store } = stores[0];
+    storesBody = [store];
+    expect((await wooStoreSettings(context)).baseTaxAddress).toStrictEqual({ country: 'US', state: 'CA', city: 'San Francisco', postcode: '94105' });
+    storesBody = [{ ...store, store_postcode: '90001' }];
+    const settings = await wooStoreSettings(context);
+    expect(settings.baseTaxAddress).toStrictEqual({ country: 'US', state: 'CA', city: 'San Francisco', postcode: '90001' });
+    expect(settings).not.toHaveProperty('taxRateTable');
+  });
+
+  it('turns a non-string base address field into an empty string', async () => {
+    storesBody = [{ ...stores[0], tax_address: { country: 'US', state: 'CA', postcode: 94105, city: 'San Francisco' } }];
+    const settings = await wooStoreSettings(context);
+    expect(settings.baseTaxAddress).toStrictEqual({ country: 'US', state: 'CA', city: 'San Francisco', postcode: '' });
+    expect(settings).not.toHaveProperty('taxRateTable');
+  });
+
+  it('leaves the base tax address out but still reads the basis when no address has a country', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    storesBody = [{ ...stores[0], tax_address: {}, store_country: '', tax_based_on: 'billing' }];
+    const settings = await wooStoreSettings(context);
+    expect(settings).not.toHaveProperty('baseTaxAddress');
+    expect(settings.taxBasedOn).toBe('billing');
+    expect(settings).not.toHaveProperty('taxRateTable');
+  });
+
+  it.each(['no', undefined])('reads neither the basis nor the base address when calc_taxes is %s', async (calcTaxes) => {
+    storesBody = [{ ...stores[0], calc_taxes: calcTaxes, tax_based_on: 'billing' }];
+    const settings = await wooStoreSettings(context);
+    expect(settings).not.toHaveProperty('taxBasedOn');
+    expect(settings).not.toHaveProperty('baseTaxAddress');
+    expect(settings).not.toHaveProperty('taxRateTable');
   });
 
   it('uppercases currency, reads yes flags and omits a non-string shipping class', async () => {
