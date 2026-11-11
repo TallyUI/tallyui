@@ -83,6 +83,8 @@ export { DISPLAY_PROTOCOL_VERSION, DISPLAY_ACTIONS, makeEnvelope, displayCart, d
 export type { PaymentPhase, DisplayTemplate, DisplayCart, DisplayPayment, DisplayConfig, DisplayPayloads, DisplayAction, DisplayEnvelope, DecodeRefusal, DecodeResult, DisplayView, DisplayState } from './customer-display';
 export { DISPLAY_CHANNEL, createBroadcastDisplayTransport, createDisplayLink, useCustomerDisplay, DISPLAY_TEMPLATE, HELLO_RETRY_MS } from './customer-display';
 export type { DisplayTransport, BroadcastChannelLike, DisplayLink, DisplayClock } from './customer-display';
+export { createSaleDisplayPublisher, derivePaymentEvent, useSaleDisplay } from './customer-display';
+export type { SaleDisplayOptions, SaleDisplayInput, SaleDisplayPublisher } from './customer-display';
 
 // Product
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
