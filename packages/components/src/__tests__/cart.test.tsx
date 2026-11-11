@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'react-native';
 import { formatMoney } from '@tallyui/core';
+import { SPLIT_FIXED_DISCOUNT } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
 import { Cart } from '../sale/cart';
 import { blue, click, discount, pricing, SaleHarness, sale, totals, traits } from './sale-harness';
@@ -575,5 +576,34 @@ describe('Cart empty state (v2)', () => {
     expect(screen.getByTestId('cart-empty')).toBeTruthy();
     expect(heads()).toEqual([]);
     expect(screen.queryByTestId('cart-footer')).toBeNull();
+  });
+});
+
+describe('Cart columns (v2 Cart Settings › Columns)', () => {
+  const columnHeads = () => screen.getAllByRole('columnheader').map((head) => head.textContent);
+
+  it('shows Split on a quantity-3 line with quantity.split, and Split leaves 3 lines', () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} columns={{ quantity: { split: true } }} />}</SaleHarness>);
+    act(() => { sale.add(blue, traits); sale.add(blue, traits); sale.add(blue, traits); });
+    click('Split Shirt');
+    expect(sale.order.lineItems.map((line) => line.quantity)).toEqual([1, 1, 1]);
+    expect(screen.getAllByText('Shirt')).toHaveLength(3);
+    expect(screen.queryByTestId('cart-line-split')).toBeNull();
+  });
+
+  it('shows a Split refusal under the line', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 2 }}>{(sale) => <Cart sale={sale} columns={{ quantity: { split: true } }} />}</SaleHarness>);
+    act(() => { sale.add(blue, traits); sale.add(blue, traits); });
+    act(() => { sale.applyDiscount(sale.order.lineItems[0].id, { type: 'fixed', value: 50 }); });
+    click('Split Shirt');
+    expect(screen.getByTestId('cart-line-split-error').textContent).toBe(SPLIT_FIXED_DISCOUNT);
+    expect(sale.order.lineItems).toHaveLength(1);
+  });
+
+  it("shows a catalogue line's SKU under the name, and the image head", () => {
+    render(<SaleHarness>{(sale) => <Cart sale={sale} columns={{ name: { sku: true }, image: { show: true } }} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.getByTestId('cart-line-sku').textContent).toBe('BLUE');
+    expect(columnHeads()).toEqual(['Qty', '', 'Item', 'Price', 'Total']);
   });
 });

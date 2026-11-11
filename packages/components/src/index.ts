@@ -63,6 +63,8 @@ export {
   type CartAction,
   CartColumnHeads,
   type CartColumnHeadsProps,
+  cartColumnIds,
+  type CartColumnSettings,
   CartFoot,
   type CartFootProps,
   type CartFootAction,

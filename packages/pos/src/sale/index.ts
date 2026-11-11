@@ -11,4 +11,5 @@ export { addEntryToCart, CartError } from './cart';
 export { catalogueEntries, findEntryByCode, variantPriceLabel } from './catalogue';
 export type { CatalogueEntry } from './catalogue';
 export { cartQuantities } from './in-cart';
+export { SPLIT_FIXED_DISCOUNT } from '../order/order-builder';
 export type { CartQuantityLine } from './in-cart';
