@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest';
-import type { Customer, CustomerAddress, CustomerInput, CustomerPatch, CustomerTaxId, SyncContext, TallyConnector } from '@tallyui/core';
+import type { Customer, CustomerAddress, CustomerInput, CustomerPage, CustomerPatch, CustomerTaxId, SyncContext, TallyConnector } from '@tallyui/core';
 
 describe('TallyConnector.updateCustomer', () => {
   it('is optional, takes context, id and patch, and resolves a Customer', () => {
@@ -32,6 +32,25 @@ describe('Customer', () => {
     expectTypeOf<Customer['billing']>().toEqualTypeOf<CustomerAddress | undefined>();
     expectTypeOf<Customer['shipping']>().toEqualTypeOf<CustomerAddress | undefined>();
     expectTypeOf<Customer['taxIds']>().toEqualTypeOf<CustomerTaxId[] | undefined>();
+  });
+});
+
+describe('TallyConnector.searchCustomersPage', () => {
+  it('is optional, takes a 1-based page and resolves a CustomerPage', () => {
+    expectTypeOf<Pick<TallyConnector, 'searchCustomersPage'>>().toEqualTypeOf<{
+      searchCustomersPage?: (context: SyncContext, query: string, options?: { limit?: number; page?: number }) => Promise<CustomerPage>;
+    }>();
+  });
+
+  it('a page may carry no total', () => {
+    expectTypeOf<CustomerPage['total']>().toEqualTypeOf<number | undefined>();
+  });
+});
+
+describe('Customer.createdAt', () => {
+  it('is an optional string the till never sends', () => {
+    expectTypeOf<Customer['createdAt']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<CustomerInput>().not.toHaveProperty('createdAt');
   });
 });
 

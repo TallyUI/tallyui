@@ -5,7 +5,7 @@ import type { CustomerTraits } from './traits/customer';
 import type { ReplicationAdapter } from './replication';
 import type { CatalogueReconcileAdapter, FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 import type { StoreSettings, StoreSettingsChoice } from './store-settings';
-import type { Customer, CustomerInput, CustomerPatch } from './customers';
+import type { Customer, CustomerInput, CustomerPage, CustomerPatch } from './customers';
 import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
 import type { PaymentMethodDescriptor } from './payment-methods';
 import type { RegisterInfo } from './registers';
@@ -332,6 +332,11 @@ export interface TallyConnector {
    * `undefined` when the connector has no customer support.
    */
   searchCustomers?: (context: SyncContext, query: string, options?: { limit?: number }) => Promise<Customer[]>;
+  /**
+   * A page of a customer search, with the store's count of all matches: online only. The query and `limit` mean what
+   * they mean for `searchCustomers`; `page` is 1-based (default 1). `undefined` when the connector can't page or count.
+   */
+  searchCustomersPage?: (context: SyncContext, query: string, options?: { limit?: number; page?: number }) => Promise<CustomerPage>;
   /** Customer creation: online only; `undefined` when the connector has no customer support. */
   createCustomer?: (context: SyncContext, input: CustomerInput) => Promise<Customer>;
   /**
