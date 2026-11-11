@@ -8,6 +8,7 @@ import type { StoreSettings, StoreSettingsChoice } from './store-settings';
 import type { Customer, CustomerInput, CustomerPage, CustomerPatch } from './customers';
 import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
 import type { PaymentMethodDescriptor } from './payment-methods';
+import type { ReceiptTemplate, ReceiptTemplateKind } from './receipt-templates';
 import type { RegisterInfo } from './registers';
 import type { Cashier } from './cashier';
 import type { FailureClass } from '../connectivity';
@@ -326,6 +327,12 @@ export interface TallyConnector {
    * the store. `undefined` when the connector has none of its own: the till offers `defaultPaymentMethods()`.
    */
   paymentMethods?: (context: SyncContext) => Promise<PaymentMethodDescriptor[]>;
+  /**
+   * The store's print templates of one kind (default `receipt`), in the store's own order: online only, read-only.
+   * Only templates the till can render are returned; `[]` when the store has none. `undefined` when the connector
+   * has no store templates (the till keeps its built-in layouts).
+   */
+  receiptTemplates?: (context: SyncContext, kind?: ReceiptTemplateKind) => Promise<ReceiptTemplate[]>;
   /**
    * Customer search: online only. An empty or whitespace query may list a first page of the store's customers
    * (recent ones, or in the store's own picker order); a connector that cannot list them returns `[]`.
