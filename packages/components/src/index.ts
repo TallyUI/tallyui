@@ -44,6 +44,18 @@ export {
   type InCartBadgeProps,
   CategoryTile,
   type CategoryTileProps,
+  VariationPicker,
+  type VariationPickerProps,
+  CameraScanButton,
+  type CameraScanButtonProps,
+  CameraScannerPanel,
+  FLASH_DURATION_MS,
+  SCANNER_MIN_HEIGHT,
+  SCANNER_MAX_HEIGHT,
+  SCANNER_DEFAULT_HEIGHT,
+  type CameraScannerPanelProps,
+  ScannerViewfinder,
+  type ViewfinderProps,
 } from './product';
 
 // Cart components
@@ -193,7 +205,12 @@ export {
   type ConnectionStatus,
   DisplaySettings,
   type DisplaySettingsProps,
+  TaxCalculationSettings,
+  type TaxCalculationSettingsProps,
 } from './settings';
+
+// Tax components
+export { TaxBasedOn, type TaxBasedOnProps } from './tax';
 
 // Sale components
 export {

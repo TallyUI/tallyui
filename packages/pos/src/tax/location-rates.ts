@@ -7,11 +7,14 @@ function rateCode(rate: woocommerceTax.WooTaxRate): string {
   return [rate.country, rate.state, rate.name || 'TAX', String(rate.priority)].filter(Boolean).join('-').toUpperCase();
 }
 
-/** A class's effective rate on 100 units taxed exclusive, compound rates included (v2's class ledger, tax-derivation.ts:49-74). */
-function classRatePpm(rates: woocommerceTax.WooTaxRate[]): number {
+/** A class's effective rate on 100 units taxed exclusive, compound rates included (v2's class ledger, tax-derivation.ts:49-74), in percent. */
+export function classRatePercent(rates: woocommerceTax.CalculateTaxesInput['rates']): number {
   if (rates.length === 0) return 0;
-  const percent = woocommerceTax.calculateTaxes({ amount: 100, rates, amountIncludesTax: false }).total;
-  return Math.round(percent * 10000);
+  return woocommerceTax.calculateTaxes({ amount: 100, rates, amountIncludesTax: false }).total;
+}
+
+function classRatePpm(rates: woocommerceTax.WooTaxRate[]): number {
+  return Math.round(classRatePercent(rates) * 10000);
 }
 
 /**
