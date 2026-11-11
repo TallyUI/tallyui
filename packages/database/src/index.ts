@@ -41,3 +41,5 @@ export {
   readSyncCadence, syncCadence$, setSyncCadence, resetSyncCadence,
 } from './sync-cadence-store';
 export type { SyncCadenceDoc, SyncCadenceCollection, SyncCadenceProfile } from './sync-cadence-store';
+export { startSyncCadence, jitteredIntervalMs } from './sync-cadence-runner';
+export type { SyncCadenceTarget, StartSyncCadenceOptions, SyncCadenceRunner } from './sync-cadence-runner';
