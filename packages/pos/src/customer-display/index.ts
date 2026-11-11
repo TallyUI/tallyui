@@ -27,3 +27,7 @@ export { createTillPairing, PENDING_POLL_MS } from './till-pairing';
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError } from './till-pairing';
 export { useTillPairing, useTillDisplays } from './use-till-pairing';
 export type { TillPairingView, TillDisplaysView } from './use-till-pairing';
+export { createDisplayClient, COLLECT_POLL_MS, DISPLAY_SIGNAL_POLL_MS, OPEN_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS } from './display-client';
+export type { DisplayClient, DisplayClientOptions, DisplayClientPhase, DisplayClientError, DisplayTokenStore } from './display-client';
+export { useDisplayClient } from './use-display-client';
+export type { DisplayClientView } from './use-display-client';
