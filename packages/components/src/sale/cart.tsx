@@ -5,6 +5,7 @@ import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
 import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
 import { cartShowsPrice } from '../cart/cart-columns';
+import type { CartColumnSettings } from '../cart/cart-columns';
 import { DiscountChips, DiscountForm } from './discount-form';
 import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
@@ -13,6 +14,7 @@ import { ShoppingCartIcon } from '../ui';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
 export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor, orderActions = true, checkout, lineEditor = 'inline',
+  columns,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
@@ -39,6 +41,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
      * price popover. Default `inline`: the − / + buttons and Price form. */
     lineEditor?: 'inline' | 'popover';
+    /** v2's Cart Settings › Columns: which columns show, a Split link under a quantity above 1 (`quantity.split`) and the
+     * SKU under the name (`name.sku`). The defaults are today's cart: Qty, Item, Price (folding as before) and Total. */
+    columns?: CartColumnSettings;
     /** The empty cart's icon, centred above `emptyText` and hidden from screen readers. Default: v2's cart icon in the
      * muted colour. Pass `null` for no icon. */
     emptyIcon?: ReactNode;
@@ -57,6 +62,12 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const display = (lineId: string) => order.display.lines.find((line) => line.lineId === lineId)!;
   const orderAmounts = order.discounts.length === 1
     ? [{ discountId: order.discounts[0].id, amountMinor: order.display.orderDiscountMinor }] : [];
+  // A line's Split refusal, shown under that line until its next split or another line's split attempt.
+  const [splitError, setSplitError] = useState<{ lineId: string; message: string } | null>(null);
+  const split = (lineId: string) => {
+    const refused = sale.splitLine(lineId);
+    setSplitError(refused === null ? null : { lineId, message: refused });
+  };
   // One open form: a line's discount or price, the order's discount (lineId null), or a charge.
   const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' } | null>(null);
   const chargesOffered = (sale.capabilities?.orderCreate ?? 0) >= 5;
@@ -83,6 +94,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     <CartLine name={line.name} attributes={line.attributes} quantity={line.quantity} unitPrice={money(line.unitPriceMinor)}
       regularUnitPrice={line.regularUnitPriceMinor === undefined ? undefined : money(line.regularUnitPriceMinor)}
       lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice}
+      columns={columns} sku={line.sku} imageUrl={line.imageUrl} onSplit={() => split(line.id)}
       quantitySlot={lineEditor === 'popover' ? <LinePopover kind="quantity" lineName={line.name} currency={order.currency}
         value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} actions={[
           ...(!pricePopover ? [{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }] : []),
@@ -92,6 +104,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       priceSlot={pricePopover ? <LinePopover kind="price" lineName={line.name} currency={order.currency} value={line.unitPriceMinor}
         regularValue={line.regularUnitPriceMinor} actions={[{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }]}
         quickDiscounts={quickDiscounts} textClassName="text-right text-muted-foreground" onApply={(amount) => applyPrice(line, amount)} /> : undefined} />
+    {splitError?.lineId === line.id ? <Text accessibilityRole="alert" testID="cart-line-split-error"
+      className="px-3 text-sm text-destructive">{splitError.message}</Text> : null}
     <DiscountChips discounts={line.discounts} amounts={display(line.id).discounts} currency={order.currency} onRemove={sale.removeDiscount} />
     {lineEditor === 'inline' ? <CartLineActions actions={[
       { id: 'discount', label: 'Discount', color: 'text-primary', onPress: () => setForm({ type: 'discount', lineId: line.id }) },
@@ -112,7 +126,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       onApply={(amount, reason) => applyPrice(line, amount, reason)} /> : null}
   </>;
   return <View dataSet={{ print: 'hide' }} className="flex-1 min-h-0" onLayout={(event) => setCartWidth(event.nativeEvent.layout.width)}>
-    {empty ? null : <CartColumnHeads showPrice={showPrice} />}
+    {empty ? null : <CartColumnHeads showPrice={showPrice} columns={columns} />}
     <CartPanel items={order.lineItems} renderItem={renderItem}
     emptyState={empty ? <View testID="cart-empty" className="flex-1 items-center justify-center gap-3 px-3 py-6">
       {emptyIcon === null ? null : <View aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"

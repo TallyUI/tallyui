@@ -400,6 +400,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       }
     },
     setQuantity(lineId: string, quantity: number) { if (!locked()) builderNow.current.updateQuantity(lineId, quantity); },
+    /** v2's cart Split: a line of quantity N becomes N lines of 1. Returns the refusal to show (SPLIT_FIXED_DISCOUNT), or null. */
+    splitLine(lineId: string): string | null {
+      if (locked()) return SALE_SAVING;
+      try { builderNow.current.splitLine(lineId); return null; }
+      catch (error) { if (error instanceof RangeError) return error.message; throw error; }
+    },
     /** ADR-075: adds a fee; returns its id or the builder's refusal. */
     addFee(input: ChargeInput): { id: string } | string {
       if (locked()) return SALE_SAVING;

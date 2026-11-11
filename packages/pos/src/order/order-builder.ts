@@ -17,6 +17,9 @@ import type {
   ChargeInput, ChargeLine, FeeLine, ShippingLine,
 } from './types';
 
+/** splitLine's refusal: a fixed line discount copied onto every split line would multiply it. */
+export const SPLIT_FIXED_DISCOUNT = 'Remove the line’s fixed discount before splitting it';
+
 /** Tax contexts already warned that per_rate_group_items fell back to per_order for inclusive lines (#287). */
 const perRateGroupWarned = new WeakSet<TaxContext>();
 
@@ -122,6 +125,12 @@ export interface OrderBuilder {
   updateShipping(id: string, patch: Partial<ChargeInput & { methodId?: string }>): void;
   removeShipping(id: string): void;
   updateQuantity(lineId: string, quantity: number): void;
+  /**
+   * Splits a line of quantity N into N lines of quantity 1 (v2's cart Split): the line keeps its id at quantity 1 and
+   * N − 1 copies with fresh ids, and fresh discount ids, follow it. Returns the new lines' ids; `[]`, emitting nothing,
+   * for quantity 1 or an unknown line. Throws a RangeError (SPLIT_FIXED_DISCOUNT) for a line with a fixed discount.
+   */
+  splitLine(lineId: string): string[];
   /** Sets a line's unit price (a till price edit), in minor units of the order's currency and the line's own tax mode; its discounts and tax are recomputed. */
   setUnitPrice(lineId: string, amountMinor: number): void;
   removeItem(lineId: string): void;
@@ -560,6 +569,19 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         );
       }
       emit();
+    },
+
+    splitLine(lineId) {
+      const index = lineItems.findIndex((li) => li.id === lineId);
+      const source = lineItems[index];
+      if (!source || source.quantity <= 1) return [];
+      if (source.discounts.some((d) => d.type === 'fixed')) throw new RangeError(SPLIT_FIXED_DISCOUNT);
+      // Not through addLine, whose merge would fold the copies back into one line.
+      const copies = Array.from({ length: source.quantity - 1 }, () =>
+        recalculateLine({ ...source, id: uid(), quantity: 1, discounts: source.discounts.map((d) => ({ ...d, id: uid() })) }));
+      lineItems = [...lineItems.slice(0, index), recalculateLine({ ...source, quantity: 1 }), ...copies, ...lineItems.slice(index + 1)];
+      emit();
+      return copies.map((li) => li.id);
     },
 
     setUnitPrice(lineId, amountMinor) {

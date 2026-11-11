@@ -1,5 +1,5 @@
 export { CartLine, type CartLineProps } from './cart-line';
-export { CartColumnHeads, type CartColumnHeadsProps } from './cart-columns';
+export { CartColumnHeads, cartColumnIds, type CartColumnHeadsProps, type CartColumnSettings } from './cart-columns';
 export { CartTotal, type CartTotalProps } from './cart-total';
 export { CartPanel, type CartPanelProps } from './cart-panel';
 export { DiscountBadge, type DiscountBadgeProps } from './discount-badge';
