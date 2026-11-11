@@ -4,3 +4,11 @@ export { DEFAULT_COOLDOWN_MS, normalizeRetailCode, hasValidRetailCheckDigit, ret
 export type { ScanRejectReason, ScanOfferResult, ScanSessionOptions, ScanSession } from './scan-session';
 export { useBarcodeScanner } from './use-barcode-scanner';
 export type { UseBarcodeScannerOptions } from './use-barcode-scanner';
+export { SCANNER_DEVICE_KEY_MAX_LENGTH, normalizeUuid, isCanonicalUuid, scannerDeviceKey, scannerTransport } from './device-identity';
+export type { ScannerConnectionType, ScannerIdentity, ScannerTransport } from './device-identity';
+export { createSerialLineDecoder } from './serial-line-decoder';
+export type { SerialLineDecoderOptions, SerialLineDecoder } from './serial-line-decoder';
+export { decodeHidPosReport } from './hid-pos-decoder';
+export type { HidPosDecodeOptions, HidPosResult } from './hid-pos-decoder';
+export { isWebSerialSupported, isWebHidSupported } from './capabilities';
+export { isChooserCancel } from './chooser-cancel';
