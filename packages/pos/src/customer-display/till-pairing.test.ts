@@ -168,6 +168,52 @@ describe('createTillPairing', () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it('g: a cancel while minting stays idle when the mint lands, and nothing polls', async () => {
+    const s = setup();
+    const release = s.signalling.hold('mint');
+    const start = s.pairing.start();
+    s.pairing.cancel();
+    release();
+    await start;
+    expect(s.pairing.phase).toEqual({ phase: 'idle' });
+    await wait(PENDING_POLL_MS * 2);
+    expect(s.signalling.called('pending')).toHaveLength(0);
+  });
+
+  it("h: a poll held across a cancel and a restart leaves the new code's claims empty", async () => {
+    const s = setup();
+    await s.pairing.start();
+    const release = s.signalling.hold('pending');
+    await wait(PENDING_POLL_MS);
+    s.pairing.cancel();
+    await s.pairing.start();
+    s.signalling.claims = [pendingClaim('k1', '4821')];
+    release();
+    await wait(0);
+    expect(s.pairing.phase).toMatchObject({ phase: 'code', code: '100002', claims: [] });
+  });
+
+  it('i: a code that expires between polls expires on time', async () => {
+    const s = setup();
+    s.signalling.expiresAt = new Date(Date.parse(NOW) + 3000).toISOString();
+    await s.pairing.start();
+    await wait(2999);
+    expect(s.pairing.phase.phase).toBe('code');
+    await wait(1);
+    expect(s.pairing.phase).toEqual({ phase: 'idle', error: 'expired' });
+  });
+
+  it('j: a second confirm while confirming makes no second call', async () => {
+    const s = await withClaims(pendingClaim('k1', '4821'));
+    const release = s.signalling.hold('confirm');
+    const first = s.pairing.confirm('k1');
+    const second = s.pairing.confirm('k1');
+    release();
+    await Promise.all([first, second]);
+    expect(s.signalling.called('confirm')).toHaveLength(1);
+    expect(s.pairing.phase).toEqual({ phase: 'idle' });
+  });
+
   it('cancel goes back to idle and stops polling', async () => {
     const s = setup();
     await s.pairing.start();

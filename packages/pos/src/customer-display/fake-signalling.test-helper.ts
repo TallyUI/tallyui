@@ -117,7 +117,14 @@ export class FakePairingSignalling implements DisplaySignalling {
   expiresAt = '2026-11-11T10:10:00.000Z';
   readonly calls: PairingCall[] = [];
   private readonly failures = new Map<PairingMethod, DisplaySignallingErrorCode>();
+  private readonly holds = new Map<PairingMethod, Promise<void>>();
 
+  /** Holds the next call of `method`, after it is recorded, until the returned release. */
+  hold(method: PairingMethod): () => void {
+    let release = () => {};
+    this.holds.set(method, new Promise<void>((resolve) => { release = resolve; }));
+    return release;
+  }
   fail(method: PairingMethod, code: DisplaySignallingErrorCode) {
     this.failures.set(method, code);
   }
@@ -129,6 +136,9 @@ export class FakePairingSignalling implements DisplaySignalling {
   }
   private async enter(method: PairingMethod, id?: string) {
     this.calls.push(id === undefined ? { method } : { method, id });
+    const held = this.holds.get(method);
+    this.holds.delete(method);
+    await held;
     const code = this.failures.get(method);
     if (code) throw new DisplaySignallingError(code);
   }
