@@ -12,3 +12,5 @@ export { decodeHidPosReport } from './hid-pos-decoder';
 export type { HidPosDecodeOptions, HidPosResult } from './hid-pos-decoder';
 export { isWebSerialSupported, isWebHidSupported } from './capabilities';
 export { isChooserCancel } from './chooser-cancel';
+export { SCANNER_PROFILES_COLLECTION, scannerProfileSchema, scannerProfileCollection, addScannerProfileCollection, scannerProfiles$, readScannerProfiles, saveScannerProfile, removeScannerProfile } from './scanner-profiles';
+export type { ScannerProfile, ScannerProfileCollection } from './scanner-profiles';
