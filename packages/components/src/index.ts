@@ -225,6 +225,7 @@ export {
 export {
   SalesRoom, type SalesRoomProps, SalesHero, type SalesHeroProps, SalesCards, type SalesCardsProps, type SalesCardId,
   SalesFiltersBar, type SalesFiltersBarProps, type SalesFilters, type SalesOption,
+  DateRangeMenu, type DateRangeMenuProps,
 } from './reports';
 
 // Fonts
