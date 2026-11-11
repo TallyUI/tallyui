@@ -3,24 +3,85 @@ import { CLOSURE_HOLDING_REJECTIONS } from '../outbox/register-outbox';
 import { readFresh } from '../rxdb';
 import { uuidv7 } from '../pos-order/uuidv7';
 import { countVariance, overThreshold } from './register-count.helpers';
-import { adoptStoreCounters, type RegisterHost } from './register-document';
+import { adoptStoreCounters, renumberClosure, type RegisterHost } from './register-document';
 import { registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import type { Closure, RegisterSession } from './schemas';
-import { isKnownSessionStatus, RegisterSessionRequiredError, RegisterTakeOverError, type RegisterSessionCollection } from './session-store';
+import { isKnownSessionStatus, RegisterSessionRequiredError, RegisterTakeOverError, type ClosureCollection,
+  type RegisterSessionCollection } from './session-store';
 
 const chains = new WeakMap<RegisterCommandCollection, Promise<void>>();
+const figure = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined);
+type Counted = { number: number; sales: number; refunds: number };
+const counted = (number: unknown, sales: unknown, refunds: unknown): Counted | undefined => {
+  const [n, s, r] = [figure(number), figure(sales), figure(refunds)];
+  return n === undefined || s === undefined || r === undefined ? undefined : { number: n, sales: s, refunds: r };
+};
+
+/**
+ * The store takes a closure only as its last number plus one; it refuses any other `register_closure_number_invalid`
+ * with its counters (ADR-068 d5). Walking the register's closures in ledger order, a refused closure is renumbered
+ * once (`number_retried`) after the refusal's counters, or after a closure ahead of it in the ledger that numbers
+ * higher, its totals re-derived as those plus its own period; the register document, the closure row and the command
+ * row are rewritten in that order, and the command is requeued in its place under a new command id (ADR-068 d6). Any
+ * other refusal, a second refusal of a renumbered closure, or malformed counters stays refused and ends the walk.
+ */
+async function renumberRefused(commands: RegisterCommandCollection, closures: ClosureCollection, host: RegisterHost,
+  storeKey: string, registerId: string) {
+  const [submits, local] = await Promise.all([
+    readFresh(commands, { selector: { registerId, type: 'register.closure.submit' }, sort: [{ seq: 'asc' }, { key: 'asc' }] }),
+    readFresh(closures, { selector: { register_id: registerId } }),
+  ]);
+  let ahead: Counted | undefined;
+  for (const submit of submits) {
+    const { payload, error } = submit;
+    if (submit.syncStatus !== 'rejected') {
+      const sent = counted(payload.number, payload.perpetualSalesTotalMinor, payload.perpetualRefundsTotalMinor);
+      if (sent && sent.number > (ahead?.number ?? -1)) ahead = sent;
+      continue;
+    }
+    let row = local.find(({ id }) => id === payload.closureId);
+    if (error?.code !== 'register_closure_number_invalid' || !row) return;
+    if (!row.number_retried) {
+      const store = (error.data?.counters ?? {}) as Record<string, unknown>;
+      const refused = counted(store.lastClosureNumber, store.perpetualSalesTotalMinor, store.perpetualRefundsTotalMinor);
+      if (!refused) return;
+      const base = ahead && ahead.number > refused.number ? ahead : refused;
+      const closedAt = row.closed_at;
+      row = { ...row, number: base.number + 1, number_retried: true, perpetual_sales_total_minor: base.sales + row.period_sales_total_minor,
+        perpetual_refunds_total_minor: base.refunds + row.period_refunds_total_minor };
+      // Closures made after it are behind it in the ledger, so the store lacks them and the register keeps them.
+      const later = local.filter((closure) => closure.closed_at > closedAt);
+      await renumberClosure(host, storeKey, registerId, row, {
+        salesMinor: later.reduce((sum, closure) => sum + closure.period_sales_total_minor, row.perpetual_sales_total_minor),
+        refundsMinor: later.reduce((sum, closure) => sum + closure.period_refunds_total_minor, row.perpetual_refunds_total_minor),
+      });
+      await (await closures.findOne(row.id).exec(true)).incrementalPatch({ number: row.number, number_retried: true,
+        perpetual_sales_total_minor: row.perpetual_sales_total_minor, perpetual_refunds_total_minor: row.perpetual_refunds_total_minor });
+    } else if (payload.number === row.number) return;
+    const renumbered = row;
+    await (await commands.findOne(submit.key).exec())?.incrementalModify((doc) => {
+      if (doc.commandId !== submit.commandId || doc.syncStatus !== 'rejected') return doc;
+      const { error: _refusal, ...rest } = doc;
+      return { ...rest, commandId: uuidv7(), syncStatus: 'pending', updatedAt: new Date().toISOString(), payload: { ...doc.payload,
+        number: renumbered.number, perpetualSalesTotalMinor: renumbered.perpetual_sales_total_minor,
+        perpetualRefundsTotalMinor: renumbered.perpetual_refunds_total_minor } };
+    });
+    ahead = { number: row.number, sales: row.perpetual_sales_total_minor, refunds: row.perpetual_refunds_total_minor };
+  }
+}
 type SessionTarget = { commands: RegisterCommandCollection; sessions: RegisterSessionCollection; sessionId: string; now?: string };
 
 /**
  * Applied opens fill a missing resume id; refused opens make open/counting sessions conflict.
  * Superseded rejections make open/counting sessions terminal; a conflict session leaves only by an applied open or abandon (ADR-078 decision 9); terminal/unknown states stay untouched.
  * Applied conflict opens restore the latest transition's counting state, otherwise open; pending rows do nothing.
- * Given `host` and `storeKey`, applied rows also raise the register's counters to the store's (#651, `adoptStoreCounters`).
+ * Given `host` and `storeKey`, applied rows also raise the register's counters to the store's (#651, `adoptStoreCounters`),
+ * and given `closures` too, a closure refused for its number is renumbered once and requeued (#655, `renumberRefused`).
  * Answers are walked in seq/key order; adoption is idempotent and safe to run at any time.
  */
-export async function adoptRegisterResults({ commands, sessions, registerId, host, storeKey }: {
+export async function adoptRegisterResults({ commands, sessions, registerId, host, storeKey, closures }: {
   commands: RegisterCommandCollection; sessions: RegisterSessionCollection; registerId: string;
-  host?: RegisterHost; storeKey?: string;
+  host?: RegisterHost; storeKey?: string; closures?: ClosureCollection;
 }): Promise<void> {
   const run = (chains.get(commands) ?? Promise.resolve()).then(async () => {
     const [answers, transitions, rows] = await Promise.all([
@@ -59,6 +120,7 @@ export async function adoptRegisterResults({ commands, sessions, registerId, hos
     }
     const counters = answers.filter((answer) => answer.syncStatus === 'applied' && answer.result?.counters).map((answer) => answer.result?.counters);
     if (host && storeKey && counters.length) await adoptStoreCounters(host, storeKey, registerId, counters);
+    if (host && storeKey && closures) await renumberRefused(commands, closures, host, storeKey, registerId);
   }).catch((error: unknown) => {
     registerCommandsLogger.error('Register result adoption failed', { context: { registerId, error: String(error) } });
   });
