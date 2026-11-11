@@ -1,9 +1,11 @@
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, saleLogger } from './use-sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, COUPONS_REPRICING, saleLogger } from './use-sale';
 export { openSales, isPartlyPaid } from './open-sales';
 export type { OpenSale } from './open-sales';
 export type { SaleStage } from './use-sale';
-export { COUPONS_UNSUPPORTED } from './discount-codes';
+export { COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION } from './discount-codes';
 export type { SaleDiscountCodes, SaleDiscountState } from './discount-codes';
+export { createStorePricedDiscountCodes } from './store-priced-discount-codes';
+export type { StorePricedAccepted, StorePricedCodePricing, StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
 export * as woocommerceDiscountCodes from './woocommerce';
 export { addEntryToCart, CartError } from './cart';
 export { catalogueEntries, findEntryByCode, variantPriceLabel } from './catalogue';
