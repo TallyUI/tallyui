@@ -81,3 +81,63 @@ export function deriveExpected({
   }
   return totals;
 }
+
+export interface DrawerTerm { amountMinor: number; count: number }
+export interface DrawerTerms {
+  floatMinor: number;
+  cashSales: DrawerTerm;
+  cashRefunds: DrawerTerm;
+  paidIn: DrawerTerm;
+  paidOut: DrawerTerm;
+  noSales: number;
+  /** Non-cash methods: captured rows minus applied refunds, keyed by method_id. */
+  otherTenders: Record<string, DrawerTerm>;
+  /** Cash sales − cash refunds + Σ other tenders' amounts (v2 `register-panel.tsx:216-219`). */
+  sessionSalesMinor: number;
+  /** Exactly deriveExpected's result for the same input. */
+  expected: Record<string, number>;
+}
+
+/**
+ * `deriveExpected`'s figures term by term, each with the number of rows behind it, for the
+ * register panel's drawer ledger (WCPOS v2 `deriveDrawerTerms`, `packages/query/src/register-session/expected.ts:210-342`).
+ * It applies `deriveExpected`'s filters, and `expected` is `deriveExpected`'s own result, so
+ * `expected.cash` is float + cash sales − cash refunds + paid in − paid out, and each other
+ * method's figure is its `otherTenders` amount. A refund counts once per method it touches.
+ */
+export function deriveDrawerTerms(input: Parameters<typeof deriveExpected>[0]): DrawerTerms {
+  const { session, movements, ledgerRowsBySession, refunds } = input;
+  const term = (): DrawerTerm => ({ amountMinor: 0, count: 0 });
+  const add = (target: DrawerTerm, amountMinor: number) => {
+    target.amountMinor += amountMinor;
+    target.count += 1;
+  };
+  const [cashSales, cashRefunds, paidIn, paidOut] = [term(), term(), term(), term()];
+  const otherTenders: Record<string, DrawerTerm> = {};
+  let noSales = 0;
+  for (const row of ledgerRowsBySession) {
+    if (row.session_id !== session.id || row.status !== 'captured') continue;
+    const method = row.kind === 'cash' ? 'cash' : row.method_id;
+    add(method === 'cash' ? cashSales : (otherTenders[method] ??= term()), row.amountMinor);
+  }
+  const voids = new Set(movements.filter((row) => row.session_id === session.id && row.type === 'void').map((row) => row.voids));
+  for (const row of movements) {
+    if (row.session_id !== session.id || row.voided_by || voids.has(row.id)) continue;
+    if (row.type === 'paid_in') add(paidIn, row.amountMinor);
+    if (row.type === 'paid_out') add(paidOut, row.amountMinor);
+    if (row.type === 'no_sale') noSales += 1;
+  }
+  for (const refund of refunds ?? []) {
+    if (refund.status !== 'applied' || refund.sessionId !== session.id) continue;
+    for (const [method, amount] of refundAmounts(refund)) {
+      if (method === 'cash') add(cashRefunds, amount);
+      else add((otherTenders[method] ??= term()), -amount);
+    }
+  }
+  const otherMinor = Object.values(otherTenders).reduce((sum, row) => sum + row.amountMinor, 0);
+  return {
+    floatMinor: session.countedFloatMinor, cashSales, cashRefunds, paidIn, paidOut, noSales, otherTenders,
+    sessionSalesMinor: cashSales.amountMinor - cashRefunds.amountMinor + otherMinor,
+    expected: deriveExpected(input),
+  };
+}

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
+import { PortalHost } from '@tallyui/primitives';
 import { salesFigures, type ReportOrder, type SalesFigures } from '@tallyui/pos';
 import { SalesRoom, type SalesFilters, type SalesRoomProps } from '../reports';
 
@@ -27,6 +28,7 @@ function setup(figures: SalesFigures, props: Partial<SalesRoomProps> = {}) {
       currency="EUR" timezone="Pacific/Auckland" now={() => new Date('2026-11-10T20:00:00Z')}
       statusOptions={[{ value: 'done', label: 'Completed & processing' }, { value: 'all', label: 'Every status' }]}
       cashierOptions={[{ value: 'u1', label: 'Ana' }]} registerOptions={[{ value: 'r1', label: 'Front' }]} {...props} />,
+    { wrapper: ({ children }) => <>{children}<PortalHost /></> },
   );
   return { onFiltersChange, onOpenCard };
 }
@@ -79,8 +81,40 @@ describe('SalesRoom filters', () => {
 
   it('calls back with a preset\'s range in store time', () => {
     const { onFiltersChange } = setup(figures);
-    choose('sales-filter-period', 'thisWeek');
+    fireEvent.click(screen.getByTestId('sales-filter-period'));
+    fireEvent.click(screen.getByTestId('sales-filter-period-thisWeek'));
     expect(onFiltersChange).toHaveBeenCalledWith({ ...filters, preset: 'thisWeek', range: { from: '2026-11-09', to: '2026-11-11' } });
+  });
+
+  it('calls back with a custom range picked on the calendar', () => {
+    const { onFiltersChange } = setup(figures);
+    fireEvent.click(screen.getByTestId('sales-filter-period'));
+    fireEvent.click(screen.getByTestId('sales-filter-period-calendar-day-2026-11-02'));
+    fireEvent.click(screen.getByTestId('sales-filter-period-calendar-day-2026-11-04'));
+    fireEvent.click(screen.getByTestId('sales-filter-period-apply'));
+    expect(onFiltersChange).toHaveBeenCalledExactlyOnceWith({ ...filters, preset: 'custom', range: { from: '2026-11-02', to: '2026-11-04' } });
+  });
+
+  it('compares a three-day custom range with the week before', () => {
+    const range = { from: '2026-11-09', to: '2026-11-11' };
+    setup(salesFigures({ orders, range, timezone: 'UTC' }), { filters: { ...filters, preset: 'custom', range } });
+    expect(text('hero-compare')).toBe('vs the week before');
+    expect(text('sales-filter-period')).toBe('Custom range · 9–11 Nov');
+  });
+
+  it.each([
+    [{ from: '2026-11-05', to: '2026-11-11' }, 'vs the week before'],
+    [{ from: '2026-11-04', to: '2026-11-11' }, 'vs the month before'],
+  ])('labels the custom range %o %s', (range, label) => {
+    setup(salesFigures({ orders, range, timezone: 'UTC' }), { filters: { ...filters, preset: 'custom', range } });
+    expect(text('hero-compare')).toBe(label);
+  });
+
+  it('gives a one-day custom range the one-day comparison toggle, as for Today', () => {
+    setup(salesFigures({ orders, range: day, compare: yesterday, timezone: 'UTC' }), { filters: { ...filters, preset: 'custom' } });
+    expect(text('hero-compare-previous')).toBe('vs yesterday');
+    expect(text('hero-compare-week')).toBe('vs last Wednesday');
+    expect(screen.queryByTestId('hero-compare')).toBeNull();
   });
 
   it('calls back with the status, cashier and register chosen, and null for everyone', () => {

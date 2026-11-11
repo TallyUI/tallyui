@@ -11,6 +11,11 @@ export type {
 
 export type { ReplicationAdapter } from './replication';
 
+export type {
+  DisplaySignalling, DisplaySignallingContext, DisplaySignallingErrorCode, DisplayAdvertisement, IceServer,
+  PendingPairing, DisplayRecord, SignalMessage,
+} from './display-signalling';
+
 export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 
 export type { StoreSettings, StoreSettingsChoice, StoreTaxRate, StoreTaxRateLocation } from './store-settings';

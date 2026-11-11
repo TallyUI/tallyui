@@ -36,6 +36,7 @@ All sizes share the base classes: `relative overflow-hidden rounded-full`.
 | `alt` | `string` | — | Accessibility label for the image; first character used as fallback if `fallback` is not set |
 | `fallback` | `string` | — | Text shown when the image is unavailable (takes priority over `alt` initial) |
 | `size` | `'sm' \| 'md' \| 'lg' \| 'xl'` | `'md'` | Controls the avatar dimensions |
+| `tone` | `'muted' \| 'primary'` | `'muted'` | The fallback's colours. `'primary'` is v2's look: light initials on a solid primary circle |
 | `className` | `string` | — | Additional NativeWind classes, merged with defaults |
 
 Plus all React Native `ViewProps`.
@@ -48,7 +49,9 @@ The fallback logic works in this order:
 2. Otherwise, take the first character of `alt` and uppercase it.
 3. If neither is available, display `?`.
 
-The fallback renders on a `bg-muted` background with `text-muted-foreground` text.
+The fallback renders on a `bg-muted` background with `text-muted-foreground` text, or with `tone="primary"` on `bg-primary` with `text-primary-foreground` text.
+
+`avatarInitials(name)` gives the initials for a fallback: the first letter of up to two words, upper case (`'Ada Lovelace'` gives `'AL'`).
 
 ## Examples
 
