@@ -12,6 +12,8 @@ export interface StoreSettings {
   taxRateCodes?: Record<string, string>;
   /** WooCommerce rates already filtered to the store's tax address; the empty class uses `standard`. */
   taxRates?: Record<string, { id: number; code: string; label: string; rate: string; priority: number; compound: boolean; shipping: boolean }[]>;
+  /** Every tax rate the store defines, wherever it applies, for an app's "all tax rates" table (#669). Display only: the cart reads `taxRatesPpm` and `taxRates`, never this. Absent when the connector did not read the list. */
+  allTaxRates?: StoreTaxRate[];
   taxRoundAtSubtotal?: boolean;
   /** WooCommerce's calculate coupon discounts sequentially setting. */
   calcDiscountsSequentially?: boolean;
@@ -21,6 +23,35 @@ export interface StoreSettings {
   pricingContext?: Record<string, string>;
   /** Derived, never read by `storeSettings`: the store's `ServerCapabilities.taxRounding`, which `useStoreSettings` fills in (#324). */
   taxRounding?: TaxRounding;
+}
+
+/** Where a tax rate applies, in the backend's own terms. A missing field means any; a backend fills only what it has (WooCommerce: country, state as `region`, postcodes, cities). */
+export interface StoreTaxRateLocation {
+  /** ISO 3166-1 alpha-2, as the backend stores it. */
+  country?: string;
+  /** State or province code. */
+  region?: string;
+  /** Codes or patterns, as the backend stores them. */
+  postcodes?: string[];
+  cities?: string[];
+  /** The backend's named tax zone, for a backend that groups its rates by zone. */
+  zone?: { id: string; name: string };
+}
+
+/** One of the store's tax rates as the backend defines it. The optional fields are set by a backend that has them. */
+export interface StoreTaxRate {
+  /** The backend's id, as a string. */
+  id: string;
+  name: string;
+  /** Percent as a decimal string, as the backend sends it ("7.2500"). */
+  rate: string;
+  location: StoreTaxRateLocation;
+  /** The backend's tax class or category key, as `taxClassSlugs` and `taxRates` key it. */
+  taxClass?: string;
+  priority?: number;
+  compound?: boolean;
+  /** Whether the rate also applies to shipping. */
+  shipping?: boolean;
 }
 
 /**

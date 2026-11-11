@@ -76,6 +76,22 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
       })));
       if (rows.length < 100) break;
     }
+    // Every rate, unfiltered, for an app's "all tax rates" table (#669); WooCommerce's empty country, state or list means any.
+    settings.allTaxRates = rates.map((rate) => ({
+      id: String(rate.id),
+      name: rate.name,
+      rate: rate.rate,
+      location: {
+        ...(rate.country ? { country: rate.country } : {}),
+        ...(rate.state ? { region: rate.state } : {}),
+        ...(rate.postcodes.length > 0 ? { postcodes: rate.postcodes } : {}),
+        ...(rate.cities.length > 0 ? { cities: rate.cities } : {}),
+      },
+      taxClass: woocommerceTax.normalizeTaxClass(rate.class),
+      priority: rate.priority,
+      compound: rate.compound,
+      shipping: rate.shipping,
+    }));
 
     const taxAddress = store.tax_address;
     let address = taxAddress && typeof taxAddress === 'object' && typeof taxAddress.country === 'string' && taxAddress.country.length > 0
