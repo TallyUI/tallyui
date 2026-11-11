@@ -2,15 +2,24 @@ import * as React from 'react';
 import { View } from 'react-native';
 import { Select as SelectPrimitive } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
+import { ChevronDownIcon } from '../icon/chevron-down-icon';
 
 const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
 const SelectValue = SelectPrimitive.Value;
 
+type SelectTriggerProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
+  /**
+   * Draws a down chevron at the right, the v2 way. Pass `false` when the children draw their
+   * own, or for a trigger that needs none. Skipped under `asChild`, whose one child owns the content.
+   */
+  chevron?: boolean;
+};
+
 const SelectTrigger = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(function SelectTrigger({ className, children, ...props }, ref) {
+  SelectTriggerProps
+>(function SelectTrigger({ className, children, chevron = true, ...props }, ref) {
   return (
     <SelectPrimitive.Trigger
       ref={ref}
@@ -20,7 +29,16 @@ const SelectTrigger = React.forwardRef<
       )}
       {...props}
     >
-      {children}
+      {chevron && !props.asChild ? (
+        <>
+          {children}
+          <View aria-hidden className="ml-2 shrink-0 opacity-50">
+            <ChevronDownIcon size={16} />
+          </View>
+        </>
+      ) : (
+        children
+      )}
     </SelectPrimitive.Trigger>
   );
 });

@@ -17,13 +17,31 @@ const avatarVariants = cva('relative overflow-hidden rounded-full', {
   },
 });
 
+const avatarFallbackVariants = cva('flex h-full w-full items-center justify-center', {
+  variants: { tone: { muted: 'bg-muted', primary: 'bg-primary' } },
+});
+
+const avatarFallbackTextVariants = cva('text-sm font-medium', {
+  variants: { tone: { muted: 'text-muted-foreground', primary: 'text-primary-foreground' } },
+});
+
 type AvatarProps = ViewProps & VariantProps<typeof avatarVariants> & {
   src?: string;
   alt?: string;
   fallback?: string;
+  /**
+   * The fallback's colours. `'primary'` is v2's look (light initials on a solid primary circle),
+   * used by the Customers table and the customer dropdown.
+   */
+  tone?: 'muted' | 'primary';
 };
 
-function Avatar({ className, size, src, alt, fallback, ...props }: AvatarProps) {
+/** Up to two words of `name`, the first letter of each, upper case. */
+function avatarInitials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join('');
+}
+
+function Avatar({ className, size, src, alt, fallback, tone = 'muted', ...props }: AvatarProps) {
   const [hasError, setHasError] = React.useState(false);
 
   return (
@@ -36,8 +54,8 @@ function Avatar({ className, size, src, alt, fallback, ...props }: AvatarProps) 
           className="h-full w-full"
         />
       ) : (
-        <View className="flex h-full w-full items-center justify-center bg-muted">
-          <Text className="text-sm font-medium text-muted-foreground">
+        <View className={avatarFallbackVariants({ tone })}>
+          <Text className={avatarFallbackTextVariants({ tone })}>
             {fallback ?? alt?.charAt(0)?.toUpperCase() ?? '?'}
           </Text>
         </View>
@@ -46,5 +64,5 @@ function Avatar({ className, size, src, alt, fallback, ...props }: AvatarProps) 
   );
 }
 
-export { Avatar, avatarVariants };
+export { Avatar, avatarVariants, avatarInitials };
 export type { AvatarProps };

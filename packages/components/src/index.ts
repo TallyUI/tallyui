@@ -140,6 +140,10 @@ export {
   type RefundFormValue,
   RefundModal,
   type RefundModalProps,
+  OrderFilterBar,
+  type OrderFilterBarProps,
+  type OrderFilterOption,
+  type PaymentMethodKind,
 } from './order';
 
 // Register components
@@ -225,6 +229,7 @@ export {
 export {
   SalesRoom, type SalesRoomProps, SalesHero, type SalesHeroProps, SalesCards, type SalesCardsProps, type SalesCardId,
   SalesFiltersBar, type SalesFiltersBarProps, type SalesFilters, type SalesOption,
+  DateRangeMenu, type DateRangeMenuProps,
 } from './reports';
 
 // Fonts

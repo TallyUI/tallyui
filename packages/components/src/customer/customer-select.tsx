@@ -3,7 +3,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { Select } from '@tallyui/primitives';
 import { useCustomerTraits, type CustomerTraits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
-import { VStack, type VStackProps } from '../ui';
+import { Avatar, avatarInitials, HStack, VStack, type VStackProps } from '../ui';
 import { SearchInput } from '../input/search-input';
 import { CustomerCard } from './customer-card';
 
@@ -21,6 +21,10 @@ export interface CustomerSelectProps<Doc = any> extends Omit<VStackProps, 'child
   placeholder?: string;
   /** Renders the search input; pass false when the parent renders its own (as CustomerPicker does) */
   showSearch?: boolean;
+  /** Draws an initials avatar before each row and the selected summary, the way v2's cart dropdown does */
+  showAvatar?: boolean;
+  /** The avatar's tone; defaults to `'primary'`, v2's look (light initials on a solid primary circle) */
+  avatarTone?: 'muted' | 'primary';
   className?: string;
 }
 
@@ -59,11 +63,25 @@ function CustomerSelectView<Doc>({
   onSearch,
   placeholder = 'Search customers...',
   showSearch = true,
+  showAvatar = false,
+  avatarTone = 'primary',
   className,
   traits,
   ...props
 }: CustomerSelectProps<Doc>) {
   const [search, setSearch] = useState('');
+
+  // The avatar is decorative: the row's accessibility label already carries the name and email.
+  function card(doc: Doc) {
+    const customerCard = <CustomerCard doc={doc} traits={traits} />;
+    if (!showAvatar) return customerCard;
+    return (
+      <HStack space="sm">
+        <Avatar aria-hidden size="sm" tone={avatarTone} fallback={avatarInitials(traits?.getName(doc) ?? '')} />
+        {customerCard}
+      </HStack>
+    );
+  }
 
   // Map selected customer to Select primitive's Option format
   const selectedOption = selected && traits
@@ -103,7 +121,7 @@ function CustomerSelectView<Doc>({
         {selected && traits && (
           <Select.Trigger asChild>
             <View className="rounded-lg border border-primary bg-primary/5 px-3 py-2">
-              <CustomerCard doc={selected} traits={traits} />
+              {card(selected)}
             </View>
           </Select.Trigger>
         )}
@@ -123,7 +141,7 @@ function CustomerSelectView<Doc>({
                     asChild
                   >
                     <Pressable accessibilityLabel={email ? `${label}, ${email}` : label} className="border-b border-border px-3 py-2">
-                      <CustomerCard doc={customer} traits={traits} />
+                      {card(customer)}
                     </Pressable>
                   </Select.Item>
                 );
