@@ -6,7 +6,7 @@ import type { ReplicationAdapter } from './replication';
 import type { CatalogueReconcileAdapter, FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 import type { StoreSettings, StoreSettingsChoice } from './store-settings';
 import type { Customer, CustomerInput, CustomerPage, CustomerPatch } from './customers';
-import type { ListOrdersQuery, StoreOrder, StoreOrderPage } from './orders';
+import type { ListOrdersQuery, OrderFilterField, StoreOrder, StoreOrderPage } from './orders';
 import type { PaymentMethodDescriptor } from './payment-methods';
 import type { ReceiptTemplate, ReceiptTemplateKind } from './receipt-templates';
 import type { RegisterInfo } from './registers';
@@ -380,9 +380,12 @@ export interface TallyConnector {
   /**
    * The store's orders, newest first, one page per call (ADR-081): online only, read-only. Rejects as `emailReceipt`
    * does (`ConnectorUnauthorizedError` for credentials; a connector's own errors otherwise, e.g. `CustomerServiceError`).
-   * `undefined` when the connector has no order history.
+   * It rejects with `UnsupportedOrderFilterError` for a filter field outside `orderFilters`; calling
+   * `assertOrderFiltersSupported` first gives that. `undefined` when the connector has no order history.
    */
   listOrders?: (context: SyncContext, query?: ListOrdersQuery) => Promise<StoreOrderPage>;
+  /** The ListOrdersQuery filter fields listOrders honours. Absent or empty: none; listOrders refuses any filter field. */
+  orderFilters?: readonly OrderFilterField[];
   /**
    * The given orders by store id (ADR-081), in the order asked; an id the store does not have is left out. Online only,
    * read-only; rejects as `listOrders`. `undefined` when the connector has no order history.

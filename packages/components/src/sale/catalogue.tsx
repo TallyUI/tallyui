@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory } from '@tallyui/core';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory, type VariantSummary } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
   catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE,
   listCategories, inCategory, cartQuantities,
   type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction, type CartQuantityLine } from '@tallyui/pos';
 import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle, CategoryNav } from '../product';
 import { ProductVariantPicker } from '../product/product-variant-picker';
+import { VariationPicker } from '../product/variation-picker';
 import { InCartBadge } from '../product/in-cart-badge';
+import { Popover } from '@tallyui/primitives';
+import { CameraScanButton } from '../product/camera-scan-button';
+import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/camera-scanner-panel';
 import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
@@ -38,7 +42,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
   viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categories, pickAnyOptions = false,
-  cartLines, showFilterBar = false, filterChips = ['inStock'], filters: filtersProp, onFiltersChange }: {
+  cartLines, showFilterBar = false, filterChips = ['inStock'], filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -98,6 +102,16 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   filters?: ProductFilters;
   /** The cashier's next filters (requested filters when controlled). */
   onFiltersChange?: (filters: ProductFilters) => void;
+  /** v2's Product settings › Variations. 'list' (default) opens the variant list chooser; 'popover' opens a grid tile's
+   * VariationPicker in a popover for a product with option groups. The table view keeps the list chooser. */
+  variationsStyle?: 'list' | 'popover';
+  /** Show v2's camera scan button beside the search box; it opens an inline CameraScannerPanel. Default false.
+   * The button shows only when cameraScanner is passed too. */
+  cameraScan?: boolean;
+  /** Passed to the CameraScannerPanel. The app owns useCameraScan (inside its ScanHubProvider) and passes its wiring
+   * here, { onDetected: camera.offer, onOpen: camera.reset, scanCount: camera.scanCount }, plus height, permission,
+   * viewfinder, decoder and readiness; its useBarcodeScanner then handles camera scans like device scans. */
+  cameraScanner?: Omit<CameraScannerPanelProps, 'onClose'>;
 }) {
   const [initial] = useState<{
     state: CatalogueViewState; loaded?: CatalogueViewState; pending?: Promise<unknown>; failed?: boolean; error?: unknown;
@@ -163,6 +177,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const validOverlayAsOf = parsedOverlayAsOf && !isNaN(parsedOverlayAsOf.getTime()) ? parsedOverlayAsOf : undefined;
   const stockAsOf = laterOf(laterOf(lastStockCheckAt, validOverlayAsOf), lastSyncedAt);
   const [query, setQuery] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
   // The chooser is live (medusapos ADR 0007): it holds only the chosen product's id and derives its choices
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.
   const [chooserId, setChooserId] = useState<string | null>(null);
@@ -220,22 +235,63 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     else { closePicker(); setChooserId(traits.getId(product)); }
   }
 
+  // The variations popover (#719): the one open popover's product id, and each product's current entries in order.
+  const [popoverId, setPopoverId] = useState<string | null>(null);
+  const entriesById = useMemo(() => {
+    const byId = new Map<string, CatalogueEntry<Doc>[]>();
+    if (variationsStyle !== 'popover') return byId;
+    for (const entry of entries) {
+      const id = traits.getId(entry.product);
+      const list = byId.get(id);
+      if (list) list.push(entry); else byId.set(id, [entry]);
+    }
+    return byId;
+  }, [entries, traits, variationsStyle]);
+  // A product that leaves the catalogue closes its popover.
+  useEffect(() => { if (popoverId !== null && !entriesById.has(popoverId)) setPopoverId(null); }, [popoverId, entriesById]);
+  // The groups the popover asks for; none means the list chooser. Without pickAnyOptions a group no variant sets is
+  // left out: a variant leaving it unset fits any value.
+  function popoverGroupsOf(product: Doc) {
+    const list = entriesById.get(traits.getId(product)) ?? [];
+    if (list.length < 2 || list.every(({ variant }) => variant.options === undefined)) return [];
+    return (traits.getVariantOptions?.(product) ?? []).filter(({ id, name, values }) => values.length > 0
+      && (list.some(({ variant }) => variant.options !== undefined && Object.prototype.hasOwnProperty.call(variant.options, name))
+        || (pickAnyOptions && id === undefined)));
+  }
+  function addFromPopover(productId: string, variant: VariantSummary, anyPicks: Record<string, string>) {
+    const entry = entriesById.get(productId)?.find((candidate) => candidate.variant.id === variant.id);
+    if (!entry) return;
+    // Only the local "Any" groups the picker step would ask for (#495) travel as picks.
+    const picked = Object.fromEntries(anyGroupsOf(entry).filter(({ name }) => anyPicks[name] !== undefined)
+      .map(({ name }) => [name, anyPicks[name]]));
+    onSelect(pickAnyOptions && Object.keys(picked).length > 0 ? { ...entry, picks: picked } : entry);
+    setPopoverId(null);
+  }
+
   const emptyState = <Text className="mt-10 text-center text-sm text-muted-foreground">
     {query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
       : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
       : isLoading ? 'Loading products…' : 'No products yet.'}
   </Text>;
 
+  const searchInput = <SearchInput value={query} onChangeText={(text) => { setQuery(text); onQueryChange?.(text); }} placeholder="Search or scan barcode / SKU" autoFocus
+    onSubmitEditing={() => {
+      if (minCodeLength && query.trim().length < minCodeLength) return;
+      const entry = findEntryByCode(entries, query);
+      if (entry) { select(entry); setQuery(''); }
+    }} />;
+
   return (
     <View className="flex-1" onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       <View className="gap-2 border-b border-border bg-card px-4 pb-3 pt-3">
-        <SearchInput value={query} onChangeText={(text) => { setQuery(text); onQueryChange?.(text); }} placeholder="Search or scan barcode / SKU" autoFocus
-          onSubmitEditing={() => {
-            if (minCodeLength && query.trim().length < minCodeLength) return;
-            const entry = findEntryByCode(entries, query);
-            if (entry) { select(entry); setQuery(''); }
-          }} />
+        {cameraScan && cameraScanner ? (
+          <View className="flex-row items-center gap-2">
+            <View className="flex-1">{searchInput}</View>
+            <CameraScanButton open={scannerOpen} onPress={() => setScannerOpen((open) => !open)} />
+          </View>
+        ) : searchInput}
         {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips} /> : null}
+        {cameraScan && cameraScanner && scannerOpen ?<CameraScannerPanel {...cameraScanner} onClose={() => setScannerOpen(false)} /> : null}
         {(statusText || statusAccessory || showViewToggle) ? (
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">
             {statusText ? <Text className="flex-1 text-xs text-muted-foreground" numberOfLines={statusAccessory ? 1 : undefined}>
@@ -281,21 +337,42 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
           sortItems={false} onSelect={selectProduct} emptyState={emptyState} />
       ) : <ProductGrid items={results} numColumns={columns}
-        renderItem={(product: Doc) => (
+        renderItem={(product: Doc) => {
+          const id = traits.getId(product);
+          const groups = variationsStyle === 'popover' ? popoverGroupsOf(product) : [];
           // TallyUI's ProductCard has no children slot, so the tile is composed directly here
           // (same structure/classes as ProductCard) to add the stock badge as a fourth child,
           // inside the card and centred with the rest, rather than adding a slot to ProductCard (out of scope for TV6b).
-          <Pressable accessibilityRole="button" testID={`product-tile-${traits.getName(product)}`} onPress={() => selectProduct(product)}>
-            <VStack space="sm" className="items-center rounded-lg border border-border bg-card p-3">
-              <ProductImage doc={product} size={80} className="rounded-md" />
-              <ProductTitle doc={product} className="text-sm" numberOfLines={2} />
-              <ProductPrice doc={product} />
-              <ProductStockBadge doc={product} showAsOf={false} className="self-center" />
-            </VStack>
-            <InCartBadge count={quantities.get(traits.getId(product)) ?? 0} className="absolute right-2 top-2"
-              testID={`in-cart-${traits.getId(product)}`} />
-          </Pressable>
-        )}
+          const tile = (
+            <Pressable accessibilityRole="button" testID={`product-tile-${traits.getName(product)}`}
+              onPress={groups.length > 0 ? () => { closePicker(); setChooserId(null); } : () => selectProduct(product)}>
+              <VStack space="sm" className="items-center rounded-lg border border-border bg-card p-3">
+                <ProductImage doc={product} size={80} className="rounded-md" />
+                <ProductTitle doc={product} className="text-sm" numberOfLines={2} />
+                <ProductPrice doc={product} />
+                <ProductStockBadge doc={product} showAsOf={false} className="self-center" />
+              </VStack>
+              <InCartBadge count={quantities.get(id) ?? 0} className="absolute right-2 top-2" testID={`in-cart-${id}`} />
+            </Pressable>
+          );
+          if (groups.length === 0) return tile;
+          // ui's PopoverContent class, built on the primitive as LinePopover is so an Overlay in the same portal closes
+          // it on a press outside (v2's outsidePress). Content takes only side 'top' | 'bottom', so v2's side="right" is left out.
+          return (
+            <Popover.Root open={popoverId === id} onOpenChange={(open) => setPopoverId((current) => open ? id : current === id ? null : current)}>
+              <Popover.Trigger asChild>{tile}</Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Overlay testID="variation-popover-overlay" style={StyleSheet.absoluteFill} />
+                <Popover.Content align="center" sideOffset={4}
+                  className="z-50 w-auto max-w-80 rounded-md border border-border bg-popover p-2 shadow-md outline-none">
+                  <VariationPicker key={id} title={traits.getName(product)} groups={groups} currency={currency}
+                    variants={(entriesById.get(id) ?? []).map(({ variant }) => variant)}
+                    onAdd={(variant, anyPicks) => addFromPopover(id, variant, anyPicks)} />
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+          );
+        }}
         emptyState={emptyState} />}
     </View>
   );

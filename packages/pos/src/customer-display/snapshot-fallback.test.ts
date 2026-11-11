@@ -22,16 +22,18 @@ const clock: ServiceClock = {
 
 function setup() {
   const posts: SnapshotBody[] = [];
+  const times: number[] = [];
   const errors: unknown[] = [];
   let refuse: DisplaySignallingErrorCode | null = null;
   const post = vi.fn(async (body: SnapshotBody) => {
     posts.push(body);
+    times.push(Date.now());
     if (refuse) throw new DisplaySignallingError(refuse);
   });
   const sender = createSnapshotSender({ post, clock, onError: (error) => errors.push(error) });
   const show = (event: DisplayEnvelope | null, active = true, seq = 1) => sender.update({ active, seq, config, event });
   const names = () => posts.map((body) => body.event.action === 'cart.updated' ? body.event.payload.receipt.lineItems[0].name : body.event.action);
-  return { sender, posts, errors, show, names, refuseWith: (code: DisplaySignallingErrorCode | null) => { refuse = code; } };
+  return { sender, posts, times, errors, show, names, refuseWith: (code: DisplaySignallingErrorCode | null) => { refuse = code; } };
 }
 const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 
@@ -78,6 +80,16 @@ describe('createSnapshotSender', () => {
     }
     await wait(SNAPSHOT_MIN_INTERVAL_MS);
     expect(s.names()).toEqual(['E']);
+    s.sender.stop();
+  });
+
+  it('2: a change every 500 ms for 5 s posts at least 4 times, never twice within a second (a throttle, not a debounce)', async () => {
+    const s = setup();
+    for (let i = 0; i < 10; i += 1) { s.show(cart(`P${i}`)); await wait(500); }
+    await wait(SNAPSHOT_MIN_INTERVAL_MS);
+    expect(s.posts.length).toBeGreaterThanOrEqual(4);
+    s.times.slice(1).forEach((at, i) => expect(at - s.times[i]).toBeGreaterThanOrEqual(SNAPSHOT_MIN_INTERVAL_MS));
+    expect(s.names().at(-1)).toBe('P9');
     s.sender.stop();
   });
 
