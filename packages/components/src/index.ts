@@ -44,6 +44,16 @@ export {
   type InCartBadgeProps,
   CategoryTile,
   type CategoryTileProps,
+  CameraScanButton,
+  type CameraScanButtonProps,
+  CameraScannerPanel,
+  FLASH_DURATION_MS,
+  SCANNER_MIN_HEIGHT,
+  SCANNER_MAX_HEIGHT,
+  SCANNER_DEFAULT_HEIGHT,
+  type CameraScannerPanelProps,
+  ScannerViewfinder,
+  type ViewfinderProps,
 } from './product';
 
 // Cart components
@@ -140,6 +150,10 @@ export {
   type RefundFormValue,
   RefundModal,
   type RefundModalProps,
+  OrderFilterBar,
+  type OrderFilterBarProps,
+  type OrderFilterOption,
+  type PaymentMethodKind,
 } from './order';
 
 // Register components
@@ -230,6 +244,7 @@ export {
 export {
   SalesRoom, type SalesRoomProps, SalesHero, type SalesHeroProps, SalesCards, type SalesCardsProps, type SalesCardId,
   SalesFiltersBar, type SalesFiltersBarProps, type SalesFilters, type SalesOption,
+  DateRangeMenu, type DateRangeMenuProps,
 } from './reports';
 
 // Fonts

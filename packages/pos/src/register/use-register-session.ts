@@ -24,7 +24,7 @@ import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
 import { readFresh, watchFresh } from '../rxdb';
-import { deriveExpected, type LedgerRow } from './expected';
+import { deriveDrawerTerms, deriveExpected, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval, closureVariance } from './register-count.helpers';
 import {
@@ -326,9 +326,11 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const entries = data?.entries ?? [];
   const sales = data?.sales ?? [];
   const replaced = replacedOrderIds(sales);
-  const expected = session
-    ? deriveExpected({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales, replaced), refunds: data?.refundRows ?? [] })
-    : {};
+  // The drawer ledger's terms; their `expected` is `deriveExpected`'s own result for the same rows.
+  const terms = session
+    ? deriveDrawerTerms({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales, replaced), refunds: data?.refundRows ?? [] })
+    : null;
+  const expected = terms ? terms.expected : {};
   const now = new Date();
   const [hour, minute] = String(expectedCloseTime ?? '').split(':').map(Number);
   const overdue = session?.status === 'open' && !!expectedCloseTime
@@ -371,6 +373,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     needsUpgrade: data?.rows.some((row) => !store.isKnownSessionStatus(row.status)) ?? false,
     movements: entries,
     expected,
+    /** `expected`'s drawer ledger, term by term with row counts (`deriveDrawerTerms`); `null` without a session. */
+    terms,
     salesCount: sales.filter((order) => !replaced.has(order.id)).length,
     overdue,
     /** A `closeSession` for this register is in flight, in any hook instance: the session can already be stored `closed` while its closure isn't written yet. */

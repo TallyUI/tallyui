@@ -7,7 +7,7 @@
 import type { JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { formatMoney } from '@tallyui/core';
-import type { SalesFigures } from '@tallyui/pos';
+import { daysOf, type SalesFigures } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { Card } from '../ui/card';
 import { dayLabel, type SalesFilters } from './filters-bar';
@@ -33,9 +33,13 @@ function Difference({ testID, text, diff, suffix }: { testID: string; text?: str
   );
 }
 
+/** A custom range compares as pos `comparisonRange` does by day count: a day, a week (up to 7) or a month. */
+const customDays = (filters: SalesFilters) => (filters.preset === 'custom' ? daysOf(filters.range).length : 0);
+
 function compareLabel(filters: SalesFilters): string {
-  if (filters.preset === 'thisWeek' || filters.preset === 'lastWeek') return 'vs the week before';
-  if (filters.preset === 'thisMonth' || filters.preset === 'lastMonth') return 'vs the month before';
+  const days = customDays(filters);
+  if (filters.preset === 'thisWeek' || filters.preset === 'lastWeek' || (days > 1 && days <= 7)) return 'vs the week before';
+  if (filters.preset === 'thisMonth' || filters.preset === 'lastMonth' || days > 7) return 'vs the month before';
   if (filters.compare === 'previous') return 'vs yesterday';
   const weekday = new Intl.DateTimeFormat('en-GB', { weekday: 'long', timeZone: 'UTC' }).format(new Date(`${filters.range.from}T00:00:00Z`));
   return `vs last ${weekday}`;
@@ -56,7 +60,7 @@ export function SalesHero({ figures, filters, onFiltersChange, currency }: Sales
   const compareSeries = figures.comparison?.series ?? [];
   const max = Math.max(0, ...series.map((point) => point.grossMinor), ...compareSeries.map((point) => point.grossMinor));
   const height = (gross: number) => `${max > 0 ? (Math.max(0, gross) / max) * 100 : 0}%` as const;
-  const oneDay = filters.preset === 'today' || filters.preset === 'yesterday';
+  const oneDay = filters.preset === 'today' || filters.preset === 'yesterday' || customDays(filters) === 1;
 
   return (
     <Card testID="sales-hero" className="gap-4 p-4">
