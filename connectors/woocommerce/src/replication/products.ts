@@ -107,6 +107,8 @@ export function toProductDocument(product: any): any {
   const projected = Object.fromEntries(Object.keys(wooProductSchema.properties)
     .filter((key) => Object.prototype.hasOwnProperty.call(product, key))
     .map((key) => [key, product[key]]));
+  // The schema types meta value as a string; WCPOS 1.10.20 sends object meta such as _woocommerce_pos_variable_prices.
+  if (Array.isArray(projected.meta_data)) projected.meta_data = projected.meta_data.filter((entry: { value?: unknown } | null) => typeof entry?.value === 'string');
   return { ...projected, uuid, ...(barcode !== undefined ? { barcode } : {}), _deleted: product.status !== 'publish' };
 }
 
