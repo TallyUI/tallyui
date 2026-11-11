@@ -58,6 +58,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'presetRange', 'DATE_PRESETS',
   // the catalogue tiles (unit ucat): the pure per-product cart quantity the in-cart badge shows, never a hook or the store.
   'cartQuantities',
+  // the variations popover (#719): the pure attribute-to-variant match and unavailable-option test the picker shows, never a hook or the store.
+  'matchVariant', 'disabledOptions',
   // the camera scanner (#720): the getUserMedia constraints, error-to-status map, BarcodeDetector lookup and decode loop the web viewfinder runs, never a hook or the store.
   'CAMERA_CONSTRAINTS', 'cameraErrorStatus', 'nativeBarcodeDetector', 'startDecodeLoop',
   // the Reports hero (#715): the pure store-day list a custom range's comparison is sized by, never a hook or the store.

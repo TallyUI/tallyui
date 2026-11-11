@@ -11,6 +11,7 @@ export { ProductList, type ProductListProps } from './product-list';
 export { CategoryNav, type CategoryNavProps, type CategoryItem } from './category-nav';
 export { ProductVariantPicker, type ProductVariantPickerProps, type VariantOption } from './product-variant-picker';
 export { InCartBadge, type InCartBadgeProps } from './in-cart-badge';
+export { VariationPicker, type VariationPickerProps } from './variation-picker';
 export { CategoryTile, type CategoryTileProps } from './category-tile';
 export { CameraScanButton, type CameraScanButtonProps } from './camera-scan-button';
 export { CameraScannerPanel, FLASH_DURATION_MS, SCANNER_MIN_HEIGHT, SCANNER_MAX_HEIGHT, SCANNER_DEFAULT_HEIGHT,
