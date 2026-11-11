@@ -64,16 +64,16 @@ describe('CurrencyProvider + useCurrencyFormatter', () => {
   });
 
   it('picks up a format that arrives after mount', () => {
-    let format: CurrencyFormat | undefined;
+    const store: { format?: CurrencyFormat } = {};
     const { result, rerender } = renderHook(() => useCurrencyFormatter(), {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <CurrencyProvider currencyCode="EUR" locale="en" format={format}>
+        <CurrencyProvider currencyCode="EUR" locale="en" format={store.format}>
           {children}
         </CurrencyProvider>
       ),
     });
     expect(result.current({ amount: 123450, currency: 'EUR' })).toBe('€1,234.50');
-    format = { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',' };
+    store.format = { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',' };
     rerender();
     expect(result.current({ amount: 123450, currency: 'EUR' })).toBe('1.234,50 €');
   });
