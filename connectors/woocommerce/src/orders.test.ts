@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConnectorUnauthorizedError, CustomerServiceError } from '@tallyui/core';
+import { ConnectorUnauthorizedError, CustomerServiceError, UnsupportedOrderFilterError } from '@tallyui/core';
 import { createWooOrders, toWooStoreOrder } from './orders';
 import { createWooCommerceConnector } from './index';
 // Order 136 recorded from WCPOS 1.10.20's push response; order 137 derived from it by hand.
@@ -226,10 +226,92 @@ describe('WooCommerce orders', () => {
     await expect(orders.getOrders(context, ['136'])).rejects.toMatchObject({ name: 'CustomerServiceError', code: 'server', message: 'HTTP 500' });
   });
 
-  it('createWooCommerceConnector exposes listOrders and getOrders', async () => {
+  describe('listOrders filters (#721)', () => {
+    const emptyList = () => vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json([]));
+    // The params a call sent beyond the page and order ones every list request carries.
+    const filterParams = (url: unknown) => {
+      const params = new URL(url as string).searchParams;
+      for (const key of ['page', 'per_page', 'orderby', 'order']) params.delete(key);
+      return [...params.entries()];
+    };
+
+    it.each([
+      [{ status: 'cancelled' }, [['status', 'cancelled']]],
+      [{ customerId: '3' }, [['customer', '3']]],
+      [{ cashierId: '2' }, [['pos_cashier', '2']]],
+      [{ storeId: '1' }, [['pos_store', '1']]],
+      [{ createdVia: 'woocommerce-pos' }, [['created_via', 'woocommerce-pos']]],
+      [{ customerId: '0' }, [['customer', '0']]],
+      [{}, []],
+    ])('sends %o as exactly its own param', async (query, expected) => {
+      const spy = emptyList();
+      await expect(orders.listOrders(context, query)).resolves.toStrictEqual({ orders: [], hasMore: false });
+      expect(spy).toHaveBeenCalledOnce();
+      expect(filterParams(spy.mock.calls[0]![0])).toStrictEqual(expected);
+    });
+
+    it('sends every filter with the page and search params in one request', async () => {
+      const spy = emptyList();
+      await orders.listOrders(context, {
+        page: 2, perPage: 10, search: 'ada', status: 'cancelled', customerId: '3', cashierId: '2', storeId: '1',
+        createdVia: 'woocommerce-pos', dateRange: { after: '2026-11-10T00:00:00.000Z', before: '2026-11-11T00:00:00.000Z' },
+      });
+      expect(spy).toHaveBeenCalledExactlyOnceWith(
+        `${context.baseUrl}/orders?page=2&per_page=10&orderby=date&order=desc&search=ada&status=cancelled&customer=3&pos_cashier=2`
+          + '&pos_store=1&created_via=woocommerce-pos&dates_are_gmt=true&after=2026-11-09T23%3A59%3A59&before=2026-11-11T00%3A00%3A00',
+        request,
+      );
+    });
+
+    it.each(['registerId', 'paymentMethod'] as const)('refuses %s before any request', async (field) => {
+      const spy = emptyList();
+      const result = orders.listOrders(context, { status: 'cancelled', [field]: '1' });
+      await expect(result).rejects.toBeInstanceOf(UnsupportedOrderFilterError);
+      await expect(result).rejects.toMatchObject({ code: 'unsupported_order_filter', fields: [field] });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    // No WooCommerce order has an empty status or created_via, so '' matches nothing and is never sent.
+    it.each([{ status: '' }, { createdVia: '' }])('resolves no orders without a request for %o', async (query) => {
+      const spy = emptyList();
+      await expect(orders.listOrders(context, query)).resolves.toStrictEqual({ orders: [], hasMore: false });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['customerId', 'abc'], ['cashierId', 'abc'], ['storeId', 'abc'], ['cashierId', ''], ['storeId', '-1'], ['customerId', '1.5'],
+    ] as const)('resolves no orders without a request for %s %o', async (field, value) => {
+      const spy = emptyList();
+      await expect(orders.listOrders(context, { status: 'cancelled', [field]: value })).resolves.toStrictEqual({ orders: [], hasMore: false });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ after: '2026-11-10T09:36:28.000Z' }, [['dates_are_gmt', 'true'], ['after', '2026-11-10T09:36:27']]],
+      [{ after: '2026-11-10T09:36:28.400Z' }, [['dates_are_gmt', 'true'], ['after', '2026-11-10T09:36:28']]],
+      [{ after: '2026-11-10T00:00:00Z' }, [['dates_are_gmt', 'true'], ['after', '2026-11-09T23:59:59']]],
+      [{ before: '2026-11-10T09:36:28.400Z' }, [['dates_are_gmt', 'true'], ['before', '2026-11-10T09:36:29']]],
+      [{ before: '2026-11-10T09:36:29.000Z' }, [['dates_are_gmt', 'true'], ['before', '2026-11-10T09:36:29']]],
+      [{ after: '2026-11-10T09:36:28.000Z', before: '2026-11-10T09:36:29.000Z' },
+        [['dates_are_gmt', 'true'], ['after', '2026-11-10T09:36:27'], ['before', '2026-11-10T09:36:29']]],
+    ])('sends dateRange %o as GMT whole seconds', async (dateRange, expected) => {
+      const spy = emptyList();
+      await orders.listOrders(context, { dateRange });
+      expect(filterParams(spy.mock.calls[0]![0])).toStrictEqual(expected);
+    });
+
+    it.each([{ after: '2026-11-10T09:36:28' }, { before: '2026-11-10T09:36:28+00:00' }])('refuses dateRange %o before any request', async (dateRange) => {
+      const spy = emptyList();
+      await expect(orders.listOrders(context, { dateRange })).rejects.toBeInstanceOf(TypeError);
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  it('createWooCommerceConnector exposes listOrders, getOrders and its order filters', async () => {
     const connector = createWooCommerceConnector();
     expect(connector.listOrders).toBeTypeOf('function');
     expect(connector.getOrders).toBeTypeOf('function');
+    expect(connector.orderFilters).toStrictEqual(['status', 'customerId', 'cashierId', 'storeId', 'createdVia', 'dateRange']);
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json([list[0]]));
     await expect(connector.getOrders!(context, ['136'])).resolves.toMatchObject([{ id: '136' }]);
   });
