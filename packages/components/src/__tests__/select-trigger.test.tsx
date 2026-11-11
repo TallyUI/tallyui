@@ -37,14 +37,16 @@ describe('SelectTrigger', () => {
   });
 
   it('renders the one child, with no chevron, under asChild', () => {
-    render(
+    // Slot clones trigger props onto each Fragment child: a chevron would be a second combobox.
+    const { container } = render(
       <Select>
         <SelectTrigger asChild>
           <Text testID="own">Own trigger</Text>
         </SelectTrigger>
       </Select>,
     );
-    expect(screen.getByTestId('own').getAttribute('role')).toBe('combobox');
-    expect(screen.getByTestId('own').querySelector('svg')).toBeNull();
+    expect(screen.getAllByRole('combobox', { hidden: true })).toEqual([screen.getByTestId('own')]);
+    expect(container.children).toHaveLength(1);
+    expect(container.querySelector('svg')).toBeNull();
   });
 });
