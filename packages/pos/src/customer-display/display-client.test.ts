@@ -117,6 +117,21 @@ describe('createDisplayClient: pairing', () => {
     s.client.close();
   });
 
+  it('keeps waiting through a network refusal from collect, then pairs', async () => {
+    const s = setup({ token: null });
+    await advance(0);
+    await s.client.claim('123456', 'Counter');
+    s.fake.collects.push('network', { status: 'paired', displayId: 'd1', token: 'tok-2' });
+    await advance(COLLECT_POLL_MS);
+    expect(s.fake.count('collect')).toBe(1);
+    expect(s.client.phase).toEqual({ phase: 'waiting', checkCode: '4321' });
+    await advance(COLLECT_POLL_MS);
+    expect(s.tokens.save).toHaveBeenCalledWith('tok-2');
+    expect(paired(s.client).link).toBe('none');
+    expect(s.phases.map((phase) => phase.phase)).toEqual(['enter-code', 'claiming', 'waiting', 'paired']);
+    s.client.close();
+  });
+
   it('gives each refusal its error, and cancel goes back with none', async () => {
     const s = setup({ token: null });
     await advance(0);
@@ -163,6 +178,15 @@ describe('createDisplayClient: the peer link', () => {
     expect(s.client.state).toEqual({ config, view: { screen: 'cart', cart: teaCart.payload } });
     expect(paired(s.client).source).toBe('peer');
     expect(hellos()).toHaveLength(sent);
+    s.client.close();
+  });
+
+  it("gives the display's peer the till's candidates from the inbox", async () => {
+    const s = await linkedUp();
+    // The till's peer is the network's first, so its two host candidates are `candidate:1-1` and `candidate:1-2`.
+    const tillCandidates = [1, 2].map((n) => ({ candidate: `candidate:1-${n}`, sdpMid: '0' }));
+    expect(s.fake.displayInbox).toEqual([]);
+    expect(s.network.peers[1].added).toEqual(tillCandidates);
     s.client.close();
   });
 
