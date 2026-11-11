@@ -76,6 +76,20 @@ describe('useCameraScan', () => {
     expect(events).toHaveLength(1);
   });
 
+  it('counts accepted codes and keeps its object while the count is unchanged', () => {
+    const { offer, result, setTime, rerender } = renderCameraScan();
+    expect(result.current.scan.scanCount).toBe(0);
+    offer('12345678');
+    offer('87654321');
+    expect(result.current.scan.scanCount).toBe(2);
+    const before = result.current.scan;
+    setTime(500);
+    offer('12345678');
+    rerender({});
+    expect(result.current.scan.scanCount).toBe(2);
+    expect(result.current.scan).toBe(before);
+  });
+
   it('lets the same code through at once after reset', () => {
     const { events, offer, result } = renderCameraScan();
     offer('12345678');

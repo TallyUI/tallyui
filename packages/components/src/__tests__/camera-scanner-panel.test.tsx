@@ -1,29 +1,18 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ScanHubProvider, useScanHub, type ScanEvent, type ScanHub, type ScannerProfileStore } from '@tallyui/pos';
-import { CameraScannerPanel } from '../product/camera-scanner-panel';
+import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/camera-scanner-panel';
 import { ScannerViewfinder, type ViewfinderProps } from '../product/scanner-viewfinder';
 
-const profiles: ScannerProfileStore = { read: async () => [], save: async () => undefined };
 let viewfinder: ViewfinderProps;
 function FakeViewfinder(props: ViewfinderProps) {
   viewfinder = props;
   return null;
 }
-let hub: ScanHub;
-function HubProbe({ children }: { children: ReactNode }) {
-  hub = useScanHub();
-  return <>{children}</>;
-}
-/** Renders inside a real ScanHubProvider, recording every hub event. */
-function renderInHub(ui: ReactElement) {
-  const view = render(<ScanHubProvider profiles={profiles} settings={{ prefix: '', suffix: '', minChars: 8 }}>
-    <HubProbe>{ui}</HubProbe>
-  </ScanHubProvider>);
-  const events: ScanEvent[] = [];
-  hub.events$.subscribe((event) => events.push(event));
-  return { ...view, events };
+/** The panel with the app's wiring stubbed; no ScanHubProvider, since the panel calls no pos hook. */
+function renderPanel(props: Partial<CameraScannerPanelProps> = {}) {
+  const all: CameraScannerPanelProps = { onClose: vi.fn(), onDetected: vi.fn(), viewfinder: FakeViewfinder, ...props };
+  const view = render(<CameraScannerPanel {...all} />);
+  return { ...view, rerenderPanel: (next: Partial<CameraScannerPanelProps>) => view.rerender(<CameraScannerPanel {...all} {...next} />) };
 }
 
 /** react-native-web drops accessibilityActions from the DOM, so run the handle's handler from its React props. */
@@ -49,7 +38,7 @@ describe('CameraScannerPanel', () => {
   });
 
   it('shows the copy for each status and none while scanning', () => {
-    renderInHub(<CameraScannerPanel onClose={vi.fn()} viewfinder={FakeViewfinder} readiness="Offline — only products already on this device will scan." />);
+    renderPanel({ readiness: 'Offline — only products already on this device will scan.' });
     expect(screen.getByTestId('camera-scanner-status').textContent).toBe('Starting camera…');
     expect(screen.getByTestId('camera-scanner-readiness').textContent).toBe('Offline — only products already on this device will scan.');
     const copy = {
@@ -65,23 +54,40 @@ describe('CameraScannerPanel', () => {
     expect(screen.queryByTestId('camera-scanner-status')).toBeNull();
   });
 
-  it('emits a decode to the hub and flashes only for camera events', () => {
+  it('passes decodes straight to onDetected and calls onOpen once on mount', () => {
+    const onDetected = vi.fn();
+    const onOpen = vi.fn();
+    const { rerenderPanel } = renderPanel({ onDetected, onOpen });
+    expect(viewfinder.onDetected).toBe(onDetected);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    rerenderPanel({ height: 200, scanCount: 1 });
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('flashes for 350 ms on each scanCount change, restarting a running flash', () => {
     vi.useFakeTimers();
-    const { events } = renderInHub(<CameraScannerPanel onClose={vi.fn()} viewfinder={FakeViewfinder} />);
-    act(() => hub.emit({ code: '12345678', source: { kind: 'serial' }, timestamp: 0 }));
+    const { rerenderPanel } = renderPanel({ scanCount: 0 });
     expect(screen.queryByTestId('camera-scanner-flash')).toBeNull();
-    act(() => viewfinder.onDetected('4006381333931', 'ean13'));
-    expect(events.at(-1)).toMatchObject({ code: '4006381333931', symbology: 'ean13', source: { kind: 'camera' } });
+    rerenderPanel({ scanCount: 1 });
     expect(screen.getByTestId('camera-scanner-flash')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(200); });
+    rerenderPanel({ scanCount: 2 });
     act(() => { vi.advanceTimersByTime(349); });
     expect(screen.getByTestId('camera-scanner-flash')).toBeTruthy();
     act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.queryByTestId('camera-scanner-flash')).toBeNull();
+    rerenderPanel({ scanCount: 2, height: 300 });
+    expect(screen.queryByTestId('camera-scanner-flash')).toBeNull();
+  });
+
+  it('never flashes for the scanCount it mounts with', () => {
+    renderPanel({ scanCount: 5 });
     expect(screen.queryByTestId('camera-scanner-flash')).toBeNull();
   });
 
   it('resizes by 16 from the accessibility actions, within 96 to 480', () => {
     const onHeightChange = vi.fn();
-    renderInHub(<CameraScannerPanel onClose={vi.fn()} viewfinder={FakeViewfinder} height={470} onHeightChange={onHeightChange} />);
+    renderPanel({ height: 470, onHeightChange });
     const handle = screen.getByTestId('camera-scanner-resize-handle');
     expect(handle.getAttribute('aria-label')).toBe('Drag to resize the camera view');
     expect(screen.getByTestId('camera-scanner-panel').style.height).toBe('470px');
@@ -95,7 +101,7 @@ describe('CameraScannerPanel', () => {
     expect(screen.getByTestId('camera-scanner-panel').style.height).toBe('480px');
     cleanup();
 
-    renderInHub(<CameraScannerPanel onClose={vi.fn()} viewfinder={FakeViewfinder} height={100} onHeightChange={onHeightChange} />);
+    renderPanel({ height: 100, onHeightChange });
     accessibilityAction(screen.getByTestId('camera-scanner-resize-handle'), 'decrement');
     expect(onHeightChange).toHaveBeenLastCalledWith(96);
     accessibilityAction(screen.getByTestId('camera-scanner-resize-handle'), 'decrement');
@@ -104,7 +110,7 @@ describe('CameraScannerPanel', () => {
 
   it('asks for camera permission before showing the camera', () => {
     const request = vi.fn();
-    renderInHub(<CameraScannerPanel onClose={vi.fn()} viewfinder={FakeViewfinder} permission={{ granted: false, request }} />);
+    renderPanel({ permission: { granted: false, request } });
     expect(screen.getByTestId('camera-permission-request').textContent).toContain('Camera access is needed to scan barcodes.');
     expect(screen.queryByTestId('camera-scanner-panel')).toBeNull();
     fireEvent.click(screen.getByText('Allow camera'));
@@ -113,7 +119,7 @@ describe('CameraScannerPanel', () => {
 
   it('closes from its close button', () => {
     const onClose = vi.fn();
-    renderInHub(<CameraScannerPanel onClose={onClose} viewfinder={FakeViewfinder} permission={{ granted: true, request: vi.fn() }} />);
+    renderPanel({ onClose, permission: { granted: true, request: vi.fn() } });
     const close = screen.getByTestId('camera-scanner-close');
     expect(close.getAttribute('aria-label')).toBe('Close barcode scanner');
     fireEvent.click(close);
@@ -122,7 +128,7 @@ describe('CameraScannerPanel', () => {
 
   it('shows the denied copy when the browser refuses the camera', async () => {
     stubMediaDevices(() => Promise.reject(new DOMException('denied', 'NotAllowedError')));
-    renderInHub(<CameraScannerPanel onClose={vi.fn()} />);
+    renderPanel({ viewfinder: undefined });
     expect(screen.getByTestId('scanner-viewfinder').querySelector('video')).toBeTruthy();
     expect(await screen.findByText('Camera access was denied — allow it in the browser settings and reopen the scanner.')).toBeTruthy();
   });
@@ -159,13 +165,13 @@ describe('CameraScannerPanel', () => {
     await vi.waitFor(() => expect(onStatus).toHaveBeenLastCalledWith('decoder-error'));
     expect(onStatus.mock.calls).toEqual([['initializing'], ['decoder-error']]);
     cleanup();
-    renderInHub(<CameraScannerPanel onClose={vi.fn()} />);
+    renderPanel({ viewfinder: undefined });
     expect(await screen.findByText('Barcode decoding is failing — close the scanner and try again.')).toBeTruthy();
   });
 
   it('follows a web pointer drag and reports the height once, only when it changed', () => {
     const onHeightChange = vi.fn();
-    renderInHub(<CameraScannerPanel onClose={vi.fn()} viewfinder={FakeViewfinder} onHeightChange={onHeightChange} />);
+    renderPanel({ onHeightChange });
     const handle = screen.getByTestId('camera-scanner-resize-handle');
     const panelHeight = () => screen.getByTestId('camera-scanner-panel').style.height;
     expect(panelHeight()).toBe('176px');

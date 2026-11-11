@@ -30,4 +30,4 @@ export type { DeviceScanControl, DeviceScanControls, ScanHubProviderProps } from
 export { CAMERA_BARCODE_TYPES, DETECTOR_FORMATS, detectorFormatToSymbology, nativeBarcodeDetector, DEFAULT_DECODE_INTERVAL_MS, DECODER_ERROR_THRESHOLD, startDecodeLoop, cameraErrorStatus, CAMERA_CONSTRAINTS } from './camera-scan';
 export type { DetectedBarcode, CameraDecoder, ViewfinderStatus, DecodeLoopOptions } from './camera-scan';
 export { useCameraScan } from './use-camera-scan';
-export type { UseCameraScanOptions } from './use-camera-scan';
+export type { UseCameraScanOptions, CameraScan } from './use-camera-scan';

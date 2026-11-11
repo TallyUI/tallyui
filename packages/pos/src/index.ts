@@ -100,7 +100,7 @@ export type { HidInputReportEventLike, HidDeviceLike, HidLike, HidScannerOptions
 export { ScanHubProvider, useScanHub, useDeviceScanControls, inertDeviceScanControls, scanTimeOf } from './scanner';
 export type { DeviceScanControl, DeviceScanControls, ScanHubProviderProps } from './scanner';
 export { CAMERA_BARCODE_TYPES, DETECTOR_FORMATS, detectorFormatToSymbology, nativeBarcodeDetector, DEFAULT_DECODE_INTERVAL_MS, DECODER_ERROR_THRESHOLD, startDecodeLoop, cameraErrorStatus, CAMERA_CONSTRAINTS, useCameraScan } from './scanner';
-export type { DetectedBarcode, CameraDecoder, ViewfinderStatus, DecodeLoopOptions, UseCameraScanOptions } from './scanner';
+export type { DetectedBarcode, CameraDecoder, ViewfinderStatus, DecodeLoopOptions, UseCameraScanOptions, CameraScan } from './scanner';
 
 // Payment drivers
 export { createPaymentDriverRegistry, driverForMethod, methodDrivers, methodForProvider, createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './payment-driver';

@@ -101,10 +101,11 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** The cashier's next filters (requested filters when controlled). */
   onFiltersChange?: (filters: ProductFilters) => void;
   /** Show v2's camera scan button beside the search box; it opens an inline CameraScannerPanel. Default false.
-   * Camera scans go to the scan hub, so this needs a ScanHubProvider (with none the hub is inert and they go
-   * nowhere); the app's useBarcodeScanner handles them like device scans. */
+   * The button shows only when cameraScanner is passed too. */
   cameraScan?: boolean;
-  /** Passed to the CameraScannerPanel (height, permission, viewfinder, decoder, readiness and the scan options). */
+  /** Passed to the CameraScannerPanel. The app owns useCameraScan (inside its ScanHubProvider) and passes its wiring
+   * here, { onDetected: camera.offer, onOpen: camera.reset, scanCount: camera.scanCount }, plus height, permission,
+   * viewfinder, decoder and readiness; its useBarcodeScanner then handles camera scans like device scans. */
   cameraScanner?: Omit<CameraScannerPanelProps, 'onClose'>;
 }) {
   const [initial] = useState<{
@@ -245,14 +246,14 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   return (
     <View className="flex-1" onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       <View className="gap-2 border-b border-border bg-card px-4 pb-3 pt-3">
-        {cameraScan ? (
+        {cameraScan && cameraScanner ? (
           <View className="flex-row items-center gap-2">
             <View className="flex-1">{searchInput}</View>
             <CameraScanButton open={scannerOpen} onPress={() => setScannerOpen((open) => !open)} />
           </View>
         ) : searchInput}
         {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips} /> : null}
-        {cameraScan && scannerOpen ? <CameraScannerPanel {...cameraScanner} onClose={() => setScannerOpen(false)} /> : null}
+        {cameraScan && cameraScanner && scannerOpen ?<CameraScannerPanel {...cameraScanner} onClose={() => setScannerOpen(false)} /> : null}
         {(statusText || statusAccessory || showViewToggle) ? (
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">
             {statusText ? <Text className="flex-1 text-xs text-muted-foreground" numberOfLines={statusAccessory ? 1 : undefined}>

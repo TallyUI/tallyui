@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { Platform, View, type AccessibilityActionEvent } from 'react-native';
-import { useCameraScan, useScanHub, type CameraDecoder, type ViewfinderStatus } from '@tallyui/pos';
+import type { CameraDecoder, ViewfinderStatus } from '@tallyui/pos';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/icon-button';
 import { GripIcon } from '../ui/icon/grip-icon';
@@ -40,16 +40,19 @@ export interface CameraScannerPanelProps {
   decoder?: CameraDecoder;
   /** v2's readiness note (storage, offline, sync starting): the app picks the copy; shown under the status. */
   readiness?: string;
-  /** Drop decodes while false. Default true. */
-  active?: boolean;
-  minChars?: number;
-  onTooShort?: (code: string) => void;
+  /** Each decode, passed straight to the viewfinder: the app passes its useCameraScan offer. */
+  onDetected: (code: string, symbology?: string) => void;
+  /** Called once on mount (the scanner opened): the app passes its useCameraScan reset. */
+  onOpen?: () => void;
+  /** The app's useCameraScan scanCount: each change after mount flashes the panel. */
+  scanCount?: number;
 }
 
-/** The inline camera scanner: each accepted decode is emitted to the scan hub as a camera scan, so it needs a
- * ScanHubProvider and reaches the app's useBarcodeScanner like any device scan (v2 camera-scanner-panel.tsx). */
+/** The inline camera scanner (v2 camera-scanner-panel.tsx). It calls no pos hook: the app owns useCameraScan (and
+ * its ScanHubProvider) and passes { onDetected: camera.offer, onOpen: camera.reset, scanCount: camera.scanCount },
+ * so accepted decodes reach the app's useBarcodeScanner like any device scan. */
 export function CameraScannerPanel({ onClose, height: heightProp = SCANNER_DEFAULT_HEIGHT, onHeightChange, permission,
-  viewfinder: Viewfinder = ScannerViewfinder, decoder, readiness, active, minChars, onTooShort }: CameraScannerPanelProps) {
+  viewfinder: Viewfinder = ScannerViewfinder, decoder, readiness, onDetected, onOpen, scanCount }: CameraScannerPanelProps) {
   const [status, setStatus] = useState<ViewfinderStatus>('initializing');
   const [height, setHeight] = useState(() => clampHeight(heightProp));
   useEffect(() => { setHeight(clampHeight(heightProp)); }, [heightProp]);
@@ -58,25 +61,23 @@ export function CameraScannerPanel({ onClose, height: heightProp = SCANNER_DEFAU
   const onHeightChangeRef = useRef(onHeightChange);
   onHeightChangeRef.current = onHeightChange;
 
-  const { offer, reset } = useCameraScan({ active, minChars, onTooShort });
   // Opening the scanner mounts the panel: a code scanned before it was closed may be scanned again at once.
-  useEffect(() => { reset(); }, [reset]);
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+  useEffect(() => { onOpenRef.current?.(); }, []);
 
-  const hub = useScanHub();
+  // Each scanCount change after mount (re)starts the flash; the value at mount never flashes.
   const [flashing, setFlashing] = useState(false);
+  const seenCount = useRef(scanCount);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const subscription = hub.events$.subscribe((event) => {
-      if (event.source.kind !== 'camera') return;
-      if (timer !== undefined) clearTimeout(timer);
-      setFlashing(true);
-      timer = setTimeout(() => { timer = undefined; setFlashing(false); }, FLASH_DURATION_MS);
-    });
-    return () => {
-      subscription.unsubscribe();
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [hub]);
+    if (scanCount === seenCount.current) return;
+    seenCount.current = scanCount;
+    if (flashTimer.current !== undefined) clearTimeout(flashTimer.current);
+    setFlashing(true);
+    flashTimer.current = setTimeout(() => { flashTimer.current = undefined; setFlashing(false); }, FLASH_DURATION_MS);
+  }, [scanCount]);
+  useEffect(() => () => { if (flashTimer.current !== undefined) clearTimeout(flashTimer.current); }, []);
 
   const adjust = (delta: number) => {
     const next = clampHeight(heightRef.current + delta);
@@ -127,7 +128,7 @@ export function CameraScannerPanel({ onClose, height: heightProp = SCANNER_DEFAU
   return (
     <View>
       <View className="relative w-full overflow-hidden rounded-md bg-black" style={{ height }} testID="camera-scanner-panel">
-        <Viewfinder onDetected={offer} onStatus={setStatus} decoder={decoder} />
+        <Viewfinder onDetected={onDetected} onStatus={setStatus} decoder={decoder} />
         {flashing ? <View className="border-success pointer-events-none absolute inset-0 rounded-md border-4"
           testID="camera-scanner-flash" /> : null}
         <View className="absolute top-1 right-1">

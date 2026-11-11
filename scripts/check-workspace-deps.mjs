@@ -58,6 +58,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'presetRange', 'DATE_PRESETS',
   // the catalogue tiles (unit ucat): the pure per-product cart quantity the in-cart badge shows, never a hook or the store.
   'cartQuantities',
+  // the camera scanner (#720): the getUserMedia constraints, error-to-status map, BarcodeDetector lookup and decode loop the web viewfinder runs, never a hook or the store.
+  'CAMERA_CONSTRAINTS', 'cameraErrorStatus', 'nativeBarcodeDetector', 'startDecodeLoop',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
