@@ -47,6 +47,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   registerId: string; cashierRef: string; capabilities?: ServerCapabilities;
   /** The platform's discount codes (ADR-077 amendment 3), e.g. woocommerceDiscountCodes.createDiscountCodes(source); without them, applyCoupon refuses with COUPONS_UNSUPPORTED. */
   discountCodes?: SaleDiscountCodes<any>;
+  /**
+   * Put on every new sale, as v2's store setting `default_customer` (or the cashier, `default_customer_is_cashier`)
+   * is on every new cart: the first sale and each one after complete, discard, park, newSale or a switch to New,
+   * never a resumed one. The app resolves which customer. A cashier's change, Guest included, stays on that sale.
+   * A change applies at once to an idle cart, else to the next new sale. One `setCustomer` would refuse is skipped
+   * (the sale starts on guest, with no error).
+   */
+  defaultCustomer?: CustomerSummary | null;
   /** Where `park()` keeps parked carts; create it with `orderDraftSchema` */
   drafts?: RxCollection;
   /**
@@ -75,7 +83,19 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
 }) {
   const taxContext = useTax();
   const madeWith = useRef({ taxContext, currency: settings.currency });
-  const [rendered, setBuilder] = useState(() => createOrderBuilder({ currency: settings.currency, taxContext }));
+  // The default customer for a new sale, unless the server would refuse it: then the sale starts on guest.
+  function defaulted(): CustomerSummary | null {
+    const customer = opts.defaultCustomer ?? null;
+    return customer && !customerRefusal(customer) ? customer : null;
+  }
+  const defaultKey = opts.defaultCustomer ? JSON.stringify([opts.defaultCustomer.id, opts.defaultCustomer.name, opts.defaultCustomer.email]) : '';
+  const defaultSeen = useRef(defaultKey);
+  const [rendered, setBuilder] = useState(() => {
+    const first = createOrderBuilder({ currency: settings.currency, taxContext });
+    const customer = defaulted();
+    if (customer) first.setCustomer(customer);
+    return first;
+  });
   // The live builder, which every mutator reads (#301): newSale() sets it before setBuilder(next) renders, so a
   // call from an older render never reaches a discarded builder. The state only moves the `order` subscription.
   const builderNow = useRef(rendered);
@@ -136,8 +156,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (active) setError(SALE_SAVING);
     return active;
   }
-  // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale(null)`.
-  function resetSale(customer: CustomerSummary | null, restored?: OrderBuilder) {
+  // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale()`, on the default customer.
+  function resetSale(customer: CustomerSummary | null = defaulted(), restored?: OrderBuilder) {
     if (inFlight.current && !pending.current) return setError(SALE_SAVING);
     if (pending.current && confirmed.current !== pending.current) {
       if (inFlight.current) checkStored(pending.current);
@@ -170,10 +190,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const idle = stage.kind === 'cart' && !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
   // A layout effect, on live idleness (#301): it runs inside the settings' commit, before any tap can be handled, and
   // the rendered `idle` would miss a line added since this render (it would then be dropped with the old builder).
+  // A new default customer starts a new sale on it at once when idle, as v2 seeds its new cart again; never held pending.
   useLayoutEffect(() => {
     const live = builderNow.current.getSnapshot();
     const liveIdle = stageNow.current.kind === 'cart' && !live.lineItems.length && !live.fees?.length && !live.shipping?.length && !inFlight.current && !pending.current;
-    if (liveIdle && (madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency)) resetSale(live.customer ?? null);
+    const newDefault = defaultSeen.current !== defaultKey;
+    defaultSeen.current = defaultKey;
+    if (liveIdle && (newDefault || madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency)) resetSale(newDefault ? undefined : live.customer ?? null);
   });
   // A screen that unmounts (medusapos: Sign out) mid-save must still leave a trace of the loss.
   useEffect(() => () => {
@@ -572,7 +595,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * clears the screen, never the record (the Front desk, 2026-09-25). `newSale()` never deletes,
      * updates or requeues `pos_orders` itself.
      */
-    newSale() { resetSale(null); },
+    newSale() { resetSale(); },
     /** Parks the cart in `drafts`; resolves to a refusal message, or null once parked. */
     async park(): Promise<string | null> {
       if (locked()) return SALE_SAVING;
@@ -583,7 +606,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (!snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length) return 'There is nothing to park';
       await writeOrderDraft(opts.drafts, snapshot);
       if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
-      resetSale(null);
+      resetSale();
       return null;
     },
     /** Resumes a draft into an empty cart; resolves to a refusal message, or null once resumed. */
@@ -662,7 +685,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         await writeOrderDraft(opts.drafts, snapshot);
         if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       }
-      resetSale(null);
+      resetSale();
       return draftId === null ? null : result.resume(draftId);
     },
     /** Discards the current sale (nothing is parked) and starts an empty one; refused while saving, once a leg of an unfinished sale took or holds money, or in the tender stage. */
@@ -671,7 +694,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const { payments } = builderNow.current.getSnapshot();
       if (stageNow.current.kind !== 'receipt' && (capturedMinor(payments) > 0 || payments.some(isInMotion))) return SALE_PARTLY_PAID;
       if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
-      resetSale(null);
+      resetSale();
       return null;
     },
     /**

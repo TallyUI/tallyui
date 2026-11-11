@@ -15,7 +15,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandEnvelope, OrderCreateEnvelope, OrderCreatePayload, StoreSettings as PricingSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import type { LogEntry } from '../logging';
-import { createOrderBuilder } from '../order';
+import { createOrderBuilder, orderDraftSchema, type CustomerSummary } from '../order';
 import { createOrderOutbox, outboxLogger, useOrderOutbox, type CommandTransport } from '../outbox';
 import { addPosOrderCollection, finalizeOrder, type PosOrder } from '../pos-order';
 import { TaxProvider } from '../tax';
@@ -2155,5 +2155,138 @@ describe('add() returns the line or the refusal (#662)', () => {
     expect(added(result, entries[0])).toBe(message);
     expect(result.current.error).toBe(message);
     expect(result.current.order.lineItems).toEqual([]);
+  });
+});
+
+// v2 (WCPOS monorepo main 85ecbd43f) pre-selects the store's default customer on every new cart:
+// use-new-order.ts seeds each new-cart template, and seeds it again when the default changes; a reopened order,
+// and a customer the cashier set to Guest (cart-header.tsx, CustomerSearch withGuest), are never re-seeded.
+describe('a default customer on every new sale (#668)', () => {
+  const regular = { id: 'customer-7', name: 'Sam Regular', email: 'sam@test.com' };
+  const jane = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+  type Props = { defaultCustomer?: CustomerSummary | null };
+  function renderWithDefault(initialProps: Props, extra: Partial<Parameters<typeof useSale>[1]> = {}) {
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
+    }
+    return renderHook((props: Props) => useSale(pricing, saleOpts({ ...extra, ...props })), { wrapper: Wrapper, initialProps });
+  }
+  async function completeCardSale(result: { current: ReturnType<typeof useSale> }) {
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.stage.kind).toBe('receipt');
+  }
+
+  it('the first sale starts with the default customer, and the completed order carries it', async () => {
+    const onSaleCompleted = vi.fn();
+    const { result } = renderWithDefault({ defaultCustomer: regular }, { onSaleCompleted });
+    expect(result.current.order.customer).toEqual(regular);
+    await completeCardSale(result);
+    expect(onSaleCompleted.mock.calls[0][0].customer).toEqual(regular);
+  });
+
+  it("after complete, the next sale starts with the default again, not the last sale's customer", async () => {
+    const onSaleCompleted = vi.fn();
+    const { result } = renderWithDefault({ defaultCustomer: regular }, { onSaleCompleted });
+    act(() => result.current.setCustomer(jane));
+    await completeCardSale(result);
+    expect(onSaleCompleted.mock.calls[0][0].customer).toEqual(jane);
+    act(() => result.current.newSale());
+    expect(result.current.order.customer).toEqual(regular);
+  });
+
+  it('after a discard (closeSale) and after newSale the default is back', () => {
+    const { result } = renderWithDefault({ defaultCustomer: regular });
+    act(() => result.current.setCustomer(jane));
+    addSaleLines(result);
+    act(() => { expect(result.current.closeSale()).toBeNull(); });
+    expect(result.current.order).toMatchObject({ lineItems: [], customer: regular });
+    act(() => result.current.setCustomer(jane));
+    act(() => result.current.newSale());
+    expect(result.current.order.customer).toEqual(regular);
+  });
+
+  it('park leaves a new cart with the default; a parked sale resumes with its own customer, picked or guest', async () => {
+    const db: RxDatabase = await createRxDatabase({
+      name: `saledefault${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false,
+    });
+    try {
+      await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+      const { result, unmount } = renderWithDefault({ defaultCustomer: regular }, { drafts: db.pos_drafts });
+      const parked: string[] = [];
+      for (const customer of [jane, null]) {
+        act(() => result.current.setCustomer(customer));
+        addSaleLines(result);
+        parked.push(result.current.order.id);
+        await act(async () => { expect(await result.current.park()).toBeNull(); });
+        expect(result.current.order).toMatchObject({ lineItems: [], customer: regular });
+      }
+      for (const [i, customer] of [jane, null].entries()) {
+        await act(async () => { expect(await result.current.resume(parked[i])).toBeNull(); });
+        expect(result.current.order).toMatchObject({ id: parked[i], customer });
+        act(() => { expect(result.current.closeSale()).toBeNull(); });
+      }
+      unmount();
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('a cashier who clears the customer keeps the sale on guest, through to the completed order', async () => {
+    const onSaleCompleted = vi.fn();
+    const { result } = renderWithDefault({ defaultCustomer: regular }, { onSaleCompleted });
+    expect(result.current.order.customer).toEqual(regular);
+    act(() => result.current.setCustomer(null));
+    await completeCardSale(result);
+    expect(onSaleCompleted.mock.calls[0][0].customer).toBeNull();
+    act(() => result.current.newSale());
+    expect(result.current.order.customer).toEqual(regular);
+  });
+
+  it.each([
+    ['a 255-character email', { id: 'cus_1', name: 'Long', email: `${'a'.repeat(246)}@test.com` }],
+    ['an id with a NUL', { id: 'cus\u00001', name: 'Nul', email: 'nul@test.com' }],
+  ])('a default with %s leaves every new sale on guest, with no error; a sendable one then applies', (_name, refused) => {
+    const { result, rerender } = renderWithDefault({ defaultCustomer: refused });
+    expect(result.current).toMatchObject({ order: { customer: null }, error: null });
+    act(() => result.current.newSale());
+    expect(result.current).toMatchObject({ order: { customer: null }, error: null });
+    rerender({ defaultCustomer: regular });
+    expect(result.current.order.customer).toEqual(regular);
+  });
+
+  it('without a default (absent or null) every new sale starts on guest, as before', async () => {
+    for (const props of [{}, { defaultCustomer: null }]) {
+      const onSaleCompleted = vi.fn();
+      const { result, unmount } = renderWithDefault(props, { onSaleCompleted });
+      expect(result.current.order.customer).toBeNull();
+      act(() => result.current.setCustomer(jane));
+      await completeCardSale(result);
+      act(() => result.current.newSale());
+      expect(result.current.order.customer).toBeNull();
+      act(() => result.current.setCustomer(jane));
+      act(() => { expect(result.current.closeSale()).toBeNull(); });
+      expect(result.current.order.customer).toBeNull();
+      unmount();
+    }
+  });
+
+  it('a default that resolves or changes on an idle cart applies at once; on a cart with lines, at the next new sale', () => {
+    const { result, rerender } = renderWithDefault({});
+    expect(result.current.order.customer).toBeNull();
+    rerender({ defaultCustomer: regular });
+    expect(result.current.order.customer).toEqual(regular);
+    const idleId = result.current.order.id;
+    rerender({ defaultCustomer: { ...regular } });
+    expect(result.current.order.id).toBe(idleId);
+    act(() => { result.current.add(entries[0], traits); });
+    rerender({ defaultCustomer: jane });
+    expect(result.current.order).toMatchObject({ id: idleId, customer: regular });
+    act(() => result.current.remove(result.current.order.lineItems[0].id));
+    expect(result.current.order).toMatchObject({ id: idleId, customer: regular });
+    act(() => { expect(result.current.closeSale()).toBeNull(); });
+    expect(result.current.order.customer).toEqual(jane);
   });
 });
