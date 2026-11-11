@@ -1,0 +1,117 @@
+{
+  "id": "019f6d2e-7800-7000-8000-000000000006",
+  "type": "order.create",
+  "version": 8,
+  "createdAt": "2026-11-11T10:00:00.000Z",
+  "deviceId": "device_golden",
+  "attempt": 1,
+  "payload": {
+    "clientOrderId": "019f6d2e-7800-7000-8000-000000000001",
+    "createdAt": "2026-11-11T10:00:00.000Z",
+    "currency": "USD",
+    "pricesIncludeTax": false,
+    "lines": [
+      {
+        "clientLineId": "019f6d2e-7800-7000-8000-000000000002",
+        "variantId": "1",
+        "title": "Item",
+        "quantity": 1,
+        "unitPriceMinor": 800
+      }
+    ],
+    "fees": [
+      {
+        "clientFeeId": "019f6d2e-7800-7000-8000-000000000003",
+        "name": "Bag",
+        "amountMinor": 20,
+        "taxStatus": "taxable",
+        "taxMinor": 1
+      }
+    ],
+    "shipping": [
+      {
+        "clientShippingId": "019f6d2e-7800-7000-8000-000000000004",
+        "name": "Delivery",
+        "methodId": "flat_rate",
+        "amountMinor": 300,
+        "taxStatus": "taxable",
+        "taxClass": "standard",
+        "taxMinor": 12
+      }
+    ],
+    "payments": [
+      {
+        "clientPaymentId": "019f6d2e-7800-7000-8000-000000000005",
+        "method": "cash",
+        "amountMinor": 1165,
+        "tenderedMinor": 1165,
+        "changeMinor": 0
+      }
+    ],
+    "subtotalMinor": 800,
+    "taxMinor": 45,
+    "totalMinor": 1165,
+    "display": {
+      "currency": "USD",
+      "exponent": 2,
+      "taxInclusive": false,
+      "subtotalMinor": 800,
+      "discountMinor": 0,
+      "taxMinor": 45,
+      "totalMinor": 1165,
+      "lines": [
+        {
+          "clientLineId": "019f6d2e-7800-7000-8000-000000000002",
+          "amountMinor": 800,
+          "discounts": []
+        }
+      ],
+      "orderDiscountMinor": 0,
+      "fees": [
+        {
+          "clientFeeId": "019f6d2e-7800-7000-8000-000000000003",
+          "amountMinor": 20
+        }
+      ],
+      "shipping": [
+        {
+          "clientShippingId": "019f6d2e-7800-7000-8000-000000000004",
+          "amountMinor": 300
+        }
+      ]
+    },
+    "taxByRate": [
+      {
+        "ratePpm": 40000,
+        "code": "US-NY-TAX-1",
+        "netMinor": 1120,
+        "taxMinor": 45,
+        "grossMinor": 1165
+      }
+    ],
+    "customer": {
+      "email": "ann@example.com",
+      "customerId": "42",
+      "billing": {
+        "firstName": "Ann",
+        "lastName": "Lee",
+        "address1": "1 Main St",
+        "city": "Albany",
+        "state": "NY",
+        "postcode": "12207",
+        "country": "US",
+        "phone": "555-0100"
+      },
+      "shipping": {
+        "firstName": "Ann",
+        "city": "Portland",
+        "state": "OR",
+        "postcode": "97201",
+        "country": "US"
+      }
+    },
+    "registerId": "register_golden",
+    "cashierRef": "cashier_golden",
+    "taxAddress": "billing"
+  }
+}

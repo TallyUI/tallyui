@@ -6,6 +6,7 @@ import type {
   CommandType,
   CommandResult,
   CommandWarning,
+  OrderAddress,
   OrderCreateEnvelope,
   OrderCreatePayload,
   OrderCreatePayment,
@@ -49,13 +50,15 @@ describe('command types', () => {
     expectTypeOf<Extract<CommandWarning, { code: 'total_mismatch' }>['bridgeMinor']>().toEqualTypeOf<number | undefined>();
   });
 
-  it('pins the envelope versions: 2 for a discounted order.create (ADR-062), 3 for one carrying ADR-065\'s figures, 4 with net discounts (#286), 6 with coupons (ADR-077), 7 with the sale\'s note (ADR-083)', () => {
-    expectTypeOf<OrderCreateEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7>();
-    expectTypeOf<CommandEnvelope<OrderCreatePayload>['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7>();
+  it('pins the envelope versions: 2 for a discounted order.create (ADR-062), 3 for one carrying ADR-065\'s figures, 4 with net discounts (#286), 6 with coupons (ADR-077), 7 with the sale\'s note (ADR-083), 8 with the tax address (#722)', () => {
+    expectTypeOf<OrderCreateEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8>();
+    expectTypeOf<CommandEnvelope<OrderCreatePayload>['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8>();
     expectTypeOf<RegisterCommandEnvelope['version']>().toEqualTypeOf<number>();
-    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7>();
+    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8>();
     expectTypeOf<OrderCreatePayload['discountMinor']>().toEqualTypeOf<number | undefined>();
     expectTypeOf<OrderCreatePayload['sessionId']>().toEqualTypeOf<string | undefined>();
     expectTypeOf<OrderCreatePayload['note']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<OrderCreatePayload['taxAddress']>().toEqualTypeOf<'billing' | 'shipping' | undefined>();
+    expectTypeOf<NonNullable<OrderCreatePayload['customer']>['billing']>().toEqualTypeOf<OrderAddress | undefined>();
   });
 });

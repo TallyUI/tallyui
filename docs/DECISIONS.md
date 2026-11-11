@@ -4452,6 +4452,8 @@ interface OrderCreatePayload {
        - The address is `/stores`'s `tax_address`.
        - When that is empty, it's the store base (`store_country`, `store_state`, `store_postcode`, `store_city`).
        - Only when both are missing is there a store-settings warning and no rates.
+       - *Amended 2026-11-11 (ADR-086):* a sale may be taxed on the customer's billing or shipping address when the
+         store says so and the server takes order.create 8, which tells it the address.
      - **Zero-rate rows are kept**, as WooCommerce keeps them on #136. order-math drops them.
      - **Till display parity (2026-10-06):** the order's subtotal, tax, total and per-rate totals are order-math's
        integer minor-unit figures. Display rows show WooCommerce's per-item amounts rounded to currency decimals,
@@ -6143,3 +6145,66 @@ interface OrderCreatePayload {
   - PLAN A11's `iceServers: []` line is superseded by decision 7.
   - Door: **one-way**, because it fixes a plugin contract and a device-auth model across three backends. The units
     are two-way except U7.
+
+## ADR-086 order.create v8: a sale taxed on the customer's address
+
+- **Date:** 2026-11-11 · **Status:** Proposed (front desk ruling on #722 step 2, 2026-11-11; one-way, merges on
+  Paul's word) · **Amends:** ADR-076 decision 4 ("A POS sale is taxed at the store's base location") · **Relates
+  to:** ADR-038 (commands), ADR-083 (how version 7 was added), ADR-070 (strict payloads and field kinds)
+- **Context:**
+  - A WooCommerce store can tax on the customer's billing or shipping address (`tax_based_on`). The till has the
+    pieces (#722 step 1: `taxBasedOn`, `baseTaxAddress`; `saleTaxContexts` re-matches the rate table per customer)
+    but taxed every sale on the base, because no `order.create` version told the server which address was used, so
+    the server would tax the order on its base and total it differently.
+  - WCPOS already reads the order's `_woocommerce_pos_tax_based_on` meta in `woocommerce_order_get_tax_location`
+    (POS orders only): `billing` taxes on the order's billing address, `shipping` on its shipping address with no
+    fallback, anything else on the base (Pro with `_pos_store`: that store's tax address). `push/orders` passes
+    `meta_data`, `billing` and `shipping` through to wc/v3, whose create runs `calculate_totals()` after the meta and
+    `created_via` are on the order. Source reading by the tallyui-woocommerce lane
+    (`~/agent/handoff/tally-woo-721-722-evidence.md` §3 and addenda); no server change is needed. Not proven live:
+    the dev store runs with `calc_taxes: no`.
+- **Decision:**
+  1. **Version 8 is version 7 plus `payload.taxAddress` (`'billing' | 'shipping'`) and `payload.customer.billing` /
+     `customer.shipping`** (`OrderAddress`, exported by `@tallyui/core`: ten optional strings of at most 255 UTF-16
+     units, no email). A v8 payload always has `taxAddress`, and that address has a non-empty `country`.
+  2. **Sent only for a sale taxed on the customer's address.** A sale taxed on the base goes out byte for byte as
+     before (the v1–v7 golden fixtures are unchanged). A v8 sale with a note carries it.
+  3. **Never downgraded.** Below 8 a server taxes on the base, so a `taxAddress` order capped below 8 throws
+     `UnsupportedOrderVersionError(8, cap)` and the outbox sends it at 8, as coupons (ADR-077) are never dropped.
+  4. **The till re-taxes by address only when the server takes 8.** `saleTaxContexts(settings, { orderCreateVersion })`
+     re-matches per customer only with `taxRateTable`, `baseTaxAddress` and a version of at least 8
+     (`TAX_ADDRESS_ORDER_CREATE_VERSION`); otherwise every customer gets the store's context, the option absent
+     included.
+  5. **The sale's rates and its customer always agree.** Once a sale's rates are fixed (tender, receipt, money
+     captured or in motion), `setCustomer` refuses a customer whose address would move them
+     (`CUSTOMER_RETAX_REFUSED`) and keeps the customer. This replaces v2's "re-tax when the cart is back" for that
+     case: a customer whose rates differ can no longer ride a sale taxed for someone else, which the server would
+     total differently. `finalizeOrder` stores `taxAddress` and the frozen addresses from the location the sale was
+     taxed with, never from a fresh lookup.
+  6. **Server checks.** `precheckCommand` refuses `taxAddress` or a customer address below 8, and a version-8 payload
+     without `taxAddress`; `payloadShapeErrors` checks the enum, the address keys and the taxed address's country;
+     `payloadBoundErrors` bounds each address string. Field kinds: `taxAddress` amount-bearing, the addresses
+     informational (`docs/contract/field-kinds.md`).
+  7. **`pos_orders` goes to schema version 12**: `taxAddress`, the customer's `billing` and `shipping`, and
+     `sentVersion` / `downgradedFrom` up to 8. The migration is the identity, through `addPosOrderCollection`.
+     `ORDER_CREATE_MAX_VERSION` is 8.
+  8. **WooCommerce.** The connector advertises 8 wherever it advertised 7 (`order_create_v5` and the coupons gate),
+     fills `taxRateTable` with the whole fetched table when it has a base address, and sends a v8 sale's
+     `taxAddress` as `_woocommerce_pos_tax_based_on` meta with the full wc/v3 `billing` (with the email) and
+     `shipping`. It never sends `base` as the meta value, nor `created_via` (the server stamps it).
+- **Consequences:**
+  - One-way. Downgrade, measured (`packages/integration-tests/src/pos-orders-open-sqlite.test.ts`): a schema-11 build
+    opening a schema-12 store throws nothing and sees an **empty** `pos_orders`; the schema-12 build reopening it
+    finds every row unchanged. An older build therefore cannot see, resend or report unsent orders while it runs.
+    An older server that does not list 8 never gets a `taxAddress` sale, because the till taxes on the base unless
+    the capability says 8.
+  - Medusa and Vendure keep their version lists; each maps a tax address its own way when it needs one.
+  - An app turns this on by passing `saleTaxContexts(settings, { orderCreateVersion: capabilities.orderCreate })` to
+    `useSale`'s `taxContextFor`; no app in this repo does yet.
+  - The parity proof is a model of the server built from the evidence file
+    (`woo-tax-address-parity.test.ts`); a live proof needs a store with `calc_taxes: yes`.
+- **Evidence:** `packages/pos/src/pos-order/command-v8.test.ts` (golden `__fixtures__/order-create-v8.json`),
+  `packages/core/src/server/order-create-v8.test.ts`, `packages/pos/src/sale/use-sale-tax-location.test.tsx`,
+  `packages/pos/src/tax/sale-tax-contexts.test.ts`, `packages/pos/src/pos-order/migration.test.ts`,
+  `packages/integration-tests/src/pos-orders-open-sqlite.test.ts`,
+  `packages/integration-tests/src/woo-tax-address-parity.test.ts`.

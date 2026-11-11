@@ -152,7 +152,8 @@ export interface CustomerSummary {
   id: string;
   name: string;
   email?: string;
-  /** A picked customer's addresses (a `Customer` carries them): kept on the open sale for its tax location (#722), never sent. */
+  /** A picked customer's addresses (a `Customer` carries them): kept on the open sale for its tax location, and sent at
+   *  order.create 8 when the sale was taxed on one of them (#722). */
   billing?: CustomerAddress;
   shipping?: CustomerAddress;
 }

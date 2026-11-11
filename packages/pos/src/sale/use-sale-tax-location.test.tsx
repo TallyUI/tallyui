@@ -12,7 +12,7 @@ import { taxProviderProps } from '../store-settings';
 import { catalogueEntries } from './catalogue';
 import { createDiscountCodes } from './woocommerce/discount-codes';
 import type { SaleCoupon } from './woocommerce/coupons';
-import { useSale } from './use-sale';
+import { CUSTOMER_RETAX_REFUSED, useSale } from './use-sale';
 
 const entries = catalogueEntries([
   { id: 10, name: 'Shirt', price: '10.00' },
@@ -30,6 +30,8 @@ const settings: StoreSettings = {
   taxRateTable: [wooRate(1, 'AU', '10.0000'), wooRate(2, 'NZ', '15.0000')],
 };
 const nzCustomer: CustomerSummary = { id: '7', name: 'Kiri', shipping: { country: 'NZ', city: 'Auckland', postcode: '1010' } };
+// order.create 8 is what lets saleTaxContexts re-match by address (#722).
+const contexts = (forSettings: StoreSettings) => saleTaxContexts(forSettings, { orderCreateVersion: 8 });
 const auCustomer: CustomerSummary = { id: '9', name: 'Matt', shipping: { country: 'AU', state: 'VIC' } };
 const coupon: SaleCoupon = { id: 101, code: 'ten', discount_type: 'percent', amount: '10' };
 const source = { find: vi.fn(async (code: string) => code === 'ten' ? coupon : null), productCategories: vi.fn(async () => new Map()) };
@@ -51,12 +53,12 @@ describe('useSale taxContextFor (#722)', () => {
   afterEach(async () => { cleanup(); await db.remove(); });
 
   function renderSale(withContexts = true) {
-    const state = { settings, taxContextFor: withContexts ? saleTaxContexts(settings) : undefined };
+    const state = { settings, taxContextFor: withContexts ? contexts(settings) : undefined };
     function Wrapper({ children }: { children: ReactNode }) {
       return <TaxProvider {...taxProviderProps(state.settings)}>{children}</TaxProvider>;
     }
     const hook = renderHook(() => useSale(state.settings, { registerId: 'register-1', cashierRef: 'cashier@store.test',
-      capabilities: { orderCreate: 7, coupons: true }, drafts: db.pos_drafts, discountCodes: createDiscountCodes(source),
+      capabilities: { orderCreate: 8, coupons: true }, drafts: db.pos_drafts, discountCodes: createDiscountCodes(source),
       taxContextFor: state.taxContextFor }), { wrapper: Wrapper });
     return { ...hook, state };
   }
@@ -134,25 +136,41 @@ describe('useSale taxContextFor (#722)', () => {
     expect(result.current.order.coupons).toBeUndefined();
   });
 
-  it('keeps the lines\' taxes in tender', () => {
+  it('refuses a customer with other rates in tender, keeping the lines\' taxes and the customer', () => {
     const { result } = renderSale();
     addLines(result);
     act(() => result.current.startTender('cash'));
     const before = result.current.order;
     act(() => result.current.setCustomer(nzCustomer));
+    expect(result.current.error).toBe(CUSTOMER_RETAX_REFUSED);
     expect(result.current.stage.kind).toBe('tender');
-    expect(result.current.order.customer).toBe(nzCustomer);
+    expect(result.current.order.customer).toBeNull();
     expect(result.current.order.lineItems).toEqual(before.lineItems);
     expect(result.current.order.taxMinor).toBe(before.taxMinor);
   });
 
-  it('re-taxes for a customer set in tender once the tender is cancelled', () => {
+  it('sets a customer with the same rates in tender, and clears the refusal', () => {
+    const { result } = renderSale();
+    addLines(result);
+    act(() => result.current.startTender('cash'));
+    const before = result.current.order;
+    act(() => result.current.setCustomer(nzCustomer));
+    act(() => result.current.setCustomer(auCustomer));
+    expect(result.current.error).toBeNull();
+    expect(result.current.order.customer).toBe(auCustomer);
+    expect(result.current.order.lineItems).toEqual(before.lineItems);
+  });
+
+  it('refuses a customer with other rates in tender, and re-taxes for them once the tender is cancelled', () => {
     const { result } = renderSale();
     addLines(result);
     act(() => result.current.startTender('cash'));
     act(() => result.current.setCustomer(nzCustomer));
+    expect(result.current.error).toBe(CUSTOMER_RETAX_REFUSED);
     expect(rateCodes(result.current.order)).toEqual([['AU-GST-1'], ['AU-GST-1']]);
     act(() => result.current.cancelTender());
+    expect(result.current.order.customer).toBeNull();
+    act(() => result.current.setCustomer(nzCustomer));
     const fresh = renderSale().result;
     act(() => fresh.current.setCustomer(nzCustomer));
     addLines(fresh);
@@ -165,20 +183,23 @@ describe('useSale taxContextFor (#722)', () => {
     expect(money(retaxed)).toEqual(money(built));
   });
 
-  it('re-taxes after a cancelled tender that had taken cash, as cancelTender drops every leg', () => {
+  it('refuses a customer with other rates once cash is taken, and re-taxes after the tender is cancelled, as cancelTender drops every leg', () => {
     const { result } = renderSale();
     addLines(result);
     act(() => result.current.startTender('cash'));
     act(() => { result.current.addTender({ method: 'cash', amountMinor: 500 }); });
     expect(result.current.order.paidMinor).toBe(500);
     act(() => result.current.setCustomer(nzCustomer));
+    expect(result.current.error).toBe(CUSTOMER_RETAX_REFUSED);
+    expect(result.current.order.customer).toBeNull();
     expect(rateCodes(result.current.order)).toEqual([['AU-GST-1'], ['AU-GST-1']]);
     act(() => result.current.cancelTender());
     expect(result.current.order.payments).toEqual([]);
+    act(() => result.current.setCustomer(nzCustomer));
     expect(rateCodes(result.current.order)).toEqual([['NZ-GST-1'], ['NZ-GST-1']]);
   });
 
-  it('keeps the rates of a cart holding captured money (a resumed draft paid in part)', async () => {
+  it('keeps the rates and the customer of a cart holding captured money (a resumed draft paid in part)', async () => {
     const paid = renderSale().result;
     addLines(paid);
     act(() => paid.current.startTender('cash'));
@@ -190,7 +211,8 @@ describe('useSale taxContextFor (#722)', () => {
     expect(result.current.stage.kind).toBe('cart');
     expect(result.current.order.paidMinor).toBe(500);
     act(() => result.current.setCustomer(nzCustomer));
-    expect(result.current.order.customer).toBe(nzCustomer);
+    expect(result.current.error).toBe(CUSTOMER_RETAX_REFUSED);
+    expect(result.current.order.customer).toBeNull();
     expect(rateCodes(result.current.order)).toEqual([['AU-GST-1'], ['AU-GST-1']]);
     expect(result.current.order.taxMinor).toBe(draft.taxMinor);
   });
@@ -233,7 +255,7 @@ describe('useSale taxContextFor (#722)', () => {
     rerender();
     expect(result.current.order.id).toBe(id);
     state.settings = { ...settings, pricesIncludeTax: true };
-    if (withContexts) state.taxContextFor = saleTaxContexts(state.settings);
+    if (withContexts) state.taxContextFor = contexts(state.settings);
     rerender();
     expect(result.current.order).toMatchObject({ pricesIncludeTax: true, customer: nzCustomer });
     expect(result.current.order.id).not.toBe(id);
@@ -243,10 +265,83 @@ describe('useSale taxContextFor (#722)', () => {
     // A new taxContextFor alone, from the same settings, counts as new settings too.
     act(() => result.current.remove(result.current.order.lineItems[0].id));
     const idle = result.current.order.id;
-    state.taxContextFor = saleTaxContexts(state.settings);
+    state.taxContextFor = contexts(state.settings);
     rerender();
     expect(result.current.order.id).not.toBe(idle);
     expect(result.current.order.customer).toBe(nzCustomer);
+  });
+
+  it.each([
+    ['taxed on their shipping address', { ...nzCustomer, email: 'kiri@example.com', billing: { firstName: 'Kiri', country: 'AU', state: '', email: 'b@example.com' } }],
+    ['at the shop base', null],
+  ] as const)('finalizes a sale %s with what order.create 8 sends', async (_label, customer) => {
+    const completed: unknown[] = [];
+    const state = { settings, taxContextFor: contexts(settings) };
+    const { result } = renderHook(() => useSale(state.settings, { registerId: 'register-1', cashierRef: 'cashier@store.test',
+      capabilities: { orderCreate: 8, coupons: true }, drafts: db.pos_drafts, taxContextFor: state.taxContextFor,
+      onSaleCompleted: (order) => { completed.push(order); } }),
+    { wrapper: ({ children }: { children: ReactNode }) => <TaxProvider {...taxProviderProps(settings)}>{children}</TaxProvider> });
+    if (customer) act(() => result.current.setCustomer(customer));
+    addLines(result);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    expect(completed).toHaveLength(1);
+    const posOrder = completed[0] as Record<string, unknown>;
+    if (!customer) {
+      expect(posOrder).not.toHaveProperty('taxAddress');
+      expect(posOrder.customer).toBeNull();
+      return;
+    }
+    expect(posOrder.taxAddress).toBe('shipping');
+    expect(posOrder.customer).toStrictEqual({ id: '7', name: 'Kiri', email: 'kiri@example.com',
+      billing: { firstName: 'Kiri', country: 'AU' }, shipping: { city: 'Auckland', postcode: '1010', country: 'NZ' } });
+  });
+
+  /** A sale for `customer` started on `startAt`'s function, given `endAt`'s mid-sale (not idle), then completed. */
+  async function finishAcross(startAt: number, endAt: number, customer: CustomerSummary | null = nzCustomer, after?: (result: Sale) => void) {
+    const completed: Record<string, unknown>[] = [];
+    const state = { taxContextFor: saleTaxContexts(settings, { orderCreateVersion: startAt }) };
+    const { result, rerender } = renderHook(() => useSale(settings, { registerId: 'register-1', cashierRef: 'cashier@store.test',
+      capabilities: { orderCreate: 8, coupons: true }, drafts: db.pos_drafts, taxContextFor: state.taxContextFor,
+      onSaleCompleted: (order) => { completed.push(order as unknown as Record<string, unknown>); } }),
+    { wrapper: ({ children }: { children: ReactNode }) => <TaxProvider {...taxProviderProps(settings)}>{children}</TaxProvider> });
+    if (customer) act(() => result.current.setCustomer(customer));
+    addLines(result);
+    const id = result.current.order.id;
+    state.taxContextFor = saleTaxContexts(settings, { orderCreateVersion: endAt });
+    rerender();
+    expect(result.current.order.id).toBe(id);
+    after?.(result);
+    act(() => result.current.startTender('external'));
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBeNull();
+    expect(completed).toHaveLength(1);
+    return completed[0];
+  }
+
+  it('completes a sale started at order.create 7 on the base, with no tax address, when a function at 8 arrives mid-sale', async () => {
+    const [atBase, across, reMatched] = [await finishAcross(7, 7), await finishAcross(7, 8), await finishAcross(8, 8)];
+    expect(across).not.toHaveProperty('taxAddress');
+    expect(across.customer).toStrictEqual({ id: '7', name: 'Kiri' });
+    expect(across.taxMinor).toBe(atBase.taxMinor);
+    expect(across.taxMinor).not.toBe(reMatched.taxMinor);
+  });
+
+  it('keeps the tax address and the re-matched figure of a sale started at 8 when a function at 7 arrives mid-sale', async () => {
+    const [reMatched, across] = [await finishAcross(8, 8), await finishAcross(8, 7)];
+    expect(across.taxAddress).toBe('shipping');
+    expect(across.customer).toStrictEqual({ id: '7', name: 'Kiri', shipping: { city: 'Auckland', postcode: '1010', country: 'NZ' } });
+    expect(across.taxMinor).toBe(reMatched.taxMinor);
+  });
+
+  it('names no address once the customer is taken off a sale on the base rates (taxNow follows a same-rates customer)', async () => {
+    // NZ re-taxes; AU re-taxes back to the base rates on its shipping address; a guest keeps those rates and the builder.
+    const order = await finishAcross(8, 8, nzCustomer, (result) => {
+      act(() => result.current.setCustomer(auCustomer));
+      act(() => result.current.setCustomer(null));
+    });
+    expect(order).not.toHaveProperty('taxAddress');
+    expect(order.customer).toBeNull();
   });
 
   it('resumes a parked sale with an NZ customer taxed at NZ', async () => {

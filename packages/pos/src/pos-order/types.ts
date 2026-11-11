@@ -1,4 +1,4 @@
-import type { CommandError, CommandServerRefs, CommandWarning, OrderCreateLine, PaymentMethodKind, TaxRounding } from '@tallyui/core';
+import type { CommandError, CommandServerRefs, CommandWarning, OrderAddress, OrderCreateLine, PaymentMethodKind, TaxRounding } from '@tallyui/core';
 import type { DisplayTotals, FeeLine, ShippingLine } from '../order/types';
 
 export type PosOrderSyncStatus = 'pending' | 'applied' | 'rejected';
@@ -74,7 +74,10 @@ export interface PosOrder {
   taxMinor: number;
   totalMinor: number;
   payments: PosOrderPayment[];
-  customer: { id?: string; name?: string; email?: string } | null;
+  /** `billing` and `shipping` (#722) are frozen copies of the customer's addresses, stored only with `taxAddress`. */
+  customer: { id?: string; name?: string; email?: string; billing?: OrderAddress; shipping?: OrderAddress } | null;
+  /** The customer address the sale was taxed on (#722), sent as order.create 8's `taxAddress`; absent: the store's base. */
+  taxAddress?: 'billing' | 'shipping';
   /** The sale's note; sent as order.create version 7's `note` (ADR-083), cut to ORDER_NOTE_MAX when frozen. */
   note?: string;
   registerId?: string;
@@ -93,9 +96,9 @@ export interface PosOrder {
    * The order.create version every attempt under this `commandId` goes out at: the outbox records it before the first
    * send, and lowers it only on a downgrade (ADR-065 amendment). Absent means not sent yet (or requeued).
    */
-  sentVersion?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  sentVersion?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   /** The version first tried, before the downgrade (the order's audit). */
-  downgradedFrom?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  downgradedFrom?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. */
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
-import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
+import type { ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
 import { paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
@@ -34,6 +34,10 @@ export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the 
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
 export const COUPONS_REPRICING = 'Coupon prices are being checked; try again in a moment';
+/** #722: setCustomer's refusal of a customer whose address moves the sale's rates once they can no longer change (tender, receipt, money live). */
+export const CUSTOMER_RETAX_REFUSED = "This customer's address changes the tax. Go back to the cart with no payment taken to change the customer.";
+/** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
+type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
 const REFERENCE_DROPPED = "The terminal's payment reference couldn't be kept";
 /**
@@ -92,11 +96,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const taxContext = useTax();
   // The store's context and the settings the sale started with, for the idle reset; the sale's own context is `taxNow`.
   const madeWith = useRef({ taxContext, currency: settings.currency, taxContextFor: opts.taxContextFor });
-  function contextFor(customer: CustomerSummary | null): TaxContext {
-    return opts.taxContextFor ? opts.taxContextFor(customer).taxContext : taxContext;
+  function contextFor(customer: CustomerSummary | null): SaleTax {
+    return opts.taxContextFor ? opts.taxContextFor(customer) : { taxContext };
   }
-  // The live builder's tax context: the store's, or its customer's (#722).
-  const taxNow = useRef<TaxContext>(taxContext);
+  // The live builder's tax context, the store's or its customer's, and the address it matched (#722), from one
+  // `taxContextFor` call: a newer function mid-sale never changes the address the sale's lines were taxed on.
+  const taxNow = useRef<SaleTax>({ taxContext });
   // The default customer for a new sale, unless the server would refuse it: then the sale starts on guest.
   function defaulted(): CustomerSummary | null {
     const customer = opts.defaultCustomer ?? null;
@@ -107,7 +112,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const [rendered, setBuilder] = useState(() => {
     const customer = defaulted();
     taxNow.current = contextFor(customer);
-    const first = createOrderBuilder({ currency: settings.currency, taxContext: taxNow.current });
+    const first = createOrderBuilder({ currency: settings.currency, taxContext: taxNow.current.taxContext });
     if (customer) first.setCustomer(customer);
     return first;
   });
@@ -219,7 +224,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   /** startTender's and complete()'s check: the live order's coupon prices are stale or being priced again. */
   function couponsUnpriced() { return !!(builderNow.current.getSnapshot().couponPricesStale || repricing.current); }
   // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale()`, on the default customer.
-  function resetSale(customer: CustomerSummary | null = defaulted(), restored?: OrderBuilder, restoredTax?: TaxContext) {
+  function resetSale(customer: CustomerSummary | null = defaulted(), restored?: OrderBuilder, restoredTax?: SaleTax) {
     if (inFlight.current && !pending.current) return setError(SALE_SAVING);
     if (pending.current && confirmed.current !== pending.current) {
       if (inFlight.current) checkStored(pending.current);
@@ -232,7 +237,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     setSaving(false);
     madeWith.current = { taxContext, currency: settings.currency, taxContextFor: opts.taxContextFor };
     const tax = restoredTax ?? contextFor(customer);
-    const next = restored ?? createOrderBuilder({ currency: settings.currency, taxContext: tax });
+    const next = restored ?? createOrderBuilder({ currency: settings.currency, taxContext: tax.taxContext });
     if (customer !== null) next.setCustomer(customer);
     builderNow.current = next;
     taxNow.current = tax;
@@ -275,9 +280,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
    * fees, shipping and note are kept, line taxes re-derived from the new rates, and the applied codes put back (store-priced
    * ones go stale and price again, as the basis has the customer). `applied`, the error and the stage are kept.
    */
-  function retax(customer: CustomerSummary | null, next: TaxContext) {
+  function retax(customer: CustomerSummary | null, next: SaleTax) {
     const snapshot = { ...builderNow.current.getSnapshot(), customer };
-    const rebuilt = restoreOrderDraft(snapshot, { currency: snapshot.currency, taxContext: next });
+    const rebuilt = restoreOrderDraft(snapshot, { currency: snapshot.currency, taxContext: next.taxContext });
     if (appliedWith.current && applied.current.size) appliedWith.current.apply(rebuilt, discountState(rebuilt.getSnapshot(), applied.current));
     builderNow.current = rebuilt;
     taxNow.current = next;
@@ -289,9 +294,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
    * receipt, a paid or moving leg finish on their rates). setCustomer's and cancelTender's check; true when it re-taxed.
    */
   function retaxFor(customer: CustomerSummary | null): boolean {
-    const next = opts.taxContextFor?.(customer).taxContext;
+    const next = opts.taxContextFor?.(customer);
     const { payments } = builderNow.current.getSnapshot();
-    if (!next || next === taxNow.current || stageNow.current.kind !== 'cart' || busy()
+    if (!next || next.taxContext === taxNow.current.taxContext || stageNow.current.kind !== 'cart' || busy()
       || capturedMinor(payments) !== 0 || payments.some(isInMotion)) return false;
     retax(customer, next);
     return true;
@@ -577,8 +582,15 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       // A searched customer's email or id the server would refuse never reaches the sale; the customer stays as it was.
       const refused = customer && customerRefusal(customer);
       if (refused) return setError(refused);
-      if (!retaxFor(customer)) builderNow.current.setCustomer(customer);
-      setError((current) => current !== null && CUSTOMER_REFUSALS.includes(current) ? null : current); // any other error stays
+      // #722: the sale's rates and its customer always agree, so a customer with other rates is refused once they are fixed.
+      if (!retaxFor(customer)) {
+        const same = opts.taxContextFor?.(customer);
+        if (same && same.taxContext !== taxNow.current.taxContext) return setError(CUSTOMER_RETAX_REFUSED);
+        // Same rates: the address now matched is this customer's (a guest's is the base), so finalize never names one they lack.
+        if (same) taxNow.current = same;
+        builderNow.current.setCustomer(customer);
+      }
+      setError((current) => current !== null && (CUSTOMER_REFUSALS.includes(current) || current === CUSTOMER_RETAX_REFUSED) ? null : current); // any other error stays
     },
     /**
      * Pins `options.session` for this tender when given, else the rendered `session` option. Pass the
@@ -670,7 +682,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       let posOrder: PosOrder;
       try {
         posOrder = finalizeOrder(current, { registerId: opts.registerId, cashierRef: opts.cashierRef, capabilities: opts.capabilities,
-          ...(localWarnings.length ? { localWarnings } : {}) });
+          ...(localWarnings.length ? { localWarnings } : {}),
+          // #722: the address the sale's lines were taxed on, kept with their context (taxNow), never a newer function's.
+          ...(taxNow.current.location ? { taxLocation: taxNow.current.location } : {}) });
       } catch (error) {
         setSaving(false);
         setError((error as Error).message);
@@ -746,7 +760,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
       // Taxed for the customer the draft restores (a refused one isn't).
       const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
-      const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax });
+      const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext });
       let n = 0;
       // A draft whose legs took money keeps the prices it was paid against (u19).
       if (opts.currentPrice && !options?.keepParkedPrices && capturedMinor(saved.payments ?? []) === 0) {

@@ -68,6 +68,23 @@ export function payloadShapeErrors(payload: unknown): string[] {
       const id = payload.customer.customerId
       check(typeof id === 'string' && id.length > 0 && id.length <= 64, 'customer.customerId', 'a string of at most 64 characters')
     }
+    for (const kind of ['billing', 'shipping']) {
+      const address = object(payload.customer) ? payload.customer[kind] : undefined
+      if (address === undefined) continue
+      check(object(address), `customer.${kind}`, 'an object')
+      if (object(address)) for (const [key, value] of Object.entries(address)) {
+        check(ORDER_ADDRESS_KEYS.includes(key), `customer.${kind}.${key}`, 'no unknown key')
+        check(typeof value === 'string', `customer.${kind}.${key}`, 'a string')
+      }
+    }
+  }
+  // Version 8 (#722): the address the till taxed on; precheckCommand requires it at 8 and refuses it below.
+  if (payload.taxAddress !== undefined) {
+    const kind = payload.taxAddress
+    const known = kind === 'billing' || kind === 'shipping'
+    check(known, 'taxAddress', 'billing or shipping')
+    const address = known && object(payload.customer) ? payload.customer[kind] : undefined
+    if (known) check(object(address) && typeof address.country === 'string' && address.country.length > 0, `customer.${kind}.country`, 'a non-empty string')
   }
   if (payload.sessionId !== undefined) {
     check(typeof payload.sessionId === 'string' && payload.sessionId.length > 0 && payload.sessionId.length <= 36,
@@ -152,9 +169,12 @@ export function payloadShapeErrors(payload: unknown): string[] {
   return errors
 }
 
+/** OrderAddress's keys (#722). */
+const ORDER_ADDRESS_KEYS = ['firstName', 'lastName', 'company', 'address1', 'address2', 'city', 'state', 'postcode', 'country', 'phone']
+
 /** Length-bound errors of an order.create payload, e.g. ['lines[0].title: expected at most 255
  * characters']; [] when every string is within its bound, at most ten. Bounds in UTF-16 code units:
- * `note` ORDER_NOTE_MAX (1000), `customer.email` 254, v5 ids 36 and class/sku/method 64, other strings 255 (`customerId` and `sessionId` keep theirs in
+ * `note` ORDER_NOTE_MAX (1000), `customer.email` 254, v8 address fields 255, v5 ids 36 and class/sku/method 64, other strings 255 (`customerId` and `sessionId` keep theirs in
  * payloadShapeErrors); only strings are checked. A plugin calls it through precheckCommand, after
  * its replay lookup, so a bound tightened later never turns an applied command's resend into
  * `invalid_payload`. */
@@ -210,6 +230,10 @@ function payloadStrings(payload: Record<string, unknown>): Array<[string, string
     if (object(line) && Array.isArray(line.anyAttributes)) line.anyAttributes.forEach((name, i) => found.push([name, `lines[${index}].anyAttributes[${i}]`, 255]))
   })
   if (object(payload.customer)) found.push([payload.customer.email, 'customer.email', 254], [payload.customer.customerId, 'customer.customerId', undefined])
+  if (object(payload.customer)) for (const kind of ['billing', 'shipping']) {
+    const address = payload.customer[kind]
+    if (object(address)) for (const [key, value] of Object.entries(address)) found.push([value, `customer.${kind}.${key}`, 255])
+  }
   found.push([payload.sessionId, 'sessionId', undefined])
   return found.filter((entry): entry is [string, string, number | undefined] => typeof entry[0] === 'string')
 }

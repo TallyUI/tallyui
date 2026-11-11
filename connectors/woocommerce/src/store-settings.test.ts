@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, StoreSettingsError, type SyncContext } from '@tallyui/core';
-import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION } from './store-settings';
+import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION,
+  WOO_TAX_ADDRESS_ORDER_CREATE_VERSION } from './store-settings';
 import { createWooCommerceConnector } from './index';
 import stores from './__tests__/fixtures/taxes-1.10.20/stores.json';
 import taxes from './__tests__/fixtures/taxes-1.10.20/taxes.json';
@@ -50,6 +51,7 @@ describe('wooStoreSettings', () => {
       taxRates: expect.any(Object),
       allTaxRates: expect.any(Array),
       taxBasedOn: 'base', baseTaxAddress: { country: 'US', state: 'CA', city: 'San Francisco', postcode: '94105' },
+      taxRateTable: taxes,
     });
     expect(settings.taxRates!.standard.map((rate) => rate.id)).toEqual([1, 2, 4]);
     expect(settings.taxRates!['reduced-rate'].map((rate) => rate.id)).toEqual([3]);
@@ -193,7 +195,7 @@ describe('wooStoreSettings', () => {
     );
   });
 
-  // #722 step 1: the basis and base address are display only; no taxRateTable, so the cart keeps the store's own rates.
+  // #722: with a base address, the whole rate table comes too, for re-taxing a sale on the customer's address (order.create 8).
   it.each([
     ['billing', 'billing'], ['shipping', 'shipping'], ['base', 'base'], ['bogus', 'base'], [undefined, 'base'],
   ] as const)('reads tax_based_on %s as %s when taxes are on', async (taxBasedOn, expected) => {
@@ -201,7 +203,7 @@ describe('wooStoreSettings', () => {
     storesBody = [taxBasedOn === undefined ? store : { ...store, tax_based_on: taxBasedOn }];
     const settings = await wooStoreSettings(context);
     expect(settings.taxBasedOn).toBe(expected);
-    expect(settings).not.toHaveProperty('taxRateTable');
+    expect(settings.taxRateTable).toStrictEqual(taxes);
   });
 
   it('takes the base tax address from a tax address that has a country', async () => {
@@ -209,7 +211,7 @@ describe('wooStoreSettings', () => {
     const settings = await wooStoreSettings(context);
     expect(settings.baseTaxAddress).toStrictEqual({ country: 'US', state: 'CA', city: 'Los Angeles', postcode: '90001' });
     expect(settings.taxRates!.standard.map((rate) => rate.id)).toEqual([1, 4]);
-    expect(settings).not.toHaveProperty('taxRateTable');
+    expect(settings.taxRateTable).toStrictEqual(taxes);
   });
 
   it('takes the base tax address from the store fields when the tax address is absent', async () => {
@@ -219,14 +221,14 @@ describe('wooStoreSettings', () => {
     storesBody = [{ ...store, store_postcode: '90001' }];
     const settings = await wooStoreSettings(context);
     expect(settings.baseTaxAddress).toStrictEqual({ country: 'US', state: 'CA', city: 'San Francisco', postcode: '90001' });
-    expect(settings).not.toHaveProperty('taxRateTable');
+    expect(settings.taxRateTable).toStrictEqual(taxes);
   });
 
   it('turns a non-string base address field into an empty string', async () => {
     storesBody = [{ ...stores[0], tax_address: { country: 'US', state: 'CA', postcode: 94105, city: 'San Francisco' } }];
     const settings = await wooStoreSettings(context);
     expect(settings.baseTaxAddress).toStrictEqual({ country: 'US', state: 'CA', city: 'San Francisco', postcode: '' });
-    expect(settings).not.toHaveProperty('taxRateTable');
+    expect(settings.taxRateTable).toStrictEqual(taxes);
   });
 
   it('leaves the base tax address out but still reads the basis when no address has a country', async () => {
@@ -236,6 +238,15 @@ describe('wooStoreSettings', () => {
     expect(settings).not.toHaveProperty('baseTaxAddress');
     expect(settings.taxBasedOn).toBe('billing');
     expect(settings).not.toHaveProperty('taxRateTable');
+  });
+
+  it('fills the table with every page of rates, unfiltered, and leaves the missing location lists empty', async () => {
+    const { postcodes: _postcodes, cities: _cities, ...bare } = taxes[0];
+    taxesBody = Array.from({ length: 100 }, (_, index) => ({ ...taxes[1], id: 100 + index }));
+    secondPage = [{ ...bare, id: 7, country: 'GB', state: '' }];
+    const settings = await wooStoreSettings(context);
+    expect(settings.taxRateTable).toHaveLength(101);
+    expect(settings.taxRateTable![100]).toStrictEqual({ ...bare, id: 7, country: 'GB', state: '', postcodes: [], cities: [] });
   });
 
   it.each(['no', undefined])('reads neither the basis nor the base address when calc_taxes is %s', async (calcTaxes) => {
@@ -308,8 +319,9 @@ describe('readWooCapabilities', () => {
   it('reads the captured rounding flag and the supported order version with context requests', async () => {
     expect(WOO_ORDER_CREATE_VERSION).toBe(5);
     expect(WOO_NOTE_ORDER_CREATE_VERSION).toBe(7);
+    expect(WOO_TAX_ADDRESS_ORDER_CREATE_VERSION).toBe(8);
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 7, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+      orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
       multiplePayments: false,
       coupons: true,
       lineTax: { none: true, classes: true },
@@ -348,10 +360,10 @@ describe('readWooCapabilities', () => {
     });
   });
 
-  it('advertises v7 with an explicit v5 advertisement and the coupons gate', async () => {
+  it('advertises v8 with an explicit v5 advertisement and the coupons gate', async () => {
     statusBody = { capabilities: ['order_create_v5'] };
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 7, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
       coupons: true,
       lineTax: { none: true, classes: true },
     });
@@ -360,7 +372,7 @@ describe('readWooCapabilities', () => {
   it('accepts an explicit v5 advertisement with payment lists', async () => {
     statusBody = { capabilities: ['order_create_v5', 'order_payments_list'] };
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 7, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: true,
+      orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: true,
       coupons: true,
       lineTax: { none: true, classes: true },
     });
@@ -381,7 +393,7 @@ describe('readWooCapabilities', () => {
   it('reads subtotal rounding enabled', async () => {
     storesBody = [{ ...stores[0], tax_round_at_subtotal: 'yes' }];
     expect(await readWooCapabilities(context)).toStrictEqual({
-      orderCreate: 7, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
+      orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
       multiplePayments: false,
       coupons: true,
       lineTax: { none: true, classes: true },
@@ -420,7 +432,7 @@ describe('readWooCapabilities', () => {
   });
 
   it.each([
-    [['order_create_v5'], '1.9.0', 7, true],
+    [['order_create_v5'], '1.9.0', 8, true],
     [['order_create_v5'], '1.8.99', 5, false],
     [[], '1.9.0', 3, true],
   ])('uses capabilities %j and site %s to advertise order version %i, coupons=%s', async (capabilities, wcpos_version, orderCreate, coupons) => {

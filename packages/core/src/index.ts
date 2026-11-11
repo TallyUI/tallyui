@@ -74,6 +74,7 @@ export type {
   RegisterSessionTransitionPayload,
   RegisterMovementRecordPayload, RegisterMovementVoidPayload, RegisterClosureSubmitPayload,
 } from './types';
+export type { OrderAddress } from './types/commands';
 
 export {
   COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, MAX_COMMANDS_PER_BATCH, ORDER_NOTE_MAX,
