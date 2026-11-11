@@ -32,6 +32,19 @@ import type { ApprovalNeeded } from '@tallyui/pos';
 import { RegisterPanel, type RegisterPanelProps } from '../register/register-panel';
 import { createRegisterDb, RegisterHarness, seedMovement, seedSession, type RegisterDb } from './register-harness';
 
+// react-native-web turns nativewind classes into generated ones, so the sheet's placement is read
+// from the className DialogContent hands the primitive; the primitive itself still renders.
+const contentClasses = vi.hoisted(() => [] as string[]);
+vi.mock('@tallyui/primitives', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tallyui/primitives')>();
+  const { createElement, forwardRef } = await import('react');
+  const Content = forwardRef<unknown, { className?: string }>(function RecordedContent(props, ref) {
+    contentClasses.push(props.className ?? '');
+    return createElement(actual.Dialog.Content as never, { ...props, ref });
+  });
+  return { ...actual, Dialog: { ...actual.Dialog, Content } };
+});
+
 let db: RegisterDb;
 let sessionId = '';
 beforeEach(async () => {
@@ -361,4 +374,136 @@ it('changes nothing when reapprove resolves null', async () => {
   await waitFor(() => expect((screen.getByTestId('register-panel-reapprove') as HTMLButtonElement).disabled).toBe(false));
   expect(reapproveClosure).not.toHaveBeenCalled();
   expect(screen.getByTestId('register-panel-reapproval')).toBeTruthy();
+});
+
+// TallyUI#716: `presentation="side"`, WCPOS v2's right-hand register sheet.
+async function renderSide(props: Partial<RegisterPanelProps> = {}, overrides?: Parameters<typeof RegisterHarness>[0]['overrides']) {
+  render(
+    <RegisterHarness db={db} overrides={overrides}>
+      {(register) => (
+        <RegisterPanel register={register} currency="EUR" registerName="Front" open onOpenChange={() => {}} presentation="side" {...props} />
+      )}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(screen.getByTestId('register-panel-paid-in')).toBeTruthy());
+}
+async function seedSideFixture() {
+  await seedSale('sale-0');
+  await seedSale('sale-1');
+  await seedMovement(db, sessionId, 'paid_in', 500, 'Change');
+}
+
+it('side: the hero shows the cash expected in the drawer, and session sales their amount and count', async () => {
+  await seedSideFixture();
+  await renderSide();
+  // 100.00 float + 20.00 cash sales + 5.00 paid in − 7.00 paid out.
+  await waitFor(() => expect(screen.getByTestId('register-panel-hero').textContent).toBe('€118.00in the drawer'));
+  expect(screen.getByTestId('register-panel-session-sales').textContent).toBe('Session sales€20.00 · 2 sales');
+});
+
+it('side: the ledger lists each term with its count, leaves out zero-count rows, and ends on Expected in the drawer', async () => {
+  await seedSideFixture();
+  await renderSide();
+  await waitFor(() => expect(screen.getByTestId('register-panel-ledger').textContent).toContain('Cash sales · 2€20.00'));
+  const ledger = screen.getByTestId('register-panel-ledger').textContent;
+  expect(ledger).toContain('Float€100.00');
+  expect(ledger).toContain('Paid in · 1€5.00');
+  expect(ledger).toContain('Paid out · 1−€7.00');
+  expect(ledger).not.toContain('Cash refunds');
+  expect(ledger).not.toContain('No sale');
+  expect(screen.getByTestId('register-panel-expected').textContent).toBe('Expected in the drawer€118.00');
+});
+
+it('side: lists Other tenders with their count', async () => {
+  await db.pos_orders.insert({
+    id: 'card-sale', commandId: 'command-card-sale', createdAt: '2026-09-20T10:00:00.000Z', updatedAt: '2026-09-20T10:00:00.000Z',
+    currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: 952, discountMinor: 0, taxMinor: 0,
+    totalMinor: 952, customer: null, syncStatus: 'pending', sessionId, cashierRef: '7',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
+    payments: [{ id: 'card-payment-0', method: 'external', amountMinor: 952 }],
+  });
+  await renderSide();
+  await waitFor(() => expect(screen.getByTestId('register-panel-other-tenders').textContent).toBe('Other tendersCard · 1€9.52'));
+});
+
+it('side: blind shows a dash in the hero and no ledger, session sales or Other tenders', async () => {
+  await seedSideFixture();
+  await db.pos_orders.insert({
+    id: 'card-sale', commandId: 'command-card-sale', createdAt: '2026-09-20T10:00:00.000Z', updatedAt: '2026-09-20T10:00:00.000Z',
+    currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: 952, discountMinor: 0, taxMinor: 0,
+    totalMinor: 952, customer: null, syncStatus: 'pending', sessionId, cashierRef: '7',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
+    payments: [{ id: 'card-payment-0', method: 'external', amountMinor: 952 }],
+  });
+  await renderSide({ onPrintXReport: vi.fn() }, { blind: true });
+  expect(screen.getByTestId('register-panel-hero').textContent).toBe('—in the drawer');
+  expect(screen.queryByTestId('register-panel-ledger')).toBeNull();
+  expect(screen.queryByTestId('register-panel-session-sales')).toBeNull();
+  expect(screen.queryByTestId('register-panel-other-tenders')).toBeNull();
+  expect(screen.getByTestId('register-panel').textContent).not.toContain('€');
+  expect((screen.getByTestId('register-panel-print') as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('side: Print X-report calls onPrintXReport, and a rejection says printing failed', async () => {
+  const onPrintXReport = vi.fn(async () => {});
+  await renderSide({ onPrintXReport });
+  fireEvent.click(screen.getByTestId('register-panel-print'));
+  await waitFor(() => expect(onPrintXReport).toHaveBeenCalledTimes(1));
+  expect(screen.queryByTestId('register-panel-print-error')).toBeNull();
+  cleanup();
+  let reject: (error: Error) => void = () => {};
+  const failing = vi.fn(() => new Promise<void>((_, fail) => { reject = fail; }));
+  await renderSide({ onPrintXReport: failing });
+  fireEvent.click(screen.getByTestId('register-panel-print'));
+  await waitFor(() => expect((screen.getByTestId('register-panel-print') as HTMLButtonElement).disabled).toBe(true));
+  await act(async () => reject(new Error('offline')));
+  await waitFor(() => expect(screen.getByTestId('register-panel-print-error').textContent).toBe('Printing failed. Try again.'));
+  expect((screen.getByTestId('register-panel-print') as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('side: without onPrintXReport there is no Print X-report button', async () => {
+  await renderSide();
+  expect(screen.queryByTestId('register-panel-print')).toBeNull();
+});
+
+it('side: an overdue session keeps the plain Close register label, the hook giving no close time', async () => {
+  let overdue = false;
+  render(
+    <RegisterHarness db={db} overrides={{ expectedCloseTime: '00:00' }}>
+      {(register) => {
+        overdue = register.overdue;
+        return <RegisterPanel register={register} currency="EUR" open onOpenChange={() => {}} presentation="side" />;
+      }}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(overdue).toBe(true));
+  expect(screen.getByTestId('register-panel-close').textContent).toBe('Close register');
+});
+
+it('side: the header line holds the store, open since, the age and the opener', async () => {
+  const [row] = await db.register_sessions.find({ selector: { id: sessionId } }).exec();
+  const opened = new Date(row!.opened_at_gmt);
+  const time = `${String(opened.getHours()).padStart(2, '0')}:${String(opened.getMinutes()).padStart(2, '0')}`;
+  await renderSide({ storeName: 'Main Street', now: () => new Date(opened.getTime() + 75 * 60_000) });
+  expect(screen.getByTestId('register-panel-title').textContent).toBe('Front');
+  expect(screen.getByTestId('register-panel-description').textContent).toBe(`Main Street · open since ${time} · 1 h 15 m · Cashier`);
+});
+
+it('side: renders a right-hand sheet, its footer outside the scrolling body', async () => {
+  contentClasses.length = 0;
+  await renderSide({ onPrintXReport: vi.fn() });
+  const sheet = contentClasses.at(-1) ?? '';
+  expect(sheet).toContain('right-0');
+  expect(sheet).toContain('h-full');
+  expect(sheet).not.toContain('translate');
+  const body = screen.getByTestId('register-panel-body');
+  expect(body.contains(screen.getByTestId('register-panel-close'))).toBe(false);
+  expect(screen.getByTestId('register-panel-footer').contains(screen.getByTestId('register-panel-print'))).toBe(true);
+});
+
+it('the default presentation renders no side-sheet hero', async () => {
+  await seedSideFixture();
+  await renderPanel();
+  expect(screen.queryByTestId('register-panel-hero')).toBeNull();
+  expect(screen.queryByTestId('register-panel-ledger')).toBeNull();
 });
