@@ -2,6 +2,7 @@ import type { OrderCreateEnvelope } from '@tallyui/core';
 import { deepEqual, type RxCollection, type RxDocumentData } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { outboxLogger } from './logger';
+import type { LogSyncRecord, SyncRecordOutcome } from '../logging';
 import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, replacedOrderIds, type PosOrder, type PosOrderServerFailures } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
@@ -22,6 +23,10 @@ export function isRequeueable(code: string | undefined): boolean {
 
 // The store's message in the refusal log is cut to this many characters, the cap connectors use for a foreign 426 message.
 const REFUSAL_LOG_MESSAGE_MAX = 200;
+
+/** An order's sync record, keyed by its durable `id` (a resend gets a new commandId). */
+const syncRecordOf = (orderId: string, outcome: SyncRecordOutcome): LogSyncRecord =>
+  ({ collection: 'pos_orders', recordId: orderId, outcome });
 
 // After this many consecutive failures the store answered (not offline) with the same head order and
 // no progress, the queue is probed one order at a time, so an order the store can't take holds up only
@@ -100,7 +105,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   // the orders whose probes failed are isolated and batching resumes. When no order is left to probe, the
   // store is down: nothing is isolated, and batching resumes with its backoff.
   let head: { id: string; count: number } | undefined;
-  let walk: { failed: Map<string, string> } | undefined;
+  let walk: { failed: Map<string, { orderId: string; reason: string }> } | undefined;
   // Isolated orders are left out of batches and retried alone, each on its own backoff, while pending
   // under their commandId.
   const isolated = new Map<string, { backoff: number; nextAt: number; reason: string }>();
@@ -211,7 +216,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       if (runProgressed && retryAfterMs === undefined && reason !== 'status_429') return undefined;
       return Math.max(retryAfterMs ?? 0, isolated.get(id)!.nextAt - now());
     }
-    if (alone === 'probe') walk?.failed.set(id, reason);
+    if (alone === 'probe') walk?.failed.set(id, { orderId: orders[0].id, reason });
     else {
       head = { id, count: head?.id === id ? head.count + 1 : 1 };
       if (head.count >= isolateAfter) walk ??= { failed: new Map() };
@@ -402,8 +407,15 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         }
         // Every refusal goes to the sync log once, with the store's code and message (the orders list shows the cashier
         // only the code's sentence, #269); unsupported_version stays an error.
-        if (result.status === 'rejected') outboxLogger[error?.code === 'unsupported_version' ? 'error' : 'warn']('Order refused by the store',
-          { orderId: order.id, code: error?.code, message: error?.message?.slice(0, REFUSAL_LOG_MESSAGE_MAX) });
+        // Each refusal and each apply also carries the order's sync record, so a Logs screen can tell which orders are
+        // stuck: the latest outcome per order rules (`deriveStuckRecords`, #656).
+        if (result.status === 'rejected') {
+          const message = error?.message?.slice(0, REFUSAL_LOG_MESSAGE_MAX);
+          outboxLogger[error?.code === 'unsupported_version' ? 'error' : 'warn']('Order refused by the store',
+            { orderId: order.id, code: error?.code, message },
+            { syncRecord: { ...syncRecordOf(order.id, 'failed'), ...(error?.code ? { code: error.code } : {}),
+              ...(message ? { reason: message } : {}) } });
+        }
         const updatedAt = new Date(now()).toISOString();
         // Progress removes the stored serverFailures in the write that marks the order applied or rejected.
         await current.incrementalModify((data) => {
@@ -413,6 +425,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
             : { syncStatus: 'applied' as const, serverRefs: result.serverRefs,
               ...(result.warnings ? { warnings: result.warnings } : {}), updatedAt });
         });
+        if (result.status !== 'rejected') {
+          outboxLogger.info('Order accepted by the store', { orderId: order.id }, { syncRecord: syncRecordOf(order.id, 'ok') });
+        }
         attempts.delete(order.commandId);
         isolated.delete(order.commandId);
         clocks.delete(order.commandId);
@@ -428,7 +443,12 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       if (alone !== 'isolated') head = undefined;
       if (walk && alone === 'probe') {
         // The store took a probe, so it is up: the orders whose probes failed are isolated, and batching resumes.
-        for (const [id, reason] of walk.failed) isolate(id, reason);
+        // Each is logged once, as pending: it stays queued and retries alone, so it is stuck but not refused (#656).
+        for (const [id, { orderId, reason }] of walk.failed) {
+          isolate(id, reason);
+          outboxLogger.warn('Order isolated: the store keeps failing it', { orderId, reason },
+            { syncRecord: { ...syncRecordOf(orderId, 'pending'), reason } });
+        }
         walk = undefined;
       }
       backoff = initialBackoff;

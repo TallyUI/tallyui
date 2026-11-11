@@ -1,6 +1,8 @@
 // Logging
-export { createLogger, consoleSink, callbackSink } from './logging';
-export type { Logger, LogSink, LogEntry, LogLevel } from './logging';
+export { createLogger, consoleSink, callbackSink, deriveStuckRecords, hasActor, matchesPresetFilters, presetFilters } from './logging';
+export type {
+  Logger, LogSink, LogEntry, LogLevel, LogActor, LogMeta, LogSyncRecord, SyncRecordOutcome, LogPreset, LogPresetFilters, StuckRecord,
+} from './logging';
 
 // CSV
 export { csvCell, csvFromCells, toCsv } from './csv';
