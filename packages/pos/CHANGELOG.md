@@ -1,5 +1,17 @@
 # @tallyui/pos
 
+## 3.18.0
+
+### Minor Changes
+
+- 6067d23: `CurrencyProvider` takes an optional `format` (symbol position, thousand separator, decimal separator, decimals), so `useCurrencyFormatter` can show money the way a store has set it, as WCPOS v2 does. Without `format`, money reads exactly as before (#667).
+- 4e0fbb3: `useSale` takes an optional `defaultCustomer`, put on every new sale it starts (the first, and each one after complete, discard, park or `newSale()`), never on a resumed sale, as WCPOS v2 pre-selects its default customer on every new cart. The app decides which customer; without the option nothing changes (#668).
+
+### Patch Changes
+
+- Updated dependencies [455c39f]
+  - @tallyui/core@3.18.0
+
 ## 3.17.0
 
 ### Minor Changes

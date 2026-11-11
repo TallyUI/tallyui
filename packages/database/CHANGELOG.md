@@ -1,5 +1,12 @@
 # @tallyui/database
 
+## 3.18.0
+
+### Patch Changes
+
+- Updated dependencies [455c39f]
+  - @tallyui/core@3.18.0
+
 ## 3.17.0
 
 ### Patch Changes
