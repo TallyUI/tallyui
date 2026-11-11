@@ -1,5 +1,17 @@
 # @tallyui/pos
 
+## 3.17.0
+
+### Minor Changes
+
+- 4a867a9: Log entries can now say who did something (`actor`) and how one record's sync went (`syncRecord`). Register events carry the cashier, and the order outbox logs each order the store accepts, refuses or keeps failing. New `presetFilters`, `hasActor` and `deriveStuckRecords` helpers let a Logs screen show a person's actions and the orders that are still stuck (#656).
+- 1297f1c: `useSale().add()` now says whether the entry went into the cart: it returns `{ lineId }` for the line it went into, or the refusal message that `error` shows (the sale is being saved, no price in the sale's currency, or an id or tax code the order can't send). Callers that ignore the result don't change (#662).
+
+### Patch Changes
+
+- 4677f1f: A closure the store refuses because its number is not the next one is now renumbered once from the store's counters and sent again, so the register is no longer stuck. Closures still waiting to send behind it are renumbered with it, and the next closure follows them. If the store refuses the renumbered closure too, it stays refused and shows as a till update that needs attention.
+  - @tallyui/core@3.17.0
+
 ## 3.16.0
 
 ### Patch Changes
