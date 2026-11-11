@@ -3,8 +3,8 @@ import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/co
 
 /** The highest order.create version the WooCommerce transport maps without coupons: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). Coupons make 6 (ADR-077 d4a-woo). */
 export const WOO_ORDER_CREATE_VERSION = 5;
-// Version 6 is version 5 plus coupons: it needs both order_create_v5 and the coupons gate.
-const WOO_COUPON_ORDER_CREATE_VERSION = 6;
+/** Version 7 is version 6 plus the sale note (ADR-083), mapped to WooCommerce's customer_note; a store takes it wherever it takes 6. Version 6 is version 5 plus coupons: it needs both order_create_v5 and the coupons gate. */
+export const WOO_NOTE_ORDER_CREATE_VERSION = 7;
 // The order.create version a store gets unless /status lists order_create_v5, which only the TallyUI fork of the plugin advertises.
 const WOO_BASE_ORDER_CREATE_VERSION = 3;
 // The first woocommerce-pos release whose coupon recalculation keeps the POS price (ADR-077 amendment 4, R2: 1.9.0, 2026-05-15).
@@ -164,7 +164,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       coupons = false;
     }
     const orderCreate = capabilities.includes('order_create_v5')
-      ? (coupons ? WOO_COUPON_ORDER_CREATE_VERSION : WOO_ORDER_CREATE_VERSION) : WOO_BASE_ORDER_CREATE_VERSION;
+      ? (coupons ? WOO_NOTE_ORDER_CREATE_VERSION : WOO_ORDER_CREATE_VERSION) : WOO_BASE_ORDER_CREATE_VERSION;
     return {
       orderCreate,
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },

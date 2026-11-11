@@ -131,7 +131,7 @@ const wooConnectorParts = {
 export const woocommerceConnector: TallyConnector = createWooCommerceConnector();
 
 // Re-export pieces for advanced usage
-export { wooStoreSettings, readWooCapabilities, WOO_ORDER_CREATE_VERSION } from './store-settings';
+export { wooStoreSettings, readWooCapabilities, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION } from './store-settings';
 export { createWooCustomers, toWooCustomer } from './customers';
 export { createWooOrders, toWooStoreOrder } from './orders';
 export { createWooCommandTransport, toWooOrderPayload, type WooCommandTransportOptions } from './commands/transport';

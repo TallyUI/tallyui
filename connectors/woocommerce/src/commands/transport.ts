@@ -164,6 +164,8 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     meta_data,
     ...(p.customer?.customerId && /^\d+$/.test(p.customer.customerId) ? { customer_id: Number(p.customer.customerId) } : {}),
     ...(p.customer?.email ? { billing: { email: p.customer.email } } : {}),
+    // Version 7 (ADR-083): the till froze and cut the note already, and wc/v3 sanitises it; no note, no key.
+    ...(typeof p.note === 'string' && p.note.length > 0 ? { customer_note: p.note } : {}),
   } };
 }
 
