@@ -22,3 +22,5 @@ export { scannerProfileStore, createDeviceScannerStateCell } from './device-scan
 export type { ScannerProfileStore, DeviceScannerSettings, DeviceScannerState, DeviceScannerErrorPhase, DeviceScannerErrorHandler, DeviceScannerStateCell, DeviceScanner } from './device-scanner';
 export { createSerialScanner, serialPortIdentity, DEFAULT_SERIAL_BAUD_RATE, STANDARD_SPP_SERVICE_CLASS_ID } from './serial-scanner';
 export type { SerialPortInfoLike, SerialPortLike, SerialLike, SerialScannerOptions } from './serial-scanner';
+export { createHidScanner, HID_POS_USAGE_PAGE } from './hid-scanner';
+export type { HidInputReportEventLike, HidDeviceLike, HidLike, HidScannerOptions } from './hid-scanner';
