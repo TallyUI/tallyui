@@ -118,6 +118,11 @@ describe('wcposReceiptData', () => {
     expect(paid.totals).toMatchObject({ paid_total: 24, change_total: 6 });
     expect(paid.cashier).toEqual({ id: 3, name: 'Sam' });
     expect(build().cashier).toEqual({ id: 0, name: '' });
+    // paid_total is the payments' sum, not the order total, when the two differ.
+    const part = build(sale({ payments: [{ methodId: 'card', methodTitle: 'Card', amountMinor: 1000 }] }));
+    expect(part.totals).toMatchObject({ total: 24, paid_total: 10 });
+    const cash = build(sale({ payments: [{ methodId: 'cash', methodTitle: 'Cash', amountMinor: 3000 }], changeMinor: 600 }));
+    expect(cash.totals).toMatchObject({ paid_total: 30, change_total: 6 });
   });
 
   it('§2.16 borrows the register name only for the same register id', () => {
