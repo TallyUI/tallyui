@@ -1,6 +1,7 @@
 import {
   DisplaySignallingError, type DisplayRecord, type DisplaySignalling, type DisplaySignallingErrorCode, type SignalMessage,
 } from '@tallyui/core';
+import type { PendingPairing } from '@tallyui/core';
 import type { SignalPort } from './webrtc';
 
 type TillMethod = 'list' | 'sendSignal' | 'receiveSignals' | 'postSnapshot';
@@ -104,6 +105,79 @@ export class FakeSignalling implements DisplaySignalling {
   confirm = notUsed;
   decline = notUsed;
   forget = notUsed;
+  claim = notUsed;
+  collect = notUsed;
+  displaySendSignal = notUsed;
+  displayReceiveSignals = notUsed;
+  readSnapshot = notUsed;
+}
+
+type PairingMethod = 'mint' | 'pending' | 'confirm' | 'decline' | 'forget';
+export interface PairingCall { method: PairingMethod; id?: string }
+
+export function pendingClaim(claimId: string, checkCode: string): PendingPairing {
+  return { claimId, displayName: `Display ${claimId}`, checkCode, expiresAt: '2026-11-11T10:10:00.000Z' };
+}
+
+/**
+ * A fake `DisplaySignalling` for the till's pairing flow: it mints numbered codes that expire at `expiresAt`, lists
+ * `claims`, drops a claim on its confirm or decline, records every call, and fails a method with a code while told to.
+ */
+export class FakePairingSignalling implements DisplaySignalling {
+  claims: PendingPairing[] = [];
+  expiresAt = '2026-11-11T10:10:00.000Z';
+  readonly calls: PairingCall[] = [];
+  private readonly failures = new Map<PairingMethod, DisplaySignallingErrorCode>();
+  private readonly holds = new Map<PairingMethod, Promise<void>>();
+
+  /** Holds the next call of `method`, after it is recorded, until the returned release. */
+  hold(method: PairingMethod): () => void {
+    let release = () => {};
+    this.holds.set(method, new Promise<void>((resolve) => { release = resolve; }));
+    return release;
+  }
+  fail(method: PairingMethod, code: DisplaySignallingErrorCode) {
+    this.failures.set(method, code);
+  }
+  heal(method: PairingMethod) {
+    this.failures.delete(method);
+  }
+  called(method: PairingMethod) {
+    return this.calls.filter((call) => call.method === method);
+  }
+  private async enter(method: PairingMethod, id?: string) {
+    this.calls.push(id === undefined ? { method } : { method, id });
+    const held = this.holds.get(method);
+    this.holds.delete(method);
+    await held;
+    const code = this.failures.get(method);
+    if (code) throw new DisplaySignallingError(code);
+  }
+
+  async mint() {
+    await this.enter('mint');
+    return { code: String(100_000 + this.called('mint').length), expiresAt: this.expiresAt };
+  }
+  async pending() {
+    await this.enter('pending');
+    return this.claims.map((claim) => ({ ...claim }));
+  }
+  async confirm(_ctx: unknown, _deviceId: string, claimId: string) {
+    await this.enter('confirm', claimId);
+    this.claims = this.claims.filter((claim) => claim.claimId !== claimId);
+  }
+  async decline(_ctx: unknown, _deviceId: string, claimId: string) {
+    await this.enter('decline', claimId);
+    this.claims = this.claims.filter((claim) => claim.claimId !== claimId);
+  }
+  async forget(_ctx: unknown, _deviceId: string, displayId: string) {
+    await this.enter('forget', displayId);
+  }
+
+  list = notUsed;
+  sendSignal = notUsed;
+  receiveSignals = notUsed;
+  postSnapshot = notUsed;
   claim = notUsed;
   collect = notUsed;
   displaySendSignal = notUsed;
