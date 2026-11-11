@@ -1,5 +1,5 @@
 import {
-  CustomerServiceError, type Customer, type CustomerAddress, type CustomerInput, type CustomerPatch, type SyncContext,
+  CustomerServiceError, type Customer, type CustomerAddress, type CustomerInput, type CustomerPage, type CustomerPatch, type SyncContext,
 } from '@tallyui/core';
 import { checkResponse } from './replication/products';
 
@@ -8,6 +8,7 @@ type WooCustomerRow = {
   first_name?: string | null;
   last_name?: string | null;
   email?: string | null;
+  date_created_gmt?: string | null;
   billing?: {
     first_name?: string | null; last_name?: string | null; email?: string | null;
     phone?: string | null; company?: string | null;
@@ -56,6 +57,8 @@ export function toWooCustomer(raw: WooCustomerRow): Customer {
   ] as const) {
     if (typeof value === 'string' && value.length > 0) customer[key] = value;
   }
+  const created = raw.date_created_gmt; // UTC without a zone suffix; `date_created` is site-local
+  if (typeof created === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(created)) customer.createdAt = `${created}Z`;
   customer.name = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.company || customer.email || customer.id;
   return customer;
 }
@@ -89,8 +92,12 @@ export async function customerRequest(context: SyncContext, route: string, init:
 
 export function createWooCustomers(options?: { newId?: () => string }) {
   const newId = options?.newId ?? newWooId;
-  return {
+  const api = {
     async searchCustomers(context: SyncContext, query: string, options?: { limit?: number }): Promise<Customer[]> {
+      return (await api.searchCustomersPage(context, query, { limit: options?.limit })).customers;
+    },
+
+    async searchCustomersPage(context: SyncContext, query: string, options?: { limit?: number; page?: number }): Promise<CustomerPage> {
       const q = query.trim();
       const perPage = String(Math.max(1, Math.min(50, options?.limit ?? 20)));
       // An empty query lists the first page in WCPOS v2's customer-picker order, last name ascending; the wcpos/v2
@@ -98,9 +105,14 @@ export function createWooCustomers(options?: { newId?: () => string }) {
       const params = q
         ? new URLSearchParams({ search: q, role: 'customer', per_page: perPage })
         : new URLSearchParams({ role: 'customer', per_page: perPage, orderby: 'last_name', order: 'asc' });
-      const { body } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
+      const requested = options?.page ?? 1;
+      const page = Number.isFinite(requested) ? Math.max(1, Math.floor(requested)) : 1;
+      if (page > 1) params.append('page', String(page));
+      const { body, headers } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
       if (!Array.isArray(body)) throw new CustomerServiceError('server', 'unexpected response');
-      return body.map(toWooCustomer);
+      // The wcpos/v2 proxy returns wc/v3's response with its headers, so `X-WP-Total` counts every match.
+      const total = headers.get('X-WP-Total');
+      return { customers: body.map(toWooCustomer), ...(total && /^\d+$/.test(total) ? { total: Number(total) } : {}) };
     },
 
     async getCustomer(context: SyncContext, id: string): Promise<Customer | null> {
@@ -167,4 +179,5 @@ export function createWooCustomers(options?: { newId?: () => string }) {
       if (status !== 200 || body?.success !== true) throw new CustomerServiceError('server', 'unexpected response');
     },
   };
+  return api;
 }

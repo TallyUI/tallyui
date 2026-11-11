@@ -21,6 +21,15 @@ export interface Customer {
   name: string;
   firstName?: string; lastName?: string; email?: string; phone?: string; company?: string;
   billing?: CustomerAddress; shipping?: CustomerAddress; taxIds?: CustomerTaxId[];
+  /** When the store created the customer: an ISO 8601 UTC instant (`2026-10-06T03:10:29Z`). Absent when the store doesn't say. */
+  createdAt?: string;
+}
+
+/** One page of a customer search: the customers on it, and how many the whole search matches when the store says. */
+export interface CustomerPage {
+  customers: Customer[];
+  /** Every customer the query matches across all pages; undefined when the store gives no count. */
+  total?: number;
 }
 
 /** What the till collects to create a customer. v1 requires an email; addresses and tax ids are optional. */

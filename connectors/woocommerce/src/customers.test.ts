@@ -20,7 +20,8 @@ const input = {
   email: 'g4-fixture-1791256221@example.invalid', firstName: 'Gee', lastName: 'Four',
   phone: '555-0144', company: 'Fourfold Supplies',
 };
-const customer = { id: '3', name: 'Gee Four', ...input };
+const customer = { id: '3', name: 'Gee Four', ...input, createdAt: `${search[0]!.date_created_gmt}Z` };
+const { createdAt: _undated, ...undatedCustomer } = customer;
 const customers = createWooCustomers({ newId: () => createRequest.mutationId });
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -245,13 +246,76 @@ describe('WooCommerce customers', () => {
   });
 
   it('maps billing fallbacks, optional fields and the display-name priority', () => {
-    expect(toWooCustomer({ id: 3, first_name: '', last_name: null, email: '', billing: search[0]!.billing })).toStrictEqual(customer);
+    expect(toWooCustomer({ id: 3, first_name: '', last_name: null, email: '', billing: search[0]!.billing })).toStrictEqual(undatedCustomer);
     expect(toWooCustomer({ id: 3, first_name: 'Top', last_name: 'Level', email: 'top@example.invalid', billing: search[0]!.billing }))
-      .toStrictEqual({ ...customer, firstName: 'Top', lastName: 'Level', name: 'Top Level', email: 'top@example.invalid' });
+      .toStrictEqual({ ...undatedCustomer, firstName: 'Top', lastName: 'Level', name: 'Top Level', email: 'top@example.invalid' });
     expect(toWooCustomer({ id: 3, email: input.email, billing: { company: input.company } }))
       .toStrictEqual({ id: '3', name: input.company, email: input.email, company: input.company });
     expect(toWooCustomer({ id: 3, email: input.email })).toStrictEqual({ id: '3', name: input.email, email: input.email });
     expect(toWooCustomer({ id: 3, first_name: '', billing: { phone: '', company: '' } })).toStrictEqual({ id: '3', name: '3' });
+  });
+
+  it('maps date_created_gmt to a UTC createdAt', () => {
+    expect(toWooCustomer({ id: 3, date_created_gmt: '2026-10-06T03:10:29' })).toStrictEqual({ id: '3', name: '3', createdAt: '2026-10-06T03:10:29Z' });
+  });
+
+  it.each([
+    ['null', null], ['empty', ''], ['space-separated', '2026-10-06 03:10:29'], ['offset', '2026-10-06T03:10:29+00:00'], ['absent', undefined],
+  ])('leaves createdAt out for a %s date_created_gmt', (_name, date) => {
+    expect(toWooCustomer(date === undefined ? { id: 3 } : { id: 3, date_created_gmt: date })).not.toHaveProperty('createdAt');
+  });
+
+  describe('searchCustomersPage', () => {
+    const page = (body: unknown, total?: string) => Response.json(body, total === undefined ? {} : { headers: { 'X-WP-Total': total } });
+    /** Runs searchCustomersPage, then searchCustomers for the same query, and returns both request URLs. */
+    async function urls(query: string, options?: { page?: number }) {
+      const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(page(search)).mockResolvedValueOnce(page(search));
+      await customers.searchCustomersPage(context, query, options);
+      await customers.searchCustomers(context, query);
+      return [spy.mock.calls[0]![0], spy.mock.calls[1]![0]] as const;
+    }
+
+    it('resolves the page with the store total, on the searchCustomers request', async () => {
+      const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(page(search, '5146')).mockResolvedValueOnce(page(search));
+      await expect(customers.searchCustomersPage(context, 'Gee')).resolves.toStrictEqual({ customers: [customer], total: 5146 });
+      await customers.searchCustomers(context, 'Gee');
+      expect(spy.mock.calls[0]).toStrictEqual(spy.mock.calls[1]);
+    });
+
+    it.each([['a query', 'Gee'], ['an empty query', ' ']])('appends page=3 as the last param for %s', async (_name, query) => {
+      const [paged, plain] = await urls(query, { page: 3 });
+      expect(paged).toBe(`${plain}&page=3`);
+    });
+
+    it.each([1, 0, -2, NaN, Infinity])('sends no page param for page %s', async (requested) => {
+      const [paged, plain] = await urls('Gee', { page: requested });
+      expect(paged).toBe(plain);
+    });
+
+    it('floors a fractional page', async () => {
+      const [paged, plain] = await urls('Gee', { page: 2.7 });
+      expect(paged).toBe(`${plain}&page=2`);
+    });
+
+    it.each([['missing', undefined], ['empty', ''], ['non-numeric', 'abc'], ['negative', '-1'], ['fractional', '1.5']])(
+      'has no total key for a %s X-WP-Total', async (_name, total) => {
+        vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(page(search, total));
+        const result = await customers.searchCustomersPage(context, 'Gee');
+        expect('total' in result).toBe(false);
+        expect(result.customers).toStrictEqual([customer]);
+      },
+    );
+
+    it('rejects a non-array body as a server error', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(page({}, '1'));
+      const result = customers.searchCustomersPage(context, 'Gee');
+      await expect(result).rejects.toBeInstanceOf(CustomerServiceError);
+      await expect(result).rejects.toMatchObject({ code: 'server', message: 'unexpected response' });
+    });
+
+    it('is on the connector', () => {
+      expect(createWooCommerceConnector().searchCustomersPage).toBeTypeOf('function');
+    });
   });
 
   describe.each([
