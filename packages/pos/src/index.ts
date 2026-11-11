@@ -13,11 +13,11 @@ export { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './curre
 export type { CurrencyFormat, CurrencyProviderProps } from './currency';
 
 // Tax
-export { TaxProvider, useTax, taxLogger } from './tax';
+export { TaxProvider, useTax, taxLogger, taxSettingsForLocation, createTaxContext, saleTaxContexts } from './tax';
 export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, computeOrderTax, taxLinesByRate } from './tax';
 export type { TaxLineInput, OrderTaxTotals, RateTaxLine } from './tax';
 export type { TaxProviderProps } from './tax';
-export type { TaxRateMap, TaxContext } from './tax';
+export type { TaxRateMap, TaxContext, SaleTaxContext } from './tax';
 
 // Store settings
 export { resolveStoreSettings, useStoreSettings, withPricingContext, taxProviderProps } from './store-settings';
@@ -99,6 +99,8 @@ export { createHidScanner, HID_POS_USAGE_PAGE } from './scanner';
 export type { HidInputReportEventLike, HidDeviceLike, HidLike, HidScannerOptions } from './scanner';
 export { ScanHubProvider, useScanHub, useDeviceScanControls, inertDeviceScanControls, scanTimeOf } from './scanner';
 export type { DeviceScanControl, DeviceScanControls, ScanHubProviderProps } from './scanner';
+export { CAMERA_BARCODE_TYPES, DETECTOR_FORMATS, detectorFormatToSymbology, nativeBarcodeDetector, DEFAULT_DECODE_INTERVAL_MS, DECODER_ERROR_THRESHOLD, startDecodeLoop, cameraErrorStatus, CAMERA_CONSTRAINTS, useCameraScan } from './scanner';
+export type { DetectedBarcode, CameraDecoder, ViewfinderStatus, DecodeLoopOptions, UseCameraScanOptions, CameraScan } from './scanner';
 
 // Payment drivers
 export { createPaymentDriverRegistry, driverForMethod, methodDrivers, methodForProvider, createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './payment-driver';
@@ -121,8 +123,8 @@ export type {
 } from './print';
 
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions } from './sale';
-export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscountState, StorePricedAccepted, StorePricedCodePricing, StorePricedDiscountCodesOptions, CartQuantityLine, OptionPicks } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
+export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscountState, StorePricedAccepted, StorePricedCodePricing, StorePricedDiscountCodesOptions, CartQuantityLine, OptionPicks, OrderFilterValue } from './sale';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
@@ -141,8 +143,8 @@ export { tenderReducer, initTenderState, initialTenderState, appliedMinor, chang
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus } from './tender';
 
 // Register
-export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, closureVariance, denominationTotal, varianceText, denominations } from './register';
-export type { MovementType, LedgerRow, Movement } from './register';
+export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, deriveDrawerTerms, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, closureVariance, denominationTotal, varianceText, denominations } from './register';
+export type { MovementType, LedgerRow, Movement, DrawerTerm, DrawerTerms } from './register';
 export { registerSessionSchema, registerSessionCollection, cashMovementSchema, closureSchema } from './register';
 export { addRegisterSessionCollection, RegisterSessionOpenClosedError, registerSessionsLogger, REGISTER_SESSION_MIGRATION_CLOSE_WAIT_MS } from './register';
 export type { RegisterSession, CashMovement, Closure } from './register';

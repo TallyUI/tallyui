@@ -13,3 +13,7 @@ export { ProductVariantPicker, type ProductVariantPickerProps, type VariantOptio
 export { InCartBadge, type InCartBadgeProps } from './in-cart-badge';
 export { VariationPicker, type VariationPickerProps } from './variation-picker';
 export { CategoryTile, type CategoryTileProps } from './category-tile';
+export { CameraScanButton, type CameraScanButtonProps } from './camera-scan-button';
+export { CameraScannerPanel, FLASH_DURATION_MS, SCANNER_MIN_HEIGHT, SCANNER_MAX_HEIGHT, SCANNER_DEFAULT_HEIGHT,
+  type CameraScannerPanelProps } from './camera-scanner-panel';
+export { ScannerViewfinder, type ViewfinderProps } from './scanner-viewfinder';

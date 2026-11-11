@@ -5,12 +5,15 @@
  */
 import { useState, type JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { DATE_PRESETS, presetRange, type DatePreset, type DayRange } from '@tallyui/pos';
+import type { DatePreset, DayRange, StoreDay } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
+import { DateRangeMenu } from './date-range-menu';
+
+export { dayLabel } from './date-range-menu';
 
 export interface SalesOption { value: string; label: string }
 export interface SalesFilters {
-  preset: DatePreset;
+  preset: DatePreset | 'custom';
   range: DayRange;
   /** A single day's comparison: the day before or the same weekday last week. */
   compare: 'previous' | 'week';
@@ -25,20 +28,14 @@ export interface SalesFiltersBarProps {
   timezone: string;
   /** The clock presets are worked out from; defaults to the time of the press. */
   now?: () => Date;
+  /** The earliest store day the data covers; the calendar's min. */
+  earliestDay?: StoreDay;
   statusOptions: SalesOption[];
   cashierOptions: SalesOption[];
   registerOptions: SalesOption[];
 }
 
-const PRESET_LABELS: Record<DatePreset, string> = {
-  today: 'Today', yesterday: 'Yesterday', thisWeek: 'This Week',
-  lastWeek: 'Last Week', thisMonth: 'This Month', lastMonth: 'Last Month',
-};
 const ALL = 'all';
-
-/** `10 Nov` for a store day. */
-export const dayLabel = (day: string): string =>
-  new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`));
 
 function ChoiceSelect({ id, value, options, onChange }: {
   id: string; value: string; options: SalesOption[]; onChange: (value: string) => void;
@@ -68,20 +65,13 @@ function ChoiceSelect({ id, value, options, onChange }: {
 }
 
 export function SalesFiltersBar({
-  filters, onFiltersChange, timezone, now, statusOptions, cashierOptions, registerOptions,
+  filters, onFiltersChange, timezone, now, earliestDay, statusOptions, cashierOptions, registerOptions,
 }: SalesFiltersBarProps): JSX.Element {
-  const { range } = filters;
   return (
     <View testID="sales-filters" className="flex-row flex-wrap items-start gap-2">
-      <ChoiceSelect id="sales-filter-period" value={filters.preset}
-        options={DATE_PRESETS.map((preset) => ({ value: preset, label: PRESET_LABELS[preset] }))}
-        onChange={(value) => {
-          const preset = value as DatePreset;
-          onFiltersChange({ ...filters, preset, range: presetRange(preset, (now ?? (() => new Date()))(), timezone) });
-        }} />
-      <Text testID="sales-filter-dates" className="py-2 text-sm text-muted-foreground">
-        {range.from === range.to ? dayLabel(range.from) : `${dayLabel(range.from)} – ${dayLabel(range.to)}`}
-      </Text>
+      <DateRangeMenu testID="sales-filter-period" value={{ preset: filters.preset, range: filters.range }}
+        timezone={timezone} now={now} earliestDay={earliestDay}
+        onChange={({ preset, range }) => onFiltersChange({ ...filters, preset, range })} />
       <ChoiceSelect id="sales-filter-status" value={filters.status} options={statusOptions}
         onChange={(status) => onFiltersChange({ ...filters, status })} />
       <ChoiceSelect id="sales-filter-cashier" value={filters.cashierId ?? ALL}

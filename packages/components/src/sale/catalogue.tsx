@@ -10,6 +10,8 @@ import { ProductVariantPicker } from '../product/product-variant-picker';
 import { VariationPicker } from '../product/variation-picker';
 import { InCartBadge } from '../product/in-cart-badge';
 import { Popover } from '@tallyui/primitives';
+import { CameraScanButton } from '../product/camera-scan-button';
+import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/camera-scanner-panel';
 import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
@@ -40,7 +42,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
   viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categories, pickAnyOptions = false,
-  cartLines, showFilterBar = false, filterChips = ['inStock'], filters: filtersProp, onFiltersChange, variationsStyle = 'list' }: {
+  cartLines, showFilterBar = false, filterChips = ['inStock'], filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -103,6 +105,13 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** v2's Product settings › Variations. 'list' (default) opens the variant list chooser; 'popover' opens a grid tile's
    * VariationPicker in a popover for a product with option groups. The table view keeps the list chooser. */
   variationsStyle?: 'list' | 'popover';
+  /** Show v2's camera scan button beside the search box; it opens an inline CameraScannerPanel. Default false.
+   * The button shows only when cameraScanner is passed too. */
+  cameraScan?: boolean;
+  /** Passed to the CameraScannerPanel. The app owns useCameraScan (inside its ScanHubProvider) and passes its wiring
+   * here, { onDetected: camera.offer, onOpen: camera.reset, scanCount: camera.scanCount }, plus height, permission,
+   * viewfinder, decoder and readiness; its useBarcodeScanner then handles camera scans like device scans. */
+  cameraScanner?: Omit<CameraScannerPanelProps, 'onClose'>;
 }) {
   const [initial] = useState<{
     state: CatalogueViewState; loaded?: CatalogueViewState; pending?: Promise<unknown>; failed?: boolean; error?: unknown;
@@ -168,6 +177,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const validOverlayAsOf = parsedOverlayAsOf && !isNaN(parsedOverlayAsOf.getTime()) ? parsedOverlayAsOf : undefined;
   const stockAsOf = laterOf(laterOf(lastStockCheckAt, validOverlayAsOf), lastSyncedAt);
   const [query, setQuery] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
   // The chooser is live (medusapos ADR 0007): it holds only the chosen product's id and derives its choices
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.
   const [chooserId, setChooserId] = useState<string | null>(null);
@@ -264,16 +274,24 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       : isLoading ? 'Loading products…' : 'No products yet.'}
   </Text>;
 
+  const searchInput = <SearchInput value={query} onChangeText={(text) => { setQuery(text); onQueryChange?.(text); }} placeholder="Search or scan barcode / SKU" autoFocus
+    onSubmitEditing={() => {
+      if (minCodeLength && query.trim().length < minCodeLength) return;
+      const entry = findEntryByCode(entries, query);
+      if (entry) { select(entry); setQuery(''); }
+    }} />;
+
   return (
     <View className="flex-1" onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       <View className="gap-2 border-b border-border bg-card px-4 pb-3 pt-3">
-        <SearchInput value={query} onChangeText={(text) => { setQuery(text); onQueryChange?.(text); }} placeholder="Search or scan barcode / SKU" autoFocus
-          onSubmitEditing={() => {
-            if (minCodeLength && query.trim().length < minCodeLength) return;
-            const entry = findEntryByCode(entries, query);
-            if (entry) { select(entry); setQuery(''); }
-          }} />
+        {cameraScan && cameraScanner ? (
+          <View className="flex-row items-center gap-2">
+            <View className="flex-1">{searchInput}</View>
+            <CameraScanButton open={scannerOpen} onPress={() => setScannerOpen((open) => !open)} />
+          </View>
+        ) : searchInput}
         {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips} /> : null}
+        {cameraScan && cameraScanner && scannerOpen ?<CameraScannerPanel {...cameraScanner} onClose={() => setScannerOpen(false)} /> : null}
         {(statusText || statusAccessory || showViewToggle) ? (
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">
             {statusText ? <Text className="flex-1 text-xs text-muted-foreground" numberOfLines={statusAccessory ? 1 : undefined}>

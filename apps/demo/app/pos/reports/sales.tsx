@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ScrollView, Text } from 'react-native';
 import { Stack } from 'expo-router';
 import { SalesRoom, type SalesFilters } from '@tallyui/components';
-import { comparisonRange, presetRange, salesFigures, type ReportOrder, type ReportRefund } from '@tallyui/pos';
+import { comparisonRange, daysOf, presetRange, salesFigures, type ReportOrder, type ReportRefund } from '@tallyui/pos';
 
 const TIMEZONE = 'Pacific/Auckland';
 const HOUR = 3_600_000;
@@ -45,10 +45,11 @@ export default function SalesRoomScreen() {
       && (!filters.cashierId || row.cashierId === filters.cashierId)
       && (!filters.registerId || row.registerId === filters.registerId)).map((row) => row.order);
     const ids = new Set(orders.map((order) => order.id));
-    const oneDay = filters.preset === 'today' || filters.preset === 'yesterday';
+    const oneDay = filters.preset === 'custom'
+      ? daysOf(filters.range).length === 1 : filters.preset === 'today' || filters.preset === 'yesterday';
     return salesFigures({
       orders, refunds: REFUNDS.filter((refund) => ids.has(refund.orderId)), range: filters.range, timezone: TIMEZONE,
-      compare: comparisonRange(filters.range, oneDay ? filters.compare : 'previous', filters.preset),
+      compare: comparisonRange(filters.range, oneDay ? filters.compare : 'previous', filters.preset === 'custom' ? undefined : filters.preset),
     });
   }, [filters]);
 
