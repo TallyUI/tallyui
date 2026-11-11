@@ -19,3 +19,7 @@ export type {
   SignalPort, PeerLink, PeerLinkState, PeerLinkOptions, PeerFactory, RTCPeerConnectionLike, RTCDataChannelLike,
   SessionDescriptionLike,
 } from './webrtc';
+export { createSnapshotSender, SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS, SNAPSHOT_LIFETIME_MS } from './snapshot-fallback';
+export type { SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './snapshot-fallback';
+export { createTillDisplayService, SIGNAL_POLL_MS, LIST_POLL_MS, CONNECT_TIMEOUT_MS } from './till-display-service';
+export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayEntry, ServiceClock } from './till-display-service';
