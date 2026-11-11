@@ -49,9 +49,10 @@ async function renumberRefused(commands: RegisterCommandCollection, closures: Cl
       const closedAt = row.closed_at;
       row = { ...row, number: base.number + 1, number_retried: true, perpetual_sales_total_minor: base.sales + row.period_sales_total_minor,
         perpetual_refunds_total_minor: base.refunds + row.period_refunds_total_minor };
-      // Closures made after it are behind it in the ledger, so the store lacks them and the register keeps them.
+      // Closures made after it are behind it in the ledger, so the store lacks them and the register keeps them, and
+      // their numbers: each renumbers after this one, so the next close mints after all of them.
       const later = local.filter((closure) => closure.closed_at > closedAt);
-      await renumberClosure(host, storeKey, registerId, row, {
+      await renumberClosure(host, storeKey, registerId, row, { lastClosureNumber: row.number + later.length,
         salesMinor: later.reduce((sum, closure) => sum + closure.period_sales_total_minor, row.perpetual_sales_total_minor),
         refundsMinor: later.reduce((sum, closure) => sum + closure.period_refunds_total_minor, row.perpetual_refunds_total_minor),
       });

@@ -441,8 +441,8 @@ describe('adoptRegisterResults', () => {
       await reconcile();
       await refuse(first, counters(41, 500000, 2000));
       await renumber();
-      // The till's later closure is behind it in the ledger, so the store lacks it and the register keeps it.
-      expect(await bucket()).toMatchObject({ last_closure_number: 42, perpetual_sales_total_minor: 505000 });
+      // The till's later closure is behind it in the ledger, so the store lacks it and the register keeps it and its number.
+      expect(await bucket()).toMatchObject({ last_closure_number: 43, perpetual_sales_total_minor: 505000 });
       await (await submit(first)).incrementalPatch({ syncStatus: 'applied' });
       await refuse(second, counters(41, 500000, 2000));
       await renumber();
@@ -471,6 +471,30 @@ describe('adoptRegisterResults', () => {
       expect(await Promise.all([submit(id), submit(behind)].map(async (row) => (await row).toJSON()))).toStrictEqual(rows);
       expect(rows[0]).toMatchObject({ syncStatus: 'rejected', error: { code: 'register_closure_number_invalid' }, payload: { number: 42 } });
       expect(await Promise.all([closure(id), closure(behind)])).toStrictEqual(closures);
+      expect(await readRegister(db.register_sessions)).toStrictEqual(register);
+    });
+
+    it('a close after a renumber mints after every closure still behind it, which will renumber after it', async () => {
+      const ids = [await closeWith(3000, '2026-11-10T17:00:00.000Z'), await closeWith(2000, '2026-11-11T17:00:00.000Z'),
+        await closeWith(1000, '2026-11-12T17:00:00.000Z')];
+      await reconcile();
+      expect((await Promise.all(ids.map(closure))).map(({ number }) => number)).toStrictEqual([1, 2, 3]);
+      await refuse(ids[0], counters(41, 500000, 2000));
+      await renumber();
+      expect((await closure(ids[0])).number).toBe(42);
+      expect((await bucket())?.last_closure_number).toBe(44);
+      expect(await mintClosureNumber(db.register_sessions, 'store', 'register')).toBe(45);
+    });
+
+    it('a closure refused with another code is not renumbered, even when its refusal carries counters', async () => {
+      const id = await closeWith(3000, '2026-11-10T17:00:00.000Z');
+      await reconcile();
+      await (await submit(id)).incrementalPatch({ syncStatus: 'rejected',
+        error: { code: 'register_closure_exists', message: 'Exists', data: counters(41, 500000, 2000) } });
+      const [row, before, register] = [(await submit(id)).toJSON(), await closure(id), await readRegister(db.register_sessions)];
+      await renumber();
+      expect((await submit(id)).toJSON()).toStrictEqual(row);
+      expect(await closure(id)).toStrictEqual(before);
       expect(await readRegister(db.register_sessions)).toStrictEqual(register);
     });
 

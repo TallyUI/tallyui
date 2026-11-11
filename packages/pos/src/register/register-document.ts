@@ -246,20 +246,21 @@ export function adoptStoreCounters(host: RegisterHost, storeKey: string, registe
 }
 
 /**
- * Records a closure the store renumbered (#655): the register's totals are set to `totals`, its last number is raised
- * to the closure's, and a reservation holding this closure takes the new row, keeping `applied`. Each field is set,
- * not added, so a repeat changes nothing.
+ * Records a closure the store renumbered (#655): the register's totals are set to `counters`, its last number is
+ * raised to `counters.lastClosureNumber` (the closure's, plus those still behind it, which renumber after it), and a
+ * reservation holding this closure takes the new row, keeping `applied`. Each field is set, not added, so a repeat
+ * changes nothing.
  */
 export function renumberClosure(host: RegisterHost, storeKey: string, registerId: string, row: Closure,
-  totals: { salesMinor: number; refundsMinor: number }) {
+  counters: { lastClosureNumber: number; salesMinor: number; refundsMinor: number }) {
   return modifyStore(host, storeKey, (store) => {
     const register = store?.registers?.[registerId] ?? {};
     const reservation = register.closure_reservation;
     return withRegister(store, registerId, {
       ...register,
-      last_closure_number: Math.max(register.last_closure_number ?? 0, row.number),
-      perpetual_sales_total_minor: totals.salesMinor,
-      perpetual_refunds_total_minor: totals.refundsMinor,
+      last_closure_number: Math.max(register.last_closure_number ?? 0, counters.lastClosureNumber),
+      perpetual_sales_total_minor: counters.salesMinor,
+      perpetual_refunds_total_minor: counters.refundsMinor,
       ...(reservation?.row.id === row.id ? { closure_reservation: { ...reservation, row } } : {}),
     });
   });
