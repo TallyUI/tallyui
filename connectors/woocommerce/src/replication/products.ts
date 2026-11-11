@@ -166,7 +166,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
         // formats it back in that zone, so an offset would move the bound to local time before the post_modified_gmt comparison.
         const newer: Record<string, string> = modified ? { modified_after: modified, dates_are_gmt: 'true' } : {};
         const mark = new URLSearchParams({ per_page: '1', orderby: 'modified', order: 'desc', ...newer });
-        const markResponse = await fetch(
+        const markResponse = await (context.fetch ?? globalThis.fetch)(
           `${context.baseUrl}/products?${mark}`,
           { headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal },
         );
@@ -192,7 +192,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       }
 
       if (requests++ >= MAX_REQUESTS_PER_CALL) return spent;
-      const response = await fetch(`${context.baseUrl}/products?${params}`, {
+      const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/products?${params}`, {
         headers: {
           ...context.headers,
           'Content-Type': 'application/json',
@@ -225,7 +225,7 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
       for (let i = 0; i < variationIds.length; i += 100) {
         const chunk = variationIds.slice(i, i + 100);
         const variationParams = new URLSearchParams({ include: chunk.join(','), per_page: String(chunk.length), orderby: 'id', order: 'asc' });
-        const response = await fetch(`${context.baseUrl}/variations?${variationParams}`, {
+        const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/variations?${variationParams}`, {
           headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal,
         });
         await checkResponse(response);

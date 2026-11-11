@@ -21,7 +21,7 @@ const WOO_ENGINES = { logicless: 'html', thermal: 'thermal' } as const;
  * Only published or virtual, enabled rows with a body the till can render; all carry WCPOS's data model.
  */
 export async function wooReceiptTemplates(context: SyncContext, kind: ReceiptTemplateKind = 'receipt'): Promise<ReceiptTemplate[]> {
-  const response = await fetch(`${context.baseUrl}/templates${kind === 'receipt' ? '' : `?type=${kind}`}`, {
+  const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/templates${kind === 'receipt' ? '' : `?type=${kind}`}`, {
     method: 'GET', headers: context.headers, signal: context.signal,
   });
   if (response.status === 404) return [];

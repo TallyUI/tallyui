@@ -75,7 +75,7 @@ function newWooId(): string {
 export async function customerRequest(context: SyncContext, route: string, init: RequestInit = {}) {
   let response: Response;
   try {
-    response = await fetch(`${context.baseUrl}/${route}`, {
+    response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/${route}`, {
       ...init, headers: { ...init.headers, ...context.headers }, signal: context.signal,
     });
   } catch (error) {

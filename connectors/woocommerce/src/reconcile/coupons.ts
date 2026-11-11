@@ -13,7 +13,7 @@ export const wooCouponFingerprint = (c: { date_modified_gmt?: string | null; usa
   [c.date_modified_gmt ?? '', c.usage_count ?? '', JSON.stringify((c.used_by ?? []).map(String))].join('|');
 
 async function get(path: string, context: SyncContext): Promise<any> {
-  const response = await fetch(`${context.baseUrl}${path}`, {
+  const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}${path}`, {
     headers: { ...context.headers, 'Content-Type': 'application/json' },
     signal: context.signal,
   });

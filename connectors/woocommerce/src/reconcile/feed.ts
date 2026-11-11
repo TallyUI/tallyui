@@ -15,7 +15,7 @@ export async function wooFetchByIds(entries: Array<ReconcileFetchEntry<any>>, co
   for (let i = 0; i < ids.length; i += MAX_IDS_PER_REQUEST) {
     const chunk = ids.slice(i, i + MAX_IDS_PER_REQUEST);
     const params = new URLSearchParams({ include: chunk.join(','), per_page: String(MAX_IDS_PER_REQUEST), status: 'any' });
-    const response = await fetch(`${context.baseUrl}/products?${params}`, {
+    const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/products?${params}`, {
       headers: { ...context.headers, 'Content-Type': 'application/json' },
       signal: context.signal,
     });

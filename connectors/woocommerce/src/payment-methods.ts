@@ -41,7 +41,7 @@ function hasMoneyString(row: WireRow): boolean {
 // Only /stores, not wooStoreSettings: that also pages through every tax rate.
 async function storeCurrency(context: SyncContext): Promise<string> {
   // Any failure but a refusal is "no store currency".
-  const response = await fetch(`${context.baseUrl}/stores`, { method: 'GET', headers: context.headers, signal: context.signal }).catch(() => undefined);
+  const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/stores`, { method: 'GET', headers: context.headers, signal: context.signal }).catch(() => undefined);
   if (response?.status === 401 || response?.status === 403) throw new ConnectorUnauthorizedError(`WooCommerce stores: HTTP ${response.status}`, response.status);
   const stores: unknown = response?.ok ? await response.json().catch(() => undefined) : undefined;
   const currency = Array.isArray(stores) ? objectOr(stores[0]).currency : undefined;
@@ -98,7 +98,7 @@ function toDescriptor(row: WireRow, currency: string): PaymentMethodDescriptor |
 
 /** WCPOS wcpos/v2/payment-methods (woocommerce-pos >= 2.0.0, contract 1.3) mapped to the till's payment methods; read-only. */
 export async function wooPaymentMethods(context: SyncContext): Promise<PaymentMethodDescriptor[]> {
-  const response = await fetch(`${context.baseUrl}/payment-methods`, { method: 'GET', headers: context.headers, signal: context.signal });
+  const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/payment-methods`, { method: 'GET', headers: context.headers, signal: context.signal });
   // The route shipped in woocommerce-pos 2.0.0; an older plugin keeps today's two methods.
   if (response.status === 404) return defaultPaymentMethods();
   if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`WooCommerce payment methods: HTTP ${response.status}`, response.status);
