@@ -92,6 +92,8 @@ export { DEFAULT_WEDGE_SETTINGS, DEFAULT_MIN_SCAN_CHARS, WEDGE_END_OF_SCAN_MS, c
 export { scannerProfileStore, createDeviceScannerStateCell, createSerialScanner, serialPortIdentity, DEFAULT_SERIAL_BAUD_RATE, STANDARD_SPP_SERVICE_CLASS_ID } from './scanner';
 export type { WedgeSettings, WedgeState, TraceKey, WedgeReplayResult, WedgeDetectorOptions, WedgeDetector, ScanRejectReason, ScanOfferResult, ScanSessionOptions, ScanSession, UseBarcodeScannerOptions, ScannerConnectionType, ScannerIdentity, ScannerTransport, SerialLineDecoderOptions, SerialLineDecoder, HidPosDecodeOptions, HidPosResult, ScannerProfile, ScannerProfileCollection, ScanSourceKind, ScanSource, ScanEvent, ScanBus, ScanHub, WedgeScanMeta } from './scanner';
 export type { ScannerProfileStore, DeviceScannerSettings, DeviceScannerState, DeviceScannerErrorPhase, DeviceScannerErrorHandler, DeviceScannerStateCell, DeviceScanner, SerialPortInfoLike, SerialPortLike, SerialLike, SerialScannerOptions } from './scanner';
+export { createHidScanner, HID_POS_USAGE_PAGE } from './scanner';
+export type { HidInputReportEventLike, HidDeviceLike, HidLike, HidScannerOptions } from './scanner';
 
 // Payment drivers
 export { createPaymentDriverRegistry, driverForMethod, methodDrivers, methodForProvider, createSimulatedDriver, SIMULATED_PROVIDER, SIMULATED_TIMING } from './payment-driver';
