@@ -522,6 +522,55 @@ describe('adoptRegisterResults', () => {
       expect(await mintClosureNumber(db.register_sessions, 'store', 'register')).toBe(45);
     });
 
+    it('a refused closure of another store is not renumbered, nor this store\'s closure queued behind it (#657)', async () => {
+      const elsewhere = await closeWith(3000, '2026-11-10T17:00:00.000Z', 'other');
+      const behind = await closeWith(2000, '2026-11-11T17:00:00.000Z');
+      await reconcile();
+      await refuse(elsewhere, counters(41, 500000, 2000));
+      const read = async () => [(await submit(elsewhere)).toJSON(), (await submit(behind)).toJSON(), await closure(elsewhere),
+        await closure(behind), await readRegister(db.register_sessions)];
+      const before = await read();
+      await renumber();
+      expect(await read()).toStrictEqual(before);
+    });
+
+    it('a closure closed before the refused one, still pending ahead of it, keeps its number, command id and payload (#657)', async () => {
+      const ahead = await closeWith(3000, '2026-11-10T17:00:00.000Z');
+      const id = await closeWith(2000, '2026-11-11T17:00:00.000Z');
+      await reconcile();
+      const [command, row] = [(await submit(ahead)).toJSON(), await closure(ahead)];
+      await refuse(id, counters(41, 500000, 2000));
+      await renumber();
+      expect((await submit(ahead)).toJSON()).toStrictEqual(command);
+      expect(await closure(ahead)).toStrictEqual(row);
+      expect(await closure(id)).toMatchObject({ number: 42, perpetual_sales_total_minor: 502000, number_retried: true });
+      expect((await bucket())?.last_closure_number).toBe(42);
+    });
+
+    it('a pending closure and an unreconciled one behind the refused #1 renumber to #43 and #44 without spending their retry (#657)', async () => {
+      const first = await closeWith(3000, '2026-11-10T17:00:00.000Z');
+      const second = await closeWith(2000, '2026-11-11T17:00:00.000Z');
+      await reconcile();
+      const third = await closeWith(1000, '2026-11-12T17:00:00.000Z');
+      expect(await db.register_commands.findOne(`closure.submit:${third}`).exec()).toBeNull();
+      const pending = (await submit(second)).toJSON();
+      expect(pending).toMatchObject({ syncStatus: 'pending', payload: { number: 2, perpetualSalesTotalMinor: 5000 } });
+      // The store's totals are the till's own, so only the numbers move: the pending command is rewritten for its number.
+      await refuse(first, counters(41, 0, 0));
+      await renumber();
+      const rows = await Promise.all([first, second, third].map(closure));
+      expect(rows.map(({ number }) => number)).toStrictEqual([42, 43, 44]);
+      expect(rows.map((row) => row.perpetual_sales_total_minor)).toStrictEqual([3000, 5000, 6000]);
+      expect(rows.map((row) => row.number_retried === true)).toStrictEqual([true, false, false]);
+      const after = (await submit(second)).toJSON();
+      expect(after).toStrictEqual({ ...pending, commandId: after.commandId, updatedAt: after.updatedAt,
+        payload: { ...pending.payload, number: 43 } });
+      expect(after.commandId).not.toBe(pending.commandId);
+      expect(await db.register_commands.findOne(`closure.submit:${third}`).exec()).toBeNull();
+      expect(await bucket()).toMatchObject({ last_closure_number: 44, perpetual_sales_total_minor: 6000 });
+      expect(await mintClosureNumber(db.register_sessions, 'store', 'register')).toBe(45);
+    });
+
     it('a closure refused with another code is not renumbered, nor the closure queued behind it, even when its refusal carries counters', async () => {
       const id = await closeWith(3000, '2026-11-10T17:00:00.000Z');
       const behind = await closeWith(2000, '2026-11-11T17:00:00.000Z');
