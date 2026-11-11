@@ -92,6 +92,14 @@ it('logs the closure number with a session-closed fact', () => {
   expect(last()).toMatchObject({ data: { context: { type: 'register.session-closed', closureId: 'c', number: 7 } } });
 });
 
+// A late sale logged without a cashier in hand carries no actor (#656).
+it('logs a late sale without an actor as no action', () => {
+  recordRegisterFact({ kind: 'late-sale', orderId: 'o', sessionId: 's', registerId: 'r' });
+  expect(last()).not.toHaveProperty('actor');
+  recordRegisterFact({ kind: 'late-sale', orderId: 'o', sessionId: 's', registerId: 'r', actor });
+  expect(last().actor).toEqual(actor);
+});
+
 // Removing a mapping, attributing a system fact, or changing its fold policy breaks this table.
 const pair = { sessionId: 'session-id', registerId: 'register-id' };
 const human = { ...pair, actor };
@@ -130,6 +138,8 @@ it.each(cases)('$fact.kind maps its type, actor, searchable pair and identity', 
   recordRegisterFact(fact);
   recordRegisterFact(fact);
   expect(entries).toHaveLength(2);
+  // The actor rides on the entry itself too, so a Logs screen's Actions preset finds it (#656).
+  expect(entries.map((e) => e.actor)).toEqual([actor, actor]);
   const [first, second] = entries.map((e) => e.data!);
   expect(first.context).toMatchObject({ type, sessionId: 'session-id', registerId: 'register-id' });
   expect(first.actor).toEqual(actor);

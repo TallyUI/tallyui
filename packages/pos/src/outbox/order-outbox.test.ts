@@ -9,6 +9,7 @@ import { commandFingerprint } from '@tallyui/core/server';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder, posOrderCollection, toOrderCreateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
+import { deriveStuckRecords, type LogEntry } from '../logging';
 import { createOrderOutbox, ISOLATE_AFTER_ATTEMPTS, STUCK_AFTER_MS, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
 import { isRequeueable, outboxLogger } from './index';
 import type { CommandTransport, OutboxState, TransportOutcome } from './types';
@@ -206,9 +207,37 @@ describe('order outbox', () => {
       await outbox.flush();
       expect((await collection.findOne(inputs[0].id).exec())!.syncStatus).toBe('rejected');
       expect(warn.mock.calls.filter(([message]) => message === 'Order refused by the store'))
-        .toEqual([['Order refused by the store', { orderId: inputs[0].id, code: 'insufficient_stock', message: 'Only 0 of SKU0 left' }]]);
+        .toEqual([['Order refused by the store', { orderId: inputs[0].id, code: 'insufficient_stock', message: 'Only 0 of SKU0 left' },
+          { syncRecord: { collection: 'pos_orders', recordId: inputs[0].id, outcome: 'failed', code: 'insufficient_stock', reason: 'Only 0 of SKU0 left' } }]]);
       expect(error).not.toHaveBeenCalled();
     } finally { warn.mockRestore(); error.mockRestore(); }
+  });
+
+  it('logs a sync record for each order the store refuses or applies; a requeued order that applies is no longer stuck (#656)', async () => {
+    const inputs = [order(0), order(1)];
+    await collection.bulkInsert(inputs);
+    const logged: LogEntry[] = [];
+    outboxLogger.addSink({ id: 'sync-record-656', levels: ['debug', 'info', 'warn', 'error'], write: (entry) => logged.push(entry) });
+    try {
+      const { outbox, send } = setup();
+      send.mockResolvedValueOnce({ kind: 'results', results: [
+        { id: inputs[0].commandId, status: 'rejected', error: { code: 'insufficient_stock', message: 'Only 0 of SKU0 left' } },
+        { id: inputs[1].commandId, status: 'applied', serverRefs: { orderId: 'server-1', totalMinor: 101 } },
+      ] });
+      await outbox.flush();
+      expect(logged.flatMap((entry) => (entry.syncRecord ? [[entry.level, entry.message, entry.syncRecord]] : []))).toEqual([
+        ['warn', 'Order refused by the store',
+          { collection: 'pos_orders', recordId: inputs[0].id, outcome: 'failed', code: 'insufficient_stock', reason: 'Only 0 of SKU0 left' }],
+        ['info', 'Order accepted by the store', { collection: 'pos_orders', recordId: inputs[1].id, outcome: 'ok' }],
+      ]);
+      expect(deriveStuckRecords(logged)).toMatchObject([{ key: `pos_orders:${inputs[0].id}`, outcome: 'failed', code: 'insufficient_stock' }]);
+      // The resend under a new commandId applies (the default transport): its ok outcome clears the record.
+      expect(await outbox.requeue()).toBe(1);
+      await outbox.flush();
+      expect((await collection.findOne(inputs[0].id).exec())!.syncStatus).toBe('applied');
+      expect(logged.at(-1)?.syncRecord).toEqual({ collection: 'pos_orders', recordId: inputs[0].id, outcome: 'ok' });
+      expect(deriveStuckRecords(logged)).toEqual([]);
+    } finally { outboxLogger.removeSink('sync-record-656'); }
   });
 
   it("caps the store's message in the refusal log at 200 characters, and logs a short one unchanged (#269 review)", async () => {
@@ -224,8 +253,10 @@ describe('order outbox', () => {
       ] });
       await outbox.flush();
       expect(warn.mock.calls.filter(([message]) => message === 'Order refused by the store')).toEqual([
-        ['Order refused by the store', { orderId: inputs[0].id, code: 'insufficient_stock', message: 'x'.repeat(200) }],
-        ['Order refused by the store', { orderId: inputs[1].id, code: 'insufficient_stock', message: short }],
+        ['Order refused by the store', { orderId: inputs[0].id, code: 'insufficient_stock', message: 'x'.repeat(200) },
+          { syncRecord: { collection: 'pos_orders', recordId: inputs[0].id, outcome: 'failed', code: 'insufficient_stock', reason: 'x'.repeat(200) } }],
+        ['Order refused by the store', { orderId: inputs[1].id, code: 'insufficient_stock', message: short },
+          { syncRecord: { collection: 'pos_orders', recordId: inputs[1].id, outcome: 'failed', code: 'insufficient_stock', reason: short } }],
       ]);
     } finally { warn.mockRestore(); }
   });
@@ -1384,6 +1415,31 @@ describe('order outbox isolation', () => {
     expect(ids(send.mock.calls.at(-1)![0])).toEqual([all[1]]);
     expect([await status(inputs[1]), await status(later[0]), await status(later[1])]).toEqual(['pending', 'applied', 'applied']);
     expect(states.some((state) => state.stuck)).toBe(false);
+  });
+
+  it('logs one pending sync record when an order is isolated, none for its later lone failures (#656)', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const logged: LogEntry[] = [];
+    outboxLogger.addSink({ id: 'isolated-656', levels: ['debug', 'info', 'warn', 'error'], write: (entry) => logged.push(entry) });
+    try {
+      const { outbox, send, next } = timed();
+      send.mockImplementation(failing(inputs[1]));
+      await outbox.flush();
+      for (let i = 0; i < 2 * ISOLATE_AFTER_ATTEMPTS + 1; i++) await next();
+      expect(await status(inputs[1])).toBe('pending');
+      const pending = () => logged.filter((entry) => entry.syncRecord?.outcome === 'pending');
+      expect(pending().map((entry) => [entry.level, entry.message, entry.data, entry.syncRecord])).toEqual([
+        ['warn', 'Order isolated: the store keeps failing it', { orderId: inputs[1].id, reason: 'status_503' },
+          { collection: 'pos_orders', recordId: inputs[1].id, outcome: 'pending', reason: 'status_503' }],
+      ]);
+      // Retried alone, failing again: still one pending record, and the stuck view names only that order.
+      await next();
+      await next();
+      expect(ids(send.mock.calls.at(-1)![0])).toEqual([inputs[1].commandId]);
+      expect(pending()).toHaveLength(1);
+      expect(deriveStuckRecords(logged).map((stuck) => [stuck.recordId, stuck.outcome])).toEqual([[inputs[1].id, 'pending']]);
+    } finally { outboxLogger.removeSink('isolated-656'); }
   });
 
   it('flags an isolated order as stuck after STUCK_AFTER_MS, and clears it when the store applies it', async () => {

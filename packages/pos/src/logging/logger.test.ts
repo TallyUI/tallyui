@@ -151,4 +151,30 @@ describe('scoped loggers', () => {
     expect(sink.entries).toHaveLength(1);
     expect(sink.entries[0].scope).toBe('grandchild');
   });
+
+  it('puts the meta actor and sync record on the entry, for root and child scopes (#656)', () => {
+    const logger = createLogger();
+    const sink = createTestSink();
+    logger.addSink(sink);
+    const actor = { id: '7', name: 'Pat' };
+    const syncRecord = { collection: 'pos_orders', recordId: 'o1', outcome: 'failed' as const, code: 'insufficient_stock' };
+
+    logger.info('opened', { a: 1 }, { actor });
+    logger.createScope('outbox').warn('refused', undefined, { syncRecord });
+
+    expect(sink.entries[0]).toMatchObject({ scope: 'root', message: 'opened', data: { a: 1 }, actor });
+    expect(sink.entries[1]).toMatchObject({ scope: 'outbox', message: 'refused', syncRecord });
+    expect(sink.entries[1]).not.toHaveProperty('actor');
+  });
+
+  it('adds no actor or sync record key to an entry logged without meta (#656)', () => {
+    const logger = createLogger();
+    const sink = createTestSink();
+    logger.addSink(sink);
+
+    logger.info('plain', { a: 1 });
+    logger.createScope('child').info('plain');
+
+    for (const entry of sink.entries) expect(Object.keys(entry).sort()).toEqual(['data', 'level', 'message', 'scope', 'timestamp']);
+  });
 });

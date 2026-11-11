@@ -67,7 +67,9 @@ export function recordRegisterFact(fact: RegisterFact): void {
     type: string,
     context: Record<string, unknown> = {},
     level: 'info' | 'warn' = 'info',
-  ) => registerFactsLogger[level](message, { actor: fact.actor, terminal, context: { type, ...pair, ...context } });
+  ) => registerFactsLogger[level](message, { actor: fact.actor, terminal, context: { type, ...pair, ...context } },
+    // The cashier also rides on the entry itself, so a Logs screen's Actions preset finds it (#656).
+    fact.actor ? { actor: fact.actor } : undefined);
   switch (fact.kind) {
     case 'session-opened':
       return emit('Register session opened', 'register.session-opened', { amount: fact.amount, variance: fact.variance });
