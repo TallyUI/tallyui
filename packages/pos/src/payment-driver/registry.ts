@@ -37,3 +37,26 @@ export function driverForMethod(
 ): PaymentDriver | undefined {
   return method?.capture.mode === 'device' ? registry.get(method.capture.provider) : undefined;
 }
+
+/** The first of `methods` a driver for `provider` takes on a device: primary `capture.mode === 'device'` and
+ * `capture.provider === provider` (WCPOS v2 apps/main/lib/payment-drivers.ts `deviceMethod`). Null when none. */
+export function methodForProvider(
+  methods: readonly PaymentMethodDescriptor[],
+  provider: string,
+): PaymentMethodDescriptor | null {
+  return methods.find((method) => method.capture.mode === 'device' && method.capture.provider === provider) ?? null;
+}
+
+/** Each method's id mapped to the registered driver that takes it (`driverForMethod`), for the methods that have one,
+ * in `methods` order. */
+export function methodDrivers(
+  registry: PaymentDriverRegistry,
+  methods: readonly PaymentMethodDescriptor[],
+): ReadonlyMap<string, PaymentDriver> {
+  const drivers = new Map<string, PaymentDriver>();
+  for (const method of methods) {
+    const driver = driverForMethod(registry, method);
+    if (driver && !drivers.has(method.id)) drivers.set(method.id, driver);
+  }
+  return drivers;
+}

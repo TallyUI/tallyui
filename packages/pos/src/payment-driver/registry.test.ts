@@ -1,7 +1,17 @@
 import { paymentMethodOf } from '@tallyui/core';
 import { describe, expect, it, vi } from 'vitest';
-import { createPaymentDriverRegistry, driverForMethod } from './registry';
+import { createPaymentDriverRegistry, driverForMethod, methodDrivers, methodForProvider } from './registry';
 import { createSimulatedDriver } from './simulated-driver';
+
+const cash = paymentMethodOf('cash');
+const deviceMethod = (id: string, provider: string) => ({
+  ...paymentMethodOf('external'),
+  id,
+  capture: { mode: 'device', provider, hardware: null },
+});
+const deviceStripeA = deviceMethod('stripe-a', 'stripe');
+const deviceSimulated = deviceMethod('simulated', 'simulated');
+const deviceStripeB = deviceMethod('stripe-b', 'stripe');
 
 describe('payment driver registry', () => {
   it('registers by provider and replaces a driver without moving its slot', () => {
@@ -58,5 +68,49 @@ describe('payment driver registry', () => {
     }
     expect(driverForMethod(registry, null)).toBeUndefined();
     expect(driverForMethod(registry, undefined)).toBeUndefined();
+  });
+
+  it('finds the first primary device method for a provider', () => {
+    const methods = [cash, deviceStripeA, deviceSimulated, deviceStripeB];
+    expect(methodForProvider(methods, 'stripe')).toBe(deviceStripeA);
+    expect(methodForProvider(methods, 'simulated')).toBe(deviceSimulated);
+    expect(methodForProvider(methods, 'sumup')).toBeNull();
+    const manualStripe = { ...deviceStripeA, id: 'manual-stripe', capture: { ...deviceStripeA.capture, mode: 'manual' } };
+    expect(methodForProvider([manualStripe], 'stripe')).toBeNull();
+    expect(methodForProvider([manualStripe, deviceStripeB], 'stripe')).toBe(deviceStripeB);
+    expect(methodForProvider([], 'stripe')).toBeNull();
+  });
+
+  it('maps each method with a registered driver to that driver, in methods order', () => {
+    const registry = createPaymentDriverRegistry();
+    const simulated = createSimulatedDriver();
+    registry.register(simulated);
+    const webviewSimulated = {
+      ...deviceSimulated,
+      id: 'webview-simulated',
+      capture: { mode: 'webview', provider: 'simulated', hardware: null, modes: [deviceSimulated.capture] },
+    };
+    const methods = [cash, deviceSimulated, deviceStripeA, webviewSimulated];
+    const map = methodDrivers(registry, methods);
+    expect(map.size).toBe(1);
+    expect(map.get(deviceSimulated.id)).toBe(simulated);
+    expect([...map.keys()]).toEqual([deviceSimulated.id]);
+
+    const stripeDriver = { ...createSimulatedDriver(), provider: 'stripe' };
+    registry.register(stripeDriver);
+    const withStripe = methodDrivers(registry, methods);
+    expect([...withStripe.keys()]).toEqual([deviceSimulated.id, deviceStripeA.id]);
+    expect([...withStripe.values()]).toEqual([simulated, stripeDriver]);
+  });
+
+  it('keeps the first entry for a duplicate method id', () => {
+    const registry = createPaymentDriverRegistry();
+    const simulated = createSimulatedDriver();
+    const stripeDriver = { ...createSimulatedDriver(), provider: 'stripe' };
+    registry.register(simulated);
+    registry.register(stripeDriver);
+    const duplicate = { ...deviceStripeA, id: deviceSimulated.id };
+    const map = methodDrivers(registry, [deviceSimulated, duplicate]);
+    expect([...map.entries()]).toEqual([[deviceSimulated.id, simulated]]);
   });
 });
