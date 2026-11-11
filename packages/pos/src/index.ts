@@ -78,6 +78,8 @@ export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, Rece
 // Receipt templates
 export { parseXml, renderHtml, sanitizeHtml, renderReceiptTemplate, renderLogiclessTemplate, renderThermalPreview, receiptTemplateData, DEFAULT_RECEIPT_TEMPLATES, PAPER_COLUMNS, renderReceiptHtml } from './receipt-template';
 export type { ThermalNode, ReceiptNode, SanitizeHtmlOptions, RenderSanitizeOptions, ReceiptTemplateRow, ReceiptTemplateLine, ReceiptTemplateData, ReceiptTemplateOptions, ReceiptPaper, RenderReceiptOptions } from './receipt-template';
+export { wcposReceiptData, formatWcposReceiptData, formatWcposMoney, WCPOS_DEFAULT_I18N, WCPOS_TAX_ID_LABELS } from './receipt-template';
+export type { FormatWcposReceiptOptions, WcposMoneyOptions, WcposReceiptSource, WcposReceiptStore, WcposReceiptOptions, WcposReceiptData, WcposReceiptView, WcposTaxId, WcposReceiptDate, WcposReceiptLine, WcposLineView } from './receipt-template';
 
 // Customer display
 export { DISPLAY_PROTOCOL_VERSION, DISPLAY_ACTIONS, makeEnvelope, displayCart, decode as decodeDisplayMessage, encode as encodeDisplayMessage, messageBytes, MAX_MESSAGE_BYTES, displayReducer, initialDisplayState } from './customer-display';
