@@ -34,8 +34,8 @@ export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the 
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
 export const COUPONS_REPRICING = 'Coupon prices are being checked; try again in a moment';
-/** #722: setCustomer's refusal of a customer whose address moves the sale's rates once they can no longer change (tender, receipt, money live). */
-export const CUSTOMER_RETAX_REFUSED = "This customer's address changes the tax. Go back to the cart with no payment taken to change the customer.";
+/** #722: setCustomer's refusal of a customer whose address moves the sale's rates once they can no longer change (tender, receipt, money live); interim until #759 re-taxes like v2. */
+export const CUSTOMER_RETAX_REFUSED = 'This customer would change the tax on this sale. To use them, cancel the payment and change the customer in the cart, or start a new order.';
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
