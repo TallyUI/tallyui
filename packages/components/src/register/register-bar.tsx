@@ -4,7 +4,7 @@ import type { useRegisterSession } from '@tallyui/pos';
 
 import { cn } from '@tallyui/theme';
 import { useShell } from '../shell/shell-context';
-import { Avatar } from '../ui/avatar';
+import { Avatar, avatarInitials } from '../ui/avatar';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { HStack } from '../ui/hstack';
@@ -35,10 +35,6 @@ export interface RegisterBarProps {
   /** Opens the navigation; inside a phone `AppShell` the shell supplies it. Hidden when neither. */
   onOpenMenu?: () => void;
   className?: string;
-}
-
-function initials(name: string): string {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join('');
 }
 
 /**
@@ -123,7 +119,7 @@ export function RegisterBar({
           disabled={!cashier.onPress}
           onPress={cashier.onPress}
         >
-          <Avatar size="sm" fallback={initials(cashier.name)} />
+          <Avatar size="sm" fallback={avatarInitials(cashier.name)} />
         </Pressable>
       )}
     </HStack>

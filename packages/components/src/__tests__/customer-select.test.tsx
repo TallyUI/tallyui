@@ -1,8 +1,21 @@
+import * as React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ConnectorProvider } from '@tallyui/core';
 import { CustomerSelect } from '../customer/customer-select';
 import { createTestConnector, wooCustomerDoc } from './helpers';
+
+// react-native-web atomizes className into hashed classes, so copy it to a data attribute.
+vi.mock('react-native', async (importOriginal) => {
+  const rn = await importOriginal<typeof import('react-native')>();
+  const withClass = (Base: React.ElementType) =>
+    React.forwardRef((props: { className?: string }, ref) => <Base ref={ref} {...props} dataSet={{ class: props.className }} />);
+  return { ...rn, View: withClass(rn.View), Text: withClass(rn.Text) };
+});
+
+// The avatar's circle: the parent of its initials.
+const avatarCircles = (initials: string) =>
+  screen.queryAllByText(initials).map((text) => text.parentElement!.getAttribute('data-class') ?? '');
 
 describe('CustomerSelect', () => {
   it.each([
@@ -82,6 +95,43 @@ describe('CustomerSelect', () => {
     );
     expect(screen.getByText('Jane Smith')).toBeDefined();
     expect(screen.getByText('Bob Jones')).toBeDefined();
+  });
+
+  it('draws no avatar by default', () => {
+    render(<ConnectorProvider connector={createTestConnector('woo')}>
+      <CustomerSelect customers={customers} selected={wooCustomerDoc} onSelect={() => {}} onSearch={() => {}} />
+    </ConnectorProvider>);
+    expect(screen.queryByText('JS')).toBeNull();
+    expect(screen.queryByText('BJ')).toBeNull();
+  });
+
+  it('with showAvatar, each row shows the initials on a primary circle, hidden from assistive tech', () => {
+    render(<ConnectorProvider connector={createTestConnector('woo')}>
+      <CustomerSelect customers={customers} onSelect={() => {}} onSearch={() => {}} showAvatar />
+    </ConnectorProvider>);
+    for (const [initials, name] of [['JS', 'Jane Smith, jane@example.com'], ['BJ', 'Bob Jones, bob@example.com']]) {
+      const row = screen.getByRole('option', { name });
+      expect(row.textContent).toContain(initials);
+      expect(avatarCircles(initials)).toEqual([expect.stringContaining('bg-primary')]);
+      expect(screen.getByText(initials).closest('[aria-hidden="true"]')).toBeTruthy();
+    }
+  });
+
+  it('avatarTone="muted" gives the muted circle', () => {
+    render(<ConnectorProvider connector={createTestConnector('woo')}>
+      <CustomerSelect customers={customers} onSelect={() => {}} onSearch={() => {}} showAvatar avatarTone="muted" />
+    </ConnectorProvider>);
+    expect(avatarCircles('JS')).toEqual([expect.stringContaining('bg-muted')]);
+    expect(screen.getByText('JS').getAttribute('data-class')).toContain('text-muted-foreground');
+    expect(avatarCircles('JS')[0]).not.toContain('bg-primary');
+  });
+
+  it('with showAvatar, the selected summary shows the avatar too', () => {
+    render(<ConnectorProvider connector={createTestConnector('woo')}>
+      <CustomerSelect customers={[]} selected={wooCustomerDoc} onSelect={() => {}} onSearch={() => {}} showAvatar />
+    </ConnectorProvider>);
+    expect(screen.getByRole('combobox').textContent).toContain('JS');
+    expect(avatarCircles('JS')).toEqual([expect.stringContaining('bg-primary')]);
   });
 
   it('shows selected customer name', () => {

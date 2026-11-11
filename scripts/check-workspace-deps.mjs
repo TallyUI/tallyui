@@ -58,6 +58,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'presetRange', 'DATE_PRESETS',
   // the catalogue tiles (unit ucat): the pure per-product cart quantity the in-cart badge shows, never a hook or the store.
   'cartQuantities',
+  // the Reports hero (#715): the pure store-day list a custom range's comparison is sized by, never a hook or the store.
+  'daysOf',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

@@ -1,4 +1,6 @@
 import type { TaxRounding } from './connector';
+import type { TaxAddress, TaxBasedOn } from '../tax/woocommerce/tax-location';
+import type { WooTaxRate } from '../tax/woocommerce/types';
 
 /** What the POS needs from the store's own settings (TV4). Read once after sign-in; the app feeds all three consumers from it. */
 export interface StoreSettings {
@@ -10,8 +12,14 @@ export interface StoreSettings {
   taxRatesPpm: { default: number; [taxClass: string]: number };
   /** The backend's tax rate name per tax class (same keys as `taxRatesPpm`, including `default`), for `per_rate_group_items`' grouping (#324). Set by a connector whose rounding groups by rate name; absent otherwise. */
   taxRateCodes?: Record<string, string>;
-  /** WooCommerce rates already filtered to the store's tax address; the empty class uses `standard`. */
+  /** WooCommerce rates already filtered to the store's tax address; the empty class uses `standard`. `taxSettingsForLocation` (@tallyui/pos) re-derives it, with `taxRatesPpm`, for another address from `taxRateTable`. */
   taxRates?: Record<string, { id: number; code: string; label: string; rate: string; priority: number; compound: boolean; shipping: boolean }[]>;
+  /** WooCommerce's "Calculate tax based on" (`tax_based_on`), normalized. Absent: the connector did not read it; the cart taxes by `taxRates` as today. */
+  taxBasedOn?: TaxBasedOn;
+  /** The shop base address, as WooCommerce resolves it for `base` (store country, state, city, postcode). */
+  baseTaxAddress?: TaxAddress;
+  /** The store's whole WooCommerce rate table, unfiltered, for re-matching by address. Absent: `taxRates` is final. */
+  taxRateTable?: WooTaxRate[];
   /** Every tax rate the store defines, wherever it applies, for an app's "all tax rates" table (#669). Display only: the cart reads `taxRatesPpm` and `taxRates`, never this. Absent when the connector did not read the list. */
   allTaxRates?: StoreTaxRate[];
   taxRoundAtSubtotal?: boolean;

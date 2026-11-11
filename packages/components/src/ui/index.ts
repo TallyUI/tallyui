@@ -9,9 +9,10 @@ export { createSvgIcon, type SvgIconProps } from './icon/svg-icon';
 export { SearchIcon } from './icon/search-icon';
 export { ShoppingCartIcon } from './icon/shopping-cart-icon';
 export { XIcon } from './icon/x-icon';
+export { ChevronDownIcon } from './icon/chevron-down-icon';
 export { Loader, loaderVariants, type LoaderProps } from './loader';
 export { Badge, badgeVariants, badgeTextVariants, type BadgeProps } from './badge';
-export { Avatar, avatarVariants, type AvatarProps } from './avatar';
+export { Avatar, avatarVariants, avatarInitials, type AvatarProps } from './avatar';
 
 // Interactive
 export { Button, buttonVariants, buttonTextVariants, type ButtonProps } from './button';
@@ -72,6 +73,12 @@ export {
 
 // Popover
 export { Popover, PopoverTrigger, PopoverContent } from './popover';
+
+// Calendar
+export { Calendar, type CalendarProps } from './calendar';
+export {
+  monthGrid, monthOf, addMonths, compareDays, pressRangeDay, type Month, type WeekDay, type GridDay,
+} from './calendar/month-grid';
 
 // Tooltip
 export { Tooltip, TooltipTrigger, TooltipContent } from './tooltip';
