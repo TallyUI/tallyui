@@ -46,7 +46,7 @@ const posOrders = await addPosOrderCollection(db);
 
 ## Store settings
 
-`useStoreSettings({ connector, context, loadChoice, saveChoice })` resolves the store's currency, tax and pricing once after sign-in, and re-resolves only when `connector` or `context` change by identity -- so memoise both. A `'choose'` state means the store sells in more than one place; render `StoreSettingsChoiceScreen` with its `choices` and hand its `onSubmit` straight to `store.choose`.
+`useStoreSettings({ connector, context, loadChoice, saveChoice })` resolves the store's currency, tax and pricing once after sign-in, and re-resolves only when `connector` or `context` change by identity -- so memoise both. A `'choose'` state means the store sells in more than one place; render `StoreSettingsChoiceScreen` with its `choices` and hand its `onSubmit` straight to `store.choose`. The `ready` state's `refresh()` re-reads the settings in place for a sync button: the till stays `ready` with `refreshing: true`, the new settings arrive once, and a failure keeps the old settings with `refreshError` set.
 
 ```tsx
 import { useMemo, type ReactNode } from 'react';
