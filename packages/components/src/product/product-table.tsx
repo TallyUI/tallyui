@@ -16,11 +16,18 @@ const BATCH_ROWS = 8;
 // Keep nearby rows mounted without rendering the whole 2,000-product catalogue.
 const WINDOW_SIZE = 5;
 
+// Place column content horizontally inside column-direction Views.
+const ALIGN = { left: 'items-start', center: 'items-center', right: 'items-end' } as const;
+
 export interface ProductTableColumn<Doc = any> {
   /** Stable id; the default columns use PRODUCT_SORT_FIELDS. */
   id: string;
   /** Header label. */
   header: string;
+  /** Places the head and the cells' content; default left (WCPOS v2 column-style). */
+  align?: 'left' | 'center' | 'right';
+  /** Draws no head label; `header` stays the head's accessible name (v2's image column). */
+  hideHeader?: boolean;
   render: (doc: Doc) => ReactNode;
   /** The value the header sort orders by; omit to make the column unsortable. */
   sortValue?: (doc: Doc) => ProductSortValue;
@@ -56,7 +63,7 @@ export function defaultProductColumns(
     { id: 'name', header: 'Name', flex: 3, render: (doc) => <ProductTitle doc={doc} numberOfLines={2} /> },
     { id: 'sku', header: 'SKU', flex: 1, render: (doc) => <ProductSku doc={doc} /> },
     { id: 'barcode', header: 'Barcode', flex: 1, render: (doc) => <Text>{traits.getBarcode(doc) ?? '—'}</Text> },
-    { id: 'price', header: 'Price', flex: 1, render: (doc) => <ProductPrice doc={doc} currencySymbol={options?.currencySymbol} /> },
+    { id: 'price', header: 'Price', flex: 1, align: 'right', render: (doc) => <ProductPrice doc={doc} currencySymbol={options?.currencySymbol} /> },
     { id: 'stock', header: 'Stock', flex: 1, render: (doc) => <ProductStockBadge doc={doc} showQuantity showAsOf={false} /> },
     { id: 'category', header: 'Category', flex: 2, render: (doc) => <Text>{traits.getCategoryNames(doc).join(', ') || '—'}</Text> },
   ];
@@ -110,14 +117,16 @@ export function ProductTable({
             <TableRow>
               {resolvedColumns.map((column) => (
                 <TableHead key={column.id} style={{ flex: column.flex ?? 1 }}
+                  className={cn('h-9 justify-center px-3 py-0', column.align && ALIGN[column.align])}
+                  aria-label={column.hideHeader ? column.header : undefined}
                   {...(column.sortValue ? { 'aria-sort': activeSort?.field === column.id
                     ? (activeSort.dir === 'asc' ? 'ascending' : 'descending') : 'none' } : {})}>
                   {column.sortValue ? (
                     <Pressable accessibilityRole="button" accessibilityLabel={'Sort by ' + column.header}
                       testID={'product-table-sort-' + column.id} onPress={() => changeSort(column.id)}>
-                      <Text>{column.header}{activeSort?.field === column.id ? (activeSort.dir === 'asc' ? ' ▲' : ' ▼') : ''}</Text>
+                      <Text numberOfLines={1}>{column.hideHeader ? '' : column.header}{activeSort?.field === column.id ? (activeSort.dir === 'asc' ? ' ▲' : ' ▼') : ''}</Text>
                     </Pressable>
-                  ) : <Text>{column.header}</Text>}
+                  ) : <Text numberOfLines={1}>{column.hideHeader ? '' : column.header}</Text>}
                 </TableHead>
               ))}
             </TableRow>
@@ -134,7 +143,8 @@ export function ProductTable({
                 const row = (
                   <TableRow testID={onSelect ? undefined : 'product-row-' + key}>
                     {resolvedColumns.map((column) => (
-                      <TableCell key={column.id} style={{ flex: column.flex ?? 1 }}>{column.render(item)}</TableCell>
+                      <TableCell key={column.id} style={{ flex: column.flex ?? 1 }}
+                        className={cn('px-3 py-1.5', column.align && ALIGN[column.align])}>{column.render(item)}</TableCell>
                     ))}
                   </TableRow>
                 );
