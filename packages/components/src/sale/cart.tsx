@@ -128,6 +128,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   return <View dataSet={{ print: 'hide' }} className="flex-1 min-h-0" onLayout={(event) => setCartWidth(event.nativeEvent.layout.width)}>
     {empty ? null : <CartColumnHeads showPrice={showPrice} columns={columns} />}
     <CartPanel items={order.lineItems} renderItem={renderItem}
+    footerClassName="px-2 py-2"
     emptyState={empty ? <View testID="cart-empty" className="flex-1 items-center justify-center gap-3 px-3 py-6">
       {emptyIcon === null ? null : <View aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
         className="text-muted-foreground">{emptyIcon}</View>}
@@ -164,9 +165,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         className="self-start rounded-md border border-border bg-card px-4 py-2 min-h-11 justify-center">
         <Text className="text-foreground">Add charge</Text></Pressable> : null}
     </View> : null}</>}
-    footer={empty ? undefined : <View testID="cart-footer" className="gap-3 pb-4">
+    footer={empty ? undefined : <View testID="cart-footer" className="gap-2">
       {/* Exclusive: subtotal − discount + tax = total. Inclusive: subtotal − discount = total, the tax "incl.", not added. */}
-      <CartTotal subtotal={money(totals.subtotalMinor)} total={money(totals.totalMinor)}
+      <CartTotal className="px-0 py-0" subtotal={money(totals.subtotalMinor)} total={money(totals.totalMinor)}
         discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
