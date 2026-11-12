@@ -6237,8 +6237,9 @@ interface OrderCreatePayload {
 
 ## ADR-088 order.create v9: each store-priced coupon's per-line amounts
 
-- **Date:** 2026-11-12 · **Status:** Proposed (front desk ruling on #786 / #790, 2026-11-12; one-way, merges on
-  Paul's word) · **Contract:** `docs/contract/order-create-v9.md` · **Relates to:** ADR-086 (how version 8 was
+- **Date:** 2026-11-12 · **Status:** Accepted (front desk ruling on #786 / #790, 2026-11-12; one-way, merged in
+  #791 on the desk's call for pre-beta TallyUI: v9 is dormant until a server advertises 9) · **Contract:**
+  `docs/contract/order-create-v9.md` · **Relates to:** ADR-086 (how version 8 was
   added), ADR-077 (coupons), ADR-070 (strict payloads and field kinds)
 - **Context:**
   - A store-priced coupon (#709, Medusa and Vendure) arrives priced per line, but order.create 6–8 carried only its
@@ -6262,6 +6263,8 @@ interface OrderCreatePayload {
   - One-way. Downgrade, measured (`packages/integration-tests/src/pos-orders-open-sqlite.test.ts`): a schema-12 build
     opening a schema-13 store throws nothing and sees an **empty** `pos_orders`; the schema-13 build reopening it
     finds every row unchanged, as for 11→12.
+  - While a schema-12 build runs on a schema-13 store, the sales queued there are invisible and unsent; nothing is
+    lost, and they send on re-upgrade.
   - WooCommerce keeps advertising 8. Medusa and Vendure advertise 9 when their plugins store the amounts.
 - **Evidence:** `packages/pos/src/pos-order/command-v9.test.ts` (golden `__fixtures__/order-create-v9.json`),
   `packages/core/src/server/order-create-v9.test.ts`, `packages/pos/src/order/store-priced-coupon-lines.test.ts`,
