@@ -60,6 +60,7 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
       calcDiscountsSequentially: (store.woocommerce_calc_discounts_sequentially ?? store.calc_discounts_sequentially) === 'yes',
       ...(typeof store.shipping_tax_class === 'string' ? { shippingTaxClass: store.shipping_tax_class } : {}),
       taxClassSlugs: classes.map((row) => row.slug),
+      taxClasses: classes.map((row) => ({ slug: row.slug, name: typeof row.name === 'string' && row.name !== '' ? row.name : row.slug })),
       taxRates,
       taxRatesPpm,
     };

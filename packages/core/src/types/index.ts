@@ -18,7 +18,7 @@ export type {
 
 export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 
-export type { StoreSettings, StoreSettingsChoice, StoreTaxRate, StoreTaxRateLocation } from './store-settings';
+export type { StoreSettings, StoreSettingsChoice, StoreTaxClass, StoreTaxRate, StoreTaxRateLocation } from './store-settings';
 
 export type { ProductTraits, TraitContext, VariantSummary, VariantOptionGroup, ProductCategory } from './traits/product';
 

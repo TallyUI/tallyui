@@ -29,6 +29,8 @@ export interface StoreSettings {
   calcDiscountsSequentially?: boolean;
   shippingTaxClass?: string;
   taxClassSlugs?: string[];
+  /** The tax classes with their display names, in the store's order. Display only. Absent when the connector did not read them. */
+  taxClasses?: StoreTaxClass[];
   /** Connector-specific and opaque to the app: what the connector needs to price documents. The app passes it back to the connector unchanged, and never logs it. */
   pricingContext?: Record<string, string>;
   /** Derived, never read by `storeSettings`: the store's `ServerCapabilities.taxRounding`, which `useStoreSettings` fills in (#324). */
@@ -46,6 +48,12 @@ export interface StoreTaxRateLocation {
   cities?: string[];
   /** The backend's named tax zone, for a backend that groups its rates by zone. */
   zone?: { id: string; name: string };
+}
+
+/** One of the store's tax classes: the key `taxClassSlugs` and `taxRates` use, and the name the store shows for it. */
+export interface StoreTaxClass {
+  slug: string;
+  name: string;
 }
 
 /** One of the store's tax rates as the backend defines it. The optional fields are set by a backend that has them. */
