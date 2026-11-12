@@ -180,7 +180,9 @@ export function createWooOrders(): Required<Pick<TallyConnector, 'listOrders' | 
       const hasMore = totalPages !== null && /^\d+$/.test(totalPages.trim())
         ? page < Number.parseInt(totalPages, 10)
         : orders.length === perPage;
-      return { orders, hasMore };
+      // X-WP-Total counts every order the query matches.
+      const total = headers.get('X-WP-Total');
+      return { orders, hasMore, ...(total && /^\d+$/.test(total) ? { total: Number(total) } : {}) };
     },
 
     async getOrders(context: SyncContext, ids: readonly string[]) {

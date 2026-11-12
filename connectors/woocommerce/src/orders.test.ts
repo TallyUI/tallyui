@@ -166,6 +166,24 @@ describe('WooCommerce orders', () => {
     expect(spy).toHaveBeenNthCalledWith(2, `${context.baseUrl}/orders?page=2&per_page=10&orderby=date&order=desc`, request);
   });
 
+  describe('listOrders total', () => {
+    it('includes the store total alongside hasMore', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(list, {
+        headers: { 'X-WP-Total': '137', 'X-WP-TotalPages': '6' },
+      }));
+      await expect(orders.listOrders(context, { page: 2, perPage: 25 })).resolves.toMatchObject({ total: 137, hasMore: true });
+    });
+
+    it.each([['missing', undefined], ['empty', ''], ['non-numeric', 'abc'], ['negative', '-1'], ['fractional', '1.5']])(
+      'has no total key for a %s X-WP-Total', async (_name, total) => {
+        vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(list, total === undefined ? {} : { headers: { 'X-WP-Total': total } }));
+        const result = await orders.listOrders(context);
+        expect('total' in result).toBe(false);
+        expect(result.orders.map((order) => order.id)).toStrictEqual(['136', '137']);
+      },
+    );
+  });
+
   it('falls back to a full page for hasMore', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(Response.json(list))
