@@ -4,7 +4,7 @@ import type { OrderCreateEnvelope } from '../types'
 import { SUPPORTED_ORDER_CREATE_VERSIONS } from './versions'
 
 // The type check fails tsc when the envelope's version union grows; the runtime check fails when the constant drifts from it.
-const ENVELOPE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8] as const satisfies readonly OrderCreateEnvelope['version'][]
+const ENVELOPE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const satisfies readonly OrderCreateEnvelope['version'][]
 
 describe('SUPPORTED_ORDER_CREATE_VERSIONS', () => {
   it('lists every order.create version the envelope type allows', () => {

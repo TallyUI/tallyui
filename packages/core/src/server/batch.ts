@@ -112,13 +112,18 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
       if (line?.[field] !== undefined) v6Fields.push(`lines[${index}].${field}`)
     }
   })
+  const coupons = Array.isArray(payload.coupons) ? payload.coupons.filter(coupon => typeof coupon === 'object' && coupon !== null && !Array.isArray(coupon)) : []
+  const couponLines = coupons.filter(coupon => coupon.lines !== undefined)
+  const couponsWithoutLines = coupons.filter(coupon => coupon.lines === undefined)
   let versionError = command.version < 5 && v5Fields.length ? v5Fields.map(field => `${field} requires version 5`).join('; ')
     : command.version < 6 && v6Fields.length ? v6Fields.map(field => `${field} requires version 6`).join('; ')
     : command.version < 7 && payload.note !== undefined ? 'note requires version 7'
     : command.version < 8 && payload.taxAddress !== undefined ? 'taxAddress requires version 8'
     : command.version < 8 && (payload.customer?.billing !== undefined || payload.customer?.shipping !== undefined)
       ? 'customer address requires version 8'
-    : command.version >= 8 && payload.taxAddress === undefined ? 'version 8 requires taxAddress'
+    : command.version < 9 && couponLines.length ? 'coupons[].lines requires version 9'
+    : command.version >= 9 && couponsWithoutLines.length ? 'version 9 requires coupons[].lines'
+    : command.version === 8 && payload.taxAddress === undefined ? 'version 8 requires taxAddress'
     : command.version === 2 && discountMinor === undefined ? 'version 2 requires discountMinor'
     : command.version === 1 && discounted ? 'discountMinor requires version 2'
     : !v3 && (display !== undefined || taxByRate !== undefined) ? 'display and taxByRate require version 3'

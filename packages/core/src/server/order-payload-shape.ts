@@ -130,7 +130,8 @@ export function payloadShapeErrors(payload: unknown): string[] {
     if (items === undefined) continue
     check(Array.isArray(items), `${prefix}coupons`, 'an array')
     if (!Array.isArray(items)) continue
-    const keys = prefix ? ['code', 'amountMinor'] : ['code', 'couponId', 'discountMinor', 'discountTaxMinor']
+    const keys = prefix ? ['code', 'amountMinor'] : ['code', 'couponId', 'discountMinor', 'discountTaxMinor', 'lines']
+    const hasLines = !prefix && items.some(item => object(item) && item.lines !== undefined)
     const seen = new Set<unknown>()
     items.forEach((item, index) => {
       const path = `${prefix}coupons[${index}]`
@@ -142,6 +143,40 @@ export function payloadShapeErrors(payload: unknown): string[] {
       if (!prefix) {
         check(!seen.has(item.code), `${path}.code`, 'no duplicate code')
         seen.add(item.code)
+        if (hasLines) check(Array.isArray(item.lines), `${path}.lines`, 'an array')
+        if (Array.isArray(item.lines)) {
+          const ids = Array.isArray(payload.lines) ? payload.lines.map(line => object(line) ? line.clientLineId : undefined) : []
+          const seenIds = new Set<unknown>()
+          let previous = -1
+          let validAmounts = true
+          let discountSum = 0n
+          let taxSum = 0n
+          item.lines.forEach((line, index) => {
+            const p = `${path}.lines[${index}]`
+            check(object(line), p, 'an object')
+            if (!object(line)) { validAmounts = false; previous = -1; return }
+            for (const key of Object.keys(line)) check(['clientLineId', 'discountMinor', 'discountTaxMinor'].includes(key), `${p}.${key}`, 'no unknown key')
+            const at = typeof line.clientLineId === 'string' ? ids.indexOf(line.clientLineId) : -1
+            check(at >= 0, `${p}.clientLineId`, 'a payload lines[].clientLineId')
+            check(!seenIds.has(line.clientLineId), `${p}.clientLineId`, 'no duplicate clientLineId')
+            seenIds.add(line.clientLineId)
+            if (at >= 0 && previous >= 0) check(at > previous, `${p}.clientLineId`, 'payload lines order')
+            previous = at
+            const valid = ['discountMinor', 'discountTaxMinor'].map(key => {
+              const valid = Number.isSafeInteger(line[key]) && (line[key] as number) >= 0
+              check(valid, `${p}.${key}`, 'a safe integer >= 0')
+              return valid
+            }).every(Boolean)
+            if (!valid) { validAmounts = false; return }
+            check(line.discountMinor !== 0 || line.discountTaxMinor !== 0, p, 'a non-zero discountMinor or discountTaxMinor')
+            discountSum += BigInt(line.discountMinor as number)
+            taxSum += BigInt(line.discountTaxMinor as number)
+          })
+          if (validAmounts && ['discountMinor', 'discountTaxMinor'].every(key => Number.isSafeInteger(item[key]) && (item[key] as number) >= 0)) {
+            check(discountSum === BigInt(item.discountMinor as number), `${path}.lines`, `discountMinor summing to ${path}.discountMinor`)
+            check(taxSum === BigInt(item.discountTaxMinor as number), `${path}.lines`, `discountTaxMinor summing to ${path}.discountTaxMinor`)
+          }
+        }
       }
     })
   }
@@ -173,16 +208,23 @@ export function payloadShapeErrors(payload: unknown): string[] {
 const ORDER_ADDRESS_KEYS = ['firstName', 'lastName', 'company', 'address1', 'address2', 'city', 'state', 'postcode', 'country', 'phone']
 
 /** Length-bound errors of an order.create payload, e.g. ['lines[0].title: expected at most 255
- * characters']; [] when every string is within its bound, at most ten. Bounds in UTF-16 code units:
+ * characters']; [] when every bound holds, at most ten. Bounds in UTF-16 code units:
  * `note` ORDER_NOTE_MAX (1000), `customer.email` 254, v8 address fields 255, v5 ids 36 and class/sku/method 64, other strings 255 (`customerId` and `sessionId` keep theirs in
- * payloadShapeErrors); only strings are checked. A plugin calls it through precheckCommand, after
+ * payloadShapeErrors); each coupon's lines array is also capped at payload.lines.length. A plugin calls it through precheckCommand, after
  * its replay lookup, so a bound tightened later never turns an applied command's resend into
  * `invalid_payload`. */
 export function payloadBoundErrors(payload: unknown): string[] {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return []
-  return payloadStrings(payload as Record<string, unknown>)
+  const record = payload as Record<string, unknown>
+  const errors = payloadStrings(record)
     .filter(([value, , max]) => max !== undefined && value.length > max)
     .map(([, path, max]) => `${path}: expected at most ${max} characters`).slice(0, 10)
+  const max = Array.isArray(record.lines) ? record.lines.length : 0
+  if (Array.isArray(record.coupons)) record.coupons.forEach((coupon, index) => {
+    if (errors.length < 10 && typeof coupon === 'object' && coupon !== null && !Array.isArray(coupon)
+      && Array.isArray(coupon.lines) && coupon.lines.length > max) errors.push(`coupons[${index}].lines: expected at most ${max} entries`)
+  })
+  return errors
 }
 
 /** Every string field order.create's checks cover, as [value, path, bound]; no bound for `customerId`
@@ -221,6 +263,9 @@ function payloadStrings(payload: Record<string, unknown>): Array<[string, string
     const items = object(parent) ? parent.coupons : undefined
     if (Array.isArray(items)) items.forEach((item, index) => {
       if (object(item)) for (const key of prefix ? ['code'] : ['code', 'couponId']) found.push([item[key], `${prefix}coupons[${index}].${key}`, key === 'code' ? 255 : 64])
+      if (!prefix && object(item) && Array.isArray(item.lines)) item.lines.forEach((line, j) => {
+        if (object(line)) found.push([line.clientLineId, `coupons[${index}].lines[${j}].clientLineId`, 255])
+      })
     })
   }
   if (Array.isArray(payload.lines)) payload.lines.forEach((line, index) => {
