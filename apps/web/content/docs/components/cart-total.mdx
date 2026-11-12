@@ -1,6 +1,6 @@
 ---
 title: CartTotal
-description: CartTotal shows subtotal and total rows for cart items, with an optional tax line, tax label, and currency symbol.
+description: CartTotal shows subtotal, optional discount, tax rows and an optional Total row in the receipt's order.
 ---
 
 ## Import
@@ -12,19 +12,23 @@ import { CartTotal } from '@tallyui/components';
 ## Usage
 
 ```tsx
-<CartTotal items={cartItems} taxRate={0.1} taxLabel="GST" />
+<CartTotal subtotal={subtotal} discount={discount} taxLines={taxLines} total={total} />
 ```
 
-Renders rows for subtotal and total, with an optional tax line when `taxRate > 0`.
+Renders rows for subtotal, optional discount, tax rows and total, in the receipt's order.
 
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `items` | `CartLineItem[]` | required | All cart line items |
-| `currencySymbol` | `string` | `'$'` | Currency symbol |
-| `taxRate` | `number` | `0` | Tax rate as decimal (0.1 = 10%) |
-| `taxLabel` | `string` | `'Tax'` | Label for tax line |
+| `subtotal` | `Money` | required | The subtotal to display |
+| `taxLines` | `Array<{ label: string; amount: Money }>` | — | Tax rows with their labels and amounts |
+| `discount` | `Money` | — | Optional discount, shown when positive |
+| `total` | `Money` | required | The total to display |
+| `taxInclusive` | `boolean` | — | Tax is already in the subtotal, so its rows read "incl." rather than add up |
+| `afterSubtotal` | `ReactNode` | — | Rows rendered directly under Subtotal, e.g. a platform's coupon chips |
+| `showTotal` | `boolean` | `true` | Draws the Total row; pass `false` when the total shows elsewhere, e.g. v2's Checkout button |
+| `locale` | `string` | — | Locale for formatting the amounts |
 | `className` | `string` | — | Override container styles |
 
 ## Live demo
