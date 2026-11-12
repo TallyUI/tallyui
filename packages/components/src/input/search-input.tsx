@@ -16,7 +16,7 @@ export function SearchInput({ value, onChangeText, className, placeholder = 'Sea
 
   return (
     <HStack space="sm" className={cn(
-      'rounded-lg border bg-card px-3 py-2.5',
+      'h-11 items-center rounded-lg border bg-card px-3',
       focused ? 'border-ring' : 'border-border',
       className,
     )}>
