@@ -7,7 +7,11 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { woocommerceCoupons, woocommerceTax } from '@tallyui/core';
 import { toWooOrderPayload } from '@tallyui/connector-woocommerce';
 import { createOrderBuilder, finalizeOrder, posOrderCollection, toOrderCreateEnvelope } from '@tallyui/pos';
+import type { PosOrder } from '@tallyui/pos';
 
+// Stored Woo lines keep LineTaxLine's rateId and compound (finalize copies { ...tax }).
+type StoredWooOrder = Omit<PosOrder, 'lines'> & { lines: (Omit<PosOrder['lines'][number], 'taxLines'> & {
+  taxLines: (PosOrder['lines'][number]['taxLines'][number] & { rateId?: number; compound?: boolean })[] })[] };
 interface WooBody {
   line_items: { product_id: number; quantity: number; subtotal: string; total: string }[];
   coupon_lines?: { code: string }[];
@@ -115,7 +119,7 @@ describe('inclusive coupon once: captured WooCommerce matrix, 2026-11-12', () =>
     try {
       const { pos_orders: collection } = await db.addCollections({ pos_orders: posOrderCollection() });
       await collection.insert(order);
-      const local = (await collection.findOne(order.id).exec())!.toJSON();
+      const local = (await collection.findOne(order.id).exec())!.toJSON() as StoredWooOrder;
       expect(local.lines.map((line) => line.taxLines)).toEqual(order.lines.map((line) => line.taxLines));
       for (const line of local.lines) for (const tax of line.taxLines) {
         expect(tax, `${mode}/${name}: stored Woo tax metadata`).toMatchObject({
@@ -174,7 +178,7 @@ describe('inclusive coupon once: captured WooCommerce matrix, 2026-11-12', () =>
     try {
       const { pos_orders: collection } = await db.addCollections({ pos_orders: posOrderCollection() });
       await collection.insert(order);
-      const local = (await collection.findOne(order.id).exec())!.toJSON();
+      const local = (await collection.findOne(order.id).exec())!.toJSON() as StoredWooOrder;
       expect(local.lines[0].taxLines).toHaveLength(2);
       expect(local.lines[0].taxLines.every((tax) => tax.compound === true)).toBe(true);
       const result = toWooOrderPayload(envelope, local);
