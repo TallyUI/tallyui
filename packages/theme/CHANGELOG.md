@@ -1,5 +1,11 @@
 # @tallyui/theme
 
+## 3.20.0
+
+### Minor Changes
+
+- 0b34330: Dialog, AlertDialog and NavDrawer backdrops paint the new per-theme `scrim` token (light 28%, dark 50% of a near-black, as WCPOS v2) instead of `bg-black/80` and `bg-black/50` (#779).
+
 ## 3.19.0
 
 ### Patch Changes
