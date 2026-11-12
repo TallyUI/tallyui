@@ -50,6 +50,10 @@ Other `ViewProps` are forwarded to the container.
 
 Each column has a stable `id`, a `header` label and a `render(doc)` function. Optional `flex` controls its width weight (default 1); `sortValue(doc)` enables header sorting. Missing values sort last in either direction.
 
+`align` (`'left'`, `'center'` or `'right'`) places the head and the cells together; the default Price column is right-aligned. `hideHeader` draws no head label while `header` stays the head's accessible name, for an image column.
+
+Heads are one line and 36 px tall; cells are padded `px-3 py-1.5`, WCPOS v2's table.
+
 `defaultProductColumns(traits, context?, { currencySymbol }?)` builds the six default columns. `useDefaultProductColumns({ currencySymbol }?)` memoises them from the provider and requires a `ConnectorProvider`.
 
 Custom columns can render without a provider:
