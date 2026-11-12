@@ -50,13 +50,15 @@ const couponConfigs = new Map<string, woocommerceCoupons.CouponDiscountConfig>(
       excluded_product_categories: [], exclude_sale_items: false }];
   }));
 
-function wooServer(body: WooBody, store: { pricesIncludeTax: boolean }) {
+function wooServer(body: WooBody, store: { pricesIncludeTax: boolean }, context = {
+  rates, taxClassOf: (productId: number) => products.find((product) => product.product_id === productId)!.tax_class,
+}) {
   const precision = woocommerceTax.getRoundingPrecision(2);
   // REST order calculation uses the posted net fields. POS price meta is retained in the body,
   // but is not an input to WC_Order's subtotal/total calculation; validate this against every capture below.
   const lineItems = body.line_items.map(({ product_id, quantity, subtotal, total }) => {
-    const tax_class = products.find((product) => product.product_id === product_id)!.tax_class;
-    const itemRates = rates.filter((rate) => rate.class === tax_class);
+    const tax_class = context.taxClassOf(product_id);
+    const itemRates = context.rates.filter((rate) => rate.class === tax_class);
     const taxOn = (amount: string) => woocommerceTax.calculateTaxes({ amount: Number(amount), rates: itemRates,
       amountIncludesTax: false, dp: 2, perRatePrecision: precision });
     const before = taxOn(subtotal), after = taxOn(total);
@@ -67,8 +69,8 @@ function wooServer(body: WooBody, store: { pricesIncludeTax: boolean }) {
   });
   const replay = woocommerceCoupons.recalculateCoupons({ lineItems, couponLines: body.coupon_lines ?? [],
     couponConfigs, pricesIncludeTax: store.pricesIncludeTax, calcDiscountsSequentially: false,
-    taxRates: rates, productCategories: new Map(), taxRoundAtSubtotal: false, dp: 2 });
-  const totals = woocommerceCoupons.calculateOrderTotals({ ...replay, taxRates: rates,
+    taxRates: context.rates, productCategories: new Map(), taxRoundAtSubtotal: false, dp: 2 });
+  const totals = woocommerceCoupons.calculateOrderTotals({ ...replay, taxRates: context.rates,
     pricesIncludeTax: store.pricesIncludeTax, taxRoundAtSubtotal: false, dp: 2 });
   return { total: Number(totals.total).toFixed(2), discount_total: Number(totals.discount_total).toFixed(2),
     discount_tax: Number(totals.discount_tax).toFixed(2) };
@@ -142,6 +144,54 @@ describe('inclusive coupon once: captured WooCommerce matrix, 2026-11-12', () =>
       console.info(`${mode}/${name}: till=${(order.totalMinor / 100).toFixed(2)}, fixture Woo=${fixture.woo.total}, `
         + `simulated 3.20.0=${old.total}, simulated new=${current.total}`);
       expect(Math.round(Number(current.total) * 100), `${mode}/${name}: server matches till`).toBe(fixture.chargedMinor);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('preserves stored rate order for two compound rates with an inclusive percent coupon', async () => {
+    const compoundRates = [
+      { id: 11, code: 'GB-VAT', label: 'GB-VAT', rate: '20.0000', compound: true,
+        priority: 1, order: 1, shipping: true, class: '' },
+      { id: 12, code: 'GB-SURCHARGE', label: 'GB-SURCHARGE', rate: '2.5000', compound: true,
+        priority: 2, order: 2, shipping: true, class: '' },
+    ];
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+      pricesIncludeTax: true, rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+      getTaxRates: (taxClass) => compoundRates.filter((rate) => rate.class === (taxClass ?? '')),
+      getTaxRatePpm: (taxClass) => compoundRates.filter((rate) => rate.class === (taxClass ?? ''))
+        .reduce((sum, rate) => sum + Math.round(Number(rate.rate) * 10000), 0),
+    }, couponContext: { configs: couponConfigs, couponIds: new Map([['fiveoff', '1'], ['ten', '2']]),
+      productCategories: new Map(), calcDiscountsSequentially: false } });
+    builder.addLine({ productId: '900', name: 'Compound product', quantity: 3,
+      unitPrice: { amount: 1999, currency: 'GBP' }, regularUnitPriceMinor: 1999, taxClass: '' });
+    builder.setCoupons(['ten']);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 8 } });
+    const envelope = toOrderCreateEnvelope(order, 'device-matrix', 1, { maxVersion: 8 });
+    const db = await createRxDatabase({ name: `couponmatrix${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    try {
+      const { pos_orders: collection } = await db.addCollections({ pos_orders: posOrderCollection() });
+      await collection.insert(order);
+      const local = (await collection.findOne(order.id).exec())!.toJSON();
+      expect(local.lines[0].taxLines).toHaveLength(2);
+      expect(local.lines[0].taxLines.every((tax) => tax.compound === true)).toBe(true);
+      const result = toWooOrderPayload(envelope, local);
+      if ('error' in result) throw new Error(result.error.message);
+      const body = result.payload as unknown as WooBody;
+      const simulated = wooServer(body, { pricesIncludeTax: true }, { rates: compoundRates, taxClassOf: () => '' });
+      console.info(`two compound rates: till=${order.totalMinor}, simulated=${Math.round(Number(simulated.total) * 100)}`);
+      expect(Math.round(Number(simulated.total) * 100), `server matches till; posted=${JSON.stringify(body)}`)
+        .toBe(order.totalMinor);
+      const reversedLocal = { ...local, lines: local.lines.map((line) => ({ ...line, taxLines: [...line.taxLines].reverse() })) };
+      const reversed = toWooOrderPayload(envelope, reversedLocal);
+      if ('error' in reversed) throw new Error(reversed.error.message);
+      const reversedBody = reversed.payload as unknown as WooBody;
+      console.info(`two compound rates: subtotal=${body.line_items[0].subtotal}, reversed=${reversedBody.line_items[0].subtotal}`);
+      expect(reversedBody.line_items[0].subtotal).not.toBe(body.line_items[0].subtotal);
+      // £59.97 less surcharge 1.462683 and VAT 9.751220; pins the order, not just a symmetric difference.
+      expect(body.line_items[0].subtotal).toBe('48.756097');
     } finally {
       await db.remove();
     }
