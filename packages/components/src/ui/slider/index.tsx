@@ -19,10 +19,10 @@ const Slider = React.forwardRef<
       )}
       {...props}
     >
-      <SliderPrimitive.Track className="relative h-2 w-full grow overflow-hidden rounded-full bg-secondary">
+      <SliderPrimitive.Track className="relative h-2 w-full grow overflow-hidden rounded-full bg-muted">
         <SliderPrimitive.Range className="absolute h-full bg-primary" />
       </SliderPrimitive.Track>
-      <SliderPrimitive.Thumb className="absolute top-0 -ml-2.5 block h-5 w-5 rounded-full border-2 border-primary bg-background web:ring-offset-background web:transition-colors web:focus-visible:outline-none web:focus-visible:ring-2 web:focus-visible:ring-ring web:focus-visible:ring-offset-2" />
+      <SliderPrimitive.Thumb className="absolute top-0 -ml-2.5 block h-5 w-5 rounded-full border-2 border-primary bg-card web:ring-offset-background web:transition-colors web:focus-visible:outline-none web:focus-visible:ring-2 web:focus-visible:ring-ring web:focus-visible:ring-offset-2" />
     </SliderPrimitive.Root>
   );
 });

@@ -22,7 +22,7 @@ const Switch = React.forwardRef<React.ComponentRef<typeof SwitchPrimitive.Root>,
       ref={ref}
       className={cn(
         `web:peer inline-flex ${s.track} shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent web:transition-colors web:focus-visible:outline-none web:focus-visible:ring-2 web:focus-visible:ring-ring web:focus-visible:ring-offset-2 web:focus-visible:ring-offset-background`,
-        props.checked ? 'bg-primary' : 'bg-input',
+        props.checked ? 'bg-primary' : 'bg-border',
         props.disabled && 'web:cursor-not-allowed opacity-50',
         className,
       )}
