@@ -101,4 +101,10 @@ export interface ListOrdersQuery {
   dateRange?: { after?: string; before?: string };
 }
 
-export interface StoreOrderPage { orders: StoreOrder[]; hasMore: boolean }
+/** One page of an order list: its orders, whether more follow, and how many the whole query matches when the store says. */
+export interface StoreOrderPage {
+  orders: StoreOrder[];
+  hasMore: boolean;
+  /** Every order the query matches across all pages; undefined when the store gives no count. */
+  total?: number;
+}
