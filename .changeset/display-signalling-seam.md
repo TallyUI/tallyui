@@ -1,5 +1,0 @@
----
-'@tallyui/core': minor
----
-
-The second-device customer display's signalling seam (ADR-085 U2, #684, #705). `TallyConnector.displaySignalling` is an optional `DisplaySignalling`: a till side (mint a code, list pending claims with their check codes, confirm or decline, list and forget displays, a signal mailbox, the snapshot post) under a cashier session holding `customer_display.pair` (`DISPLAY_PAIR_CAPABILITY`), and a display side (claim, collect the token once, its own mailbox, the snapshot read) gated by the display's token. Every refusal is a `DisplaySignallingError`. `ServerCapabilities.customerDisplay` carries `/tally/v1/info`'s display advertisement, read by `parseDisplayAdvertisement` with `DEFAULT_ICE_SERVERS`. `rateLimitSource` keys failed claims per source (IPv6 by /64). `@tallyui/core/server` adds `createMemoryDisplaySignalling`, an in-memory reference server, and `displaySignallingContract`, the shared suite each plugin's connector runs against its own routes through a `DisplaySignallingHarness`.

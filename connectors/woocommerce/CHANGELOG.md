@@ -1,5 +1,37 @@
 # @tallyui/connector-woocommerce
 
+## 3.19.0
+
+### Minor Changes
+
+- a3387fc: Customers carry an optional `createdAt`, and the optional connector method `searchCustomersPage` returns a page of a customer search with the store's total (`CustomerPage`); the WooCommerce connector fills both, from `date_created_gmt` and the `X-WP-Total` header (#680).
+- 434c143: order.create version 8 taxes a sale on the customer's address (#722, step 2). Version 8 is version 7 plus `payload.taxAddress` (`'billing'` or `'shipping'`, the address the till matched the rates against) and the customer's `billing` and `shipping` addresses. A till sends 8 only when a sale was taxed on one of the customer's addresses, and never downgrades such a sale: capped below 8, `toOrderCreateEnvelope` throws `UnsupportedOrderVersionError(8, cap)` and the outbox sends it at 8, never at a version whose server would tax it on the base. A sale taxed on the base sends the same bytes as before. The server precheck refuses `taxAddress` or customer addresses below 8, and 8 without `taxAddress`.
+
+  `@tallyui/pos`: `saleTaxContexts(settings, { orderCreateVersion })` re-matches rates by the customer's address only from order.create 8 (`TAX_ADDRESS_ORDER_CREATE_VERSION`); without the option, or below 8, every customer gets the store's context. `finalizeOrder` takes `taxLocation` and stores the tax address with the customer's addresses. `useSale` refuses a customer whose rates differ from the sale's once tender has begun (`CUSTOMER_RETAX_REFUSED`), telling the cashier to cancel the payment and change the customer in the cart, or start a new order. This is an interim: #759 re-taxes the sale on a customer change, as WCPOS v2 does. `pos_orders` moves to schema 12; its migration is the identity, and a schema-11 till opening a schema-12 store finds no orders.
+
+  `@tallyui/connector-woocommerce`: `wooStoreSettings` fills `taxRateTable` whenever the store has a base address and advertises order.create 8 where it advertised 7. `toWooOrderPayload` sends a version-8 sale's tax address as WCPOS's `_woocommerce_pos_tax_based_on` meta, with the customer's billing and shipping addresses.
+
+- f819768: `receiptTemplates()` lists the store's renderable print templates; WooCommerce reads them from the WCPOS templates route and labels them with the `wcpos` data model.
+- 3a6eb07: `SyncContext` takes an optional `fetch`, resolved per request and defaulting to `globalThis.fetch`, so a host can pass a wrapper such as `meteredFetch` to count requests.
+  The WooCommerce connector sends every pull, reconcile, settings, payment-methods, receipt-templates and customers request through `context.fetch` when it is set.
+- 564433e: `listOrders` now filters order history on the server. The connector declares `orderFilters` (`status`, `customerId`, `cashierId`, `storeId`, `createdVia`, `dateRange`, also exported as `WOO_ORDER_FILTERS`) and sends them to WCPOS `wcpos/v2/orders` as `status`, `customer`, `pos_cashier`, `pos_store`, `created_via` and `after`/`before`, with `dates_are_gmt=true` and the bounds converted to WooCommerce's strict whole-second comparison. `registerId` and `paymentMethod`, which WCPOS does not filter on, are refused with `UnsupportedOrderFilterError` before any request instead of being dropped, and an id that is not all digits, or an empty `status` or `createdVia`, resolves an empty page without a request.
+- 5ebdb30: The WooCommerce connector's `paymentMethods` lists the store's POS-enabled payment gateways from WCPOS's `wcpos/v2/payment-methods` route, with money limits and cash rounding in minor units, and falls back to cash and the card terminal on a plugin older than 2.0.0 (#679).
+- be21652: A sale's note reaches the WooCommerce order as its customer note (order.create 7, ADR-083), on stores that take coupon orders; on other stores the till shows the note as not sent.
+- 13708fa: The WooCommerce connector reads the store's tax basis and base tax address (#722, step 1). When the store calculates taxes, `wooStoreSettings` sets `taxBasedOn` from the store's `tax_based_on` in `wcpos/v2/stores` (normalised, so anything other than `base`, `billing` or `shipping` reads as `base`), and `baseTaxAddress` to the same address it already matches rates against (`tax_address` when it has a country, else the `store_*` fields), with each field a string. It leaves `baseTaxAddress` out when neither address has a country, and sets neither field when taxes are off. These fields are for display only. The connector does not fill `taxRateTable` and does not tax by the customer's address, so the rates the cart uses and every amount stay the same. Per-customer taxing comes later, together with an order.create change so that the server agrees.
+
+### Patch Changes
+
+- 369b380: Variable products from WCPOS 1.10.20 and later no longer fail validation in dev builds: a product's stored `meta_data` now keeps only the entries with string values, so object meta such as `_woocommerce_pos_variable_prices` is dropped (#713).
+- Updated dependencies [a3387fc]
+- Updated dependencies [1af7329]
+- Updated dependencies [434c143]
+- Updated dependencies [a15835f]
+- Updated dependencies [f819768]
+- Updated dependencies [2e691f2]
+- Updated dependencies [3a6eb07]
+- Updated dependencies [41aa864]
+  - @tallyui/core@3.19.0
+
 ## 3.18.0
 
 ### Minor Changes

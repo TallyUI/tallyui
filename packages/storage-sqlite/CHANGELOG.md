@@ -1,5 +1,19 @@
 # @tallyui/storage-sqlite
 
+## 3.19.0
+
+### Patch Changes
+
+- Updated dependencies [a3387fc]
+- Updated dependencies [1af7329]
+- Updated dependencies [434c143]
+- Updated dependencies [a15835f]
+- Updated dependencies [f819768]
+- Updated dependencies [2e691f2]
+- Updated dependencies [3a6eb07]
+- Updated dependencies [41aa864]
+  - @tallyui/core@3.19.0
+
 ## 3.18.0
 
 ### Patch Changes
