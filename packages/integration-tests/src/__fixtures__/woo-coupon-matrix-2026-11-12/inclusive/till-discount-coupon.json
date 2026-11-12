@@ -1,0 +1,178 @@
+{
+  "row": "till-discount-coupon",
+  "cart": [
+    {
+      "sku": "COF-FLW",
+      "name": "Flat White",
+      "qty": 3
+    },
+    {
+      "sku": "BAK-MUF",
+      "name": "Blueberry Muffin",
+      "qty": 1
+    }
+  ],
+  "tillDiscount": {
+    "type": "fixed",
+    "amount": "1.37",
+    "scope": "order"
+  },
+  "coupon": "fiveoff",
+  "chargedMinor": 1088,
+  "tillFooter": "Subtotal $17.25 fiveoff \u00d7 -$5.00 Discount \u2212$6.37 incl. Tax 7.25% $0.71 incl. Tax 1.375% $0.14 incl. Tax 2% $0.21 Total $10.88 \u22ee Checkout $10.88",
+  "posted": {
+    "status": "completed",
+    "set_paid": true,
+    "currency": "USD",
+    "payment_method": "pos_cash",
+    "payment_method_title": "Cash",
+    "line_items": [
+      {
+        "product_id": 312,
+        "quantity": 3,
+        "subtotal": "7.834112",
+        "total": "7.834112",
+        "meta_data": [
+          {
+            "key": "_woocommerce_pos_data",
+            "value": "{\"price\":\"4.143333\",\"regular_price\":\"4.50\"}"
+          }
+        ]
+      },
+      {
+        "product_id": 318,
+        "quantity": 1,
+        "subtotal": "1.985604",
+        "total": "1.985604",
+        "meta_data": [
+          {
+            "key": "_woocommerce_pos_data",
+            "value": "{\"price\":\"3.45\",\"regular_price\":\"3.75\"}"
+          }
+        ]
+      }
+    ],
+    "coupon_lines": [
+      {
+        "code": "fiveoff"
+      }
+    ],
+    "meta_data": [
+      {
+        "key": "_woocommerce_pos_uuid",
+        "value": "01a1d05c-0194-75c6-a6ca-cf21cbb7cef8"
+      }
+    ]
+  },
+  "woo": {
+    "id": 401,
+    "currency": "USD",
+    "prices_include_tax": true,
+    "total": "5.88",
+    "total_tax": "0.57",
+    "cart_tax": "0.57",
+    "discount_total": "4.51",
+    "discount_tax": "0.49",
+    "shipping_total": "0.00",
+    "line_items": [
+      {
+        "name": "Flat White",
+        "sku": "COF-FLW",
+        "product_id": 312,
+        "variation_id": 0,
+        "quantity": 3,
+        "tax_class": "",
+        "subtotal": "7.83",
+        "subtotal_tax": "0.85",
+        "total": "4.45",
+        "total_tax": "0.48",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "0.32",
+            "subtotal": "0.57"
+          },
+          {
+            "id": 2,
+            "total": "0.06",
+            "subtotal": "0.11"
+          },
+          {
+            "id": 4,
+            "total": "0.10",
+            "subtotal": "0.17"
+          }
+        ]
+      },
+      {
+        "name": "Blueberry Muffin",
+        "sku": "BAK-MUF",
+        "product_id": 318,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "1.99",
+        "subtotal_tax": "0.21",
+        "total": "0.86",
+        "total_tax": "0.09",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "0.06",
+            "subtotal": "0.14"
+          },
+          {
+            "id": 2,
+            "total": "0.01",
+            "subtotal": "0.03"
+          },
+          {
+            "id": 4,
+            "total": "0.02",
+            "subtotal": "0.04"
+          }
+        ]
+      }
+    ],
+    "tax_lines": [
+      {
+        "rate_id": 1,
+        "rate_code": "US-CA-CA STATE-1",
+        "label": "CA State",
+        "compound": false,
+        "rate_percent": 7.25,
+        "tax_total": "0.38",
+        "shipping_tax_total": "0.00"
+      },
+      {
+        "rate_id": 2,
+        "rate_code": "US-CA-SF DISTRICT-2",
+        "label": "SF District",
+        "compound": false,
+        "rate_percent": 1.375,
+        "tax_total": "0.07",
+        "shipping_tax_total": "0.00"
+      },
+      {
+        "rate_id": 4,
+        "rate_code": "US-CA-COMPOUND TEST-3",
+        "label": "Compound Test",
+        "compound": true,
+        "rate_percent": 2,
+        "tax_total": "0.12",
+        "shipping_tax_total": "0.00"
+      }
+    ],
+    "coupon_lines": [
+      {
+        "code": "fiveoff",
+        "discount": "4.51",
+        "discount_tax": "0.49",
+        "discount_type": "fixed_cart",
+        "nominal_amount": 5,
+        "free_shipping": false
+      }
+    ],
+    "fee_lines": []
+  }
+}

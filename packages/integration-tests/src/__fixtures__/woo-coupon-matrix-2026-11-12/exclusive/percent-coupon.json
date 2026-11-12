@@ -1,0 +1,174 @@
+{
+  "row": "percent-coupon",
+  "cart": [
+    {
+      "sku": "BAK-MUF",
+      "name": "Blueberry Muffin",
+      "qty": 3
+    },
+    {
+      "sku": "COF-FLW",
+      "name": "Flat White",
+      "qty": 1
+    }
+  ],
+  "tillDiscount": null,
+  "coupon": "ten",
+  "chargedMinor": 1571,
+  "tillFooter": "Subtotal $15.75 ten \u00d7 -$1.57 Discount \u2212$1.57 Tax 7.25% $1.02 Tax 1.375% $0.20 Tax 2% $0.31 Total $15.71 \u22ee Checkout $15.71",
+  "posted": {
+    "status": "completed",
+    "set_paid": true,
+    "currency": "USD",
+    "payment_method": "pos_cash",
+    "payment_method_title": "Cash",
+    "line_items": [
+      {
+        "product_id": 318,
+        "quantity": 3,
+        "subtotal": "11.25",
+        "total": "11.25",
+        "meta_data": [
+          {
+            "key": "_woocommerce_pos_data",
+            "value": "{\"price\":\"3.75\",\"regular_price\":\"3.75\"}"
+          }
+        ]
+      },
+      {
+        "product_id": 312,
+        "quantity": 1,
+        "subtotal": "4.50",
+        "total": "4.50",
+        "meta_data": [
+          {
+            "key": "_woocommerce_pos_data",
+            "value": "{\"price\":\"4.50\",\"regular_price\":\"4.50\"}"
+          }
+        ]
+      }
+    ],
+    "coupon_lines": [
+      {
+        "code": "ten"
+      }
+    ],
+    "meta_data": [
+      {
+        "key": "_woocommerce_pos_uuid",
+        "value": "01a1d06b-667f-7607-9318-e9777cf4dab8"
+      }
+    ]
+  },
+  "woo": {
+    "id": 409,
+    "currency": "USD",
+    "prices_include_tax": false,
+    "total": "15.71",
+    "total_tax": "1.53",
+    "cart_tax": "1.53",
+    "discount_total": "1.57",
+    "discount_tax": "0.17",
+    "shipping_total": "0.00",
+    "line_items": [
+      {
+        "name": "Blueberry Muffin",
+        "sku": "BAK-MUF",
+        "product_id": 318,
+        "variation_id": 0,
+        "quantity": 3,
+        "tax_class": "",
+        "subtotal": "11.25",
+        "subtotal_tax": "1.21",
+        "total": "10.13",
+        "total_tax": "1.09",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "0.73",
+            "subtotal": "0.82"
+          },
+          {
+            "id": 2,
+            "total": "0.14",
+            "subtotal": "0.15"
+          },
+          {
+            "id": 4,
+            "total": "0.22",
+            "subtotal": "0.24"
+          }
+        ]
+      },
+      {
+        "name": "Flat White",
+        "sku": "COF-FLW",
+        "product_id": 312,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "4.50",
+        "subtotal_tax": "0.49",
+        "total": "4.05",
+        "total_tax": "0.44",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "0.29",
+            "subtotal": "0.33"
+          },
+          {
+            "id": 2,
+            "total": "0.06",
+            "subtotal": "0.06"
+          },
+          {
+            "id": 4,
+            "total": "0.09",
+            "subtotal": "0.10"
+          }
+        ]
+      }
+    ],
+    "tax_lines": [
+      {
+        "rate_id": 1,
+        "rate_code": "US-CA-CA STATE-1",
+        "label": "CA State",
+        "compound": false,
+        "rate_percent": 7.25,
+        "tax_total": "1.02",
+        "shipping_tax_total": "0.00"
+      },
+      {
+        "rate_id": 2,
+        "rate_code": "US-CA-SF DISTRICT-2",
+        "label": "SF District",
+        "compound": false,
+        "rate_percent": 1.375,
+        "tax_total": "0.20",
+        "shipping_tax_total": "0.00"
+      },
+      {
+        "rate_id": 4,
+        "rate_code": "US-CA-COMPOUND TEST-3",
+        "label": "Compound Test",
+        "compound": true,
+        "rate_percent": 2,
+        "tax_total": "0.31",
+        "shipping_tax_total": "0.00"
+      }
+    ],
+    "coupon_lines": [
+      {
+        "code": "ten",
+        "discount": "1.57",
+        "discount_tax": "0.17",
+        "discount_type": "percent",
+        "nominal_amount": 10,
+        "free_shipping": false
+      }
+    ],
+    "fee_lines": []
+  }
+}

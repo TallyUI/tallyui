@@ -1,0 +1,190 @@
+{
+  "row": "mixed",
+  "cart": [
+    {
+      "sku": "COF-FLW",
+      "name": "Flat White",
+      "qty": 1
+    },
+    {
+      "sku": "MER-TOT",
+      "name": "Tote Bag",
+      "qty": 1
+    },
+    {
+      "sku": "BAK-CRO",
+      "name": "Croissant",
+      "qty": 1
+    }
+  ],
+  "tillDiscount": {
+    "type": "fixed",
+    "amount": "1.37",
+    "scope": "order"
+  },
+  "coupon": null,
+  "chargedMinor": 2227,
+  "tillFooter": "Subtotal $23.00 Discount \u2212$1.37 Tax 5.5% $0.18 Tax 0% $0.00 Tax 7.25% $0.31 Tax 1.375% $0.06 Tax 2% $0.09 Total $22.27 \u22ee Checkout $22.27",
+  "posted": {
+    "status": "completed",
+    "set_paid": true,
+    "currency": "USD",
+    "payment_method": "pos_cash",
+    "payment_method_title": "Cash",
+    "line_items": [
+      {
+        "product_id": 312,
+        "quantity": 1,
+        "subtotal": "4.23",
+        "total": "4.23"
+      },
+      {
+        "product_id": 326,
+        "quantity": 1,
+        "subtotal": "14.11",
+        "total": "14.11"
+      },
+      {
+        "product_id": 316,
+        "quantity": 1,
+        "subtotal": "3.29",
+        "total": "3.29"
+      }
+    ],
+    "meta_data": [
+      {
+        "key": "_woocommerce_pos_uuid",
+        "value": "01a1d06a-a673-7900-aa8a-1f6ce929d75f"
+      }
+    ]
+  },
+  "woo": {
+    "id": 408,
+    "currency": "USD",
+    "prices_include_tax": false,
+    "total": "22.27",
+    "total_tax": "0.64",
+    "cart_tax": "0.64",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "0.00",
+    "line_items": [
+      {
+        "name": "Flat White",
+        "sku": "COF-FLW",
+        "product_id": 312,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "4.23",
+        "subtotal_tax": "0.46",
+        "total": "4.23",
+        "total_tax": "0.46",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "0.31",
+            "subtotal": "0.31"
+          },
+          {
+            "id": 2,
+            "total": "0.06",
+            "subtotal": "0.06"
+          },
+          {
+            "id": 4,
+            "total": "0.09",
+            "subtotal": "0.09"
+          }
+        ]
+      },
+      {
+        "name": "Tote Bag",
+        "sku": "MER-TOT",
+        "product_id": 326,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "zero-rate",
+        "subtotal": "14.11",
+        "subtotal_tax": "0.00",
+        "total": "14.11",
+        "total_tax": "0.00",
+        "taxes": [
+          {
+            "id": 5,
+            "total": "0.00",
+            "subtotal": "0.00"
+          }
+        ]
+      },
+      {
+        "name": "Croissant",
+        "sku": "BAK-CRO",
+        "product_id": 316,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "reduced-rate",
+        "subtotal": "3.29",
+        "subtotal_tax": "0.18",
+        "total": "3.29",
+        "total_tax": "0.18",
+        "taxes": [
+          {
+            "id": 3,
+            "total": "0.18",
+            "subtotal": "0.18"
+          }
+        ]
+      }
+    ],
+    "tax_lines": [
+      {
+        "rate_id": 1,
+        "rate_code": "US-CA-CA STATE-1",
+        "label": "CA State",
+        "compound": false,
+        "rate_percent": 7.25,
+        "tax_total": "0.31",
+        "shipping_tax_total": "0.00"
+      },
+      {
+        "rate_id": 2,
+        "rate_code": "US-CA-SF DISTRICT-2",
+        "label": "SF District",
+        "compound": false,
+        "rate_percent": 1.375,
+        "tax_total": "0.06",
+        "shipping_tax_total": "0.00"
+      },
+      {
+        "rate_id": 4,
+        "rate_code": "US-CA-COMPOUND TEST-3",
+        "label": "Compound Test",
+        "compound": true,
+        "rate_percent": 2,
+        "tax_total": "0.09",
+        "shipping_tax_total": "0.00"
+      },
+      {
+        "rate_id": 5,
+        "rate_code": "US-CA-ZERO-1",
+        "label": "Zero",
+        "compound": false,
+        "rate_percent": 0,
+        "tax_total": "0.00",
+        "shipping_tax_total": "0.00"
+      },
+      {
+        "rate_id": 3,
+        "rate_code": "US-CA-CA REDUCED-1",
+        "label": "CA Reduced",
+        "compound": false,
+        "rate_percent": 5.5,
+        "tax_total": "0.18",
+        "shipping_tax_total": "0.00"
+      }
+    ],
+    "coupon_lines": [],
+    "fee_lines": []
+  }
+}
