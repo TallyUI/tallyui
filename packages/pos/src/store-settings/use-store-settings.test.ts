@@ -27,7 +27,7 @@ describe('useStoreSettings', () => {
 
     expect(result.current).toEqual({ state: 'loading' });
     await act(async () => pending.resolve(settings));
-    expect(result.current).toEqual({ state: 'ready', settings, choice: undefined });
+    expect(result.current).toEqual({ state: 'ready', settings, choice: undefined, refresh: expect.any(Function) });
   });
 
   it('is choose, then choose(choice) resolves to ready and saves the pick', async () => {
@@ -45,7 +45,7 @@ describe('useStoreSettings', () => {
     expect(current.choices).toEqual(choices);
 
     act(() => current.choose({ country: 'de' }));
-    await waitFor(() => expect(result.current).toEqual({ state: 'ready', settings, choice: { country: 'de' } }));
+    await waitFor(() => expect(result.current).toEqual({ state: 'ready', settings, choice: { country: 'de' }, refresh: expect.any(Function) }));
     expect(saveChoice).toHaveBeenCalledExactlyOnceWith({ country: 'de' });
   });
 
@@ -87,7 +87,7 @@ describe('useStoreSettings', () => {
     expect(result.current).toEqual({ state: 'loading' });
 
     await act(async () => second.resolve(settings));
-    expect(result.current).toEqual({ state: 'ready', settings, choice: undefined });
+    expect(result.current).toEqual({ state: 'ready', settings, choice: undefined, refresh: expect.any(Function) });
   });
 
   it('is unsupported when the connector has no storeSettings', async () => {

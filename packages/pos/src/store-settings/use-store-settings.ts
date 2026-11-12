@@ -6,7 +6,13 @@ import type { ResolveStoreSettingsOptions } from './resolve-store-settings';
 
 export type StoreSettingsState =
   | { state: 'loading' }
-  | { state: 'ready'; settings: StoreSettings; choice?: StoreSettingsChoice }
+  | { state: 'ready'; settings: StoreSettings; choice?: StoreSettingsChoice;
+      /** Re-reads the store's settings and tax rounding in place, for a "sync" button; the till stays `ready` meanwhile. A call while one runs is ignored. */
+      refresh: () => void;
+      /** True while a refresh runs; `settings` are still the ones in hand. */
+      refreshing?: boolean;
+      /** Why the last refresh failed; `settings` are the ones from before it. Cleared when the next refresh starts. */
+      refreshError?: unknown }
   | { state: 'choose'; choices: StoreSettingsChoices; initial?: StoreSettingsChoice; choose: (choice: StoreSettingsChoice) => void }
   | { state: 'error'; error: unknown; retry: () => void; nextRetryAt?: number }
   | { state: 'unsupported' };
@@ -60,6 +66,7 @@ function readTaxRounding({ connector, context }: ResolveStoreSettingsOptions): P
  * if (store.state === 'choose')
  *   return <StoreSettingsChoiceScreen choices={store.choices} initial={store.initial} onSubmit={store.choose} />;
  * if (store.state !== 'ready') return <Loading />; // or an error with store.retry, or the app's own config when unsupported
+ * // Use store.refresh for a sync button.
  * const syncContext = withPricingContext(context, store.settings); // for the replication
  * return <TaxProvider {...taxProviderProps(store.settings)}>{children}</TaxProvider>;
  * ```
@@ -77,19 +84,26 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
   // arriving after a store switch made that request stale is ignored, so it can't apply an old
   // pick to the new store. `known`, when given, is the rounding that request already read, so
   // a pick doesn't read it again.
-  const resolve = useCallback((choice?: StoreSettingsChoice, from?: number, known?: Promise<TaxRounding | undefined>) => {
+  const resolve = useCallback((choice?: StoreSettingsChoice, from?: number, known?: Promise<TaxRounding | undefined>, previous?: Extract<StoreSettingsState, { state: 'ready' }>) => {
     if (from !== undefined && from !== requestRef.current) return;
     clearTimeout(retryTimerRef.current);
     const request = ++requestRef.current;
     const current = () => request === requestRef.current;
-    setState(LOADING);
+    const ready = (value: Omit<Extract<StoreSettingsState, { state: 'ready' }>, 'state' | 'refresh'>) => {
+      const next: Extract<StoreSettingsState, { state: 'ready' }> = { state: 'ready', ...value, refresh: () => resolve(value.choice, request, undefined, next) };
+      return next;
+    };
+    if (previous) {
+      const { refreshError: _error, ...refreshing } = previous;
+      setState({ ...refreshing, refreshing: true });
+    } else setState(LOADING);
     const rounding = known ?? readTaxRounding(optionsRef.current);
     Promise.all([resolveStoreSettings(optionsRef.current, choice), rounding]).then(
       ([result, taxRounding]) => {
         if (!current()) return;
-        retryDelayRef.current = INITIAL_RETRY_MS;
+        if (!previous) retryDelayRef.current = INITIAL_RETRY_MS;
         if (result.status === 'ready')
-          setState({ state: 'ready', settings: taxRounding ? { ...result.settings, taxRounding } : result.settings, choice: result.choice });
+          setState(ready({ settings: taxRounding ? { ...result.settings, taxRounding } : result.settings, choice: result.choice }));
         else if (result.status === 'choose')
           setState({ state: 'choose', choices: result.choices, initial: result.initial, choose: (pick) => resolve(pick, request, rounding) });
         else setState({ state: 'unsupported' });
@@ -97,6 +111,10 @@ export function useStoreSettings(options: ResolveStoreSettingsOptions): StoreSet
       // A retry keeps the choice that failed: a new pick is saved only once it resolves.
       (error: unknown) => {
         if (!current()) return;
+        if (previous) {
+          setState(ready({ settings: previous.settings, choice: previous.choice, refreshError: error }));
+          return;
+        }
         const retry = () => resolve(choice, request);
         if (error instanceof StoreCapabilitiesUnavailableError) {
           const delay = retryDelayRef.current;
