@@ -6208,3 +6208,29 @@ interface OrderCreatePayload {
   `packages/pos/src/tax/sale-tax-contexts.test.ts`, `packages/pos/src/pos-order/migration.test.ts`,
   `packages/integration-tests/src/pos-orders-open-sqlite.test.ts`,
   `packages/integration-tests/src/woo-tax-address-parity.test.ts`.
+
+## ADR-087 Appearance: themes, icon sets and font sets (deferred)
+
+- **Date:** 2026-11-12 · **Status:** Deferred (front desk ruling on Tally Woo rows A12/D5, 2026-11-12) · **Relates
+  to:** ADR-084 (v2 parity)
+- **Context:**
+  - WCPOS v2's Appearance settings offer a theme (light, dark, ocean, sunset, monochrome, paper, warm, bold, market;
+    monorepo `apps/main/global.css:341-1353`, `packages/components/src/lib/themes.ts:56+`), a font set (auto, system,
+    instrument, grotesk, fraunces, manrope; `themes.ts:6-31`) and an icon set (auto, tabler, hugeicons, phosphor;
+    `packages/components/src/icon/sets.ts:7-11`, where auto follows the theme through `THEME_ICON_SET`,
+    `themes.ts:163`).
+  - TallyUI already has v2's scale (`auto | compact | regular | spacious`: `packages/theme/src/scale.ts`,
+    `ScaleProvider`, the Display settings row), and light and dark token sets in `packages/theme/src/tokens.css`.
+- **Decision:**
+  1. None of this is built in the current gap round. Rows A12 and D5 count as "deferred: ADR", not open gaps.
+  2. This ADR is written in full after the functional rows (selling, payments, refunds, reports) reach parity.
+  3. Its order is fixed now: theme tokens first (the nine v2 themes as token sets over the existing scale system),
+     the icon-set abstraction second, font sets last (they carry a loading cost).
+  4. From now on no component hard-codes an icon library import, so the later abstraction stays cheap. Icons go
+     through `packages/components/src/ui/icon` (`createSvgIcon`).
+- **Today's icon imports (2026-11-12):** no package under `packages/` imports an icon library; every component icon is
+  an inline path through `createSvgIcon` (`packages/components/src/ui/icon/*`, `register/register-side-sheet.tsx`).
+  The one library import is `lucide-react` in the docs site (`apps/web/package.json`), which is not a POS surface
+  and is outside this rule.
+- **Consequences:** apps keep the light and dark tokens until the ADR lands; a consumer that wants a v2 theme sooner
+  overrides the tokens in its own CSS.
