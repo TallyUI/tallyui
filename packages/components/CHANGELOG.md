@@ -1,5 +1,29 @@
 # @tallyui/components
 
+## 3.20.0
+
+### Minor Changes
+
+- e4fb919: `CartFoot`'s Checkout is at least 56 px tall (`min-h-14`) and its ⋮ is 44 × 44 px (`h-11 w-11`), WCPOS v2's sizes (#766).
+- 8010117: `Cart` draws its totals and foot at WCPOS v2's inset (8 px in, 8 px apart), and `CartPanel` takes a `footerClassName` for its footer's wrapper (#765).
+- 845b12f: `CartTotal` and `Cart` take `showTotal` (default `true`) so a v2-style cart can leave out the Total row, and the Total row is `font-semibold` instead of `font-bold`, as WCPOS v2 (#781).
+- 378dcc6: `ProductTable` columns take `align` and `hideHeader`, heads are one line and 36 px tall, cells are padded `px-3 py-1.5`, and the default Price column is right-aligned, matching WCPOS v2's table (#768).
+- 0b34330: Dialog, AlertDialog and NavDrawer backdrops paint the new per-theme `scrim` token (light 28%, dark 50% of a near-black, as WCPOS v2) instead of `bg-black/80` and `bg-black/50` (#779).
+- 4244a8d: `SearchInput` is 44 px tall (`h-11`), WCPOS v2's search height, instead of sizing itself by padding (#767).
+- 7896999: Switch's off track paints `bg-border` and Slider's track `bg-muted` with a `bg-card` thumb, WCPOS v2's tones, instead of `bg-input`, `bg-secondary` and `bg-background` (#780).
+
+### Patch Changes
+
+- Updated dependencies [6b16ac6]
+- Updated dependencies [749894f]
+- Updated dependencies [0b34330]
+- Updated dependencies [2879bfd]
+- Updated dependencies [5f3475b]
+  - @tallyui/pos@3.20.0
+  - @tallyui/core@3.20.0
+  - @tallyui/theme@3.20.0
+  - @tallyui/primitives@3.20.0
+
 ## 3.19.0
 
 ### Minor Changes

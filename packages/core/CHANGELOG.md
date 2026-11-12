@@ -1,5 +1,12 @@
 # @tallyui/core
 
+## 3.20.0
+
+### Minor Changes
+
+- 749894f: `StoreOrderPage` gains an optional `total`, every order the query matches, and the WooCommerce connector fills it from `X-WP-Total`, for v2's "Showing N of M" (#769).
+- 5f3475b: `StoreSettings` gains `taxClasses`, each tax class's slug and display name, and the WooCommerce connector fills it from `taxes/classes`, so a renamed class shows its WooCommerce name (#770).
+
 ## 3.19.0
 
 ### Minor Changes

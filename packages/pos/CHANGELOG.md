@@ -1,5 +1,18 @@
 # @tallyui/pos
 
+## 3.20.0
+
+### Minor Changes
+
+- 2879bfd: `useStoreSettings`'s `ready` state gains `refresh()`, which re-reads the store's settings in place for v2's tax sync button, with `refreshing` and `refreshError` (#771).
+
+### Patch Changes
+
+- 6b16ac6: order.create v4+ sends the right tax-exclusive line discount for a tax-inclusive line that has a till discount and a store-priced coupon; 3.19.0 took the tax after the coupon (#786).
+- Updated dependencies [749894f]
+- Updated dependencies [5f3475b]
+  - @tallyui/core@3.20.0
+
 ## 3.19.0
 
 ### Minor Changes
