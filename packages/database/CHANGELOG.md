@@ -1,5 +1,26 @@
 # @tallyui/database
 
+## 3.19.0
+
+### Minor Changes
+
+- 98f7dfd: A local `request_metrics` collection keeps one row per hour, and `persistRequestMetrics` hydrates a request-metrics counter from it, writes the changed hours every 5 minutes and on `stop()`, and deletes the hours that fall out of the newest 48 (#683).
+- 3e33d02: Hourly request metrics ported from WCPOS v2: `createRequestMetrics` keeps the newest 48 hourly buckets of requests, bytes, durations, failures and server load, and `meteredFetch` wraps a `fetch` so each request is recorded.
+- 6adf1c5: Sync cadence presets (Eco, Balanced, Realtime, ported from WCPOS v2) and a device-local `sync_cadence` collection that holds the chosen profile, with `readSyncCadence`, `syncCadence$`, `setSyncCadence` and `resetSyncCadence`.
+- b3f790b: `startSyncCadence` is an opt-in runner that calls `reSync()` on its targets on a jittered timer set by the sync cadence profile, and `startReplication` takes an optional `pullBatchSize` that overrides the adapter's pull page size (#683).
+
+### Patch Changes
+
+- Updated dependencies [a3387fc]
+- Updated dependencies [1af7329]
+- Updated dependencies [434c143]
+- Updated dependencies [a15835f]
+- Updated dependencies [f819768]
+- Updated dependencies [2e691f2]
+- Updated dependencies [3a6eb07]
+- Updated dependencies [41aa864]
+  - @tallyui/core@3.19.0
+
 ## 3.18.0
 
 ### Patch Changes

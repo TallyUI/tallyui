@@ -1,5 +1,0 @@
----
-'@tallyui/pos': minor
----
-
-The sale taxes by the customer's address (#722). `saleTaxContexts(settings)` returns `useSale`'s new `taxContextFor` option: the tax context for a customer's address as WooCommerce's "Calculate tax based on" picks it, from `taxRateTable`, cached so that customers matching the same rates share one context (the store's own context for everyone without `taxRateTable` and `baseTaxAddress`). With it, each new sale and each resumed sale is taxed for its customer, and `setCustomer` re-taxes a cart whose new customer moves the rates, keeping its order id, lines, discounts, fees, shipping, note and coupons; a sale in tender, on its receipt or holding captured or moving money keeps its rates, as in WCPOS v2, and a customer set during tender is taxed for when `cancelTender()` brings the cart back. `sale.taxLocation` reports the address used, with `hasCustomer`. `CustomerSummary` gains optional `billing` and `shipping` addresses, kept on the open sale and its draft and never sent. `createTaxContext(props)` builds `TaxProvider`'s context outside React.
