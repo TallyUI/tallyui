@@ -16,6 +16,8 @@ export interface CartPanelProps<T> extends Omit<VStackProps, 'children'> {
   afterItems?: ReactNode;
   /** Footer slot (e.g. totals, checkout button) */
   footer?: ReactNode;
+  /** Classes for the footer's wrapper (default `border-t border-border px-3 py-2`). */
+  footerClassName?: string;
   /** Content shown when items is empty */
   emptyState?: ReactNode;
   className?: string;
@@ -51,6 +53,7 @@ export function CartPanel<T>({
   header,
   afterItems,
   footer,
+  footerClassName,
   emptyState,
   className,
   ...props
@@ -72,7 +75,7 @@ export function CartPanel<T>({
         {afterItems}
       </ScrollView>
 
-      {footer && <View className="border-t border-border px-3 py-2">{footer}</View>}
+      {footer && <View className={cn('border-t border-border px-3 py-2', footerClassName)}>{footer}</View>}
     </VStack>
   );
 }
