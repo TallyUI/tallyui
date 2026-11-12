@@ -1,5 +1,5 @@
 // ADR-073; M3-spike-paid-push.md proves paid order pushes against WCPOS 1.10.20.
-import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
+import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, woocommerceTax, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
 
 export type WooTransportOutcome =
   | { kind: 'results'; results: CommandResult[] }
@@ -32,9 +32,22 @@ export function wooMinorFromDecimal(text: string, currency: string): number | un
 }
 
 export interface WooLocalOrder {
-  lines: ReadonlyArray<{ id: string; netMicros?: string; /** The line's discount in its own tax mode (gross when inclusive), as stored. */ discountMinor?: number }>;
+  lines: ReadonlyArray<{ id: string; netMicros?: string; /** The line's discount in its own tax mode (gross when inclusive), as stored. */ discountMinor?: number;
+    taxLines?: ReadonlyArray<{ rateId?: number; compound?: boolean; ratePpm: number }> }>;
   fees?: ReadonlyArray<{ id: string; netMicros?: string }>;
   shipping?: ReadonlyArray<{ id: string; netMicros?: string }>;
+}
+
+// Match woocommerceLine's pre-coupon net calculation exactly (ADR-076).
+function preCouponNetMicros(minor: bigint, digits: number, stored: WooLocalOrder['lines'][number] | undefined): string | undefined {
+  if (!stored || stored.taxLines?.some((tax) => typeof tax.rateId !== 'number' || typeof tax.compound !== 'boolean')) return undefined;
+  const factor = 10 ** digits, precision = woocommerceTax.getRoundingPrecision(digits);
+  const input = { amount: Number(minor) / factor, rates: (stored.taxLines ?? []).map((tax, index) => ({
+    id: tax.rateId!, rate: String(tax.ratePpm / 10000), compound: tax.compound!, priority: index, order: index,
+  })), amountIncludesTax: true, dp: digits, perRatePrecision: precision };
+  const result = woocommerceTax.calculateTaxes(input);
+  const net = woocommerceTax.roundHalfUp(input.amount - result.total, precision);
+  return String(Math.round(net * factor * 1e6));
 }
 
 // Repeated until stable so no removal can join a new tag (CodeQL js/incomplete-multi-character-sanitization).
@@ -119,6 +132,11 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
         ? local?.lines.find((stored) => stored.id === line.clientLineId)?.discountMinor : line.discountMinor ?? 0;
       if (discount === undefined) return { error: { code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } };
       const quantity = BigInt(line.quantity), minor = BigInt(line.unitPriceMinor) * quantity - BigInt(discount);
+      if (line.taxInclusive ?? p.pricesIncludeTax) {
+        const net = inclusiveNet(preCouponNetMicros(minor, digits, local?.lines.find((stored) => stored.id === line.clientLineId)), line.clientLineId);
+        if (typeof net !== 'string') return net;
+        subtotal = total = net;
+      }
       const divisor = quantity * 10n ** BigInt(digits), micros = (minor * 1000000n * 2n + divisor) / (divisor * 2n);
       price = minor % quantity === 0n ? major(Number(minor / quantity))
         : `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;

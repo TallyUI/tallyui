@@ -42,6 +42,50 @@ describe('wooMinorFromDecimal', () => {
 
 describe('createWooCommandTransport', () => {
   describe('coupon orders', () => {
+    function inclusiveCouponOrder() {
+      const envelope = order();
+      envelope.version = 6;
+      envelope.payload.currency = 'USD';
+      envelope.payload.pricesIncludeTax = true;
+      envelope.payload.lines = [{ clientLineId: 'flat-white', variantId: '312', unitPriceMinor: 450, quantity: 3 }];
+      envelope.payload.coupons = [{ code: 'fiveoff', couponId: '1', discountMinor: 451, discountTaxMinor: 49 }];
+      const local: WooLocalOrder = { lines: [{ id: 'flat-white', netMicros: '879983800', discountMinor: 0, taxLines: [
+        { rateId: 1, compound: false, ratePpm: 72500 }, { rateId: 2, compound: false, ratePpm: 13750 },
+        { rateId: 4, compound: true, ratePpm: 20000 },
+      ] }] };
+      return { envelope, local };
+    }
+
+    it.each([true, false])('posts the inclusive net before coupons only with coupons=%s', (coupons) => {
+      const { envelope, local } = inclusiveCouponOrder();
+      if (!coupons) delete envelope.payload.coupons;
+      // woocommerceLine: $13.50 gross, 7.25% + 1.375% then 2% compound;
+      // subtract its six-decimal rate taxes and roundHalfUp(6) => $12.184391.
+      const expected = coupons ? '12.184391' : '8.799838';
+      expect(toWooOrderPayload(envelope, local)).toMatchObject({ payload: { line_items: [
+        { subtotal: expected, total: expected },
+      ] } });
+    });
+
+    it.each(['rateId', 'compound', 'line'] as const)('refuses an inclusive coupon line missing stored %s', (missing) => {
+      const { envelope, local } = inclusiveCouponOrder();
+      if (missing === 'line') local.lines = [];
+      else delete local.lines[0].taxLines![0][missing];
+      expect(toWooOrderPayload(envelope, local)).toEqual({ error: { code: 'unsupported_tax_mode',
+        message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till.",
+      } });
+    });
+
+    it('keeps exclusive coupon line bytes without stored tax metadata', () => {
+      const { envelope } = inclusiveCouponOrder();
+      envelope.payload.pricesIncludeTax = false;
+      expect(toWooOrderPayload(envelope)).toMatchObject({ payload: { line_items: [
+        { product_id: 312, quantity: 3, subtotal: '13.50', total: '13.50', meta_data: [
+          { key: '_woocommerce_pos_data', value: '{"price":"4.50","regular_price":"4.50"}' },
+        ] },
+      ] } });
+    });
+
     const couponEnvelope = order();
     couponEnvelope.version = 6;
     Object.assign(couponEnvelope.payload, { subtotalMinor: 2100, discountMinor: 100, totalMinor: 1750,

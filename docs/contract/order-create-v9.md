@@ -64,6 +64,25 @@ amount after everything. Each coupon's figures are apportioned so its sums land 
 so a line's result can differ from the till's own exact figure by that apportionment's rounding. The till PR's tests
 measure and bound that difference.
 
+**A coupon is taken off once.** Added on 2026-11-12 after 3.20.0 applied WooCommerce coupons twice on inclusive
+stores (#792). A server does exactly one of two things:
+- **It writes the per-line amounts.** It starts each line from `netA − lines[i].discountMinor` and subtracts each
+  coupon's `lines` entry once.
+- **It recomputes coupons itself from `coupons[].code`.** It starts each line from the same pre-coupon amount and
+  ignores `lines`. WooCommerce's `recalculate_coupons` does this.
+
+In both cases, no amount it starts a line from already has a coupon taken off. The check is the order total: the
+server's stored total equals the payload's `totalMinor`.
+
+**WooCommerce mapping.** The rule binds the connectors too, and the till's stored figures make it easy to break.
+- The till's stored line `netMicros` is after coupons (it is what the till charged), so it is not a pre-coupon amount.
+- WooCommerce orders never go at 9: its replay coupons have no `lines` (see "When the till sends 9").
+- The WooCommerce connector posts `coupon_lines` and lets WooCommerce apply them. On a tax-inclusive line it posts the
+  WooCommerce net of the line's pre-coupon gross (`unitPriceMinor × quantity − discountMinor`), worked out from the
+  line's stored rates, never the stored `netMicros`.
+- Since 3.20.1 the matrix test (`packages/integration-tests/src/woo-inclusive-coupon-matrix.test.ts`) checks this
+  against real WooCommerce orders.
+
 ## How the till apportions (normative, so two implementations agree)
 
 For coupon *k*, the till takes each line's exact change in micros (millionths of a minor unit) when *k* applies on top
