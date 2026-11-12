@@ -106,7 +106,7 @@ export function NavDrawer({ open, onOpenChange, items, activeId, onNavigate, hea
         <Pressable
           testID={`${testID}-backdrop`}
           accessibilityLabel="Close menu"
-          className="flex-1 bg-black/50"
+          className="flex-1 bg-scrim"
           onPress={close}
         />
       </Animated.View>

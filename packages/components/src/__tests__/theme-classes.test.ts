@@ -86,6 +86,20 @@ it('bordered controls fill with the card', () => {
   }
 });
 
+it('paints modal backdrops with the scrim token', () => {
+  const classes = [
+    readFileSync(join(root, 'ui/dialog/index.tsx'), 'utf8').match(/<DialogPrimitive\.Overlay[\s\S]*?cn\(\s*'([^']*)'/)?.[1],
+    readFileSync(join(root, 'ui/alert-dialog/index.tsx'), 'utf8').match(/<AlertDialogPrimitive\.Overlay[\s\S]*?cn\(\s*'([^']*)'/)?.[1],
+    readFileSync(join(root, 'shell/nav-drawer.tsx'), 'utf8').match(/<Pressable\b[^>]*-backdrop[^>]*className="([^"]*)"/)?.[1],
+  ];
+  for (const value of classes) {
+    expect(value).toMatch(/\bbg-scrim\b/);
+    expect(value).not.toMatch(/bg-black/);
+  }
+  expect(sources.filter(({ file }) => file.startsWith('packages/components/src/ui/'))
+    .filter(({ source }) => /bg-black\/\d+/.test(source)).map(({ file }) => file)).toEqual([]);
+});
+
 it('has no undefined danger classes', () => {
   expect(sources.filter(({ source }) => /\b(bg|text|border)-danger\b/.test(source)).map(({ file }) => file)).toEqual([]);
 });

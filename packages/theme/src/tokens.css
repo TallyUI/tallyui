@@ -53,6 +53,9 @@
   --color-input: #d1d5db;
   --color-ring: #5b5ef0;
 
+  /* Scrim (modal backdrops) */
+  --color-scrim: #14161b47;
+
   /* Commerce */
   --color-price: #047857;
   --color-sale: #dc2626;
@@ -109,6 +112,9 @@
     --color-input: #d1d5db;
     --color-ring: #5b5ef0;
 
+    /* Scrim (modal backdrops) */
+    --color-scrim: #14161b47;
+
     /* Commerce */
     --color-price: #047857;
     --color-sale: #dc2626;
@@ -163,6 +169,9 @@
     --color-border: #3d444d;
     --color-input: #636c76;
     --color-ring: #818cf8;
+
+    /* Scrim (modal backdrops) */
+    --color-scrim: #00000280;
 
     /* Commerce */
     --color-price: #3fb950;
