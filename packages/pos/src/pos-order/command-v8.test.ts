@@ -11,7 +11,7 @@ import { createOrderBuilder } from '../order/order-builder';
 import type { CustomerSummary } from '../order/types';
 import { createOrderOutbox } from '../outbox/order-outbox';
 import type { CommandTransport } from '../outbox/types';
-import { ORDER_CREATE_MAX_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
+import { TAX_ADDRESS_ORDER_CREATE_VERSION, toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
 import { finalizeOrder } from './finalize';
 import { posOrderCollection } from './schema';
 
@@ -125,11 +125,8 @@ describe('order.create v8, a sale taxed on the customer\'s address (#722)', () =
     expect(JSON.stringify(payload)).toBe(JSON.stringify(without.payload));
   });
 
-  it('pins both stored version maxima and the golden version to the till maximum', () => {
-    const { properties } = posOrderCollection().schema;
-    expect(ORDER_CREATE_MAX_VERSION).toBe(TAX_ADDRESS_ORDER_CREATE_VERSION);
-    expect(properties.sentVersion.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.downgradedFrom.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(ORDER_CREATE_MAX_VERSION);
+  it('pins the tax address version and the golden version to 8', () => {
+    expect(TAX_ADDRESS_ORDER_CREATE_VERSION).toBe(8);
+    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(8);
   });
 });

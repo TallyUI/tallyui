@@ -21,6 +21,15 @@ export interface PosOrderCoupon {
   couponId: string; // the connector's coupon id, as a string
   discountMinor: number; // the coupon's discount, ex tax, in integer minor units
   discountTaxMinor: number; // its tax, in integer minor units
+  /** Present only on a store-priced coupon (#790), in stored `lines` order, with no zero entries;
+   * absent on WooCommerce replay coupons and on every order stored before schema 13. */
+  lines?: PosOrderCouponLine[];
+}
+
+export interface PosOrderCouponLine {
+  lineId: string; // the stored line's id
+  discountMinor: number; // tax-exclusive, integer minor units
+  discountTaxMinor: number; // integer minor units
 }
 
 export interface PosOrderLine {
@@ -96,9 +105,9 @@ export interface PosOrder {
    * The order.create version every attempt under this `commandId` goes out at: the outbox records it before the first
    * send, and lowers it only on a downgrade (ADR-065 amendment). Absent means not sent yet (or requeued).
    */
-  sentVersion?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  sentVersion?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   /** The version first tried, before the downgrade (the order's audit). */
-  downgradedFrom?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  downgradedFrom?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. */
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */

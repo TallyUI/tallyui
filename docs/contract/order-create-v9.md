@@ -1,7 +1,7 @@
 # order.create version 9: each coupon's per-line amounts
 
-Status: contract agreed (front desk ruling, 2026-11-12, on #786); not yet built. A server can build against this page
-now. The till side lands in one PR after 3.20.0, with an ADR that cites this page.
+Status: contract agreed (front desk ruling, 2026-11-12, on #786); the till side is built (#791, ADR-088). A server
+builds against this page and advertises 9 when it stores the per-line amounts.
 
 ## Why
 

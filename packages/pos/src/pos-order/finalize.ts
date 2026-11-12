@@ -280,8 +280,14 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(fees?.length ? { fees } : {}), ...(shipping?.length ? { shipping } : {}),
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor, taxRounding,
-    ...(order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor }) =>
-      ({ code, couponId, discountMinor, discountTaxMinor })) } : {}),
+    ...(order.coupons?.length ? { coupons: order.coupons.map((coupon) => ({
+      code: coupon.code, couponId: coupon.couponId, discountMinor: coupon.discountMinor, discountTaxMinor: coupon.discountTaxMinor,
+      ...(coupon.lines !== undefined ? { lines: coupon.lines.map(({ lineId, discountMinor, discountTaxMinor }) => {
+        const index = order.lineItems.findIndex((line) => line.id === lineId);
+        if (index === -1) throw new Error("finalize: a coupon's line share names no line on the order");
+        return { lineId: lines[index].id, discountMinor, discountTaxMinor };
+      }) } : {}),
+    })) } : {}),
     ...(display && taxByRate ? { display, taxByRate } : {}),
     customer: order.customer ? { id: order.customer.id, name: order.customer.name,
       ...(order.customer.email !== undefined ? { email: order.customer.email } : {}),

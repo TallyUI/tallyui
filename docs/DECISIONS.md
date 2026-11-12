@@ -6234,3 +6234,35 @@ interface OrderCreatePayload {
   and is outside this rule.
 - **Consequences:** apps keep the light and dark tokens until the ADR lands; a consumer that wants a v2 theme sooner
   overrides the tokens in its own CSS.
+
+## ADR-088 order.create v9: each store-priced coupon's per-line amounts
+
+- **Date:** 2026-11-12 · **Status:** Proposed (front desk ruling on #786 / #790, 2026-11-12; one-way, merges on
+  Paul's word) · **Contract:** `docs/contract/order-create-v9.md` · **Relates to:** ADR-086 (how version 8 was
+  added), ADR-077 (coupons), ADR-070 (strict payloads and field kinds)
+- **Context:**
+  - A store-priced coupon (#709, Medusa and Vendure) arrives priced per line, but order.create 6–8 carried only its
+    total, so a server that stores line-level adjustments had to split it again and could split it differently
+    from the till (#786).
+  - WooCommerce replay coupons are recomputed by Woo from `coupons[].code` and need no split.
+- **Decision:**
+  1. **Version 9 is version 8 with `coupons[].lines`** (`{ clientLineId, discountMinor, discountTaxMinor }`), in
+     the contract's figures; `taxAddress` becomes optional at 9 and follows the sale.
+  2. **Sent only when every coupon is store-priced and the server advertises 9.** Below 9 no coupon carries
+     `lines`, and the bytes are exactly today's (the v3/v6/v7/v8 golden fixtures are unchanged). A sale with any
+     WooCommerce replay coupon never goes at 9.
+  3. **Downgraded freely.** The per-line amounts are an addition that a v8 server never needed, so an
+     `unsupported_version` answer resends at the version 3.20.1 picks, and the stored `lines` are kept.
+  4. **The till stores the split.** `finalizeOrder` keeps the builder's `lines`, mapped to the stored line ids;
+     `pos_orders` goes to schema version 13 (coupon `lines`, `sentVersion` / `downgradedFrom` up to 9). The
+     migration is the identity, through `addPosOrderCollection`. `ORDER_CREATE_MAX_VERSION` is 9.
+  5. **A coupon is taken off once** (contract): a server writes the per-line amounts or recomputes from the codes,
+     never both, and always from a pre-coupon amount.
+- **Consequences:**
+  - One-way. Downgrade, measured (`packages/integration-tests/src/pos-orders-open-sqlite.test.ts`): a schema-12 build
+    opening a schema-13 store throws nothing and sees an **empty** `pos_orders`; the schema-13 build reopening it
+    finds every row unchanged, as for 11→12.
+  - WooCommerce keeps advertising 8. Medusa and Vendure advertise 9 when their plugins store the amounts.
+- **Evidence:** `packages/pos/src/pos-order/command-v9.test.ts` (golden `__fixtures__/order-create-v9.json`),
+  `packages/core/src/server/order-create-v9.test.ts`, `packages/pos/src/order/store-priced-coupon-lines.test.ts`,
+  `packages/pos/src/pos-order/migration.test.ts`, `packages/integration-tests/src/pos-orders-open-sqlite.test.ts`.
