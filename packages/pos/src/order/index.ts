@@ -11,6 +11,7 @@ export type { OrderManager, OrderManagerOptions, ParkedOrderSummary } from './or
 export type {
   Order,
   OrderCoupon,
+  OrderCouponLine,
   SentOrder,
   LineItem,
   LineTaxLine,

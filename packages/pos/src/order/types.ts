@@ -1,11 +1,20 @@
 import type { CustomerAddress, Money, TaxRounding } from '@tallyui/core';
 import type { PaymentLegStatus } from '../tender/payment-legs';
 
+/** A store-priced coupon's share of one line (#790, docs/contract/order-create-v9.md), tax-exclusive, in integer minor units. */
+export interface OrderCouponLine {
+  lineId: string;
+  discountMinor: number;    // >= 0
+  discountTaxMinor: number; // >= 0
+}
+
 export interface OrderCoupon {
   code: string; // lower-case code
   couponId: string; // the connector's coupon id, as a string
   discountMinor: number; // the coupon's discount (WooCommerce's replay, or the store's own prices, #709), ex tax, in integer minor units
   discountTaxMinor: number; // its tax, in integer minor units
+  /** #790: present only on a store-priced coupon. It holds the coupon's share of each line, in lineItems order, with no zero entries. */
+  lines?: OrderCouponLine[];
 }
 
 export interface Order {

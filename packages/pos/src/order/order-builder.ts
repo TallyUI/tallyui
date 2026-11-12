@@ -1,10 +1,11 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
 import { resolvePrice, woocommerceTax, type woocommerceCoupons, type ProductTraits, type ResolvedPrice, type TaxRounding } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
-import { taxMicros, roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
+import { taxMicros, roundMicrosToMinor, roundedTaxByRate, MICROS_PER_MINOR } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
 import { capturedMinor, canMoveLeg, legStatus, type PaymentLegStatus } from '../tender/payment-legs';
 import { allocateOrderDiscount } from './allocate-order-discount';
+import { apportionLargestRemainders } from './apportion';
 import { woocommerceLine, woocommerceTotals, woocommerceCouponReplay } from './woocommerce-tax';
 import type {
   Order,
@@ -30,6 +31,12 @@ function uid(): string {
 
 function roundHalfAway(n: number): number {
   return Math.sign(n) * Math.round(Math.abs(n));
+}
+
+/** A line's exact tax-exclusive amount for store-priced coupon apportionment (#790). */
+function exTaxMicros(line: LineItem, woo: boolean): bigint {
+  if (woo) return line.netMicros !== undefined ? BigInt(line.netMicros) : BigInt(line.netMinor) * MICROS_PER_MINOR;
+  return BigInt(line.netMinor) * MICROS_PER_MINOR - (line.taxInclusive ? BigInt(line.taxMicros) : 0n);
 }
 
 /** The settlement totals of recalculated lines; the display figures derive from them (ADR-063). */
@@ -267,14 +274,27 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       coupons = couponCodes.map((code) => {
         const priced = store.priced.get(code);
         for (const { lineId, amountMinor } of priced?.lines ?? []) taken.set(lineId, (taken.get(lineId) ?? 0) + amountMinor);
+        const beforeLines = lines;
         lines = lineItems.map((li, index) => taken.has(li.id) ? recalculateLine(li, shares[index], taken.get(li.id)) : displaySourceLines[index]);
         const before = totals;
         totals = settle(lines);
         storeDisplayRows.push(displayBasis(before) - displayBasis(totals));
         // A settlement subtotal is a difference of separately rounded sums (lines total less order-rounded tax), so a
         // rounding cent could in principle move it against a coupon; a coupon never shows as raising the price.
-        return { code, couponId: priced?.couponId ?? '', discountMinor: Math.max(0, before.subtotalMinor - totals.subtotalMinor),
+        const coupon = { code, couponId: priced?.couponId ?? '', discountMinor: Math.max(0, before.subtotalMinor - totals.subtotalMinor),
           discountTaxMinor: Math.max(0, before.taxMinor - totals.taxMinor) };
+        const fallbackId = priced?.lines.find(({ lineId }) => lineItems.some((li) => li.id === lineId))?.lineId;
+        const fallbackIndex = lineItems.findIndex((li) => li.id === fallbackId);
+        if (fallbackIndex === -1) {
+          // No priced line remains: a non-zero coupon has no split, so step 3 sends the order below version 9.
+          return coupon.discountMinor === 0 && coupon.discountTaxMinor === 0 ? { ...coupon, lines: [] } : coupon;
+        }
+        const e = lines.map((line, i) => exTaxMicros(beforeLines[i], !!woo) - exTaxMicros(line, !!woo));
+        const t = lines.map((line, i) => BigInt(beforeLines[i].taxMicros) - BigInt(line.taxMicros));
+        const discountShares = apportionLargestRemainders(e, coupon.discountMinor, fallbackIndex);
+        const taxShares = apportionLargestRemainders(t, coupon.discountTaxMinor, fallbackIndex);
+        return { ...coupon, lines: lineItems.map((li, i) => ({ lineId: li.id, discountMinor: discountShares[i], discountTaxMinor: taxShares[i] }))
+          .filter((line) => line.discountMinor !== 0 || line.discountTaxMinor !== 0) };
       });
     }
     const { subtotalMinor, taxMinor, totalMinor } = totals;

@@ -116,13 +116,15 @@ describe('finalizeOrder', () => {
   });
 
   it('finalizes a fresh store-priced coupon sale into the v6 coupons shape (#709)', () => {
-    const { builder } = storePricedSale();
+    const { builder, line } = storePricedSale();
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     const snapshot = builder.getSnapshot();
-    expect(snapshot.coupons).toEqual([{ code: 'save', couponId: 'promo_1', discountMinor: 250, discountTaxMinor: 47 }]);
+    expect(snapshot.coupons).toEqual([{ code: 'save', couponId: 'promo_1', discountMinor: 250, discountTaxMinor: 47,
+      lines: [{ lineId: line, discountMinor: 250, discountTaxMinor: 47 }] }]);
     const envelope = toOrderCreateEnvelope(finalizeOrder(snapshot, { capabilities: { orderCreate: 6 } }), 'device1', 1, { maxVersion: 6 });
     expect(envelope.version).toBe(6);
-    expect(envelope.payload.coupons).toEqual(snapshot.coupons);
+    // v6 carries a coupon's totals only (#790).
+    expect(envelope.payload.coupons).toEqual(snapshot.coupons!.map(({ lines: _lines, ...coupon }) => coupon));
     expect(envelope.payload).toMatchObject({ subtotalMinor: snapshot.subtotalMinor, taxMinor: snapshot.taxMinor });
   });
 
