@@ -124,6 +124,8 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     : command.version < 9 && couponLines.length ? 'coupons[].lines requires version 9'
     : command.version >= 9 && couponsWithoutLines.length ? 'version 9 requires coupons[].lines'
     : command.version === 8 && payload.taxAddress === undefined ? 'version 8 requires taxAddress'
+    : command.version >= 9 && payload.taxAddress === undefined && (payload.customer?.billing !== undefined || payload.customer?.shipping !== undefined)
+      ? 'version 9 customer address requires taxAddress'
     : command.version === 2 && discountMinor === undefined ? 'version 2 requires discountMinor'
     : command.version === 1 && discounted ? 'discountMinor requires version 2'
     : !v3 && (display !== undefined || taxByRate !== undefined) ? 'display and taxByRate require version 3'

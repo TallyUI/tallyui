@@ -96,8 +96,15 @@ describe('store-priced coupon lines (#790)', () => {
     expect(builder.getSnapshot().coupons![0].lines).toStrictEqual([]);
   });
 
-  // setCoupons rejects a priced lineId not on the sale with a RangeError.
-  it.todo('leaves lines off a code that priced no line of the order');
+  it('refuses a code that prices a line not on the sale and keeps the coupons', () => {
+    const builder = make(), l1 = add(builder, 1000);
+    builder.setCoupons(['c'], priced(builder, { c: ['cc', [[l1, 100]]] }));
+    const before = builder.getSnapshot().coupons;
+    expect(before).toHaveLength(1);
+    expect(() => builder.setCoupons(['c', 'ghost'], priced(builder, { c: ['cc', [[l1, 100]]], ghost: ['cg', [['missing', 50]]] })))
+      .toThrow(new RangeError('Coupon ghost prices a line not on the sale'));
+    expect(builder.getSnapshot().coupons).toStrictEqual(before);
+  });
 
   it('leaves lines off WooCommerce replay coupons', () => {
     const builder = createOrderBuilder({ currency: 'GBP', taxContext: wooContext({ standard: [rate(1, '20.0000')] }), couponContext: wooCoupons });
@@ -142,6 +149,48 @@ describe('store-priced coupon lines (#790)', () => {
               const delta = BigInt(share) * 1_000_000n - e;
               const difference = delta < 0n ? -delta : delta;
               expect(difference).toBeLessThan(2_000_000n);
+              if (difference > maximum) maximum = difference;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Measured maximum over this grid under WooCommerce rounding: 833300 micros (0.83 minor units).
+  it('keeps sums exact and bounds the rounding difference across the grid under WooCommerce rounding', () => {
+    let maximum = 0n;
+    const rateLists: WooRate[][] = [[rate(1, '7.0000')], [rate(1, '19.0000')], [rate(1, '20.0000')],
+      [rate(1, '19.0000'), rate(2, '7.0000', { compound: true })]];
+    for (const pricesIncludeTax of [false, true]) {
+      for (const roundAtSubtotal of [false, true]) {
+        for (const standard of rateLists) {
+          const builder = make(wooContext({ standard }, pricesIncludeTax, roundAtSubtotal));
+          const ids = [[999, 1], [1001, 3], [1234, 2]].map(([unit, quantity], i) => {
+            const id = add(builder, unit, `p${i}`);
+            builder.updateQuantity(id, quantity);
+            return id;
+          });
+          const pricing = priced(builder, { a: ['ca', [[ids[0], 137], [ids[1], 0], [ids[2], 251]]],
+            b: ['cb', [[ids[0], 0], [ids[1], 99], [ids[2], 45]]] });
+          const stages = [[], ['a'], ['a', 'b']].map((codes) => {
+            builder.setCoupons(codes, pricing);
+            return builder.getSnapshot();
+          });
+          const order = stages[2];
+          expect(order.coupons!.map((coupon) => coupon.code)).toEqual(['a', 'b']);
+          for (const [k, coupon] of order.coupons!.entries()) {
+            const lines = coupon.lines!;
+            expect(lines.reduce((sum, line) => sum + line.discountMinor, 0)).toBe(coupon.discountMinor);
+            expect(lines.reduce((sum, line) => sum + line.discountTaxMinor, 0)).toBe(coupon.discountTaxMinor);
+            expect(lines.every((line) => line.discountMinor !== 0 || line.discountTaxMinor !== 0)).toBe(true);
+            expect(lines.map((line) => line.lineId)).toEqual(ids.filter((id) => lines.some((line) => line.lineId === id)));
+            for (const [i, id] of ids.entries()) {
+              const e = exTaxMicros(stages[k].lineItems[i], true) - exTaxMicros(stages[k + 1].lineItems[i], true);
+              const share = lines.find((line) => line.lineId === id)?.discountMinor ?? 0;
+              const delta = BigInt(share) * 1_000_000n - e;
+              const difference = delta < 0n ? -delta : delta;
+              expect(difference).toBeLessThanOrEqual(2_000_000n);
               if (difference > maximum) maximum = difference;
             }
           }
