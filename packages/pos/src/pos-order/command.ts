@@ -48,13 +48,16 @@ export function cutText(text: string, max: number): string {
 
 /**
  * Version 4 (#286): a line's discount made tax-exclusive. An exclusive line's is unchanged; an inclusive line's
- * gross discount D on its amount A becomes `net(A) − net(A − D)`, exact in millionths (net(A − D) from its stored
- * taxLines, the tax on A − D; net(A) from `taxMicros`, as the builder taxes), rounded half away from zero.
+ * gross discount D on its amount A becomes `net(A) − net(A − D)`, exact in millionths, rounded half away from zero.
+ * Tax comes from stored taxLines after D, recomputed before a store-priced coupon, and from `taxMicros` before D.
  */
-function netDiscountMinor(line: PosOrderLine, pricesIncludeTax: boolean): number {
+function netDiscountMinor(line: PosOrderLine, pricesIncludeTax: boolean, woocommerce: boolean): number {
   if (!(line.taxInclusive ?? pricesIncludeTax) || line.discountMinor === 0) return line.discountMinor;
   const ratePpm = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
-  const taxAfter = line.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n);
+  const afterDiscount = line.unitPriceMinor * line.quantity - line.discountMinor;
+  // A store-priced coupon leaves stored taxLines after the coupon; the line discount needs tax before it.
+  const taxAfter = !woocommerce && line.netMinor < afterDiscount ? taxMicros(afterDiscount, ratePpm, true)
+    : line.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n);
   const taxBefore = taxMicros(line.unitPriceMinor * line.quantity, ratePpm, true);
   return roundMicrosToMinor(BigInt(line.discountMinor) * MICROS_PER_MINOR - taxBefore + taxAfter);
 }
@@ -117,7 +120,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   if (taxAddress && base < 3) throw new Error(`Order ${order.id} is taxed on the customer's ${taxAddress} address but has no figures`);
   const version = (taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
     : note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
-  const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax) : line.discountMinor);
+  const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax, order.taxRounding?.granularity === 'woocommerce') : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
   const email = order.customer?.email;
