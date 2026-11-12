@@ -47,6 +47,11 @@ describe('wooStoreSettings', () => {
     expect(settings).toStrictEqual({
       currency: 'USD', pricesIncludeTax: false, taxRoundAtSubtotal: false, calcDiscountsSequentially: false, shippingTaxClass: 'inherit',
       taxClassSlugs: ['standard', 'reduced-rate', 'zero-rate'],
+      taxClasses: [
+        { slug: 'standard', name: 'Standard rate' },
+        { slug: 'reduced-rate', name: 'Reduced rate' },
+        { slug: 'zero-rate', name: 'Zero rate' },
+      ],
       taxRatesPpm: { default: 106250, 'reduced-rate': 55000, 'zero-rate': 0 },
       taxRates: expect.any(Object),
       allTaxRates: expect.any(Array),
@@ -112,6 +117,31 @@ describe('wooStoreSettings', () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       `${context.baseUrl}/stores`, `${context.baseUrl}/taxes/classes`,
     ]);
+  });
+
+  it('reads tax class display names when tax calculation is disabled', async () => {
+    storesBody = [{ ...stores[0], calc_taxes: 'no' }];
+    const settings = await wooStoreSettings(context);
+    expect(settings.taxClasses).toStrictEqual([
+      { slug: 'standard', name: 'Standard rate' },
+      { slug: 'reduced-rate', name: 'Reduced rate' },
+      { slug: 'zero-rate', name: 'Zero rate' },
+    ]);
+  });
+
+  it('uses the slug verbatim when a tax class name is missing or empty', async () => {
+    classesBody = [
+      { slug: 'standard', name: 'Standard rate' },
+      { slug: 'luxury' },
+      { slug: 'food', name: '' },
+    ];
+    const settings = await wooStoreSettings(context);
+    expect(settings.taxClasses).toStrictEqual([
+      { slug: 'standard', name: 'Standard rate' },
+      { slug: 'luxury', name: 'luxury' },
+      { slug: 'food', name: 'food' },
+    ]);
+    expect(settings.taxClassSlugs).toEqual(['standard', 'luxury', 'food']);
   });
 
   it('reads all 101 rates across exactly two pages', async () => {

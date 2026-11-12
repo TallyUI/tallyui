@@ -25,6 +25,7 @@ export type {
   StockStatus,
   StoreSettings,
   StoreSettingsChoice,
+  StoreTaxClass,
   StoreTaxRate,
   StoreTaxRateLocation,
 } from './types';
