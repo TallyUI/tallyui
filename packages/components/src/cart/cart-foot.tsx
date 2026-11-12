@@ -68,12 +68,12 @@ export function CartFoot({ total, onCheckout, actions = [], disabled = false, lo
         {actions.length > 0 ? (
           <Pressable ref={trigger} accessibilityRole="button" accessibilityLabel={MENU_LABEL} aria-haspopup="menu"
             aria-expanded={open} testID="cart-foot-more" onPress={() => setOpen((value) => !value)}
-            className="min-h-12 min-w-12 items-center justify-center rounded-md border border-border bg-card">
+            className="h-11 w-11 self-center items-center justify-center rounded-md border border-border bg-card">
             <Text className="text-lg text-foreground">⋮</Text>
           </Pressable>
         ) : null}
         <Pressable accessibilityRole="button" testID="cart-checkout" disabled={disabled} onPress={onCheckout}
-          className={cn('min-h-12 flex-1 justify-center rounded-md bg-primary px-4 py-3', disabled && 'opacity-50')}>
+          className={cn('min-h-14 flex-1 justify-center rounded-md bg-primary px-4 py-3', disabled && 'opacity-50')}>
           <Text className="text-center font-semibold text-primary-foreground">{`Checkout ${formatMoney(total, locale) ?? '—'}`}</Text>
         </Pressable>
       </View>
