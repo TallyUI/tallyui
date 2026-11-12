@@ -31,6 +31,7 @@ import type { PosOrder } from './types';
  * Version 11 lets `sentVersion` and `downgradedFrom` be 7 (order.create version 7, ADR-083), and changes nothing else. Its migration is the identity. It is one-way like version 10.
  * Version 12 adds the order's `taxAddress` and the customer's `billing` and `shipping` (#722), and lets `sentVersion` and
  * `downgradedFrom` be 8 (order.create version 8), and changes nothing else. Its migration is the identity. It is one-way like version 11.
+ * Version 13 adds a store-priced coupon's `lines` (#790) and lets `sentVersion` and `downgradedFrom` be 9 (order.create version 9), and changes nothing else. Its migration is the identity. It is one-way like version 12.
  */
 /** A customer's address on an order taxed by it (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
@@ -40,7 +41,7 @@ const orderAddressSchema = { type: 'object', additionalProperties: false, proper
 } } as const;
 
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 12, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 13, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -57,6 +58,10 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     coupons: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
       code: { type: 'string', minLength: 1, maxLength: 255 }, couponId: { type: 'string', minLength: 1, maxLength: 64 },
       discountMinor: { type: 'integer', minimum: 0 }, discountTaxMinor: { type: 'integer', minimum: 0 },
+      lines: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        lineId: { type: 'string', minLength: 1, maxLength: 36 }, discountMinor: { type: 'integer', minimum: 0 },
+        discountTaxMinor: { type: 'integer', minimum: 0 },
+      }, required: ['lineId', 'discountMinor', 'discountTaxMinor'] } },
     }, required: ['code', 'couponId', 'discountMinor', 'discountTaxMinor'] } },
     lines: { type: 'array', items: {
       type: 'object', properties: {
@@ -128,8 +133,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       roundAtSubtotal: { type: 'boolean' },
       mode: { type: 'string', enum: ['half_away_from_zero', 'half_up'] },
     }, required: ['granularity'] },
-    sentVersion: { type: 'integer', minimum: 1, maximum: 8 },
-    downgradedFrom: { type: 'integer', minimum: 1, maximum: 8 },
+    sentVersion: { type: 'integer', minimum: 1, maximum: 9 },
+    downgradedFrom: { type: 'integer', minimum: 1, maximum: 9 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
     display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
@@ -193,5 +198,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity } };
 }

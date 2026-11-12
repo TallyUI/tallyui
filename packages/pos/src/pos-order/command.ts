@@ -3,7 +3,7 @@ import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
 import type { PosOrder, PosOrderLine } from './types';
 
 /** The highest order.create version this till sends; pos_orders' sentVersion and downgradedFrom maxima must equal it. */
-export const ORDER_CREATE_MAX_VERSION = 8 as const;
+export const ORDER_CREATE_MAX_VERSION = 9 as const;
 /** order.create 8 (#722) tells the server which customer address the sale was taxed on (`taxAddress`) and carries the
  *  addresses; below it a server taxes on the store's base, so `saleTaxContexts` re-taxes by address only from here. */
 export const TAX_ADDRESS_ORDER_CREATE_VERSION = 8 as const;
@@ -97,6 +97,7 @@ function wireNote(note: string | undefined): string | undefined {
  * A sale taxed on the customer's address (`taxAddress`, #722) needs version 8 and never downgrades: below 8 the server
  * taxes on the base, so a lower cap throws UnsupportedOrderVersionError(8). At 8 it carries the note, `taxAddress` and
  * the stored addresses; every other field follows the version its content makes, as at 7.
+ * Version 9 sends every coupon's stored line shares when the cap allows it, keeping notes and any tax address.
  * Orders with Any picks (#495) need version 6 too, carrying a line's `anyAttributes`, and coupons only when they have some.
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
@@ -118,8 +119,10 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   // Every other field follows `base`, so a note changes nothing else in the payload.
   const note = wireNote(order.note);
   if (taxAddress && base < 3) throw new Error(`Order ${order.id} is taxed on the customer's ${taxAddress} address but has no figures`);
-  const version = (taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
+  const couponLines = !!order.coupons?.length && order.coupons.every((coupon) => coupon.lines !== undefined);
+  const version = (couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
     : note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
+  const withTaxAddress = version === 8 || (version === 9 && taxAddress !== undefined);
   const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax, order.taxRounding?.granularity === 'woocommerce') : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
@@ -129,7 +132,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   const customerId = typeof id === 'string' && id.length > 0 && id.length <= 64 ? id : undefined;
   const sessionId = order.sessionId ?? order.lateSessionId;
   const { billing, shipping } = order.customer ?? {};
-  const addresses = version === 8 ? { ...(billing ? { billing: { ...billing } } : {}), ...(shipping ? { shipping: { ...shipping } } : {}) } : {};
+  const addresses = withTaxAddress ? { ...(billing ? { billing: { ...billing } } : {}), ...(shipping ? { shipping: { ...shipping } } : {}) } : {};
   const { fees: _fees, shipping: _shipping, coupons: _coupons, ...storedDisplay } = { ...order.display! };
   return {
     id: order.commandId, type: 'order.create', version, createdAt: order.createdAt, deviceId, attempt,
@@ -153,8 +156,10 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         amountMinor: charge.amountMinor, taxStatus: charge.taxStatus,
         ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(charge.taxMicros)),
       })) } : {}),
-      ...(base === 6 && order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor }) => ({
+      ...(base === 6 && order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor, lines }) => ({
         code, couponId, discountMinor, discountTaxMinor,
+        ...(version === 9 ? { lines: lines!.map(({ lineId, discountMinor, discountTaxMinor }) =>
+          ({ clientLineId: lineId, discountMinor, discountTaxMinor })) } : {}),
       })) } : {}),
       payments: order.payments.map((payment) => ({
         clientPaymentId: payment.id, method: payment.method, amountMinor: payment.amountMinor,
@@ -178,13 +183,13 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         })),
       } : {}),
       customer: base >= 3
-        ? (email || customerId || version === 8 ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}), ...addresses } : null)
+        ? (email || customerId || withTaxAddress ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}), ...addresses } : null)
         : (email ? { email } : null),
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
       ...(base >= 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
       ...(version >= 7 && note ? { note } : {}),
-      ...(version === 8 ? { taxAddress } : {}),
+      ...(withTaxAddress ? { taxAddress } : {}),
     },
   };
 }

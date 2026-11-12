@@ -1,0 +1,89 @@
+{
+  "id": "019f6d2e-7800-7000-8000-000000000004",
+  "type": "order.create",
+  "version": 9,
+  "createdAt": "2026-11-12T10:00:00.000Z",
+  "deviceId": "device_golden",
+  "attempt": 1,
+  "payload": {
+    "clientOrderId": "019f6d2e-7800-7000-8000-000000000001",
+    "createdAt": "2026-11-12T10:00:00.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": true,
+    "lines": [
+      {
+        "clientLineId": "019f6d2e-7800-7000-8000-000000000002",
+        "variantId": "p",
+        "title": "p",
+        "quantity": 1,
+        "unitPriceMinor": 1190,
+        "discountMinor": 100
+      }
+    ],
+    "coupons": [
+      {
+        "code": "c",
+        "couponId": "promo_1",
+        "discountMinor": 84,
+        "discountTaxMinor": 16,
+        "lines": [
+          {
+            "clientLineId": "019f6d2e-7800-7000-8000-000000000002",
+            "discountMinor": 84,
+            "discountTaxMinor": 16
+          }
+        ]
+      }
+    ],
+    "payments": [
+      {
+        "clientPaymentId": "019f6d2e-7800-7000-8000-000000000003",
+        "method": "cash",
+        "amountMinor": 971,
+        "tenderedMinor": 971,
+        "changeMinor": 0
+      }
+    ],
+    "subtotalMinor": 816,
+    "discountMinor": 100,
+    "taxMinor": 155,
+    "totalMinor": 971,
+    "display": {
+      "currency": "EUR",
+      "exponent": 2,
+      "taxInclusive": true,
+      "subtotalMinor": 1190,
+      "discountMinor": 219,
+      "taxMinor": 155,
+      "totalMinor": 971,
+      "lines": [
+        {
+          "clientLineId": "019f6d2e-7800-7000-8000-000000000002",
+          "amountMinor": 1190,
+          "discounts": [
+            {
+              "discountId": "discount_line",
+              "amountMinor": 119
+            }
+          ]
+        }
+      ],
+      "orderDiscountMinor": 0,
+      "coupons": [
+        {
+          "code": "c",
+          "amountMinor": 100
+        }
+      ]
+    },
+    "taxByRate": [
+      {
+        "ratePpm": 190000,
+        "netMinor": 816,
+        "taxMinor": 155,
+        "grossMinor": 971
+      }
+    ],
+    "customer": null
+  }
+}

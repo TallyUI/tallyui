@@ -243,6 +243,10 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 | `payload.sessionId` | instruction (honoured by recording) | 3 |
 | `payload.note` | informational (ADR-083) | 7 |
 | `payload.taxAddress` | instruction, amount-bearing (#722): the address the sale was taxed on | 8 |
+| `payload.coupons[].lines` | informational, amount-bearing (#790) | 9 |
+| `payload.coupons[].lines[].clientLineId` | informational (#790) | 9 |
+| `payload.coupons[].lines[].discountMinor` | informational, amount-bearing (#790) | 9 |
+| `payload.coupons[].lines[].discountTaxMinor` | informational, amount-bearing (#790) | 9 |
 
 - A discount, on the order or a line, is the cashier's price decision:
   the server honours it by applying or recording it, or refuses it.
@@ -264,6 +268,7 @@ must equal the order's tax mode when charges are present; subtotal excludes char
   addresses (`firstName`, `lastName`, `company`, `address1`, `address2`,
   `city`, `state`, `postcode`, `country`, `phone`, each at most 255
   characters) travel only at 8.
+- `payload.coupons[].lines` (version 9) is each coupon's share of each line it reduced, apportioned so the shares sum exactly to the coupon's figures (`docs/contract/order-create-v9.md`). A server may ignore it and allocate the coupon itself, as at version 6. A server that writes per-line adjustments uses it as sent. At 9 every coupon carries it; below 9 none does.
 - `payload.sessionId` is the session the server's register figures count
   the sale in (ADR-068 decision 13), and `payload.registerId` is the
   till's device id, never the drawer (ADR-068 decision 7a). A server

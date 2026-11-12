@@ -9,8 +9,9 @@ export interface CommandEnvelope<P = unknown> {
    *  4 is 3 with every `discountMinor` tax-exclusive, built only when capped at 4 or more (#286).
    *  5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
    *  7 is 6 plus the sale's `note` (ADR-083), sent only for an order that has one.
-   *  8 is 7 plus `taxAddress` and the customer's addresses (#722), sent only for a sale taxed on the customer's address. */
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+   *  8 is 7 plus `taxAddress` and the customer's addresses (#722), sent only for a sale taxed on the customer's address.
+   *  9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -57,8 +58,9 @@ export interface OrderRefundOrderStateData { state: string }
 export interface OrderRefundNoOpenSessionData { sessionId: string }
 
 /** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
- * 7 is 6 plus the sale's note (ADR-083). 8 is 7 plus `taxAddress` and the customer's addresses (#722). */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 };
+ * 7 is 6 plus the sale's note (ADR-083). 8 is 7 plus `taxAddress` and the customer's addresses (#722).
+ * 9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -275,6 +277,18 @@ export interface OrderCreateCoupon {
   discountMinor: number;
   /** The tax on that discount, integer >= 0. */
   discountTaxMinor: number;
+  /** Version 9 (#790): this coupon's share of each line it reduced; present on every coupon at 9, never below. */
+  lines?: OrderCreateCouponLine[];
+}
+
+/** Version 9 (#790): one coupon's share of one line, in integer minor units; see docs/contract/order-create-v9.md. */
+export interface OrderCreateCouponLine {
+  /** A `payload.lines[].clientLineId`. */
+  clientLineId: string;
+  /** This coupon's discount on that line, tax-exclusive, integer >= 0. */
+  discountMinor: number;
+  /** The tax on it, integer >= 0. */
+  discountTaxMinor: number;
 }
 
 /** Version 5: a fee, never discounted (ADR-075). */
@@ -394,7 +408,7 @@ export interface OrderCreatePayload {
     /** Version 8 (#722): the customer's shipping address, sent only with `taxAddress`. */
     shipping?: OrderAddress;
   } | null;
-  /** Version 8 (#722): the customer address the till taxed the sale on; always present at 8, and that address has a
+  /** Version 8 (#722): the customer address the till taxed the sale on; always present at 8; optional at 9, and that address has a
    *  non-empty `country`. Absent: the store's base address. */
   taxAddress?: 'billing' | 'shipping';
   registerId?: string;

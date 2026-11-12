@@ -50,7 +50,8 @@ describe('store-priced coupons (#709)', () => {
     const { builder, line } = oneLine();
     builder.setCoupons(['SAVE '], priced(builder, { save: ['c1', [[line, 300]]] }));
     const order = builder.getSnapshot();
-    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 300, discountTaxMinor: 60 }]);
+    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 300, discountTaxMinor: 60,
+      lines: [{ lineId: line, discountMinor: 300, discountTaxMinor: 60 }] }]);
     expect(order).toMatchObject({ subtotalMinor: 700, taxMinor: 140, totalMinor: 840, discountMinor: 0 });
     expect(order.lineItems[0]).toMatchObject({ discountMinor: 0, orderDiscountMinor: 0, netMinor: 700, discounts: [] });
     expect(order.display.coupons).toEqual([{ code: 'save', amountMinor: 300 }]);
@@ -63,7 +64,8 @@ describe('store-priced coupons (#709)', () => {
     const { builder, line } = oneLine(taxContext(true), 1200);
     builder.setCoupons(['save'], priced(builder, { save: ['c1', [[line, 240]]] }));
     const order = builder.getSnapshot();
-    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 200, discountTaxMinor: 40 }]);
+    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 200, discountTaxMinor: 40,
+      lines: [{ lineId: line, discountMinor: 200, discountTaxMinor: 40 }] }]);
     expect(order).toMatchObject({ subtotalMinor: 800, taxMinor: 160, totalMinor: 960, discountMinor: 0 });
     expect(order.lineItems[0].discountMinor).toBe(0);
     expect(order.display.coupons).toEqual([{ code: 'save', amountMinor: 240 }]);
@@ -79,7 +81,9 @@ describe('store-priced coupons (#709)', () => {
     builder.setCoupons(['save'], priced(builder, { save: ['c1', [[inclusive, 120], [exclusive, 100]]] }));
     const order = builder.getSnapshot();
     expect(order.lineItems.map((li) => li.netMinor)).toEqual([1080, 900]);
-    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 200, discountTaxMinor: 40 }]);
+    // e/t in minor units: inclusive 100/20, exclusive 100/20, so both splits are equal.
+    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 200, discountTaxMinor: 40,
+      lines: [{ lineId: inclusive, discountMinor: 100, discountTaxMinor: 20 }, { lineId: exclusive, discountMinor: 100, discountTaxMinor: 20 }] }]);
     expect(order).toMatchObject({ subtotalMinor: 1800, taxMinor: 360, totalMinor: 2160 });
     expect(order.display).toMatchObject({ subtotalMinor: 2000, discountMinor: 200 });
     expect(order.display.lines).toEqual(before.display.lines);
@@ -93,9 +97,12 @@ describe('store-priced coupons (#709)', () => {
     builder.setCoupons(['a', 'b'], priced(builder, { a: ['ca', [[l1, 600], [l2, 100]]], b: ['cb', [[l1, 700], [l2, 50]]] }));
     const order = builder.getSnapshot();
     expect(order.lineItems.map((li) => li.netMinor)).toEqual([0, 350]);
+    // e/t in minor units: a takes 600/120 and 100/20; b takes the remaining 400/80 and 50/10.
     expect(order.coupons).toEqual([
-      { code: 'a', couponId: 'ca', discountMinor: 700, discountTaxMinor: 140 },
-      { code: 'b', couponId: 'cb', discountMinor: 450, discountTaxMinor: 90 },
+      { code: 'a', couponId: 'ca', discountMinor: 700, discountTaxMinor: 140,
+        lines: [{ lineId: l1, discountMinor: 600, discountTaxMinor: 120 }, { lineId: l2, discountMinor: 100, discountTaxMinor: 20 }] },
+      { code: 'b', couponId: 'cb', discountMinor: 450, discountTaxMinor: 90,
+        lines: [{ lineId: l1, discountMinor: 400, discountTaxMinor: 80 }, { lineId: l2, discountMinor: 50, discountTaxMinor: 10 }] },
     ]);
     expect(order.coupons!.reduce((sum, c) => sum + c.discountMinor, 0)).toBe(before.subtotalMinor - order.subtotalMinor);
     expect(order.coupons!.reduce((sum, c) => sum + c.discountTaxMinor, 0)).toBe(before.taxMinor - order.taxMinor);
@@ -109,7 +116,8 @@ describe('store-priced coupons (#709)', () => {
     builder.setCoupons(['save'], priced(builder, { save: ['c1', [[line, 300]]] }));
     const order = builder.getSnapshot();
     expect(order.lineItems[0]).toMatchObject({ discountMinor: 200, orderDiscountMinor: 100, netMinor: 500 });
-    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 300, discountTaxMinor: 60 }]);
+    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 300, discountTaxMinor: 60,
+      lines: [{ lineId: line, discountMinor: 300, discountTaxMinor: 60 }] }]);
     expect(order).toMatchObject({ subtotalMinor: 500, taxMinor: 100, totalMinor: 600, discountMinor: 200 });
     expect(order.display).toMatchObject({ subtotalMinor: 1000, discountMinor: 500, orderDiscountMinor: 100 });
     displayIdentity(order);
@@ -121,7 +129,8 @@ describe('store-priced coupons (#709)', () => {
     builder.setCoupons(['save'], priced(builder, { save: ['c1', [[line, 900]]] }));
     const order = builder.getSnapshot();
     expect(order.lineItems[0]).toMatchObject({ netMinor: 0, discountMinor: 400, taxMicros: '0' });
-    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 600, discountTaxMinor: 120 }]);
+    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 600, discountTaxMinor: 120,
+      lines: [{ lineId: line, discountMinor: 600, discountTaxMinor: 120 }] }]);
     expect(order).toMatchObject({ subtotalMinor: 0, taxMinor: 0, totalMinor: 0 });
     expect(order.display).toMatchObject({ subtotalMinor: 1000, discountMinor: 1000 });
     displayIdentity(order);
@@ -135,7 +144,8 @@ describe('store-priced coupons (#709)', () => {
     builder.setCoupons(['save'], priced(builder, { save: ['c1', [[l1, 300]]] }));
     const order = builder.getSnapshot();
     expect(order.lineItems.map((li) => li.netMinor)).toEqual([700, 500]);
-    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 300, discountTaxMinor: 60 }]);
+    expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 300, discountTaxMinor: 60,
+      lines: [{ lineId: l1, discountMinor: 300, discountTaxMinor: 60 }] }]);
     expect(order).toMatchObject({ subtotalMinor: 1200, taxMinor: 240, totalMinor: 1440, discountMinor: 0 });
     expect(order.display.coupons).toEqual([{ code: 'save', amountMinor: 300 }]);
     expect(order.display).toMatchObject({ subtotalMinor: 1500, discountMinor: 300 });
@@ -182,7 +192,8 @@ describe('store-priced coupons (#709)', () => {
       expect(error).toBeInstanceOf(RangeError);
       expect((error as Error).message).toBe(message);
       expect(builder.getSnapshot()).toBe(before);
-      expect(builder.getSnapshot().coupons).toEqual([{ code: 'kept', couponId: 'c0', discountMinor: 100, discountTaxMinor: 20 }]);
+      expect(builder.getSnapshot().coupons).toEqual([{ code: 'kept', couponId: 'c0', discountMinor: 100, discountTaxMinor: 20,
+        lines: [{ lineId: line, discountMinor: 100, discountTaxMinor: 20 }] }]);
     });
 
     it('ignores priced codes that are not set, and re-validates the current context when none is given', () => {
@@ -261,7 +272,9 @@ describe('store-priced coupons (#709)', () => {
       change(sale);
       const order = sale.builder.getSnapshot();
       expect(order).not.toHaveProperty('couponPricesStale');
-      expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 400, discountTaxMinor: 80 }]);
+      // e/t in minor units: sale.line 300/60 and sale.other 100/20, a 3:1 split for both totals.
+      expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 400, discountTaxMinor: 80,
+        lines: [{ lineId: sale.line, discountMinor: 300, discountTaxMinor: 60 }, { lineId: sale.other, discountMinor: 100, discountTaxMinor: 20 }] }]);
       displayIdentity(order);
     });
 
@@ -279,7 +292,8 @@ describe('store-priced coupons (#709)', () => {
       const { builder, other } = pricedSale();
       builder.removeItem(other);
       const order = builder.getSnapshot();
-      expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 300, discountTaxMinor: 60 }]);
+      expect(order.coupons).toEqual([{ code: 'save', couponId: 'c1', discountMinor: 300, discountTaxMinor: 60,
+        lines: [{ lineId: order.lineItems[0].id, discountMinor: 300, discountTaxMinor: 60 }] }]);
       expect(order).toMatchObject({ subtotalMinor: 700, taxMinor: 140, totalMinor: 840, couponPricesStale: true });
     });
   });

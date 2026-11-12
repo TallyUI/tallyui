@@ -55,6 +55,7 @@ export type { OrderManager, OrderManagerOptions, ParkedOrderSummary } from './or
 export type {
   Order,
   OrderCoupon,
+  OrderCouponLine,
   SentOrder,
   LineItem,
   LineTaxLine,
@@ -145,6 +146,7 @@ export { noteDelivery, type NoteDelivery } from './pos-order';
 export { TAX_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export { CUSTOMER_RETAX_REFUSED } from './sale/use-sale';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions } from './pos-order';
+export type { PosOrderCouponLine } from './pos-order/types';
 export { createHttpCommandTransport, createOrderOutbox, isRequeueable, useOrderOutbox, outboxLogger } from './outbox';
 export { createRegisterOutbox, isRegisterRequeueable, useRegisterOutbox, summarizeOutboxHealth, watchOutboxHealth, useOutboxHealth } from './outbox';
 export type { RegisterOutboxOptions, RegisterOutbox, UseRegisterOutboxOptions, UseRegisterOutboxResult } from './outbox';

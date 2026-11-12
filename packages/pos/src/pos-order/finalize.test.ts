@@ -116,13 +116,15 @@ describe('finalizeOrder', () => {
   });
 
   it('finalizes a fresh store-priced coupon sale into the v6 coupons shape (#709)', () => {
-    const { builder } = storePricedSale();
+    const { builder, line } = storePricedSale();
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     const snapshot = builder.getSnapshot();
-    expect(snapshot.coupons).toEqual([{ code: 'save', couponId: 'promo_1', discountMinor: 250, discountTaxMinor: 47 }]);
+    expect(snapshot.coupons).toEqual([{ code: 'save', couponId: 'promo_1', discountMinor: 250, discountTaxMinor: 47,
+      lines: [{ lineId: line, discountMinor: 250, discountTaxMinor: 47 }] }]);
     const envelope = toOrderCreateEnvelope(finalizeOrder(snapshot, { capabilities: { orderCreate: 6 } }), 'device1', 1, { maxVersion: 6 });
     expect(envelope.version).toBe(6);
-    expect(envelope.payload.coupons).toEqual(snapshot.coupons);
+    // v6 carries a coupon's totals only (#790).
+    expect(envelope.payload.coupons).toEqual(snapshot.coupons!.map(({ lines: _lines, ...coupon }) => coupon));
     expect(envelope.payload).toMatchObject({ subtotalMinor: snapshot.subtotalMinor, taxMinor: snapshot.taxMinor });
   });
 
@@ -130,6 +132,28 @@ describe('finalizeOrder', () => {
     const order = finalizeOrder(discountedSale().getSnapshot(), { capabilities: { orderCreate: 3 } });
     expect(order).not.toHaveProperty('coupons');
     for (const line of order.lines) expect(line).not.toHaveProperty('regularUnitPriceMinor');
+  });
+
+  it('stores a store-priced coupon’s lines with the stored line ids, in order', () => {
+    const { builder, line } = storePricedSale();
+    const second = builder.getSnapshot().lineItems[1].id;
+    builder.setCoupons(['save'], { kind: 'store-priced', basis: couponPricingBasis(builder.getSnapshot()),
+      priced: new Map([['save', { couponId: 'promo_1', lines: [{ lineId: second, amountMinor: 100 }, { lineId: line, amountMinor: 250 }] }]]) });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const snapshot = builder.getSnapshot(), order = finalizeOrder(snapshot, { capabilities: { orderCreate: 9 } });
+    expect(snapshot.coupons![0].lines!.map((share) => share.lineId)).toEqual([line, second]);
+    expect(order.coupons![0].lines).toStrictEqual(snapshot.coupons![0].lines!.map((share, i) => ({ ...share, lineId: order.lines[i].id })));
+    expect(order.coupons![0].lines).not.toBe(snapshot.coupons![0].lines);
+    expect(order.lines.map((stored) => stored.id)).not.toEqual([line, second]);
+  });
+
+  it('refuses a coupon line share that names no line on the order', () => {
+    const { builder } = storePricedSale();
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const snapshot = structuredClone(builder.getSnapshot());
+    snapshot.coupons![0].lines![0].lineId = 'missing';
+    expect(() => finalizeOrder(snapshot, { capabilities: { orderCreate: 9 } }))
+      .toThrow("finalize: a coupon's line share names no line on the order");
   });
 
   it('appends localWarnings, remaps builder payment ids by position, and leaves envelope bytes unchanged', () => {
