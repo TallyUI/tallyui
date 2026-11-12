@@ -387,18 +387,24 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           if (max !== undefined && max < (stored.sentVersion ?? from)) {
             try {
               const to = toOrderCreateEnvelope(stored, deviceId, 1, { maxVersion: max }).version;
-              let changed = false;
-              await current.incrementalModify((data) => {
-                changed = data.syncStatus === 'pending' && data.commandId === order.commandId && max < (data.sentVersion ?? from);
-                if (changed) { data.sentVersion = to; data.downgradedFrom ??= from; delete data.serverFailures; }
-                return data;
-              });
-              if (changed) {
-                outboxLogger.warn('Sent an order at a lower order.create version', { orderId: order.id, from, to });
-                progressed = downgraded = true;
-                clocks.delete(order.commandId);
+              // Each downgrade strictly lowers sentVersion and stays within the store's cap, so an order downgrades at
+              // most 8 times; a pick that doesn't is terminal, never a resend at a version the store refused.
+              if (to <= max && to < (stored.sentVersion ?? from)) {
+                let changed = false;
+                await current.incrementalModify((data) => {
+                  changed = data.syncStatus === 'pending' && data.commandId === order.commandId && max < (data.sentVersion ?? from)
+                    && to < (data.sentVersion ?? from);
+                  if (changed) { data.sentVersion = to; data.downgradedFrom ??= from; delete data.serverFailures; }
+                  return data;
+                });
+                if (changed) {
+                  outboxLogger.warn('Sent an order at a lower order.create version', { orderId: order.id, from, to });
+                  progressed = downgraded = true;
+                  clocks.delete(order.commandId);
+                }
+                continue;
               }
-              continue;
+              error = { code: 'unsupported_version', message: `order.create ${to} is the lowest this order can go; the store takes ${max}` };
             } catch (cause) {
               if (!(cause instanceof UnsupportedOrderVersionError)) throw cause;
               error = { code: 'unsupported_version', message: cause.message };

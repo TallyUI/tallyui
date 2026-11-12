@@ -52,6 +52,21 @@ describe('order.create v9 (coupon lines, #790)', () => {
   })
 
   it.each([
+    ['a billing address', { billing: { country: 'DE' } }],
+    ['a shipping address', { shipping: { country: 'DE' } }],
+  ])('refuses %s without taxAddress at 9', (_label, customer) => {
+    expect(command(9, { ...v9, customer })).toEqual(rejected('version 9 customer address requires taxAddress'))
+  })
+
+  it.each([
+    ['no address', { ...v9, taxAddress: 'billing' }],
+    ['an empty country', { ...v9, taxAddress: 'billing', customer: { billing: { country: '' } } }],
+    ['only the other address', { ...v9, taxAddress: 'shipping', customer: { billing: { country: 'DE' } } }],
+  ])('a v9 taxAddress still needs its address country: %s', (_label, payload) => {
+    expect(command(9, payload)).toEqual(rejected(`customer.${payload.taxAddress}.country: expected a non-empty string`))
+  })
+
+  it.each([
     [6, v9],
     [7, v9],
     [8, { ...v9, taxAddress: 'billing', customer: { billing: { country: 'DE' } } }],

@@ -14,7 +14,8 @@ each line (`StorePricedCoupon.lines`), so version 9 sends it.
 
 - **Version 9 is version 8 plus `coupons[].lines`.** Every field of 1–8 keeps its meaning. Unlike version 8, a v9
   payload does not need `taxAddress`; it carries `taxAddress` and the customer's addresses only for a sale taxed on
-  the customer's address, and `note` when the sale has one.
+  the customer's address, and `note` when the sale has one. A v9 payload with a customer address but no `taxAddress`
+  is `invalid_payload`, and a v9 `taxAddress` needs that address's non-empty `country`, as at 8.
 - **When the till sends 9:** the server advertises 9 (`GET /tally/v1/info` →
   `contracts["order.create"]` includes 9), and the order has at least one coupon, and every one of its coupons has
   stored per-line amounts. In 3.x that means the store-priced coupons of #709. WooCommerce's coupons (ADR-077 replay)
