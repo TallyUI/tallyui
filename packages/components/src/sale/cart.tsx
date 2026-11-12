@@ -13,7 +13,7 @@ import { LinePopover } from './line-popover';
 import { ShoppingCartIcon } from '../ui';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, couponDiscountMinor, orderActions = true, checkout, lineEditor = 'inline',
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, lineEditor = 'inline',
   columns,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
@@ -26,6 +26,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     quickDiscounts?: readonly number[];
     /** Rows under the totals' Subtotal, e.g. the platform's coupon chips (passed to CartTotal). */
     afterSubtotal?: ReactNode;
+    /** Draws the totals' Total row. Pass `false` for v2's cart, where the total is on the Checkout button (`checkout`). Default `true`. */
+    showTotal?: boolean;
     /** The coupon amount the app itemises in `afterSubtotal` (e.g. Σ `order.display.coupons`), in integer minor units of
      * the order's currency, in the display mode. When given, the Discount row shows the other discounts only (the
      * totals' discount minus this) and is hidden when they come to 0. Absent: the Discount row is the whole discount. */
@@ -169,7 +171,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       {/* Exclusive: subtotal − discount + tax = total. Inclusive: subtotal − discount = total, the tax "incl.", not added. */}
       <CartTotal className="px-0 py-0" subtotal={money(totals.subtotalMinor)} total={money(totals.totalMinor)}
         discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
-        taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} />
+        taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
       {checkout ? <CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout} actions={checkout.actions}
         disabled={!order.lineItems.length} /> : <View className="flex-row gap-3">

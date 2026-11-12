@@ -14,10 +14,12 @@ export interface CartTotalProps extends Omit<VStackProps, 'children'> {
   className?: string;
   /** Rows rendered directly under Subtotal, e.g. a platform's coupon chips. */
   afterSubtotal?: ReactNode;
+  /** Draws the Total row. Pass `false` when the total shows elsewhere, e.g. v2's Checkout button. Default `true`. */
+  showTotal?: boolean;
 }
 
 /**
- * Displays a cart summary: subtotal, optional discount, optional tax, and total, in the receipt's order.
+ * Displays a cart summary: subtotal, optional discount, optional tax, and an optional Total row, in the receipt's order.
  *
  * ```tsx
  * <CartTotal subtotal={subtotal} discount={discount} taxLines={taxLines} total={total} />
@@ -32,6 +34,7 @@ export function CartTotal({
   locale,
   className,
   afterSubtotal,
+  showTotal = true,
   ...props
 }: CartTotalProps) {
   return (
@@ -57,10 +60,10 @@ export function CartTotal({
         </HStack>
       ))}
 
-      <HStack space="none" className="mt-1.5 justify-between border-t border-border pt-2">
-        <Text className="font-bold">Total</Text>
-        <Text className="font-bold">{formatMoney(total, locale) ?? '—'}</Text>
-      </HStack>
+      {showTotal && <HStack space="none" className="mt-1.5 justify-between border-t border-border pt-2">
+        <Text className="font-semibold">Total</Text>
+        <Text className="font-semibold">{formatMoney(total, locale) ?? '—'}</Text>
+      </HStack>}
     </VStack>
   );
 }
