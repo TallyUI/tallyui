@@ -31,7 +31,7 @@ const OPTIONS: { value: TaxBasedOn; label: string }[] = [
   { value: 'base', label: 'Shop base address' },
 ];
 
-/** The class name rule of @tallyui/pos `taxDerivation` (re-implemented here: components import only types from pos). */
+/** The class name rule of @tallyui/pos `taxDerivation`, copied: pos keeps it private (`taxClassName` in tax/tax-derivation.ts). */
 function classLabel(slug: string): string {
   if (slug === '' || slug === 'standard') return 'Standard';
   const words = slug.replace(/-/g, ' ');

@@ -1,7 +1,7 @@
 import type { JSX } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { formatMoney } from '@tallyui/core';
-import type { OpenSale } from '@tallyui/pos';
+import { isPartlyPaid, type OpenSale } from '@tallyui/pos';
 import { Text } from '../ui/text';
 
 /** Pass `openSales(sale.order, useParkedSales(drafts).parked)`; `onSelect` and `onNew` call `sale.switchSale(id)` and `sale.switchSale(null)`. */
@@ -29,8 +29,7 @@ export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsP
     <View testID="open-sale-tabs" className="h-14 flex-row items-stretch border-t border-border bg-card">
       <ScrollView horizontal accessibilityRole="tablist" showsHorizontalScrollIndicator={false} className="min-w-0 flex-1">
         {sales.map((sale) => {
-          // isPartlyPaid from @tallyui/pos, inlined: components import only types from pos (v2 cart/tab-chip.tsx).
-          const partly = sale.paidMinor > 0 && sale.balanceDueMinor > 0;
+          const partly = isPartlyPaid(sale);
           const status = `Partly paid · ${formatMoney({ amount: sale.balanceDueMinor, currency })} due`;
           return (
             <Pressable key={sale.id} testID={`open-sale-tab-${sale.id}`} accessibilityRole="tab"

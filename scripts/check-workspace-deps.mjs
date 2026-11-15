@@ -29,7 +29,7 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // register screens, job B (register-screens-b): the count/closure maths and one pure data
   // table (denomination faces by currency, not a hook or the store) RegisterCount/ClosureSheet
   // read, never write, from.
-  'countVariance', 'overThreshold', 'denominationTotal', 'denominations', 'varianceText', 'minorToDecimal',
+  'countVariance', 'denominationTotal', 'denominations', 'varianceText', 'minorToDecimal',
   // the approval gate (approved-by): the one "over threshold" definition RegisterCount and
   // useRegisterSession's closeSession share.
   'closeNeedsApproval',
@@ -64,6 +64,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'CAMERA_CONSTRAINTS', 'cameraErrorStatus', 'nativeBarcodeDetector', 'startDecodeLoop',
   // the Reports hero (#715): the pure store-day list a custom range's comparison is sized by, never a hook or the store.
   'daysOf',
+  // the cart tabs (v2 cart/tab-chip.tsx): the one pure test of a partly paid sale the tab chip shows, never a hook or the store.
+  'isPartlyPaid',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

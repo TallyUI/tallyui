@@ -15,7 +15,8 @@ export interface ProductStockBadgeProps extends Omit<HStackProps, 'children'> {
   className?: string;
 }
 
-const statusLabels: Record<StockStatus, string> = {
+/** The stock-status words every stock display uses (catalogue rows, the badge, the variations popover). */
+export const STOCK_STATUS_LABELS: Record<StockStatus, string> = {
   in_stock: 'In Stock',
   out_of_stock: 'Out of Stock',
   backorder: 'On Backorder',
@@ -66,7 +67,7 @@ function formatAsOf(iso: string): string {
  */
 export function ProductStockBadge({ doc, showQuantity = false, showAsOf = true, className, ...props }: ProductStockBadgeProps) {
   const { status, quantity, asOf } = useProductStock(doc);
-  const label = statusLabels[status] ?? statusLabels.unknown;
+  const label = STOCK_STATUS_LABELS[status] ?? STOCK_STATUS_LABELS.unknown;
   const styles = STATUS_STYLES[status] ?? STATUS_STYLES.unknown;
 
   return (
