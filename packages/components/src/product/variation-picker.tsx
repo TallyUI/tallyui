@@ -8,6 +8,7 @@ import { cn } from '@tallyui/theme';
 import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Text } from '../ui/text';
+import { STOCK_STATUS_LABELS } from './product-stock-badge';
 
 export interface VariationPickerProps {
   /** The product name. */
@@ -27,9 +28,8 @@ const CHIP_CHARACTERS = 15;
 
 // ProductStockBadge's label vocabulary; v2 shows nothing for stock it does not track.
 function stockLabel({ status, quantity }: StockLevel): string | null {
-  if (status === 'out_of_stock') return 'Out of Stock';
-  if (status === 'backorder') return 'On Backorder';
-  if (status === 'in_stock' && quantity != null) return `In Stock (${quantity})`;
+  if (status === 'out_of_stock' || status === 'backorder') return STOCK_STATUS_LABELS[status];
+  if (status === 'in_stock' && quantity != null) return `${STOCK_STATUS_LABELS.in_stock} (${quantity})`;
   return null;
 }
 

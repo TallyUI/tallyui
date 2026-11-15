@@ -7,6 +7,7 @@ import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, s
   type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction, type CartQuantityLine } from '@tallyui/pos';
 import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle, CategoryNav } from '../product';
 import { ProductVariantPicker } from '../product/product-variant-picker';
+import { STOCK_STATUS_LABELS } from '../product/product-stock-badge';
 import { VariationPicker } from '../product/variation-picker';
 import { InCartBadge } from '../product/in-cart-badge';
 import { Popover } from '@tallyui/primitives';
@@ -15,10 +16,6 @@ import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/cam
 import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
-
-const STOCK_LABEL = {
-  in_stock: 'In Stock', out_of_stock: 'Out of Stock', backorder: 'On Backorder', unknown: 'Unknown',
-};
 
 // locale/hour12/now are injected (rather than read from the device or the clock inside this
 // function) so the formatting is testable without the device; callers default them to the
@@ -324,7 +321,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
                 <Text className="font-semibold text-foreground">{entry.variant.title}</Text>
                 <Text className="text-muted-foreground">{entry.variant.sku}</Text>
                 <Text className="text-foreground">{variantPriceLabel(entry.variant, currency)}</Text>
-                <Text className="text-muted-foreground">{STOCK_LABEL[entry.variant.stock.status]} · {stockAsOf ? `as of ${formatStockSyncTime(stockAsOf, undefined, hour12)}` : 'not yet synced'}</Text>
+                <Text className="text-muted-foreground">{STOCK_STATUS_LABELS[entry.variant.stock.status]} · {stockAsOf ? `as of ${formatStockSyncTime(stockAsOf, undefined, hour12)}` : 'not yet synced'}</Text>
               </Pressable>
             ))}
             <Pressable accessibilityRole="button" onPress={() => setChooserId(null)} className="rounded-md border border-border bg-card px-4 py-3">
