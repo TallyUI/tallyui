@@ -7,6 +7,7 @@
  * (ADR-080 amendment 1), by the server's rule. WCPOS's `attributeRefunds` fallbacks (allocations,
  * `refunded_amount`) are not ported: the store attributes each refund to a tender in `byMethod`.
  */
+import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 
 export type RefundRow = Pick<PosRefund, 'id' | 'sessionId' | 'status' | 'result'>;
@@ -29,6 +30,14 @@ export type LedgerRow = {
   status: string;
   amountMinor: number;
 };
+
+/** The ledger rows of these orders' payments. Each payment is captured, and a cash payment's amount is already net of change. */
+export function paymentLedgerRows(orders: readonly Pick<PosOrder, 'sessionId' | 'payments'>[]): LedgerRow[] {
+  return orders.flatMap((order) => order.payments.map((payment) => ({
+    session_id: order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
+    status: 'captured', amountMinor: payment.amountMinor,
+  })));
+}
 
 /** `type`, `voids` and `voided_by` are kept as WCPOS names them: neutral across backends. */
 export type Movement = {

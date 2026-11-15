@@ -24,7 +24,7 @@ import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
 import { readFresh, watchFresh } from '../rxdb';
-import { deriveDrawerTerms, deriveExpected, type LedgerRow } from './expected';
+import { deriveDrawerTerms, deriveExpected, paymentLedgerRows, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval, closureVariance } from './register-count.helpers';
 import {
@@ -185,10 +185,7 @@ function currentSession(rows: RegisterSession[], closureRows: Closure[], reserva
 
 /** A session's ledger rows, built from its orders' payments the way `writeClosure` builds them. */
 function ledgerRows(orders: readonly PosOrder[], replaced = replacedOrderIds(orders)): LedgerRow[] {
-  return orders.filter((order) => !replaced.has(order.id)).flatMap((order) => order.payments.map((payment) => ({
-    session_id: order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
-    status: 'captured', amountMinor: payment.amountMinor,
-  })));
+  return paymentLedgerRows(orders.filter((order) => !replaced.has(order.id)));
 }
 
 /** The closure's counted map, as `closeSession` hands it to `writeClosure`: cash is always present. */
@@ -337,6 +334,16 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     && now.getTime() > new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute).getTime();
 
   const requireOpen = () => store.requireOpenSession(sessions ?? undefined, registerId, enabled);
+  /** The conflict session to act on, read past the query cache; RegisterSessionRequiredError when there is none. */
+  const freshConflict = async () => {
+    if (!commandTarget) throw new RegisterSessionRequiredError();
+    const target = commandTarget;
+    const row = currentSession(await readFresh(target.sessions, { selector: { register_id: target.registerId } }),
+      await readFresh(target.closures, { selector: { register_id: target.registerId } }),
+      reservationOf(await readRegister(target.host), target.storeKey, target.registerId));
+    if (row?.status !== 'conflict') throw new RegisterSessionRequiredError();
+    return { target, sessionId: row.id };
+  };
   // A non-null id means `sessions` was there to find it.
   const requireSaleSession = async () => {
     const id = await requireOpen();
@@ -400,20 +407,12 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     requireSaleSession,
     actions: {
       takeOver: async () => {
-        if (!commandTarget) throw new RegisterSessionRequiredError();
-        const row = currentSession(await readFresh(commandTarget.sessions, { selector: { register_id: commandTarget.registerId } }),
-          await readFresh(commandTarget.closures, { selector: { register_id: commandTarget.registerId } }),
-          reservationOf(await readRegister(commandTarget.host), commandTarget.storeKey, commandTarget.registerId));
-        if (row?.status !== 'conflict') throw new RegisterSessionRequiredError();
-        await takeOverSession({ ...commandTarget, sessionId: row.id, registerContract: options.capabilities?.register });
+        const { target, sessionId } = await freshConflict();
+        await takeOverSession({ ...target, sessionId, registerContract: options.capabilities?.register });
       },
       chooseAnotherRegister: async () => {
-        if (!commandTarget) throw new RegisterSessionRequiredError();
-        const row = currentSession(await readFresh(commandTarget.sessions, { selector: { register_id: commandTarget.registerId } }),
-          await readFresh(commandTarget.closures, { selector: { register_id: commandTarget.registerId } }),
-          reservationOf(await readRegister(commandTarget.host), commandTarget.storeKey, commandTarget.registerId));
-        if (row?.status !== 'conflict') throw new RegisterSessionRequiredError();
-        await abandonSession({ ...commandTarget, sessionId: row.id });
+        const { target, sessionId } = await freshConflict();
+        await abandonSession({ ...target, sessionId });
       },
       /** ADR-082 d7: sends `approvalNeeded`'s closure again with a new proof and approver; `RegisterReapproveError` unless it is refused with either approval code at contract 3. */
       reapproveClosure: async (input: { closureId: string; approval: string; approvedBy: string }) => {

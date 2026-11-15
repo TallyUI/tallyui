@@ -16,7 +16,7 @@ import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
-import { deriveExpected, refundAmounts, type LedgerRow } from './expected';
+import { deriveExpected, paymentLedgerRows, refundAmounts } from './expected';
 import { recordRegisterFact } from './facts';
 import { MAX_REASON_LENGTH } from './movement-input';
 import { countVariance } from './register-count.helpers';
@@ -497,16 +497,7 @@ export async function writeClosure({
   const replaced = replacedOrderIds(orders);
   const bound = orders.filter((order) => order.sessionId === session.id && !replaced.has(order.id));
   const countedRefunds = (refunds ?? []).filter((refund) => refund.status === 'applied' && refund.sessionId === session.id);
-  // Each payment is captured, and a cash payment's amount is already net of change.
-  const rows: LedgerRow[] = bound.flatMap((order) =>
-    order.payments.map((payment) => ({
-      session_id: order.sessionId,
-      kind: payment.method === 'cash' ? 'cash' : 'other',
-      method_id: payment.method,
-      status: 'captured',
-      amountMinor: payment.amountMinor,
-    })),
-  );
+  const rows = paymentLedgerRows(bound);
   const entries = movements.filter((row) => row.session_id === session.id);
   const till_expected =
     tillExpected ??
