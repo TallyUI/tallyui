@@ -6,6 +6,7 @@ import type { RegisterSessionCollection } from '../register/session-store';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
 import { STUCK_AFTER_MS } from './order-outbox';
+import { DEFAULT_INITIAL_BACKOFF_MS, DEFAULT_MAX_BACKOFF_MS, retryDelay } from './retry-delay';
 import { safeErrorMessage, safeErrorString } from './safe-error';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -71,8 +72,8 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   const { collection, sessions, transport, deviceId } = options;
   const size = options.batchSize;
   const batchSize = Math.max(1, Math.min(typeof size === 'number' && Number.isFinite(size) ? Math.floor(size) : 10, 10));
-  const initialBackoff = options.initialBackoffMs ?? 1000;
-  const maxBackoff = options.maxBackoffMs ?? 60000;
+  const initialBackoff = options.initialBackoffMs ?? DEFAULT_INITIAL_BACKOFF_MS;
+  const maxBackoff = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
   const random = options.random ?? Math.random;
   const now = options.now ?? Date.now;
   const state$ = new BehaviorSubject<OutboxState>({ pending: 0, sending: false });
@@ -151,7 +152,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
   function scheduleRetry(reason: string, retryAfterMs = 0) {
     state$.next({ ...state$.value, lastRetryReason: reason, stuck: stuckState() });
     if (stopped) { stoppedDuringRun = true; return; }
-    const delay = Math.min(Math.max(retryAfterMs, backoff * (0.9 + 0.2 * random())), maxBackoff);
+    const delay = retryDelay(backoff, retryAfterMs, maxBackoff, random);
     backoff = Math.min(backoff * 2, maxBackoff);
     timer = setTimeout(() => { timer = undefined; flush().catch(() => {}); }, delay);
     state$.next({ ...state$.value, sending: false, nextAttemptAt: now() + delay });
