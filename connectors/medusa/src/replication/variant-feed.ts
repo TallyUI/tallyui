@@ -1,5 +1,5 @@
-import { ConnectorUnauthorizedError } from '@tallyui/core';
-import type { ReplicationAdapter, SyncContext } from '@tallyui/core';
+import type { ReplicationAdapter } from '@tallyui/core';
+import { adminGet } from '../admin-get';
 import { fetchByIds } from '../reconcile/ids';
 import { MEDUSA_PRODUCT_FIELDS, toDocument, type MedusaProductCheckpoint } from './products';
 import { withCalculatedPrices } from '../pricing/calculated';
@@ -9,19 +9,6 @@ import type { MedusaProductDocument } from '../schemas/products';
 const MAX_LIMIT = 1000;
 /** The newest variant's `updated_at`: each pass's mark, and a fresh install's seed. */
 const MARK_PATH = '/admin/product-variants?limit=1&order=-updated_at&fields=id,updated_at';
-
-async function get(path: string, context: SyncContext) {
-  const response = await fetch(`${context.baseUrl}${path}`, {
-    headers: { ...context.headers, 'Content-Type': 'application/json' },
-    signal: context.signal,
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status as 401 | 403);
-    throw new Error(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`);
-  }
-  return response.json();
-}
 
 /**
  * Variant feed for Medusa products (ADR-060, amendment 8).
@@ -50,7 +37,7 @@ export const createMedusaVariantFeedReplication = (variantPageSize = MAX_LIMIT):
     // The next call's unchanged-mark check then ends at one mark read, unless
     // a variant changed since.
     async seedCheckpoint(context) {
-      const markData = await get(MARK_PATH, context);
+      const markData = await adminGet(MARK_PATH, context);
       return { offset: 0, updated_at: markData.variants?.[0]?.updated_at ?? '', pass_mark: undefined, pass_count: undefined };
     },
     async handler(lastCheckpoint, batchSize, context) {
@@ -58,7 +45,7 @@ export const createMedusaVariantFeedReplication = (variantPageSize = MAX_LIMIT):
       let passMark = lastCheckpoint?.pass_mark ?? lastCheckpoint?.updated_at ?? '';
       let passCount = lastCheckpoint?.pass_count;
       if (offset === 0 && lastCheckpoint?.pass_mark === undefined) {
-        const markData = await get(MARK_PATH, context);
+        const markData = await adminGet(MARK_PATH, context);
         passMark = markData.variants?.[0]?.updated_at ?? passMark;
         if (lastCheckpoint?.updated_at && passMark === lastCheckpoint.updated_at) {
           return { documents: [], checkpoint: lastCheckpoint };
@@ -70,7 +57,7 @@ export const createMedusaVariantFeedReplication = (variantPageSize = MAX_LIMIT):
         // Medusa 2.21 honours only the operator form; `updated_at[gte]` is silently dropped.
         // The columns are timestamptz and `$gte` includes ties, as in the product feed.
         if (lastCheckpoint?.updated_at) params.set('updated_at[$gte]', lastCheckpoint.updated_at);
-        return get(`/admin/product-variants?${params}`, context);
+        return adminGet(`/admin/product-variants?${params}`, context);
       };
 
       // RxDB stops pulling on a page shorter than batchSize, so keep reading
@@ -109,7 +96,7 @@ export const createMedusaVariantFeedReplication = (variantPageSize = MAX_LIMIT):
       const moved = (['offset', 'updated_at', 'pass_mark', 'pass_count'] as const)
         .some((key) => checkpoint[key] !== lastCheckpoint?.[key]);
       if (!documents.length && moved) {
-        const carrier = await get(`/admin/products?${new URLSearchParams({ limit: '1', fields: MEDUSA_PRODUCT_FIELDS })}`, context);
+        const carrier = await adminGet(`/admin/products?${new URLSearchParams({ limit: '1', fields: MEDUSA_PRODUCT_FIELDS })}`, context);
         const priced = await withCalculatedPrices((carrier.products ?? []).map(toDocument) as MedusaProductDocument[], context);
         documents.push(...priced.map((doc) => ({ ...doc, _deleted: false })));
       }

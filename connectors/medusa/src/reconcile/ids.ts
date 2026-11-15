@@ -1,5 +1,5 @@
-import { ConnectorUnauthorizedError } from '@tallyui/core';
 import type { SyncContext } from '@tallyui/core';
+import { adminGet } from '../admin-get';
 import { MEDUSA_PRODUCT_FIELDS, toDocument } from '../replication/products';
 import { withCalculatedPrices } from '../pricing/calculated';
 import type { MedusaProductDocument } from '../schemas/products';
@@ -13,24 +13,11 @@ const PAGE_SIZE = 1000;
  */
 export const MAX_IDS_PER_REQUEST = 100;
 
-async function get(path: string, context: SyncContext) {
-  const response = await fetch(`${context.baseUrl}${path}`, {
-    headers: { ...context.headers, 'Content-Type': 'application/json' },
-    signal: context.signal,
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status as 401 | 403);
-    throw new Error(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`);
-  }
-  return response.json();
-}
-
 /** Every live product id with its live variant ids, one request per page (ADR-060). */
 export async function* fetchPages(context: SyncContext): AsyncIterable<Array<{ id: string; variantIds: string[] }>> {
   for (let offset = 0, count = 1; offset < count; offset += PAGE_SIZE) {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset), order: 'id', fields: 'id,variants.id' });
-    const data = await get(`/admin/products?${params}`, context);
+    const data = await adminGet(`/admin/products?${params}`, context);
     const products: Array<{ id: string; variants?: Array<{ id: string }> }> = data.products ?? [];
     count = data.count;
     yield products.map((p) => ({ id: String(p.id), variantIds: (p.variants ?? []).map((v) => String(v.id)) }));
@@ -49,7 +36,7 @@ export async function fetchByIds(ids: string[], context: SyncContext): Promise<R
     const chunk = ids.slice(i, i + MAX_IDS_PER_REQUEST);
     const params = new URLSearchParams({ fields: MEDUSA_PRODUCT_FIELDS, limit: String(chunk.length) });
     for (const id of chunk) params.append('id[]', id);
-    const data = await get(`/admin/products?${params}`, context);
+    const data = await adminGet(`/admin/products?${params}`, context);
     const products: Array<Record<string, unknown>> = data.products ?? [];
     results.push(...products.map(toDocument));
   }

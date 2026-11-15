@@ -1,5 +1,5 @@
-import { ConnectorUnauthorizedError } from '@tallyui/core';
 import type { StockReconcileAdapter } from '@tallyui/core';
+import { adminGet } from '../admin-get';
 
 type Level = { stocked_quantity: number; reserved_quantity: number };
 
@@ -24,16 +24,7 @@ export const medusaStockReconcile: StockReconcileAdapter = {
     for (let offset = 0, count = 1; offset < count; offset += PAGE_SIZE) {
       // Offset paging needs a total order, or items can be skipped or repeated between pages.
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset), fields: FIELDS, order: 'id' });
-      const response = await fetch(`${context.baseUrl}/admin/inventory-items?${params}`, {
-        headers: { ...context.headers, 'Content-Type': 'application/json' },
-        signal: context.signal,
-      });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status as 401 | 403);
-        throw new Error(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`);
-      }
-      const data = await response.json() as { inventory_items: Array<{ id: string; location_levels?: Level[] }>; count: number };
+      const data = await adminGet(`/admin/inventory-items?${params}`, context) as { inventory_items: Array<{ id: string; location_levels?: Level[] }>; count: number };
       count = data.count;
       yield new Map(data.inventory_items.map((item) => [item.id, (item.location_levels ?? [])
         .map(({ stocked_quantity, reserved_quantity }) => ({ stocked_quantity, reserved_quantity }))]));

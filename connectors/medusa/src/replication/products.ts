@@ -1,6 +1,7 @@
-import { compareIds, ConnectorUnauthorizedError } from '@tallyui/core';
+import { compareIds } from '@tallyui/core';
 import type { ReplicationAdapter } from '@tallyui/core';
 
+import { adminGet } from '../admin-get';
 import { medusaProductSchema, type MedusaProductDocument } from '../schemas/products';
 import { withCalculatedPrices } from '../pricing/calculated';
 
@@ -63,16 +64,7 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
       const offset = lastCheckpoint?.offset ?? 0;
       let passMark = lastCheckpoint?.pass_mark ?? lastCheckpoint?.updated_at ?? '';
       if (offset === 0 && lastCheckpoint?.pass_mark === undefined) {
-        const markResponse = await fetch(
-          `${context.baseUrl}/admin/products?limit=1&order=-updated_at&fields=id,updated_at`,
-          { headers: { ...context.headers, 'Content-Type': 'application/json' }, signal: context.signal },
-        );
-        if (!markResponse.ok) {
-          const error = await markResponse.json().catch(() => ({}));
-          if (markResponse.status === 401 || markResponse.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${markResponse.status}${error?.message ? `: ${error.message}` : ''}`, markResponse.status as 401 | 403);
-          throw new Error(`Medusa API error: ${markResponse.status}${error?.message ? `: ${error.message}` : ''}`);
-        }
-        const markData = await markResponse.json();
+        const markData = await adminGet('/admin/products?limit=1&order=-updated_at&fields=id,updated_at', context);
         passMark = markData.products?.[0]?.updated_at ?? passMark;
         if (lastCheckpoint?.updated_at && passMark === lastCheckpoint.updated_at) {
           return { documents: [], checkpoint: lastCheckpoint };
@@ -93,24 +85,7 @@ export const medusaProductReplication: ReplicationAdapter<any, MedusaProductChec
         params.set('updated_at[$gte]', lastCheckpoint.updated_at);
       }
 
-      const response = await fetch(
-        `${context.baseUrl}/admin/products?${params}`,
-        {
-          headers: {
-            ...context.headers,
-            'Content-Type': 'application/json',
-          },
-          signal: context.signal,
-        },
-      );
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`, response.status as 401 | 403);
-        throw new Error(`Medusa API error: ${response.status}${error?.message ? `: ${error.message}` : ''}`);
-      }
-
-      const data = await response.json();
+      const data = await adminGet(`/admin/products?${params}`, context);
       const products: any[] = data.products ?? [];
       if (offset > 0 && (products.length === 0 || data.count < (lastCheckpoint?.pass_count ?? data.count))) {
         return medusaProductReplication.pull.handler({
