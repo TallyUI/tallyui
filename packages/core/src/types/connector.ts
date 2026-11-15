@@ -153,7 +153,7 @@ const maxVersion = (list: unknown): number | undefined => {
  * Reads a 2xx body of `GET /tally/v1/info` (ADR-062): `orderCreate` is the max of
  * `contracts["order.create"]`, or 1 when it's missing or malformed; `register` is the max of
  * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287); malformed `lineTax` is ignored.
- * malformed `registerApproval` is ignored (ADR-082). `coupons` is true only when the body says `coupons: true` (#709).
+ * A malformed `registerApproval` is ignored (ADR-082). `coupons` is true only when the body says `coupons: true` (#709).
  * `orderRefund` is the max of `contracts["order.refund"]` when valid, otherwise absent (ADR-080).
  * `customerDisplay` is present only when `parseDisplayAdvertisement` accepts it; a malformed one warns (ADR-085).
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
@@ -247,7 +247,7 @@ export interface SyncContext {
  */
 export interface ConnectorSchemas {
   products: RxJsonSchema<any>;
-  // Future: orders, customers, taxes, etc.
+  // Any other collection's schema, keyed by the collection's name.
   [key: string]: RxJsonSchema<any>;
 }
 

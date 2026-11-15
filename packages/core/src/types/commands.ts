@@ -8,6 +8,7 @@ export interface CommandEnvelope<P = unknown> {
   /** 3 when the order carries ADR-065's `display` and `taxByRate` (the store accepts 3), else 2 when discounted, else 1;
    *  4 is 3 with every `discountMinor` tax-exclusive, built only when capped at 4 or more (#286).
    *  5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
+   *  6 is 5 plus coupons, regular prices, line attributes and Any picks (ADR-077, #495), sent only for an order that has one.
    *  7 is 6 plus the sale's `note` (ADR-083), sent only for an order that has one.
    *  8 is 7 plus `taxAddress` and the customer's addresses (#722), sent only for a sale taxed on the customer's address.
    *  9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
@@ -58,6 +59,7 @@ export interface OrderRefundOrderStateData { state: string }
 export interface OrderRefundNoOpenSessionData { sessionId: string }
 
 /** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
+ * 6 is 5 plus coupons, regular prices, line attributes and Any picks (ADR-077, #495).
  * 7 is 6 plus the sale's note (ADR-083). 8 is 7 plus `taxAddress` and the customer's addresses (#722).
  * 9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
 export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 };
