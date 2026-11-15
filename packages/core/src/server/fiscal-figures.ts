@@ -7,7 +7,7 @@ export type CommandErrorWithData = CommandError
 /** @deprecated Use `OrderCreatePayload` from `@tallyui/core`; kept for plugins migrating from local copies. */
 export type OrderCreatePayloadV3 = OrderCreatePayload
 
-export function fiscalFiguresErrors(payload: OrderCreatePayloadV3): string[] {
+export function fiscalFiguresErrors(payload: OrderCreatePayload): string[] {
   const errors: string[] = []
   const check = (valid: boolean, path: string, expected: string) => {
     if (!valid && errors.length < 10) errors.push(`${path}: expected ${expected}`)

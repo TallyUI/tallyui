@@ -1,6 +1,6 @@
 import { MAX_COMMANDS_PER_BATCH } from '../commands'
 import type { AnyCommandEnvelope, BatchTooLargeBody, CommandEnvelope, CommandResult, OrderCreatePayload, RegisterCommandEnvelope } from '../types'
-import { fiscalFiguresErrors, type OrderCreatePayloadV3 } from './fiscal-figures'
+import { fiscalFiguresErrors } from './fiscal-figures'
 import { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
 
 /** An envelope validateBatch accepted: every field's shape is checked, and its version is any positive
@@ -43,6 +43,12 @@ export function validateBatch(body: unknown):
   return { ok: true, commands }
 }
 
+// A rejected result; `data` is set only when given, so an invalid_payload error has no data key.
+const rejected = (id: string, code: 'unsupported_version' | 'invalid_payload', message: string, data?: Record<string, number>): CommandResult =>
+  ({ id, status: 'rejected', error: data === undefined ? { code, message } : { code, message, data } })
+// A server lists at most ten payload errors in one message.
+const firstTen = (errors: readonly string[]) => errors.slice(0, 10).join('; ')
+
 /**
  * The rejection a batch returns for this command before any executor runs, or undefined
  * when the command goes on to the plugin's executor. A plugin's batch handler calls
@@ -69,36 +75,33 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   if (envelope.type === 'order.refund') {
     const versions = supported.orderRefund ?? []
     if (!versions.includes(envelope.version)) {
-      return { id: envelope.id, status: 'rejected', error: { code: 'unsupported_version',
-        message: `order.refund version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : 'takes no refunds'}`,
-        data: { orderRefund: versions.length ? Math.max(...versions) : 0 },
-      } }
+      return rejected(envelope.id, 'unsupported_version',
+        `order.refund version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : 'takes no refunds'}`,
+        { orderRefund: versions.length ? Math.max(...versions) : 0 })
     }
     return undefined
   }
   if (envelope.type !== 'order.create') {
     if (!supported.register.includes(envelope.version)) {
-      return { id: envelope.id, status: 'rejected', error: { code: 'unsupported_version',
-        message: `register version ${envelope.version} is not supported; this server supports ${supported.register.join(', ')}`,
-        data: { register: Math.max(...supported.register) },
-      } }
+      return rejected(envelope.id, 'unsupported_version',
+        `register version ${envelope.version} is not supported; this server supports ${supported.register.join(', ')}`,
+        { register: Math.max(...supported.register) })
     }
     return undefined
   }
   const command = envelope as CommandEnvelope<OrderCreatePayload>
   if (!supported.orderCreate.includes(command.version)) {
-    return { id: command.id, status: 'rejected', error: { code: 'unsupported_version',
-      message: `order.create version ${command.version} is not supported; this server supports ${supported.orderCreate.join(', ')}`,
-      data: { orderCreate: Math.max(...supported.orderCreate) },
-    } }
+    return rejected(command.id, 'unsupported_version',
+      `order.create version ${command.version} is not supported; this server supports ${supported.orderCreate.join(', ')}`,
+      { orderCreate: Math.max(...supported.orderCreate) })
   }
   // ADR-062 sends version 2 exactly when there is a discount, so version 1 can never create adjustments.
   const { lines, discountMinor } = command.payload as { lines?: unknown; discountMinor?: unknown }
   const discounted = discountMinor !== undefined
     || (Array.isArray(lines) && lines.some(line => (line as { discountMinor?: unknown } | null)?.discountMinor !== undefined))
-  const payload = command.payload as OrderCreatePayloadV3
+  const payload = command.payload as OrderCreatePayload
   const { display, taxByRate, sessionId } = payload
-  // Versions 4 and 5 carry version 3's fields, with tax-exclusive discountMinor (#286).
+  // Version 4 and later carry version 3's fields, with tax-exclusive discountMinor (#286).
   const v3 = command.version >= 3
   const v5Fields = ['fees', 'shipping'].filter(field => payload[field as 'fees' | 'shipping'] !== undefined)
   if (Array.isArray(lines)) lines.forEach((line, index) => {
@@ -142,17 +145,17 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     if (versionError) break
   }
   if (versionError) {
-    return { id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: versionError } }
+    return rejected(command.id, 'invalid_payload', versionError)
   }
   const bounds = payloadBoundErrors(payload)
   if (bounds.length) {
-    return { id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: bounds.slice(0, 10).join('; ') } }
+    return rejected(command.id, 'invalid_payload', firstTen(bounds))
   }
   const shape = payloadShapeErrors(payload)
   const errors = command.version >= 5 && shape.length ? shape
     : v3 && display !== undefined && taxByRate !== undefined && shape.length === 0 ? fiscalFiguresErrors(payload) : []
   if (errors.length) {
-    return { id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: errors.slice(0, 10).join('; ') } }
+    return rejected(command.id, 'invalid_payload', firstTen(errors))
   }
   return undefined
 }
