@@ -7,6 +7,7 @@ import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, replacedOr
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
+import { DEFAULT_INITIAL_BACKOFF_MS, DEFAULT_MAX_BACKOFF_MS, retryDelay } from './retry-delay';
 import type { CommandTransport, OutboxState } from './types';
 
 // Pause after three 401s since the server last accepted credentials.
@@ -63,7 +64,7 @@ export interface OrderOutbox {
   /** Sends pending orders until empty or retrying. Concurrent calls share one run. */
   flush(): Promise<void>;
   /** Moves rejected orders (all, or those whose id is listed) back to pending with a new commandId, then flushes.
-   * Orders rejected with idempotency_mismatch are left for reconciliation. Resolves to the number requeued. */
+   * Orders whose rejection code isRequeueable refuses are left alone. Resolves to the number requeued. */
   requeue(orderIds?: string[]): Promise<number>;
   /** Watches for pending orders and sends them. */
   start(): void;
@@ -75,8 +76,8 @@ export interface OrderOutbox {
 export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const { collection, transport, deviceId } = options;
   const batchSize = Math.min(options.batchSize ?? 10, 10);
-  const initialBackoff = options.initialBackoffMs ?? 1000;
-  const maxBackoff = options.maxBackoffMs ?? 60000;
+  const initialBackoff = options.initialBackoffMs ?? DEFAULT_INITIAL_BACKOFF_MS;
+  const maxBackoff = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
   const random = options.random ?? Math.random;
   const now = options.now ?? Date.now;
   const state$ = new BehaviorSubject<OutboxState>({ pending: 0, sending: false });
@@ -199,7 +200,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
 
   function isolate(id: string, reason: string, retryAfterMs = 0) {
     const entry = isolated.get(id) ?? { backoff: initialBackoff };
-    const delay = Math.min(Math.max(retryAfterMs, entry.backoff * (0.9 + 0.2 * random())), maxBackoff);
+    const delay = retryDelay(entry.backoff, retryAfterMs, maxBackoff, random);
     isolated.set(id, { reason, backoff: Math.min(entry.backoff * 2, maxBackoff), nextAt: now() + delay });
   }
 
@@ -228,12 +229,17 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   function scheduleRetry(reason: string, retryAfterMs = 0, wait?: number) {
     state$.next({ ...state$.value, lastRetryReason: reason });
     if (stopped) { stoppedDuringRun = true; return; }
-    const delay = wait ?? Math.min(Math.max(retryAfterMs, backoff * (0.9 + 0.2 * random())), maxBackoff);
+    const delay = wait ?? retryDelay(backoff, retryAfterMs, maxBackoff, random);
     if (wait === undefined) backoff = Math.min(backoff * 2, maxBackoff);
     isolatedWait = wait !== undefined;
     // A timer firing while a run is still finishing finds it busy: the run's end flushes again.
     timer = setTimeout(() => { timer = undefined; if (running) timerFiredDuringRun = true; flush().catch(() => {}); }, delay);
     state$.next({ ...state$.value, sending: false, nextAttemptAt: now() + delay });
+  }
+
+  // A failed refresh is logged; the caller reads whatever capabilities are cached.
+  async function refreshCapabilities() {
+    try { await options.refreshCapabilities?.(); } catch (cause) { outboxLogger.warn('Failed to refresh capabilities', { cause }); }
   }
 
   async function run() {
@@ -338,9 +344,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       if (outcome.kind === 'refused' && outcome.status === 400 && options.getMaxOrderCreateVersion) {
         const match = /^Invalid commands\[(\d+)\]\.version$/.exec(outcome.reason);
         if (match) {
-          try { await options.refreshCapabilities?.(); } catch (cause) { outboxLogger.warn('Failed to refresh capabilities', { cause }); }
-          const advertised = await options.getMaxOrderCreateVersion();
-          const max = typeof advertised === 'number' && Number.isSafeInteger(advertised) && advertised > 0 ? advertised : undefined;
+          await refreshCapabilities();
+          const max = validMax(await options.getMaxOrderCreateVersion());
           if (max !== undefined && max < batch[Number(match[1])]?.version) {
             batchMax = max;
             capabilitiesRefreshed = true;
@@ -375,11 +380,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         let error = result.error;
         if (result.status === 'rejected' && error?.code === 'unsupported_version' && options.getMaxOrderCreateVersion) {
           if (!capabilitiesRefreshed) {
-            try { await options.refreshCapabilities?.(); } catch (cause) { outboxLogger.warn('Failed to refresh capabilities', { cause }); }
-            const advertised = error.data?.orderCreate;
-            const max = typeof advertised === 'number' && Number.isSafeInteger(advertised) && advertised > 0
-              ? advertised : await options.getMaxOrderCreateVersion();
-            batchMax = typeof max === 'number' && Number.isSafeInteger(max) && max > 0 ? max : undefined;
+            await refreshCapabilities();
+            // The rejection's own advertised max wins; otherwise ask the store's capabilities.
+            batchMax = validMax(validMax(error.data?.orderCreate) ?? await options.getMaxOrderCreateVersion());
             capabilitiesRefreshed = true;
           }
           const max = batchMax;
