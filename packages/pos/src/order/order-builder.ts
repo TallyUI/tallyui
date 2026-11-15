@@ -186,12 +186,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const grossMinor = line.unitPriceMinor * line.quantity;
 
     // Each amount is what that discount actually removed, capped at what's left, matching buildOrder's order-discount path (ADR-062).
-    let remaining = grossMinor;
-    const recalcedDiscounts = line.discounts.map((d) => {
-      const amountMinor = Math.min(remaining, computeDiscountAmount(d, d.type === 'percentage' ? grossMinor : remaining));
-      remaining -= amountMinor;
-      return { ...d, amountMinor };
-    });
+    const recalcedDiscounts = capSequentially(line.discounts, grossMinor);
 
     // The order share never exceeds what the line discounts leave (allocateOrderDiscount's bound).
     const lineDiscountMinor = Math.min(grossMinor, recalcedDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
@@ -235,6 +230,17 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     return Math.max(0, Math.min(discount.value, base));
   }
 
+  /** Applies each discount in turn: a percentage is computed on `base`, a fixed one on what is left,
+   *  and each amount is capped at what the earlier ones leave (ADR-062). */
+  function capSequentially<D extends Discount>(discounts: readonly D[], base: number): (D & { amountMinor: number })[] {
+    let remaining = base;
+    return discounts.map((d) => {
+      const amountMinor = Math.min(remaining, computeDiscountAmount(d, d.type === 'percentage' ? base : remaining));
+      remaining -= amountMinor;
+      return { ...d, amountMinor };
+    });
+  }
+
   function buildOrder(): Order {
     // Order discounts are pre-tax (ADR-062). The base is the lines' pre-order-discount amounts, each in its
     // own mode (an inclusive line's shelf amount, an exclusive line's net). A percentage discount is additive:
@@ -244,12 +250,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // taxed on what is left.
     const lineAmounts = lineItems.map((li) => woo ? li.unitPriceMinor * li.quantity - li.discountMinor : li.netMinor);
     const base = lineAmounts.reduce((sum, amount) => sum + Math.max(0, amount), 0);
-    let remaining = base;
-    const recalcedOrderDiscounts = orderDiscounts.map((d) => {
-      const amountMinor = Math.min(remaining, computeDiscountAmount(d, d.type === 'percentage' ? base : remaining));
-      remaining -= amountMinor;
-      return { ...d, amountMinor };
-    });
+    const recalcedOrderDiscounts = capSequentially(orderDiscounts, base);
     const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const displaySourceLines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
     const store = couponContext && 'kind' in couponContext ? couponContext : undefined;
