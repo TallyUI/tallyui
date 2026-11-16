@@ -19,7 +19,7 @@ import { reportOrderFromPosOrder } from './adapters';
 describe('a WooCommerce sale with a converted line: receipt, recorded taxByRate, Reports and the Z report agree per rate', () => {
   let db: RxDatabase<{ register_sessions: RegisterSessionCollection; closures: ClosureCollection }>;
   let splits: Record<'receipt' | 'recorded' | 'reportsFallback' | 'zReport', {
-    ratePpm: number; netMinor?: number; amountMinor: number;
+    ratePpm: number; netMinor?: number | null; amountMinor: number;
   }[]>;
 
   beforeAll(async () => {
