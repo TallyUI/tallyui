@@ -1,7 +1,7 @@
 import {
   CustomerServiceError, type Customer, type CustomerAddress, type CustomerInput, type CustomerPage, type CustomerPatch, type SyncContext,
 } from '@tallyui/core';
-import { checkResponse } from './replication/products';
+import { checkResponse, WCPOS_UUID_META_KEY } from './replication/products';
 
 type WooCustomerRow = {
   id: number | string;
@@ -155,7 +155,7 @@ export function createWooCustomers(options?: { newId?: () => string }) {
       if (!Array.isArray(rows)) throw new CustomerServiceError('server', 'unexpected response');
       const row: WooCustomerRow | undefined = rows.find((raw: WooCustomerRow) => String(raw.id) === id);
       if (!row) throw new CustomerServiceError('invalid', 'Unknown customer');
-      const uuid = row.meta_data?.find((entry) => entry.key === '_woocommerce_pos_uuid')?.value;
+      const uuid = row.meta_data?.find((entry) => entry.key === WCPOS_UUID_META_KEY)?.value;
       if (typeof uuid !== 'string' || !uuid) throw new CustomerServiceError('server', 'unexpected response');
       const payload = toWooPatch(patch);
       if (Object.keys(payload).length === 0) return toWooCustomer(row);

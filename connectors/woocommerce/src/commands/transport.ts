@@ -1,5 +1,6 @@
 // ADR-073; M3-spike-paid-push.md proves paid order pushes against WCPOS 1.10.20.
 import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, woocommerceTax, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
+import { WCPOS_UUID_META_KEY } from '../replication/products';
 
 export type WooTransportOutcome =
   | { kind: 'results'; results: CommandResult[] }
@@ -170,7 +171,7 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   }
   const primary = p.payments.reduce((largest, payment) => payment.amountMinor > largest.amountMinor ? payment : largest);
   const cash = primary.method === 'cash';
-  const meta_data = [{ key: '_woocommerce_pos_uuid', value: p.clientOrderId }];
+  const meta_data = [{ key: WCPOS_UUID_META_KEY, value: p.clientOrderId }];
   if (p.payments.length > 1) {
     meta_data.push({ key: '_woocommerce_pos_payments', value: JSON.stringify(p.payments.map((payment) => ({
       method: payment.method === 'cash' ? 'pos_cash' : 'pos_card',

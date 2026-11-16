@@ -4,6 +4,7 @@ import {
 } from '@tallyui/core';
 import { customerRequest } from './customers';
 import { wooMinorFromDecimal } from './commands/transport';
+import { WCPOS_UUID_META_KEY } from './replication/products';
 
 type Row = Record<string, unknown>;
 
@@ -42,7 +43,7 @@ function decimalSumMinor(a: unknown, b: unknown, currency: string): number {
 const grossTax = (net: unknown, tax: unknown, currency: string) => decimalSumMinor(net, tax, currency) - minor(net, currency);
 
 function posUuid(metaData: unknown): string | undefined {
-  const entry = rows(metaData).find((meta) => meta.key === '_woocommerce_pos_uuid' && nonEmpty(meta.value));
+  const entry = rows(metaData).find((meta) => meta.key === WCPOS_UUID_META_KEY && nonEmpty(meta.value));
   return entry ? (entry.value as string) : undefined;
 }
 

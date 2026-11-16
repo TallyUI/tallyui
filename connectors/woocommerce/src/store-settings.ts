@@ -1,7 +1,7 @@
 import { ConnectorUnauthorizedError, StoreSettingsError, minorUnitDigits, woocommerceTax } from '@tallyui/core';
 import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/core';
 
-/** The highest order.create version the WooCommerce transport maps without coupons: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). Coupons make 6 (ADR-077 d4a-woo). */
+/** The highest order.create version the WooCommerce transport maps without coupons: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). A store with coupons gets 8 (`WOO_TAX_ADDRESS_ORDER_CREATE_VERSION`): 6 adds coupons (ADR-077 d4a-woo), 7 the note, 8 the tax address. */
 export const WOO_ORDER_CREATE_VERSION = 5;
 /** Version 7 is version 6 plus the sale note (ADR-083), mapped to WooCommerce's customer_note; a store takes it wherever it takes 6. Version 6 is version 5 plus coupons: it needs both order_create_v5 and the coupons gate. */
 export const WOO_NOTE_ORDER_CREATE_VERSION = 7;
