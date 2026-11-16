@@ -171,9 +171,9 @@ export { mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegis
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register';
 export { RegisterSessionRequiredError, RegisterSessionClosedError, RegisterNeedsUpgradeError, RegisterSessionConflictError, RegisterTakeOverError, isKnownSessionStatus, RegisterMovementAmountError, RegisterMovementReasonError, RegisterMovementStrandedError, openSessionSelector, requireOpenSession, stampSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure } from './register';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';
-export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows } from './register';
+export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows, ENGLISH_CLOSURE_LABELS } from './register';
 export type { Correction, RecordedFigures, ClosureScope } from './register';
-export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact } from './register';
+export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact, createClosureContext, formatDecimalMoney, type CreateClosureContextOptions } from './register';
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
 export { roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';

@@ -16,3 +16,26 @@ export function minorToDecimal(minor: number, exponent: number): string {
   const fraction = abs % scale;
   return exponent === 0 ? `${sign}${whole}` : `${sign}${whole}.${String(fraction).padStart(exponent, '0')}`;
 }
+
+const decimalFormatters = new Map<string, Intl.NumberFormat>();
+
+/** Formats a decimal amount as currency; preserves empty, non-finite or unformattable input. */
+export function formatDecimalMoney(value: string, options: { currency: string; exponent: number; locale?: string }): string {
+  const { currency, exponent, locale } = options;
+  if (value === '') return '';
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || currency === 'XXX') return value;
+  const key = `${currency}:${exponent}:${locale ?? ''}`;
+  let formatter = decimalFormatters.get(key);
+  if (!formatter) {
+    try {
+      formatter = new Intl.NumberFormat(locale, {
+        style: 'currency', currency, minimumFractionDigits: exponent, maximumFractionDigits: exponent,
+      });
+    } catch {
+      return value;
+    }
+    decimalFormatters.set(key, formatter);
+  }
+  return formatter.format(amount);
+}
