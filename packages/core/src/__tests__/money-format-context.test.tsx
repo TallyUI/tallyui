@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MoneyFormatProvider, useCurrencySymbol, useFormatMoney } from '../context/money-format-context';
-import { currencySymbol, formatMoney, type Money } from '../money';
+import { currencySymbol, formatMoney } from '../money';
+import type { Money } from '../types/money';
 
 function Probe({ money, locale }: { money: Money; locale?: string }) {
   const format = useFormatMoney();

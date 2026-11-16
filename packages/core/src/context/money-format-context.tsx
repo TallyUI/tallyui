@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
-import { currencySymbol, formatMoney, type Money, type MoneyFormat } from '../money';
+import { currencySymbol, formatMoney, type MoneyFormat } from '../money';
+import type { Money } from '../types/money';
 
 interface MoneyFormatContextValue { locale?: string; format?: MoneyFormat }
 
