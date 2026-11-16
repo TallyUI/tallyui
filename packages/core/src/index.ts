@@ -110,3 +110,5 @@ export * as woocommerceCoupons from './coupons/woocommerce';
 // Browser-safe: command-result.ts imports only types. @tallyui/core/server re-exports these too, but
 // its barrel reaches node:crypto (fingerprint.ts), so browser packages import them from here.
 export { parseCommandResult, CommandResultError } from './server/command-result';
+// Browser-safe: register-figures.ts has no imports. The till and demo backends derive the same session figures.
+export { deriveSessionFigures, deriveVariance } from './server/register-figures';

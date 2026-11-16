@@ -84,6 +84,16 @@ function useAnnounceOnIos(...texts: (string | undefined)[]) {
   }, texts);
 }
 /**
+ * True when `SyncStatus` with these props would show only "Sales are up to date.": no pull notice, nothing waiting,
+ * no refused sales and no missing backend. An app can hide the status line then.
+ */
+export function syncStatusQuiet({ state, registerState, pullNotice }:
+  { state: OutboxState; registerState?: OutboxState; pullNotice?: SyncNotice }): boolean {
+  return !pullNotice && state.pending === 0 && (registerState?.pending ?? 0) === 0 && !state.rejected
+    && !(state.backendMissing ?? registerState?.backendMissing);
+}
+
+/**
  * `pluginName` names the store's plugin in the detail, as its owners know it; `registerState` counts till updates.
  * `pullNotice` (a stopped product pull) shows as its own line and detail, above the outbox line.
  */
