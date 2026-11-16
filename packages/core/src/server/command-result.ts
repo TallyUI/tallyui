@@ -69,7 +69,16 @@ export function parseCommandResult(value: unknown): CommandResult {
     if (refunds.reduce((sum, entry) => sum + entry.totalMinor, 0) !== refund.totalMinor) throw new CommandResultError('Invalid refund.refunds')
     result.refund = { totalMinor: refund.totalMinor as number, byMethod, refunds }
   }
-  if (result.status === 'applied' && result.serverRefs === undefined && result.register === undefined && result.refund === undefined) {
+  if (input.reopen !== undefined) {
+    if (!object(input.reopen)) throw new CommandResultError('Invalid reopen')
+    const reopen = input.reopen as Record<string, unknown>
+    if (typeof reopen.orderId !== 'string' || reopen.orderId.length === 0) throw new CommandResultError('Invalid reopen.orderId')
+    if (typeof reopen.status !== 'string' || reopen.status.length === 0) throw new CommandResultError('Invalid reopen.status')
+    if (reopen.revision !== undefined && (typeof reopen.revision !== 'string' || reopen.revision.length === 0)) throw new CommandResultError('Invalid reopen.revision')
+    result.reopen = { orderId: reopen.orderId, status: reopen.status }
+    if (reopen.revision !== undefined) result.reopen.revision = reopen.revision as string
+  }
+  if (result.status === 'applied' && result.serverRefs === undefined && result.register === undefined && result.refund === undefined && result.reopen === undefined) {
     throw new CommandResultError('Invalid serverRefs: required for applied')
   }
   if (input.warnings !== undefined) {

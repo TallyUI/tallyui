@@ -110,6 +110,16 @@ describe('parseLineTax (ADR-075)', () => {
 });
 
 describe('parseInfoCapabilities (ADR-062, #287)', () => {
+  it('reads the order.reopen capability (ADR-090)', () => {
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1], 'order.reopen': [1] } }))
+      .toStrictEqual({ orderCreate: 1, orderReopen: 1 });
+  });
+
+  it.each([undefined, null, [], [0, -1, 1.5, '1'], 1, {}])('omits missing or malformed order.reopen %j', (reopen) => {
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1], 'order.reopen': reopen } }))
+      .toStrictEqual({ orderCreate: 1 });
+  });
+
   it('reads the order.refund capability (ADR-080)', () => {
     expect(parseInfoCapabilities({ contracts: { 'order.create': [1], 'order.refund': [1] } }))
       .toStrictEqual({ orderCreate: 1, orderRefund: 1 });
