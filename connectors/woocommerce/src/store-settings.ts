@@ -1,5 +1,6 @@
 import { ConnectorUnauthorizedError, StoreSettingsError, minorUnitDigits, woocommerceTax } from '@tallyui/core';
-import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/core';
+import type { MoneyFormat, ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/core';
+import { WOO_CURRENCY_SYMBOLS } from './currency-symbols';
 
 /** The highest order.create version the WooCommerce transport maps without coupons: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). A store with coupons gets 8 (`WOO_TAX_ADDRESS_ORDER_CREATE_VERSION`): 6 adds coupons (ADR-077 d4a-woo), 7 the note, 8 the tax address. */
 export const WOO_ORDER_CREATE_VERSION = 5;
@@ -37,6 +38,13 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
     if (!Array.isArray(stores) || stores.length === 0) throw new Error('WooCommerce stores: expected a non-empty array');
     const store = stores[0];
     const currency = store.currency.toUpperCase();
+    const moneyFormat: MoneyFormat = {
+      ...(['left', 'right', 'left_space', 'right_space'].includes(store.currency_pos) ? { position: store.currency_pos } : {}),
+      ...(typeof store.price_thousand_sep === 'string' ? { thousandSeparator: store.price_thousand_sep } : {}),
+      ...(typeof store.price_decimal_sep === 'string' ? { decimalSeparator: store.price_decimal_sep } : {}),
+      ...(Number.isInteger(store.price_num_decimals) && store.price_num_decimals >= 0 ? { decimals: store.price_num_decimals } : {}),
+      ...(WOO_CURRENCY_SYMBOLS[currency] !== undefined ? { symbol: WOO_CURRENCY_SYMBOLS[currency] } : {}),
+    };
     const digits = minorUnitDigits(currency);
     if (typeof store.price_num_decimals === 'number' && store.price_num_decimals !== digits) {
       console.warn(`WooCommerce price_num_decimals is ${store.price_num_decimals}; the till rounds ${currency} to ${digits} digits`);
@@ -59,6 +67,7 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
       taxRoundAtSubtotal: store.tax_round_at_subtotal === 'yes',
       calcDiscountsSequentially: (store.woocommerce_calc_discounts_sequentially ?? store.calc_discounts_sequentially) === 'yes',
       preventOverselling: store.prevent_overselling === true,
+      ...(Object.keys(moneyFormat).length > 0 ? { moneyFormat } : {}),
       ...(typeof store.shipping_tax_class === 'string' ? { shippingTaxClass: store.shipping_tax_class } : {}),
       taxClassSlugs: classes.map((row) => row.slug),
       taxClasses: classes.map((row) => ({ slug: row.slug, name: typeof row.name === 'string' && row.name !== '' ? row.name : row.slug })),

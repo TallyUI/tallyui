@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConnectorUnauthorizedError, StoreSettingsError, type SyncContext } from '@tallyui/core';
+import { ConnectorUnauthorizedError, StoreSettingsError, formatMoney, type SyncContext } from '@tallyui/core';
 import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION,
   WOO_TAX_ADDRESS_ORDER_CREATE_VERSION } from './store-settings';
 import { createWooCommerceConnector } from './index';
@@ -46,6 +46,7 @@ describe('wooStoreSettings', () => {
     const settings = await wooStoreSettings(context);
     expect(settings).toStrictEqual({
       currency: 'USD', pricesIncludeTax: false, taxRoundAtSubtotal: false, calcDiscountsSequentially: false, preventOverselling: false, shippingTaxClass: 'inherit',
+      moneyFormat: { position: 'left', thousandSeparator: ',', decimalSeparator: '.', decimals: 2, symbol: '$' },
       taxClassSlugs: ['standard', 'reduced-rate', 'zero-rate'],
       taxClasses: [
         { slug: 'standard', name: 'Standard rate' },
@@ -65,6 +66,31 @@ describe('wooStoreSettings', () => {
       id: 4, code: 'US-CA-COMPOUND TEST-3', label: 'Compound Test', rate: '2.0000',
       priority: 3, compound: true, shipping: false,
     });
+  });
+
+  it('reads a comma-decimal, right-symbol CAD store as WooCommerce prints it', async () => {
+    storesBody = [{ ...stores[0], currency: 'cad', currency_pos: 'right_space', price_thousand_sep: '.', price_decimal_sep: ',', price_num_decimals: 2 }];
+    const settings = await wooStoreSettings(context);
+    expect(settings.moneyFormat).toStrictEqual({ position: 'right_space', thousandSeparator: '.', decimalSeparator: ',', decimals: 2, symbol: '$' });
+    expect(formatMoney({ amount: 123456, currency: 'CAD' }, 'en-US', settings.moneyFormat)).toBe('1.234,56 $');
+  });
+
+  it('keeps an empty thousand separator and leaves out what it cannot read', async () => {
+    storesBody = [{ ...stores[0], currency: 'XTS', currency_pos: 'middle', price_thousand_sep: '', price_decimal_sep: 7, price_num_decimals: '2' }];
+    const settings = await wooStoreSettings(context);
+    expect(settings.moneyFormat).toStrictEqual({ thousandSeparator: '' });
+  });
+
+  it('leaves moneyFormat out when no format field is readable', async () => {
+    storesBody = [{ ...stores[0], currency: 'XTS', currency_pos: undefined, price_thousand_sep: undefined, price_decimal_sep: undefined, price_num_decimals: undefined }];
+    const settings = await wooStoreSettings(context);
+    expect('moneyFormat' in settings).toBe(false);
+  });
+
+  it('reads moneyFormat when the store does not calculate taxes', async () => {
+    storesBody = [{ ...stores[0], calc_taxes: 'no' }];
+    const settings = await wooStoreSettings(context);
+    expect(settings.moneyFormat?.symbol).toBe('$');
   });
 
   it('reads prevent_overselling when the store turns it on', async () => {
