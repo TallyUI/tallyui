@@ -66,7 +66,10 @@ export function createExtensionHost({ extensions, grant = {}, log = console.warn
             ...(hook.capabilities.has('register.read') && sources.register ? { register: sources.register } : {}),
           }) });
           const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), remaining); });
-          hook.module ??= Promise.resolve().then(() => hook.contribution.load());
+          const loading = hook.module ??= Promise.resolve().then(() => hook.contribution.load()).catch(cause => {
+            if (hook.module === loading) hook.module = undefined;
+            throw cause;
+          });
           const verdict = await Promise.race([timeout, hook.module.then(module => {
             if (Date.now() >= expires) throw new Error('timeout');
             return module.default(ctx);

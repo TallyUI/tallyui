@@ -50,6 +50,17 @@ describe.each(['guard', 'extension'] as const)('%s failures', tier => {
   });
 });
 
+it('retries a rejected guard load on the next dispatch', async () => {
+  const manifest = extension(), load = vi.fn<Hook['load']>()
+    .mockRejectedValueOnce(new Error('load failed'))
+    .mockResolvedValue({ default: () => undefined });
+  manifest.hooks![event]!.load = load;
+  const host = createExtensionHost({ extensions: [manifest], log: vi.fn() });
+  await expect(host.dispatch(event, payload)).resolves.toBe(GUARD_FAILED);
+  await expect(host.dispatch(event, payload)).resolves.toBeNull();
+  expect(load).toHaveBeenCalledTimes(2);
+});
+
 it.each(['handler', 'load'] as const)('times out a guard whose %s never settles and clears its timer', async phase => {
   vi.useFakeTimers();
   const manifest = extension('acme.guard', 'guard', () => new Promise(() => {}));
