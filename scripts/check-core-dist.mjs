@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync, existsSync } from 'node:fs'; // backstop for check-workspace-deps.mjs (#157 review): check:deps sees source only
-import { builtinModules } from 'node:module';
+import { builtinModules, createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 const ENTRY = 'packages/core/dist/index.js';
 const RXDB_RE = /from\s*['"](rxdb|rxjs)(?:\/[^'"]*)?['"]/;
@@ -44,3 +44,18 @@ for (const entry of BROWSER_ENTRIES) {
   if (bad) { console.error(`check:core-dist: ${bad} (browser packages import from @tallyui/core, never @tallyui/core/server or a Node built-in)`); process.exit(1); }
 }
 console.log('check:core-dist: all ten browser entries are free of Node built-ins and @tallyui/core/server');
+
+// The CJS copy of ./server (for the CommonJS backend plugins) must load under require() and expose
+// the same runtime exports as the ESM build, so a plugin that switches loses nothing.
+const SERVER_ESM = 'packages/core/dist/server/index.js';
+const SERVER_CJS = 'packages/core/dist/server/index.cjs';
+for (const f of [SERVER_CJS, 'packages/core/dist/server/index.d.cts']) {
+  if (!existsSync(f)) { console.error(`check:core-dist: ${f} missing; run \`pnpm build\` first`); process.exit(1); }
+}
+const cjsKeys = Object.keys(createRequire(import.meta.url)(resolve(SERVER_CJS))).sort();
+const esmKeys = Object.keys(await import(resolve(SERVER_ESM))).sort();
+if (cjsKeys.join() !== esmKeys.join()) {
+  console.error(`check:core-dist: ${SERVER_CJS} exports differ from ${SERVER_ESM}: cjs [${cjsKeys}] vs esm [${esmKeys}]`);
+  process.exit(1);
+}
+console.log(`check:core-dist: ${SERVER_CJS} loads under require() with the same ${cjsKeys.length} exports as the ESM build`);
