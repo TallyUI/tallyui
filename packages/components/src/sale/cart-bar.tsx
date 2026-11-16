@@ -1,10 +1,11 @@
 import { Pressable, Text } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
 
 /** Phone mode's cart summary (medusapos ADR 0009): the whole bar is one button; the total is the cart's own Total row. */
 export function CartBar({ sale, onOpen }: { sale: ReturnType<typeof useSale>; onOpen: () => void }) {
+  const formatMoney = useFormatMoney();
   const { order } = sale;
   const count = order.lineItems.reduce((sum, line) => sum + line.quantity, 0);
   const total = formatMoney({ amount: buildReceiptData(order, { storeName: '' }).totals.totalMinor, currency: order.currency });

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Image, ScrollView, Text, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import type { DisplayPayment, DisplayState, ReceiptData } from '@tallyui/pos';
 
 // English copy from WCPOS v2's display (Pro packages/display/src/sample-snapshot.json); config.i18n overrides it.
@@ -22,6 +22,7 @@ const CARD_TEXT = { started: 'text-primary-foreground', approved: 'text-success-
  * right with the totals, or the payment card.
  */
 export function CustomerDisplayScreen({ state }: { state: DisplayState }) {
+  const formatMoney = useFormatMoney();
   const { config, view } = state;
   const t = (key: keyof typeof COPY) => config?.i18n[key] ?? COPY[key];
   if (view.screen === 'idle') {

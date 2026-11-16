@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { currencySymbol } from '@tallyui/core';
+import { useCurrencySymbol } from '@tallyui/core';
 import { useT } from '../i18n';
 import { Label } from '../ui/label';
 import { parsePrice } from './price-form';
@@ -25,6 +25,7 @@ const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center 
 
 /** `onApply` returns a refusal to show inline, or null once applied. */
 export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, kind: fixedKind, onApply, onClose }: ChargeFormProps) {
+  const currencySymbol = useCurrencySymbol();
   const t = useT();
   const [stateKind, setKind] = useState<'fee' | 'shipping' | 'custom'>('fee');
   const kind = fixedKind ?? stateKind;

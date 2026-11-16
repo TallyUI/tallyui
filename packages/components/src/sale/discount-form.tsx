@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { formatMoney, minorUnitDigits, moneyFromDecimalString } from '@tallyui/core';
+import { formatMoney, useFormatMoney, minorUnitDigits, moneyFromDecimalString, type Money } from '@tallyui/core';
 import type { AppliedDiscount, Discount } from '@tallyui/pos';
 import { DiscountBadge } from '../cart';
 
@@ -23,8 +23,8 @@ export function parseDiscount(type: Discount['type'], text: string, currency: st
 }
 
 /** "10%", or a fixed discount's amount as it actually comes off (amountMinor), never the amount requested. */
-export const discountLabel = (discount: AppliedDiscount, currency: string) => discount.type === 'percentage'
-  ? `${discount.value}%` : formatMoney({ amount: discount.amountMinor, currency }) ?? String(discount.amountMinor);
+export const discountLabel = (discount: AppliedDiscount, currency: string, format: (money: Money) => string | undefined = formatMoney) => discount.type === 'percentage'
+  ? `${discount.value}%` : format({ amount: discount.amountMinor, currency }) ?? String(discount.amountMinor);
 
 const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center justify-center';
 
@@ -70,13 +70,14 @@ export function DiscountChips({ discounts, currency, onRemove, prefix, amounts =
   discounts: AppliedDiscount[]; currency: string; onRemove: (id: string) => void; prefix?: string;
   amounts?: { discountId: string; amountMinor: number }[];
 }) {
+  const formatStoreMoney = useFormatMoney();
   if (!discounts.length) return null;
   return <View className="flex-row flex-wrap gap-2 px-3">
     {discounts.map((discount) => {
       const amount = amounts.find((row) => row.discountId === discount.id)?.amountMinor;
-      const own = discountLabel(discount, currency);
+      const own = discountLabel(discount, currency, formatStoreMoney);
       const label = [prefix, amount === undefined ? (prefix ? `−${own}` : own) : discount.type === 'percentage' ? own : null,
-        amount === undefined ? null : `−${formatMoney({ amount, currency })}`].filter(Boolean).join(' ');
+        amount === undefined ? null : `−${formatStoreMoney({ amount, currency })}`].filter(Boolean).join(' ');
       return <Pressable key={discount.id} accessibilityRole="button" accessibilityLabel={`Remove discount ${label}`}
         onPress={() => onRemove(discount.id)} className="min-h-11 flex-row items-center gap-1">
         <DiscountBadge label={label} className="self-center" /><Text className="text-muted-foreground">✕</Text>

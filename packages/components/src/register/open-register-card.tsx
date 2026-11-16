@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
 import { parseMinor, validAmount } from '@tallyui/pos';
 
-import { currencySymbol, formatMoney, minorUnitDigits } from '@tallyui/core';
+import { useCurrencySymbol, useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
@@ -33,6 +33,8 @@ export interface OpenRegisterCardProps {
  * typed, because `enteredAmount` only ever starts from it, never re-derives from it.
  */
 export function OpenRegisterCard({ register, currency, configuredFloatMinor, className }: OpenRegisterCardProps) {
+  const formatMoney = useFormatMoney();
+  const currencySymbol = useCurrencySymbol();
   const digits = minorUnitDigits(currency);
   const lastCountedMinor = register.lastClosure?.counted?.cash ?? null;
   const expectedFloatMinor = configuredFloatMinor ?? lastCountedMinor ?? null;

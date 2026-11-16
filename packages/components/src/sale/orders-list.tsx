@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { formatMoney, knownWarnings } from '@tallyui/core';
+import { useFormatMoney, knownWarnings } from '@tallyui/core';
 import { isRequeueable, needsAttention, noteDelivery, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { NOTE_NOT_SENT, orderReference } from './order-reference';
 import { sinceText } from './since-text';
@@ -51,6 +51,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
   history?: OrderHistoryRow[];
   onOpen?: (row: PosOrder | OrderHistoryRow) => void;
 }) {
+  const formatMoney = useFormatMoney();
   const retrying = useRef(new Set<string>());
   const [retryingIds, setRetryingIds] = useState(new Set<string>());
   const [expanded, setExpanded] = useState(new Set<string>());

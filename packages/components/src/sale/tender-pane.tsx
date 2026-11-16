@@ -6,7 +6,7 @@
  */
 import { useEffect, useState, type JSX } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { defaultPaymentMethods, formatMoney, minorUnitDigits, type PaymentMethodDescriptor } from '@tallyui/core';
+import { defaultPaymentMethods, useFormatMoney, minorUnitDigits, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
   activePlan, canVoidLeg, changeMinor, countsTowardPaid, isInMotion, legStatus, planLegs, quickTenderedAmounts, tenderRounding,
   type PaymentLegStatus, type TenderAction, type TenderKey, type TenderState, type useSale,
@@ -49,6 +49,7 @@ const rowsSince = (payments: readonly Leg[], from: number) =>
   payments.filter(countsTowardPaid).slice(from).map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
 
 export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps): JSX.Element | null {
+  const formatMoney = useFormatMoney();
   const { order, stage } = sale;
   const t = useT();
   const [reference, setReference] = useState('');

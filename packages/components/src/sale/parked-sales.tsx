@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import type { ParkedOrderSummary, useSale } from '@tallyui/pos';
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
@@ -24,6 +24,7 @@ export interface ParkedSalesProps {
 }
 
 export function ParkedSales({ sale, parked, onDiscard, onPark, onResume, currency, open, onOpenChange, hour12 }: ParkedSalesProps): JSX.Element {
+  const formatMoney = useFormatMoney();
   const { height: windowHeight } = useWindowDimensions();
   const maxHeight = Math.max(280, windowHeight - 64);
   const [confirming, setConfirming] = useState<string | null>(null);

@@ -6,7 +6,7 @@
  */
 import type { JSX, ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import type { SalesFigures } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { Card } from '../ui/card';
@@ -101,6 +101,7 @@ function shares<T>(rows: T[], toShare: (row: T) => Omit<Share, 'swatch'>, otherT
 }
 
 export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): JSX.Element {
+  const formatMoney = useFormatMoney();
   const money = (minor: number) => formatMoney({ amount: minor, currency }) ?? '';
   const { totals, payments, products, categories, taxes, refunds } = figures;
   const { margin } = totals;
