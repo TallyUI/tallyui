@@ -472,6 +472,15 @@ describe('Cart checkout', () => {
     expect(onCheckout).toHaveBeenCalledTimes(1);
   });
 
+  it('passes the checkout note to the foot for a non-empty sale', () => {
+    const onCheckout = vi.fn();
+    const onPress = vi.fn();
+    render(<SaleHarness>{(sale) => <Cart sale={sale}
+      checkout={{ onCheckout, note: { text: 'Leave at door', onPress } }} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.getByTestId('cart-note-row').textContent).toBe('Leave at door');
+  });
+
   it("lists the host's actions in the ⋮ menu and calls the one pressed", () => {
     const onPark = vi.fn();
     const onVoid = vi.fn();
