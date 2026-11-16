@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
+import { currencySymbol } from '@tallyui/core';
+import { useT } from '../i18n';
+import { Label } from '../ui/label';
 import { parsePrice } from './price-form';
 
 export interface ChargeFormProps {
@@ -15,10 +18,14 @@ export interface ChargeFormProps {
   onClose: () => void;
 }
 
+const NAME_LABEL_ID = 'charge-form-name-label';
+const AMOUNT_LABEL_ID = 'charge-form-amount-label';
+
 const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center justify-center';
 
 /** `onApply` returns a refusal to show inline, or null once applied. */
 export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, kind: fixedKind, onApply, onClose }: ChargeFormProps) {
+  const t = useT();
   const [stateKind, setKind] = useState<'fee' | 'shipping' | 'custom'>('fee');
   const kind = fixedKind ?? stateKind;
   const title = fixedKind === undefined ? 'Add charge'
@@ -49,11 +56,15 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
           {option === 'fee' ? 'Fee' : option === 'shipping' ? 'Shipping' : 'Custom item'}</Text>
       </Pressable>)}
     </View> : null}
-    <TextInput accessibilityLabel="Name" placeholder="Name" value={name} onChangeText={setName}
+    <Label nativeID={NAME_LABEL_ID}>{t('common.name')}</Label>
+    <TextInput accessibilityLabelledBy={NAME_LABEL_ID} accessibilityLabel={t('common.name')} value={name} onChangeText={setName}
       className="min-w-0 rounded-md border border-border bg-background px-3 py-2 text-foreground" />
-    <TextInput accessibilityLabel="Amount" value={text} onChangeText={setText} onSubmitEditing={apply}
-      inputMode="decimal" placeholder={currency}
-      className="min-w-0 rounded-md border border-border bg-background px-3 py-2 text-foreground" />
+    <Label nativeID={AMOUNT_LABEL_ID}>{t('common.amount')}</Label>
+    <View className="flex-row items-center rounded-md border border-border bg-background">
+      <Text testID="charge-form-currency" className="pl-3 text-muted-foreground">{currencySymbol(currency)}</Text>
+      <TextInput accessibilityLabelledBy={AMOUNT_LABEL_ID} accessibilityLabel={t('common.amount')} value={text} onChangeText={setText} onSubmitEditing={apply}
+        inputMode="decimal" className="min-w-0 flex-1 px-3 py-2 text-foreground" />
+    </View>
     {storeShipping ? <Text className="text-muted-foreground">Shipping is taxed at the store's shipping tax class.</Text> : <>
       {lineTax?.none ? <Pressable accessibilityRole="switch" accessibilityLabel="No tax"
         accessibilityState={{ checked: noTax }} aria-checked={noTax} onPress={() => setNoTax(!noTax)} className={`${button} ${noTax ? 'bg-primary' : 'bg-card'}`}>
