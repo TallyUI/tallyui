@@ -1,5 +1,20 @@
 # @tallyui/core
 
+## 3.21.0
+
+### Minor Changes
+
+- c9403ce: `@tallyui/core/server` now ships a CommonJS build beside the ESM one, so CommonJS backend plugins can `require('@tallyui/core/server')`. The `./server` export map gains a `require` condition (`dist/server/index.cjs`, types `dist/server/index.d.cts`); `import` resolves exactly as before. The main entry and `./rxdb` stay ESM-only.
+- 0eb7640: order.create version 9 (#790): `OrderCreateCoupon.lines` (`OrderCreateCouponLine`) carries each coupon's share of each line. `SUPPORTED_ORDER_CREATE_VERSIONS` adds 9, `precheckCommand`, `payloadShapeErrors` and `payloadBoundErrors` check it (docs/contract/order-create-v9.md), and version 9 needs no `taxAddress`.
+- 6e191c9: New exports the platform apps copied before: `deriveSessionFigures` and `deriveVariance` on `@tallyui/core`'s browser-safe main entry; `tenderLabel` and a new `syncStatusQuiet` predicate (true when `SyncStatus` would show only "Sales are up to date.") on `@tallyui/components`.
+
+### Patch Changes
+
+- c9201a2: Internal tidy: `precheckCommand` builds its rejections through one helper, core uses `OrderCreatePayload` internally (the deprecated `OrderCreatePayloadV3` alias stays exported), and the order.create version docs now list version 6. Behaviour unchanged.
+- a171cf5: `precheckCommand` refuses an order.create 9 payload that carries a customer address without `taxAddress` (#790).
+
+  The order outbox treats an `unsupported_version` downgrade that would not go strictly lower, or would stay above the store's cap, as a terminal rejection instead of resending (#790).
+
 ## 3.20.1
 
 ## 3.20.0

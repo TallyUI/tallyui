@@ -1,5 +1,28 @@
 # @tallyui/pos
 
+## 3.21.0
+
+### Minor Changes
+
+- d5f08c7: order.create version 9 (#790, ADR-088): the order builder splits each store-priced coupon over its lines, `finalizeOrder` stores the split (`PosOrderCoupon.lines`, `PosOrderCouponLine`), and the till sends it as `coupons[].lines` when the server advertises 9. Below 9 every payload is byte for byte as before. `pos_orders` goes to schema version 13 (identity migration, one-way) and `ORDER_CREATE_MAX_VERSION` is 9.
+
+### Patch Changes
+
+- 1a544e7: Internal tidy: `allocateOrderDiscount` uses the shared largest-remainder routine, and the order builder applies line and order discounts through one helper. Behaviour and exports unchanged.
+- 3ff125d: Internal tidy: the order and register outboxes share one retry-delay function and backoff defaults, and the order outbox validates an advertised order.create max in one place. Behaviour and exports unchanged.
+- c83bb01: Internal tidy: the register hook and `writeClosure` build payment ledger rows with one function, and the conflict take-over and abandon actions share one fresh read. Behaviour and exports unchanged.
+- a1363ea: Internal tidy: the Vendure price fingerprint builds each variant's entry in one place, order history reuses its one tally-fields option, `REQUIRED_MULTI_INSTANCE_BY_ENGINE` keys on `WEB_STORAGE_ENGINE`, and stale planning and version comments are corrected. Behaviour unchanged.
+- a171cf5: `precheckCommand` refuses an order.create 9 payload that carries a customer address without `taxAddress` (#790).
+
+  The order outbox treats an `unsupported_version` downgrade that would not go strictly lower, or would stay above the store's cap, as a terminal rejection instead of resending (#790).
+
+- Updated dependencies [c9403ce]
+- Updated dependencies [0eb7640]
+- Updated dependencies [6e191c9]
+- Updated dependencies [c9201a2]
+- Updated dependencies [a171cf5]
+  - @tallyui/core@3.21.0
+
 ## 3.20.1
 
 ### Patch Changes
