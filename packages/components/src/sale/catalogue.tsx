@@ -39,7 +39,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
   viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categories, pickAnyOptions = false,
-  cartLines, showFilterBar = false, filterChips = ['inStock'], filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner }: {
+  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -95,6 +95,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   showFilterBar?: boolean;
   /** Which chips the bar shows. Default ['inStock'], the one Catalogue applies itself. */
   filterChips?: readonly ProductFilterChip[];
+  /** With the In Stock pill on, keep 'backorder' products in the grid (only 'out_of_stock' is dropped). Default false: WCPOS v2's pill is stock_status 'instock' and drops backorders too. */
+  inStockKeepsBackorder?: boolean;
   /** Controlled filters; changes are reported through onFiltersChange. */
   filters?: ProductFilters;
   /** The cashier's next filters (requested filters when controlled). */
@@ -181,16 +183,16 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const [width, setWidth] = useState(0);
   const columns = resolveGridColumns(state.gridColumns, width);
   const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
-  // v2's In Stock pill is stock_status 'instock', so it drops backorders too; a stock the backend did not report stays.
+  // v2's In Stock pill drops backorders unless inStockKeepsBackorder is set; a stock the backend did not report stays.
   const stockFiltered = showFilterBar && filters.inStock;
   const results = useMemo(() => {
     if (items !== undefined) return suppliedItems;
     const matched = searchProducts(activeCategory
       ? shown.filter((doc) => inCategory(doc, activeCategory.id, traits)) : shown, query, traits);
     const filtered = stockFiltered
-      ? matched.filter((doc) => !['out_of_stock', 'backorder'].includes(traits.getStock(doc).status)) : matched;
+      ? matched.filter((doc) => !(inStockKeepsBackorder ? ['out_of_stock'] : ['out_of_stock', 'backorder']).includes(traits.getStock(doc).status)) : matched;
     return state.sort ? sortProducts(filtered, state.sort, (doc, field) => productSortValue(doc, field, traits, { currency })) : filtered;
-  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered]);
+  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered, inStockKeepsBackorder]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
