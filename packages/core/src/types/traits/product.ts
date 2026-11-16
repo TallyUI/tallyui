@@ -5,6 +5,8 @@ import type { StockLevel } from '../stock';
 export interface ProductCategory {
   id: string;
   name: string;
+  /** The category's picture (absolute URL); a browse tile shows it, else the name's initial on a tint. */
+  imageUrl?: string;
 }
 
 /** One purchasable variant of a product, in backend-neutral terms. */
