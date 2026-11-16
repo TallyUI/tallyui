@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createWedgeDetector, DEFAULT_WEDGE_SETTINGS, replayWedgeDetector, WEDGE_END_OF_SCAN_MS } from './wedge-detector';
+import { createWedgeDetector, DEFAULT_WEDGE_SETTINGS, replayWedgeDetector, stripBoundary, WEDGE_END_OF_SCAN_MS } from './wedge-detector';
 
 function trace(code: string, gap = 5) {
   return [...code].map((key, index) => ({ key, timeMs: index * gap }));
@@ -51,8 +51,22 @@ describe('wedge detector', () => {
     expect(replayWedgeDetector(trace('[1234]'), settings)).toEqual({ detectedAsScan: true, code: '1234' });
     expect(replayWedgeDetector(trace('[12[34]'), settings).code).toBe('12[34');
     expect(replayWedgeDetector(trace('12]34'), settings).code).toBe('12]34');
-    expect(replayWedgeDetector(trace('[1234]'), { ...settings, prefix: '[1' }).code).toBe('[1234');
-    expect(replayWedgeDetector(trace('[1234]'), { ...settings, suffix: '4]' }).code).toBe('1234]');
+    expect(replayWedgeDetector(trace('[1234]'), { ...settings, prefix: '[1' }).code).toBe('234');
+    expect(replayWedgeDetector(trace('[1234]'), { ...settings, suffix: '4]' }).code).toBe('123');
+  });
+
+  it('strips a multi-character prefix and suffix', () => {
+    expect(replayWedgeDetector(trace(']E04006381333931'), { threshold: 24, prefix: ']E0', suffix: '' })).toEqual({
+      detectedAsScan: true, code: '4006381333931',
+    });
+    expect(replayWedgeDetector(trace(']E0123##'), { threshold: 24, prefix: ']E0', suffix: '##' })).toEqual({
+      detectedAsScan: true, code: '123',
+    });
+    expect(replayWedgeDetector(trace('12]E034'), { threshold: 24, prefix: ']E0', suffix: '' })).toEqual({
+      detectedAsScan: true, code: '12]E034',
+    });
+    expect(stripBoundary(']E'.split(''), { threshold: 24, prefix: ']E0', suffix: '' })).toBe(']E');
+    expect(stripBoundary('AB'.split(''), { threshold: 24, prefix: 'AB', suffix: 'B' })).toBe('');
   });
 
   it('emits once after the burst settles', () => {

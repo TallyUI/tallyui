@@ -53,13 +53,13 @@ export function foldWedgeKey(state: WedgeState, key: string, timeMs: number, thr
   return state;
 }
 
-/** Strip a configured prefix/suffix only when it equals the single key at
- * that edge of the stack — never as a substring. */
+/** Match whole strings at the edges: prefix first, then suffix on the remainder.
+ * A one-character setting behaves as before. */
 export function stripBoundary(stack: string[], settings: WedgeSettings): string {
-  const inputStack = [...stack];
-  if (settings.prefix && inputStack[0] === settings.prefix) inputStack.shift();
-  if (settings.suffix && inputStack[inputStack.length - 1] === settings.suffix) inputStack.pop();
-  return inputStack.join('');
+  let code = stack.join('');
+  if (settings.prefix && code.startsWith(settings.prefix)) code = code.slice(settings.prefix.length);
+  if (settings.suffix && code.endsWith(settings.suffix)) code = code.slice(0, -settings.suffix.length);
+  return code;
 }
 
 export interface TraceKey { key: string; timeMs: number; }

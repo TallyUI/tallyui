@@ -51,6 +51,12 @@ describe('createSerialLineDecoder', () => {
     expect(scans).toEqual(['12345678']);
   });
 
+  it('strips a multi-character prefix and suffix per line', () => {
+    const { scans, instance } = decoder({ prefix: ']E0', suffix: '##' });
+    instance.push(']E0123##\r\n');
+    expect(scans).toEqual(['123']);
+  });
+
   it('reset drops a buffered partial line', () => {
     const { scans, instance } = decoder();
     instance.push('partial');
