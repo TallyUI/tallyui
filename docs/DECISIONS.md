@@ -5548,9 +5548,10 @@ interface OrderCreatePayload {
 
 ## ADR-081 Order history in core: optional `listOrders`/`getOrders`, and reprint from a stored order (G7)
 
-- **Date:** 2026-10-14 · **Status:** Accepted (front desk ruling, 2026-10-14) · **Relates to:** ADR-079 (Vendure
-  order history, whose "Open: a core order-history contract waits for a second platform" this settles), ADR-080
-  (`order.refund` v1), ADR-065 (the stored order's display figures), ADR-073 (the WooCommerce order transport)
+- **Date:** 2026-10-14 · **Status:** Accepted (front desk ruling, 2026-10-14) · **Amended by ADR-090:** decision 5,
+  reopen-to-edit · **Relates to:** ADR-079 (Vendure order history, whose "Open: a core order-history contract
+  waits for a second platform" this settles), ADR-080 (`order.refund` v1), ADR-065 (the stored order's display
+  figures), ADR-073 (the WooCommerce order transport)
 - **Context:**
   - The tallyui-woocommerce app's M6 needs to browse past orders, reprint one and refund it
     (~/agent/handoff/tallyui-woo-g7-gap-2026-10-14.md). Before this change, `TallyConnector` had no order read. The
@@ -6347,3 +6348,105 @@ interface OrderCreatePayload {
   creates none behaves exactly as before. The slice's exit test is medusapos's `CouponField` and `useGatedSale`
   rewritten as one extension with no other TallyUI change.
 - **Evidence:** `packages/extensions/src/host.test.ts`, `react.test.tsx`, `sale-source.test.tsx`, `pipeline.test.ts`.
+
+## ADR-090 Reopen a store order to edit it: `order.reopen` v1 and `order.update` v1 (parity D7)
+
+- **Date:** 2026-11-17 · **Status:** Accepted with conditions (front desk ruling on the D7 reopen draft, 2026-11-16:
+  departures 1 to 4 are architecture, the desk's call; conditions Q1, the spike's store and the paid-above-total
+  section are written in below) · **Amends:** ADR-081 decision 5 ("M6 drops reopen-to-edit … no core support")
+  · **Relates to:** ADR-038 (the command contract), ADR-070 (strict payloads), ADR-073 (the WooCommerce order
+  transport), ADR-080 (`order.refund` v1, whose pattern this follows), WCPOS v2's reopen (the reference for features
+  and taste)
+- **Context (v2 facts; M = wcpos monorepo origin/main, W = woocommerce-pos origin/main 18c41490):**
+  - **Reopen is a status change, and every payment still counts**
+    (W `docs/adr/0040-server-derives-paid-no-money-epoch.md:11-12,85-89`). It is refused only while money is in
+    motion, i.e. a provider leg is `pending` or `authorized`, a gateway attempt is unresolved, or a refund allocation
+    is pending: HTTP 422 `wcpos_money_in_motion`,
+    `data: { payment_id, attempt_id }` (W `Order_Writer.php:765-801`, `Sale_State.php:147-165`).
+  - **The write** is `POST wcpos/v2/push/orders` with
+    `{ mutationId, operation: 'update', collection: 'orders', recordId, baseRevision, payload }`, `Idempotency-Key`
+    and `If-Match` (M `sync-core/src/recordPushAdapter.ts:205-237`). The payload is `status: 'pos-open'` plus identity
+    meta (M `pos-carrier/carrier.ts:46-59,159-188`). It carries no lines and no totals.
+  - **The server decides which statuses reopen.** It reopens a locked order (not editable, or completion stands) to
+    `pos-open`. Its other refusals are `wcpos_status_not_pushable`, `wcpos_currency_locked` and `reopen_required`
+    (W `Sale_State.php:23,108-124`).
+  - **After a reopen** the order is the cart. Completion is `POST wcpos/v2/orders/{id}/close`, and the server derives
+    paid (ADR 0040 rule 1). The balance is total − paid + refunded (W `Ledger.php:503`, `signed_balance`). A
+    gateway-paid order's tender is adopted as a captured row (W `Order_Writer.php:453,708-713`).
+  - v2 writes `pos-open` locally first and rolls it back on a refusal
+    (M `packages/core/src/screens/main/orders/commands/use-order-record.ts:23-48`, undo at `:54-93`).
+  - TallyUI's store orders are online reads (ADR-081). The order outbox only creates. `reopenRefusedOrder` (ADR-077
+    d4b) is unrelated: it turns a refused local sale back into a parked cart.
+- **Departures from v2 (accepted by the desk as architecture):**
+  1. **Capability-gated.** `ServerCapabilities.orderReopen?: number`; absent or 0 hides the action. WCPOS 1.10.x has
+     neither the reopen money gate nor `orders/{id}/close`; both first ship in WCPOS v2.0.0 (W 27218c53, tag
+     v2.0.0-beta.1).
+  2. **Online only, nothing optimistic.** The till sends, waits for the store's verdict, and only then builds the cart.
+     Offline the action is disabled. Online the cashier sees what v2 shows, since v2 also waits before opening the cart.
+  3. **Edits reach the store once, at checkout** (`order.update` on the order outbox), not edit by edit. Until then the
+     store shows the order at `pos-open` with its old lines. An abandoned reopen leaves it at `pos-open`, as in v2.
+  4. **Scope cut:** no invoice "Send again" trigger; Re-open is offered from the order detail only.
+
+  Everything else keeps v2's semantics: the server decides which statuses reopen, every payment still counts, the
+  only money refusal is a payment in motion, at most one reopen per order is in flight, degraded storage blocks the
+  reopen, and the till never writes a paid status.
+- **Decision:**
+  1. **`order.reopen` v1, an online command on ADR-080's pattern.** It rides `POST /tally/v1/commands` in the shared
+     envelope (`OrderReopenEnvelope`) as a one-command batch; neither outbox ever carries it. The command `id` is the
+     idempotency key: when the answer is unknown the till resends the same envelope; after a rejection a new attempt
+     has a new id.
+     - **Capability:** `/tally/v1/info` lists `"order.reopen": [1]` under `contracts`; `ServerCapabilities` gains
+       `orderReopen?: number`. The till's own is `SUPPORTED_ORDER_REOPEN_VERSIONS = [1]`. `precheckCommand`'s
+       `supported` gains an optional `orderReopen`; without it the answer is `unsupported_version`
+       (`data: { orderReopen: 0 }`).
+     - **Payload v1** (strict, ADR-070; `reopenPayloadErrors`): `orderId` (the platform's order id), `clientOrderId?`
+       (the till's id for the sale, when it has one), `baseRevision?` (the store's revision as last read, for platforms
+       that check it), `cashierRef` and `registerId` (the identity the store records), `storeId?`, each a non-empty
+       string of at most 64 characters with no NUL, and `createdAt` (a valid date). No lines and no totals.
+     - **Applied result:** `reopen: { orderId, status, revision? }`. The till then reads the order with the
+       connector's `getOrder` and builds the cart from that read, never from the list it opened the detail from. A
+       `duplicate` (already open with this identity) counts as applied.
+     - **Refusals (`OrderReopenRejectionCode`):**
+       - `payment_in_motion`, `data: { paymentId?, attemptId? }`. The store's message stays `error.message`, and the
+         app shows it first, as v2 does.
+       - `order_state`, `data: { state, storeCode? }`: the store will not reopen this status or currency.
+       - `revision_conflict`: `baseRevision` is stale; the app re-reads and asks again.
+       - `forbidden`: the credentials may not reopen.
+
+       The shared codes (`invalid_payload`, `unsupported_version`, `platform_error`, `internal_error`) still apply.
+  2. **When Re-open is offered:** `orderReopen >= 1`, the till is online, storage is not degraded (v2 #163 R5), and no
+     reopen of that order is in flight (a module-level in-flight set in `@tallyui/pos`, as in v2). No status filter on
+     the client: the store decides. Storefront orders included (desk, Q2: as v2).
+  3. **The reopened sale.** Lines keep the order's own unit prices and quantities, not re-priced from the catalogue.
+     Every payment already on the order enters as a captured leg that counts toward paid and cannot be removed or
+     voided at the till. The sale carries `storeOrderId` and `baseRevision`. Tax is the store's: the till shows the
+     store's totals and re-quotes after edits, as it does today (desk, Q3: as recommended); ADR-073's
+     `unsupported_tax_mode` still applies.
+  4. **`order.update` v1, the outbox command for a reopened sale's checkout.** A `pos_orders` row with `storeOrderId`
+     goes out as `order.update`, never `order.create`. Its payload is the `order.create` payload at the till's version
+     plus `orderId` and `baseRevision`; `lines` and `payments` are the whole new state, and payments already on the
+     order carry their store `paymentId` and are not re-taken. Its result has `order.create`'s `serverRefs`. New
+     refusals: `payment_in_motion`; `reopen_required` (the store order is no longer open: the sale goes to Needs
+     attention and the cashier may reopen again); `revision_conflict`. Capability `orderUpdate`: a store that lists
+     `order.reopen` lists `order.update`. Its core types land with phase c, because the spike (phase b) settles the
+     line and payment shapes.
+  5. **`pos_orders` gains `storeOrderId?` and `baseRevision?`** in phase c: a schema bump, one-way (ADR-069).
+  6. **WooCommerce mapping** (WCPOS >= 2.0.0; `orderReopen` is advertised only from that plugin version):
+     - `order.reopen` is a `wcpos/v2/push/orders` `operation: 'update'` with `recordId` = the order's
+       `_woocommerce_pos_uuid`, `baseRevision`, `If-Match`, and `Idempotency-Key` = the command id. The payload is
+       `status: 'pos-open'`, `_pos_user` and `_pos_store` only. **`_wcpos_register` and `_wcpos_till` are never
+       written** (desk, Q1): they feed WCPOS register and closure reports, and TallyUI on Woo has no register sync
+       (ADR-073). If the store refuses an update without them, the spike reports the refusal to the desk; no value is
+       invented.
+     - `order.update` is the same endpoint's update with the new lines and only this session's payments, then
+       `POST wcpos/v2/orders/{id}/close`. The till never writes `completed` or `set_paid`; the server derives paid.
+     - The `line_items` diff (existing ids, removed lines) and how a split payment is recorded on an update are proved
+       by a spike before the transport is written. **The spike runs on a local wp-env or Docker store with WCPOS 2.0.3
+       only, never dev-free, dev-pro or demo** (they share the production MariaDB).
+  7. **Medusa and Vendure:** not decided here. Their capability stays absent, so the action stays hidden.
+- **Open, before phase c (desk condition 4):** what happens when the edited total falls below what is already paid.
+  The section cites what WCPOS v2 does (a refund flow, change, or a refusal) and keeps it. A negative remainder is
+  never settled silently as cash change.
+- **Phases** (each its own spec and PR; one-way, blast:shared): (a) core: `order.reopen` types, payload check,
+  precheck, result parsing and capability parsing; (b) the Woo spike; (c) pos: `sendOrderReopen`, the reopened sale,
+  `pos_orders` vN, `order.update` types and the outbox; (d) the Woo transport; (e) the app's action (tally-woo).
