@@ -12,10 +12,12 @@
     "@tallyui/core": "workspace:*"
   },
   "devDependencies": {
+    "@tallyui/components": "workspace:*",
     "@tallyui/connector-medusa": "workspace:*",
     "@tallyui/connector-vendure": "workspace:*",
     "@tallyui/connector-woocommerce": "workspace:*",
     "@tallyui/database": "workspace:*",
+    "@tallyui/extensions": "workspace:*",
     "@tallyui/pos": "workspace:*",
     "@tallyui/storage-sqlite": "workspace:*",
     "@types/react": ">=18",
