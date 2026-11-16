@@ -1,5 +1,18 @@
 # @tallyui/connector-vendure
 
+## 3.21.0
+
+### Patch Changes
+
+- ef2347e: Internal tidy: the WooCommerce order, customer and order-push code use `WCPOS_UUID_META_KEY` instead of spelling the meta key, and stale doc comments are corrected (the Woo coupon order.create version, Medusa's ignored `maxPages` advice, the errors Vendure's `gql` throws). Behaviour unchanged.
+- ef2347e: Internal tidy: the Vendure price fingerprint builds each variant's entry in one place, order history reuses its one tally-fields option, `REQUIRED_MULTI_INSTANCE_BY_ENGINE` keys on `WEB_STORAGE_ENGINE`, and stale planning and version comments are corrected. Behaviour unchanged.
+- Updated dependencies [ef2347e]
+- Updated dependencies [ef2347e]
+- Updated dependencies [ef2347e]
+- Updated dependencies [ef2347e]
+- Updated dependencies [ef2347e]
+  - @tallyui/core@3.21.0
+
 ## 3.20.1
 
 ### Patch Changes

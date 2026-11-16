@@ -1,5 +1,30 @@
 # @tallyui/pos
 
+## 3.21.0
+
+### Minor Changes
+
+- ef2347e: order.create version 9 (#790, ADR-088): the order builder splits each store-priced coupon over its lines, `finalizeOrder` stores the split (`PosOrderCoupon.lines`, `PosOrderCouponLine`), and the till sends it as `coupons[].lines` when the server advertises 9. Below 9 every payload is byte for byte as before. `pos_orders` goes to schema version 13 (identity migration, one-way) and `ORDER_CREATE_MAX_VERSION` is 9.
+- ef2347e: The tender reducer takes WCPOS v2 split V1 additively: `thenWays` on the fixed plan, `entryMode` with `set-entry-mode`, `percentOfMinor`, and pure `tenderFigures`. `SplitTab` is deprecated.
+- 8d6fa8b: `useSale` takes an optional `tenderGate`, awaited before a tender starts; a refusal stays on the cart and shows its message. Without it `startTender` is unchanged.
+
+### Patch Changes
+
+- ef2347e: Internal tidy: `allocateOrderDiscount` uses the shared largest-remainder routine, and the order builder applies line and order discounts through one helper. Behaviour and exports unchanged.
+- ef2347e: Internal tidy: the order and register outboxes share one retry-delay function and backoff defaults, and the order outbox validates an advertised order.create max in one place. Behaviour and exports unchanged.
+- ef2347e: Internal tidy: the register hook and `writeClosure` build payment ledger rows with one function, and the conflict take-over and abandon actions share one fresh read. Behaviour and exports unchanged.
+- ef2347e: Internal tidy: the Vendure price fingerprint builds each variant's entry in one place, order history reuses its one tally-fields option, `REQUIRED_MULTI_INSTANCE_BY_ENGINE` keys on `WEB_STORAGE_ENGINE`, and stale planning and version comments are corrected. Behaviour unchanged.
+- ef2347e: `precheckCommand` refuses an order.create 9 payload that carries a customer address without `taxAddress` (#790).
+
+  The order outbox treats an `unsupported_version` downgrade that would not go strictly lower, or would stay above the store's cap, as a terminal rejection instead of resending (#790).
+
+- Updated dependencies [ef2347e]
+- Updated dependencies [ef2347e]
+- Updated dependencies [ef2347e]
+- Updated dependencies [ef2347e]
+- Updated dependencies [ef2347e]
+  - @tallyui/core@3.21.0
+
 ## 3.20.1
 
 ### Patch Changes
