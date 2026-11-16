@@ -6269,3 +6269,56 @@ interface OrderCreatePayload {
 - **Evidence:** `packages/pos/src/pos-order/command-v9.test.ts` (golden `__fixtures__/order-create-v9.json`),
   `packages/core/src/server/order-create-v9.test.ts`, `packages/pos/src/order/store-priced-coupon-lines.test.ts`,
   `packages/pos/src/pos-order/migration.test.ts`, `packages/integration-tests/src/pos-orders-open-sqlite.test.ts`.
+
+## ADR-089 Extension API v1 (experimental)
+
+- **Date:** 2026-11-16 · **Status:** Accepted, experimental (front desk ruling on the extensibility proposal,
+  2026-11-16: GO on the first slice; the desk reviews this ADR and the public types before merge) · **Package:**
+  `packages/extensions` (`@tallyui/extensions`, private, 0.x) · **Relates to:** ADR-009 (stateless components),
+  ADR-064 (components import pos only as types), ADR-077 (discount codes as a strategy), ADR-087 (themes deferred)
+- **Context:**
+  - Every consumer app extends the POS by props and by spreading the `useSale()` result: medusapos fills Cart
+    `afterSubtotal` with its own `CouponField` and wraps `startTender` in `useGatedSale`; vendurepos and the Woo app
+    override `startTender` and `cancelTender` the same way. Nothing isolates a failing addition, and nothing names
+    the places an addition may go.
+  - The design and the measured demand are in the proposal (`~/agent/research/tallyui-extensibility/PROPOSAL.md`,
+    §1-4 and §8), modelled on roadmap#120's three tiers and WCPOS v2's slot registry and action pipeline.
+- **Decision:**
+  1. **Three tiers, one manifest.** Tier A: an in-app module with React blocks and hooks (this slice). Tier B:
+     declared data (fields, settings) rendered by the host. Tier C: sandboxed mini-apps. All three are described by
+     the same manifest; only tier A exists in v1.
+  2. **A new package, `@tallyui/extensions`,** owns the contract, so its version is the contract's version. It
+     imports no other `@tallyui/*` package at runtime; pos's sale reaches it structurally (`SaleLike`), and
+     `packages/components` is untouched: a host fills a component's existing slot prop with `<ExtensionTarget>`.
+  3. **Targets are a closed vocabulary.** A target id (v1: `pos.cart.after-subtotal`) is added only in a release of
+     this package, together with its sources and block props. An unknown id refuses the whole manifest.
+  4. **Read views and capabilities.** A block never holds the sale object: it gets read-only `{ value, subscribe }`
+     views and an `api` holding only the capabilities it declared and the app granted (v1: `sale.read`,
+     `sale.coupons`). The `sale` view carries only what the known consumers read (stage, currency, coupons, the two
+     coupon-pricing flags); a field is added when a consumer needs it, not before.
+  5. **The manifest's static part is data.** Everything except the lazy `load()` functions survives
+     `JSON.stringify`, so a catalogue can describe an extension that has not been loaded, and an extension whose
+     targets never mount costs nothing.
+  6. **Instance-scoped host, all or nothing.** `createExtensionHost({ extensions, grant })` validates each manifest
+     and either accepts it whole or refuses it with a reason (`ExtensionRefusal`); nothing is half-loaded. There is
+     no global registry and importing the package registers nothing, so two hosts (tests, two apps) never interfere.
+  7. **Isolation is part of the contract.** Each entry renders inside its own error boundary: a block that throws,
+     or whose `load()` rejects, renders nothing and is logged with its extension id; its siblings and the cart are
+     unaffected. Entries render by `order` (default 100), then extension id.
+  8. **Money math is a strategy, not a hook.** Prices, tax, totals and rounding stay with single-owner strategies
+     (`SaleDiscountCodes`, `currentPrice`, `taxContextFor` on `useSale`), because totals must agree with the
+     server's `order.create` and work offline. Hooks (the action pipeline, slice spec 2) may observe, rewrite an
+     action's payload or refuse it; they never filter a total.
+  9. **Version window.** `EXTENSION_API_VERSION` is 1. Before 1.0 of the package the host accepts exactly the current
+     version and the contract may change in any commit; the "current and previous version" window begins at 1.0,
+     which the front desk calls once two apps consume the package. `engines` (a TallyUI version range) is left out
+     until then: a private, unversioned package has no release to check against.
+  10. **Not published.** The package is `private` and in the changesets `ignore` list, so it is never versioned with
+      the fixed `@tallyui/*` group, tagged or published; it is merged to main only.
+- **Out of v1:** other targets and events, providers through the manifest, the settings page and safe mode, custom
+  fields (an `order.create` meta block gets its own ADR, phase 3), theming (ADR-087), tier C, a development-mode
+  failure chip and the unmounted-target warning.
+- **Consequences:** an app opts in by creating a host and placing `<ExtensionTarget>` in its slots; an app that
+  creates none behaves exactly as before. The slice's exit test is medusapos's `CouponField` and `useGatedSale`
+  rewritten as one extension with no other TallyUI change.
+- **Evidence:** `packages/extensions/src/host.test.ts`, `react.test.tsx`, `sale-source.test.tsx`.
