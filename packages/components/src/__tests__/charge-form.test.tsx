@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { I18nProvider } from '../i18n';
 import { ChargeForm } from '../sale/charge-form';
 
 afterEach(() => cleanup());
@@ -129,5 +130,28 @@ describe('ChargeForm', () => {
     click('Cancel');
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows visible Name and Amount labels, translatable by the app's catalogue", () => {
+    render(<ChargeForm currency="EUR" onApply={() => null} onClose={() => {}} />);
+    for (const name of ['Name', 'Amount']) expect(screen.getByText(name)).toBeTruthy();
+    for (const name of ['Name', 'Amount']) expect(screen.getByRole('textbox', { name })).toBeTruthy();
+    cleanup();
+    render(<I18nProvider locale="fr" resources={{ fr: { 'common.name': 'Nom', 'common.amount': 'Montant' } }}>
+      <ChargeForm currency="EUR" onApply={() => null} onClose={() => {}} /></I18nProvider>);
+    for (const name of ['Nom', 'Montant']) expect(screen.getByText(name)).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Montant' })).toBeTruthy();
+  });
+
+  it("shows the sale currency's symbol as the amount affix, never a hard-coded code", () => {
+    const onApply = vi.fn().mockReturnValue(null);
+    render(<ChargeForm currency="GBP" onApply={onApply} onClose={() => {}} />);
+    expect(screen.getByTestId('charge-form-currency').textContent).toBe('£');
+    expect(screen.getByRole('textbox', { name: 'Amount' }).hasAttribute('placeholder')).toBe(false);
+    for (const currency of ['EUR', '€']) expect(screen.queryByText(currency)).toBeNull();
+    input('Name', 'Bag');
+    input('Amount', '12.34');
+    click('Apply');
+    expect(onApply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'Bag', amountMinor: 1234 }));
   });
 });

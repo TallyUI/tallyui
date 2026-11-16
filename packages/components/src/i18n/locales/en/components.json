@@ -1,6 +1,8 @@
 {
+	"common.amount": "Amount",
 	"common.back": "Back",
 	"common.backspace": "Delete last digit",
+	"common.name": "Name",
 	"common.total": "Total",
 	"pos_checkout.cancel_payment": "Cancel payment",
 	"pos_checkout.cancelled": "Cancelled",
