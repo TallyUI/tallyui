@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, CustomerServiceError } from '@tallyui/core';
-import { createVendureCustomer, getVendureCustomer, searchVendureCustomers, toVendureCustomer, updateVendureCustomer } from './customers';
+import { createVendureCustomer, getVendureCustomer, listVendureCustomers, searchVendureCustomers, toVendureCustomer, updateVendureCustomer } from './customers';
 import { createVendureConnector } from './index';
 import search from './__tests__/fixtures/customers/1a-customers-search-matches.json';
 import noMatches from './__tests__/fixtures/customers/1b-customers-search-none.json';
@@ -22,6 +22,47 @@ const ada = { id: '2', name: 'Ada Lovelace', firstName: 'Ada', lastName: 'Lovela
 afterEach(() => vi.restoreAllMocks());
 
 describe('Vendure customers', () => {
+  it('lists a page with totalItems, createdAt and the default addresses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ data: { customers: { totalItems: 7, items: [get.response.data.customer] } } }));
+    const address = { firstName: 'Ada Lovelace', address1: '12 Fixture Street', city: 'London', postcode: 'N1 1AA', country: 'DE' };
+    await expect(listVendureCustomers(context)).resolves.toStrictEqual({
+      customers: [{ ...ada, createdAt: '2026-10-06T01:13:57.496Z', billing: address, shipping: address }], total: 7,
+    });
+  });
+
+  it('passes the list options through as given', async () => {
+    const options = { skip: 20, take: 10, sort: { createdAt: 'DESC' }, filter: { emailAddress: { contains: 'ada' } }, filterOperator: 'OR' } as const;
+    const spy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ data: { customers: { totalItems: 0, items: [] } } }))
+      .mockResolvedValueOnce(Response.json({ data: { customers: { totalItems: 0, items: [] } } }));
+    await listVendureCustomers(context, options);
+    expect(JSON.parse(spy.mock.calls[0]![1]!.body as string).variables).toStrictEqual({ options });
+    await listVendureCustomers(context);
+    expect(JSON.parse(spy.mock.calls[1]![1]!.body as string).variables).toStrictEqual({ options: {} });
+  });
+
+  it('keeps billing and shipping apart and leaves them out without a default', async () => {
+    const addresses = [
+      { fullName: 'Billing Name', streetLine1: '1 Bill Road', defaultBillingAddress: true, defaultShippingAddress: false },
+      { fullName: 'Shipping Name', streetLine1: '2 Ship Lane', defaultBillingAddress: false, defaultShippingAddress: true },
+    ];
+    const raw = get.response.data.customer;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ data: { customers: { totalItems: 2, items: [
+      { ...raw, addresses }, { ...raw, addresses: [{ fullName: 'No Default', streetLine1: '3 Other Road' }] },
+    ] } } }));
+    await expect(listVendureCustomers(context)).resolves.toStrictEqual({ customers: [
+      { ...ada, createdAt: raw.createdAt, billing: { firstName: 'Billing Name', address1: '1 Bill Road' }, shipping: { firstName: 'Shipping Name', address1: '2 Ship Lane' } },
+      { ...ada, createdAt: raw.createdAt },
+    ], total: 2 });
+  });
+
+  it('rejects a list without totalItems', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ data: { customers: { items: [] } } }));
+    const result = listVendureCustomers(context);
+    await expect(result).rejects.toBeInstanceOf(CustomerServiceError);
+    await expect(result).rejects.toMatchObject({ code: 'server', message: 'unexpected response' });
+  });
+
   it('maps the recorded search and sends the trimmed query in the session channel', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(search.response, { status: search.httpStatus }));
     await expect(searchVendureCustomers(context, '  ada  ')).resolves.toStrictEqual([adam, ada]);
@@ -211,6 +252,7 @@ describe('Vendure customers', () => {
   });
 
   const calls = [
+    ['list', () => listVendureCustomers(context)],
     ['search', () => searchVendureCustomers(context, 'ada')],
     ['create', () => createVendureCustomer(context, input)],
     ['get', () => getVendureCustomer(context, '2')],
