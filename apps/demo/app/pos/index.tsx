@@ -35,6 +35,7 @@ const screens = [
   { href: '/pos/register/count', label: 'RegisterCount' },
   { href: '/pos/register/count-blind', label: 'RegisterCount (blind)' },
   { href: '/pos/register/closure', label: 'ClosureSheet' },
+  { href: '/pos/tap-targets', label: 'Tap targets' },
   // Reports
   { href: '/pos/reports/sales', label: 'Sales room' },
   // Settings
