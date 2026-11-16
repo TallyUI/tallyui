@@ -8,6 +8,7 @@ const WOO_STOCK_STATUS: Record<string, StockStatus> = {
   outofstock: 'out_of_stock',
   onbackorder: 'backorder',
 };
+const WOO_BACKORDERS: ReadonlySet<unknown> = new Set(['no', 'notify', 'yes']);
 
 /**
  * WooCommerce product trait implementations.
@@ -52,6 +53,7 @@ export const wooProductTraits: ProductTraits = {
   getStock: (doc) => ({
     status: WOO_STOCK_STATUS[doc.stock_status] ?? 'unknown',
     quantity: doc.manage_stock === false ? undefined : doc.stock_quantity ?? undefined,
+    ...(WOO_BACKORDERS.has(doc.backorders) ? { backorders: doc.backorders } : {}),
   }),
 
   getPrice: (doc) => doc.price || undefined,

@@ -58,6 +58,7 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
       pricesIncludeTax: store.prices_include_tax === 'yes',
       taxRoundAtSubtotal: store.tax_round_at_subtotal === 'yes',
       calcDiscountsSequentially: (store.woocommerce_calc_discounts_sequentially ?? store.calc_discounts_sequentially) === 'yes',
+      preventOverselling: store.prevent_overselling === true,
       ...(typeof store.shipping_tax_class === 'string' ? { shippingTaxClass: store.shipping_tax_class } : {}),
       taxClassSlugs: classes.map((row) => row.slug),
       taxClasses: classes.map((row) => ({ slug: row.slug, name: typeof row.name === 'string' && row.name !== '' ? row.name : row.slug })),

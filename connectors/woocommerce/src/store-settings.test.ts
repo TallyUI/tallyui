@@ -45,7 +45,7 @@ describe('wooStoreSettings', () => {
   it('reads the captured settings and matched rates in WooCommerce order', async () => {
     const settings = await wooStoreSettings(context);
     expect(settings).toStrictEqual({
-      currency: 'USD', pricesIncludeTax: false, taxRoundAtSubtotal: false, calcDiscountsSequentially: false, shippingTaxClass: 'inherit',
+      currency: 'USD', pricesIncludeTax: false, taxRoundAtSubtotal: false, calcDiscountsSequentially: false, preventOverselling: false, shippingTaxClass: 'inherit',
       taxClassSlugs: ['standard', 'reduced-rate', 'zero-rate'],
       taxClasses: [
         { slug: 'standard', name: 'Standard rate' },
@@ -65,6 +65,11 @@ describe('wooStoreSettings', () => {
       id: 4, code: 'US-CA-COMPOUND TEST-3', label: 'Compound Test', rate: '2.0000',
       priority: 3, compound: true, shipping: false,
     });
+  });
+
+  it('reads prevent_overselling when the store turns it on', async () => {
+    storesBody = [{ ...stores[0], prevent_overselling: true }];
+    expect((await wooStoreSettings(context)).preventOverselling).toBe(true);
   });
 
   it.each([

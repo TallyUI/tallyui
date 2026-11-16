@@ -15,4 +15,6 @@ export interface StockLevel {
   status: StockStatus;
   /** Units on hand, when tracked. May be negative on backorder. */
   quantity?: number;
+  /** Whether the backend takes orders beyond `quantity` (WooCommerce's `backorders`): `no` refuses, `notify` takes them and tells the customer, `yes` takes them. Absent: the backend did not say. */
+  backorders?: 'no' | 'notify' | 'yes';
 }
