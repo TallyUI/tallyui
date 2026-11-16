@@ -1,6 +1,6 @@
 import type { JSX } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import { isPartlyPaid, type OpenSale } from '@tallyui/pos';
 import { Text } from '../ui/text';
 
@@ -24,6 +24,7 @@ function who(sale: OpenSale): string {
  * tab is underlined even when it is the only one; a blank cart has no tab, the + cell is its tab and reads "New".
  */
 export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsProps): JSX.Element {
+  const formatMoney = useFormatMoney();
   const blank = !sales.some((sale) => sale.current);
   return (
     <View testID="open-sale-tabs" className="h-14 flex-row items-stretch border-t border-border bg-card">

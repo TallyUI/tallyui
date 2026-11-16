@@ -3,7 +3,7 @@
 // (packages/core/src/screens/main/pos/cart/cells/quantity-keypad.tsx and cells/price.tsx); MIT, WCPOS.
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { formatMoney, minorUnitDigits } from '@tallyui/core';
+import { useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { Popover } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 import { DIGIT_ROWS, Keypad, type KeypadKey } from '../input/keypad';
@@ -51,6 +51,7 @@ export interface LinePopoverProps {
  */
 export function LinePopover({ kind, lineName, currency, value, onApply, quickDiscounts, textClassName, regularValue,
   actions }: LinePopoverProps) {
+  const formatMoney = useFormatMoney();
   const [open, setOpen] = useState(false);
   // v2's entry: the typed buffer (`.` as its separator), or the lit quick key, a percentage off `value`.
   const [entry, setEntry] = useState<{ buffer: string; percent?: number }>({ buffer: '' });

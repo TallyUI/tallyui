@@ -6,7 +6,7 @@
  */
 import type { JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import { daysOf, type SalesFigures } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { Card } from '../ui/card';
@@ -46,6 +46,7 @@ function compareLabel(filters: SalesFilters): string {
 }
 
 export function SalesHero({ figures, filters, onFiltersChange, currency }: SalesHeroProps): JSX.Element {
+  const formatMoney = useFormatMoney();
   const money = (minor: number) => formatMoney({ amount: minor, currency }) ?? '';
   const { totals, series } = figures;
   const before = figures.comparison && figures.comparison.totals.orderCount > 0 ? figures.comparison.totals : undefined;

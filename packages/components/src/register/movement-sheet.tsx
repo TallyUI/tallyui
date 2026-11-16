@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { MovementType, useRegisterSession } from '@tallyui/pos';
 import { movementFieldError, normalizeAmount, parseMinor } from '@tallyui/pos';
 
-import { currencySymbol, minorUnitDigits } from '@tallyui/core';
+import { useCurrencySymbol, minorUnitDigits } from '@tallyui/core';
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
@@ -41,6 +41,7 @@ export interface MovementSheetProps {
  * hides the amount field, always records zero, and opens the drawer once the row is written.
  */
 export function MovementSheet({ register, type, currency, onDone, onOpenChange, onOpenDrawer }: MovementSheetProps) {
+  const currencySymbol = useCurrencySymbol();
   const digits = minorUnitDigits(currency);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');

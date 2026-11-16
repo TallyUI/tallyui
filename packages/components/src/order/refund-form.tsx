@@ -1,6 +1,6 @@
 import { useRef, useState, type JSX } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { formatMoney, type OrderRefundPayload } from '@tallyui/core';
+import { useFormatMoney, type OrderRefundPayload } from '@tallyui/core';
 import { priceRefund, refundableLines, type EarlierRefund, type RefundableOrderLine } from '@tallyui/pos';
 import { QuantityStepper } from '../input/quantity-stepper';
 import { errorText } from '../lib/error-text';
@@ -56,6 +56,7 @@ export function RefundForm({
   refundableShippingMinor = 0, originalMethod, defaultRestock = true, online = true,
   error, onConfirm, onCancel,
 }: RefundFormProps): JSX.Element {
+  const formatMoney = useFormatMoney();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [restock, setRestock] = useState<Record<string, boolean>>({});
   const [shippingText, setShippingText] = useState('');

@@ -1,4 +1,4 @@
-import { formatMoney, minorUnitDigits, moneyToMajor, resolvePrice, resolvePriceRange, useProductTraits, useTraitContext } from '@tallyui/core';
+import { useFormatMoney, minorUnitDigits, moneyToMajor, resolvePrice, resolvePriceRange, useProductTraits, useTraitContext } from '@tallyui/core';
 import type { Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, type TextProps } from '../ui';
@@ -47,6 +47,7 @@ export interface ProductPriceProps extends Omit<TextProps, 'children'> {
  * ```
  */
 export function ProductPrice({ doc, currency, locale, currencySymbol = '$', className, showFromPrice = true, fromLabel, formatFrom, ...textProps }: ProductPriceProps) {
+  const formatMoney = useFormatMoney();
   const { getPrices, getVariants } = useProductTraits();
   const traitContext = useTraitContext();
   const effectiveCurrency = currency ?? traitContext.currency;

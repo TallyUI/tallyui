@@ -2,7 +2,7 @@
 // (the ⋮ beside a full-width "Checkout {order_total}"), MIT, WCPOS.
 import * as React from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
-import { formatMoney, type Money } from '@tallyui/core';
+import { useFormatMoney, type Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { CartNoteRow } from './cart-note-row';
 
@@ -37,6 +37,7 @@ const MENU_LABEL = 'More actions';
  * ```
  */
 export function CartFoot({ total, onCheckout, actions = [], note, disabled = false, locale, className }: CartFootProps) {
+  const formatMoney = useFormatMoney();
   const [open, setOpen] = React.useState(false);
   const trigger = React.useRef<View>(null);
   const menu = React.useRef<View>(null);

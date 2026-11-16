@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
-import { formatMoney, type Money } from '@tallyui/core';
+import { useFormatMoney, type Money } from '@tallyui/core';
 import { Image } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 import { Text, HStack, type HStackProps } from '../ui';
@@ -45,6 +45,7 @@ export interface CartLineProps extends Omit<HStackProps, 'children'> {
  */
 export function CartLine({ name, attributes, quantity, unitPrice, regularUnitPrice, lineTotal, showPrice = true, quantitySlot, priceSlot,
   columns, sku, imageUrl, onSplit, locale, className, ...props }: CartLineProps) {
+  const formatMoney = useFormatMoney();
   const options = Object.entries(attributes ?? {}).map(([key, value]) => `${key}: ${value}`).join(' · ');
   const regular = regularUnitPrice && regularUnitPrice.currency === unitPrice.currency && regularUnitPrice.amount > unitPrice.amount
     ? formatMoney(regularUnitPrice, locale) ?? '—' : null;

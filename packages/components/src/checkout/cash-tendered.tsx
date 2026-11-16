@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View, type ViewProps } from 'react-native';
 
-import { formatMoney, minorUnitDigits, moneyFromDecimalString, type Money } from '@tallyui/core';
+import { useFormatMoney, minorUnitDigits, moneyFromDecimalString, type Money } from '@tallyui/core';
 import { quickTenderedAmounts } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 
@@ -33,6 +33,7 @@ export function CashTendered({
   className,
   ...viewProps
 }: CashTenderedProps) {
+  const formatMoney = useFormatMoney();
   const [internalAmount, setInternalAmount] = useState(defaultAmount ?? total);
   const amount = controlledAmount ?? internalAmount;
   const buttons = quickAmounts ?? defaultQuickAmounts(total);

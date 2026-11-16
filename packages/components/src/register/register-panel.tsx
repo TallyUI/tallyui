@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import type { ApprovalNeeded, MovementType, useRegisterSession } from '@tallyui/pos';
 
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog';
@@ -59,6 +59,7 @@ export interface RegisterPanelProps {
 export function RegisterPanel({
   register, currency, registerName, open, onOpenChange, reapprove, className, presentation = 'dialog', storeName, onPrintXReport, now,
 }: RegisterPanelProps) {
+  const formatMoney = useFormatMoney();
   const { session, expected, salesCount, blind, movements, lastClosure, approvalNeeded, actions, terms } = register;
   const side = presentation === 'side';
   const [reapproving, setReapproving] = useState(false);

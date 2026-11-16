@@ -12,7 +12,7 @@ import {
   varianceText,
 } from '@tallyui/pos';
 
-import { currencySymbol, formatMoney, minorUnitDigits } from '@tallyui/core';
+import { useCurrencySymbol, useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
@@ -138,6 +138,8 @@ export interface RegisterCountProps {
  * the server flag would otherwise leave a blind count with no gate at all over threshold.
  */
 export function RegisterCount({ register, currency, approve, className }: RegisterCountProps) {
+  const formatMoney = useFormatMoney();
+  const currencySymbol = useCurrencySymbol();
   const { session, expected, blind, varianceThreshold, actions } = register;
   const digits = minorUnitDigits(currency);
   const faces = denominations[currency] ?? denominations.default;

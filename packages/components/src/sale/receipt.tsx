@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import { buildReceiptData, noteDelivery, type ReceiptData, type SentOrder } from '@tallyui/pos';
 import type { PosOrder } from '@tallyui/pos';
 import { injectPrintStyle } from './print-style';
@@ -35,6 +35,7 @@ type ReceiptProps = {
 /** `store`/`taxLabel`/`topInset`/`formatDate` replace the app's Medusa settings, hard-coded VAT (default matches
  * TV6a's `Cart`), outbox strip and date util, so `Receipt` stays platform-neutral (ADR-052). */
 export function Receipt(props: ReceiptProps) {
+  const formatMoney = useFormatMoney();
   const { posOrder, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
     topInset = 0, formatDate = defaultFormatDate, footerSlot, doneLabel = 'New sale' } = props;
   useEffect(injectPrintStyle, []);
@@ -70,7 +71,7 @@ export function Receipt(props: ReceiptProps) {
       {/* Before any discount, then the line's own discounts as sub-rows (TallyUI ADR-063); they add up to the subtotal. */}
       {row(`${line.quantity} × ${money(line.unitPriceMinor)}`, money(line.displayAmountMinor))}
       {line.displayDiscounts.map((discount, i) => <View key={i} className="pl-4">{row(`${order ? discountLabel(
-        order.lineItems[index].discounts[i], receipt.currency) : discount.label} off`, `−${money(discount.amountMinor)}`)}</View>)}
+        order.lineItems[index].discounts[i], receipt.currency, formatMoney) : discount.label} off`, `−${money(discount.amountMinor)}`)}</View>)}
     </View>)}
     {/* Each discount appears once in the totals: line discounts are itemised under their lines and summed once here;
         the order discount appears once. order.display's figures (ADR-063; medusapos ADR 0008). */}

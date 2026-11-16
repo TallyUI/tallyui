@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { formatMoney, type Money } from '@tallyui/core';
+import { useFormatMoney, type Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, HStack, VStack, type VStackProps } from '../ui';
 
@@ -37,6 +37,7 @@ export function CartTotal({
   showTotal = true,
   ...props
 }: CartTotalProps) {
+  const formatMoney = useFormatMoney();
   return (
     <VStack space="none" className={cn('gap-1.5 px-3 py-3', className)} {...props}>
       <HStack space="none" className="justify-between">

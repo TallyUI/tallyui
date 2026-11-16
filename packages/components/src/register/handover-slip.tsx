@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import type { HandoverSlipData } from '@tallyui/pos';
 
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import { Text } from '../ui/text';
 import { tenderLabel } from './register-count';
 import { countLine } from './switch-confirm';
@@ -19,6 +19,7 @@ export interface HandoverSlipProps {
  * No dialog: the host places it, for example in a print preview. No expected figures while blind.
  */
 export function HandoverSlip({ slip, currency }: HandoverSlipProps) {
+  const formatMoney = useFormatMoney();
   const register = [slip.registerName, slip.openedAtTime && `open since ${slip.openedAtTime}`, slip.openedByName]
     .filter(Boolean)
     .join(' · ');

@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { Path, Rect } from 'react-native-svg';
 import type { DrawerTerms, RegisterSession } from '@tallyui/pos';
 
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import { Button } from '../ui/button';
 import { DialogDescription, DialogTitle } from '../ui/dialog';
 import { createSvgIcon } from '../ui/icon/svg-icon';
@@ -122,6 +122,7 @@ interface FiguresProps {
 
 /** The hero (cash expected, "in the drawer") and the session sales line; `—` and no sales while blind. */
 export function RegisterSideHero({ terms, blind, currency, salesCount }: FiguresProps & { salesCount: number }) {
+  const formatMoney = useFormatMoney();
   const shown = !blind && terms ? terms : null;
   return (
     <View className="gap-1">
@@ -145,6 +146,7 @@ export function RegisterSideHero({ terms, blind, currency, salesCount }: Figures
 
 /** The drawer ledger (v2 `register-panel.tsx:450-536`) and Other tenders; nothing while blind. */
 export function RegisterSideLedger({ terms, blind, currency }: FiguresProps) {
+  const formatMoney = useFormatMoney();
   if (blind || !terms) return null;
   const money = (amount: number) => formatMoney({ amount, currency }) ?? '';
   const rows = [

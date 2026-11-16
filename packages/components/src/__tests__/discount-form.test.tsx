@@ -21,6 +21,11 @@ describe('parseDiscount', () => {
 });
 
 describe('discountLabel', () => {
+  it('uses the supplied formatter for a fixed discount', () => {
+    const discount: AppliedDiscount = { id: 'd1', type: 'fixed', value: 2000, amountMinor: 1250 };
+    expect(discountLabel(discount, 'EUR', () => 'X')).toBe('X');
+  });
+
   it('shows amountMinor (the #129 caps), not the requested amount', () => {
     // A fixed discount clamped by the discount engine: value (requested) is 2000, amountMinor (actual) is 1250.
     const discount: AppliedDiscount = { id: 'd1', type: 'fixed', value: 2000, amountMinor: 1250 };

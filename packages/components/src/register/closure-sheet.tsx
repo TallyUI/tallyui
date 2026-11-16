@@ -3,7 +3,7 @@ import { AccessibilityInfo, Animated, View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
 import { countVariance, TAX_ROUNDING_MIXED_NOTE, varianceText } from '@tallyui/pos';
 
-import { formatMoney, minorUnitDigits } from '@tallyui/core';
+import { useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
@@ -60,6 +60,7 @@ export interface ClosureSheetProps {
  * while blind, per the register-screens-b design, since TallyUI's closure lists every tender.
  */
 export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureSheetProps) {
+  const formatMoney = useFormatMoney();
   const { lastClosure: closure, blind } = register;
   const digits = minorUnitDigits(currency);
   const { opacity, scale } = useCompletionMotion();

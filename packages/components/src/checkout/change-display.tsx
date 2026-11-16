@@ -1,6 +1,6 @@
 import { Text, View, type ViewProps } from 'react-native';
 
-import { formatMoney, type Money } from '@tallyui/core';
+import { useFormatMoney, type Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 
 export interface ChangeDisplayProps extends Omit<ViewProps, 'children'> {
@@ -10,6 +10,7 @@ export interface ChangeDisplayProps extends Omit<ViewProps, 'children'> {
 }
 
 export function ChangeDisplay({ change, locale, className, ...viewProps }: ChangeDisplayProps) {
+  const formatMoney = useFormatMoney();
   return (
     <View className={cn('items-center gap-1 rounded-xl bg-muted p-4', className)} {...viewProps}>
       <Text className="text-sm text-muted-foreground">Change Due</Text>
