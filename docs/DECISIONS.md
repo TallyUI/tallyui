@@ -6319,14 +6319,18 @@ interface OrderCreatePayload {
       `checkout.tender.start`, payload `{ method }`). A manifest's `hooks` names, per event, a lazy handler and a tier;
       `host.dispatch(event, payload, sources)` resolves to the refusal to show or `null`, and never rejects. The
       semantics are WCPOS v2's dispatcher, cut to what a gate needs:
-      - **Two tiers, extensions first.** The `extension` tier fails open: a throw, a rejected load, a timeout or a
-        malformed verdict skips the hook, and its `{ refuse }` is ignored and logged, so an add-on can never stop a
-        sale. The `guard` tier fails closed: the first refusal is the answer, and a failing guard refuses with
-        `GUARD_FAILED`.
+      - **Two tiers, guards first.** The `guard` tier fails closed: the first refusal is the answer, a failing guard
+        refuses with `GUARD_FAILED`, and either ends the dispatch, so extension hooks observe only a tender start
+        that goes ahead and their time never delays a guard. The `extension` tier fails open: a throw, a rejected
+        load, a timeout or a malformed verdict skips the hook, and its `{ refuse }` is ignored and logged, so an
+        add-on can never stop a sale. (The first cut ran extensions first; no WCPOS v2 reason backed that order, and
+        the front desk's review of #813 reversed it.)
       - **One budget per tier per dispatch** (`ACTION_BUDGET_MS`, 1500 ms for tender start), shared by the tier's
         hooks and counting each hook's first `load()`. A resolved module is cached; a rejected load is retried on
         the next dispatch.
-      - **Three strikes.** Each failure is a strike; on the third (`ACTION_HOOK_STRIKES`) the hook is switched off
+      - **Three strikes.** Each failure of a hook that ran is a strike. A hook starved because its tier's budget was
+        already spent takes no strike (that dispatch it is skipped, or a guard refuses with `GUARD_FAILED`), so a
+        slow neighbour cannot switch it off. On the third (`ACTION_HOOK_STRIKES`) the hook is switched off
         for the host's life. A switched-off extension hook leaves the chain, but a switched-off guard keeps
         refusing: a register-open check that stopped running must not silently let tenders through.
       - **Views by grant.** A hook's frozen `ctx.view` holds `sale` and `register` (`RegisterView { open }`, the new
