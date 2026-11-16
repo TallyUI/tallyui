@@ -51,6 +51,8 @@ export interface ServerCapabilities {
   register?: number;
   /** The highest `order.refund` version; absent or 0 means the store takes no refunds and the app hides the action (ADR-080). */
   orderRefund?: number;
+  /** The highest `order.reopen` version; absent or 0 means the store cannot reopen orders and the app hides the action (ADR-090). */
+  orderReopen?: number;
   /** How the store rounds tax (#287). Absent: an older server, per_order + half_away_from_zero. */
   taxRounding?: TaxRounding;
   /** Whether one order may carry several payments. Absent means it may: order.create's `payments` has always been a
@@ -155,6 +157,7 @@ const maxVersion = (list: unknown): number | undefined => {
  * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287); malformed `lineTax` is ignored.
  * A malformed `registerApproval` is ignored (ADR-082). `coupons` is true only when the body says `coupons: true` (#709).
  * `orderRefund` is the max of `contracts["order.refund"]` when valid, otherwise absent (ADR-080).
+ * `orderReopen` is the max of `contracts["order.reopen"]` when valid, otherwise absent (ADR-090).
  * `customerDisplay` is present only when `parseDisplayAdvertisement` accepts it; a malformed one warns (ADR-085).
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
  * A non-object body is also unknown, not a statement of the store's defaults.
@@ -167,6 +170,7 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
   const { contracts, taxRounding, lineTax, registerApproval, coupons, customerDisplay } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown; coupons?: unknown; customerDisplay?: unknown };
   const register = maxVersion(contracts?.register);
   const orderRefund = maxVersion(contracts?.['order.refund']);
+  const orderReopen = maxVersion(contracts?.['order.reopen']);
   const rounding = parseTaxRounding(taxRounding);
   if (taxRounding !== undefined && rounding === undefined) {
     warn?.(`malformed taxRounding: rounding is unknown, so settings wait: ${JSON.stringify(taxRounding)}`);
@@ -177,6 +181,7 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
   const display = parseDisplayAdvertisement(customerDisplay, warn);
   return { orderCreate: maxVersion(contracts?.['order.create']) ?? 1,
     ...(orderRefund !== undefined ? { orderRefund } : {}),
+    ...(orderReopen !== undefined ? { orderReopen } : {}),
     ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}),
     ...(parsedLineTax ? { lineTax: parsedLineTax } : {}),
     ...(parsed ? { registerApproval: parsed } : {}), ...(coupons === true ? { coupons: true } : {}),

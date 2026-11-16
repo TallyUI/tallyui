@@ -26,7 +26,7 @@ export type RegisterCommandType = 'register.session.open' | 'register.session.tr
 export type RegisterCommandEnvelope<P = Record<string, unknown>> =
   Omit<CommandEnvelope<P>, 'type' | 'version'> & { type: RegisterCommandType; version: number };
 /** Any command a transport can carry. */
-export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown> | OrderRefundEnvelope<unknown>;
+export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown> | OrderRefundEnvelope<unknown> | OrderReopenEnvelope<unknown>;
 
 /** A line's refunded quantity and restock choice (ADR-080). */
 export interface OrderRefundLine { orderLineId: string; quantity: number; restock: boolean }
@@ -57,6 +57,23 @@ export interface OrderRefundAmountMismatchData { expectedMinor: number; serverMi
 export interface OrderRefundOrderStateData { state: string }
 /** The session that is not open on the refunding register (ADR-080). */
 export interface OrderRefundNoOpenSessionData { sessionId: string }
+
+/** An online reopen against a store order, attributed to the cashier and register (ADR-090). */
+export interface OrderReopenPayload {
+  orderId: string; clientOrderId?: string; baseRevision?: string;
+  cashierRef: string; registerId: string; storeId?: string; createdAt: string;
+}
+/** An order.reopen v1 command with the shared idempotency envelope (ADR-090). */
+export type OrderReopenEnvelope<P = OrderReopenPayload> =
+  Omit<CommandEnvelope<P>, 'type' | 'version'> & { type: 'order.reopen'; version: 1 };
+/** The reopened order's server identity, status and revision (ADR-090). */
+export interface OrderReopenResult { orderId: string; status: string; revision?: string }
+/** Per-command reopen refusals (ADR-090). */
+export type OrderReopenRejectionCode = 'payment_in_motion' | 'order_state' | 'revision_conflict' | 'forbidden';
+/** The payment or attempt preventing a reopen (ADR-090). */
+export interface OrderReopenPaymentInMotionData { paymentId?: string; attemptId?: string }
+/** The order state preventing a reopen and the store's refusal code (ADR-090). */
+export interface OrderReopenOrderStateData { state: string; storeCode?: string }
 
 /** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
  * 6 is 5 plus coupons, regular prices, line attributes and Any picks (ADR-077, #495).
@@ -159,6 +176,7 @@ export interface CommandResult {
   error?: CommandError;
   register?: RegisterCommandResult;
   refund?: OrderRefundResult;
+  reopen?: OrderReopenResult;
 }
 
 /** A register command's server figures (registers c2b applies them). */

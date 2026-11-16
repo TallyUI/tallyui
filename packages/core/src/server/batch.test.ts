@@ -12,6 +12,11 @@ const command = {
 }
 
 describe('validateBatch', () => {
+  it('accepts an order.reopen envelope (ADR-090)', () => {
+    const commands = [{ ...command, type: 'order.reopen' }]
+    expect(validateBatch({ commands })).toEqual({ ok: true, commands })
+  })
+
   it('accepts an order.refund envelope (ADR-080)', () => {
     const commands = [{ ...command, type: 'order.refund' }]
     expect(validateBatch({ commands })).toEqual({ ok: true, commands })
@@ -83,6 +88,34 @@ describe('validateBatch', () => {
 describe('precheckCommand', () => {
   // A server's own lists (#297); core's SUPPORTED_* constants are the till's capability.
   const server = { orderCreate: [1, 2, 3, 4], register: [1] }
+
+  it('leaves a supported order.reopen to the plugin payload check (ADR-090)', () => {
+    expect(precheckCommand({ ...command, type: 'order.reopen' }, { ...server, orderReopen: [1] })).toBeUndefined()
+  })
+
+  it('refuses an unsupported order.reopen version with the server capability', () => {
+    expect(precheckCommand({ ...command, type: 'order.reopen', version: 2 }, { ...server, orderReopen: [1] }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.reopen version 2 is not supported; this server supports 1',
+        data: { orderReopen: 1 },
+      } })
+  })
+
+  it('names the highest reopen version a server lists', () => {
+    expect(precheckCommand({ ...command, type: 'order.reopen', version: 3 }, { ...server, orderReopen: [1, 2] }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.reopen version 3 is not supported; this server supports 1, 2',
+        data: { orderReopen: 2 },
+      } })
+  })
+
+  it.each([{}, { orderReopen: [] }])('takes no reopens when the reopen list is absent or empty (%j)', capability => {
+    expect(precheckCommand({ ...command, type: 'order.reopen' }, { ...server, ...capability }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.reopen version 1 is not supported; this server takes no reopens',
+        data: { orderReopen: 0 },
+      } })
+  })
 
   it('leaves a supported order.refund to the plugin payload check (ADR-080)', () => {
     expect(precheckCommand({ ...command, type: 'order.refund' }, { ...server, orderRefund: [1] })).toBeUndefined()
