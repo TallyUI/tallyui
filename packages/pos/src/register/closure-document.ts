@@ -13,7 +13,9 @@
  * date-fns/`@date-fns/tz` become `Intl`, following a2's `businessDayOf`; a cashier id stays a2's
  * string id (not WCPOS's numeric one).
  */
-import { minorToDecimal } from './money';
+import { minorUnitDigits } from '@tallyui/core';
+import { ENGLISH_CLOSURE_LABELS } from './document-labels';
+import { minorToDecimal, formatDecimalMoney } from './money';
 import type { Closure, RegisterSession } from './schemas';
 
 type Values = Record<string, unknown>;
@@ -46,6 +48,38 @@ export type ClosureContext = {
    */
   breakdowns?: Values;
 };
+
+export type CreateClosureContextOptions = {
+  currency: string;
+  store: Record<string, unknown>;
+  /** Defaults to minorUnitDigits(currency) from @tallyui/core. */
+  exponent?: number;
+  /** Defaults to the runtime's Intl locale. */
+  locale?: string;
+  /** Defaults to 'device' (formatClosureDate then uses the runtime's zone). */
+  timezone?: string;
+  /** Defaults to new Date().toISOString(). */
+  printedAt?: string;
+  /** Merged over ENGLISH_CLOSURE_LABELS; extra keys pass through to i18n. */
+  labels?: Record<string, string>;
+  expected?: Record<string, number>;
+  breakdowns?: Record<string, unknown>;
+};
+
+export function createClosureContext(options: CreateClosureContextOptions): ClosureContext {
+  const currency = options.currency.toUpperCase();
+  const exponent = options.exponent ?? minorUnitDigits(currency);
+  const locale = options.locale ?? new Intl.NumberFormat().resolvedOptions().locale;
+  return {
+    store: options.store, currency, exponent, locale,
+    timezone: options.timezone ?? 'device',
+    printedAt: options.printedAt ?? new Date().toISOString(),
+    formatMoney: (v) => formatDecimalMoney(v, { currency, exponent, locale }),
+    i18n: { ...ENGLISH_CLOSURE_LABELS, ...options.labels },
+    ...(options.expected !== undefined ? { expected: options.expected } : {}),
+    ...(options.breakdowns !== undefined ? { breakdowns: options.breakdowns } : {}),
+  };
+}
 
 const decimalMap = (minor: Record<string, number>, exponent: number): Record<string, string> =>
   Object.fromEntries(Object.entries(minor).map(([key, value]) => [key, minorToDecimal(value, exponent)]));
