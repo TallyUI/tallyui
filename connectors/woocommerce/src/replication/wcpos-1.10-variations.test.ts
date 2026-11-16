@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fixture from '../__tests__/fixtures/wcpos-1.10.20-variations.json';
 import { closeTills, context, createFakeStore, startTill } from '../__tests__/fake-store';
-import { toVariationDocument, wooProductReplication } from './products';
+import { toProductDocument, toVariationDocument, wooProductReplication } from './products';
 import { wooProductSchema } from '../schemas/products';
 
 afterEach(closeTills);
@@ -16,10 +16,14 @@ describe('WCPOS 1.10.20 variation documents', () => {
     const { payload } = fixture.documents.find((doc) => doc.id === id)!;
     expect(toVariationDocument(payload)).toEqual({
       id, sku, barcode, price: '25.00', regular_price: '25.00', sale_price: '', on_sale: false,
-      stock_status: 'instock', stock_quantity: 10, manage_stock: true, status: 'publish', purchasable: true,
+      stock_status: 'instock', stock_quantity: 10, manage_stock: true, backorders: 'no', status: 'publish', purchasable: true,
       tax_class: '', tax_status: 'taxable',
       attributes: [{ id: 0, name: 'Size', option: size }, { id: 0, name: 'Colour', option: colour }],
     });
+  });
+
+  it('keeps a product\'s backorders', () => {
+    expect(toProductDocument({ id: 1, uuid: 'u1', status: 'publish', backorders: 'notify' }).backorders).toBe('notify');
   });
 
   it('keeps a global attribute id and drops a non-numeric one', () => {
@@ -39,8 +43,8 @@ describe('WCPOS 1.10.20 variation documents', () => {
 });
 
 describe('WCPOS 1.10.20 variations pull', () => {
-  it('uses product schema version 2 and retains replicated variation tax fields', async () => {
-    expect(wooProductSchema.version).toBe(2);
+  it('uses product schema version 3 and retains replicated variation tax fields', async () => {
+    expect(wooProductSchema.version).toBe(3);
     const store = createFakeStore(1);
     Object.assign(store.rows[0], { id: 102, type: 'variable', variations: [104, 105, 106] });
     store.respond = (url) => url.pathname === '/wp-json/wcpos/v2/variations'
@@ -51,7 +55,7 @@ describe('WCPOS 1.10.20 variations pull', () => {
     expect(product.variation_docs).toHaveLength(fixture.documents.length);
     for (const { payload } of fixture.documents) {
       expect(product.variation_docs.find((variation: { id: number }) => variation.id === payload.id))
-        .toMatchObject({ tax_class: payload.tax_class, tax_status: payload.tax_status });
+        .toMatchObject({ tax_class: payload.tax_class, tax_status: payload.tax_status, backorders: payload.backorders });
     }
   });
 

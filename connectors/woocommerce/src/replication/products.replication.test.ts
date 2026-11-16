@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRxDatabase } from 'rxdb';
+import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
+import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { connectorCollection } from '@tallyui/database';
 import { at, closeTills, createFakeStore, stamp, startTill, type FakeRow } from '../__tests__/fake-store';
+import { wooProductSchema } from '../schemas/products';
 
 afterEach(closeTills);
 
@@ -103,5 +108,30 @@ describe('WooCommerce product pass cursor in the real RxDB replication loop', ()
     state.reSync();
     await vi.waitFor(() => expect(errors).not.toEqual([]));
     expect((errors[0] as any).parameters.errors[0]).toMatchObject({ name: 'WooDateFilterError', code: 'unsupported_store' });
+  });
+});
+
+describe('WooCommerce product schema upgrade', () => {
+  it('drops a version 2 product cache on open under schema version 3 and resyncs it', async () => {
+    const v2Schema = { ...wooProductSchema, version: 2, properties: { ...wooProductSchema.properties } };
+    delete v2Schema.properties.backorders;
+    const options = { name: `woo${Math.random().toString(36).slice(2)}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false };
+    let db = await createRxDatabase(options);
+    try {
+      await db.addCollections({ products: connectorCollection(v2Schema) });
+      await db.products.insert({ uuid: 'stale', id: 999, name: 'Stale', status: 'publish', date_modified_gmt: '2026-01-01T00:00:00' });
+      expect(await db.products.count().exec()).toBe(1);
+      await db.close();
+      db = await createRxDatabase(options);
+      await db.addCollections({ products: connectorCollection(wooProductSchema) });
+      expect(db.products.schema.version).toBe(3);
+      expect(await db.products.count().exec()).toBe(0);
+      const { sync, local } = await startTill(createFakeStore(3), { db });
+      await sync();
+      expect([...(await local()).keys()].sort()).toEqual(['u1', 'u2', 'u3']);
+    } finally {
+      await closeTills();
+      await db.close();
+    }
   });
 });

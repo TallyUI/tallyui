@@ -27,6 +27,8 @@ export interface StoreSettings {
   taxRoundAtSubtotal?: boolean;
   /** WooCommerce's calculate coupon discounts sequentially setting. */
   calcDiscountsSequentially?: boolean;
+  /** WCPOS's "prevent overselling" store setting: WCPOS v2's stock guard runs only when it is on. Absent: the connector did not read it; treat it as off. */
+  preventOverselling?: boolean;
   shippingTaxClass?: string;
   taxClassSlugs?: string[];
   /** The tax classes with their display names, in the store's order. Display only. Absent when the connector did not read them. */
