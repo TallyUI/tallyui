@@ -3,7 +3,7 @@ import { AccessibilityInfo, Platform } from 'react-native';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SyncNotice } from '@tallyui/core';
 import type { OutboxState } from '@tallyui/pos';
-import { SyncStatus } from '../sale/sync-status';
+import { SyncStatus, syncStatusQuiet } from '../sale/sync-status';
 
 const os = Platform.OS;
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); Object.assign(Platform, { OS: os }); });
@@ -661,5 +661,22 @@ describe('SyncStatus', () => {
     render(<SyncStatus state={{ pending: 0, sending: false }} pluginName="WCPOS" pullNotice={notice('missing_plugin')} />);
     expect(screen.getByText(pluginDetail)).toBeTruthy();
     expect(screen.queryByText(outboxDetail(''))).toBeNull();
+  });
+
+  describe('syncStatusQuiet', () => {
+    it.each<[{ state: OutboxState; registerState?: OutboxState; pullNotice?: SyncNotice }, boolean]>([
+      [{ state: { pending: 0, sending: false } }, true],
+      [{ state: { pending: 1, sending: false } }, false],
+      [{ state: { pending: 0, sending: false }, registerState: { pending: 2, sending: false } }, false],
+      [{ state: { pending: 0, sending: false, rejected: 1 } }, false],
+      [{ state: { pending: 0, sending: false, backendMissing: { since: 1 } } }, false],
+      [{ state: { pending: 0, sending: false }, registerState: { pending: 0, sending: false, backendMissing: { since: 1 } } }, false],
+      [{ state: { pending: 0, sending: false }, pullNotice: notice('unauthorized') }, false],
+      [{ state: { pending: 0, sending: true } }, true],
+    ])('matches the rendered status for %j (quiet: %s)', (props, quiet) => {
+      expect(syncStatusQuiet(props)).toBe(quiet);
+      render(<SyncStatus {...props} />);
+      expect(document.body.textContent === 'Sales are up to date.').toBe(quiet);
+    });
   });
 });
