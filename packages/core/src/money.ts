@@ -80,6 +80,8 @@ export interface MoneyFormat {
   thousandSeparator?: string;
   decimalSeparator?: string;
   decimals?: number;
+  /** The store's currency symbol as plain text (e.g. WooCommerce's `currency_symbol` with HTML entities decoded); Intl's symbol for the currency and locale when unset. */
+  symbol?: string;
 }
 
 /**
@@ -102,11 +104,16 @@ export function formatMoney(money: Money, locale?: string, format?: MoneyFormat)
   return formatter.format(moneyToMajor(money));
 }
 
+const POSITIONS: ReadonlyArray<string> = ['left', 'right', 'left_space', 'right_space'];
+
 /**
  * Money in a store's format, ported from WCPOS v2 (MIT): the position map of
- * `packages/core/src/screens/main/hooks/use-currency-format.tsx` and the separators and places
- * of `use-number-format.ts`. As there, the places are always shown, the integer is grouped every
- * three digits, and a minus leads the symbol. The symbol is Intl's for the currency and locale.
+ * `packages/core/src/screens/main/hooks/use-currency-format.tsx` and the separators and places of
+ * `use-number-format.ts`. As there, the places are always shown, digits are Latin, and a minus leads the symbol.
+ * With a thousand separator the integer is grouped every three digits; without one, Intl groups it for the locale.
+ * Departures from v2: the symbol falls back to Intl's when the format has none; a position outside the four values
+ * means Intl's side and gap (v2 shows no symbol); fewer places round halves away from zero (v2 rounds them toward
+ * +infinity, so -12.50 at 0 places reads -13 here, -12 there); v2's lakh/wan grouping styles are not supported.
  * Returns undefined for 'XXX' or a code Intl refuses, so callers can fall back.
  */
 function formatMoneyWith(money: Money, format: MoneyFormat, locale?: string): string | undefined {
@@ -120,17 +127,19 @@ function formatMoneyWith(money: Money, format: MoneyFormat, locale?: string): st
   try {
     parts = new Intl.NumberFormat(locale, {
       style: 'currency', currency: money.currency, minimumFractionDigits: decimals, maximumFractionDigits: decimals,
+      numberingSystem: 'latn',
     }).formatToParts(major);
   } catch {
     return undefined;
   }
   const text = (...types: string[]) => parts.filter((p) => types.includes(p.type)).map((p) => p.value).join('');
-  const { position, thousandSeparator, decimalSeparator } = format;
+  const { thousandSeparator, decimalSeparator } = format;
+  const position = format.position !== undefined && POSITIONS.includes(format.position) ? format.position : undefined;
   const integer = thousandSeparator === undefined
     ? text('integer', 'group')
     : text('integer').replace(/\B(?=(\d{3})+(?!\d))/g, thousandSeparator);
   const number = integer + (decimals > 0 ? (decimalSeparator ?? text('decimal')) + text('fraction') : '');
-  const symbol = text('currency');
+  const symbol = format.symbol ?? text('currency');
   const left = position
     ? position.startsWith('left')
     : parts.findIndex((p) => p.type === 'currency') < parts.findIndex((p) => p.type === 'integer');

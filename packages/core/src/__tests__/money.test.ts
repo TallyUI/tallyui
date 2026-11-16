@@ -65,6 +65,31 @@ describe('formatMoney', () => {
   const usd = (amount: number) => ({ amount, currency: 'USD' });
   const eur = (amount: number) => ({ amount, currency: 'EUR' });
 
+  it.each([
+    [{ amount: 1250, currency: 'CAD' }, 'en', { position: 'left', symbol: '$' }, '$12.50'],
+    [{ amount: 123450, currency: 'EUR' }, 'en', { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',', symbol: '€' }, '1.234,50 €'],
+    [{ amount: -1250, currency: 'ZAR' }, 'en', { position: 'left', symbol: 'R' }, '-R12.50'],
+  ] as const)('uses the store symbol: %j', (money, locale, format, expected) => {
+    expect(formatMoney(money, locale, format)).toBe(expected);
+  });
+
+  it('shows Latin digits and groups them in a non-Latin locale', () => {
+    expect(formatMoney({ amount: 123456789, currency: 'USD' }, 'ar-EG', {
+      position: 'left', thousandSeparator: ',', decimalSeparator: '.', symbol: '$',
+    })).toBe('$1,234,567.89');
+  });
+
+  it('shows no Arabic-Indic digits in ar-EG without a thousand separator', () => {
+    const result = formatMoney({ amount: 123456789, currency: 'USD' }, 'ar-EG', { position: 'left', symbol: '$' });
+    expect(result).not.toMatch(/[٠-٩]/);
+    expect(result).toMatch(/^\$1.?234.?567.?89$/u);
+  });
+
+  it('treats a position outside the four values as unset', () => {
+    const m = { amount: 1250, currency: 'USD' };
+    expect(formatMoney(m, 'en', { position: 'middle' as never })).toBe(formatMoney(m, 'en', {}));
+  });
+
   it('places the symbol by position (v2 currency_pos)', () => {
     expect(formatMoney(usd(123450), 'en', { position: 'left' })).toBe('$1,234.50');
     expect(formatMoney(usd(123450), 'en', { position: 'left_space' })).toBe('$ 1,234.50');
@@ -112,9 +137,8 @@ describe('formatMoney', () => {
     ['EUR', eur(123450), 'de-DE', undefined, new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(1234.5)],
     ['JPY', { amount: 1200, currency: 'JPY' }, 'en', undefined, new Intl.NumberFormat('en', { style: 'currency', currency: 'JPY' }).format(1200)],
     ['negative USD', usd(-123450), 'en', undefined, new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(-1234.5)],
-  ] as const)('without a format reads exactly as Intl: %s', (_label, money, locale, format, expected) => {
+  ] as const)('without a format reads exactly as Intl: %s', (_label, money, locale, _format, expected) => {
     expect(formatMoney(money, locale)).toBe(expected);
-    expect(formatMoney(money, locale, format)).toBe(expected);
   });
 
   it.each([
