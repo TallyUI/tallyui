@@ -1,5 +1,6 @@
 import * as React from 'react';
 import {
+  Platform,
   Pressable,
   View,
   type GestureResponderEvent,
@@ -7,8 +8,9 @@ import {
   type LayoutRectangle,
 } from 'react-native';
 import { useAugmentedRef, useControllableState, useRelativePosition, type LayoutPosition } from '../hooks';
+import { isTopLayer, pushLayer, removeLayer } from '../layer-stack';
 import { Portal as RNPortal } from '../portal';
-import { Slot } from '../slot';
+import { Slot, composeRefs } from '../slot';
 import type {
   CloseProps,
   ContentProps,
@@ -23,7 +25,13 @@ import type {
 // Internal context (nativeID for aria linkage)
 // ---------------------------------------------------------------------------
 
-const InternalContext = React.createContext<{ nativeID: string } | null>(null);
+interface InternalContextValue {
+  nativeID: string;
+  triggerRef: React.MutableRefObject<View | null>;
+  overlayCount: React.MutableRefObject<number>;
+}
+
+const InternalContext = React.createContext<InternalContextValue | null>(null);
 
 function useInternalContext() {
   const context = React.useContext(InternalContext);
@@ -64,9 +72,11 @@ function Root({ open: openProp, defaultOpen, onOpenChange: onOpenChangeProp, chi
   });
   const [triggerPosition, setTriggerPosition] = React.useState<LayoutPosition | null>(null);
   const [contentLayout, setContentLayout] = React.useState<LayoutRectangle | null>(null);
+  const triggerRef = React.useRef<View | null>(null);
+  const overlayCount = React.useRef(0);
 
   return (
-    <InternalContext.Provider value={{ nativeID }}>
+    <InternalContext.Provider value={{ nativeID, triggerRef, overlayCount }}>
       <RootContext.Provider
         value={{
           open,
@@ -94,6 +104,7 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
   ref
 ) {
   const { open, onOpenChange, setTriggerPosition } = useRootContext();
+  const { triggerRef } = useInternalContext();
 
   const augmentedRef = useAugmentedRef<View>({
     ref,
@@ -109,6 +120,10 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
         onOpenChange(false);
       },
     },
+  });
+
+  React.useLayoutEffect(() => {
+    triggerRef.current = augmentedRef.current;
   });
 
   const onPress = React.useCallback(
@@ -171,6 +186,16 @@ const Overlay = React.forwardRef<View, OverlayProps>(function Overlay(
   ref
 ) {
   const { open, onOpenChange, setTriggerPosition, setContentLayout } = useRootContext();
+  const { overlayCount } = useInternalContext();
+
+  // While an Overlay renders, an outside press is the Overlay's to handle.
+  React.useLayoutEffect(() => {
+    if (!forceMount && !open) return;
+    overlayCount.current += 1;
+    return () => {
+      overlayCount.current -= 1;
+    };
+  }, [open, forceMount, overlayCount]);
 
   const onPress = React.useCallback(
     (ev: GestureResponderEvent) => {
@@ -212,12 +237,67 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
     style,
     disablePositioningStyle,
     onLayout: onLayoutProp,
+    onEscapeKeyDown,
+    onPointerDownOutside,
+    onInteractOutside,
     ...props
   },
   ref
 ) {
-  const { open, triggerPosition, contentLayout, setContentLayout } = useRootContext();
-  const { nativeID } = useInternalContext();
+  const { open, onOpenChange, triggerPosition, setTriggerPosition, contentLayout, setContentLayout } =
+    useRootContext();
+  const { nativeID, triggerRef, overlayCount } = useInternalContext();
+
+  const contentRef = React.useRef<View | null>(null);
+  const composedRef = React.useMemo(() => composeRefs(ref, contentRef), [ref]);
+
+  const onEscapeKeyDownRef = React.useRef(onEscapeKeyDown);
+  const onPointerDownOutsideRef = React.useRef(onPointerDownOutside);
+  const onInteractOutsideRef = React.useRef(onInteractOutside);
+  const closeRef = React.useRef(() => {});
+  onEscapeKeyDownRef.current = onEscapeKeyDown;
+  onPointerDownOutsideRef.current = onPointerDownOutside;
+  onInteractOutsideRef.current = onInteractOutside;
+  closeRef.current = () => {
+    setTriggerPosition(null);
+    setContentLayout(null);
+    onOpenChange(false);
+  };
+
+  // Web only: Escape and a pointerdown outside content and trigger dismiss the
+  // topmost open layer (see layer-stack.ts). Native is untouched.
+  React.useEffect(() => {
+    if ((!open && !forceMount) || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    pushLayer(nativeID);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !isTopLayer(nativeID)) return;
+      onEscapeKeyDownRef.current?.(event);
+      if (!event.defaultPrevented) closeRef.current();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!isTopLayer(nativeID) || overlayCount.current !== 0) return;
+      const target = event.target;
+      const contentNode = contentRef.current as unknown as Node | null;
+      const triggerNode = triggerRef.current as unknown as Node | null;
+      if (target instanceof Node && (contentNode?.contains(target) || triggerNode?.contains(target))) {
+        return;
+      }
+      const outside = new CustomEvent('popover.pointerDownOutside', {
+        cancelable: true,
+        detail: { originalEvent: event },
+      });
+      onPointerDownOutsideRef.current?.(outside);
+      onInteractOutsideRef.current?.(outside);
+      if (!outside.defaultPrevented) closeRef.current();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown, { capture: true });
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown, { capture: true });
+      removeLayer(nativeID);
+    };
+  }, [open, forceMount, nativeID, triggerRef, overlayCount]);
 
   const positionStyle = useRelativePosition({
     align,
@@ -247,7 +327,7 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
 
   return (
     <Component
-      ref={ref}
+      ref={composedRef}
       role="dialog"
       nativeID={nativeID}
       aria-labelledby={`${nativeID}_title`}

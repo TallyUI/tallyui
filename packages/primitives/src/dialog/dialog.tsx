@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Platform, Pressable, Text, View, type GestureResponderEvent } from 'react-native';
 import { useControllableState } from '../hooks';
 import { Portal as RNPortal } from '../portal';
+import { isTopLayer, pushLayer, removeLayer } from '../layer-stack';
 import { Slot } from '../slot';
 import type {
   CloseProps,
@@ -14,8 +15,6 @@ import type {
   TitleProps,
   TriggerProps,
 } from './types';
-
-const openContentStack: string[] = [];
 
 // ---------------------------------------------------------------------------
 // Contexts
@@ -173,17 +172,16 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
   onOpenChangeRef.current = onOpenChange;
   React.useEffect(() => {
     if ((!open && !forceMount) || Platform.OS !== 'web' || typeof document === 'undefined') return;
-    openContentStack.push(nativeID);
+    pushLayer(nativeID);
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || openContentStack[openContentStack.length - 1] !== nativeID) return;
+      if (event.key !== 'Escape' || !isTopLayer(nativeID)) return;
       onEscapeKeyDownRef.current?.(event);
       if (!event.defaultPrevented) onOpenChangeRef.current(false);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      const index = openContentStack.indexOf(nativeID);
-      if (index !== -1) openContentStack.splice(index, 1);
+      removeLayer(nativeID);
     };
   }, [open, forceMount, nativeID]);
 
