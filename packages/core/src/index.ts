@@ -112,3 +112,5 @@ export * as woocommerceCoupons from './coupons/woocommerce';
 export { parseCommandResult, CommandResultError } from './server/command-result';
 // Browser-safe: register-figures.ts has no imports. The till and demo backends derive the same session figures.
 export { deriveSessionFigures, deriveVariance } from './server/register-figures';
+// Browser-safe: tax-rate.ts has no imports. The till and servers convert percentages to the same integer ppm.
+export { ratePpmFromPercent } from './server/tax-rate';
