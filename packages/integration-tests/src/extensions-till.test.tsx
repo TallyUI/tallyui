@@ -1,10 +1,9 @@
 import { useRef, useState } from 'react';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { Cart } from '@tallyui/components';
 import { wooProductTraits as traits } from '@tallyui/connector-woocommerce';
 import {
   createExtensionHost, ExtensionHostProvider, ExtensionTarget, useSaleSource,
@@ -47,8 +46,9 @@ function Harness({ db, register, onSale }: {
   const saleSource = useSaleSource(sale);
   sources.current = { sale: saleSource, register };
   onSale(sale);
+  // Cart slot placement is covered by cart.test.tsx and cart-total.test.tsx.
   return <ExtensionHostProvider host={host}>
-    <Cart sale={sale} afterSubtotal={<ExtensionTarget id="pos.cart.after-subtotal" sale={saleSource} />} />
+    <ExtensionTarget id="pos.cart.after-subtotal" sale={saleSource} />
   </ExtensionHostProvider>;
 }
 
@@ -73,7 +73,7 @@ describe('till extension through a real sale', () => {
 
   it('renders the cart block and refuses tender when the register is closed', async () => {
     const sale = await renderSale(false);
-    expect(await within(screen.getByTestId('cart-footer')).findByText('Coupons: 0')).toBeTruthy();
+    expect(await screen.findByText('Coupons: 0')).toBeTruthy();
     await act(async () => { sale.current.startTender('cash'); });
     expect(sale.current.stage).toEqual({ kind: 'cart' });
     expect(sale.current.error).toBe('Register closed');

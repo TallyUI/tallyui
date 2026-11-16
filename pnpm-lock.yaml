@@ -430,6 +430,9 @@ importers:
       '@tallyui/database':
         specifier: workspace:*
         version: link:../database
+      '@tallyui/extensions':
+        specifier: workspace:*
+        version: link:../extensions
       '@tallyui/pos':
         specifier: workspace:*
         version: link:../pos

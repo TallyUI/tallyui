@@ -12,7 +12,6 @@
     "@tallyui/core": "workspace:*"
   },
   "devDependencies": {
-    "@tallyui/components": "workspace:*",
     "@tallyui/connector-medusa": "workspace:*",
     "@tallyui/connector-vendure": "workspace:*",
     "@tallyui/connector-woocommerce": "workspace:*",
