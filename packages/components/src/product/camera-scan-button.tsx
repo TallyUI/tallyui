@@ -1,4 +1,5 @@
 import { View } from 'react-native';
+import { MinTargetBand } from '../scale/min-target';
 import { IconButton } from '../ui/icon-button';
 import { ScanIcon } from '../ui/icon/scan-icon';
 import { Text } from '../ui/text';
@@ -20,6 +21,7 @@ export function CameraScanButton({ open, onPress, testID = 'camera-scan-button' 
         <IconButton variant={open ? 'secondary' : 'ghost'} testID={testID} accessibilityLabel={label}
           accessibilityState={{ expanded: open }} onPress={onPress}>
           <View className={open ? 'text-secondary-foreground' : 'text-foreground'}><ScanIcon size={20} /></View>
+          <MinTargetBand square />
         </IconButton>
       </TooltipTrigger>
       <TooltipContent><Text>{label}</Text></TooltipContent>

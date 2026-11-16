@@ -6,13 +6,22 @@ import type { ViewfinderProps } from '../product/scanner-viewfinder';
 
 const traits = medusaConnector.traits.product;
 const FakeViewfinder = (_props: ViewfinderProps) => null;
+const matchMedia = window.matchMedia;
+
+// jsdom has no matchMedia, which usePointer reads as a coarse pointer; this stub is a mouse.
+function finePointer() {
+  window.matchMedia = vi.fn((media: string) => ({
+    media, matches: media === '(pointer: fine)' || media === '(hover: hover)',
+    addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  }) as unknown as MediaQueryList);
+}
 
 function renderCatalogue(props: Partial<Parameters<typeof Catalogue>[0]> = {}) {
   return render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} {...props} />);
 }
 
 describe('Catalogue camera scan', () => {
-  afterEach(() => { cleanup(); });
+  afterEach(() => { cleanup(); window.matchMedia = matchMedia; });
 
   it('has no camera scan button by default, nor without the cameraScanner wiring', () => {
     renderCatalogue();
@@ -48,5 +57,20 @@ describe('Catalogue camera scan', () => {
     expect(onOpen).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByTestId('camera-scan-button'));
     expect(screen.queryByTestId('camera-scanner-panel')).toBeNull();
+  });
+
+  const searchRow = () => screen.getByTestId('camera-scan-button').parentElement as HTMLElement;
+
+  it('makes the search row the band\'s height under a coarse pointer', () => {
+    renderCatalogue({ cameraScan: true, cameraScanner: { viewfinder: FakeViewfinder, onDetected: vi.fn() } });
+    expect(searchRow().contains(screen.getByPlaceholderText('Search or scan barcode / SKU'))).toBe(true);
+    expect(searchRow().style.minHeight).toBe('44px');
+  });
+
+  it('leaves the search row unsized under a fine pointer', () => {
+    finePointer();
+    renderCatalogue({ cameraScan: true, cameraScanner: { viewfinder: FakeViewfinder, onDetected: vi.fn() } });
+    expect(searchRow().contains(screen.getByPlaceholderText('Search or scan barcode / SKU'))).toBe(true);
+    expect(searchRow().style.minHeight).toBe('');
   });
 });

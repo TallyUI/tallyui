@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Tabs as TabsPrimitive, TextClassContext } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
+import { MinTargetBand } from '../../scale/min-target';
 
 const Tabs = TabsPrimitive.Root;
 
@@ -16,7 +17,7 @@ function TabsList({ className, ...props }: React.ComponentPropsWithoutRef<typeof
 const TabsTrigger = React.forwardRef<
   React.ComponentRef<typeof TabsPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
->(function TabsTrigger({ className, ...props }, ref) {
+>(function TabsTrigger({ className, children, ...props }, ref) {
   const { value } = TabsPrimitive.useRootContext();
   const isActive = props.value === value;
 
@@ -35,7 +36,15 @@ const TabsTrigger = React.forwardRef<
           className,
         )}
         {...props}
-      />
+      >
+        {/* The band rides along after the label; asChild's Slot takes one child, so it keeps its own. */}
+        {props.asChild ? children : (state) => (
+          <>
+            {typeof children === 'function' ? children(state) : children}
+            <MinTargetBand />
+          </>
+        )}
+      </TabsPrimitive.Trigger>
     </TextClassContext.Provider>
   );
 });
