@@ -325,12 +325,12 @@ describe('wooStoreSettings', () => {
     expect(settings).not.toHaveProperty('shippingTaxClass');
   });
 
-  it('warns about a decimal count mismatch without changing the settings', async () => {
+  it('warns about a decimal count mismatch and changes only the display decimals', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const expected = await wooStoreSettings(context);
     expect(warn).not.toHaveBeenCalled();
     storesBody = [{ ...stores[0], price_num_decimals: 3 }];
-    expect(await wooStoreSettings(context)).toStrictEqual(expected);
+    expect(await wooStoreSettings(context)).toStrictEqual({ ...expected, moneyFormat: { ...expected.moneyFormat, decimals: 3 } });
     expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('the till rounds USD to 2 digits'));
   });
 
