@@ -1,17 +1,5 @@
 # @tallyui/database
 
-## 3.21.0
-
-### Patch Changes
-
-- a1363ea: Internal tidy: the Vendure price fingerprint builds each variant's entry in one place, order history reuses its one tally-fields option, `REQUIRED_MULTI_INSTANCE_BY_ENGINE` keys on `WEB_STORAGE_ENGINE`, and stale planning and version comments are corrected. Behaviour unchanged.
-- Updated dependencies [c9403ce]
-- Updated dependencies [0eb7640]
-- Updated dependencies [6e191c9]
-- Updated dependencies [c9201a2]
-- Updated dependencies [a171cf5]
-  - @tallyui/core@3.21.0
-
 ## 3.20.1
 
 ### Patch Changes

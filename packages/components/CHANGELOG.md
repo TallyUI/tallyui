@@ -1,32 +1,5 @@
 # @tallyui/components
 
-## 3.21.0
-
-### Minor Changes
-
-- dedcdd3: Catalogue: optional inStockKeepsBackorder keeps backorder products in the grid while the In Stock pill is on (default off, unchanged).
-- 6e191c9: New exports the platform apps copied before: `deriveSessionFigures` and `deriveVariance` on `@tallyui/core`'s browser-safe main entry; `tenderLabel` and a new `syncStatusQuiet` predicate (true when `SyncStatus` would show only "Sales are up to date.") on `@tallyui/components`.
-
-### Patch Changes
-
-- 69f335d: ChargeForm: visible, translatable Name and Amount labels; the amount shows the sale currency's symbol as an affix instead of a currency-code placeholder.
-- 2431d40: RegisterPanel's side presentation keeps the register-panel-sales-count, -amount and -movements testIDs.
-- 3456730: Internal tidy: the cart tabs use `@tallyui/pos`'s `isPartlyPaid` instead of a copy, and the catalogue, stock badge and variations popover share one stock-status label table. Behaviour unchanged.
-- Updated dependencies [c9403ce]
-- Updated dependencies [0eb7640]
-- Updated dependencies [d5f08c7]
-- Updated dependencies [6e191c9]
-- Updated dependencies [c9201a2]
-- Updated dependencies [1a544e7]
-- Updated dependencies [3ff125d]
-- Updated dependencies [c83bb01]
-- Updated dependencies [a1363ea]
-- Updated dependencies [a171cf5]
-  - @tallyui/core@3.21.0
-  - @tallyui/pos@3.21.0
-  - @tallyui/primitives@3.21.0
-  - @tallyui/theme@3.21.0
-
 ## 3.20.1
 
 ### Patch Changes
