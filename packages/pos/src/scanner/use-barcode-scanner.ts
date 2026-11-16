@@ -13,12 +13,15 @@ export interface UseBarcodeScannerOptions {
   prefix?: string;
   suffix?: string;
   minChars?: number;
+  /** Which focused elements own their keys; a key there resets the burst and is never scanned.
+   * 'reset' (default): INPUT and TEXTAREA. 'ignore-editable': also SELECT and contentEditable elements. */
+  fieldPolicy?: 'reset' | 'ignore-editable';
   /** Called with each accepted scan event (wedge or device) after cross-source de-duplication,
    * before onScan. */
   onScanEvent?: (event: ScanEvent) => void;
 }
 
-/** Listen for keyboard-wedge scans outside INPUT/TEXTAREA, with a minimum length gate. Inside a ScanHubProvider the
+/** Listen for keyboard-wedge scans according to fieldPolicy, with a minimum length gate. Inside a ScanHubProvider the
  * hub's device scans (serial, HID-POS) join them, and a copy of one physical scan from a second source is dropped.
  * Ported from WCPOS v2 packages/core/src/screens/main/hooks/barcodes/use-barcode-detection.ts (monorepo 5ac185b0).
  * @example
@@ -59,8 +62,13 @@ export function useBarcodeScanner(options: UseBarcodeScannerOptions): void {
     };
     let detector = createWedgeDetector(detectorOptions);
     const handler = (e: KeyboardEvent) => {
-      const tagName = (e.target as HTMLElement | null)?.tagName;
-      if (tagName === 'INPUT' || tagName === 'TEXTAREA') {
+      const target = e.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      if (
+        tagName === 'INPUT' || tagName === 'TEXTAREA'
+        || ((latest.current.fieldPolicy ?? 'reset') === 'ignore-editable'
+          && (tagName === 'SELECT' || target?.isContentEditable === true))
+      ) {
         detector.dispose();
         detector = createWedgeDetector(detectorOptions);
       } else if (detector.handleKey(e.key)) {

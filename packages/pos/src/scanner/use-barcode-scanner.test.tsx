@@ -73,6 +73,59 @@ describe('useBarcodeScanner', () => {
     }
   });
 
+  it('scans a burst on a select or contentEditable element by default', () => {
+    const onScan = vi.fn();
+    renderHook(() => useBarcodeScanner({ onScan }));
+    const select = document.createElement('select');
+    const div = document.createElement('div');
+    Object.defineProperty(div, 'isContentEditable', { value: true });
+    document.body.append(select, div);
+    elements.push(select, div);
+    typeBurst(select, '036000291452');
+    vi.advanceTimersByTime(200);
+    expect(onScan).toHaveBeenCalledExactlyOnceWith('036000291452');
+    typeBurst(div, '036000291452');
+    vi.advanceTimersByTime(200);
+    expect(onScan).toHaveBeenCalledTimes(2);
+    expect(onScan).toHaveBeenNthCalledWith(2, '036000291452');
+  });
+
+  it("ignores keys typed into a select or contentEditable element under 'ignore-editable'", () => {
+    const onScan = vi.fn();
+    renderHook(() => useBarcodeScanner({ onScan, fieldPolicy: 'ignore-editable' }));
+    const select = document.createElement('select');
+    const div = document.createElement('div');
+    const input = document.createElement('input');
+    Object.defineProperty(div, 'isContentEditable', { value: true });
+    document.body.append(select, div, input);
+    elements.push(select, div, input);
+    for (const element of [select, div, input]) {
+      typeBurst(element, '036000291452');
+      vi.advanceTimersByTime(200);
+      expect(onScan).not.toHaveBeenCalled();
+    }
+    typeBurst(document.body, '036000291452');
+    vi.advanceTimersByTime(200);
+    expect(onScan).toHaveBeenCalledExactlyOnceWith('036000291452');
+  });
+
+  it('applies a changed fieldPolicy on the next burst', () => {
+    const onScan = vi.fn();
+    const { rerender } = renderHook(({ fieldPolicy }) => useBarcodeScanner({ onScan, fieldPolicy }), {
+      initialProps: { fieldPolicy: undefined as UseBarcodeScannerOptions['fieldPolicy'] },
+    });
+    const select = document.createElement('select');
+    document.body.append(select);
+    elements.push(select);
+    typeBurst(select, '036000291452');
+    vi.advanceTimersByTime(200);
+    expect(onScan).toHaveBeenCalledExactlyOnceWith('036000291452');
+    rerender({ fieldPolicy: 'ignore-editable' });
+    typeBurst(select, '036000291452');
+    vi.advanceTimersByTime(200);
+    expect(onScan).toHaveBeenCalledExactlyOnceWith('036000291452');
+  });
+
   it('drops a burst shorter than minChars', () => {
     const onScan = vi.fn();
     const { rerender } = renderHook(({ minChars }) => useBarcodeScanner({ onScan, minChars }), {
