@@ -111,7 +111,7 @@ export function RegisterPanel({
             </IconButton>
           </DialogClose>
         </View>
-        {!side && <Text testID="register-panel-sales-count">{salesCount} sale{salesCount === 1 ? '' : 's'} this session</Text>}
+        <Text testID="register-panel-sales-count">{salesCount} sale{salesCount === 1 ? '' : 's'} this session</Text>
         <ScrollView testID="register-panel-body" className="flex-1" contentContainerClassName={side ? 'gap-4' : 'gap-3'}>
           {/* Here, not in RegisterCount: a refused closure's session is already closed, and the
               panel is what still shows once a closure exists. Title and button: WCPOS v2's
