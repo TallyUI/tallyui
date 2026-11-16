@@ -38,6 +38,8 @@
       "@tallyui/pos/*": ["packages/pos/src/*"],
       "@tallyui/primitives": ["packages/primitives/src/index.ts"],
       "@tallyui/primitives/*": ["packages/primitives/src/*"],
+      "@tallyui/extensions": ["packages/extensions/src/index.ts"],
+      "@tallyui/extensions/*": ["packages/extensions/src/*"],
       "@tallyui/mock-api": ["apps/mock-api/src/index.ts"],
       "@tallyui/mock-api/*": ["apps/mock-api/src/*"]
     }

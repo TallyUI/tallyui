@@ -34,6 +34,7 @@ export default defineConfig({
       '@tallyui/storage-sqlite': path.resolve(__dirname, 'packages/storage-sqlite/src'),
       '@tallyui/pos': path.resolve(__dirname, 'packages/pos/src'),
       '@tallyui/primitives': path.resolve(__dirname, 'packages/primitives/src'),
+      '@tallyui/extensions': path.resolve(__dirname, 'packages/extensions/src'),
       '@tallyui/mock-api': path.resolve(__dirname, 'apps/mock-api/src'),
       // React Native → Web for component rendering in tests
       'react-native': 'react-native-web',
