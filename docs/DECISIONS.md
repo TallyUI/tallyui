@@ -6353,7 +6353,8 @@ interface OrderCreatePayload {
 
 - **Date:** 2026-11-17 · **Status:** Accepted with conditions (front desk ruling on the D7 reopen draft, 2026-11-16:
   departures 1 to 4 are architecture, the desk's call; conditions Q1, the spike's store and the paid-above-total
-  section are written in below) · **Amends:** ADR-081 decision 5 ("M6 drops reopen-to-edit … no core support")
+  section are written in below; spike result and condition 4 added 2026-11-17, phases c to e wait for the desk)
+  · **Amends:** ADR-081 decision 5 ("M6 drops reopen-to-edit … no core support")
   · **Relates to:** ADR-038 (the command contract), ADR-070 (strict payloads), ADR-073 (the WooCommerce order
   transport), ADR-080 (`order.refund` v1, whose pattern this follows), WCPOS v2's reopen (the reference for features
   and taste)
@@ -6444,9 +6445,69 @@ interface OrderCreatePayload {
        by a spike before the transport is written. **The spike runs on a local wp-env or Docker store with WCPOS 2.0.3
        only, never dev-free, dev-pro or demo** (they share the production MariaDB).
   7. **Medusa and Vendure:** not decided here. Their capability stays absent, so the action stays hidden.
-- **Open, before phase c (desk condition 4):** what happens when the edited total falls below what is already paid.
-  The section cites what WCPOS v2 does (a refund flow, change, or a refusal) and keeps it. A negative remainder is
-  never settled silently as cash change.
+- **The phase b spike** (2026-11-17, local wp-env only: WooCommerce 10.4.3 with woocommerce-pos v2.0.3;
+  report and captures in `~/agent/research/tallyui-shared/spikes/2026-11-17-d7b-woo-reopen/REPORT.md`).
+  - **`order.reopen` v1 holds unchanged.** Every store answer maps to an existing v1 code. No core change is needed
+    before a release.
+  - **Q1 stands: no refusal to report.** A reopen with only `status`, `_pos_user` and `_pos_store` is accepted (200).
+    `_wcpos_register` and `_wcpos_till` are left as the order has them.
+  - **No status is refused.** Completed, processing, on-hold, pending, cancelled, refunded and storefront orders all
+    reopen.
+  - **What the Woo transport adds (phase d):**
+    - **`recordId`.** It is the order's `_woocommerce_pos_uuid`. The `wcpos/v2/orders?include=<id>` read stamps one
+      on a storefront order. The till carries the uuid and the revision from the detail read it built the cart from.
+      Reading again just before the push would replace `baseRevision` and defeat the conflict check, so that read
+      happens only when the uuid is missing.
+    - **`baseRevision`.** It is mandatory on Woo (428 without it). The connector's precheck refuses a reopen without
+      one as `invalid_payload`. The applied `revision` is the ack's `currentRevision`. A 409 conflict carries
+      `currentRevision` and the document.
+    - **`cashierRef`.** It goes to `_pos_user`, which the store honours only when it equals the credential's own WP
+      user and otherwise silently ignores. The connector's precheck therefore refuses (`invalid_payload`) a
+      `cashierRef` that is not the credential's user id, so nothing is dropped silently.
+    - **`registerId` and `storeId`.** `registerId` is never written. `_pos_store` comes from `storeId` and is omitted
+      when absent, as in v2.
+  - **Refusal mapping.**
+
+    | Tally code | Woo answer |
+    |---|---|
+    | `payment_in_motion` | 422 `wcpos_money_in_motion` (`data.payment_id` or `attempt_id`); on close, 409 `wcpos_payment_in_flight` |
+    | `revision_conflict` | 409 `woo_rxdb_sync_conflict`; money commands say 409 `wcpos_revision_stale` |
+    | `order_state` | 404 `woo_rxdb_sync_record_not_found` (`state: 'not_found'`); 422 `wcpos_status_not_pushable` |
+    | `forbidden` | 403 `woocommerce_pos_rest_forbidden` |
+    | `unsupported_version` | 426 `wcpos_update_required` |
+    | `internal_error` (a till bug, never shown as a store refusal) | 422 `woo_rxdb_sync_bad_mutation_id`; 422 `woo_rxdb_sync_header_body_mismatch`; 428 |
+
+  - **What `order.update` v1 adds in phase c (to decision 4):**
+    - **Store line identity.** Each line of a reopened sale carries the store's line id (`storeLineId?`). Woo's
+      `line_items` replaces the whole set: a kept line is sent by id, a removed line as `product_id: null`, and a new
+      line without an id. A kept line sent without its id would be a new line, and the old one removed. This is read
+      from the code, not run.
+    - **Explicit line money.** Every changed line carries its own `subtotal` and `total` (ex tax): the order's unit
+      price × the new quantity. wc/v3 does not reprice a quantity change (the spike's 3 × 4.00 billed 8.00).
+    - **Write order:**
+      1. one push with the lines;
+      2. one `orders/{id}/payments` record per new payment, chaining `revision`;
+      3. `orders/{id}/close`.
+
+      A record that settles the balance completes the sale by itself, and close then confirms idempotently.
+    - **Payments already on the order are never sent.** Resending one is 422 `wcpos_command_conflict`.
+    - **`reopen_required`** is 422 `reopen_required` (`data.order_status`).
+  - **Read model.** A reopen fills an empty `_pos_user_created` with the reopening cashier. A storefront order
+    reopened at the till then reads as created by that cashier.
+- **The edited total below what is already paid (desk condition 4).**
+  - **WCPOS v2 completes the sale.** It neither refuses nor gives change. The balance is
+    `max(0, total − paid + refunded)` and overpaid is `max(0, paid − total)` (M `derive.ts:114,164-165`). Checkout
+    shows "Done" (M `checkout-body.ts:24-26`), and the zero-balance press closes the order
+    (M `use-tender-flow.ts:944-971`). Overpaid is only logged (`settlement.boundary-overpaid`,
+    M `boundary-commit.ts:207-209,228`); no screen reads it.
+  - **The store does the same** (spike Q9). A sale paid 12.10 and edited to 8.80 closes 200 `completed` with
+    `balance: 0.00, refund_due: 3.30`. The payment stays captured with nothing refunded.
+  - **TallyUI keeps v2's behaviour:** the close completes and no refusal is added.
+  - **The till never records a change leg for a negative remainder.** The money stays on the order as the store's
+    `refund_due`, so it is never settled silently as cash change.
+  - **After the close,** the completed sale shows "Refund due" with the amount (paid − total), and offers ADR-080's
+    `order.refund` for it. The cashier may leave it, and it stays on the store order as `refund_due`. A forced prompt
+    is not added, since v2 has none.
 - **Phases** (each its own spec and PR; one-way, blast:shared): (a) core: `order.reopen` types, payload check,
   precheck, result parsing and capability parsing; (b) the Woo spike; (c) pos: `sendOrderReopen`, the reopened sale,
   `pos_orders` vN, `order.update` types and the outbox; (d) the Woo transport; (e) the app's action (tally-woo).
