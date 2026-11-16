@@ -53,6 +53,25 @@ describe('useBarcodeScanner', () => {
     expect(onScan).toHaveBeenCalledTimes(2);
   });
 
+  it('passes gapRule to the detector', () => {
+    const onScan = vi.fn();
+    const { rerender } = renderHook(({ gapRule }) => useBarcodeScanner({ onScan, gapRule, minChars: 6 }), {
+      initialProps: { gapRule: undefined as UseBarcodeScannerOptions['gapRule'] },
+    });
+    typeBurst(document.body, '036000');
+    vi.advanceTimersByTime(35);
+    typeBurst(document.body, '291452');
+    vi.advanceTimersByTime(200);
+    expect(onScan).toHaveBeenCalledExactlyOnceWith('036000291452');
+    rerender({ gapRule: 'every' });
+    typeBurst(document.body, '036000');
+    vi.advanceTimersByTime(35);
+    typeBurst(document.body, '291452');
+    vi.advanceTimersByTime(200);
+    expect(onScan).toHaveBeenCalledTimes(2);
+    expect(onScan).toHaveBeenNthCalledWith(2, '291452');
+  });
+
   it('ignores keys typed into a focused input', () => {
     const onScan = vi.fn();
     renderHook(() => useBarcodeScanner({ onScan }));

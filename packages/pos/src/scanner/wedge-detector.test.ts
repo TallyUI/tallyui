@@ -99,6 +99,56 @@ describe('wedge detector', () => {
   });
 });
 
+describe('gapRule', () => {
+  const keys = [
+    ...trace('1234'),
+    ...trace('5678').map((entry) => ({ ...entry, timeMs: entry.timeMs + 55 })),
+  ];
+
+  it('folded (the default) keeps a burst through one slow gap', () => {
+    const expected = { detectedAsScan: true, code: '12345678' };
+    expect(replayWedgeDetector(keys, DEFAULT_WEDGE_SETTINGS)).toEqual(expected);
+    expect(replayWedgeDetector(keys, { ...DEFAULT_WEDGE_SETTINGS, gapRule: 'folded' })).toEqual(expected);
+  });
+
+  it('every restarts the burst at a slow gap', () => {
+    expect(replayWedgeDetector(keys, { ...DEFAULT_WEDGE_SETTINGS, gapRule: 'every' })).toEqual({
+      detectedAsScan: true, code: '5678',
+    });
+  });
+
+  it('every drops a burst ended by a slow key', () => {
+    const ended = [...trace('123456789'), { key: 'X', timeMs: 80 }];
+    expect(replayWedgeDetector(ended, { ...DEFAULT_WEDGE_SETTINGS, gapRule: 'every' })).toEqual({
+      detectedAsScan: false, code: '',
+    });
+  });
+
+  it('every ends a live burst without emitting', () => {
+    const clock = createClock();
+    const onScan = vi.fn();
+    const detector = createWedgeDetector({
+      ...clock,
+      getSettings: () => ({ ...DEFAULT_WEDGE_SETTINGS, gapRule: 'every' }),
+      onScan,
+    });
+    for (const key of '123456789') {
+      detector.handleKey(key);
+      clock.advance(5);
+    }
+    clock.advance(35);
+    expect(detector.handleKey('X')).toBe(false);
+    clock.advance(500);
+    expect(onScan).not.toHaveBeenCalled();
+    for (const key of '036000291452') {
+      detector.handleKey(key);
+      clock.advance(5);
+    }
+    clock.advance(200);
+    expect(onScan).toHaveBeenCalledExactlyOnceWith('036000291452', { terminated: false, startedAtMs: 580 });
+  });
+});
+
 describe('createWedgeDetector meta', () => {
   const SETTINGS = DEFAULT_WEDGE_SETTINGS;
 

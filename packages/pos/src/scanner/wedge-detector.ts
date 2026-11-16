@@ -4,6 +4,9 @@
 export interface WedgeSettings {
   /** Folded-average gap (ms) below which input latches as a scan. */
   threshold: number;
+  /** 'folded' (default): v2's folded average, latched for the rest of the burst. 'every': each gap must be under
+   * the threshold; a slower key drops the burst and starts a new one. */
+  gapRule?: 'folded' | 'every';
   /** Stripped only when it equals the first key. */
   prefix: string;
   /** Stripped only when it equals the last key. */
@@ -35,18 +38,23 @@ export function createWedgeState(): WedgeState {
 /** Fold one key, mutating and returning state. Kept bug-for-bug with v2:
  * only length-1 keys advance timing; the first gap is +Infinity; the average
  * folds as (avg + gap) / 2. Scanning latches below threshold for the burst;
- * a slow key outside a burst resets the average and restarts the stack. */
-export function foldWedgeKey(state: WedgeState, key: string, timeMs: number, threshold: number): WedgeState {
+ * a slow key outside a burst resets the average and restarts the stack;
+ * 'every' ends the burst on a slow gap. */
+export function foldWedgeKey(state: WedgeState, key: string, timeMs: number, threshold: number, gapRule: 'folded' | 'every' = 'folded'): WedgeState {
   if (key.length !== 1) return state;
   let gap = Number.POSITIVE_INFINITY;
   if (state.lastTimeMs !== null) gap = timeMs - state.lastTimeMs;
   state.avg = state.avg === 0 ? gap : (state.avg + gap) / 2;
-  if (state.detecting || state.avg < threshold) {
+  if (gapRule === 'every' ? gap < threshold : state.detecting || state.avg < threshold) {
     state.detecting = true;
     state.stack.push(key);
   } else {
     state.avg = 0;
     state.stack = [key];
+    if (gapRule === 'every') {
+      state.detecting = false;
+      state.sawTerminator = false;
+    }
   }
   if (state.stack.length === 1) state.startedAtMs = timeMs;
   state.lastTimeMs = timeMs;
@@ -73,7 +81,7 @@ export interface WedgeReplayResult {
 /** Replay the detector over a completed keystroke trace. */
 export function replayWedgeDetector(keys: TraceKey[], settings: WedgeSettings): WedgeReplayResult {
   const state = createWedgeState();
-  for (const entry of keys) foldWedgeKey(state, entry.key, entry.timeMs, settings.threshold);
+  for (const entry of keys) foldWedgeKey(state, entry.key, entry.timeMs, settings.threshold, settings.gapRule);
   if (!state.detecting) return { detectedAsScan: false, code: '' };
   return { detectedAsScan: true, code: stripBoundary(state.stack, settings) };
 }
@@ -132,7 +140,7 @@ export function createWedgeDetector(options: WedgeDetectorOptions): WedgeDetecto
       return false;
     }
     const settings = options.getSettings();
-    foldWedgeKey(state, key, time, settings.threshold);
+    foldWedgeKey(state, key, time, settings.threshold, settings.gapRule);
     if (!state.detecting) return false;
     clearTimer();
     function settle() {

@@ -10,6 +10,8 @@ export interface UseBarcodeScannerOptions {
   /** Listen only while true (default true). */
   enabled?: boolean;
   threshold?: number;
+  /** Gap rule for scanner bursts; see WedgeSettings.gapRule. */
+  gapRule?: 'folded' | 'every';
   prefix?: string;
   suffix?: string;
   minChars?: number;
@@ -50,6 +52,7 @@ export function useBarcodeScanner(options: UseBarcodeScannerOptions): void {
     const detectorOptions = {
       getSettings: () => ({
         threshold: latest.current.threshold ?? DEFAULT_WEDGE_SETTINGS.threshold,
+        gapRule: latest.current.gapRule,
         prefix: latest.current.prefix ?? '',
         suffix: latest.current.suffix ?? '',
       }),
