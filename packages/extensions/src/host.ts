@@ -48,7 +48,7 @@ export function createExtensionHost({ extensions, grant = {}, log = console.warn
   for (const key of Object.keys(grant)) if (!accepted.includes(key)) log(`[@tallyui/extensions] grant names no loaded extension: ${key}`);
   for (const target of TARGET_IDS) Object.freeze(entries[target].sort((a, b) => a.order - b.order || (a.extensionId < b.extensionId ? -1 : a.extensionId > b.extensionId ? 1 : 0)));
   return { accepted, refused, entries: target => entries[target], async dispatch(event, payload, sources = {}) {
-    for (const tier of ['extension', 'guard'] as const) {
+    for (const tier of ['guard', 'extension'] as const) {
       let deadline: number | undefined;
       for (const hook of hooks) {
         if (hook.event !== event || hook.contribution.tier !== tier) continue;
@@ -58,9 +58,13 @@ export function createExtensionHost({ extensions, grant = {}, log = console.warn
         }
         const expires = deadline ??= Date.now() + ACTION_BUDGET_MS[event];
         const remaining = expires - Date.now();
+        if (remaining <= 0) {
+          try { log(`[@tallyui/extensions] ${hook.id} ${event}: starved`); } catch { /* Logging cannot stop dispatch. */ }
+          if (tier === 'guard') return GUARD_FAILED;
+          continue;
+        }
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          if (remaining <= 0) throw new Error('timeout');
           const ctx = Object.freeze({ event, payload: Object.freeze({ ...payload }), view: Object.freeze({
             ...(hook.capabilities.has('sale.read') && sources.sale ? { sale: sources.sale.view } : {}),
             ...(hook.capabilities.has('register.read') && sources.register ? { register: sources.register } : {}),

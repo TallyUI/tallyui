@@ -25,7 +25,7 @@ it('resolves null with no hooks', async () => {
   await expect(host.dispatch(event, payload)).resolves.toBeNull();
 });
 
-it.each([undefined, 'Register closed'])('runs extensions before guards, ignores their refusal, and stops at a guard refusal: %s', async refusal => {
+it.each([undefined, 'Register closed'])('runs guards before extensions, skips extensions after a guard refusal, and ignores an extension refusal: %s', async refusal => {
   const calls: string[] = [], later = vi.fn(() => { calls.push('later'); });
   const host = createExtensionHost({ log: vi.fn(), extensions: [
     extension('acme.guard', 'guard', () => { calls.push('guard'); return refusal ? { refuse: refusal } : undefined; }),
@@ -33,7 +33,7 @@ it.each([undefined, 'Register closed'])('runs extensions before guards, ignores 
     extension('acme.ext', 'extension', () => { calls.push('extension'); return { refuse: 'ignored' }; }),
   ] });
   await expect(host.dispatch(event, payload)).resolves.toBe(refusal ?? null);
-  expect(calls).toEqual(refusal ? ['extension', 'guard'] : ['extension', 'guard', 'later']);
+  expect(calls).toEqual(refusal ? ['guard'] : ['guard', 'later', 'extension']);
   expect(later).toHaveBeenCalledTimes(refusal ? 0 : 1);
 });
 
@@ -86,6 +86,26 @@ it('shares the extension budget: the second 1000 ms hook times out and its later
   await vi.advanceTimersByTimeAsync(500);
   expect(log).toHaveBeenCalledTimes(2);
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it('does not strike a starved extension hook and runs it once its slow neighbour is switched off', async () => {
+  vi.useFakeTimers();
+  const log = vi.fn(), first = vi.fn(() => new Promise<void>(resolve => setTimeout(() => resolve(undefined), ACTION_BUDGET_MS[event] + 1)));
+  const second = vi.fn(() => undefined);
+  const host = createExtensionHost({ log, extensions: [extension('acme.first', 'extension', first), extension('acme.second', 'extension', second)] });
+  for (let i = 0; i < 3; i++) {
+    log.mockClear();
+    const result = host.dispatch(event, payload);
+    await vi.advanceTimersByTimeAsync(ACTION_BUDGET_MS[event] + 1);
+    await expect(result).resolves.toBeNull();
+    expect(second).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(`acme.second ${event}: starved`));
+    expect(log.mock.calls.filter(([message]) => message.includes('acme.second') && message.includes('switched off'))).toHaveLength(0);
+  }
+  expect(log).toHaveBeenCalledWith(expect.stringContaining(`acme.first ${event}: switched off`));
+  await expect(host.dispatch(event, payload)).resolves.toBeNull();
+  expect(first).toHaveBeenCalledTimes(3);
+  expect(second).toHaveBeenCalledTimes(1);
 });
 
 it.each(['extension', 'guard'] as const)('switches off a %s hook after three failures, preserving guard refusal', async tier => {
