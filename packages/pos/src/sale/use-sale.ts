@@ -34,6 +34,8 @@ export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the 
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
 export const COUPONS_REPRICING = 'Coupon prices are being checked; try again in a moment';
+/** startTender refuses with this when the app's tenderGate rejects instead of answering. */
+export const TENDER_GATE_FAILED = 'The checkout check failed, so the tender did not start';
 /** #722: setCustomer's refusal of a customer whose address moves the sale's rates once they can no longer change (tender, receipt, money live); interim until #759 re-taxes like v2. */
 export const CUSTOMER_RETAX_REFUSED = 'This customer would change the tax on this sale. To use them, cancel the payment and change the customer in the cart, or start a new order.';
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
@@ -53,6 +55,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   registerId: string; cashierRef: string; capabilities?: ServerCapabilities;
   /** The platform's discount codes (ADR-077 amendment 3), e.g. woocommerceDiscountCodes.createDiscountCodes(source); without them, applyCoupon refuses with COUPONS_UNSUPPORTED. */
   discountCodes?: SaleDiscountCodes<any>;
+  /**
+   * Awaited after startTender's own checks, before the tender starts (ADR-089 D11): resolves to a refusal to show,
+   * or null to start. Typically `(attempt) => host.dispatch('checkout.tender.start', attempt, sources)` from
+   * `@tallyui/extensions`. Without it startTender starts at once, as before; a rejection refuses with TENDER_GATE_FAILED.
+   */
+  tenderGate?: (attempt: { method: 'cash' | 'external' }) => Promise<string | null>;
   /**
    * Put on every new sale, as v2's store setting `default_customer` (or the cashier, `default_customer_is_cashier`)
    * is on every new cart: the first sale and each one after complete, discard, park, newSale or a switch to New,
@@ -143,6 +151,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const error = saving && saleError ? saleError : configError ?? saleError;
   // The session pinned by startTender for this tender (`undefined` inside: none); null until a tender starts.
   const tenderSession = useRef<{ session: typeof opts.session } | null>(null);
+  const tenderGatePending = useRef(false);
   // The ids, at the tender, of payments whose terminal references were dropped.
   const droppedReferences = useRef<Set<string>>(new Set());
   // The pending completion isStored confirmed stored after its save failed; `canContinue` mirrors it for
@@ -411,6 +420,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     return inFlight.current ?? Promise.resolve();
   }
 
+  function begin(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
+    if (locked()) return;
+    const current = builderNow.current.getSnapshot();
+    if (!current.lineItems.length) return;
+    if (couponsUnpriced()) return setError(COUPONS_REPRICING);
+    tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
+    setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
+    setStage({ kind: 'tender', method });
+  }
+
   const result = {
     order, stage, error, idle,
     /** #722: the address the sale's customer is taxed by (WooCommerce's `tax_based_on`), for a "Tax based on" panel; undefined without `taxContextFor`. */
@@ -598,13 +617,20 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * opened just before (#170 race). A repeat call mid-tender keeps the first pin.
      */
     startTender(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
+      if (!opts.tenderGate) return begin(method, options);
       if (locked()) return;
       const current = builderNow.current.getSnapshot();
       if (!current.lineItems.length) return;
       if (couponsUnpriced()) return setError(COUPONS_REPRICING);
-      tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
-      setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
-      setStage({ kind: 'tender', method });
+      if (tenderGatePending.current) return;
+      const b = builderNow.current, at = generation.current;
+      tenderGatePending.current = true;
+      void Promise.resolve().then(() => opts.tenderGate!({ method })).catch(() => TENDER_GATE_FAILED).then((refusal) => {
+        tenderGatePending.current = false;
+        if (builderNow.current !== b || generation.current !== at) return;
+        if (refusal !== null) setError(refusal);
+        else begin(method, options);
+      });
     },
     setTender,
     /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. */
