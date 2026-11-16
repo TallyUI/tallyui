@@ -20,8 +20,8 @@ const schema = {
 };
 const connector = { id: 'test', schemas: { products: schema } } as unknown as TallyConnector;
 
-// A fake storage bearing job 2a's marker, without depending on
-// @tallyui/storage-sqlite (job 2b must not import job 2a's package).
+// A fake storage bearing @tallyui/storage-sqlite's engine marker, without depending on
+// that package (@tallyui/database must not import @tallyui/storage-sqlite).
 function sqliteSahpoolStorage() {
   return Object.assign(getRxStorageMemory(), { tallyEngine: WEB_STORAGE_ENGINE });
 }

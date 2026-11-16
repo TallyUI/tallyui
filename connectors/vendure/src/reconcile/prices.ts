@@ -19,6 +19,10 @@ const PRICE_LIST_QUERY = `
 /** `${variantId}:${currencyCode}:${price}:${priceWithTax}` entries, sorted and joined. */
 const fingerprintOf = (entries: string[]): string => [...entries].sort().join('|');
 
+/** One variant's fingerprint entry; the server pages and the local document must build it the same way. */
+const priceEntry = (v: { id: unknown; currencyCode: unknown; price: unknown; priceWithTax: unknown }): string =>
+  `${v.id}:${v.currencyCode}:${v.price}:${v.priceWithTax}`;
+
 /**
  * Every product's price fingerprint, one `productVariants` page at a time
  * (ADR-060's nightly backstop). The listing is not grouped by product, so a
@@ -43,7 +47,7 @@ export async function* fetchPages(context: SyncContext): AsyncIterable<Map<strin
       touched.add(productId);
       const entries = byProduct.get(productId) ?? [];
       byProduct.set(productId, entries);
-      entries.push(`${variant.id}:${variant.currencyCode}:${variant.price}:${variant.priceWithTax}`);
+      entries.push(priceEntry(variant));
     }
     yield new Map([...touched].map((id) => [id, fingerprintOf(byProduct.get(id) ?? [])]));
   }
@@ -51,8 +55,6 @@ export async function* fetchPages(context: SyncContext): AsyncIterable<Map<strin
 
 /** The same fingerprint, computed from a local product document's variants. Replicated Vendure documents already carry `price`, `priceWithTax` and `currencyCode`. */
 export function fingerprint(doc: any): string {
-  const entries: string[] = (doc.variants ?? []).map(
-    (v: any) => `${v.id}:${v.currencyCode}:${v.price}:${v.priceWithTax}`,
-  );
+  const entries: string[] = (doc.variants ?? []).map((v: any) => priceEntry(v));
   return fingerprintOf(entries);
 }

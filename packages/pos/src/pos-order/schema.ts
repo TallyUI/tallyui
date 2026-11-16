@@ -25,7 +25,7 @@ import type { PosOrder } from './types';
  * Its migration is the identity. It is one-way like version 7.
  * Version 9 adds the order's `coupons` and the receipt's `display.coupons` (ADR-077 d2), and a line's `attributes` (#495)
  * and `regularUnitPriceMinor` (ADR-077 d2), and `reopenedAt`: when a refused order was reopened as a parked sale (ADR-077 d4b), and lets `sentVersion` and `downgradedFrom` be 6 (order.create version 6, ADR-077 d4), and changes nothing else.
- * `finalizeOrder` writes a line's `attributes`; the order.create envelope sends them only at version 6.
+ * `finalizeOrder` writes a line's `attributes`; the order.create envelope sends them when its base payload is version 6 (wire versions 6 to 9).
  * Its migration is the identity. It is one-way like version 8.
  * Version 10 adds a line's `anyAttributes` (#495 c/d) and changes nothing else. Its migration is the identity. It is one-way like version 9.
  * Version 11 lets `sentVersion` and `downgradedFrom` be 7 (order.create version 7, ADR-083), and changes nothing else. Its migration is the identity. It is one-way like version 10.

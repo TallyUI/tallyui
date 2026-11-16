@@ -9,7 +9,7 @@ export { isStorageWorkerStartError } from './is-storage-worker-start-error';
 // Also at import, before anything else can make RxDB cache the flag's first check as false.
 setPremiumFlag();
 
-/** Marks a storage as this package's web engine (ADR-061), for job 2b to recognise. */
+/** Marks a storage as this package's web engine (ADR-061), for @tallyui/database to recognise. */
 export const SQLITE_SAHPOOL_ENGINE = 'sqlite-sahpool';
 
 /** The web storage, with `terminate()` for the live-tab park order (ADR-061, amendment 1). */
