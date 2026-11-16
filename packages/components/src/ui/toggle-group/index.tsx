@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ToggleGroup as ToggleGroupPrimitive, TextClassContext } from '@tallyui/primitives';
+import { ToggleGroup as ToggleGroupPrimitive, toggleGroupUtils, TextClassContext } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 import { type VariantProps } from 'class-variance-authority';
 import { toggleVariants, toggleTextVariants } from '../toggle';
@@ -38,6 +38,7 @@ const ToggleGroupItem = React.forwardRef<
   ToggleGroupItemProps
 >(function ToggleGroupItem({ className, variant, size, ...props }, ref) {
   const context = React.useContext(ToggleGroupContext);
+  const pressed = toggleGroupUtils.getIsSelected(ToggleGroupPrimitive.useRootContext().value, props.value);
 
   return (
     <TextClassContext.Provider
@@ -53,6 +54,7 @@ const ToggleGroupItem = React.forwardRef<
             variant: variant || context.variant,
             size: size || context.size,
           }),
+          pressed && 'bg-accent text-accent-foreground',
           className,
         )}
         {...props}
