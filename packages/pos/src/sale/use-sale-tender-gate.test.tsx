@@ -59,6 +59,19 @@ describe('useSale tender gate', () => {
     expect(result.current.stage).toEqual({ kind: 'cart' });
   });
 
+  it('shows TENDER_GATE_FAILED after a synchronous throw and allows another attempt', async () => {
+    const gate = vi.fn<TenderGate>()
+      .mockImplementationOnce(() => { throw new Error('offline'); })
+      .mockResolvedValueOnce(null);
+    const { result } = await renderSale(gate);
+    await act(async () => { result.current.startTender('cash'); });
+    expect(result.current.error).toBe(TENDER_GATE_FAILED);
+    expect(result.current.stage).toEqual({ kind: 'cart' });
+    await act(async () => { result.current.startTender('cash'); });
+    expect(gate).toHaveBeenCalledTimes(2);
+    expect(result.current.stage).toEqual({ kind: 'tender', method: 'cash' });
+  });
+
   it('calls a pending gate once across repeated taps', async () => {
     let resolve!: (answer: string | null) => void;
     const answer = new Promise<string | null>((done) => { resolve = done; });

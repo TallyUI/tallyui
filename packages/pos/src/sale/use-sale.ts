@@ -625,7 +625,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (tenderGatePending.current) return;
       const b = builderNow.current, at = generation.current;
       tenderGatePending.current = true;
-      void opts.tenderGate({ method }).catch(() => TENDER_GATE_FAILED).then((refusal) => {
+      void Promise.resolve().then(() => opts.tenderGate!({ method })).catch(() => TENDER_GATE_FAILED).then((refusal) => {
         tenderGatePending.current = false;
         if (builderNow.current !== b || generation.current !== at) return;
         if (refusal !== null) setError(refusal);
