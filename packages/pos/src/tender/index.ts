@@ -1,5 +1,7 @@
-export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, activePlan, planLegs, MAX_TENDER_MINOR } from './tender-state';
+export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, percentOfMinor, activePlan, planLegs, MAX_TENDER_MINOR } from './tender-state';
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg } from './tender-state';
+export { tenderFigures, runsWholeOrder } from './tender-figures';
+export type { TenderFacts, TenderFigures } from './tender-figures';
 export { tenderVoidSchema, tenderVoidCollection } from './tender-void';
 export type { TenderVoid } from './tender-void';
 export { roundedDue, tenderRounding } from './cash-rounding';

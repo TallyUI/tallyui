@@ -7,10 +7,54 @@ import {
   initialTenderState,
   initTenderState,
   MAX_TENDER_MINOR,
+  percentOfMinor,
   planLegs,
   quickTenderedAmounts,
   tenderReducer,
+  type TenderAction,
 } from './tender-state';
+
+it.each([
+  [18250, 25, 4563],
+  [18250, -1, 0],
+  [18250, 120, 18250],
+  [0, 25, 0],
+])('rounds and clamps %i minor × %i percent to %i', (balance, percent, want) => {
+  expect(percentOfMinor(balance, percent)).toBe(want);
+});
+
+it('plans a first amount followed by three equal shares, then replans short legs', () => {
+  const plan = { kind: 'fixed' as const, firstMinor: 2000, thenWays: 3, title: null, from: 0 };
+  const figures = planLegs(plan, [], 18250);
+  expect(figures.legs.map(({ minor }) => minor)).toEqual([2000, 5417, 5417, 5416]);
+  expect(figures.label.ways).toBe(4);
+  expect(
+    planLegs(plan, [{ minor: 2000, title: 'Cash' }], 16250).legs.map(({ minor }) => minor),
+  ).toEqual([2000, 5417, 5417, 5416]);
+  expect(planLegs(plan, [{ minor: 1000, title: 'Cash' }], 17250).thisPaymentMinor).toBe(5750);
+  expect(activePlan(plan, 3, 5416)).toBe(plan);
+  expect(activePlan(plan, 4, 1)).toBeNull();
+});
+
+it('starts in money mode, clears the entry on a mode change, and resets mode with the tender flow', () => {
+  expect(initialTenderState.entryMode).toBe('money');
+  const percent = tenderReducer(
+    { ...initialTenderState, entryMinor: 250, entryDirty: true },
+    { type: 'set-entry-mode', mode: 'percent' },
+  );
+  expect(percent).toMatchObject({ entryMode: 'percent', entryMinor: 0, entryDirty: false });
+  const actions: TenderAction[] = [
+    { type: 'tender-started' },
+    { type: 'back' },
+    { type: 'tender-recorded', rowsSinceFrom: [], balanceMinor: 1000 },
+    { type: 'set-plan', plan: { kind: 'even', ways: 2, from: 0 }, balanceMinor: 1000 },
+    { type: 'clear-plan', balanceMinor: 1000 },
+    { type: 'arm-custom' },
+  ];
+  for (const action of actions) {
+    expect(tenderReducer(percent, action).entryMode).toBe('money');
+  }
+});
 
 describe('tenderReducer', () => {
   it('replaces the pre-fill on the first digit, then shifts later digits in from the right', () => {
