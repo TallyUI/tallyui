@@ -1,14 +1,16 @@
 // Tap targets (44 px under a coarse pointer): the phone till from top to bottom. The catalogue
 // header mirrors `packages/components/src/sale/catalogue.tsx` (its search row, status row and
-// horizontal CategoryNav), so the e2e spec measures each control inside the strips it sits in.
-import { useState } from 'react';
+// horizontal CategoryNav), so the e2e spec measures each control inside the strips it sits in. The search
+// row mirrors catalogue's coarse-pointer minHeight (the band's height), computed here from public exports.
+import { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import {
   CameraScanButton, CategoryNav, Input, RegisterBar, ScaleProvider, Tabs, TabsList, TabsTrigger, Text, ViewToggle,
+  usePointer, useScale,
 } from '@tallyui/components';
 import { openSession, type CatalogueView } from '@tallyui/pos';
-import type { ScaleStep } from '@tallyui/theme';
+import { POINTER_FLOORS, type ScaleStep } from '@tallyui/theme';
 import { useDemoRegister, type DemoRegisterDb } from '../../lib/use-demo-register';
 
 const CATEGORIES = [
@@ -24,6 +26,13 @@ async function seed(db: DemoRegisterDb) {
     registerId: 'demo-register', expectedFloatMinor: 20000, countedFloatMinor: 20000,
     openedBy: 'demo-cashier', businessDay: { year: 2026, month: 9, day: 20 },
   });
+}
+
+// Rendered inside the ScaleProvider, so the hooks read the `?scale=` step rather than the provider's default.
+function SearchRow({ children }: { children: ReactNode }) {
+  const band = Math.max(useScale().variables['--spacing-ctl'], POINTER_FLOORS.coarse);
+  const coarse = usePointer() === 'coarse';
+  return <View className="flex-row items-center gap-2" style={coarse ? { minHeight: band } : undefined}>{children}</View>;
 }
 
 export default function TapTargetsScreen() {
@@ -50,12 +59,12 @@ export default function TapTargetsScreen() {
           </TabsList>
         </Tabs>
         <View className="gap-2 border-b border-border bg-card px-4 pb-3 pt-3">
-          <View className="flex-row items-center gap-2">
+          <SearchRow>
             <View className="flex-1">
               <Input><Input.Field placeholder="Search or scan barcode / SKU" /></Input>
             </View>
             <CameraScanButton open={scannerOpen} onPress={() => setScannerOpen((open) => !open)} />
-          </View>
+          </SearchRow>
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">
             <Text className="flex-1 text-xs text-muted-foreground">24 products</Text>
             <ViewToggle value={view} onChange={setView} />

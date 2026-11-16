@@ -1,6 +1,8 @@
 import { Pressable, ScrollView, Text, View, type ViewProps } from 'react-native';
 
 import { cn } from '@tallyui/theme';
+import { MinTargetBand, useMinTarget } from '../scale/min-target';
+import { usePointer } from '../scale/use-pointer';
 
 export interface CategoryItem {
   id: string;
@@ -24,6 +26,9 @@ export function CategoryNav({
   ...viewProps
 }: CategoryNavProps) {
   const isHorizontal = orientation === 'horizontal';
+  // A horizontal ScrollView clips its content: under a coarse pointer the row is the band's height, so no band is cut.
+  const band = useMinTarget();
+  const coarse = usePointer() === 'coarse';
 
   const content = categories.map((cat) => {
     const active = cat.id === selectedId;
@@ -47,6 +52,8 @@ export function CategoryNav({
         >
           {cat.name}
         </Text>
+        {/* Stacked chips would take each other's touches, so only the horizontal row gets a band. */}
+        {isHorizontal && <MinTargetBand />}
       </Pressable>
     );
   });
@@ -57,6 +64,7 @@ export function CategoryNav({
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerClassName="flex-row gap-2 px-3 py-2"
+        contentContainerStyle={coarse ? { alignItems: 'center', minHeight: band } : undefined}
         className={className}
         role="radiogroup"
         accessibilityLabel="Categories"

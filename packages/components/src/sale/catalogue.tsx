@@ -17,6 +17,8 @@ import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type
 import { CategoryBrowseGrid, CategoryCrumb } from './category-browse';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
+import { useMinTarget } from '../scale/min-target';
+import { usePointer } from '../scale/use-pointer';
 
 // locale/hour12/now are injected (rather than read from the device or the clock inside this
 // function) so the formatting is testable without the device; callers default them to the
@@ -194,6 +196,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const browsing = showCategoryNav && categoryBrowse === 'tiles';
   const atRoot = browsing && !activeCategory && !allOpen && !query.trim() && categoryList.length > 0;
   const [scannerOpen, setScannerOpen] = useState(false);
+  // The search row is shorter than the scan button's band at Compact, and the status row's Grid/Table band below
+  // covers the overhang: under a coarse pointer the search row is the band's height.
+  const band = useMinTarget();
+  const coarse = usePointer() === 'coarse';
   // The chooser is live (medusapos ADR 0007): it holds only the chosen product's id and derives its choices
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.
   const [chooserId, setChooserId] = useState<string | null>(null);
@@ -301,7 +307,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     <View className="flex-1" onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       <View className="gap-2 border-b border-border bg-card px-4 pb-3 pt-3">
         {cameraScan && cameraScanner ? (
-          <View className="flex-row items-center gap-2">
+          <View className="flex-row items-center gap-2" style={coarse ? { minHeight: band } : undefined}>
             <View className="flex-1">{searchInput}</View>
             <CameraScanButton open={scannerOpen} onPress={() => setScannerOpen((open) => !open)} />
           </View>
