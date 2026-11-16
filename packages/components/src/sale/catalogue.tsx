@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory, type VariantSummary } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
   catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE,
-  listCategories, inCategory, cartQuantities,
+  listCategories, inCategory, productCategories, cartQuantities,
   type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction, type CartQuantityLine } from '@tallyui/pos';
 import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle, CategoryNav } from '../product';
 import { ProductVariantPicker } from '../product/product-variant-picker';
@@ -14,6 +14,7 @@ import { Popover } from '@tallyui/primitives';
 import { CameraScanButton } from '../product/camera-scan-button';
 import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/camera-scanner-panel';
 import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
+import { CategoryBrowseGrid, CategoryCrumb } from './category-browse';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
 
@@ -38,7 +39,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
 }
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
-  viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categories, pickAnyOptions = false,
+  viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categoryBrowse = 'chips', categories, pickAnyOptions = false,
   cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
@@ -81,6 +82,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   showViewToggle?: boolean;
   /** Show the category nav in the header. Default false. */
   showCategoryNav?: boolean;
+  /** How the categories show when showCategoryNav is set: 'chips' (default) is the CategoryNav row; 'tiles' is v2's
+   * browse root, the categories as poster tiles with their product counts, opening one under a "Categories › name"
+   * breadcrumb. A search typed at the root searches every product. */
+  categoryBrowse?: 'chips' | 'tiles';
   /** Replaces the categories derived from the listed products. */
   categories?: ProductCategory[];
   /** App-filtered, sorted list shown as given; products still drives scanning and variant choices. */
@@ -169,6 +174,15 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // merges the overlay itself keeps working, and can drop its own merge.
   const shown = useStockOverlaid(products) as Doc[];
   const categoryList = useMemo(() => categories ?? listCategories(shown, traits), [categories, shown, traits]);
+  const counts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const doc of shown) {
+      for (const id of new Set(productCategories(doc, traits).map((category) => category.id))) {
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [shown, traits]);
   const activeCategory = showCategoryNav ? categoryList.find((category) => category.id === state.categoryId) : undefined;
   const suppliedItems = useStockOverlaid(items ?? products) as Doc[];
   const overlayAsOf = useStockOverlayAsOf();
@@ -176,6 +190,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const validOverlayAsOf = parsedOverlayAsOf && !isNaN(parsedOverlayAsOf.getTime()) ? parsedOverlayAsOf : undefined;
   const stockAsOf = laterOf(laterOf(lastStockCheckAt, validOverlayAsOf), lastSyncedAt);
   const [query, setQuery] = useState('');
+  const [allOpen, setAllOpen] = useState(false);
+  const browsing = showCategoryNav && categoryBrowse === 'tiles';
+  const atRoot = browsing && !activeCategory && !allOpen && !query.trim() && categoryList.length > 0;
   const [scannerOpen, setScannerOpen] = useState(false);
   // The chooser is live (medusapos ADR 0007): it holds only the chosen product's id and derives its choices
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.
@@ -300,7 +317,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             {showViewToggle ? <ViewToggle value={state.view} onChange={(view) => changeState({ type: 'setView', view })} /> : null}
           </View>
         ) : null}
-        {showCategoryNav ? <CategoryNav categories={[{ id: '', name: 'All products' }, ...categoryList]}
+        {showCategoryNav && !browsing ? <CategoryNav categories={[{ id: '', name: 'All products' }, ...categoryList]}
           selectedId={activeCategory?.id ?? ''}
           onSelect={(id) => changeState({ type: 'setCategory', categoryId: id === '' ? null : id })} /> : null}
         {pickEntry ? (
@@ -332,6 +349,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           </View>
         ) : null}
       </View>
+      {atRoot ? <CategoryBrowseGrid categories={categoryList} counts={counts} total={shown.length} columns={columns}
+        onOpen={(id) => { if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }} /> : <>
+      {browsing && (activeCategory || allOpen) ? <CategoryCrumb here={activeCategory?.name ?? 'All products'}
+        onRoot={() => { setAllOpen(false); changeState({ type: 'setCategory', categoryId: null }); }} /> : null}
       {state.view === 'table' ? (
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
           sortItems={false} onSelect={selectProduct} emptyState={emptyState} />
@@ -373,6 +394,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           );
         }}
         emptyState={emptyState} />}
+      </>}
     </View>
   );
 }
