@@ -83,7 +83,7 @@ export function createVendureOrders(options: { pricesIncludeTax?: boolean; tally
       const wanted = [...new Set(ids.filter((id) => id.length > 0))];
       const orders: StoreOrder[] = [];
       for (const id of wanted) {
-        const order = await getVendureOrder(context, id, options.tallyFields === false ? { tallyFields: false } : undefined);
+        const order = await getVendureOrder(context, id, tally);
         if (order === null) continue;
         // Never placed: a cart, not order history.
         if (order.orderPlacedAt === null) continue;
