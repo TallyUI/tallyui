@@ -377,6 +377,21 @@ it('changes nothing when reapprove resolves null', async () => {
   expect(screen.getByTestId('register-panel-reapproval')).toBeTruthy();
 });
 
+it.each(['dialog', 'side'] as const)('keeps the e2e testIDs in the %s presentation', async (presentation) => {
+  render(
+    <RegisterHarness db={db}>
+      {(register) => (
+        <RegisterPanel register={register} currency="EUR" registerName="Front" open onOpenChange={() => {}} presentation={presentation} />
+      )}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(screen.getByTestId('register-panel-paid-in')).toBeTruthy());
+  expect(screen.getByTestId('register-panel-amount').textContent).toBe('Front');
+  expect(screen.getByTestId('register-panel-sales-count').textContent).toBe('0 sales this session');
+  expect(screen.getByTestId('register-panel-movements')).toBeTruthy();
+  if (presentation === 'side') expect(screen.getByTestId('register-panel-title').textContent).toBe('Front');
+});
+
 // TallyUI#716: `presentation="side"`, WCPOS v2's right-hand register sheet.
 async function renderSide(props: Partial<RegisterPanelProps> = {}, overrides?: Parameters<typeof RegisterHarness>[0]['overrides']) {
   render(

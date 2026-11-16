@@ -49,7 +49,9 @@ export function RegisterSideHeader({ session, registerName, storeName, now }: {
         <RegisterIcon size={18} />
       </View>
       <View className="flex-1 gap-1">
-        <DialogTitle testID="register-panel-title">{registerName ?? 'Register'}</DialogTitle>
+        <DialogTitle testID="register-panel-title">
+          <Text testID="register-panel-amount">{registerName ?? 'Register'}</Text>
+        </DialogTitle>
         <DialogDescription testID="register-panel-description">
           {describeSession(session, storeName, now ? now() : new Date())}
         </DialogDescription>
