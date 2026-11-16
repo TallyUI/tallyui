@@ -20,9 +20,15 @@
       "default": "./dist/rxdb/index.js"
     },
     "./server": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js",
       "source": "./src/server/index.ts",
+      "import": {
+        "types": "./dist/server/index.d.ts",
+        "default": "./dist/server/index.js"
+      },
+      "require": {
+        "types": "./dist/server/index.d.cts",
+        "default": "./dist/server/index.cjs"
+      },
       "default": "./dist/server/index.js"
     }
   },

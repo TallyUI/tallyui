@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsup';
 
-export default defineConfig({
+export default defineConfig([{
   // Subpaths stay out of the main entry: rxdb carries the RxDB helpers, and server carries
   // the plugins' contract, including node:crypto. The main entry stays free of all three.
   entry: { index: 'src/index.ts', 'rxdb/index': 'src/rxdb/index.ts', 'server/index': 'src/server/index.ts' },
@@ -10,4 +10,14 @@ export default defineConfig({
   // tsup strips the `node:` prefix by default; keeping it makes the server bundle portable
   // (Deno, Workers) and lets check-core-dist's `node:` check fire.
   removeNodeProtocol: false,
-});
+},
+  // A CommonJS copy of ./server only, for the CJS backend plugins (Medusa, Vendure), which cannot
+  // require() an ESM-only package. With "type": "module", tsup names it index.cjs / index.d.cts.
+  {
+    entry: { 'server/index': 'src/server/index.ts' },
+    format: ['cjs'],
+    dts: true,
+    external: ['react', 'rxdb', 'rxjs'],
+    removeNodeProtocol: false,
+  },
+]);
