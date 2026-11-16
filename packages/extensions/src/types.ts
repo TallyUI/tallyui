@@ -5,7 +5,7 @@ export const TARGET_IDS = ['pos.cart.after-subtotal'] as const;
 export type TargetId = (typeof TARGET_IDS)[number];
 
 /** What an extension may ask for (ADR-089 D4). The app grants a subset per extension; ungranted ones are absent from the block's props. */
-export const CAPABILITIES = ['sale.read', 'sale.coupons'] as const;
+export const CAPABILITIES = ['sale.read', 'sale.coupons', 'register.read'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 /** A read-only, subscribable value (ADR-089 D4): an extension reads through it and never holds the sale object itself. */
@@ -40,6 +40,50 @@ export interface SaleSource {
   readonly actions: SaleActions;
 }
 
+/** The events an extension may hook (ADR-089 D11): closed, like the target ids. */
+export const ACTION_EVENTS = ['checkout.tender.start'] as const;
+export type ActionEvent = (typeof ACTION_EVENTS)[number];
+
+/** Per event, the time one tier's hooks share on a dispatch, in ms (WCPOS v2 ACTION_BUDGET_MS). */
+export const ACTION_BUDGET_MS: Readonly<Record<ActionEvent, number>> = { 'checkout.tender.start': 1500 };
+/** Failures (a throw, a rejected load, a timeout, a malformed verdict) after which a hook is switched off for the host's life. */
+export const ACTION_HOOK_STRIKES = 3;
+/** What a dispatch refuses with when a guard throws, times out or has been switched off: a guard fails closed. */
+export const GUARD_FAILED = 'A checkout check could not run, so this was stopped';
+
+/** The register as a hook sees it, granted by `register.read`. */
+export interface RegisterView {
+  readonly open: boolean;
+}
+
+/** Per event, the action's payload, frozen. */
+export interface ActionPayloads {
+  'checkout.tender.start': { readonly method: 'cash' | 'external' };
+}
+
+/** What the app supplies a dispatch; a hook sees each only when its extension was granted the read capability. */
+export interface ActionSources {
+  sale?: SaleSource;
+  register?: ReadView<RegisterView>;
+}
+
+export interface ActionContext<E extends ActionEvent> {
+  readonly event: E;
+  readonly payload: ActionPayloads[E];
+  readonly view: { readonly sale?: ReadView<SaleView>; readonly register?: ReadView<RegisterView> };
+}
+
+/** Return nothing to go on, or refuse with the message the app shows. Only a `guard` hook's refusal stops the action. */
+export type ActionVerdict = void | { refuse: string };
+export type ActionHandler<E extends ActionEvent> = (ctx: ActionContext<E>) => ActionVerdict | Promise<ActionVerdict>;
+
+/** One hook on an event: its tier and its lazily loaded handler. */
+export interface HookContribution<E extends ActionEvent> {
+  /** `guard` fails closed (a failing or switched-off guard refuses); `extension` fails open and cannot refuse. */
+  tier: 'guard' | 'extension';
+  load: () => Promise<{ default: ActionHandler<E> }>;
+}
+
 /** What the host passes each target, by target id. */
 export interface TargetSources {
   'pos.cart.after-subtotal': { sale: SaleSource };
@@ -71,11 +115,13 @@ export interface ExtensionManifest {
   apiVersion: number;
   capabilities: readonly Capability[];
   targets: { [T in TargetId]?: TargetContribution<T> };
+  hooks?: { [E in ActionEvent]?: HookContribution<E> };
 }
 
 export type RefusalReason =
   | 'id.invalid' | 'id.duplicate' | 'apiVersion.unsupported'
-  | 'capability.unknown' | 'target.unknown' | 'target.invalid' | 'capability.notDeclared';
+  | 'capability.unknown' | 'target.unknown' | 'target.invalid' | 'capability.notDeclared'
+  | 'hook.unknown' | 'hook.invalid';
 
 /** An extension the host did not load, and why (ADR-089 D6: never half-loaded). */
 export interface ExtensionRefusal {
@@ -99,6 +145,8 @@ export interface ExtensionHost {
   readonly refused: readonly ExtensionRefusal[];
   /** The target's entries, by `order` then extension id; the same array on every call. */
   entries<T extends TargetId>(target: T): readonly TargetEntry<T>[];
+  /** Runs the event's hooks (ADR-089 D11); resolves to the refusal to show, or null to go on. Never rejects. */
+  dispatch<E extends ActionEvent>(event: E, payload: ActionPayloads[E], sources?: ActionSources): Promise<string | null>;
 }
 
 export interface CreateExtensionHostOptions {
