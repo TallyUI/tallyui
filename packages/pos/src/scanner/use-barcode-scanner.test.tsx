@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, renderHook } from '@testing-library/react';
+import { act, cleanup, render, renderHook } from '@testing-library/react';
 import { createScanHub } from './scan-events';
 import { useBarcodeScanner } from './use-barcode-scanner';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ScannerProfileStore } from './device-scanner';
 import { ScanHubProvider, useScanHub } from './scan-hub-context';
 import type { UseBarcodeScannerOptions } from './use-barcode-scanner';
@@ -251,5 +251,165 @@ describe('useBarcodeScanner', () => {
     } finally {
       vi.mocked(useScanHub).mockImplementation(actual.useScanHub);
     }
+  });
+});
+
+/** Dispatches a cancelable keydown, so a test can read defaultPrevented. */
+function press(target: EventTarget, key: string): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  target.dispatchEvent(event);
+  return event;
+}
+
+/** Presses each key of `code` 5 ms apart, as a scanner does, and returns the events. */
+function pressBurst(target: EventTarget, code: string): KeyboardEvent[] {
+  return [...code].map((key) => {
+    const event = press(target, key);
+    vi.advanceTimersByTime(5);
+    return event;
+  });
+}
+
+function MoneyField({ onScan }: { onScan: (code: string) => void }) {
+  const [v, setV] = useState('');
+  useBarcodeScanner({ onScan, fieldPolicy: 'hold-money' });
+  return <input inputMode="decimal" value={v} onChange={(e) => setV(e.target.value)} data-testid="m" />;
+}
+
+describe('fieldPolicy hold-money', () => {
+  let input: HTMLInputElement;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    input = document.createElement('input');
+    input.setAttribute('inputmode', 'decimal');
+    document.body.append(input);
+    input.focus();
+  });
+  afterEach(() => {
+    cleanup();
+    input.remove();
+    vi.useRealTimers();
+  });
+
+  it('a scan into a money field is scanned and never reaches it', () => {
+    const onScan = vi.fn();
+    renderHook(() => useBarcodeScanner({ onScan, fieldPolicy: 'hold-money' }));
+    const events = pressBurst(input, '036000291452');
+    events.push(press(input, 'Enter'));
+    vi.advanceTimersByTime(200);
+
+    expect(onScan).toHaveBeenCalledExactlyOnceWith('036000291452');
+    expect(input.value).toBe('');
+    expect(events.every((event) => event.defaultPrevented)).toBe(true);
+  });
+
+  it('typing at human speed goes in at the caret', () => {
+    const onScan = vi.fn();
+    renderHook(() => useBarcodeScanner({ onScan, fieldPolicy: 'hold-money' }));
+    const inputs = vi.fn();
+    input.addEventListener('input', inputs);
+    const events = ['1', '2', '.', '5'].map((key) => {
+      const event = press(input, key);
+      vi.advanceTimersByTime(100);
+      return event;
+    });
+
+    expect(events.every((event) => event.defaultPrevented)).toBe(true);
+    expect(input.value).toBe('12.5');
+    expect(inputs).toHaveBeenCalledTimes(4);
+    expect(onScan).not.toHaveBeenCalled();
+  });
+
+  it('a short fast run goes in once the detector settles', () => {
+    const onScan = vi.fn();
+    renderHook(() => useBarcodeScanner({ onScan, fieldPolicy: 'hold-money' }));
+    pressBurst(input, '12');
+    vi.advanceTimersByTime(200);
+
+    expect(input.value).toBe('12');
+    expect(onScan).not.toHaveBeenCalled();
+  });
+
+  it('held keys replace the selection', () => {
+    renderHook(() => useBarcodeScanner({ onScan: vi.fn(), fieldPolicy: 'hold-money' }));
+    input.value = '1000';
+    input.setSelectionRange(1, 3);
+    press(input, '5');
+    vi.advanceTimersByTime(100);
+
+    expect(input.value).toBe('150');
+    expect(input.selectionStart).toBe(2);
+  });
+
+  it('a named key flushes the held keys first and is not prevented', () => {
+    renderHook(() => useBarcodeScanner({ onScan: vi.fn(), fieldPolicy: 'hold-money' }));
+    press(input, '7');
+    vi.advanceTimersByTime(2);
+    let seen: string | undefined;
+    input.addEventListener('keydown', () => { seen = input.value; }, { capture: true });
+    const backspace = press(input, 'Backspace');
+
+    expect(seen).toBe('7');
+    expect(backspace.defaultPrevented).toBe(false);
+  });
+
+  it('a key elsewhere flushes the held keys into their field', () => {
+    renderHook(() => useBarcodeScanner({ onScan: vi.fn(), fieldPolicy: 'hold-money' }));
+    press(input, '9');
+    vi.advanceTimersByTime(2);
+    press(document.body, 'a');
+
+    expect(input.value).toBe('9');
+  });
+
+  it('unmount flushes held keys', () => {
+    const { unmount } = renderHook(() => useBarcodeScanner({ onScan: vi.fn(), fieldPolicy: 'hold-money' }));
+    press(input, '3');
+    unmount();
+
+    expect(input.value).toBe('3');
+  });
+
+  it('a scan into another input still resets under hold-money', () => {
+    const onScan = vi.fn();
+    renderHook(() => useBarcodeScanner({ onScan, fieldPolicy: 'hold-money' }));
+    const other = document.createElement('input');
+    document.body.append(other);
+    try {
+      other.focus();
+      const events = pressBurst(other, '036000291452');
+      vi.advanceTimersByTime(200);
+
+      expect(onScan).not.toHaveBeenCalled();
+      expect(events.some((event) => event.defaultPrevented)).toBe(false);
+    } finally {
+      other.remove();
+    }
+  });
+
+  it('other policies do not hold a money field', () => {
+    for (const fieldPolicy of [undefined, 'ignore-editable'] as const) {
+      const onScan = vi.fn();
+      const { unmount } = renderHook(() => useBarcodeScanner({ onScan, fieldPolicy }));
+      const events = pressBurst(input, '036000291452');
+      vi.advanceTimersByTime(200);
+
+      expect(onScan).not.toHaveBeenCalled();
+      expect(events.some((event) => event.defaultPrevented)).toBe(false);
+      expect(input.value).toBe('');
+      unmount();
+    }
+  });
+
+  it('a React-controlled money field sees the flushed value', () => {
+    const { getByTestId } = render(<MoneyField onScan={vi.fn()} />);
+    const money = getByTestId('m') as HTMLInputElement;
+    money.focus();
+    press(money, '4');
+    act(() => { vi.advanceTimersByTime(100); });
+    press(money, '2');
+    act(() => { vi.advanceTimersByTime(100); });
+
+    expect(money.value).toBe('42');
   });
 });
