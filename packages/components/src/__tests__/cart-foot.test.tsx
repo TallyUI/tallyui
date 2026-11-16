@@ -70,3 +70,33 @@ describe('CartFoot', () => {
     expect(onVoid).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('CartFoot note row', () => {
+  it('hides the row without a note prop', () => {
+    render(<CartFoot total={total} onCheckout={() => {}} />);
+    expect(screen.queryByTestId('cart-note-row')).toBeNull();
+  });
+
+  it('hides the row when the note is whitespace', () => {
+    const onPress = vi.fn();
+    render(<CartFoot total={total} onCheckout={() => {}} note={{ text: '   ', onPress }} />);
+    expect(screen.queryByTestId('cart-note-row')).toBeNull();
+  });
+
+  it('shows the note and calls onPress when clicked', () => {
+    const onPress = vi.fn();
+    render(<CartFoot total={total} onCheckout={() => {}} note={{ text: 'Gift wrap', onPress }} />);
+    expect(screen.getByTestId('cart-note-row').textContent).toBe('Gift wrap');
+    const button = screen.getByRole('button', { name: 'Edit note: Gift wrap' });
+    expect(button).toBeTruthy();
+    fireEvent.click(button);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('comes before the Checkout button in document order', () => {
+    render(<CartFoot total={total} onCheckout={() => {}} note={{ text: 'Gift wrap', onPress: () => {} }} />);
+    const row = screen.getByTestId('cart-note-row');
+    const checkout = screen.getByRole('button', { name: `Checkout ${formatMoney(total)}` });
+    expect(row.compareDocumentPosition(checkout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

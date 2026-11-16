@@ -36,8 +36,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * cart "+" menu). Applied discounts and charges still show and can be removed. */
     orderActions?: boolean;
     /** Swaps the Cash and Card terminal row for v2's foot, `CartFoot`: "Checkout {total}" calls `onCheckout`, and the
-     * ⋮ menu lists `actions`. Absent: the Cash and Card terminal row. */
-    checkout?: { onCheckout: () => void; actions?: readonly CartFootAction[] };
+     * ⋮ menu lists `actions`, with `note` above the buttons. Absent: the Cash and Card terminal row. */
+    checkout?: { onCheckout: () => void; actions?: readonly CartFootAction[]; note?: { text: string; onPress: () => void } };
     /** `popover`: tapping a line's quantity or price opens v2's keypad (WCPOS cart cells/quantity-keypad.tsx and
      * cells/price.tsx), the price one with the quick-discount keys and the struck regular price. Popover mode draws no
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
@@ -174,7 +174,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
       {checkout ? <CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout} actions={checkout.actions}
-        disabled={!order.lineItems.length} /> : <View className="flex-row gap-3">
+        note={checkout.note} disabled={!order.lineItems.length} /> : <View className="flex-row gap-3">
         <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('cash')} className={pay}>
           <Text className="text-center font-semibold text-primary-foreground">Cash</Text>
         </Pressable>
