@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
@@ -5,6 +6,14 @@ import { PortalHost } from '@tallyui/primitives';
 import { switchWarnings, type HandoverSlipData, type SwitchKind } from '@tallyui/pos';
 import { HandoverSlip } from '../register/handover-slip';
 import { SwitchConfirm, type SwitchConfirmProps } from '../register/switch-confirm';
+
+// react-native-web atomizes className into hashed classes, so copy it to a data attribute.
+vi.mock('react-native', async (importOriginal) => {
+  const rn = await importOriginal<typeof import('react-native')>();
+  const withClass = (Base: React.ElementType) =>
+    React.forwardRef((props: { className?: string }, ref) => <Base ref={ref} {...props} dataSet={{ class: props.className }} />);
+  return { ...rn, Pressable: withClass(rn.Pressable) };
+});
 
 afterEach(cleanup);
 
@@ -60,9 +69,9 @@ it('sign out with an open session: close first, or sign out anyway', () => {
   expect(text('switch-confirm-title')).toBe('Till 1 is still open at $150.00. Close it first?');
   expect(text('switch-confirm-description')).toBe('A till left open stays open for the next cashier. The closure records who closed it.');
   expect(text('switch-confirm-confirm')).toBe('Sign out anyway');
-  expect(screen.getByTestId('switch-confirm-close-register').className).toContain('bg-primary');
-  expect(screen.getByTestId('switch-confirm-confirm').className).toContain('border-input');
-  expect(screen.getByTestId('switch-confirm-confirm').className).not.toContain('bg-primary');
+  expect(screen.getByTestId('switch-confirm-close-register').getAttribute('data-class')).toContain('bg-primary');
+  expect(screen.getByTestId('switch-confirm-confirm').getAttribute('data-class')).toContain('border-input');
+  expect(screen.getByTestId('switch-confirm-confirm').getAttribute('data-class')).not.toContain('bg-primary');
   fireEvent.click(screen.getByTestId('switch-confirm-close-register'));
   expect(onCloseRegister).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByTestId('switch-confirm-confirm'));
@@ -71,7 +80,7 @@ it('sign out with an open session: close first, or sign out anyway', () => {
   show({ kind: 'signOut', warnings: warn('signOut', 0, { open: true }) });
   expect(text('switch-confirm-title')).toBe('Till 1 is still open. Close it first?');
   expect(screen.queryByTestId('switch-confirm-close-register')).toBeNull();
-  expect(screen.getByTestId('switch-confirm-confirm').className).toContain('bg-primary');
+  expect(screen.getByTestId('switch-confirm-confirm').getAttribute('data-class')).toContain('bg-primary');
 });
 
 it('names each warning but the open session, which the title already names', () => {
