@@ -1,5 +1,17 @@
 # @tallyui/storage-sqlite
 
+## 3.21.0
+
+### Patch Changes
+
+- 3808956: Internal tidy: the Vendure price fingerprint builds each variant's entry in one place, order history reuses its one tally-fields option, `REQUIRED_MULTI_INSTANCE_BY_ENGINE` keys on `WEB_STORAGE_ENGINE`, and stale planning and version comments are corrected. Behaviour unchanged.
+- Updated dependencies [3808956]
+- Updated dependencies [3808956]
+- Updated dependencies [3808956]
+- Updated dependencies [3808956]
+- Updated dependencies [3808956]
+  - @tallyui/core@3.21.0
+
 ## 3.20.1
 
 ### Patch Changes

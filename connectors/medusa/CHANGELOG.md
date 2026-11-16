@@ -1,5 +1,18 @@
 # @tallyui/connector-medusa
 
+## 3.21.0
+
+### Patch Changes
+
+- 3808956: Internal tidy: the WooCommerce order, customer and order-push code use `WCPOS_UUID_META_KEY` instead of spelling the meta key, and stale doc comments are corrected (the Woo coupon order.create version, Medusa's ignored `maxPages` advice, the errors Vendure's `gql` throws). Behaviour unchanged.
+- 3808956: Internal tidy: the Admin API reads in the product and variant feeds and the id, price and stock reconcilers share one GET helper, and the price fingerprint builds its base-price entries in one place. Behaviour unchanged.
+- Updated dependencies [3808956]
+- Updated dependencies [3808956]
+- Updated dependencies [3808956]
+- Updated dependencies [3808956]
+- Updated dependencies [3808956]
+  - @tallyui/core@3.21.0
+
 ## 3.20.1
 
 ### Patch Changes
