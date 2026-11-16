@@ -6315,10 +6315,35 @@ interface OrderCreatePayload {
      until then: a private, unversioned package has no release to check against.
   10. **Not published.** The package is `private` and in the changesets `ignore` list, so it is never versioned with
       the fixed `@tallyui/*` group, tagged or published; it is merged to main only.
+  11. **The action pipeline (added 2026-11-16, slice spec 2).** Events are a closed vocabulary like targets (v1:
+      `checkout.tender.start`, payload `{ method }`). A manifest's `hooks` names, per event, a lazy handler and a tier;
+      `host.dispatch(event, payload, sources)` resolves to the refusal to show or `null`, and never rejects. The
+      semantics are WCPOS v2's dispatcher, cut to what a gate needs:
+      - **Two tiers, guards first.** The `guard` tier fails closed: the first refusal is the answer, a failing guard
+        refuses with `GUARD_FAILED`, and either ends the dispatch, so extension hooks observe only a tender start
+        that goes ahead and their time never delays a guard. The `extension` tier fails open: a throw, a rejected
+        load, a timeout or a malformed verdict skips the hook, and its `{ refuse }` is ignored and logged, so an
+        add-on can never stop a sale. (The first cut ran extensions first; no WCPOS v2 reason backed that order, and
+        the front desk's review of #813 reversed it.)
+      - **One budget per tier per dispatch** (`ACTION_BUDGET_MS`, 1500 ms for tender start), shared by the tier's
+        hooks and counting each hook's first `load()`. A resolved module is cached; a rejected load is retried on
+        the next dispatch.
+      - **Three strikes.** Each failure of a hook that ran is a strike. A hook starved because its tier's budget was
+        already spent takes no strike (that dispatch it is skipped, or a guard refuses with `GUARD_FAILED`), so a
+        slow neighbour cannot switch it off. On the third (`ACTION_HOOK_STRIKES`) the hook is switched off
+        for the host's life. A switched-off extension hook leaves the chain, but a switched-off guard keeps
+        refusing: a register-open check that stopped running must not silently let tenders through.
+      - **Views by grant.** A hook's frozen `ctx.view` holds `sale` and `register` (`RegisterView { open }`, the new
+        `register.read` capability) only when granted, as for blocks (D4).
+      - **Deferred:** the Koa-style `next`, payload rewriting and after-work arrive with the first event whose payload
+        a hook may rewrite; per-hook order and required guards arrive with a second guard consumer. Until then a
+        handler returns a verdict and nothing else, which keeps D8's line (observe or refuse) trivially true.
+      - **`useSale` stays independent.** `@tallyui/pos` is published and cannot depend on this private package, so
+        it takes a structural `tenderGate` (slice spec 2b) that an app wires to `host.dispatch`.
 - **Out of v1:** other targets and events, providers through the manifest, the settings page and safe mode, custom
   fields (an `order.create` meta block gets its own ADR, phase 3), theming (ADR-087), tier C, a development-mode
   failure chip and the unmounted-target warning.
 - **Consequences:** an app opts in by creating a host and placing `<ExtensionTarget>` in its slots; an app that
   creates none behaves exactly as before. The slice's exit test is medusapos's `CouponField` and `useGatedSale`
   rewritten as one extension with no other TallyUI change.
-- **Evidence:** `packages/extensions/src/host.test.ts`, `react.test.tsx`, `sale-source.test.tsx`.
+- **Evidence:** `packages/extensions/src/host.test.ts`, `react.test.tsx`, `sale-source.test.tsx`, `pipeline.test.ts`.
