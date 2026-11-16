@@ -916,4 +916,14 @@ describe('v2 tile details', () => {
     fireEvent.click(screen.getByTestId('filter-chip-inStock'));
     expect(screen.getByTestId('product-tile-Wool Gloves')).toBeTruthy();
   });
+
+  it('In Stock keeps backorder products with inStockKeepsBackorder, and still drops out-of-stock ones', () => {
+    const backordered = { id: 'gloves', title: 'Wool Gloves', status: 'published', variants: [
+      { id: 'gloves-one', title: 'One size', sku: 'GLOVES', barcode: '444',
+        prices: [{ amount: 12, currency_code: 'eur' }], manage_inventory: true, inventory_quantity: 0, allow_backorder: true },
+    ] };
+    render(<Catalogue products={[...products, backordered, soldOut]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} showFilterBar inStockKeepsBackorder />);
+    expect(screen.getByTestId('product-tile-Wool Gloves')).toBeTruthy();
+    expect(screen.queryByTestId('product-tile-Grey Scarf')).toBeNull();
+  });
 });
