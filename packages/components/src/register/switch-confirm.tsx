@@ -80,11 +80,11 @@ export function SwitchConfirm({
             ))}
           </View>
         )}
-        <Button testID="switch-confirm-confirm" className="min-h-14" onPress={onConfirm}>
+        <Button testID="switch-confirm-confirm" variant={kind === 'signOut' && warnings.sessionOpen && !!onCloseRegister ? 'outline' : 'default'} className="min-h-14" onPress={onConfirm}>
           <Text>{confirm}</Text>
         </Button>
         {kind === 'signOut' && warnings.sessionOpen && !!onCloseRegister && (
-          <Button testID="switch-confirm-close-register" variant="outline" className="min-h-14" onPress={onCloseRegister}>
+          <Button testID="switch-confirm-close-register" className="min-h-14" onPress={onCloseRegister}>
             <Text>Close register</Text>
           </Button>
         )}

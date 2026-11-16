@@ -60,6 +60,9 @@ it('sign out with an open session: close first, or sign out anyway', () => {
   expect(text('switch-confirm-title')).toBe('Till 1 is still open at $150.00. Close it first?');
   expect(text('switch-confirm-description')).toBe('A till left open stays open for the next cashier. The closure records who closed it.');
   expect(text('switch-confirm-confirm')).toBe('Sign out anyway');
+  expect(screen.getByTestId('switch-confirm-close-register').className).toContain('bg-primary');
+  expect(screen.getByTestId('switch-confirm-confirm').className).toContain('border-input');
+  expect(screen.getByTestId('switch-confirm-confirm').className).not.toContain('bg-primary');
   fireEvent.click(screen.getByTestId('switch-confirm-close-register'));
   expect(onCloseRegister).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByTestId('switch-confirm-confirm'));
@@ -68,6 +71,7 @@ it('sign out with an open session: close first, or sign out anyway', () => {
   show({ kind: 'signOut', warnings: warn('signOut', 0, { open: true }) });
   expect(text('switch-confirm-title')).toBe('Till 1 is still open. Close it first?');
   expect(screen.queryByTestId('switch-confirm-close-register')).toBeNull();
+  expect(screen.getByTestId('switch-confirm-confirm').className).toContain('bg-primary');
 });
 
 it('names each warning but the open session, which the title already names', () => {
