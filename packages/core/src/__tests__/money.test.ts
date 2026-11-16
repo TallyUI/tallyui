@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from '../money';
+import { formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from '../money';
 import type { ProductPrice } from '../types';
 
 describe('minorUnitDigits', () => {
@@ -58,6 +58,135 @@ describe('moneyFromDecimalString', () => {
     expect(moneyFromDecimalString('1.5', 'JPY')).toBeUndefined();
     expect(moneyFromDecimalString('1.0', 'JPY')).toBeUndefined();
     expect(moneyFromDecimalString('9007199254740992', 'JPY')).toBeUndefined();
+  });
+});
+
+describe('formatMoney', () => {
+  const usd = (amount: number) => ({ amount, currency: 'USD' });
+  const eur = (amount: number) => ({ amount, currency: 'EUR' });
+
+  it.each([
+    [{ amount: 1250, currency: 'CAD' }, 'en', { position: 'left', symbol: '$' }, '$12.50'],
+    [{ amount: 123450, currency: 'EUR' }, 'en', { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',', symbol: '€' }, '1.234,50 €'],
+    [{ amount: -1250, currency: 'ZAR' }, 'en', { position: 'left', symbol: 'R' }, '-R12.50'],
+  ] as const)('uses the store symbol: %j', (money, locale, format, expected) => {
+    expect(formatMoney(money, locale, format)).toBe(expected);
+  });
+
+  it('shows Latin digits and groups them in a non-Latin locale', () => {
+    expect(formatMoney({ amount: 123456789, currency: 'USD' }, 'ar-EG', {
+      position: 'left', thousandSeparator: ',', decimalSeparator: '.', symbol: '$',
+    })).toBe('$1,234,567.89');
+  });
+
+  it('shows no Arabic-Indic digits in ar-EG without a thousand separator', () => {
+    const result = formatMoney({ amount: 123456789, currency: 'USD' }, 'ar-EG', { position: 'left', symbol: '$' });
+    expect(result).not.toMatch(/[٠-٩]/);
+    expect(result).toMatch(/^\$1.?234.?567.?89$/u);
+  });
+
+  it('treats a position outside the four values as unset', () => {
+    const m = { amount: 1250, currency: 'USD' };
+    expect(formatMoney(m, 'en', { position: 'middle' as never })).toBe(formatMoney(m, 'en', {}));
+  });
+
+  it('places the symbol by position (v2 currency_pos)', () => {
+    expect(formatMoney(usd(123450), 'en', { position: 'left' })).toBe('$1,234.50');
+    expect(formatMoney(usd(123450), 'en', { position: 'left_space' })).toBe('$ 1,234.50');
+    expect(formatMoney(usd(123450), 'en', { position: 'right' })).toBe('1,234.50$');
+    expect(formatMoney(usd(123450), 'en', { position: 'right_space' })).toBe('1,234.50 $');
+  });
+
+  it('uses the given thousand and decimal separators', () => {
+    const format = { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',' } as const;
+    expect(formatMoney(eur(123450), 'de-DE', format)).toBe('1.234,50 €');
+    // es would not group 1234 by itself; the store's separator groups every three digits.
+    expect(formatMoney(eur(123450), 'es', format)).toBe('1.234,50 €');
+    expect(formatMoney(eur(123456789), 'en', format)).toBe('1.234.567,89 €');
+    expect(formatMoney(usd(123450), 'en', { thousandSeparator: '' })).toBe('$1234.50');
+  });
+
+  it('shows the given number of decimals, rounding half away from zero', () => {
+    expect(formatMoney(usd(1250), 'en', { decimals: 0 })).toBe('$13');
+    expect(formatMoney(usd(1249), 'en', { decimals: 0 })).toBe('$12');
+    expect(formatMoney(usd(3451), 'en', { decimals: 3 })).toBe('$34.510');
+    expect(formatMoney({ amount: 1200, currency: 'JPY' }, 'en', { decimals: 2 })).toBe('¥1,200.00');
+    expect(formatMoney({ amount: 1200, currency: 'JPY' }, 'en', {})).toBe('¥1,200');
+    const de = { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',', decimals: 0 } as const;
+    expect(formatMoney(eur(123450), 'de-DE', de)).toBe('1.235 €');
+  });
+
+  it('leads a negative amount with a minus, before the symbol', () => {
+    expect(formatMoney(usd(-123450), 'en', { position: 'left' })).toBe('-$1,234.50');
+    const de = { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',' } as const;
+    expect(formatMoney(eur(-123450), 'de-DE', de)).toBe('-1.234,50 €');
+    expect(formatMoney(usd(-1250), 'en', { decimals: 0 })).toBe('-$13');
+    expect(formatMoney(usd(-4), 'en', { decimals: 0 })).toBe('$0');
+  });
+
+  it("keeps Intl's side and gap when no position is given", () => {
+    expect(formatMoney(eur(123450), 'de-DE', { decimals: 0 })).toBe('1.235 €');
+  });
+
+  it('returns undefined for XXX', () => {
+    expect(formatMoney({ amount: 3451, currency: 'XXX' }, 'en', { position: 'left' })).toBeUndefined();
+  });
+
+  it.each([
+    ['USD', usd(123450), 'en', undefined, new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(1234.5)],
+    ['EUR', eur(123450), 'de-DE', undefined, new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(1234.5)],
+    ['JPY', { amount: 1200, currency: 'JPY' }, 'en', undefined, new Intl.NumberFormat('en', { style: 'currency', currency: 'JPY' }).format(1200)],
+    ['negative USD', usd(-123450), 'en', undefined, new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(-1234.5)],
+  ] as const)('without a format reads exactly as Intl: %s', (_label, money, locale, _format, expected) => {
+    expect(formatMoney(money, locale)).toBe(expected);
+  });
+
+  it.each([
+    ['left positive', usd(123450), 'en', { position: 'left' }, '$1,234.50'],
+    ['left negative', usd(-123450), 'en', { position: 'left' }, '-$1,234.50'],
+    ['left_space positive', usd(123450), 'en', { position: 'left_space' }, '$ 1,234.50'],
+    ['left_space negative', usd(-123450), 'en', { position: 'left_space' }, '-$ 1,234.50'],
+    ['right positive', usd(123450), 'en', { position: 'right' }, '1,234.50$'],
+    ['right negative', usd(-123450), 'en', { position: 'right' }, '-1,234.50$'],
+    ['right_space positive', usd(123450), 'en', { position: 'right_space' }, '1,234.50 $'],
+    ['right_space negative', usd(-123450), 'en', { position: 'right_space' }, '-1,234.50 $'],
+  ] as const)('uses the Woo position: %s', (_label, money, locale, format, expected) => {
+    expect(formatMoney(money, locale, format)).toBe(expected);
+  });
+
+  it.each([
+    ['EUR separators', eur(-123450), 'de-DE', { position: 'right_space', thousandSeparator: '.', decimalSeparator: ',' }, '-1.234,50 €'],
+    ['rounds half away from zero', usd(-1250), 'en', { decimals: 0 }, '-$13'],
+    ['no minus on zero', usd(-4), 'en', { decimals: 0 }, '$0'],
+    ['one cent', usd(-1), 'en', { position: 'left' }, '-$0.01'],
+  ] as const)('formats negatives: %s', (_label, money, locale, format, expected) => {
+    expect(formatMoney(money, locale, format)).toBe(expected);
+  });
+
+  it.each([
+    ['zero USD', usd(0), 'en', { position: 'left' }, '$0.00'],
+    ['JPY', { amount: 123456, currency: 'JPY' }, 'en', { position: 'left' }, '¥123,456'],
+    ['negative JPY', { amount: -123456, currency: 'JPY' }, 'en', { position: 'right_space' }, '-123,456 ¥'],
+    ['JPY separators', { amount: 123456, currency: 'JPY' }, 'en', { position: 'left', decimals: 0, thousandSeparator: '.', decimalSeparator: ',' }, '¥123.456'],
+    ['KRW', { amount: 1000, currency: 'KRW' }, 'en', { position: 'left' }, '₩1,000'],
+  ] as const)('formats zero and zero-decimal currencies: %s', (_label, money, locale, format, expected) => {
+    expect(formatMoney(money, locale, format)).toBe(expected);
+  });
+
+  it.each([
+    ['French', eur(123456789), 'fr-FR', { position: 'right_space', thousandSeparator: '\u00a0', decimalSeparator: ',' }, '1\u00a0234\u00a0567,89 €'],
+    ['English', eur(123456789), 'en', { position: 'right_space', thousandSeparator: '\u00a0', decimalSeparator: ',' }, '1\u00a0234\u00a0567,89 €'],
+  ] as const)('uses non-breaking-space thousands in %s', (_label, money, locale, format, expected) => {
+    const result = formatMoney(money, locale, format);
+    expect(result).toBe(expected);
+    expect(result).not.toContain('\u202f');
+  });
+
+  it.each([
+    ['XXX', { amount: 3451, currency: 'XXX' }, 'en', { position: 'left' }, undefined],
+    ['ZZZZ', { amount: 3451, currency: 'ZZZZ' }, 'en', { position: 'left' }, undefined],
+  ] as const)('returns undefined for unknown code %s', (_label, money, locale, format, expected) => {
+    expect(formatMoney(money, locale, format)).toBe(expected);
   });
 });
 

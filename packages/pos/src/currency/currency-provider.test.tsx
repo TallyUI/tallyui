@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { formatMoney } from '@tallyui/core';
 import { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './currency-provider';
-import type { CurrencyFormat } from './format-money-with';
+import type { CurrencyFormat } from '.';
 
 function wrapper(currency: string, locale?: string) {
   return function Wrapper({ children }: { children: ReactNode }) {
