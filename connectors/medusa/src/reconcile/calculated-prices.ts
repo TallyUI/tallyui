@@ -23,8 +23,8 @@ function fingerprintOf(variants: Variant[]): string {
  * counts them as `unreported`.
  *
  * The app runs it as `reconcile.calculatedPrices` with
- * `startFingerprintReconcile({ …, intervalMs: MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS, maxPages: 1000 })`:
- * the runner's default of 100 pages of 100 products would truncate at 10,000 products.
+ * `startFingerprintReconcile({ …, intervalMs: MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS })`;
+ * the runner's request budget bounds a pass, so a large catalogue does not truncate (#248).
  */
 export async function* fetchPages(context: SyncContext): AsyncIterable<Map<string, string>> {
   const pricing = context.pricingContext;

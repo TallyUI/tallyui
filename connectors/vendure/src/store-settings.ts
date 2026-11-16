@@ -22,7 +22,7 @@ type ActiveChannel = { defaultCurrencyCode: string; pricesIncludeTax: boolean; d
 type TaxCategory = { id: string; isDefault: boolean };
 type TaxRateItem = { name?: string; enabled: boolean; value: number; category: { id: string } | null; customerGroup: { id: string } | null };
 
-/** `gql` throws a plain `Error` for a non-OK response or a GraphQL `errors` body; both become `StoreSettingsError('failed')` here. */
+/** `gql` throws `ConnectorUnauthorizedError` for a 401 or 403 and `VendureApiError` for another non-OK response or a GraphQL `errors` body; each becomes `StoreSettingsError('failed')` here. */
 async function query(context: SyncContext, source: string, variables?: Record<string, unknown>): Promise<any> {
   try {
     return await gql(context, source, variables);
