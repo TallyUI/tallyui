@@ -362,7 +362,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           </View>
         ) : null}
       </View>
-      {rowsSlot != null ? <View testID="catalogue-rows" className="gap-4 p-4">{rowsSlot}</View> : null}
+      {/* Only when React would draw it: `!open && <Notice />` passes false, which must not leave a blank band. */}
+      {rowsSlot != null && typeof rowsSlot !== 'boolean' && rowsSlot !== '' ? <View testID="catalogue-rows" className="gap-4 p-4">{rowsSlot}</View> : null}
       {atRoot ? <CategoryBrowseGrid categories={categoryList} counts={counts} total={shown.length} columns={columns}
         onOpen={(id) => { if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }} /> : <>
       {browsing && (activeCategory || allOpen) ? <CategoryCrumb here={activeCategory?.name ?? 'All products'}

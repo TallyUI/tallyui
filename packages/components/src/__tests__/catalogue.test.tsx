@@ -771,6 +771,14 @@ describe('Catalogue view state', () => {
     expect(screen.queryByTestId('catalogue-rows')).toBeNull();
   });
 
+  it('renders no rows band for an empty rowsSlot', () => {
+    for (const empty of [false, null, undefined, '']) {
+      const { unmount } = render(<Catalogue {...props} rowsSlot={empty} />);
+      expect(screen.queryByTestId('catalogue-rows')).toBeNull();
+      unmount();
+    }
+  });
+
   it('shows supplied items in their order despite query and sort, and reports query text', () => {
     const onQueryChange = vi.fn();
     const items = [products[1], products[0]];
