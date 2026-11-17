@@ -93,12 +93,12 @@ export function OrderDetail({
         </View>
 
         <View className="gap-1 border-t border-border pt-3">
-          <View className="flex-row justify-between">
+          <View className="flex-row items-center justify-between">
             <Text className="text-sm text-muted-foreground">Subtotal</Text>
             <Text className="text-sm text-foreground">{subtotal}</Text>
           </View>
           {discount ? (
-            <View testID="order-detail-discount" className="flex-row justify-between">
+            <View testID="order-detail-discount" className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Text className="text-sm text-muted-foreground">Discount</Text>
                 {couponCodes ? (
@@ -111,7 +111,7 @@ export function OrderDetail({
             </View>
           ) : null}
           {shipping ? (
-            <View testID="order-detail-shipping" className="flex-row justify-between">
+            <View testID="order-detail-shipping" className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Text className="text-sm text-muted-foreground">Shipping</Text>
                 {shippingMethod ? <Text className="text-xs text-muted-foreground">· {shippingMethod}</Text> : null}
@@ -120,22 +120,22 @@ export function OrderDetail({
             </View>
           ) : null}
           {fees ? (
-            <View testID="order-detail-fees" className="flex-row justify-between">
+            <View testID="order-detail-fees" className="flex-row items-center justify-between">
               <Text className="text-sm text-muted-foreground">Fees</Text>
               <Text className="text-sm text-foreground">{fees}</Text>
             </View>
           ) : null}
-          <View className="flex-row justify-between">
+          <View className="flex-row items-center justify-between">
             <Text className="text-sm text-muted-foreground">Tax</Text>
             <Text className="text-sm text-foreground">{tax}</Text>
           </View>
           {taxLines?.map((line, i) => (
-            <View key={i} testID={`order-detail-tax-line-${i}`} className="flex-row justify-between pl-3">
+            <View key={i} testID={`order-detail-tax-line-${i}`} className="flex-row items-center justify-between pl-3">
               <Text className="text-xs text-muted-foreground">{line.label}</Text>
               <Text className="text-xs text-muted-foreground">{line.amount}</Text>
             </View>
           ))}
-          <View className="flex-row justify-between border-t border-border pt-2 mt-1">
+          <View className="flex-row items-center justify-between border-t border-border pt-2 mt-1">
             <Text className="text-sm font-bold text-foreground">Total</Text>
             <Text className="text-sm font-bold text-foreground">{total}</Text>
           </View>

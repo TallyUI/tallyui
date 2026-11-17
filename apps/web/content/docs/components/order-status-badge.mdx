@@ -1,6 +1,6 @@
 ---
 title: OrderStatusBadge
-description: OrderStatusBadge shows a colored dot and label for pending, processing, completed, refunded, or cancelled orders.
+description: OrderStatusBadge shows a colored dot and label for pending, processing, completed, on hold, failed, POS open, POS partial, refunded, or cancelled orders.
 ---
 
 ## Import
@@ -19,17 +19,19 @@ Renders a small pill with a coloured dot and label. Each status maps to a distin
 
 `'cancelled'` and Medusa's `'canceled'` both show as **Cancelled**.
 
+`'pos-open'` and `'pos-partial'` are WCPOS's own statuses and show as **POS open** and **POS partial**, as in WCPOS v2.
+
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `status` | `OrderStatus` | required | One of `'pending'`, `'processing'`, `'completed'`, `'refunded'`, `'cancelled'`, or `'canceled'` |
+| `status` | `OrderStatus` | required | One of `'pending'`, `'processing'`, `'completed'`, `'refunded'`, `'cancelled'`, `'canceled'`, `'on-hold'`, `'failed'`, `'pos-open'`, or `'pos-partial'` |
 | `className` | `string` | — | Override container styles |
 
 ### OrderStatus
 
 ```ts
-type OrderStatus = 'pending' | 'processing' | 'completed' | 'refunded' | 'cancelled' | 'canceled';
+type OrderStatus = 'pending' | 'processing' | 'completed' | 'refunded' | 'cancelled' | 'canceled' | 'on-hold' | 'failed' | 'pos-open' | 'pos-partial';
 ```
 
 ## Live demo
