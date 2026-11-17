@@ -1,4 +1,6 @@
 import { expect, it } from 'vitest';
+import { orderBuilderFromStoreOrder } from '../order/from-store-order';
+import { finalizeOrder } from '../pos-order/finalize';
 import { deriveExpected, paymentLedgerRows, refundAmounts, type RefundRow } from './expected';
 
 // Fixtures are minor units at exponent 2 (GBP-style): WCPOS's server four-decimal amount '50'
@@ -20,6 +22,22 @@ it('paymentLedgerRows leaves out locked store payments (gate 11)', () => {
   ] }]);
   expect(rows).toEqual([
     { session_id: 'session', kind: 'cash', method_id: 'cash', status: 'captured', amountMinor: 1500 },
+  ]);
+});
+
+it('gate 11 on a finalize-written row: locked pos_cash and card legs never count', () => {
+  const builder = orderBuilderFromStoreOrder({
+    id: '41', reference: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298',
+    status: 'completed', placedAt: '2026-11-17T10:00:00.000Z', currency: 'EUR', pricesIncludeTax: false, customer: null,
+    lines: [{ id: '7', productId: 'coffee', name: 'Coffee', quantity: 2, subtotalMinor: 2000, totalMinor: 2000, subtotalTaxMinor: 200, taxMinor: 200 }],
+    fees: [], shipping: [], coupons: [], refunds: [], discountMinor: 0, discountTaxMinor: 0, taxLines: [], taxMinor: 200, totalMinor: 2200,
+    payments: [{ id: 'p1', method: 'pos_cash', amountMinor: 500 }, { id: 'p2', method: 'stripe', amountMinor: 700 }],
+  }, { currency: 'EUR', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false } });
+  builder.addPayment({ method: 'cash', amountMinor: 1200 });
+  const row = finalizeOrder(builder.getSnapshot());
+  expect(row.payments.map(({ reference }) => reference)).toEqual(['pos_cash', 'stripe', undefined]);
+  expect(paymentLedgerRows([{ ...row, sessionId: 'session' }])).toEqual([
+    { session_id: 'session', kind: 'cash', method_id: 'cash', status: 'captured', amountMinor: 1000 },
   ]);
 });
 
