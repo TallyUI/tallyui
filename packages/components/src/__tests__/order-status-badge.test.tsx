@@ -51,4 +51,19 @@ describe('OrderStatusBadge', () => {
     expect(labels[1].getAttribute('data-class')).toBe(labels[0].getAttribute('data-class'));
     expect(labels[0].getAttribute('data-class')).toContain('text-muted-foreground');
   });
+
+  it.each([
+    ['on-hold', 'On hold', 'bg-warning'],
+    ['failed', 'Failed', 'bg-destructive'],
+    ['pos-open', 'POS open', 'bg-info'],
+    ['pos-partial', 'POS partial', 'bg-warning'],
+  ] as const)('renders v2\'s label and tone for %s', (status, label, dot) => {
+    render(<OrderStatusBadge status={status} />);
+    const text = screen.getByText(label);
+    expect(text).toBeDefined();
+    expect(screen.queryByText('Pending')).toBeNull();
+    const dotClasses = (text.previousElementSibling?.getAttribute('data-class') ?? '').split(/\s+/);
+    expect(dotClasses).toContain(dot);
+    expect(text.getAttribute('data-class')).toContain('text-foreground');
+  });
 });

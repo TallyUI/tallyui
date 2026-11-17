@@ -3,7 +3,18 @@ import { Stack } from 'expo-router';
 import { OrderStatusBadge, Text } from '@tallyui/components';
 import type { OrderStatus } from '@tallyui/components';
 
-const statuses: OrderStatus[] = ['pending', 'processing', 'completed', 'refunded', 'cancelled'];
+const statuses: OrderStatus[] = [
+  'pending',
+  'processing',
+  'completed',
+  'refunded',
+  'cancelled',
+  'canceled',
+  'on-hold',
+  'failed',
+  'pos-open',
+  'pos-partial',
+];
 
 export default function OrderStatusBadgeScreen() {
   return (
