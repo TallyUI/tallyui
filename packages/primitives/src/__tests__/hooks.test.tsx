@@ -94,6 +94,28 @@ describe('useRelativePosition', () => {
     expect(result.current).toMatchObject({ position: 'absolute', top: 420 });
   });
 
+  it("one content's position does not change another's", () => {
+    const first = renderHook(() =>
+      useRelativePosition({
+        ...args,
+        triggerPosition: { pageX: 1000, pageY: 100, width: 80, height: 40 },
+      })
+    );
+    const second = renderHook(() =>
+      useRelativePosition({
+        ...args,
+        triggerPosition: { pageX: 1000, pageY: 600, width: 80, height: 40 },
+      })
+    );
+    expect(first.result.current).toMatchObject({
+      position: 'absolute',
+      top: 144,
+      left: 824,
+    });
+    expect(second.result.current).toMatchObject({ top: 420 });
+    expect(first.result.current).not.toBe(second.result.current);
+  });
+
   it('is hidden until the trigger and content are measured', () => {
     const { result } = renderHook(() =>
       useRelativePosition({ ...args, triggerPosition: null })
