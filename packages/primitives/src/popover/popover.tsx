@@ -8,6 +8,7 @@ import {
   type LayoutRectangle,
 } from 'react-native';
 import { useAugmentedRef, useControllableState, useRelativePosition, type LayoutPosition } from '../hooks';
+import { measureTrigger } from '../hooks/measure-trigger';
 import { isTopLayer, pushLayer, removeLayer } from '../layer-stack';
 import { Portal as RNPortal } from '../portal';
 import { Slot, composeRefs } from '../slot';
@@ -111,9 +112,7 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
     methods: {
       open: () => {
         onOpenChange(true);
-        augmentedRef.current?.measure?.((_x, _y, width, height, pageX, pageY) => {
-          setTriggerPosition({ width, pageX, pageY, height });
-        });
+        measureTrigger(augmentedRef.current, setTriggerPosition);
       },
       close: () => {
         setTriggerPosition(null);
@@ -129,9 +128,7 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
   const onPress = React.useCallback(
     (ev: GestureResponderEvent) => {
       if (disabled) return;
-      augmentedRef.current?.measure?.((_x, _y, width, height, pageX, pageY) => {
-        setTriggerPosition({ width, pageX, pageY, height });
-      });
+      measureTrigger(augmentedRef.current, setTriggerPosition);
       onOpenChange(!open);
       onPressProp?.(ev);
     },

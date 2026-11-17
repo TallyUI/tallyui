@@ -1,7 +1,8 @@
 import { renderHook, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { Dimensions } from 'react-native';
+import { Dimensions, type View } from 'react-native';
 import { useControllableState, useRelativePosition } from '../hooks';
+import { measureTrigger } from '../hooks/measure-trigger';
 
 describe('useControllableState', () => {
   it('works in uncontrolled mode with defaultProp', () => {
@@ -124,5 +125,23 @@ describe('useRelativePosition', () => {
       opacity: 0,
       position: 'absolute',
     });
+  });
+});
+
+describe('measureTrigger', () => {
+  it('on web reads the trigger box from measureInWindow, not measure', () => {
+    const measure = vi.fn();
+    const node = {
+      measure,
+      measureInWindow: vi.fn((cb: (x: number, y: number, width: number, height: number) => void) =>
+        cb(10, 20, 30, 40)
+      ),
+    } as unknown as View;
+    const onMeasure = vi.fn();
+
+    measureTrigger(node, onMeasure);
+
+    expect(onMeasure).toHaveBeenCalledWith({ pageX: 10, pageY: 20, width: 30, height: 40 });
+    expect(measure).not.toHaveBeenCalled();
   });
 });
