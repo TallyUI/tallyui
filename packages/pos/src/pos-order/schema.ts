@@ -32,6 +32,7 @@ import type { PosOrder } from './types';
  * Version 12 adds the order's `taxAddress` and the customer's `billing` and `shipping` (#722), and lets `sentVersion` and
  * `downgradedFrom` be 8 (order.create version 8), and changes nothing else. Its migration is the identity. It is one-way like version 11.
  * Version 13 adds a store-priced coupon's `lines` (#790) and lets `sentVersion` and `downgradedFrom` be 9 (order.create version 9), and changes nothing else. Its migration is the identity. It is one-way like version 12.
+ * Version 14 adds a reopened sale's store ids (ADR-090 decision 5): the order's `storeOrderId` and `baseRevision`, a line's, fee's and shipping line's `storeLineId`, and a payment's `storePaymentId`, and changes nothing else. Its migration is the identity. It is one-way like version 13.
  */
 /** A customer's address on an order taxed by it (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
@@ -41,10 +42,12 @@ const orderAddressSchema = { type: 'object', additionalProperties: false, proper
 } } as const;
 
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 13, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 14, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
+    storeOrderId: { type: 'string', minLength: 1, maxLength: 64 },
+    baseRevision: { type: 'string', minLength: 1, maxLength: 64 },
     commandId: { type: 'string', maxLength: 36 },
     createdAt: { type: 'string', maxLength: 40 },
     updatedAt: { type: 'string' },
@@ -66,6 +69,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     lines: { type: 'array', items: {
       type: 'object', properties: {
         id: { type: 'string', maxLength: 36 }, productId: { type: 'string' }, variantId: { type: 'string' },
+        storeLineId: { type: 'string', minLength: 1, maxLength: 64 },
         name: { type: 'string' }, sku: { type: 'string' }, quantity: { type: 'integer' },
         taxStatus: { type: 'string', enum: ['taxable', 'none'] },
         custom: { type: 'object', additionalProperties: false, properties: {
@@ -85,6 +89,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       required: ['id', 'productId', 'name', 'sku', 'quantity', 'unitPriceMinor', 'discountMinor', 'netMinor', 'taxLines'],
     } },
     fees: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      storeLineId: { type: 'string', minLength: 1, maxLength: 64 },
       id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },
       amountMinor: { type: 'integer', minimum: 0 }, taxClass: { type: 'string', maxLength: 64 },
       taxStatus: { type: 'string', enum: ['taxable', 'none'] }, netMinor: { type: 'integer' }, taxMicros: { type: 'string' },
@@ -95,6 +100,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       }, required: ['ratePpm', 'taxMicros'] } },
     }, required: ['id', 'name', 'amountMinor', 'taxStatus', 'taxLines', 'netMinor', 'taxMicros'] } },
     shipping: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      storeLineId: { type: 'string', minLength: 1, maxLength: 64 },
       id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },
       methodId: { type: 'string', maxLength: 64 }, amountMinor: { type: 'integer', minimum: 0 }, taxClass: { type: 'string', maxLength: 64 },
       taxStatus: { type: 'string', enum: ['taxable', 'none'] }, netMinor: { type: 'integer' }, taxMicros: { type: 'string' },
@@ -107,6 +113,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     payments: { type: 'array', items: {
       type: 'object', properties: {
         id: { type: 'string', maxLength: 36 }, method: { type: 'string', enum: ['cash', 'external'] },
+        storePaymentId: { type: 'string', minLength: 1, maxLength: 64 },
         amountMinor: { type: 'integer' }, tenderedMinor: { type: 'integer' }, changeMinor: { type: 'integer' }, reference: { type: 'string' },
       }, required: ['id', 'method', 'amountMinor'],
     } },
@@ -198,5 +205,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity } };
 }
