@@ -246,6 +246,7 @@ export {
 // App shell
 export {
   AppShell, type AppShellProps, NavRail, type NavRailProps, NavDrawer, type NavDrawerProps, type ShellNavItem,
+  ConnectivityToast, type ConnectivityToastProps,
 } from './shell';
 
 // Reports components
