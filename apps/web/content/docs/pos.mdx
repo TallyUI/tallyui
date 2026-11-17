@@ -218,6 +218,99 @@ await manager.deleteParkedOrder(parkedId);
 manager.newOrder();
 ```
 
+### Selling with useSale
+
+`useSale` is the React hook the platform apps sell with: one sale's cart, tender and completion on top of `createOrderBuilder`. Call it under a `TaxProvider`; [Cart](/docs/components/cart), [Tender](/docs/components/tender) and [ParkedSales](/docs/components/parked-sales) take its result as `sale`. The first argument is `settings: Pick<StoreSettings, 'currency' | 'calcDiscountsSequentially'>`; the second is the options below (`?` marks optional options).
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `registerId` | `string` | Register identifier passed to order finalization. |
+| `cashierRef` | `string` | Cashier reference passed to order finalization. |
+| `capabilities?` | `ServerCapabilities` | Server capabilities used by finalization and exposed to sale components. |
+| `discountCodes?` | `SaleDiscountCodes<any>` | Platform discount codes; without them, `applyCoupon` refuses with `COUPONS_UNSUPPORTED`. |
+| `tenderGate?` | `(attempt: { method: 'cash' \| 'external' }) => Promise<string \| null>` | Awaited after checkout checks: return a refusal or `null` to start tender; rejection gives `TENDER_GATE_FAILED`. |
+| `defaultCustomer?` | `CustomerSummary \| null` | Customer for each new sale, never a resumed one; changes apply to an idle cart or the next new sale, and a refused customer is skipped. |
+| `drafts?` | `RxCollection` | Collection created with `orderDraftSchema` where `park()` keeps carts. |
+| `currentPrice?` | `(variantId: string) => number \| undefined` | Current variant price in integer minor units, or unknown; `resume()` re-prices unless asked to keep parked prices. |
+| `session?` | `{ id: string; sessions: RegisterSessionCollection }` | Session pinned at tender start for completion; a refused stamp uses `lateSessionId` and records a `late-sale` fact without stopping the sale. |
+| `onSaleCompleted?` | `(posOrder: PosOrder) => Promise<void> \| void` | Receives the finalized order; must accept the same order again when completion is retried. |
+| `isStored?` | `(posOrder: PosOrder) => Promise<boolean>` | Confirms storage after a failed or hung save, including a refused mid-save `newSale()`; only `true` enables Continue, otherwise Retry is offered. |
+| `taxContextFor?` | `(customer: CustomerSummary \| null) => SaleTaxContext` | Memoized customer tax context, e.g. `saleTaxContexts(settings)`; customer changes re-tax the cart, while tender and receipt keep their rates. Defaults to `useTax()`. |
+
+| Group | Returned member | Description |
+|-------|-----------------|-------------|
+| State | `order` | Current order snapshot. |
+| State | `stage` | `SaleStage`: `cart`, `tender` with a `cash` or `external` method, or `receipt` with `order` and `posOrder`. |
+| State | `error` | Current error or refusal message, or `null`. |
+| State | `idle` | In the cart stage with no product lines, fees or shipping. |
+| State | `taxLocation` | Customer's matched tax address; undefined without `taxContextFor`. |
+| State | `capabilities` | Passed-through capabilities; components offer fees, shipping and custom lines at `orderCreate >= 5`, and tax controls as `lineTax` allows. |
+| State | `saving` | Completion is pending; the sale is locked and the UI offers Retry. |
+| State | `canContinue` | The pending order is confirmed stored, so the UI can offer Continue. |
+| State | `couponsRepricing` | Coupons are being priced again; tender refuses with `COUPONS_REPRICING`. |
+| Cart | `add(entry, traits)` | Adds a line or increments its quantity; returns `{ lineId }` or a refusal also shown in `error`. |
+| Cart | `setQuantity(lineId, quantity)` | Updates a line's quantity. |
+| Cart | `remove(lineId)` | Removes a line. |
+| Cart | `splitLine(lineId)` | Splits quantity N into N lines of one; returns a refusal or `null`. |
+| Cart | `setUnitPrice(lineId, amountMinor)` | Sets price in minor units of the line's tax mode and recalculates discounts and tax; returns a refusal or `null`. |
+| Cart | `applyDiscount(lineId, discount)` | Applies a line discount, or an order discount for `null`; returns a refusal (including `DISCOUNTS_UNSUPPORTED`) or `null`. |
+| Cart | `removeDiscount(id)` | Removes a discount. |
+| Cart | `applyCoupon(code)` | Looks up, checks and applies a platform discount code; resolves to a refusal or `null`. |
+| Cart | `removeCoupon(code)` | Removes an applied coupon; returns a refusal or `null`. |
+| Cart | `repriceCoupons()` | Retries coupon pricing; resolves to a refusal or error, or `null`. |
+| Cart | `setNote(note)` | Sets the note kept with parked carts and sent as the order note; a new sale clears it. |
+| Cart | `setCustomer(customer)` | Picks a customer or `null` for guest; refuses invalid customer data or a tax change once rates are fixed. |
+| Cart | `addFee(input)` | Adds a fee from `ChargeInput`; returns `{ id }` or a refusal. |
+| Cart | `updateFee(id, patch)` | Updates a fee; returns a refusal or `null`. |
+| Cart | `removeFee(id)` | Removes a fee; returns a refusal or `null`. |
+| Cart | `addShipping(input)` | Adds shipping from `ChargeInput` with optional `methodId`; returns `{ id }` or a refusal. |
+| Cart | `updateShipping(id, patch)` | Updates shipping; returns a refusal or `null`. |
+| Cart | `removeShipping(id)` | Removes shipping; returns a refusal or `null`. |
+| Cart | `addCustomLine(input)` | Adds a distinct custom line with `name`, `priceMinor` and optional `quantity`, `taxClass`, `taxStatus`, `sku`; returns `{ id }` or a refusal. |
+| Cart | `park()` | Stores the cart in `drafts` and starts a new sale; resolves to a refusal or `null`. |
+| Cart | `resume(draftId, options?)` | Restores a draft into an empty cart, rechecks coupons and optionally keeps parked prices with `keepParkedPrices`; resolves to a refusal or `null`. |
+| Cart | `switchSale(draftId)` | Parks the current cart and opens a draft, or a new sale for `null`; refuses while saving, partly paid, payment in motion or in tender. |
+| Cart | `closeSale()` | Discards the current sale and starts an empty one; refuses while saving, with money on an unfinished sale or in tender (`SALE_PARTLY_PAID`, `SALE_IN_TENDER`). |
+| Cart | `holdsStoreOrder(orderId)` | Resolves whether the live sale or a readable parked draft holds this store order. |
+| Cart | `openStoreOrder(order)` | Loads a reopened store order into an empty sale; returns a refusal or `null`. |
+| Tender | `startTender(method, options?)` | Starts `cash` or `external` tender and pins `options.session` or the hook's session; repeated calls keep the first pin. |
+| Tender | `setTender(tender)` | Replaces unlocked payments with one tender, or clears them for `null`. |
+| Tender | `addTender(tender)` | Adds a cash or external payment; external amounts are capped at the balance less payments in motion, and only cash gives change. |
+| Tender | `setTenderStatus(paymentId, status)` | Sets `authorized`, `captured` or `failed`; returns whether the status changed. |
+| Tender | `voidTender(paymentId)` | Voids an eligible payment, keeping its record but counting nothing; returns whether it was voided. |
+| Tender | `removeTender(paymentId)` | Removes an unlocked payment and its dropped-reference warning. |
+| Tender | `cancelTender()` | Clears unlocked payments and returns to the cart. |
+| Completion | `complete()` | Finalizes, saves and shows the receipt; refuses payments in motion with `PAYMENT_IN_MOTION`. Retry reuses the same pending order. |
+| Completion | `newSale()` | Starts an empty sale; a pending save must be confirmed stored before it can be abandoned, and its stored record is kept. |
+| Completion | `continueSale()` | Starts a new sale only for a confirmed stored pending completion, without redelivering it or showing its receipt. |
+
+`complete()` finalizes the order, stamps the `session` if given, and hands it to `onSaleCompleted`, where the app stores it for the outbox (for example, with `useOrderOutbox`'s `record`), then shows the receipt. While completion is pending, `saving` is true and every sale change refuses with `SALE_SAVING`; after a save failure, Retry calls `complete()` with the same pending order. `isStored` decides whether `canContinue` offers Continue: only confirmed storage enables it, and without `isStored` a failed save offers Retry only.
+
+```tsx
+import { useSale, type CatalogueEntry, type PosOrder, type RegisterSessionCollection } from '@tallyui/pos';
+import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
+import { VStack, Button, Text } from '@tallyui/components';
+
+declare const settings: Pick<StoreSettings, 'currency' | 'calcDiscountsSequentially'>;
+declare const registerId: string, cashierRef: string;
+declare const capabilities: ServerCapabilities;
+declare const session: { id: string; sessions: RegisterSessionCollection };
+declare const onSaleCompleted: (posOrder: PosOrder) => Promise<void>;
+declare const isStored: (posOrder: PosOrder) => Promise<boolean>;
+declare const entry: CatalogueEntry<unknown>, traits: ProductTraits<unknown>;
+
+// Render under a TaxProvider.
+function Sale() {
+  const sale = useSale(settings, { registerId, cashierRef, capabilities, session, onSaleCompleted, isStored });
+  return (
+    <VStack>
+      <Button onPress={() => sale.add(entry, traits)}><Text>Add item</Text></Button>
+      {sale.error ? <Text className="text-destructive">{sale.error}</Text> : null}
+    </VStack>
+  );
+}
+```
+
 ## Repositories
 
 `createRepository` wraps an RxDB collection with a clean read/write API that returns plain JSON objects instead of RxDB documents:
