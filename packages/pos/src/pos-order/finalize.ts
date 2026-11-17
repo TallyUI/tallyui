@@ -134,6 +134,8 @@ export function referenceReason(value: string | undefined): 'long' | 'nul' | nul
  * customer email or id the shape check would refuse is left out, so `toOrderCreateEnvelope` sends it unchanged.
  */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
+  // W4 (ADR-090 D7c5) replaces this with the order.update mapping.
+  if (order.storeOrder) throw new Error('finalize: a reopened store order cannot be completed by this version of TallyUI');
   if ((order.fees?.length || order.shipping?.length || order.lineItems.some((line) => line.custom))
     && (options.capabilities?.orderCreate ?? 1) < 5) {
     throw new Error("finalize: fees, shipping and custom lines need the store to accept order.create version 5; update the store's TallyUI plugin");

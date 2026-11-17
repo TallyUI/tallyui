@@ -28,6 +28,15 @@ function discountedSale() {
 }
 
 describe('finalizeOrder', () => {
+  it('refuses a fully paid reopened store order while a plain order still finalizes', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const order = builder.getSnapshot();
+    expect(() => finalizeOrder({ ...order, storeOrder: { id: '123', revision: 'r1' } }))
+      .toThrow('finalize: a reopened store order cannot be completed by this version of TallyUI');
+    expect(() => finalizeOrder(order)).not.toThrow();
+  });
+
   it.each(['pending', 'authorized', 'failed', 'voided'] as const)('rejects a %s payment leg', (status) => {
     const builder = sale();
     builder.addPayment({ method: 'cash', amountMinor: 3451 });
