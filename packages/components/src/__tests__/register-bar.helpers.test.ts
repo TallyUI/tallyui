@@ -18,6 +18,26 @@ it('asks for a register', () => {
 it('shows offline', () => {
   expect(describeRegisterBarPill({ ...base, online: false })).toBe('Offline');
 });
+it('counts the sales to send when offline', () => {
+  expect(describeRegisterBarPill({ ...base, online: false, awaitingStore: 3 })).toBe('Offline · 3 sales to send');
+  expect(describeRegisterBarPill({ ...base, online: false, awaitingStore: 1 })).toBe('Offline · 1 sale to send');
+});
+it('reads the awaiting sales last when online', () => {
+  expect(describeRegisterBarPill({ ...base, awaitingStore: 2 })).toBe('2 sales awaiting store');
+  expect(describeRegisterBarPill({ ...base, awaitingStore: 1 })).toBe('1 sale awaiting store');
+  expect(
+    describeRegisterBarPill({ ...base, sessionsOn: true, sessionStatus: 'open', overdue: true, awaitingStore: 2 }),
+  ).toBe('Overdue');
+});
+it('a choice or an unfinished close still outranks the count', () => {
+  expect(
+    describeRegisterBarPill({ ...base, registerId: null, online: false, awaitingStore: 2 }),
+  ).toBe('Choose a register');
+});
+it('zero counts nothing', () => {
+  expect(describeRegisterBarPill({ ...base, online: false, awaitingStore: 0 })).toBe('Offline');
+  expect(describeRegisterBarPill({ ...base, awaitingStore: 0 })).toBeNull();
+});
 it('prioritises choosing over offline', () => {
   expect(describeRegisterBarPill({ ...base, registerId: null, online: false })).toBe('Choose a register');
 });

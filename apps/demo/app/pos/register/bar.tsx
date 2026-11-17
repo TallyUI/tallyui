@@ -7,8 +7,9 @@ import { useDemoRegister, type DemoRegisterDb } from '../../../lib/use-demo-regi
 /**
  * Every pill state `describeRegisterBarPill` can return (register-bar.helpers.ts), keyed by a
  * short slug for the URL and the screenshot filenames the Front desk reviews the copy from.
+ * Also shows the two counted pills: sales to send offline and sales awaiting the store online.
  */
-const STATES = ['choose', 'offline', 'approval', 'counting', 'overdue', 'closed', 'none'] as const;
+const STATES = ['choose', 'offline', 'to-send', 'awaiting', 'approval', 'counting', 'overdue', 'closed', 'none'] as const;
 type BarState = (typeof STATES)[number];
 
 function isBarState(value: unknown): value is BarState {
@@ -39,7 +40,7 @@ export default function RegisterBarScreen() {
   const { state: param } = useLocalSearchParams<{ state?: string }>();
   const state: BarState = isBarState(param) ? param : 'none';
   const registerId = state === 'choose' ? null : 'demo-register';
-  const online = state !== 'offline';
+  const online = state !== 'offline' && state !== 'to-send';
   const expectedCloseTime = state === 'overdue' ? '00:00' : undefined;
   const { register, ready } = useDemoRegister({ registerId, expectedCloseTime, seed: seedFor(state) });
   return (
@@ -51,6 +52,7 @@ export default function RegisterBarScreen() {
             register={register}
             registerId={registerId}
             online={online}
+            awaitingStore={state === 'to-send' || state === 'awaiting' ? 3 : 0}
             registerName="Front counter"
             multiRegister
             onOpenPanel={() => {}}

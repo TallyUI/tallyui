@@ -17,6 +17,10 @@ export type RegisterBarPill =
   | 'Choose a register'
   | 'Close not finished'
   | 'Offline'
+  | `Offline · ${number} sale to send`
+  | `Offline · ${number} sales to send`
+  | `${number} sale awaiting store`
+  | `${number} sales awaiting store`
   | 'Approval needed'
   | 'Counting'
   | 'Overdue'
@@ -25,12 +29,14 @@ export type RegisterBarPill =
 /**
  * Priority, matching WCPOS's ordering: choosing a register outranks everything (LEDGER 48);
  * then a closed session whose close isn't in flight (TallyUI: it blocks selling until Finish
- * closing); then an unreachable store reads as offline, ahead of any session state; approval needed
- * outranks plain counting; an open, overdue session outranks a session-less "closed" pill.
+ * closing); then an unreachable store reads as offline, counting sales still to send, ahead of any
+ * session state; approval needed outranks plain counting; an open, overdue session outranks a
+ * session-less "closed" pill; online sales awaiting the store rank last.
  */
 export function describeRegisterBarPill({
   registerId,
   online,
+  awaitingStore = 0,
   sessionStatus,
   overdue = false,
   approvalRequired = false,
@@ -40,6 +46,8 @@ export function describeRegisterBarPill({
   /** The register this till is bound to, or `null` when it isn't bound yet. */
   registerId: string | null;
   online: boolean;
+  /** Sales taken that the store has still to hear (v2's useAwaitingStoreCount); 0 or omitted counts nothing. */
+  awaitingStore?: number;
   /** `conflict` and `superseded` (ADR-078 decision 9) get no pill of their own yet; step 3b decides theirs. */
   sessionStatus?: RegisterSession['status'] | null;
   overdue?: boolean;
@@ -51,10 +59,15 @@ export function describeRegisterBarPill({
 }): RegisterBarPill | null {
   if (registerId === null) return 'Choose a register';
   if (sessionStatus === 'closed' && !closing) return 'Close not finished';
-  if (!online) return 'Offline';
+  if (!online) return awaitingStore > 0
+    ? `Offline · ${awaitingStore} ${awaitingStore === 1 ? 'sale' : 'sales'} to send`
+    : 'Offline';
   if (sessionStatus === 'counting' && !approvalRequired) return 'Counting';
   if (approvalRequired) return 'Approval needed';
   if (sessionStatus === 'open' && overdue) return 'Overdue';
   if (sessionsOn && !sessionStatus) return 'Register closed';
-  return null;
+  // Online, the sales the store has not answered rank last: they need no action (v2).
+  return awaitingStore > 0
+    ? `${awaitingStore} ${awaitingStore === 1 ? 'sale' : 'sales'} awaiting store`
+    : null;
 }
