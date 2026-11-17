@@ -1,5 +1,5 @@
 import { DisplaySignallingError, type DisplaySignalling, type PendingPairing, type SyncContext } from '@tallyui/core';
-import { quietly, type ServiceClock } from './snapshot-fallback';
+import { quietly, systemClock, type ServiceClock } from './snapshot-fallback';
 import type { TillDisplayService } from './till-display-service';
 
 /** How often the till lists the claims on its code while it shows one; TallyUI's choice. */
@@ -37,12 +37,6 @@ export interface TillPairing {
   forget(displayId: string): Promise<void>;
   close(): void;
 }
-
-const systemClock: ServiceClock = {
-  now: () => Date.now(),
-  setTimeout: (run, ms) => setTimeout(run, ms),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
 
 const NAMED: ReadonlySet<string> = new Set<PairingError>(['forbidden', 'limit', 'expired', 'not_found', 'network', 'server']);
 /** A signalling refusal keeps its code; anything else is `server`. */
