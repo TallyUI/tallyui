@@ -67,6 +67,7 @@ export type {
   OrderRefundQuantityExceedsData, OrderRefundAmountMismatchData, OrderRefundOrderStateData, OrderRefundNoOpenSessionData,
   OrderReopenPayload, OrderReopenEnvelope, OrderReopenResult, OrderReopenRejectionCode,
   OrderReopenPaymentInMotionData, OrderReopenOrderStateData,
+  OrderUpdateLine, OrderUpdateFee, OrderUpdateShipping, OrderUpdatePayment, OrderUpdatePayload, OrderUpdateEnvelope, OrderUpdateRejectionCode, OrderUpdateReopenRequiredData,
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,

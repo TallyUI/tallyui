@@ -14,3 +14,5 @@ export const SUPPORTED_REGISTER_VERSIONS: readonly number[] = [1]
 export const SUPPORTED_ORDER_REFUND_VERSIONS: readonly number[] = [1]
 /** The till's capability for order.reopen versions (ADR-090); a server passes its own. */
 export const SUPPORTED_ORDER_REOPEN_VERSIONS: readonly number[] = [1]
+/** The till's capability for order.update versions (ADR-090); a server passes its own. */
+export const SUPPORTED_ORDER_UPDATE_VERSIONS: readonly number[] = [1]

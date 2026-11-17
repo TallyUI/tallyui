@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import type { BatchTooLargeBody, OrderCreateEnvelope, OrderRefundEnvelope, OrderReopenEnvelope, RegisterCommandEnvelope } from '../types'
+import type { BatchTooLargeBody, OrderCreateEnvelope, OrderRefundEnvelope, OrderReopenEnvelope, OrderUpdateEnvelope, RegisterCommandEnvelope } from '../types'
 import { precheckCommand, validateBatch, type ValidatedCommandEnvelope } from './batch'
 import { commandFingerprint } from './fingerprint'
 import type { CommandRejectionCode } from './rejection-codes'
@@ -26,12 +26,14 @@ describe('server envelope types', () => {
       expectTypeOf(envelope.version).toEqualTypeOf<number>()
     } else if (envelope.type === 'order.reopen') {
       expectTypeOf(envelope.version).toEqualTypeOf<number>()
+    } else if (envelope.type === 'order.update') {
+      expectTypeOf(envelope.version).toEqualTypeOf<number>()
     } else {
       expectTypeOf(envelope).toEqualTypeOf<RegisterCommandEnvelope<Record<string, unknown>>>()
     }
   })
 
-  it('precheckCommand accepts a register, an order.create, an order.refund, an order.reopen and a validated envelope without a cast', () => {
+  it('precheckCommand accepts a register, an order.create, an order.refund, an order.reopen, an order.update and a validated envelope without a cast', () => {
     const server = { orderCreate: [1, 2, 3], register: [1] } as const
     precheckCommand({} as RegisterCommandEnvelope, server)
     precheckCommand({} as OrderCreateEnvelope, server)
@@ -39,6 +41,8 @@ describe('server envelope types', () => {
     precheckCommand({} as OrderRefundEnvelope, { ...server, orderRefund: [1] })
     precheckCommand({} as OrderReopenEnvelope, server)
     precheckCommand({} as OrderReopenEnvelope, { ...server, orderReopen: [1] })
+    precheckCommand({} as OrderUpdateEnvelope, server)
+    precheckCommand({} as OrderUpdateEnvelope, { ...server, orderUpdate: [1] })
     precheckCommand({} as ValidatedCommandEnvelope, server)
   })
 
@@ -80,6 +84,7 @@ describe('server envelope types', () => {
       | 'register_approval_required' | 'register_approval_invalid'
       | 'nothing_to_refund' | 'quantity_exceeds' | 'amount_mismatch' | 'order_state' | 'not_till_order' | 'forbidden' | 'no_open_session'
       | 'payment_in_motion' | 'revision_conflict'
+      | 'reopen_required'
     >()
   })
 })

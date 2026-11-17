@@ -2,6 +2,7 @@ import { MAX_COMMANDS_PER_BATCH } from '../commands'
 import type { AnyCommandEnvelope, BatchTooLargeBody, CommandEnvelope, CommandResult, OrderCreatePayload, RegisterCommandEnvelope } from '../types'
 import { fiscalFiguresErrors } from './fiscal-figures'
 import { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
+import { orderCreatePart, updatePayloadErrors } from './update-payload-shape'
 
 /** An envelope validateBatch accepted: every field's shape is checked, and its version is any positive
  *  safe integer (precheckCommand decides which versions this server supports). */
@@ -10,6 +11,7 @@ export type ValidatedCommandEnvelope =
   | RegisterCommandEnvelope<Record<string, unknown>>
   | (Omit<CommandEnvelope<Record<string, unknown>>, 'type' | 'version'> & { type: 'order.refund'; version: number })
   | (Omit<CommandEnvelope<Record<string, unknown>>, 'type' | 'version'> & { type: 'order.reopen'; version: number })
+  | (Omit<CommandEnvelope<Record<string, unknown>>, 'type' | 'version'> & { type: 'order.update'; version: number })
 
 /** Validates every envelope before any command is claimed. */
 export function validateBatch(body: unknown):
@@ -32,7 +34,7 @@ export function validateBatch(body: unknown):
     }
     let field: string | undefined
     if (typeof command.id !== 'string' || command.id.length === 0 || command.id.length > 64) field = 'id'
-    else if (!['order.create', 'order.refund', 'order.reopen', 'register.session.open', 'register.session.transition', 'register.movement.record',
+    else if (!['order.create', 'order.refund', 'order.reopen', 'order.update', 'register.session.open', 'register.session.transition', 'register.movement.record',
       'register.movement.void', 'register.closure.submit'].includes(command.type)) field = 'type'
     else if (!Number.isSafeInteger(command.version) || command.version < 1) field = 'version'
     else if (typeof command.payload !== 'object' || command.payload === null || Array.isArray(command.payload)) field = 'payload'
@@ -60,15 +62,18 @@ const firstTen = (errors: readonly string[]) => errors.slice(0, 10).join('; ')
  * claim, in the executor (order.create; register commands follow ADR-068). It pushes any result
  * one of those steps returns and moves on.
  *
+ * For order.update the shape check is updatePayloadErrors (ADR-090): it adds the update's store ids, and below
+ * createVersion 5 precheckCommand does not repeat it.
+ *
  * The replay lookup goes before precheckCommand so an already-applied command always replays
  * as `duplicate`, even once a later @tallyui/core tightens what precheckCommand accepts.
  *
  * `supported` is the SERVER's own list (what its /info advertises), never core's constants, which are the
  * till's capability (#297). The version check, the `unsupported_version` message and its `data` all use it:
- * `precheckCommand(envelope, { orderCreate: [1, 2, 3], register: [1], orderRefund: [1], orderReopen: [1] })` (`orderRefund` and `orderReopen` are optional).
+ * `precheckCommand(envelope, { orderCreate: [1, 2, 3], register: [1], orderRefund: [1], orderReopen: [1], orderUpdate: [1] })` (`orderRefund`, `orderReopen` and `orderUpdate` are optional).
  */
 export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>,
-  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[]; orderReopen?: readonly number[] }): CommandResult | undefined {
+  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[]; orderReopen?: readonly number[]; orderUpdate?: readonly number[] }): CommandResult | undefined {
   // An empty list would send Math.max() of nothing (-Infinity, null in JSON) as the server's version.
   for (const key of ['orderCreate', 'register'] as const) {
     if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
@@ -90,6 +95,20 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
         { orderReopen: versions.length ? Math.max(...versions) : 0 })
     }
     return undefined
+  }
+  if (envelope.type === 'order.update') {
+    const versions = supported.orderUpdate ?? []
+    if (!versions.includes(envelope.version)) {
+      return rejected(envelope.id, 'unsupported_version',
+        `order.update version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : 'takes no updates'}`,
+        { orderUpdate: versions.length ? Math.max(...versions) : 0 })
+    }
+    const payload = envelope.payload as Record<string, unknown>
+    const createPayload = orderCreatePart(payload)
+    const shape = payloadShapeErrors(createPayload)
+    const errors = updatePayloadErrors(payload).filter(error => !shape.includes(error))
+    if (errors.length) return rejected(envelope.id, 'invalid_payload', firstTen(errors))
+    return precheckCommand({ id: envelope.id, type: 'order.create', version: payload.createVersion as number, payload: createPayload }, supported)
   }
   if (envelope.type !== 'order.create') {
     if (!supported.register.includes(envelope.version)) {
