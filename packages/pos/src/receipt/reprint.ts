@@ -2,6 +2,7 @@ import type { StoreOrder } from '@tallyui/core';
 import { noteDelivery } from '../pos-order/note-delivery';
 import type { PosOrder } from '../pos-order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
+import { recordedTaxByRate, taxedLinesFor } from '../tax/taxed-lines';
 import type { ReceiptConfig, ReceiptData, ReceiptLineItem } from './types';
 import { RECEIPT_SCHEMA_VERSION } from './types';
 import { wooGrossMinor } from './woo-gross';
@@ -60,12 +61,10 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
       displayDiscounts,
     };
   });
-  // Without taxByRate (finalized below order.create v3), the rows are computed as buildReceiptData computes them. A line's
-  // taxInclusive is stored only when it differs from the order's mode; WooCommerce lines take the order's, as there.
-  const taxedLines = [...order.lines.map((line) => ({ ...line, taxInclusive: order.taxRounding.granularity === 'woocommerce'
-    && line.netMicros !== undefined ? order.pricesIncludeTax : line.taxInclusive ?? order.pricesIncludeTax })),
-  ...[...(order.fees ?? []), ...(order.shipping ?? [])].map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
-  const taxLines = order.taxByRate ? order.taxByRate.map((row) => ({
+  // Use a stored split unless recordedTaxByRate refuses it; otherwise compute it as buildReceiptData does.
+  const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
+  const recorded = recordedTaxByRate(order);
+  const taxLines = recorded ? recorded.map((row) => ({
     label: config.taxLabels?.[row.ratePpm] ?? row.label ?? `Tax ${row.ratePpm / 10000}%`, code: row.code, ratePpm: row.ratePpm, amountMinor: row.amountMinor,
   })) : taxLinesByRate(taxedLines, order.taxMinor, config.taxLabels, order.taxRounding)
     .map(({ label, code, ratePpm, amountMinor }) => ({ label, code, ratePpm, amountMinor }));

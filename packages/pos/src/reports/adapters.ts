@@ -2,7 +2,7 @@ import type { StoreOrder } from '@tallyui/core';
 import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
-import { taxedLinesFor } from '../tax/taxed-lines';
+import { recordedTaxByRate, taxedLinesFor } from '../tax/taxed-lines';
 import type { LineJoin, ReportLine, ReportOrder, ReportRefund } from './types';
 
 function joinedLine(line: { productId?: string; variantId?: string; quantity: number }, join?: LineJoin): Pick<ReportLine, 'costMinor' | 'category'> {
@@ -19,7 +19,7 @@ function joinedLine(line: { productId?: string; variantId?: string; quantity: nu
 
 export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin): ReportOrder {
   const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
-  const taxes = order.taxByRate ?? taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding);
+  const taxes = recordedTaxByRate(order) ?? taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding);
   return {
     id: order.id, at: order.createdAt, totalMinor: order.totalMinor, taxMinor: order.taxMinor,
     discountMinor: order.discountMinor, needsPayment: false, refunds: [],

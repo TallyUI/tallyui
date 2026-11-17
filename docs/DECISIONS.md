@@ -3153,6 +3153,16 @@ interface OrderCreatePayload {
   (`sentVersion`, `pos_orders` v5) before its first send, and every
   retry resends that version; with the max unknown, 3. `requeue()`
   clears it, since a new `commandId` is a new idempotency key.
+- **Amended: sales finalized before #834 (Front desk, 2026-11-17).**
+  Before #834, `finalizeOrder` split a WooCommerce-rounded sale's tax
+  by rate with each converted line in its own tax mode, while the
+  receipt rounded it in the store's. The stored `taxByRate` of such a
+  sale (a line with `netMicros` and a stored `taxInclusive`) is never
+  trusted on read: the reprint and Reports recompute it with
+  `taxedLinesFor` (`recordedTaxByRate`), which equals the stored split
+  for a sale finalized after #834. Stored documents are not rewritten,
+  and the `taxByRate` already sent in `order.create` stays the
+  store's record; a Z report closed after #834 already recomputes.
 
 ## ADR-066 Standalone app: TallyUI with no backend
 
