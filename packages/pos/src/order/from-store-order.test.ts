@@ -113,6 +113,7 @@ describe('orderBuilderFromStoreOrder', () => {
     { reason: 'store_id', change: (read) => { delete read.shipping[0].id; } },
     { reason: 'store_id', change: (read) => { delete read.payments[0].id; } },
     { reason: 'store_id', change: (read) => { read.clientOrderId = 'x'.repeat(65); } },
+    { reason: 'store_id', change: (read) => { read.id = 'x'.repeat(65); } },
     { reason: 'refund', change: (read) => { read.refunds = [{ id: 'r1', amountMinor: 100 }]; } },
     { reason: 'payment_record', change: (read) => { read.paymentRecordUnreadable = true; } },
     { reason: 'coupon', change: (read) => { read.coupons = [{ code: 'ten', discountMinor: 100, discountTaxMinor: 10 }]; } },
