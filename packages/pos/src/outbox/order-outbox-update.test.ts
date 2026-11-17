@@ -110,7 +110,7 @@ describe('order outbox updates', () => {
         if (scenario === 'refused') input.fees = [{ id: uuidv7(), name: 'Bag', amountMinor: 0, taxStatus: 'none', netMinor: 0, taxMicros: '0', taxLines: [] }];
       }
       await collection.bulkInsert(scenario === 'isolation' ? [plain, input] : [input]);
-      const { outbox, send, states } = setup({ getMaxOrderCreateVersion: () => 3, isolateAfterAttempts: 2 });
+      const { outbox, send, states } = setup({ getMaxOrderCreateVersion: () => 5, isolateAfterAttempts: 2 });
       if (scenario === '503') {
         send.mockResolvedValueOnce(retry);
         await outbox.flush();

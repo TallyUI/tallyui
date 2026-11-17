@@ -20,6 +20,7 @@ import type { ReplicationAdapter, TaxRounding } from '@tallyui/core';
 import { createOrderBuilder } from '../order/order-builder';
 import { taxLinesByRate } from '../tax/exact';
 import { finalizeOrder } from '../pos-order/finalize';
+import { UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE } from '../pos-order/needs-attention';
 import type { PosOrder, PosOrderPayment } from '../pos-order/types';
 import { bindRegister, ensureRegister, nextSaleCounter, readRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator, type CashMovement, type RegisterSession } from './schemas';
@@ -118,6 +119,12 @@ async function seed() {
     softwareVersion: '1.0.0',
   };
 }
+it('counts a held unsendable update as unsynced, like any other unsent order', async () => {
+  const input = await seed();
+  input.orders[0] = { ...input.orders[0], storeOrderId: 'store-1', baseRevision: `sha256:${'a'.repeat(64)}`,
+    error: { code: UPDATE_UNSENDABLE, message: UPDATE_UNSENDABLE_MESSAGE } };
+  expect((await writeClosure(input)).toJSON()).toMatchObject({ unsynced_count: 1, unsynced_total_minor: 8000 });
+});
 it('freezes the count figures and breakdowns; retries reuse one number and one period increment', async () => {
   const input = await seed();
   const [row, repeated] = await Promise.all([writeClosure(input), writeClosure(input)]);
