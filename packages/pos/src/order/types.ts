@@ -17,8 +17,13 @@ export interface OrderCoupon {
   lines?: OrderCouponLine[];
 }
 
+/** The store order a reopened cart edits (ADR-090): its id, the revision it was read at, and the till's id for it when a till made it. */
+export interface StoreOrderRef { id: string; revision: string; uuid?: string }
+
 export interface Order {
   id: string;
+  /** Set only on a reopened sale; absent on every new sale. */
+  storeOrder?: StoreOrderRef;
   status: 'draft' | 'parked' | 'saved' | 'completed';
   lineItems: LineItem[];
   fees?: FeeLine[];
@@ -78,6 +83,8 @@ export interface DisplayLine {
 
 export interface LineItem {
   id: string;
+  /** The store's id for a line the reopened sale keeps; absent on a line the till added. */
+  storeLineId?: string;
   taxClass?: string;
   /** WooCommerce's stored net at rounding precision, in integer micro-minor units, and its rounded gross. */
   netMicros?: string;
@@ -110,6 +117,8 @@ export interface LineItem {
 
 export interface ChargeLine {
   id: string;
+  /** The store's id for a line the reopened sale keeps; absent on a line the till added. */
+  storeLineId?: string;
   netMicros?: string;
   totalMinor?: number;
   name: string;
@@ -122,7 +131,7 @@ export interface ChargeLine {
 }
 export interface FeeLine extends ChargeLine {}
 export interface ShippingLine extends ChargeLine { methodId?: string }
-export interface ChargeInput { name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none' }
+export interface ChargeInput { name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string }
 
 export interface LineTaxLine {
   code?: string;
@@ -146,6 +155,10 @@ export interface AppliedDiscount extends Discount {
 
 export interface Payment {
   id: string;
+  /** The store's payment record id for a leg it already holds */
+  storePaymentId?: string;
+  /** A leg the store already holds: never removed or moved, only sent back with its storePaymentId */
+  locked?: true;
   method: string;
   /** Absent means captured; only captured legs count toward paidMinor. */
   status?: PaymentLegStatus;
@@ -176,6 +189,8 @@ export interface PaymentMethod {
 
 export interface AddLineInput {
   productId: string;
+  /** A kept store line: never merged */
+  storeLineId?: string;
   custom?: true;
   taxStatus?: 'taxable' | 'none';
   variantId?: string;

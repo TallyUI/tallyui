@@ -9,6 +9,7 @@ import { apportionLargestRemainders } from './apportion';
 import { woocommerceLine, woocommerceTotals, woocommerceCouponReplay } from './woocommerce-tax';
 import type {
   Order,
+  StoreOrderRef,
   LineItem,
   Discount,
   AppliedDiscount,
@@ -20,6 +21,7 @@ import type {
 
 /** splitLine's refusal: a fixed line discount copied onto every split line would multiply it. */
 export const SPLIT_FIXED_DISCOUNT = 'Remove the line’s fixed discount before splitting it';
+export const LOCKED_PAYMENT = 'A payment the store already holds cannot be removed';
 
 /** Tax contexts already warned that per_rate_group_items fell back to per_order for inclusive lines (#287). */
 const perRateGroupWarned = new WeakSet<TaxContext>();
@@ -118,6 +120,7 @@ export interface OrderBuilderOptions {
   currency: string;
   taxContext: TaxContext;
   id?: string;
+  storeOrder?: StoreOrderRef;
   couponContext?: OrderCouponContext;
 }
 
@@ -157,6 +160,7 @@ export interface OrderBuilder {
 
 export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const { taxContext } = options;
+  let storeOrder = options.storeOrder;
   let couponContext: OrderCouponContext | StorePricedCouponContext | undefined = options.couponContext;
   const currency = options.currency.toUpperCase();
   const orderId = options.id ?? uid();
@@ -390,6 +394,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     const order: Order = {
       id: orderId,
+      ...(storeOrder !== undefined ? { storeOrder } : {}),
       status: 'draft',
       lineItems: lines,
       ...(coupons ? { coupons } : {}),
@@ -439,6 +444,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       const line = wooLine(input.amountMinor, taxClass === woocommerceTax.NO_SHIPPING_TAX ? undefined : taxClass,
         taxContext.pricesIncludeTax, untaxed, shipping);
       return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus,
+        ...(input.storeLineId !== undefined ? { storeLineId: input.storeLineId } : {}),
         ...line };
     }
     const code = taxContext.getTaxRateCode?.(input.taxClass);
@@ -450,6 +456,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       taxInclusive: taxContext.pricesIncludeTax,
     });
     return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus,
+      ...(input.storeLineId !== undefined ? { storeLineId: input.storeLineId } : {}),
       taxLines: line.taxLines, netMinor: line.netMinor, taxMicros: line.taxMicros };
   }
 
@@ -469,7 +476,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const taxInclusive = unitPrice.taxInclusive ?? taxContext.pricesIncludeTax;
 
     const existing = lineItems.find(
-      (li) => !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
+      (li) => input.storeLineId === undefined && !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
         && (!woo || li.taxClass === input.taxClass && (li.taxStatus === 'none') === (input.taxStatus === 'none'))
         && li.regularUnitPriceMinor === input.regularUnitPriceMinor && samePicks(li, input)
         && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length
@@ -487,6 +494,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const lineId = uid();
     const line: LineItem = {
       id: lineId,
+      ...(input.storeLineId !== undefined ? { storeLineId: input.storeLineId } : {}),
       ...((input.custom ? input.taxClass !== undefined : woo) ? { taxClass: input.taxClass } : {}),
       productId,
       ...(input.custom ? { custom: true as const } : {}),
@@ -598,8 +606,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       if (!source || source.quantity <= 1) return [];
       if (source.discounts.some((d) => d.type === 'fixed')) throw new RangeError(SPLIT_FIXED_DISCOUNT);
       // Not through addLine, whose merge would fold the copies back into one line.
+      const { storeLineId: _storeLineId, ...copy } = source;
       const copies = Array.from({ length: source.quantity - 1 }, () =>
-        recalculateLine({ ...source, id: uid(), quantity: 1, discounts: source.discounts.map((d) => ({ ...d, id: uid() })) }));
+        recalculateLine({ ...copy, id: uid(), quantity: 1, discounts: source.discounts.map((d) => ({ ...d, id: uid() })) }));
       lineItems = [...lineItems.slice(0, index), recalculateLine({ ...source, quantity: 1 }), ...copies, ...lineItems.slice(index + 1)];
       emit();
       return copies.map((li) => li.id);
@@ -665,13 +674,14 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     setPaymentStatus(paymentId, status) {
       const payment = payments.find((p) => p.id === paymentId);
-      if (!payment || !canMoveLeg(legStatus(payment), status)) return false;
+      if (!payment || payment.locked || !canMoveLeg(legStatus(payment), status)) return false;
       payments = payments.map((p) => p.id === paymentId ? { ...p, status } : p);
       emit();
       return true;
     },
 
     removePayment(paymentId) {
+      if (payments.some((p) => p.id === paymentId && p.locked)) throw new RangeError(LOCKED_PAYMENT);
       payments = payments.filter((p) => p.id !== paymentId);
       emit();
     },
@@ -715,6 +725,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     },
 
     clear() {
+      storeOrder = undefined;
       lineItems = [];
       fees = [];
       shipping = [];
