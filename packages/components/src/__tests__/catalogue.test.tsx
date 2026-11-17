@@ -26,10 +26,11 @@ vi.mock('../product', () => ({
       ))}
     </div>
   ),
-  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton }: ProductTableProps) => (
+  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton, cartQuantity }: ProductTableProps) => (
     <div data-testid="table" data-sort-items={String(sortItems)} data-show-thumbnail={showThumbnail} data-show-add-button={showAddButton}>
       <button data-testid="table-sort" onClick={() => onSortChange?.({ field: 'name', dir: sort?.dir === 'asc' ? 'desc' : 'asc' })}>Sort</button>
-      {items.length ? items.map((item) => <button key={item.id} data-testid={`table-row-${item.id}`} onClick={() => onSelect?.(item)}>{item.title}</button>) : emptyState}
+      {items.length ? items.map((item) => <button key={item.id} data-testid={`table-row-${item.id}`} data-in-cart={cartQuantity?.(item)}
+        onClick={() => onSelect?.(item)}>{item.title}</button>) : emptyState}
     </div>
   ),
   ProductGrid: ({ items, renderItem, emptyState, numColumns }: ComponentProps<typeof ProductGrid>) => (
@@ -616,7 +617,7 @@ describe('Catalogue view state', () => {
     const onStateChange = vi.fn();
     const saveViewState = vi.fn();
     render(<Catalogue {...props} showViewToggle statusText="Synced" onStateChange={onStateChange} saveViewState={saveViewState} />);
-    expect(within(screen.getByTestId('catalogue-status-row')).getByTestId('view-toggle')).toBeTruthy();
+    expect(within(screen.getByTestId('catalogue-search-row')).getByTestId('view-toggle')).toBeTruthy();
     fireEvent.click(screen.getByTestId('view-toggle-grid'));
     expect(onStateChange).not.toHaveBeenCalled();
     expect(saveViewState).not.toHaveBeenCalled();
@@ -625,6 +626,31 @@ describe('Catalogue view state', () => {
     expect(screen.queryByTestId('grid')).toBeNull();
     expect(onStateChange.mock.calls).toEqual([[tableState]]);
     expect(saveViewState.mock.calls).toEqual([[tableState]]);
+  });
+
+  it('puts the view toggle and searchAccessory in the search row, in v2\'s order', () => {
+    const accessory = <span data-testid="search-accessory">Settings</span>;
+    const { rerender } = render(<Catalogue {...props} showViewToggle searchAccessory={accessory} />);
+    const row = within(screen.getByTestId('catalogue-search-row'));
+    const search = row.getByPlaceholderText('Search or scan barcode / SKU');
+    const toggle = row.getByTestId('view-toggle');
+    const extra = row.getByTestId('search-accessory');
+    expect(search.compareDocumentPosition(toggle)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(toggle.compareDocumentPosition(extra)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.queryByTestId('catalogue-status-row')).toBeNull();
+    rerender(<Catalogue {...props} searchAccessory={accessory} />);
+    const only = within(screen.getByTestId('catalogue-search-row'));
+    expect(only.getByTestId('search-accessory')).toBeTruthy();
+    expect(screen.queryByTestId('view-toggle')).toBeNull();
+  });
+
+  it('renders no search row for an empty searchAccessory', () => {
+    for (const empty of [false, null, undefined, '']) {
+      const { unmount } = render(<Catalogue {...props} searchAccessory={empty} />);
+      expect(screen.queryByTestId('catalogue-search-row')).toBeNull();
+      expect(screen.getByPlaceholderText('Search or scan barcode / SKU')).toBeTruthy();
+      unmount();
+    }
   });
 
   it('uses a synchronous load on the first render and reports without saving', () => {
@@ -660,6 +686,13 @@ describe('Catalogue view state', () => {
     expect(flags.map((flag) => screen.getByTestId('table').getAttribute(flag))).toEqual(['true', 'true']);
     rerender(<Catalogue {...props} defaultViewState={{ view: 'table' }} />);
     expect(flags.map((flag) => screen.getByTestId('table').getAttribute(flag))).toEqual([null, null]);
+  });
+
+  it("passes the cart's summed quantities to the table", () => {
+    render(<Catalogue {...props} defaultViewState={{ view: 'table' }}
+      cartLines={[{ productId: 'shirt', quantity: 2 }, { productId: 'shirt', quantity: 1 }]} />);
+    expect(screen.getByTestId('table-row-shirt').getAttribute('data-in-cart')).toBe('3');
+    expect(screen.getByTestId('table-row-hat').getAttribute('data-in-cart')).toBe('0');
   });
 
   it('fills a synchronous load from defaultViewState', () => {

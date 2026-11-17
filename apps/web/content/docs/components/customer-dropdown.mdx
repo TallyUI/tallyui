@@ -15,7 +15,7 @@ import { CustomerDropdown } from '@tallyui/components';
 <CustomerDropdown search={searchCustomers} selected={customer} onSelect={setCustomer} online={online} />
 ```
 
-The chip names the sale's customer, or Guest. While the dropdown is open it reads "Select Customer"; the search is debounced, a stale response is dropped and nothing is sent for a blank query or offline. Guest is always the first row. On the web the arrow keys move between the field and the rows, Enter or Space picks, Escape closes. `CustomerPicker` stays for the modal and inline picker.
+The chip names the sale's customer, or Guest. While the dropdown is open it reads "Select Customer"; the search is debounced, a stale response is dropped and nothing is sent for a blank query or offline. Guest is always the first row. On the web the arrow keys move between the field and the rows, Enter or Space picks, Escape closes. `CustomerPicker` stays for the modal and inline picker. As in v2, Guest is drawn with a person glyph, not initials, and the address pin beside the chip appears only when `onEditAddress` is given.
 
 ## Props
 
@@ -27,3 +27,5 @@ The chip names the sale's customer, or Guest. While the dropdown is open it read
 - `debounceMs` (`number`, default `250`): wait before a search, ms.
 - `className` (`string`): classes for the row holding the label and the chip.
 - `testID` (`string`, default `'customer-dropdown-chip'`): testID of the chip.
+- `onEditAddress` (`() => void`): opens the app's editor for the sale's addresses (v2's split pin beside the chip). Absent: no pin.
+- `hasAddress` (`boolean`, default `false`): `false` greys the pin until the sale's billing has an address, as in v2.

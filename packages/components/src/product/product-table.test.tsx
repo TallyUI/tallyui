@@ -192,4 +192,30 @@ describe('ProductTable row extras', () => {
     expect(screen.queryAllByTestId(/^product-row-add-/)).toHaveLength(0);
     expect(heads()).toHaveLength(6);
   });
+
+  it('shows the cart count in place of the + and adds on press', () => {
+    const onSelect = vi.fn();
+    render(table({ onSelect, showAddButton: true, cartQuantity: (doc) => (doc.id === 2 ? 3 : 0) }));
+    expect(screen.getByTestId('product-row-in-cart-2').textContent).toBe('3');
+    expect(screen.getByTestId('product-row-add-2').getAttribute('aria-label')).toBe('In cart: 3');
+    expect(screen.getByTestId('product-row-add-1').getAttribute('aria-label')).toBe('Add to cart');
+    expect(screen.queryByTestId('product-row-in-cart-1')).toBeNull();
+    fireEvent.click(screen.getByTestId('product-row-add-2'));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(items[1]);
+  });
+
+  it('keeps the > and no count for a product with variants', () => {
+    render(
+      <ConnectorProvider connector={medusaConnector} traitContext={{ currency: 'EUR' }}>
+        <ProductTable items={[hoodie]} onSelect={vi.fn()} showAddButton cartQuantity={() => 2} />
+      </ConnectorProvider>,
+    );
+    expect(screen.getByTestId('product-row-add-hoodie').getAttribute('aria-label')).toBe('Variations');
+    expect(screen.queryByTestId('product-row-in-cart-hoodie')).toBeNull();
+  });
+
+  it('draws no count without the add column', () => {
+    render(table({ onSelect: vi.fn(), cartQuantity: () => 3 }));
+    expect(screen.queryAllByTestId(/^product-row-in-cart-/)).toHaveLength(0);
+  });
 });

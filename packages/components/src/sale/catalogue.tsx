@@ -41,7 +41,12 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
   return a.getTime() >= b.getTime() ? a : b;
 }
 
-export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
+// Only when React would draw it: `!open && <Notice />` passes false, which must not leave a blank band.
+function draws(node: ReactNode): boolean {
+  return node != null && typeof node !== 'boolean' && node !== '';
+}
+
+export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, searchAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
   viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categoryBrowse = 'chips', categories, pickAnyOptions = false,
   cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow, rowsSlot }: {
   products: Doc[];
@@ -52,6 +57,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   statusText?: string;
   /** Rendered at the end of the status line, e.g. a register control at phone width; the row renders even without `statusText`. */
   statusAccessory?: ReactNode;
+  /** v2's own controls beside the search field (its PageBar children, e.g. the Product settings button): rendered
+   * at the end of the search row, after the camera scan button and the view toggle. Default none. */
+  searchAccessory?: ReactNode;
   lastSyncedAt: Date | null;
   /** The catalogue's first pull is still running, so an empty grid says "Loading products…" rather than "No products yet.". Defaults to lastSyncedAt === null with no pullError; pass false
    * when a null lastSyncedAt doesn't mean a pull is running (e.g. offline on first start). */
@@ -81,7 +89,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   onViewStateError?: (error: unknown) => void;
   /** Loaded state or a cashier's next state (requested state when controlled). */
   onStateChange?: (state: CatalogueViewState) => void;
-  /** Show the grid/table toggle in the header. Default false. */
+  /** Show the grid/table toggle in the search row, beside the search field as in v2. Default false. */
   showViewToggle?: boolean;
   /** Show the category nav in the header. Default false. */
   showCategoryNav?: boolean;
@@ -203,8 +211,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const browsing = showCategoryNav && categoryBrowse === 'tiles';
   const atRoot = browsing && !activeCategory && !allOpen && !query.trim() && categoryList.length > 0;
   const [scannerOpen, setScannerOpen] = useState(false);
-  // The search row is shorter than the scan button's band at Compact, and the status row's Grid/Table band below
-  // covers the overhang: under a coarse pointer the search row is the band's height.
+  // The search row is shorter than a control's band at Compact: under a coarse pointer it is the band's height.
   const band = useMinTarget();
   const coarse = usePointer() === 'coarse';
   // The chooser is live (medusapos ADR 0007): it holds only the chosen product's id and derives its choices
@@ -313,21 +320,22 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   return (
     <View className="flex-1" onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       <View className="gap-2 border-b border-border bg-card px-4 pb-3 pt-3">
-        {cameraScan && cameraScanner ? (
-          <View className="flex-row items-center gap-2" style={coarse ? { minHeight: band } : undefined}>
+        {(cameraScan && cameraScanner) || showViewToggle || draws(searchAccessory) ? (
+          <View testID="catalogue-search-row" className="flex-row items-center gap-2" style={coarse ? { minHeight: band } : undefined}>
             <View className="flex-1">{searchInput}</View>
-            <CameraScanButton open={scannerOpen} onPress={() => setScannerOpen((open) => !open)} />
+            {cameraScan && cameraScanner ? <CameraScanButton open={scannerOpen} onPress={() => setScannerOpen((open) => !open)} /> : null}
+            {showViewToggle ? <ViewToggle className="self-center" value={state.view} onChange={(view) => changeState({ type: 'setView', view })} /> : null}
+            {draws(searchAccessory) ? searchAccessory : null}
           </View>
         ) : searchInput}
         {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips} /> : null}
         {cameraScan && cameraScanner && scannerOpen ?<CameraScannerPanel {...cameraScanner} onClose={() => setScannerOpen(false)} /> : null}
-        {(statusText || statusAccessory || showViewToggle) ? (
+        {(statusText || statusAccessory) ? (
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">
             {statusText ? <Text className="flex-1 text-xs text-muted-foreground" numberOfLines={statusAccessory ? 1 : undefined}>
               {statusText}{query.trim() ? ` · ${results.length.toLocaleString()} matching` : ''}
             </Text> : null}
             {statusAccessory}
-            {showViewToggle ? <ViewToggle value={state.view} onChange={(view) => changeState({ type: 'setView', view })} /> : null}
           </View>
         ) : null}
         {showCategoryNav && !browsing ? <CategoryNav categories={[{ id: '', name: 'All products' }, ...categoryList]}
@@ -362,8 +370,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           </View>
         ) : null}
       </View>
-      {/* Only when React would draw it: `!open && <Notice />` passes false, which must not leave a blank band. */}
-      {rowsSlot != null && typeof rowsSlot !== 'boolean' && rowsSlot !== '' ? <View testID="catalogue-rows" className="gap-4 p-4">{rowsSlot}</View> : null}
+      {draws(rowsSlot) ? <View testID="catalogue-rows" className="gap-4 p-4">{rowsSlot}</View> : null}
       {atRoot ? <CategoryBrowseGrid categories={categoryList} counts={counts} total={shown.length} columns={columns}
         onOpen={(id) => { if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }} /> : <>
       {browsing && (activeCategory || allOpen) ? <CategoryCrumb here={activeCategory?.name ?? 'All products'}
@@ -371,7 +378,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       {state.view === 'table' ? (
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
           sortItems={false} onSelect={selectProduct} emptyState={emptyState}
-          showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton} />
+          showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton}
+          cartQuantity={(doc) => quantities.get(traits.getId(doc)) ?? 0} />
       ) : <ProductGrid items={results} numColumns={columns}
         renderItem={(product: Doc) => {
           const id = traits.getId(product);

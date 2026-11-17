@@ -24,7 +24,7 @@ const [state, dispatch] = useReducer(tenderReducer, { methodId: 'cash', balanceM
 
 `TenderPane` is the pane inside [Tender](/docs/components/tender), laid out as WCPOS v2's. Use `Tender` unless the host keeps the tender reducer itself. It renders nothing outside the tender stage.
 
-The headline shows the total, or what remains once money is paid (pending legs never count), the amount paid so far and any change. Each payment leg shows its method, amount and status, the next pending leg is marked Next, and Cancel payment shows where the method can void the leg.
+The headline's caption reads To pay, or Remaining once money is paid (pending legs never count). The balance sits beside it when it differs from the entry, and the entry is the large figure underneath. Under the caption are the amount paid so far and any change. Each payment leg shows its method, amount and status, the next pending leg is marked Next, and Cancel payment shows where the method can void the leg.
 
 While a balance remains, the cashier picks Cash or Card terminal and sets the entry on the keypad, where digits shift in from the right, or, for cash, with a quick-cash chip: the exact amount, then the next 5, 10 and 50. A chip or a keypad press only sets the entry. A hint under it reads the change, what is left after a part payment, or that the method can't give change. `Take {amount} in {method}` records the leg with `sale.addTender`, and the entry is pre-typed with the next leg's amount. Card terminal also takes a terminal reference.
 

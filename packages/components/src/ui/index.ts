@@ -26,6 +26,7 @@ export { SettingsIcon } from './icon/settings-icon';
 export { MessageQuestionIcon } from './icon/message-question-icon';
 export { Loader, loaderVariants, type LoaderProps } from './loader';
 export { Badge, badgeVariants, badgeTextVariants, type BadgeProps } from './badge';
+export { StatusBadge, statusDotVariants, type StatusBadgeProps } from './status-badge';
 export { Avatar, avatarVariants, avatarInitials, type AvatarProps } from './avatar';
 
 // Interactive
