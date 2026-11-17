@@ -36,7 +36,9 @@ function memoryTokens(initial: string | null) {
   };
 }
 
-function setup({ token = 'tok-1' as string | null, snapshot = false } = {}) {
+function setup({ token = 'tok-1', snapshot = false, onError }: {
+  token?: string | null; snapshot?: boolean; onError?: (error: unknown) => void;
+} = {}) {
   const fake = new FakeDisplaySignalling();
   const network = new FakeNetwork();
   const tokens = memoryTokens(token);
@@ -44,7 +46,7 @@ function setup({ token = 'tok-1' as string | null, snapshot = false } = {}) {
   const phases: DisplayClientPhase[] = [];
   const client = createDisplayClient({
     signalling: fake, context, tokens, advertisement: { iceServers: [], snapshot }, createPeer: network.createPeer,
-    onError: (error) => errors.push(error),
+    onError: onError ?? ((error) => errors.push(error)),
   });
   client.onChange(() => phases.push(client.phase));
   return { fake, network, tokens, errors, phases, client };
@@ -270,6 +272,18 @@ describe('createDisplayClient: the snapshot fallback', () => {
     }
     expect(s.client.state.view).toEqual({ screen: 'cart', cart: teaCart.payload });
     expect(s.errors).toHaveLength(4);
+    s.client.close();
+  });
+
+  it('keeps polling when the onError handler itself throws', async () => {
+    let calls = 0;
+    const s = setup({ snapshot: true, onError: () => { calls += 1; throw new Error('handler failed'); } });
+    s.fake.snapshot = 'text';
+    await advance(0);
+    expect(calls).toBe(1);
+    s.fake.snapshot = body(2, teaCart);
+    await advance(SNAPSHOT_POLL_MS);
+    expect(s.client.state.view).toEqual({ screen: 'cart', cart: teaCart.payload });
     s.client.close();
   });
 
