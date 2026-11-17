@@ -12,7 +12,7 @@ const order = (id: string, totalMinor: number, overrides: Partial<ReportOrder> =
   lines: [{ key: `p-${id}`, name: 'Coffee', quantity: 1, netMinor: totalMinor, taxMinor: 0 }], ...overrides,
 });
 const figuresOf = (orders: ReportOrder[]) => salesFigures({ orders, range: day, timezone: 'UTC' });
-const payments = figuresOf([order('a', 1500, { payments: [{ method: 'cash', amountMinor: 1500 }] }), order('b', 1000)]);
+const payments = figuresOf([order('a', 1500, { taxMinor: 300, payments: [{ method: 'cash', amountMinor: 1500 }] }), order('b', 1000)]);
 // One costed line (Coffee) and one with no cost (Scone, no category).
 const costed = figuresOf([order('a', 2500, { lines: [
   { key: 'coffee', name: 'Coffee', quantity: 1, netMinor: 1500, taxMinor: 0, costMinor: 500, category: drinks },
