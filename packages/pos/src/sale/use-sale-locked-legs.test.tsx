@@ -7,7 +7,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, orderDraftSchema, restoreOrderDraft, writeOrderDraft } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
-import { posOrderCollection } from '../pos-order';
+import { posOrderCollection, type PosOrder } from '../pos-order';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { SALE_PARTLY_PAID, useSale } from './use-sale';
@@ -268,13 +268,25 @@ describe('useSale locked legs', () => {
     expect(result.current.order[collection]![0]).not.toHaveProperty('storeLineId');
   });
 
-  it('complete refuses a fully tendered reopened cart without writing an order', async () => {
+  it('complete finalizes a fully tendered reopened cart as the store order', async () => {
     const { result, orders } = await resumeSale();
     act(() => { result.current.startTender('external'); });
     expect(result.current.order.balanceDueMinor).toBe(0);
     await act(async () => { await result.current.complete(); });
-    expect(result.current.error).toBe('finalize: a reopened store order cannot be completed by this version of TallyUI');
-    expect(await orders.find().exec()).toEqual([]);
+    expect(result.current.error).toBeNull();
+    const rows = await orders.find().exec();
+    expect(rows).toHaveLength(1);
+    const row = rows[0].toJSON() as PosOrder;
+    expect(row).toMatchObject({
+      storeOrderId: '41', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', refundDueMinor: 0,
+    });
+    expect(row.lines.find((line) => line.productId === 'coffee')?.storeLineId).toBe('7');
+    // The stored row marks the store's locked leg by its storePaymentId (finalize-reopened.test.ts T1); it has no `locked` field.
+    expect(row.payments).toEqual([
+      { id: expect.any(String), storePaymentId: 'p1', method: 'external', amountMinor: 500, reference: 'Cash' },
+      { id: expect.any(String), method: 'external', amountMinor: 500 },
+    ]);
+    expect(row.payments.reduce((sum, payment) => sum + payment.amountMinor, 0)).toBe(row.totalMinor);
   });
 
   it('a cash tender and a cancelled tender keep the locked leg', async () => {
