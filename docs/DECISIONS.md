@@ -6425,7 +6425,8 @@ interface OrderCreatePayload {
      `unsupported_tax_mode` still applies.
   4. **`order.update` v1, the outbox command for a reopened sale's checkout.** A `pos_orders` row with `storeOrderId`
      goes out as `order.update`, never `order.create`. Its payload is the `order.create` payload at the till's version
-     plus `orderId` and `baseRevision`; `lines` and `payments` are the whole new state, and payments already on the
+     plus `orderId` and `baseRevision`; `lines`, `fees`, `shipping` and `payments` are the whole new state (absent
+     `fees` or `shipping` means the sale has none, so the store's are removed), and payments already on the
      order carry their store `paymentId` and are not re-taken. The body names the `order.create` version it follows
      in `createVersion` and is checked by that version's rules. Kept lines, fees and shipping carry the store's
      `storeLineId`, one id space unique across the three (WooCommerce order items; v2 removes fees and shipping by
