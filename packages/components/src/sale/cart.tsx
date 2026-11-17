@@ -4,6 +4,7 @@ import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
 import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
 import { CartChargeLine } from '../cart/cart-charge-line';
+import { MotionRows } from '../cart/cart-row-motion';
 import { cartShowsPrice } from '../cart/cart-columns';
 import type { CartColumnSettings } from '../cart/cart-columns';
 import { DiscountChips, DiscountForm } from './discount-form';
@@ -136,7 +137,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   </>;
   return <View dataSet={{ print: 'hide' }} className="flex-1 min-h-0" onLayout={(event) => setCartWidth(event.nativeEvent.layout.width)}>
     {empty ? null : <CartColumnHeads showPrice={showPrice} columns={columns} />}
-    <CartPanel items={order.lineItems} renderItem={renderItem}
+    <CartPanel items={order.lineItems} renderItem={renderItem} pulseKey={(line) => line.quantity} identity={order.id}
     footerClassName="px-2 py-2"
     emptyState={empty ? <View testID="cart-empty" className="flex-1 items-center justify-center gap-3 px-3 py-6">
       {emptyIcon === null ? null : <View aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
@@ -146,8 +147,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
     </View> : undefined}
     afterItems={<>
-      {(['fees', 'shipping'] as const).map((kind) => order[kind]?.map((charge, index) =>
-        <View key={charge.id} testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`}>
+      {(['fees', 'shipping'] as const).map((kind) => <MotionRows key={kind} items={order[kind] ?? []} keyOf={(charge) => charge.id}
+        pulseKey={() => 0} identity={order.id} renderItem={(charge, index) =>
+        <View testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`}>
           <CartChargeLine name={charge.name} price={money(charge.amountMinor)}
             total={money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor)}
             showPrice={showPrice} columns={columns} />
@@ -157,7 +159,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
               className="rounded-md border border-border bg-card px-3 py-2 min-h-11 items-center justify-center">
               <Text className="text-foreground">Remove</Text></Pressable>
           </View>
-        </View>))}
+        </View>} />)}
       {showOrderDiscount || showCharge ? <View className="gap-3 px-3 py-2">
       {showOrderDiscount ? <>
       <DiscountChips discounts={order.discounts} amounts={orderAmounts} currency={order.currency} onRemove={sale.removeDiscount}
