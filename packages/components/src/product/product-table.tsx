@@ -11,6 +11,7 @@ import { ProductTitle } from './product-title';
 import { ProductSku } from './product-sku';
 import { ProductPrice } from './product-price';
 import { ProductStockBadge } from './product-stock-badge';
+import { InCartBadge } from './in-cart-badge';
 
 // Limit initial mounts for a 2,000-product catalogue to eight rows.
 const INITIAL_ROWS = 8;
@@ -70,6 +71,10 @@ export interface ProductTableProps extends Omit<ViewProps, 'children'> {
   /** End each row with v2's add control, which calls onSelect(item) exactly as a row press does: a + labelled
    * "Add to cart", or a > labelled "Variations" for a product with more than one variant. Needs onSelect. Default false. */
   showAddButton?: boolean;
+  /** v2's in-cart count: how many of the product the cart holds (e.g. from cartQuantities). In the add column
+   * (showAddButton), a count above 0 shows in place of the +, labelled "In cart: N", and pressing it calls onSelect
+   * as the + does; a product with variants keeps its >. Default: no count. */
+  cartQuantity?: (doc: any) => number;
   className?: string;
 }
 
@@ -99,7 +104,7 @@ export function useDefaultProductColumns(options?: { currencySymbol?: string }):
 export function ProductTable({
   items, columns, sort, defaultSort = null, onSortChange, sortItems = true, onSelect,
   searchSlot, filterSlot, emptyState, showUnsellable = false, currencySymbol, showThumbnail = false,
-  showAddButton = false, className, ...viewProps
+  showAddButton = false, cartQuantity, className, ...viewProps
 }: ProductTableProps): JSX.Element {
   // Without a ConnectorProvider, custom columns can render without traits.
   let traits: ReturnType<typeof useProductTraits> | undefined;
@@ -164,6 +169,7 @@ export function ProductTable({
               renderItem={({ item, index }) => {
                 const key = String(item.id ?? index);
                 const variations = addButton && traits !== undefined && traits.getVariantCount(item) > 1;
+                const count = addButton && !variations ? cartQuantity?.(item) ?? 0 : 0;
                 const row = (
                   <TableRow testID={onSelect ? undefined : 'product-row-' + key}>
                     {thumbnail ? <TableCell style={{ width: thumb + CELL_PAD_X }} className="flex-none px-3 py-1.5">
@@ -174,9 +180,12 @@ export function ProductTable({
                     ))}
                     {addButton ? (
                       <TableCell style={{ width: ACTION_WIDTH }} className="flex-none items-center justify-center px-0 py-1.5">
-                        <IconButton testID={'product-row-add-' + key} accessibilityLabel={variations ? 'Variations' : 'Add to cart'}
+                        <IconButton testID={'product-row-add-' + key}
+                          accessibilityLabel={variations ? 'Variations' : count > 0 ? `In cart: ${count}` : 'Add to cart'}
                           onPress={(event) => { event.stopPropagation?.(); onSelect!(item); }}>
-                          <View className="text-muted-foreground">{variations ? <ChevronRightIcon size={18} /> : <PlusIcon size={18} />}</View>
+                          {variations || count <= 0 ? <View className="text-muted-foreground">
+                            {variations ? <ChevronRightIcon size={18} /> : <PlusIcon size={18} />}</View> : null}
+                          {!variations && cartQuantity ? <InCartBadge count={count} identity={key} testID={'product-row-in-cart-' + key} /> : null}
                           <MinTargetBand square />
                         </IconButton>
                       </TableCell>

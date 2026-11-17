@@ -418,7 +418,7 @@
   },
   "packages/components/src/product/product-table.tsx": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 3
+      "count": 4
     },
     "react-hooks/rules-of-hooks": {
       "count": 1
