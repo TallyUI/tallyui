@@ -108,6 +108,53 @@ describe('live receipt refund-due', () => {
   });
 });
 
+describe('receipt change on a reopened sale with locked legs', () => {
+  it('locked 50 above a new total of 30, no cash: change 0, refund-due 20', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 3000, currency: 'USD' }, taxRates: [] });
+    builder.addPayment({ method: 'external', amountMinor: 5000, locked: true });
+    const receipt = buildReceiptData(builder.getSnapshot(), { storeName: 'Shop' });
+    expect(receipt.changeDueMinor).toBe(0);
+    expect(receipt.refundDueMinor).toBe(2000);
+  });
+
+  it('locked 20 below a new total of 30, cash 20: change 10, no refund-due', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 3000, currency: 'USD' }, taxRates: [] });
+    builder.addPayment({ method: 'external', amountMinor: 2000, locked: true });
+    builder.addPayment({ method: 'cash', amountMinor: 2000 });
+    const receipt = buildReceiptData(builder.getSnapshot(), { storeName: 'Shop' });
+    expect(receipt.changeDueMinor).toBe(1000);
+    expect(receipt).not.toHaveProperty('refundDueMinor');
+  });
+
+  it('locked 50 above a new total of 30, cash 10: change 10, refund-due 20', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 3000, currency: 'USD' }, taxRates: [] });
+    builder.addPayment({ method: 'external', amountMinor: 5000, locked: true });
+    builder.addPayment({ method: 'cash', amountMinor: 1000 });
+    const receipt = buildReceiptData(builder.getSnapshot(), { storeName: 'Shop' });
+    expect(receipt.changeDueMinor).toBe(1000);
+    expect(receipt.refundDueMinor).toBe(2000);
+  });
+
+  it('change is never negative and equals the cash change over a grid', () => {
+    const total = 3000;
+    for (const locked of [0, 1000, 2000, 3000, 5000]) {
+      for (const cash of [0, 500, 1000, 2000, 4000]) {
+        const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+        builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: total, currency: 'USD' }, taxRates: [] });
+        if (locked > 0) builder.addPayment({ method: 'external', amountMinor: locked, locked: true });
+        if (cash > 0) builder.addPayment({ method: 'cash', amountMinor: cash });
+        const receipt = buildReceiptData(builder.getSnapshot(), { storeName: 'Shop' });
+        expect(receipt.changeDueMinor, `locked ${locked} cash ${cash}`).toBeGreaterThanOrEqual(0);
+        expect(receipt.changeDueMinor, `locked ${locked} cash ${cash}`).toBe(Math.max(0, cash - Math.max(0, total - locked)));
+        expect(receipt.refundDueMinor ?? 0, `locked ${locked} cash ${cash}`).toBe(Math.max(0, locked - total));
+      }
+    }
+  });
+});
+
 describe('receipt schema 1.4 blocks', () => {
   it('fills the 1.4 defaults', () => {
     const receipt = buildReceiptData(baseOrder, config);
