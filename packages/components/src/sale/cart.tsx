@@ -10,10 +10,11 @@ import { DiscountChips, DiscountForm } from './discount-form';
 import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
 import { LinePopover } from './line-popover';
+import { OrderNoteSheet } from './order-note-sheet';
 import { ShoppingCartIcon } from '../ui';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, lineEditor = 'inline',
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, noteSheet, lineEditor = 'inline',
   columns,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
@@ -38,6 +39,11 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     /** Swaps the Cash and Card terminal row for v2's foot, `CartFoot`: "Checkout {total}" calls `onCheckout`, and the
      * ⋮ menu lists `actions`, with `note` above the buttons. Absent: the Cash and Card terminal row. */
     checkout?: { onCheckout: () => void; actions?: readonly CartFootAction[]; note?: { text: string; onPress: () => void } };
+    /** v2's note editing, owned by the Cart: the ⋮ menu gains "Order details" (first), which opens `OrderNoteSheet`
+     * on `sale.order.note`, and the note row above the buttons shows that note and opens the sheet too. `label`
+     * names the note (default "Customer note"; a platform whose note the customer never sees passes its own, e.g.
+     * "Order note"). Needs `checkout`; when given, it replaces `checkout.note`. */
+    noteSheet?: { label?: string };
     /** `popover`: tapping a line's quantity or price opens v2's keypad (WCPOS cart cells/quantity-keypad.tsx and
      * cells/price.tsx), the price one with the quick-discount keys and the struck regular price. Popover mode draws no
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
@@ -54,6 +60,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   }) {
   const formatMoney = useFormatMoney();
   const { order } = sale;
+  const [noteOpen, setNoteOpen] = useState(false);
   // v2's empty cart: an icon and a line, no heads and no foot. A fee or shipping row alone keeps the cart.
   const empty = !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
   const money = (amount: number) => ({ amount, currency: order.currency });
@@ -174,8 +181,11 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
-      {checkout ? <CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout} actions={checkout.actions}
-        note={checkout.note} disabled={!order.lineItems.length} /> : <View className="flex-row gap-3">
+      {checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
+        actions={noteSheet ? [{ label: 'Order details', onPress: () => setNoteOpen(true) }, ...(checkout.actions ?? [])] : checkout.actions}
+        note={noteSheet ? { text: order.note, onPress: () => setNoteOpen(true) } : checkout.note} disabled={!order.lineItems.length} />
+        {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}
+          label={noteSheet.label} onOpenChange={setNoteOpen} /> : null}</> : <View className="flex-row gap-3">
         <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('cash')} className={pay}>
           <Text className="text-center font-semibold text-primary-foreground">Cash</Text>
         </Pressable>

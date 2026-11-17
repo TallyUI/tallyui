@@ -453,6 +453,41 @@ describe('Cart', () => {
 describe('Cart checkout', () => {
   const checkoutButton = () => screen.getByRole('button', { name: /^Checkout / });
 
+  it("noteSheet: Order details opens the sheet, typing sets the sale's note and the row shows it", () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} noteSheet={{}}
+      checkout={{ onCheckout: () => {}, actions: [{ label: 'Void', onPress: vi.fn(), destructive: true }] }} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    expect(screen.queryByTestId('cart-note-row')).toBeNull();
+    click('More actions');
+    const menu = screen.getByRole('menu', { name: 'More actions' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Order details', 'Void']);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Order details' }));
+    expect(screen.getByTestId('order-note-sheet')).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Customer note' }), { target: { value: 'Leave at door' } });
+    expect(sale.order.note).toBe('Leave at door');
+    fireEvent.click(screen.getByTestId('order-note-close'));
+    expect(screen.queryByTestId('order-note-sheet')).toBeNull();
+    expect(screen.getByTestId('cart-note-row').textContent).toBe('Leave at door');
+  });
+
+  it("noteSheet: the note row opens the sheet holding the note, under the platform's label", () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} noteSheet={{ label: 'Order note' }}
+      checkout={{ onCheckout: () => {} }} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setNote('Gift wrap'));
+    click('Edit note: Gift wrap');
+    expect((screen.getByRole('textbox', { name: 'Order note' }) as HTMLTextAreaElement).value).toBe('Gift wrap');
+  });
+
+  it("without noteSheet the ⋮ has only the host's actions", () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale}
+      checkout={{ onCheckout: () => {}, actions: [{ label: 'Void', onPress: vi.fn() }] }} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('More actions');
+    const menu = screen.getByRole('menu', { name: 'More actions' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Void']);
+  });
+
   it('keeps Cash and Card terminal, and no Checkout, without the prop', () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     act(() => sale.add(blue, traits));

@@ -220,6 +220,7 @@ export {
   Cart, CartBar, Tender, SplitTender, TenderPane, type TenderPaneProps, DiscountForm, DiscountChips, parseDiscount, discountLabel,
   PriceForm, parsePrice, LinePopover, type LinePopoverProps,
   ChargeForm, type ChargeFormProps,
+  OrderNoteSheet, type OrderNoteSheetProps,
   Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, syncStatusQuiet, OrdersList, type OrderHistoryRow, orderReference,
   ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps, CustomerDisplayScreen,
   CustomerDisplayPairing, type CustomerDisplayPairingProps,
