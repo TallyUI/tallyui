@@ -65,7 +65,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const empty = !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
   const money = (amount: number) => ({ amount, currency: order.currency });
   // order.display's figures (TallyUI ADR-063), with its tax split by rate; never app arithmetic (medusapos ADR 0008).
-  const { totals } = buildReceiptData(order, { storeName: '' });
+  const { totals, fees, shipping } = buildReceiptData(order, { storeName: '' });
   const taxRows = totals.taxLines.map((line) => ({ label: taxLabel(line.ratePpm), amount: money(line.amountMinor) }));
   // Each line before its discounts, with its own discounts' amounts. The order discounts are one figure: a single
   // order discount's chip carries it; several keep their own labels, as no single one has a display amount.
@@ -180,9 +180,12 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         <Text className="text-foreground">Add charge</Text></Pressable> : null}
     </View> : null}</>}
     footer={empty ? undefined : <View testID="cart-footer" className="gap-2">
-      {/* Exclusive: subtotal − discount + tax = total. Inclusive: subtotal − discount = total, the tax "incl.", not added. */}
+      {/* Exclusive: subtotal − discount + fees + shipping + tax = total. Inclusive: subtotal − discount + fees + shipping =
+        total, the tax "incl.", not added. */}
       <CartTotal className="px-0 py-0" subtotal={money(totals.subtotalMinor)} total={money(totals.totalMinor)}
         discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
+        fees={money(fees.reduce((sum, row) => sum + row.amountMinor, 0))}
+        shipping={money(shipping.reduce((sum, row) => sum + row.amountMinor, 0))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
       {checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}

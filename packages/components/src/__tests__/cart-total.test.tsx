@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { Text } from 'react-native';
+import { formatMoney } from '@tallyui/core';
 import { CartTotal } from '../cart/cart-total';
 
 const subtotal = { amount: 3000, currency: 'EUR' };
@@ -46,6 +47,33 @@ describe('CartTotal', () => {
     const positions = ['Subtotal', 'Discount', 'VAT', 'Total'].map((label) => text.indexOf(label));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it('renders Fees and Shipping rows between Discount and the tax rows, as WCPOS v2', () => {
+    const { container } = render(<CartTotal subtotal={subtotal} total={total} discount={{ amount: 250, currency: 'EUR' }} locale="en"
+      fees={{ amount: 120, currency: 'EUR' }} shipping={{ amount: 240, currency: 'EUR' }}
+      taxLines={[{ label: 'VAT', amount: { amount: 400, currency: 'EUR' } }]} />);
+    expect(within(screen.getByTestId('cart-total-fees')).getByText('Fees')).toBeDefined();
+    expect(within(screen.getByTestId('cart-total-fees')).getByText('€1.20')).toBeDefined();
+    expect(within(screen.getByTestId('cart-total-shipping')).getByText('Shipping')).toBeDefined();
+    expect(within(screen.getByTestId('cart-total-shipping')).getByText('€2.40')).toBeDefined();
+    const text = container.textContent ?? '';
+    const positions = ['Subtotal', 'Discount', 'Fees', 'Shipping', 'VAT', 'Total'].map((label) => text.indexOf(label));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it.each([undefined, 0])('omits the Fees and Shipping rows for %s', (amount) => {
+    const charge = amount === undefined ? undefined : { amount, currency: 'EUR' };
+    render(<CartTotal subtotal={subtotal} total={total} locale="en" fees={charge} shipping={charge} />);
+    expect(screen.queryByText('Fees')).toBeNull();
+    expect(screen.queryByText('Shipping')).toBeNull();
+  });
+
+  it('shows a negative fee, as WCPOS v2 shows any non-zero fee', () => {
+    render(<CartTotal subtotal={subtotal} total={total} locale="en" fees={{ amount: -100, currency: 'EUR' }} />);
+    const row = screen.getByTestId('cart-total-fees');
+    expect(within(row).getByText(formatMoney({ amount: -100, currency: 'EUR' }, 'en')!)).toBeDefined();
   });
 
   it('renders afterSubtotal between Subtotal and Discount', () => {
