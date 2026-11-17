@@ -289,6 +289,7 @@ manager.newOrder();
 ```tsx
 import { useSale, type CatalogueEntry, type PosOrder, type RegisterSessionCollection } from '@tallyui/pos';
 import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
+import { VStack, Button, Text } from '@tallyui/components';
 
 declare const settings: Pick<StoreSettings, 'currency' | 'calcDiscountsSequentially'>;
 declare const registerId: string, cashierRef: string;
@@ -302,10 +303,10 @@ declare const entry: CatalogueEntry<unknown>, traits: ProductTraits<unknown>;
 function Sale() {
   const sale = useSale(settings, { registerId, cashierRef, capabilities, session, onSaleCompleted, isStored });
   return (
-    <div>
-      <button onClick={() => sale.add(entry, traits)}>Add item</button>
-      {sale.error && <p role="alert">{sale.error}</p>}
-    </div>
+    <VStack>
+      <Button onPress={() => sale.add(entry, traits)}><Text>Add item</Text></Button>
+      {sale.error ? <Text className="text-destructive">{sale.error}</Text> : null}
+    </VStack>
   );
 }
 ```
