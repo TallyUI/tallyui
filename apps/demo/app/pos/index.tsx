@@ -5,6 +5,7 @@ import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 const screens = [
   // App shell
   { href: '/pos/app-shell', label: 'AppShell' },
+  { href: '/pos/connectivity-toast', label: 'ConnectivityToast' },
   // Input
   { href: '/pos/quantity-stepper', label: 'QuantityStepper' },
   // Cart

@@ -92,6 +92,7 @@
     "app-shell",
     "nav-rail",
     "nav-drawer",
+    "connectivity-toast",
     "pos-layout",
     "checkout-layout",
     "settings-layout",
