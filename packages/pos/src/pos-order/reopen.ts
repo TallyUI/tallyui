@@ -8,7 +8,7 @@ import { customerRefusal } from './command';
 import type { PosOrder } from './types';
 
 export const REOPENABLE_CODES: readonly string[] = ['coupon_invalid', 'total_mismatch'];
-export type ReopenRefusal = 'not_found' | 'not_rejected' | 'code_not_reopenable' | 'already_replaced' | 'session_closed';
+export type ReopenRefusal = 'not_found' | 'store_order' | 'not_rejected' | 'code_not_reopenable' | 'already_replaced' | 'session_closed';
 export class ReopenRefusedOrderError extends Error {
   constructor(readonly orderId: string, readonly reason: ReopenRefusal) {
     super(`Cannot reopen order ${orderId}: ${reason}`);
@@ -27,6 +27,8 @@ export async function reopenRefusedOrder(orderId: string, deps: {
 }): Promise<string> {
   const [order] = await readFresh(deps.orders, { selector: { id: orderId } });
   if (!order) throw new ReopenRefusedOrderError(orderId, 'not_found');
+  // A reopened store order returns as order.update; a redo would send order.create without its store ids (ADR-090 gate 6).
+  if (order.storeOrderId !== undefined) throw new ReopenRefusedOrderError(orderId, 'store_order');
   if (order.syncStatus !== 'rejected') throw new ReopenRefusedOrderError(orderId, 'not_rejected');
   if (!REOPENABLE_CODES.includes(order.error?.code ?? '')) throw new ReopenRefusedOrderError(orderId, 'code_not_reopenable');
   const successors = await readFresh(deps.orders, { selector: { saleId: orderId } });
