@@ -70,6 +70,22 @@ describe('SalesRoom cards', () => {
     fireEvent.click(screen.getByTestId('card-payments-open'));
     expect(onOpenCard).toHaveBeenCalledWith('payments');
   });
+
+  it('shows all six cards by default', () => {
+    setup(salesFigures({ orders, range: day, timezone: 'UTC' }));
+    for (const id of ['orders', 'payments', 'products', 'categories', 'taxes', 'refunds']) {
+      expect(screen.getByTestId(`card-${id}`)).toBeTruthy();
+    }
+  });
+
+  it('leaves out the cards named in hideCards and keeps the rest in order', () => {
+    setup(salesFigures({ orders, range: day, timezone: 'UTC' }), { hideCards: ['categories', 'refunds'] });
+    expect(screen.queryByTestId('card-categories')).toBeNull();
+    expect(screen.queryByTestId('card-refunds')).toBeNull();
+    expect(screen.queryByTestId('card-categories-empty')).toBeNull();
+    const shown = Array.from(screen.getByTestId('sales-cards').children, (child) => child.getAttribute('data-testid'));
+    expect(shown).toEqual(['card-orders', 'card-payments', 'card-products', 'card-taxes']);
+  });
 });
 
 describe('SalesRoom filters', () => {

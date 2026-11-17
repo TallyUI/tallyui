@@ -18,6 +18,8 @@ export interface SalesCardsProps {
   currency: string;
   /** Opens the card's panel. */
   onOpenCard?: (card: SalesCardId) => void;
+  /** Cards to leave out, e.g. one the backend's report cannot fill; the rest keep their order. Default: all six. */
+  hide?: SalesCardId[];
 }
 
 const SWATCHES = ['bg-primary', 'bg-info', 'bg-success', 'bg-warning', 'bg-destructive'];
@@ -111,7 +113,7 @@ function shares<T>(rows: T[], toShare: (row: T) => Omit<Share, 'swatch'>, otherT
   return [...head, { label: 'Other', value: rest.reduce((sum, row) => sum + toShare(row).value, 0), text: otherText(rest), swatch: OTHER_SWATCH }];
 }
 
-export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): JSX.Element {
+export function SalesCards({ figures, currency, onOpenCard, hide }: SalesCardsProps): JSX.Element {
   const formatMoney = useFormatMoney();
   const money = (minor: number) => formatMoney({ amount: minor, currency }) ?? '';
   const { totals, payments, products, categories, taxes, refunds } = figures;
@@ -129,10 +131,11 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
     note: row.netMinor === null ? undefined : `on ${money(row.netMinor)}`,
   }), (rest) => money(rest.reduce((sum, row) => sum + row.taxMinor, 0)));
   const card = { onOpen: onOpenCard };
+  const shows = (id: SalesCardId) => !hide?.includes(id);
 
   return (
     <View testID="sales-cards" className="flex-row flex-wrap gap-4">
-      <ReportCard id="orders" name="Orders" figure={String(totals.orderCount)} {...card}>
+      {shows('orders') && (<ReportCard id="orders" name="Orders" figure={String(totals.orderCount)} {...card}>
         {totals.orderCount === 0 ? <Empty testID="card-orders-empty">No orders in this period</Empty> : (
           <View className="gap-2">
             <StatGrid stats={[
@@ -149,13 +152,13 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
             )}
           </View>
         )}
-      </ReportCard>
-      <ReportCard id="payments" name="Payments" figure={money(totals.grossMinor)} {...card}>
+      </ReportCard>)}
+      {shows('payments') && (<ReportCard id="payments" name="Payments" figure={money(totals.grossMinor)} {...card}>
         {payments.rows.length === 0 ? <Empty testID="card-payments-empty">No payments in this period</Empty> : (
           <><ProportionalBar shares={paymentShares} /><Legend shares={paymentShares} /></>
         )}
-      </ReportCard>
-      <ReportCard id="products" name="Top products" figure={String(totals.items)} {...card}>
+      </ReportCard>)}
+      {shows('products') && (<ReportCard id="products" name="Top products" figure={String(totals.items)} {...card}>
         {products.length === 0 ? <Empty testID="card-products-empty">No sales in this period</Empty> : (
           <View className="gap-2">
             {products.slice(0, TOP_PRODUCTS).map((row) => {
@@ -175,13 +178,13 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
             })}
           </View>
         )}
-      </ReportCard>
-      <ReportCard id="categories" name="Categories" figure={money(categoryNet)} {...card}>
+      </ReportCard>)}
+      {shows('categories') && (<ReportCard id="categories" name="Categories" figure={money(categoryNet)} {...card}>
         {categories.length === 0 ? <Empty testID="card-categories-empty">No sales in this period</Empty> : (
           <><ProportionalBar shares={categoryShares} /><Legend shares={categoryShares} /></>
         )}
-      </ReportCard>
-      <ReportCard id="taxes" name="Taxes" figure={money(totals.taxMinor)} {...card}>
+      </ReportCard>)}
+      {shows('taxes') && (<ReportCard id="taxes" name="Taxes" figure={money(totals.taxMinor)} {...card}>
         {taxes.length === 0 ? <Empty testID="card-taxes-empty">None in this period</Empty> : (
           <>
             <ProportionalBar shares={taxShares} /><Legend shares={taxShares} />
@@ -192,8 +195,8 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
             ]} />
           </>
         )}
-      </ReportCard>
-      <ReportCard id="refunds" name="Refunds" figure={money(refunds.amountMinor)} {...card}>
+      </ReportCard>)}
+      {shows('refunds') && (<ReportCard id="refunds" name="Refunds" figure={money(refunds.amountMinor)} {...card}>
         {refunds.count === 0 ? <Empty testID="card-refunds-none">None in this period</Empty> : (
           <StatGrid stats={[
             { label: 'Refunded', value: money(refunds.amountMinor) },
@@ -202,7 +205,7 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
               value: totals.grossMinor === 0 ? UNKNOWN : percent((totals.grossMinor - refunds.amountMinor) / totals.grossMinor) },
           ]} />
         )}
-      </ReportCard>
+      </ReportCard>)}
     </View>
   );
 }
