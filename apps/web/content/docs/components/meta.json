@@ -36,6 +36,7 @@
     "---Customer---",
     "customer-card",
     "customer-select",
+    "customer-dropdown",
     "customer-form",
     "customer-order-history",
     "---Checkout---",
