@@ -344,7 +344,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   function setTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string } | null) {
     if (locked()) return;
     const builder = builderNow.current;
-    for (const payment of builder.getSnapshot().payments) builder.removePayment(payment.id);
+    for (const payment of builder.getSnapshot().payments) if (!payment.locked) builder.removePayment(payment.id);
     droppedReferences.current.clear();
     setError(null);
     if (tender) addOne(tender);
@@ -426,7 +426,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (!current.lineItems.length) return;
     if (couponsUnpriced()) return setError(COUPONS_REPRICING);
     tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
-    setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
+    const lockedMinor = current.payments.reduce((sum, payment) => sum + (payment.locked ? payment.amountMinor : 0), 0);
+    if (lockedMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
+    else setTender(method === 'external' && current.totalMinor - lockedMinor > 0 ? { method, amountMinor: current.totalMinor - lockedMinor } : null);
     setStage({ kind: 'tender', method });
   }
 
@@ -653,8 +655,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     },
     /** The leg stays in order.payments as voided and counts nothing; removeTender still removes a leg outright. */
     voidTender(paymentId: string): boolean {
-      if (locked()) return false;
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
+      if (payment?.locked) return false;
+      if (locked()) return false;
       if (!payment || (payment.method !== 'cash' && payment.method !== 'external') || !canVoidLeg(payment, paymentMethodOf(payment.method))) return false;
       builderNow.current.setPaymentStatus(paymentId, 'voided');
       droppedReferences.current.delete(paymentId);
@@ -663,8 +666,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     },
     /** ADR-072: remove one tender and its dropped-reference warning. An id not among the payments changes nothing. */
     removeTender(paymentId: string): void {
+      const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
+      if (payment?.locked) return;
       if (locked()) return;
-      if (!builderNow.current.getSnapshot().payments.some((payment) => payment.id === paymentId)) return;
+      if (!payment) return;
       builderNow.current.removePayment(paymentId);
       droppedReferences.current.delete(paymentId);
       clearStaleError();
