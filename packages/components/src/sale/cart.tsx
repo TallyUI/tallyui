@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
-import { useFormatMoney } from '@tallyui/core';
 import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
 import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
+import { CartChargeLine } from '../cart/cart-charge-line';
 import { cartShowsPrice } from '../cart/cart-columns';
 import type { CartColumnSettings } from '../cart/cart-columns';
 import { DiscountChips, DiscountForm } from './discount-form';
@@ -52,7 +52,6 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     /** The empty cart's line. Default: v2's "Tap a product to start a sale". */
     emptyText?: string;
   }) {
-  const formatMoney = useFormatMoney();
   const { order } = sale;
   // v2's empty cart: an icon and a line, no heads and no foot. A fee or shipping row alone keeps the cart.
   const empty = !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
@@ -141,13 +140,16 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     </View> : undefined}
     afterItems={<>
       {(['fees', 'shipping'] as const).map((kind) => order[kind]?.map((charge, index) =>
-        <View key={charge.id} testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`} className="flex-row items-center gap-3 px-3 py-2">
-          <Text className="flex-1 text-foreground">{charge.name}</Text>
-          <Text className="text-foreground">{formatMoney(money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor))}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${charge.name}`}
-            onPress={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}
-            className="rounded-md border border-border bg-card px-3 py-2 min-h-11 items-center justify-center">
-            <Text className="text-foreground">Remove</Text></Pressable>
+        <View key={charge.id} testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`}>
+          <CartChargeLine name={charge.name} price={money(charge.amountMinor)}
+            total={money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor)}
+            showPrice={showPrice} columns={columns} />
+          <View className="flex-row px-3 pb-2">
+            <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${charge.name}`}
+              onPress={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}
+              className="rounded-md border border-border bg-card px-3 py-2 min-h-11 items-center justify-center">
+              <Text className="text-foreground">Remove</Text></Pressable>
+          </View>
         </View>))}
       {showOrderDiscount || showCharge ? <View className="gap-3 px-3 py-2">
       {showOrderDiscount ? <>
