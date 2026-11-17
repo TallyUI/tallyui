@@ -146,7 +146,7 @@ export function wcposSourceFromSentOrder(order: SentOrder, config: ReceiptConfig
       methodId: p.method, methodTitle: methodTitle(p.method), amountMinor: p.amountMinor,
       ...(p.reference !== undefined ? { transactionId: p.reference } : {}),
     })),
-    changeMinor: order.changeDueMinor,
+    changeMinor: receipt.changeDueMinor,
   };
 }
 

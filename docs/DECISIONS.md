@@ -6518,6 +6518,11 @@ interface OrderCreatePayload {
       A record that settles the balance completes the sale by itself, and close then confirms idempotently.
     - **Payments already on the order are never sent.** Resending one is 422 `wcpos_command_conflict`.
     - **`reopen_required`** is 422 `reopen_required` (`data.order_status`).
+    - **Refund-due is shown, never as Change (W4e).**
+      - The receipt shows a "Refund due" row, live and on reprint, and the orders list shows a "Refund due" line, when a reopened sale's new total is below what the store already holds.
+      - Readers use the stored `refundDueMinor`. `refundDueOf` computes `sum(payments) − total` only for a row without it.
+      - On the live receipt, the figure is the locked legs beyond the new total, and it is taken out of `changeDueMinor`. So every reader of the receipt data (template, ESC/POS, customer display) stops showing it as change.
+      - Their own refund-due rows, and the tender pane, are a separate PR that gates phase e wiring (desk Q4, 2026-11-17).
   - **Read model.** A reopen fills an empty `_pos_user_created` with the reopening cashier. A storefront order
     reopened at the till then reads as created by that cashier.
 - **The edited total below what is already paid (desk condition 4).**
