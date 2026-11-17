@@ -241,9 +241,17 @@ export function RegisterCount({ register, currency, approve, className }: Regist
         <Label testID="count-amount-label" nativeID={AMOUNT_LABEL_ID}>
           {`Cash counted (${currencySymbol(currency)})`}
         </Label>
-        <Input>
+        {/* v2's count: the amount is a hero figure typed in place, its currency symbol in the field. */}
+        <Input className="h-16">
+          <Input.Left>
+            <Text testID="count-amount-symbol" className="text-2xl text-muted-foreground tabular-nums">
+              {currencySymbol(currency)}
+            </Text>
+          </Input.Left>
           <Input.Field
             testID="count-amount"
+            className="text-4xl font-bold tabular-nums pl-1.5"
+            placeholder={minorToDecimal(0, digits)}
             value={displayAmount}
             onChangeText={(value) => {
               // Typing clears the tiles, and a later tile tap replaces the typed amount (LEDGER 65).

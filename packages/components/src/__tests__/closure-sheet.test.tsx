@@ -69,12 +69,35 @@ it('shows the closure number, and figures and variance per tender, and dismisses
   );
   await waitFor(() => expect(screen.getByTestId('closure-title').textContent).toBe('Register closed'));
   expect(screen.getByTestId('closure-number').textContent).toBe('Closure #1');
-  expect(screen.getByTestId('closure-counted-cash').textContent).toBe('Counted €63.30');
-  expect(screen.getByTestId('closure-expected-cash').textContent).toBe('Expected €100.00');
-  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('€36.70 short');
+  expect(screen.getByTestId('closure-counted-cash').textContent).toBe('€63.30');
+  expect(screen.getByTestId('closure-expected-cash').textContent).toBe('€100.00');
+  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('−€36.70');
+  expect(screen.getByTestId('closure-variance-eyebrow').textContent).toBe('Variance · short');
   expect(screen.getByTestId('closure-counted-external').textContent).toBe('Counted €22.00');
   fireEvent.click(screen.getByTestId('closure-done'));
   expect(onDone).toHaveBeenCalledTimes(1);
+});
+
+it('leads with an over variance as a plus figure, and an exact count as zero', async () => {
+  await closeWithCount(12345);
+  await renderClosure();
+  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('+€23.45');
+  expect(screen.getByTestId('closure-variance-eyebrow').textContent).toBe('Variance · over');
+  // A second render on a fresh register: the exact count.
+  cleanup();
+  await db.remove();
+  db = await createRegisterDb();
+  await closeWithCount(10000);
+  await renderClosure();
+  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('€0.00');
+  expect(screen.getByTestId('closure-variance-eyebrow').textContent).toBe('Variance · Exact');
+});
+
+it('shows a large count and variance in full', async () => {
+  await closeWithCount(123456789);
+  await renderClosure();
+  expect(screen.getByTestId('closure-counted-cash').textContent).toBe('€1,234,567.89');
+  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('+€1,234,467.89');
 });
 
 it('blind closure hides every figure, but still shows the closure number', async () => {

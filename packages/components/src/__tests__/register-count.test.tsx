@@ -74,6 +74,12 @@ it('labels the amount field, and shows a live variance line against the expected
   expect(screen.getByTestId('count-variance').textContent).toContain('Exact');
 });
 
+it('frames the cash field as a large figure with the currency symbol', async () => {
+  await renderCounting();
+  expect(screen.getByTestId('count-amount-symbol').textContent).toBe('€');
+  expect(screen.getByTestId('count-amount').getAttribute('placeholder')).toBe('0.00');
+});
+
 it('counts two notes, clears their contribution on typing, and clears the tiles', async () => {
   // Unlike WCPOS's fold, this design's tiles are always visible (no 'count-denominations' toggle).
   await renderCounting();
