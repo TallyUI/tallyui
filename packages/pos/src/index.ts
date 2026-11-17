@@ -140,14 +140,14 @@ export type {
 export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, TENDER_GATE_FAILED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
 export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscountState, StorePricedAccepted, StorePricedCodePricing, StorePricedDiscountCodesOptions, CartQuantityLine, OptionPicks, OrderFilterValue } from './sale';
 
-export { uuidv7, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export { noteDelivery, type NoteDelivery } from './pos-order';
 export { TAX_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export { CUSTOMER_RETAX_REFUSED } from './sale/use-sale';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
-export { createHttpCommandTransport, createOrderOutbox, isRequeueable, useOrderOutbox, outboxLogger } from './outbox';
+export { createHttpCommandTransport, createOrderOutbox, isRequeueable, isRequeueableOrder, useOrderOutbox, outboxLogger } from './outbox';
 export { createRegisterOutbox, isRegisterRequeueable, useRegisterOutbox, summarizeOutboxHealth, watchOutboxHealth, useOutboxHealth } from './outbox';
 export type { RegisterOutboxOptions, RegisterOutbox, UseRegisterOutboxOptions, UseRegisterOutboxResult } from './outbox';
 export type { OutboxCounts, OutboxHealth, UseOutboxHealthOptions, UseOutboxHealthResult } from './outbox';
@@ -174,7 +174,10 @@ export { RegisterSessionRequiredError, RegisterSessionClosedError, RegisterNeeds
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';
 export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows, ENGLISH_CLOSURE_LABELS } from './register';
 export type { Correction, RecordedFigures, ClosureScope } from './register';
-export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact, createClosureContext, formatDecimalMoney, type CreateClosureContextOptions } from './register';
+export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact, createClosureContext, formatDecimalMoney, type CreateClosureContextOptions } from './register';
+import { minorToDecimal as registerMinorToDecimal } from './register';
+/** @deprecated Use `minorToMajor(minor, digits)` from `@tallyui/core`, which also rejects an amount that is not a safe integer. */
+export const minorToDecimal: (minor: number, exponent: number) => string = registerMinorToDecimal;
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
 export { roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';

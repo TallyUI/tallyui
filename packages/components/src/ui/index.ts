@@ -42,6 +42,7 @@ export {
   AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle,
   AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from './alert-dialog';
+export { ConfirmDialog, type ConfirmDialogProps } from './confirm-dialog';
 
 // Select
 export {

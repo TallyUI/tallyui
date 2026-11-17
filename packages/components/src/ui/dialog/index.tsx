@@ -23,9 +23,10 @@ const DialogOverlay = React.forwardRef<
 });
 DialogOverlay.displayName = 'DialogOverlay';
 
-/** Where the content sits: centred (the default), or a full-height sheet on the right edge, full width on a phone. */
+/** Where the content sits: centred (the default), or a full-height sheet on the left or right edge, full width on a phone. */
 const SIDE_CLASS = {
   center: 'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-background p-6 shadow-lg',
+  left: 'fixed left-0 top-0 bottom-0 z-50 h-full w-full max-w-lg gap-4 rounded-none border-r border-border bg-background p-6 shadow-lg',
   right: 'fixed right-0 top-0 bottom-0 z-50 h-full w-full max-w-lg gap-4 rounded-none border-l border-border bg-background p-6 shadow-lg',
 } as const;
 

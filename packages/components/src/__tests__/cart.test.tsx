@@ -54,9 +54,11 @@ describe('Cart', () => {
     const fee = screen.getByTestId('cart-fee-0');
     const shipping = screen.getByTestId('cart-shipping-0');
     expect(within(fee).getByText('Bag')).toBeTruthy();
-    expect(within(fee).getByText(money(sale.order.display.fees![0].amountMinor))).toBeTruthy();
+    expect(within(fee).getByTestId('cart-charge-price').textContent).toBe(money(sale.order.fees![0].amountMinor));
+    expect(within(fee).getByTestId('cart-charge-total').textContent).toBe(money(sale.order.display.fees![0].amountMinor));
     expect(within(shipping).getByText('Delivery')).toBeTruthy();
-    expect(within(shipping).getByText(money(sale.order.display.shipping![0].amountMinor))).toBeTruthy();
+    expect(within(shipping).getByTestId('cart-charge-price').textContent).toBe(money(sale.order.shipping![0].amountMinor));
+    expect(within(shipping).getByTestId('cart-charge-total').textContent).toBe(money(sale.order.display.shipping![0].amountMinor));
     expect(within(row('Alteration')).getAllByText(money(360))).toHaveLength(2);
     expect(screen.getByText('Alteration').compareDocumentPosition(fee) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(fee.compareDocumentPosition(shipping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -73,6 +75,42 @@ describe('Cart', () => {
     click('Remove Alteration');
     expect(totals(sale.order)).toEqual(before);
     expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();
+  });
+
+  it("draws each charge in the cart's columns, after the lines", () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    for (const [kind, name, amount] of [['Fee', 'Bag', '1.20'], ['Shipping', 'Delivery', '2.40']]) {
+      click('Add charge');
+      click(kind);
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
+      click('Apply');
+    }
+    const fee = screen.getByTestId('cart-fee-0');
+    const shipping = screen.getByTestId('cart-shipping-0');
+    for (const charge of [fee, shipping]) {
+      const chargeRow = charge.firstElementChild!;
+      expect(chargeRow.children).toHaveLength(screen.getAllByRole('columnheader').length);
+      expect(chargeRow.firstElementChild!.textContent).toBe('');
+    }
+    expect(screen.getByText('Shirt').compareDocumentPosition(fee) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(fee.compareDocumentPosition(shipping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("folds a charge's Price cell on a phone, as the heads do", () => {
+    dimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    click('Add charge');
+    click('Fee');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Bag' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '1.20' } });
+    click('Apply');
+    expect(screen.queryByRole('columnheader', { name: 'Price' })).toBeNull();
+    const fee = within(screen.getByTestId('cart-fee-0'));
+    expect(fee.queryByTestId('cart-charge-price')).toBeNull();
+    expect(fee.getByTestId('cart-charge-total')).toBeTruthy();
   });
 
   it('keeps only one charge, discount or price form open', () => {
@@ -452,6 +490,41 @@ describe('Cart', () => {
 
 describe('Cart checkout', () => {
   const checkoutButton = () => screen.getByRole('button', { name: /^Checkout / });
+
+  it("noteSheet: Order details opens the sheet, typing sets the sale's note and the row shows it", () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} noteSheet={{}}
+      checkout={{ onCheckout: () => {}, actions: [{ label: 'Void', onPress: vi.fn(), destructive: true }] }} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    expect(screen.queryByTestId('cart-note-row')).toBeNull();
+    click('More actions');
+    const menu = screen.getByRole('menu', { name: 'More actions' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Order details', 'Void']);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Order details' }));
+    expect(screen.getByTestId('order-note-sheet')).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Customer note' }), { target: { value: 'Leave at door' } });
+    expect(sale.order.note).toBe('Leave at door');
+    fireEvent.click(screen.getByTestId('order-note-close'));
+    expect(screen.queryByTestId('order-note-sheet')).toBeNull();
+    expect(screen.getByTestId('cart-note-row').textContent).toBe('Leave at door');
+  });
+
+  it("noteSheet: the note row opens the sheet holding the note, under the platform's label", () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} noteSheet={{ label: 'Order note' }}
+      checkout={{ onCheckout: () => {} }} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setNote('Gift wrap'));
+    click('Edit note: Gift wrap');
+    expect((screen.getByRole('textbox', { name: 'Order note' }) as HTMLTextAreaElement).value).toBe('Gift wrap');
+  });
+
+  it("without noteSheet the ⋮ has only the host's actions", () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale}
+      checkout={{ onCheckout: () => {}, actions: [{ label: 'Void', onPress: vi.fn() }] }} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('More actions');
+    const menu = screen.getByRole('menu', { name: 'More actions' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Void']);
+  });
 
   it('keeps Cash and Card terminal, and no Checkout, without the prop', () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);

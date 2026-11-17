@@ -8,10 +8,12 @@ const screens = [
   // Input
   { href: '/pos/quantity-stepper', label: 'QuantityStepper' },
   // Cart
+  { href: '/pos/open-sale-tabs', label: 'OpenSaleTabs' },
   { href: '/pos/discount-badge', label: 'DiscountBadge' },
   { href: '/pos/cart-note-input', label: 'CartNoteInput' },
   { href: '/pos/cart-panel', label: 'CartPanel' },
   { href: '/pos/sale-charges', label: 'Cart charges' },
+  { href: '/pos/sale-note', label: 'Cart note' },
   // Product
   { href: '/pos/category-nav', label: 'CategoryNav' },
   { href: '/pos/product-variant-picker', label: 'ProductVariantPicker' },

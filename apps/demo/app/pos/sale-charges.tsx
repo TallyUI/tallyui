@@ -18,7 +18,7 @@ const entries = catalogueEntries([
   { id: 'mug', title: 'Mug', status: 'published', variants: [{ id: 'mug-white', title: 'White', sku: 'MUG', prices: [{ amount: 8, currency_code: 'eur' }] }] },
 ], traits);
 
-function Sale({ capabilities }: { capabilities: ServerCapabilities }) {
+function Sale({ capabilities, editor }: { capabilities: ServerCapabilities; editor?: string }) {
   const sale = useSale(settings, { registerId: 'demo-register', cashierRef: 'demo-cashier', capabilities });
   const { stage } = sale;
   if (stage.kind === 'receipt') {
@@ -36,19 +36,22 @@ function Sale({ capabilities }: { capabilities: ServerCapabilities }) {
         <Text className="text-foreground">Add {traits.getName(entry.product)}</Text>
       </Pressable>)}
     </View>
-    <Cart sale={sale} taxClasses={taxClasses} />
+    {editor === 'popover'
+      ? <Cart sale={sale} taxClasses={taxClasses} lineEditor="popover" canEditPrice quickDiscounts={[5, 10, 15]} showTotal={false} checkout={{ onCheckout: () => sale.startTender('cash') }} />
+      : <Cart sale={sale} taxClasses={taxClasses} showTotal={false} checkout={{ onCheckout: () => sale.startTender('cash') }} />}
   </View>;
 }
 
-/** `?v=4` is a store on order.create 4, which takes no fees, shipping or custom lines: the Cart offers no "Add charge". */
+/** `?v=4` is a store on order.create 4, which takes no fees, shipping or custom lines: the Cart offers no "Add charge".
+ * `?editor=popover` opens each line's quantity and price in v2's keypad popover, with 5/10/15% quick discounts. */
 export default function SaleChargesScreen() {
-  const { v } = useLocalSearchParams<{ v?: string }>();
+  const { v, editor } = useLocalSearchParams<{ v?: string; editor?: string }>();
   const orderCreate = v === '4' ? 4 : 5;
   return (
     <View className="flex-1 bg-background" testID="sale-charges-screen">
       <Stack.Screen options={{ title: 'Cart charges' }} />
       <TaxProvider {...taxProviderProps(settings)}>
-        <Sale key={orderCreate} capabilities={{ orderCreate, lineTax: { none: true, classes: true } }} />
+        <Sale key={orderCreate} capabilities={{ orderCreate, lineTax: { none: true, classes: true } }} editor={editor} />
       </TaxProvider>
     </View>
   );

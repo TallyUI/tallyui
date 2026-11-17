@@ -1,4 +1,5 @@
 export { currencyDecimals, minorToMajor, majorToMinor } from './money'
+export { minorUnitDigits } from '../money'
 export { ratePpmFromPercent } from './tax-rate'
 export { canonicalJson, commandFingerprint } from './fingerprint'
 export { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'

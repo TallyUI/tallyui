@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
 import type { OpenSale } from '@tallyui/pos';
 import { OpenSaleTabs } from '../sale/open-sale-tabs';
@@ -62,5 +62,50 @@ describe('OpenSaleTabs', () => {
     expect(screen.getByTestId('new-sale-tab').getAttribute('aria-selected')).toBe('true');
     fireEvent.click(screen.getByTestId('new-sale-tab'));
     expect(blank.onNew).not.toHaveBeenCalled();
+  });
+});
+
+describe('OpenSaleTabs age', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date('2026-11-17T12:00:00.000Z'));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('shows the age in hours after the total once a parked sale has waited an hour', () => {
+    renderTabs([
+      sale('a', { parkedAt: '2026-11-17T07:00:00Z' }),
+      sale('b', { parkedAt: '2026-11-17T11:30:00Z' }),
+      sale('c', { parkedAt: '2026-11-17T10:59:00Z' }),
+      sale('d', { current: true }),
+    ]);
+    expect(screen.getByTestId('open-sale-tab-a-age').textContent).toBe('5 h');
+    expect(screen.getByTestId('open-sale-tab-a-amount').textContent).toBe(`${eur(2250)} · 5 h`);
+    expect(screen.getByTestId('open-sale-tab-c-age').textContent).toBe('1 h');
+    expect(screen.queryByTestId('open-sale-tab-b-age')).toBeNull();
+    expect(screen.queryByTestId('open-sale-tab-d-age')).toBeNull();
+  });
+
+  it('rounds to the nearest hour', () => {
+    renderTabs([sale('a', { parkedAt: '2026-11-17T09:20:00Z' })]);
+    expect(screen.getByTestId('open-sale-tab-a-age').textContent).toBe('3 h');
+  });
+
+  it('a partly paid tab shows its chip and no age', () => {
+    renderTabs([sale('a', { parkedAt: '2026-11-17T07:00:00Z', paidMinor: 1000, balanceDueMinor: 1250 })]);
+    expect(screen.getByTestId('open-sale-chip-a')).not.toBeNull();
+    expect(screen.queryByTestId('open-sale-tab-a-age')).toBeNull();
+  });
+
+  it('an unparseable parkedAt shows no age', () => {
+    renderTabs([sale('a', { parkedAt: 'not a date' })]);
+    expect(screen.queryByTestId('open-sale-tab-a-age')).toBeNull();
+  });
+
+  it('the age appears when the minute tick crosses the hour', () => {
+    renderTabs([sale('a', { parkedAt: '2026-11-17T11:00:30Z' })]);
+    expect(screen.queryByTestId('open-sale-tab-a-age')).toBeNull();
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(screen.getByTestId('open-sale-tab-a-age').textContent).toBe('1 h');
   });
 });

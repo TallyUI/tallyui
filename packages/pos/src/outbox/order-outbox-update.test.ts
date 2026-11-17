@@ -28,6 +28,8 @@ function order(i: number): PosOrder {
 function reopened(i: number): PosOrder {
   const input = order(i);
   return { ...input, storeOrderId: 'store-' + i, baseRevision: `sha256:${String(i).repeat(64)}`,
+    taxByRate: [], display: { currency: 'EUR', exponent: 2, taxInclusive: false, subtotalMinor: 100 + i, discountMinor: 0,
+      taxMinor: 0, totalMinor: 100 + i, orderDiscountMinor: 0, lines: [{ lineId: input.lines[0].id, amountMinor: 100 + i, discounts: [] }] },
     lines: [{ ...input.lines[0], storeLineId: '11' }], payments: [{ ...input.payments[0], storePaymentId: '21' }] };
 }
 function applied(batch: Array<OrderCreateEnvelope | OrderUpdateEnvelope>): CommandResult[] {
@@ -105,11 +107,10 @@ describe('order outbox updates', () => {
         input.taxByRate = [];
         input.display = { currency: 'EUR', exponent: 2, taxInclusive: false, subtotalMinor: 101, discountMinor: 0,
           taxMinor: 0, totalMinor: 101, orderDiscountMinor: 0, lines: [{ lineId: input.lines[0].id, amountMinor: 101, discounts: [] }] };
-        if (scenario === 'unsupported_version') input.sentVersion = 4;
-        else input.fees = [{ id: uuidv7(), name: 'Bag', amountMinor: 0, taxStatus: 'none', netMinor: 0, taxMicros: '0', taxLines: [] }];
+        if (scenario === 'refused') input.fees = [{ id: uuidv7(), name: 'Bag', amountMinor: 0, taxStatus: 'none', netMinor: 0, taxMicros: '0', taxLines: [] }];
       }
       await collection.bulkInsert(scenario === 'isolation' ? [plain, input] : [input]);
-      const { outbox, send, states } = setup({ getMaxOrderCreateVersion: () => 3, isolateAfterAttempts: 2 });
+      const { outbox, send, states } = setup({ getMaxOrderCreateVersion: () => 5, isolateAfterAttempts: 2 });
       if (scenario === '503') {
         send.mockResolvedValueOnce(retry);
         await outbox.flush();

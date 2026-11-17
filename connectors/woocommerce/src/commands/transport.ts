@@ -201,6 +201,11 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   } };
 }
 
+/** A capability option given as a value or read at push time; absent means closed. */
+function capability(flag: boolean | (() => boolean | Promise<boolean>) | undefined): boolean | Promise<boolean> {
+  return typeof flag === 'function' ? flag() : flag ?? false;
+}
+
 export function createWooCommandTransport(options: WooCommandTransportOptions): {
   send(batch: OrderCreateEnvelope[], context?: { local?: { orders?: ReadonlyMap<string, WooLocalOrder> } }): Promise<WooTransportOutcome>;
 } {
@@ -209,10 +214,8 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
   while (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
   return {
     async send(batch, context) {
-      const paymentsList = typeof options.acceptsPaymentsList === 'function'
-        ? await options.acceptsPaymentsList() : options.acceptsPaymentsList ?? false;
-      const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && (typeof options.acceptsCoupons === 'function'
-        ? await options.acceptsCoupons() : options.acceptsCoupons ?? false);
+      const paymentsList = await capability(options.acceptsPaymentsList);
+      const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && await capability(options.acceptsCoupons);
       const results: CommandResult[] = [];
       for (const envelope of batch) {
         if (envelope.payload.coupons?.length && !coupons) {

@@ -25,11 +25,14 @@ Wrap your app with `TaxProvider` to make tax configuration available to the orde
 
 ```tsx
 import { TaxProvider } from '@tallyui/pos';
+import type { ComponentType } from 'react';
+
+declare const PosInterface: ComponentType;
 
 function App() {
   return (
     <TaxProvider
-      rates={{ default: 0.1, reduced: 0.05 }}
+      ratesPpm={{ default: 100000, reduced: 50000 }}
       pricesIncludeTax={true}
     >
       <PosInterface />
@@ -38,7 +41,7 @@ function App() {
 }
 ```
 
-The `rates` object maps tax class names to decimal rates. A `default` key is required -- it's the fallback when no tax class is specified.
+The `ratesPpm` object maps tax class names to integer parts per million (10% = 100000). The `default` key supplies the fallback when no tax class is specified.
 
 ### useTax Hook
 
@@ -48,10 +51,10 @@ Inside the provider, `useTax()` gives you the tax context:
 import { useTax } from '@tallyui/pos';
 
 function PriceDisplay({ price, taxClass }: { price: number; taxClass?: string }) {
-  const { getTaxRate, pricesIncludeTax } = useTax();
-  const rate = getTaxRate(taxClass);
+  const { getTaxRatePpm, pricesIncludeTax } = useTax();
+  const ratePpm = getTaxRatePpm(taxClass);
 
-  // rate is 0.1 for default, 0.05 for 'reduced', etc.
+  // ratePpm is 100000 for default, 50000 for 'reduced', etc.
 }
 ```
 
@@ -59,20 +62,23 @@ function PriceDisplay({ price, taxClass }: { price: number; taxClass?: string })
 
 For standalone tax math outside of React, use the calculation functions directly:
 
-```typescript
-import { calculateTax, extractTax, addTax } from '@tallyui/pos';
+```ts
+import { createTaxContext, ratePpmFromPercent, computeOrderTax, taxMicros, roundMicrosToMinor } from '@tallyui/pos';
 
-// Price is $10 exclusive of tax, rate is 10%
-const result = calculateTax(10, 0.1, false);
-// { priceExclTax: 10, priceInclTax: 11, taxAmount: 1 }
+const taxContext = createTaxContext({
+  ratesPpm: { default: ratePpmFromPercent(10) },
+  pricesIncludeTax: false,
+});
+const ratePpm = taxContext.getTaxRatePpm();
 
-// Price is $11 inclusive of tax, rate is 10%
-const result2 = calculateTax(11, 0.1, true);
-// { priceExclTax: 10, priceInclTax: 11, taxAmount: 1 }
+// $10 exclusive of tax, expressed in integer cents
+const result = computeOrderTax(
+  [{ unitPriceMinor: 1000, quantity: 1, ratePpm }], taxContext.pricesIncludeTax,
+);
+// subtotalMinor: 1000, taxMinor: 100, totalMinor: 1100
 
-// Utility helpers
-addTax(10, 0.1);      // 11
-extractTax(11, 0.1);  // 1
+// Extract the tax from $11 inclusive of tax, then round to cents
+roundMicrosToMinor(taxMicros(1100, ratePpm, true)); // 100
 ```
 
 ## Currency Formatting
@@ -81,20 +87,26 @@ Currency formatting uses `Intl.NumberFormat` under the hood, with a caching laye
 
 ### Standalone Function
 
-```typescript
-import { formatCurrency } from '@tallyui/pos';
+Use `formatMoney` from `@tallyui/core` with integer minor units and a currency code:
 
-formatCurrency(29.99, 'USD');         // "$29.99"
-formatCurrency(29.99, 'EUR', 'de-DE'); // "29,99 €"
-formatCurrency(1500, 'JPY', 'ja-JP'); // "￥1,500"
+```ts
+import { formatMoney } from '@tallyui/core';
+
+formatMoney({ amount: 2999, currency: 'USD' }, 'en-US'); // "$29.99"
+formatMoney({ amount: 2999, currency: 'EUR' }, 'de-DE'); // "29,99 €"
+formatMoney({ amount: 1500, currency: 'JPY' }, 'ja-JP'); // "￥1,500"
 ```
 
 ### Currency Provider
 
-For components that format prices throughout the app, the provider avoids passing currency codes everywhere:
+For components that format prices throughout the app, the provider shares locale and formatting settings. The formatter takes a `Money` object with integer minor units and its currency code:
 
 ```tsx
 import { CurrencyProvider, useCurrencyFormatter } from '@tallyui/pos';
+import type { Money } from '@tallyui/core';
+import type { ComponentType } from 'react';
+
+declare const PosInterface: ComponentType;
 
 function App() {
   return (
@@ -104,9 +116,9 @@ function App() {
   );
 }
 
-function TotalDisplay({ amount }: { amount: number }) {
+function TotalDisplay({ money }: { money: Money }) {
   const format = useCurrencyFormatter();
-  return <Text>{format(amount)}</Text>; // "$29.99"
+  return <span>{format(money)}</span>; // "$29.99" for { amount: 2999, currency: 'USD' }
 }
 ```
 
@@ -118,19 +130,22 @@ The order system has two layers: `OrderBuilder` handles a single order's state, 
 
 `createOrderBuilder` returns a reactive order object. Every mutation emits the recalculated order through `order$`:
 
-```typescript
+```ts
 import { createOrderBuilder } from '@tallyui/pos';
+import type { ProductTraits } from '@tallyui/core';
+
+declare const productDoc: unknown, productTraits: ProductTraits;
 
 const builder = createOrderBuilder({
   currency: 'USD',
-  taxContext: { getTaxRate: () => 0.1, pricesIncludeTax: false },
+  taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false },
 });
 
 // Subscribe to order changes
 builder.order$.subscribe((order) => {
-  console.log('Total:', order.total);
-  console.log('Tax:', order.taxTotal);
-  console.log('Balance due:', order.balanceDue);
+  console.log('Total (cents):', order.totalMinor);
+  console.log('Tax (cents):', order.taxMinor);
+  console.log('Balance due (cents):', order.balanceDueMinor);
 });
 
 // Add products using connector traits
@@ -149,12 +164,12 @@ builder.applyLineDiscount(lineId, {
 // Apply a $5 order-level discount
 builder.applyOrderDiscount({
   type: 'fixed',
-  value: 5,
+  value: 500,
   label: 'Loyalty reward',
 });
 
-// Record payment
-builder.addPayment({ method: 'card', amount: 25.50 });
+// Record a $25.50 payment in cents
+builder.addPayment({ method: 'card', amountMinor: 2550 });
 
 // Attach a customer
 builder.setCustomer({ id: '42', name: 'Jane Doe', email: 'jane@example.com' });
@@ -168,12 +183,15 @@ When the same product is added twice, the builder increments the existing line i
 
 `createOrderManager` wraps the builder with persistence. It requires an RxDB collection to store parked order drafts:
 
-```typescript
+```ts
 import { createOrderManager } from '@tallyui/pos';
+import type { TallyDatabase } from '@tallyui/database';
+
+declare const db: TallyDatabase;
 
 const manager = createOrderManager({
   currency: 'USD',
-  taxContext: { getTaxRate: () => 0.1, pricesIncludeTax: false },
+  taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false },
   draftsCollection: db.order_drafts,
 });
 
@@ -187,7 +205,7 @@ const parkedId = await manager.parkCurrentOrder();
 
 // See all parked orders
 manager.parkedOrders$.subscribe((parked) => {
-  // [{ id, customerName, itemCount, total, parkedAt }]
+  // [{ id, customerName, itemCount, totalMinor, parkedAt, source }]
 });
 
 // Resume a parked order (restores all line items, discounts, payments)
@@ -204,8 +222,11 @@ manager.newOrder();
 
 `createRepository` wraps an RxDB collection with a clean read/write API that returns plain JSON objects instead of RxDB documents:
 
-```typescript
+```ts
 import { createRepository } from '@tallyui/pos';
+import type { TallyDatabase } from '@tallyui/database';
+
+declare const db: TallyDatabase;
 
 const productRepo = createRepository(db.products);
 
@@ -221,7 +242,11 @@ await productRepo.update('prod-new', { price: '5.00' });
 await productRepo.remove('prod-new');
 
 // Bulk operations
-await productRepo.bulkCreate([item1, item2, item3]);
+await productRepo.bulkCreate([
+  { id: 'prod-1', name: 'Espresso', price: '3.00' },
+  { id: 'prod-2', name: 'Latte', price: '4.50' },
+  { id: 'prod-3', name: 'Mocha', price: '5.00' },
+]);
 await productRepo.bulkRemove(['id-1', 'id-2']);
 ```
 
@@ -231,34 +256,36 @@ The reactive queries (`findAll$`, `search$`, etc.) stay live -- they re-emit whe
 
 `buildReceiptData` takes a completed order and a store config, and returns a structured receipt object ready for rendering or printing:
 
-```typescript
-import { buildReceiptData } from '@tallyui/pos';
+```ts
+import { buildReceiptData, type Order } from '@tallyui/pos';
+
+declare const order: Order;
 
 const receipt = buildReceiptData(order, {
   storeName: 'Blue Bottle Coffee',
   storeAddress: '123 Main St, San Francisco, CA',
   cashier: 'Alex',
   register: 'POS-1',
-  taxLabels: { 0.1: 'GST 10%', 0.05: 'Reduced GST 5%' },
+  taxLabels: { 100000: 'GST 10%', 50000: 'Reduced GST 5%' },
 });
 
 // receipt.header  — store name, address, order number, date, cashier, register
-// receipt.lineItems — name, sku, quantity, unitPrice, lineTotal
-// receipt.discounts — label, amount
+// receipt.lineItems — name, sku, quantity, unitPriceMinor, lineTotalMinor
+// receipt.discounts — label, amountMinor
 // receipt.totals — taxInclusive, subtotalMinor (before discounts), discountMinor, taxLines[], taxMinor, totalMinor: the display figures (ADR-063)
-// receipt.payments — method, amount, reference
-// receipt.changeDue — change owed to customer
+// receipt.payments — method, amountMinor, reference
+// receipt.changeDueMinor — change owed to customer in minor units
 // receipt.footer — note, barcode
 // receipt.currency — currency code
 ```
 
-The `taxLabels` config maps tax rates to human-readable labels. If a rate doesn't have a label, it falls back to "Tax X%" formatting.
+The `taxLabels` config maps tax rates in ppm (100000 = 10%) to human-readable labels. If a rate doesn't have a label, it falls back to "Tax X%" formatting.
 
 ## Logging
 
 `createLogger` provides structured logging with scopes and pluggable sinks. Each sink controls which log levels and scopes it listens to.
 
-```typescript
+```ts
 import { createLogger, consoleSink, callbackSink } from '@tallyui/pos';
 
 const logger = createLogger('pos');
@@ -292,7 +319,11 @@ replicationLogger.info('Sync started');
 
 Scoped loggers inherit all sinks from the parent. You can filter sinks by scope if you only want certain loggers to write to certain destinations:
 
-```typescript
+```ts
+import { consoleSink, type Logger } from '@tallyui/pos';
+
+declare const logger: Logger;
+
 logger.addSink(consoleSink({
   levels: ['debug', 'info', 'warn', 'error'],
   scopes: ['replication'], // only logs from the 'replication' scope
