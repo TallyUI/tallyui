@@ -15,6 +15,8 @@ import { cn } from '@tallyui/theme';
 import { QUICK_CASH_STEPS } from '../checkout/cash-tendered';
 import { useT } from '../i18n';
 import { DIGIT_ROWS, Keypad } from '../input/keypad';
+import { BanknoteIcon } from '../ui/icon/banknote-icon';
+import { CreditCardIcon } from '../ui/icon/credit-card-icon';
 
 type Sale = ReturnType<typeof useSale>;
 type Leg = Sale['order']['payments'][number];
@@ -30,6 +32,8 @@ export interface TenderPaneProps {
 
 /** order.create's bound on `payments[].reference`, in UTF-16 units. */
 const REFERENCE_MAX = 255;
+/** v2 tender-pane.tsx: five method tiles a row on a wide pane (TileGrid columns). */
+const TILE_COLUMNS = 5;
 /** v2 labels.ts statusLabel, as catalogue keys. */
 const STATUS_LABEL: Record<PaymentLegStatus, string> = {
   pending: 'pos_checkout.status_pending', authorized: 'pos_checkout.status_authorized', captured: 'pos_checkout.status_captured',
@@ -132,12 +136,27 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
       className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
 
     {balance > 0 ? <View testID="tender-entry" className="gap-3">
-      <View className="flex-row flex-wrap gap-2">
-        {offered.map((tile) => <Pressable key={tile.id} testID={`tender-method-${tile.id}`} accessibilityRole="button" accessibilityState={{ selected: tile.id === state.methodId }}
-          onPress={() => dispatch({ type: 'pick-method', methodId: tile.id, prefillMinor: balance, readerId: null })}
-          className={cn(button, tile.id === state.methodId && 'border-primary bg-primary')}>
-          <Text className={cn('text-center font-semibold', tile.id === state.methodId ? 'text-primary-foreground' : 'text-foreground')}>{tile.title}</Text>
-        </Pressable>)}
+      <View testID="tender-methods" className="w-full gap-2">
+        {Array.from({ length: Math.ceil(offered.length / TILE_COLUMNS) }, (_, row) => (
+          <View key={row} className="flex-row gap-2">
+            {Array.from({ length: TILE_COLUMNS }, (_, column) => {
+              const tile = offered[row * TILE_COLUMNS + column];
+              if (!tile) return <View key={column} className="min-w-0 flex-1" />;
+              const selected = tile.id === state.methodId;
+              const Icon = tile.kind === 'cash' ? BanknoteIcon : CreditCardIcon;
+              return <View key={tile.id} className="min-w-0 flex-1">
+                <Pressable key={tile.id} testID={`tender-method-${tile.id}`} accessibilityRole="button" accessibilityState={{ selected: tile.id === state.methodId }}
+                  // react-native-web does not render accessibilityState.selected.
+                  aria-selected={tile.id === state.methodId}
+                  onPress={() => dispatch({ type: 'pick-method', methodId: tile.id, prefillMinor: balance, readerId: null })}
+                  className={cn('min-h-16 items-center justify-center gap-1 rounded-md border bg-card px-2 py-2', selected ? 'border-primary bg-muted' : 'border-border')}>
+                  <Icon size={20} testID={`tender-method-${tile.id}-icon`} />
+                  <Text numberOfLines={2} className="text-center font-semibold text-foreground">{tile.title}</Text>
+                </Pressable>
+              </View>;
+            })}
+          </View>
+        ))}
       </View>
       {planned ? <Text testID="tender-plan" className="text-sm text-muted-foreground">{t('pos_checkout.n_of_ways', { n: planned.label.n, ways: planned.label.ways })}</Text> : null}
       <Text testID="tender-entry-amount" className={cn('text-3xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
