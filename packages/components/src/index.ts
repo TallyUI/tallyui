@@ -150,6 +150,7 @@ export {
   OrderDetail,
   type OrderDetailProps,
   type OrderDetailLineItem,
+  type OrderDetailTaxLine,
   RefundForm,
   type RefundFormProps,
   type RefundFormValue,

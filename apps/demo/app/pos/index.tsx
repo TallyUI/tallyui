@@ -26,6 +26,7 @@ const screens = [
   // Order
   { href: '/pos/order-status-badge', label: 'OrderStatusBadge' },
   { href: '/pos/order-card', label: 'OrderCard' },
+  { href: '/pos/order-detail', label: 'OrderDetail' },
   // Register
   { href: '/pos/cash-count-input', label: 'CashCountInput' },
   { href: '/pos/register-open-close', label: 'RegisterOpenClose' },
