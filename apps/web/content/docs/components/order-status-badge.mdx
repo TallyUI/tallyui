@@ -17,17 +17,19 @@ import { OrderStatusBadge } from '@tallyui/components';
 
 Renders a small pill with a coloured dot and label. Each status maps to a distinct colour so cashiers can scan order states at a glance.
 
+`'cancelled'` and Medusa's `'canceled'` both show as **Cancelled**.
+
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `status` | `OrderStatus` | required | One of `'pending'`, `'processing'`, `'completed'`, `'refunded'`, or `'cancelled'` |
+| `status` | `OrderStatus` | required | One of `'pending'`, `'processing'`, `'completed'`, `'refunded'`, `'cancelled'`, or `'canceled'` |
 | `className` | `string` | — | Override container styles |
 
 ### OrderStatus
 
 ```ts
-type OrderStatus = 'pending' | 'processing' | 'completed' | 'refunded' | 'cancelled';
+type OrderStatus = 'pending' | 'processing' | 'completed' | 'refunded' | 'cancelled' | 'canceled';
 ```
 
 ## Live demo
