@@ -37,8 +37,8 @@ function Sale({ capabilities, editor }: { capabilities: ServerCapabilities; edit
       </Pressable>)}
     </View>
     {editor === 'popover'
-      ? <Cart sale={sale} taxClasses={taxClasses} lineEditor="popover" canEditPrice quickDiscounts={[5, 10, 15]} />
-      : <Cart sale={sale} taxClasses={taxClasses} />}
+      ? <Cart sale={sale} taxClasses={taxClasses} lineEditor="popover" canEditPrice quickDiscounts={[5, 10, 15]} showTotal={false} checkout={{ onCheckout: () => sale.startTender('cash') }} />
+      : <Cart sale={sale} taxClasses={taxClasses} showTotal={false} checkout={{ onCheckout: () => sale.startTender('cash') }} />}
   </View>;
 }
 
