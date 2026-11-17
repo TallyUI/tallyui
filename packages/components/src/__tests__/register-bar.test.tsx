@@ -6,10 +6,19 @@
 // Not ported: 'opens the user sheet from the bar avatar', 'reopens the Add user consumer after
 // this site returns from OAuth' — the user avatar, user sheet and OAuth-return rehosting are all
 // dropped from this neutral port (design item 3).
+import * as React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { useRegisterSession } from '@tallyui/pos';
 import { RegisterBar } from '../register/register-bar';
+
+// react-native-web atomizes className into hashed classes, so copy it to a data attribute.
+vi.mock('react-native', async (importOriginal) => {
+  const rn = await importOriginal<typeof import('react-native')>();
+  const withClass = (Base: React.ElementType) =>
+    React.forwardRef((props: { className?: string }, ref) => <Base ref={ref} {...props} dataSet={{ class: props.className }} />);
+  return { ...rn, View: withClass(rn.View), Text: withClass(rn.Text) };
+});
 
 afterEach(() => cleanup());
 
@@ -75,8 +84,8 @@ it('draws the pill as a warning dot and its word, not a filled badge', () => {
   const pill = screen.getByTestId('register-bar-pill');
   const dot = pill.querySelector('[aria-hidden]');
   expect(dot).not.toBeNull();
-  expect(dot?.className).toContain('bg-warning');
-  expect(pill.className).not.toContain('bg-warning');
+  expect(dot?.getAttribute('data-class')).toContain('bg-warning');
+  expect(pill.getAttribute('data-class') ?? '').not.toContain('bg-warning');
   expect(pill.textContent).toBe('Offline');
 });
 
