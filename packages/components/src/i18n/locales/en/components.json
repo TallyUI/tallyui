@@ -24,6 +24,7 @@
 	"pos_checkout.status_pending": "Pending",
 	"pos_checkout.status_voided": "Voided",
 	"pos_checkout.take_amount_in": "Take {amount} in {method}",
+	"pos_checkout.tendered": "Tendered",
 	"tender.complete_sale": "Complete sale",
 	"tender.continue": "Continue",
 	"tender.not_taken": "That payment wasn't taken: nothing is due, or the amount isn't valid.",

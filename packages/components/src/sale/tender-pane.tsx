@@ -74,6 +74,7 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
   const entryChange = changeMinor(figures.entryMinor, figures.appliedMinor, givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
   const noChange = method !== null && !givesChange && figures.entryMinor > balance;
+  const changeLeads = !noChange && entryChange > 0;
   const rows = rowsSince(order.payments, state.plan?.from ?? 0).map(({ title, amountMinor }) => ({ title, minor: amountMinor }));
   const plan = activePlan(state.plan, rows.length, balance);
   const planned = plan ? planLegs(plan, rows, balance) : null;
@@ -159,9 +160,15 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
         ))}
       </View>
       {planned ? <Text testID="tender-plan" className="text-sm text-muted-foreground">{t('pos_checkout.n_of_ways', { n: planned.label.n, ways: planned.label.ways })}</Text> : null}
-      <Text testID="tender-entry-amount" className={cn('text-3xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
-      {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-      <Text testID="tender-entry-hint" className={cn('min-h-6 text-sm', noChange ? 'text-warning' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
+      {changeLeads ? <>
+        <Text testID="tender-entry-hint" className="text-4xl font-bold text-success">{hint}</Text>
+        <Text testID="tender-tendered-line" className="min-h-6 text-sm text-muted-foreground">{t('pos_checkout.tendered')} <Text testID="tender-entry-amount" className="font-semibold text-foreground">{money(figures.entryMinor)}</Text>{order.totalMinor !== balance ? ` · ${t('common.total')} ${money(order.totalMinor)}` : ''}</Text>
+        {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
+      </> : <>
+        <Text testID="tender-entry-amount" className={cn('text-3xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
+        {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
+        <Text testID="tender-entry-hint" className={cn('min-h-6 text-sm', noChange ? 'text-warning' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
+      </>}
       {method?.id === 'external' ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
         value={reference} onChangeText={setReference} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
       {chips.length ? <View testID="tender-quick" className="flex-row flex-wrap gap-2">
