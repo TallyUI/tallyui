@@ -1,0 +1,39 @@
+---
+title: SalesCardPanel
+description: SalesCardPanel opens a Sales room card's figure in full as a side panel, with a total row, a status line, Close and an optional Export CSV.
+---
+
+## Import
+
+```tsx
+import { SalesCardPanel } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { SalesCardPanel, type SalesPanelId } from '@tallyui/components';
+
+const [card, setCard] = useState<SalesPanelId | null>(null);
+<SalesCardPanel
+  card={card}
+  figures={figures}
+  currency="NZD"
+  scope="Today · Front counter"
+  onClose={() => setCard(null)}
+  onExportCsv={(csv, filename) => saveFile(filename, csv)}
+/>
+```
+
+When `SalesCards` gets `onOpenCard`, each card head is a 44 pt button with a chevron after its figure. `SalesCardPanel` opens on the right for the Payments (Sales by payment method), Top products, Categories (Sales by category) and Taxes (Taxes collected) cards: a table of the card's rows with a total row, where an unknown cost, margin or net reads `—`. The footer shows `N orders · <gross>`, adds `cost missing on X of Y items` on products and categories when a line has no cost, then Close and, when `onExportCsv` is given, Export CSV, which hands over the shown cells as CSV and the file name `sales-<card>-<from>-<to>.csv`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `card` | `SalesPanelId \| null` | required | The open panel: `payments`, `products`, `categories` or `taxes`; `null` closes it |
+| `figures` | `SalesFigures` | required | The period's figures from `salesFigures` in [@tallyui/pos](/docs/pos) |
+| `currency` | `string` | required | Currency the money cells are formatted in |
+| `scope` | `string` | --- | The line under the title, such as the period and register; the app words it |
+| `onClose` | `() => void` | required | Called by Close and when the panel is dismissed |
+| `onExportCsv` | `(csv: string, filename: string) => void` | --- | Shows Export CSV; receives the CSV text and its file name |

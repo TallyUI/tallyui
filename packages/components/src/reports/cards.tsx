@@ -7,9 +7,10 @@
 import type { JSX, ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFormatMoney } from '@tallyui/core';
-import type { SalesFigures } from '@tallyui/pos';
+import type { GroupRow, PaymentRow, SalesFigures, TaxRow } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { Card } from '../ui/card';
+import { ChevronRightIcon } from '../ui/icon/chevron-right-icon';
 
 export type SalesCardId = 'orders' | 'payments' | 'products' | 'categories' | 'taxes' | 'refunds';
 export interface SalesCardsProps {
@@ -23,27 +24,37 @@ const SWATCHES = ['bg-primary', 'bg-info', 'bg-success', 'bg-warning', 'bg-destr
 const OTHER_SWATCH = 'bg-muted-foreground';
 const LEGEND_ROWS = 5;
 const TOP_PRODUCTS = 4;
-const UNKNOWN = '—';
-const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
+export const UNKNOWN = '—';
+export const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
+// The row names the cards and the detail panel (card-panel.tsx) share.
+export const paymentLabel = (row: PaymentRow) =>
+  row.label || (row.method === 'unpaid' ? 'Unpaid' : row.method === 'unknown' ? 'Unknown' : row.method);
+export const productLabel = (row: GroupRow) => row.name || 'Unknown';
+export const categoryLabel = (row: GroupRow) => (row.key === '' ? 'Uncategorised' : row.name);
+export const taxLabel = (row: TaxRow) => row.label || 'Tax';
 
 interface Share { label: string; value: number; text: string; note?: string; swatch: string }
 
 function ReportCard({ id, name, figure, onOpen, children }: {
   id: SalesCardId; name: string; figure: string; onOpen?: (card: SalesCardId) => void; children: ReactNode;
 }): JSX.Element {
-  const head = (
-    <View className="flex-row items-baseline justify-between gap-2">
-      <Text className="text-sm text-muted-foreground">{name}</Text>
-      <Text testID={`card-${id}-figure`} className="text-lg font-semibold text-foreground">{figure}</Text>
-    </View>
-  );
+  const label = <Text className="text-sm text-muted-foreground">{name}</Text>;
+  const value = <Text testID={`card-${id}-figure`} className="text-lg font-semibold text-foreground">{figure}</Text>;
   return (
     <Card testID={`card-${id}`} className="min-w-72 flex-1 gap-3 p-4">
       {onOpen ? (
-        <Pressable testID={`card-${id}-open`} accessibilityRole="button" accessibilityLabel={name} onPress={() => onOpen(id)}>
-          {head}
+        // v2 card.tsx: a 44 pt head that dims on press, the chevron after the figure.
+        <Pressable testID={`card-${id}-open`} accessibilityRole="button" accessibilityLabel={name} onPress={() => onOpen(id)}
+          className="min-h-11 flex-row items-center justify-between gap-2 active:opacity-70">
+          {label}
+          <View className="flex-row items-center gap-1">
+            {value}
+            <ChevronRightIcon testID={`card-${id}-chevron`} size={16} className="text-muted-foreground" />
+          </View>
         </Pressable>
-      ) : head}
+      ) : (
+        <View className="flex-row items-baseline justify-between gap-2">{label}{value}</View>
+      )}
       {children}
     </Card>
   );
@@ -108,14 +119,13 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
   const productNet = products.reduce((sum, row) => sum + row.netMinor, 0);
   const categoryNet = categories.reduce((sum, row) => sum + row.netMinor, 0);
   const paymentShares = shares(payments.rows, (row) => ({
-    label: row.label || (row.method === 'unpaid' ? 'Unpaid' : row.method === 'unknown' ? 'Unknown' : row.method),
-    value: row.amountMinor, text: money(row.amountMinor), note: `${row.orders} orders`,
+    label: paymentLabel(row), value: row.amountMinor, text: money(row.amountMinor), note: `${row.orders} orders`,
   }), (rest) => money(rest.reduce((sum, row) => sum + row.amountMinor, 0)));
   const categoryShares = shares(categories, (row) => ({
-    label: row.key === '' ? 'Uncategorised' : row.name, value: row.netMinor, text: money(row.netMinor), note: `${row.quantity} sold`,
+    label: categoryLabel(row), value: row.netMinor, text: money(row.netMinor), note: `${row.quantity} sold`,
   }), (rest) => money(rest.reduce((sum, row) => sum + row.netMinor, 0)));
   const taxShares = shares(taxes, (row) => ({
-    label: row.label || 'Tax', value: row.taxMinor, text: money(row.taxMinor),
+    label: taxLabel(row), value: row.taxMinor, text: money(row.taxMinor),
     note: row.netMinor === null ? undefined : `on ${money(row.netMinor)}`,
   }), (rest) => money(rest.reduce((sum, row) => sum + row.taxMinor, 0)));
   const card = { onOpen: onOpenCard };
@@ -153,7 +163,7 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
               return (
                 <View key={row.key} className="gap-1">
                   <View className="flex-row justify-between gap-2">
-                    <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>{row.name || 'Unknown'}</Text>
+                    <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>{productLabel(row)}</Text>
                     <Text className="text-sm font-medium text-foreground">{money(row.netMinor)}</Text>
                   </View>
                   <View className="h-1.5 overflow-hidden rounded-md bg-muted">
