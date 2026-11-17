@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useNavigation } from 'expo-router';
 import {
   ActivityHeartbeatIcon,
   AppShell,
@@ -45,6 +45,13 @@ export default function AppShellScreen() {
   const [active, setActive] = useState('pos');
   const { register, ready } = useDemoRegister({});
   const page = NAV.find((item) => item.id === active)?.label;
+  const navigation = useNavigation();
+  useEffect(() => {
+    // v2's drawer screens draw no navigator header, so the root stack's `pos` header is hidden while the shell shows.
+    const parent = navigation.getParent();
+    parent?.setOptions({ headerShown: false });
+    return () => parent?.setOptions({ headerShown: true });
+  }, [navigation]);
   return (
     <>
       {/* v2's drawer screens set headerShown: false (every screen carries its own bar). */}
