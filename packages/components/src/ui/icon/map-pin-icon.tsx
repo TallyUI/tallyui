@@ -1,10 +1,10 @@
-import { Circle, Path } from 'react-native-svg';
+import { Path } from 'react-native-svg';
 import { createSvgIcon } from './svg-icon';
 
-// Lucide map-pin (ISC), the glyph of WCPOS v2's `address` icon
+// Tabler map-pin (MIT): the glyph of WCPOS v2's `address` icon in its default (Tabler) set.
 export const MapPinIcon = createSvgIcon('MapPinIcon', () => (
   <>
-    <Path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" />
-    <Circle cx={12} cy={10} r={3} />
+    <Path d="M9 11a3 3 0 1 0 6 0 3 3 0 0 0-6 0" />
+    <Path d="M17.657 16.657 13.414 20.9a2 2 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0" />
   </>
 ));
