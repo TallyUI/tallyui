@@ -7,11 +7,8 @@ import { useRef, type JSX } from 'react';
 import { View } from 'react-native';
 import type { PairingError, PairingPhase, TillDisplayEntry, TillDisplayStatus } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogTitle, AlertDialogTrigger,
-} from '../ui/alert-dialog';
 import { Button } from '../ui/button';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Loader } from '../ui/loader';
 import { Text } from '../ui/text';
 import { SettingsGroup } from './settings-group';
@@ -63,25 +60,12 @@ function DisplayRow({ entry, onForget }: { entry: TillDisplayEntry; onForget: (d
         <Text className="text-sm font-medium text-foreground">{name}</Text>
         <Text testID={`display-state-${displayId}`} className="text-xs text-muted-foreground">{stateOf(entry)}</Text>
       </View>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button testID={`forget-${displayId}`} variant="outline" className="min-h-11"><Text>Forget</Text></Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogTitle>{`Forget ${name}?`}</AlertDialogTitle>
-          <AlertDialogDescription>It will need a new code to pair again.</AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel asChild>
-              <Button testID={`forget-cancel-${displayId}`} variant="outline" className="min-h-11"><Text>Cancel</Text></Button>
-            </AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <Button testID={`forget-confirm-${displayId}`} variant="destructive" className="min-h-11" onPress={() => onForget(displayId)}>
-                <Text>Forget</Text>
-              </Button>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        testID={`forget-dialog-${displayId}`} cancelTestID={`forget-cancel-${displayId}`} confirmTestID={`forget-confirm-${displayId}`}
+        title={`Forget ${name}?`} description="It will need a new code to pair again." confirmLabel="Forget"
+        onConfirm={() => onForget(displayId)}
+        trigger={<Button testID={`forget-${displayId}`} variant="outline" className="min-h-11"><Text>Forget</Text></Button>}
+      />
     </View>
   );
 }
