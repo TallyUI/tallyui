@@ -37,6 +37,26 @@ export default function DialogScreen() {
         </VStack>
 
         <VStack className="gap-3">
+          <Text className="text-lg font-bold">Side Sheet</Text>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button testID="open-side-sheet"><Text>Open Side Sheet</Text></Button>
+            </DialogTrigger>
+            <DialogContent side="right" testID="demo-side-sheet">
+              <DialogHeader>
+                <DialogTitle>Side sheet</DialogTitle>
+                <DialogDescription>Slides in from the right edge.</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button testID="demo-side-sheet-done"><Text>Done</Text></Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </VStack>
+
+        <VStack className="gap-3">
           <Text className="text-lg font-bold">Edit Profile Dialog</Text>
           <Dialog>
             <DialogTrigger asChild>

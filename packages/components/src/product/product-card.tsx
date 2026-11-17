@@ -5,6 +5,7 @@ import { VStack, Text, type VStackProps } from '../ui';
 import { ProductImage } from './product-image';
 import { ProductTitle } from './product-title';
 import { ProductPrice } from './product-price';
+import { PressVeil } from './press-veil';
 
 export interface ProductCardProps extends Omit<VStackProps, 'children'> {
   doc: any;
@@ -50,7 +51,10 @@ export function ProductCard({ doc, onPress, imageSize = 80, currencySymbol, notS
     return <Pressable disabled aria-disabled onPress={undefined}>{content}</Pressable>;
   }
   if (onPress) {
-    return <Pressable onPress={onPress}>{content}</Pressable>;
+    return <Pressable onPress={onPress}>{({ pressed }) => <>
+      {content}
+      <PressVeil pressed={pressed} className="rounded-lg" testID="product-card-pressed" />
+    </>}</Pressable>;
   }
   return content;
 }

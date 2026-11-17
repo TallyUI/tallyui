@@ -3,7 +3,7 @@ import { deepEqual, type RxCollection, type RxDocumentData } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { outboxLogger } from './logger';
 import type { LogSyncRecord, SyncRecordOutcome } from '../logging';
-import { toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, uuidv7, replacedOrderIds, type PosOrder, type PosOrderServerFailures } from '../pos-order';
+import { toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, uuidv7, replacedOrderIds, type PosOrder, type PosOrderServerFailures } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
@@ -20,6 +20,17 @@ const NOT_REQUEUEABLE = new Set(['idempotency_mismatch', 'coupon_invalid', 'tota
 /** Whether the outbox resends a rejection with this code. */
 export function isRequeueable(code: string | undefined): boolean {
   return !NOT_REQUEUEABLE.has(code ?? '');
+}
+
+/**
+ * Whether `requeue()` will send this order again. A rejected order: its code is requeueable, except that a reopened
+ * sale (`storeOrderId`) refused with `reopen_required` or `revision_conflict` needs a fresh reopen, not a resend
+ * (ADR-090 gate 5). A pending order the outbox could not build as an update (`UPDATE_UNSENDABLE`): yes, it is tried again.
+ */
+export function isRequeueableOrder(order: Pick<PosOrder, 'syncStatus' | 'storeOrderId' | 'error'>): boolean {
+  return order.syncStatus === 'pending' ? order.error?.code === UPDATE_UNSENDABLE
+    : order.syncStatus === 'rejected' && isRequeueable(order.error?.code)
+      && !(order.storeOrderId !== undefined && ['reopen_required', 'revision_conflict'].includes(order.error?.code ?? ''));
 }
 
 // The store's message in the refusal log is cut to this many characters, the cap connectors use for a foreign 426 message.
@@ -63,8 +74,8 @@ export interface OrderOutboxOptions {
 export interface OrderOutbox {
   /** Sends pending orders until empty or retrying. Concurrent calls share one run. */
   flush(): Promise<void>;
-  /** Moves rejected orders (all, or those whose id is listed) back to pending with a new commandId, then flushes.
-   * Orders whose rejection code isRequeueable refuses are left alone. Resolves to the number requeued. */
+  /** Requeues rejected orders with a new commandId, or clears a pending update's unsendable mark, then flushes.
+   * Orders isRequeueableOrder refuses are left alone. Resolves to the number requeued. */
   requeue(orderIds?: string[]): Promise<number>;
   /** Watches for pending orders and sends them. */
   start(): void;
@@ -250,19 +261,28 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     runProgressed = false;
     const sentAlone = new Set<string>();
     while (!stopped) try {
+      const unsendable = await readFresh(collection, { selector: { syncStatus: 'pending', 'error.code': UPDATE_UNSENDABLE } });
+      const holds = new Map<string, string>();
+      for (const order of unsendable) if (order.storeOrderId !== undefined
+        && (!holds.has(order.storeOrderId) || order.createdAt < holds.get(order.storeOrderId)!)) holds.set(order.storeOrderId, order.createdAt);
+      const hold = holds.size ? { $or: [
+        { storeOrderId: { $exists: false } },
+        { storeOrderId: { $nin: [...holds.keys()] } },
+        ...[...holds].map(([storeOrderId, createdAt]) => ({ storeOrderId, createdAt: { $lt: createdAt } })),
+      ] } : {};
       if (!restored) await restore();
       await updateState({ sending: true, nextAttemptAt: undefined });
       insertedDuringRun = false;
       // An order no longer pending under its commandId leaves the isolated set and loses its stuck clock.
       const tracked = [...new Set([...isolated.keys(), ...clocks.keys()])];
-      const held = tracked.length ? await readFresh(collection, { selector: { syncStatus: 'pending', commandId: { $in: tracked } },
+      const held = tracked.length ? await readFresh(collection, { selector: { syncStatus: 'pending', ...hold, commandId: { $in: tracked } },
         sort: [{ createdAt: 'asc' }] }) : [];
       for (const id of tracked) if (!held.some((order) => order.commandId === id)) { isolated.delete(id); clocks.delete(id); }
       // During a walk, the oldest pending order neither probed nor isolated, alone. A sale rung up during
       // a walk triggers its next probe: still one request per sale. None left: the store is down.
       let probe: PosOrder | undefined;
       if (walk) {
-        [probe] = await readFresh(collection, { selector: { syncStatus: 'pending',
+        [probe] = await readFresh(collection, { selector: { syncStatus: 'pending', ...hold,
           commandId: { $nin: [...isolated.keys(), ...walk.failed.keys()] } }, sort: [{ createdAt: 'asc' }], limit: 1 });
         if (!probe) { walk = undefined; head = undefined; }
       }
@@ -272,7 +292,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       const [due] = held.filter((order) => isDue(order.commandId) && !sentAlone.has(order.commandId))
         .sort((a, b) => isolated.get(a.commandId)!.nextAt - isolated.get(b.commandId)!.nextAt);
       let orders = turn === 'isolated' && due ? [due] : probe ? [probe] : await readFresh(collection, {
-        selector: { syncStatus: 'pending', ...(isolated.size ? { commandId: { $nin: [...isolated.keys()] } } : {}) },
+        selector: { syncStatus: 'pending', ...hold, ...(isolated.size ? { commandId: { $nin: [...isolated.keys()] } } : {}) },
         sort: [{ createdAt: 'asc' }], limit: batchSize,
       });
       if (!orders.length && due) orders = [due];
@@ -288,21 +308,52 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       // An order goes out, on every attempt, at the version it first went out at: a retry's bytes never change, even
       // after the store upgrades (#286). A first send takes the server's max, read once per batch; unknown is 3.
       const firstSend = orders.some((order) => order.sentVersion === undefined);
-      const serverMax = (firstSend && validMax(await Promise.resolve().then(() => options.getMaxOrderCreateVersion?.())
-        .catch((cause) => { outboxLogger.warn('Failed to read capabilities', { cause }); }))) || 3;
+      const readMax = firstSend ? validMax(await Promise.resolve().then(() => options.getMaxOrderCreateVersion?.())
+        .catch((cause) => { outboxLogger.warn('Failed to read capabilities', { cause }); })) : undefined;
+      const serverMax = readMax || 3;
       const localOrders = new Map<string, PosOrder>();
-      const batch = await Promise.all(orders.map(async (order) => {
+      const built = orders.map((order): { order: PosOrder; unsendable: unknown }
+        | { order: PosOrder; frozen: PosOrder; attempt: number; envelope: OrderCreateEnvelope | OrderUpdateEnvelope } => {
         const frozen = freezeSentForm(order);
         const attempt = (attempts.get(order.commandId) ?? 0) + 1;
-        attempts.set(order.commandId, attempt);
         let envelope: OrderCreateEnvelope | OrderUpdateEnvelope;
         try {
           envelope = toEnvelope(frozen, attempt, order.sentVersion ?? serverMax);
         } catch (cause) {
+          if (order.storeOrderId !== undefined && (!(cause instanceof UnsupportedOrderVersionError)
+            || order.sentVersion !== undefined || readMax !== undefined)) return { order, unsendable: cause };
           // Content that cannot downgrade goes at its required version: the server's refusal rejects it.
           if (!(cause instanceof UnsupportedOrderVersionError)) throw cause;
-          envelope = toEnvelope(frozen, attempt, cause.needed >= 5 ? cause.needed : 3);
+          let max = cause.needed >= 5 ? cause.needed : 3;
+          // Including the first build above, try at most three times, only while the needed version rises.
+          for (let build = 2; ; build++) {
+            try { envelope = toEnvelope(frozen, attempt, max); break; }
+            catch (error) {
+              if (build < 3 && error instanceof UnsupportedOrderVersionError && error.needed > max) {
+                max = error.needed; continue;
+              }
+              if (order.storeOrderId !== undefined) return { order, unsendable: error };
+              throw error;
+            }
+          }
         }
+        return { order, frozen, attempt, envelope };
+      });
+      for (const entry of built) if ('unsendable' in entry) {
+        const { storeOrderId, createdAt } = entry.order;
+        if (!holds.has(storeOrderId!) || createdAt < holds.get(storeOrderId!)!) holds.set(storeOrderId!, createdAt);
+      }
+      for (const entry of built) if ('unsendable' in entry) {
+        const { order, unsendable: cause } = entry;
+        await (await collection.findOne(order.id).exec())?.incrementalModify((data) =>
+          data.syncStatus === 'pending' && data.commandId === order.commandId
+            ? { ...data, error: { code: UPDATE_UNSENDABLE, message: UPDATE_UNSENDABLE_MESSAGE } } : data);
+        outboxLogger.warn('Order update cannot be built; held until a person acts', { orderId: order.id, storeOrderId: order.storeOrderId, cause });
+      }
+      const batch = await Promise.all(built.filter((entry) => 'envelope' in entry)
+        .filter(({ order }) => !(order.storeOrderId !== undefined && holds.has(order.storeOrderId) && order.createdAt >= holds.get(order.storeOrderId)!))
+        .map(async ({ order, frozen, attempt, envelope }) => {
+        attempts.set(order.commandId, attempt);
         // Bounds apply when frozen: persist older tills' sent forms before sending (Front desk, 2026-09-29). A first
         // send's version is stored, awaited, before the batch request leaves, so a crash in between keeps it.
         if (frozen !== order || order.sentVersion === undefined) {
@@ -312,6 +363,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         localOrders.set(envelope.id, frozen);
         return envelope;
       }));
+      if (!batch.length) continue;
+      orders = orders.filter((order) => localOrders.has(order.commandId));
       let outcome = await transport.send(batch, { local: { orders: localOrders } });
       // A 404 answers the whole batch (the route is missing); any other answer resets the count. Offline changes nothing.
       backendNotFound.record(outcome, now());
@@ -497,17 +550,22 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     state$,
     flush,
     async requeue(orderIds) {
-      const orders = (await readFresh(collection, { selector: { syncStatus: 'rejected',
+      const orders = (await readFresh(collection, { selector: { $or: [{ syncStatus: 'rejected' }, { syncStatus: 'pending', 'error.code': UPDATE_UNSENDABLE }],
         ...(orderIds ? { id: { $in: orderIds } } : {}) } }))
-        .filter((order) => isRequeueable(order.error?.code));
+        .filter(isRequeueableOrder);
       let count = 0;
       for (const order of orders) {
         const oldCommandId = order.commandId;
         let changed = false;
         // The modifier sees the stored state, even when findOne's cached result is stale.
         await (await collection.findOne(order.id).exec())?.incrementalModify((data) => {
-          changed = data.syncStatus === 'rejected' && isRequeueable(data.error?.code);
+          changed = isRequeueableOrder(data);
           if (!changed) return data;
+          if (data.syncStatus === 'pending') {
+            delete data.error;
+            data.updatedAt = new Date(now()).toISOString();
+            return data;
+          }
           data.syncStatus = 'pending';
           delete data.error;
           delete data.serverFailures;
