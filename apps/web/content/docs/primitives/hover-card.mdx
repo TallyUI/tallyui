@@ -12,7 +12,7 @@ import { HoverCard } from '@tallyui/primitives';
 ## Usage
 
 ```tsx
-<HoverCard.Root openDelay={200} closeDelay={100}>
+<HoverCard.Root>
   <HoverCard.Trigger>
     <Text>@username</Text>
   </HoverCard.Trigger>
@@ -29,15 +29,15 @@ import { HoverCard } from '@tallyui/primitives';
 
 ### HoverCard.Root
 
-Manages the open/closed state with configurable open and close delays. Does not render a DOM element.
+Manages the open/closed state. Does not render a DOM element.
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `open` | `boolean` | — | Controlled open state |
 | `defaultOpen` | `boolean` | `false` | Initial state (uncontrolled) |
 | `onOpenChange` | `(open: boolean) => void` | — | Called when open state changes |
-| `openDelay` | `number` | `0` | Delay in ms before the card appears |
-| `closeDelay` | `number` | `0` | Delay in ms before the card hides |
+| `openDelay` | `number` | -- | Accepted and currently ignored |
+| `closeDelay` | `number` | -- | Accepted and currently ignored |
 
 ### HoverCard.Trigger
 
