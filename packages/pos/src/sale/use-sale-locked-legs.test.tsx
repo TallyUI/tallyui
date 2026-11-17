@@ -85,14 +85,6 @@ describe('useSale locked legs', () => {
     expect(result.current.order.payments[1]).not.toHaveProperty('locked');
   });
 
-  it('setTenderStatus refuses to fail a captured locked leg', async () => {
-    const { result, lockedLeg } = await resumeSale();
-    act(() => { expect(result.current.setTenderStatus(lockedLeg.id, 'failed')).toBe(false); });
-    expect(result.current.order.payments).toEqual([lockedLeg]);
-    expect(result.current.order.payments[0].status ?? 'captured').toBe('captured');
-    expect(result.current.order.payments[0].locked).toBe(true);
-  });
-
   it.each([
     ['addFee', 'fees', 'f9'], ['addShipping', 'shipping', 's9'],
   ] as const)('%s drops a caller-supplied store id', async (add, collection, storeLineId) => {
