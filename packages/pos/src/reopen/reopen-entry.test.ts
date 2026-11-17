@@ -153,6 +153,18 @@ describe('storeOrderForReopen', () => {
     expect(refusal).not.toBeInstanceOf(ReopenEntryError);
   });
 
+  it('passes a non-rebuild error thrown inside the rebuild through unchanged', () => {
+    const boom = new Error('rate lookup failed');
+    let refusal: unknown;
+    try {
+      storeOrderForReopen(storeOrder(), {
+        ...options, taxContext: { ...taxContext, getTaxRatePpm: () => { throw boom; } },
+      });
+    } catch (error) { refusal = error; }
+    expect(refusal).toBe(boom);
+    expect(refusal).not.toBeInstanceOf(ReopenEntryError);
+  });
+
   it.each(['success', 'status', 'catalogue', 'rebuild', 'overpaid'])('does not change the read on %s', (mode) => {
     const read = storeOrder();
     if (mode === 'status') read.status = 'failed';
