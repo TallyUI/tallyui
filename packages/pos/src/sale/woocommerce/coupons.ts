@@ -1,6 +1,12 @@
 import { minorUnitDigits, woocommerceCoupons } from '@tallyui/core';
 import type { LineItem } from '../../order';
 
+/** The WooCommerce customer id a coupon check compares: a safe integer above zero, else null (the email is used instead). */
+export function wooCustomerId(customer: { id?: string } | null | undefined): number | null {
+  const id = Number(customer?.id);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
 /** A WooCommerce coupon as the sale needs it: the engine's input and the connector's numeric id. */
 export type SaleCoupon = woocommerceCoupons.CouponInput & { id: number };
 /** Where the sale finds coupons (ADR-077 amendment 2); the app builds it over the till's coupons collection. */
