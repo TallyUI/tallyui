@@ -162,6 +162,12 @@ it("carries the mixed tax rounding line ready to print, only when the session's 
     "This register's sales used more than one tax rounding method. Each sale's tax is as its receipt showed." });
   expect(buildClosureDocument(row, context).closure).not.toHaveProperty('tax_rounding_note');
 });
+// ADR-090 ruling 38: a reopened sale's tax rates are its whole order's, and the Z report says so.
+it('adds the store-paid tax note when the flag is set', () => {
+  const flagged = buildClosureDocument({ ...row, breakdowns: { ...row.breakdowns, tax_includes_store_paid: true } }, context);
+  expect(flagged.closure).toMatchObject({ tax_store_paid_note: 'Tax rates include tax on amounts paid earlier in the store.' });
+  expect(buildClosureDocument(row, context).closure).not.toHaveProperty('tax_store_paid_note');
+});
 // Revert: omit local copy marking or number the X-report.
 it('marks local copies but never numbers or persists an X-report', () => {
   expect(buildClosureDocument({ ...row, print_count: 2 }, context).fiscal).toMatchObject({

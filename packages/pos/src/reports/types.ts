@@ -43,6 +43,8 @@ export interface ReportOrder {
   needsPayment?: boolean;
   lines: ReportLine[];
   payments: ReportPayment[];
+  /** A reopened sale's payments the store already held (its locked legs): not this till's takings, but they settle the total. */
+  paidEarlierMinor?: number;
   taxes: ReportTax[];
   /** Refunds embedded on the order, undated (a store order's own list). Positive. */
   refunds: Array<{ id: string; amountMinor: number }>;

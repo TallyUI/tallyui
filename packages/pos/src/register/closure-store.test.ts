@@ -18,6 +18,7 @@ import { REPLICATION_STATE_BY_COLLECTION } from 'rxdb/plugins/replication';
 import { startReplication } from '@tallyui/database';
 import type { ReplicationAdapter, TaxRounding } from '@tallyui/core';
 import { createOrderBuilder } from '../order/order-builder';
+import { orderBuilderFromStoreOrder } from '../order/from-store-order';
 import { taxLinesByRate } from '../tax/exact';
 import { finalizeOrder } from '../pos-order/finalize';
 import { UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE } from '../pos-order/needs-attention';
@@ -649,4 +650,33 @@ it('counts two registers in one store on their own: sale counters and closure nu
   const close = async (registerId: string) =>
     (await z(await closeSession(db.register_sessions, (await open(registerId)).id, { counted: { cash: 10000 } }))).number;
   expect([await close('front'), await close('back'), await close('front'), await close('back')]).toEqual([1, 1, 2, 2]);
+});
+
+// ADR-090 ruling 38: a reopened sale, built as the till builds it, on the Z. Store order 1100 (tax 100), 500 paid in the store.
+function reopenedRow(sessionId: string): PosOrder {
+  const builder = orderBuilderFromStoreOrder({
+    id: '41', reference: '41', clientOrderId: 'u-1', revision: `sha256:${'a'.repeat(64)}`, status: 'completed', placedAt: '2026-11-17T10:00:00.000Z',
+    currency: 'EUR', pricesIncludeTax: false, customer: null, fees: [], shipping: [], coupons: [], refunds: [], discountMinor: 0, discountTaxMinor: 0,
+    lines: [{ id: '7', productId: 'coffee', name: 'Coffee', quantity: 1, subtotalMinor: 1000, totalMinor: 1000, subtotalTaxMinor: 100, taxMinor: 100 }],
+    taxLines: [], taxMinor: 100, totalMinor: 1100, payments: [{ id: 'p1', method: 'pos_cash', title: 'Cash', amountMinor: 500 }],
+  }, { currency: 'EUR', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false } });
+  builder.addPayment({ method: 'cash', amountMinor: 600 });
+  return { ...finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } }), sessionId };
+}
+const closeWith = async (orders: (sessionId: string) => PosOrder[]) => {
+  const closed = await closeSession(db.register_sessions, (await open()).id, { counted: { cash: 10000 } });
+  return z(closed, { orders: orders(closed.id) });
+};
+const tillRow = (sessionId: string) => order('till', sessionId, [{ method: 'cash', amountMinor: 1000 }]);
+it('transaction_count counts a reopened row once', async () => {
+  const closure = await closeWith((id) => [tillRow(id), reopenedRow(id)]);
+  expect(closure.breakdowns.transaction_count).toBe(2);
+  expect(closure.period_sales_total_minor).toBe(1600);
+});
+it('labels tax rates when the session holds a reopened order', async () => {
+  const reopened = (await closeWith((id) => [tillRow(id), reopenedRow(id)])).breakdowns;
+  expect(reopened.tax_includes_store_paid).toBe(true);
+  // Whole-order figures, the store-paid 500 included: unchanged by the label.
+  expect(reopened.tax_rates).toEqual({ 100000: { name: 'Tax 10%', net_minor: 1000, tax_minor: 100, gross_minor: 1100 } });
+  expect((await closeWith((id) => [tillRow(id)])).breakdowns).not.toHaveProperty('tax_includes_store_paid');
 });

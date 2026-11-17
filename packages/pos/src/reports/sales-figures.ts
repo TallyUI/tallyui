@@ -139,7 +139,7 @@ export function salesFigures(input: SalesFiguresInput): SalesFigures {
   const taxes = new Map<string, TaxRow>();
   for (const order of orders) {
     const contributions = [...order.payments];
-    const remainder = order.totalMinor - order.payments.reduce((sum, payment) => sum + payment.amountMinor, 0);
+    const remainder = order.totalMinor - (order.paidEarlierMinor ?? 0) - order.payments.reduce((sum, payment) => sum + payment.amountMinor, 0);
     if (remainder > 0) contributions.push({ method: order.needsPayment ? 'unpaid' : 'unknown', amountMinor: remainder });
     const methods = new Set<string>();
     for (const payment of contributions) {

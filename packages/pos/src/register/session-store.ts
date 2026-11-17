@@ -15,6 +15,7 @@ import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import { taxedLinesFor } from '../tax/taxed-lines';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
+import { tillPayments } from '../pos-order/till-payments';
 import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
 import { deriveExpected, paymentLedgerRows, refundAmounts } from './expected';
@@ -563,7 +564,7 @@ export async function writeClosure({
     perpetual_sales_total_minor: 0,
     perpetual_refunds_total_minor: 0,
     unsynced_count: unsynced.length,
-    unsynced_total_minor: sum(unsynced.flatMap((order) => order.payments.filter((payment) => payment.storePaymentId === undefined).map((payment) => payment.amountMinor))),
+    unsynced_total_minor: sum(unsynced.flatMap((order) => tillPayments(order.payments).map((payment) => payment.amountMinor))),
     software_version: softwareVersion,
     printed_at: null,
     print_count: 0,
@@ -579,6 +580,8 @@ export async function writeClosure({
       ),
       // The session's sales used more than one tax rounding (#287): the Z report says so.
       ...(roundings.size > 1 ? { tax_rounding_mixed: true } : {}),
+      // A reopened sale's tax rates are its whole order's, including tax on what was paid earlier in the store (ADR-090 ruling 38).
+      ...(bound.some((order) => order.storeOrderId !== undefined) ? { tax_includes_store_paid: true } : {}),
       opening_float: {
         expected_minor: session.expected_float_minor ?? null,
         counted_minor: session.counted_float_minor,
