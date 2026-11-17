@@ -94,6 +94,7 @@ describe('order.create v9 store-priced coupon lines (#790)', () => {
       fees: [{ id: 'fee-1', name: 'Bag', amountMinor: 20, taxStatus: 'none', netMinor: 20, taxMicros: '0', taxLines: [] }],
       shipping: [{ id: 'shipping-1', name: 'Delivery', amountMinor: 30, taxStatus: 'none', netMinor: 30, taxMicros: '0', taxLines: [] }] };
     const withIds: PosOrder = { ...withoutIds,
+      baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298',
       lines: [{ ...withoutIds.lines[0], storeLineId: '11' }], fees: [{ ...withoutIds.fees![0], storeLineId: '12' }],
       shipping: [{ ...withoutIds.shipping![0], storeLineId: '13' }], payments: [{ ...withoutIds.payments[0], storePaymentId: '21' }] };
     for (const maxVersion of [6, 8, 9]) {

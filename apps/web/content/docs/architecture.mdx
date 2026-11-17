@@ -53,6 +53,7 @@ A connector is a package that knows how to talk to a specific backend. It implem
 interface TallyConnector {
   id: string;           // 'woocommerce', 'medusa', etc.
   name: string;         // Human-readable name
+  description: string;  // Description of the backend
   auth: ConnectorAuth;  // How to authenticate
   schemas: {            // RxDB schemas (per-connector shape)
     products: RxJsonSchema;
@@ -60,11 +61,17 @@ interface TallyConnector {
   traits: {             // Accessor functions
     product: ProductTraits;
   };
-  replication: {        // Pull-only sync via RxDB replication
-    products: ReplicationAdapter;
+  sync: {               // Deprecated, still required
+    products: CollectionSync;
   };
+  replication?: {       // Pull-only sync via RxDB replication
+    products?: ReplicationAdapter<any>;
+  };
+  // ...optional members switch on features: see Connectors
 }
 ```
+
+See [The TallyConnector contract](/docs/connectors#the-tallyconnector-contract) for every member and whether it is required.
 
 ### Per-Connector Schemas
 

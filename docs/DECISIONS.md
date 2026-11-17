@@ -6502,6 +6502,11 @@ interface OrderCreatePayload {
       `line_items` replaces the whole set: a kept line is sent by id, a removed line as `product_id: null`, and a new
       line without an id. A kept line sent without its id would be a new line, and the old one removed. This is read
       from the code, not run.
+    - **Version floor, base revision and pairing (W4a).** An update builds at `max(5, content)` order.create version,
+      capped at the store's cap, and is refused (`UnsupportedOrderVersionError(5, cap)`) only when that cap is below 5
+      (desk Q1, 2026-11-17); with no fees it is the version-4 payload except the number. The till never builds an
+      update without `baseRevision` or without figures. Store ids pair with items by client id, never by position
+      (gate 8).
     - **Explicit line money.** Every changed line carries its own `subtotal` and `total` (ex tax): the order's unit
       price × the new quantity. wc/v3 does not reprice a quantity change (the spike's 3 × 4.00 billed 8.00).
     - **Write order:**

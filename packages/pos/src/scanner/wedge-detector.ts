@@ -31,6 +31,7 @@ export interface WedgeState {
   sawTerminator: boolean;
 }
 
+/** @deprecated Internal helper, not supported API; leaves the public entry at the next major. */
 export function createWedgeState(): WedgeState {
   return { avg: 0, detecting: false, stack: [], lastTimeMs: null, startedAtMs: null, sawTerminator: false };
 }
@@ -39,7 +40,8 @@ export function createWedgeState(): WedgeState {
  * only length-1 keys advance timing; the first gap is +Infinity; the average
  * folds as (avg + gap) / 2. Scanning latches below threshold for the burst;
  * a slow key outside a burst resets the average and restarts the stack;
- * 'every' ends the burst on a slow gap. */
+ * 'every' ends the burst on a slow gap.
+ * @deprecated Internal helper, not supported API; leaves the public entry at the next major. */
 export function foldWedgeKey(state: WedgeState, key: string, timeMs: number, threshold: number, gapRule: 'folded' | 'every' = 'folded'): WedgeState {
   if (key.length !== 1) return state;
   let gap = Number.POSITIVE_INFINITY;
@@ -62,7 +64,8 @@ export function foldWedgeKey(state: WedgeState, key: string, timeMs: number, thr
 }
 
 /** Match whole strings at the edges: prefix first, then suffix on the remainder.
- * A one-character setting behaves as before. */
+ * A one-character setting behaves as before.
+ * @deprecated Internal helper, not supported API; leaves the public entry at the next major. */
 export function stripBoundary(stack: string[], settings: WedgeSettings): string {
   let code = stack.join('');
   if (settings.prefix && code.startsWith(settings.prefix)) code = code.slice(settings.prefix.length);
@@ -78,7 +81,8 @@ export interface WedgeReplayResult {
   code: string;
 }
 
-/** Replay the detector over a completed keystroke trace. */
+/** Replay the detector over a completed keystroke trace.
+ * @deprecated Internal helper, not supported API; leaves the public entry at the next major. */
 export function replayWedgeDetector(keys: TraceKey[], settings: WedgeSettings): WedgeReplayResult {
   const state = createWedgeState();
   for (const entry of keys) foldWedgeKey(state, entry.key, entry.timeMs, settings.threshold, settings.gapRule);
