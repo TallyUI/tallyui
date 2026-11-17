@@ -35,28 +35,29 @@ export function CustomerDropdown({ search, selected, onSelect, onError, online, 
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const sequence = useRef(0);
   const searchRef = useRef(search);
   searchRef.current = search;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
   const chip = useRef<View>(null);
   const name = selected?.name ?? 'Guest';
 
   // CustomerPicker's search: debounced, a stale response dropped, nothing sent for a blank query or offline.
   useEffect(() => {
-    const current = ++sequence.current;
+    let stale = false;
     setError(null);
     if (!online || !query.trim()) { setCustomers([]); return; }
     const timer = setTimeout(async () => {
       try {
         const results = await searchRef.current(query);
-        if (current === sequence.current) setCustomers(results);
+        if (!stale) setCustomers(results);
       } catch (error) {
-        if (current !== sequence.current) return;
+        if (stale) return;
         setError(customerErrorText(error));
-        if (!(error instanceof CustomerServiceError)) onError?.(error);
+        if (!(error instanceof CustomerServiceError)) onErrorRef.current?.(error);
       }
     }, debounceMs);
-    return () => { clearTimeout(timer); sequence.current++; };
+    return () => { clearTimeout(timer); stale = true; };
   }, [query, online, debounceMs]);
 
   // Each open starts, and each close leaves, an empty query with no results.
@@ -109,6 +110,7 @@ function Panel({ chip, onClose, children }: { chip: RefObject<View | null>; onCl
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     const node = panel.current as unknown as HTMLElement | null;
+    const trigger = chip.current as unknown as HTMLElement | null;
     node?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       const items = Array.from(node?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
@@ -124,7 +126,7 @@ function Panel({ chip, onClose, children }: { chip: RefObject<View | null>; onCl
     };
     // Capture phase: react-native-web's TextInput stops keydown propagation (TextInput/index.js, "see #612"), so a bubble listener never hears the field.
     document.addEventListener('keydown', onKeyDown, true);
-    return () => { document.removeEventListener('keydown', onKeyDown, true); (chip.current as unknown as HTMLElement | null)?.focus?.(); };
+    return () => { document.removeEventListener('keydown', onKeyDown, true); trigger?.focus?.(); };
   }, [chip]);
   return <View ref={panel}>{children}</View>;
 }
