@@ -66,12 +66,16 @@ describe('Cart', () => {
     expect(within(footer.getByText('Subtotal').parentElement!).getByText(money(sale.order.display.subtotalMinor))).toBeTruthy();
     expect(within(footer.getByText(inclusive ? 'incl. Tax 25%' : 'Tax 25%').parentElement!).getByText(money(sale.order.display.taxMinor))).toBeTruthy();
     expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();
+    expect(within(footer.getByTestId('cart-total-fees')).getByText(money(sale.order.display.fees![0].amountMinor))).toBeTruthy();
+    expect(within(footer.getByTestId('cart-total-shipping')).getByText(money(sale.order.display.shipping![0].amountMinor))).toBeTruthy();
     click('Remove Bag');
     expect(screen.queryByTestId('cart-fee-0')).toBeNull();
     expect(sale.order.fees ?? []).toEqual([]);
+    expect(footer.queryByTestId('cart-total-fees')).toBeNull();
     click('Remove Delivery');
     expect(screen.queryByTestId('cart-shipping-0')).toBeNull();
     expect(sale.order.shipping ?? []).toEqual([]);
+    expect(footer.queryByTestId('cart-total-shipping')).toBeNull();
     click('Remove Alteration');
     expect(totals(sale.order)).toEqual(before);
     expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();

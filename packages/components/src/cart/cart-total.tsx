@@ -7,6 +7,10 @@ export interface CartTotalProps extends Omit<VStackProps, 'children'> {
   subtotal: Money;
   taxLines?: Array<{ label: string; amount: Money }>;
   discount?: Money;
+  /** The fee lines' sum in the display tax mode; a "Fees" row shows when it is not 0, as WCPOS v2. */
+  fees?: Money;
+  /** The shipping lines' sum in the display tax mode; a "Shipping" row shows when it is not 0, as WCPOS v2. */
+  shipping?: Money;
   total: Money;
   /** The tax is already in the subtotal (an inclusive display), so its rows read "incl." rather than add up. */
   taxInclusive?: boolean;
@@ -19,7 +23,8 @@ export interface CartTotalProps extends Omit<VStackProps, 'children'> {
 }
 
 /**
- * Displays a cart summary: subtotal, optional discount, optional tax, and an optional Total row, in the receipt's order.
+ * Displays a cart summary: subtotal, optional discount, fees and shipping, optional tax, and an optional Total row, in the
+ * receipt's order.
  *
  * ```tsx
  * <CartTotal subtotal={subtotal} discount={discount} taxLines={taxLines} total={total} />
@@ -29,6 +34,8 @@ export function CartTotal({
   subtotal,
   taxLines,
   discount,
+  fees,
+  shipping,
   total,
   taxInclusive,
   locale,
@@ -51,6 +58,20 @@ export function CartTotal({
         <HStack space="none" className="justify-between">
           <Text className="text-sm text-muted-foreground">Discount</Text>
           <Text className="text-sm">−{formatMoney(discount, locale) ?? '—'}</Text>
+        </HStack>
+      )}
+
+      {fees && fees.amount !== 0 && (
+        <HStack testID="cart-total-fees" space="none" className="justify-between">
+          <Text className="text-sm text-muted-foreground">Fees</Text>
+          <Text className="text-sm">{formatMoney(fees, locale) ?? '—'}</Text>
+        </HStack>
+      )}
+
+      {shipping && shipping.amount !== 0 && (
+        <HStack testID="cart-total-shipping" space="none" className="justify-between">
+          <Text className="text-sm text-muted-foreground">Shipping</Text>
+          <Text className="text-sm">{formatMoney(shipping, locale) ?? '—'}</Text>
         </HStack>
       )}
 

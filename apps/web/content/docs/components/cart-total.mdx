@@ -1,6 +1,6 @@
 ---
 title: CartTotal
-description: CartTotal shows subtotal, optional discount, tax rows and an optional Total row in the receipt's order.
+description: CartTotal shows subtotal, optional discount, fees and shipping, tax rows and an optional Total row in the receipt's order.
 ---
 
 ## Import
@@ -15,7 +15,7 @@ import { CartTotal } from '@tallyui/components';
 <CartTotal subtotal={subtotal} discount={discount} taxLines={taxLines} total={total} />
 ```
 
-Renders rows for subtotal, optional discount, tax rows and total, in the receipt's order.
+Renders rows for subtotal, optional discount, fees and shipping, tax rows and total, in the receipt's order.
 
 ## Props
 
@@ -24,6 +24,8 @@ Renders rows for subtotal, optional discount, tax rows and total, in the receipt
 | `subtotal` | `Money` | required | The subtotal to display |
 | `taxLines` | `Array<{ label: string; amount: Money }>` | — | Tax rows with their labels and amounts |
 | `discount` | `Money` | — | Optional discount, shown when positive |
+| `fees` | `Money` | — | The fee lines' sum in the display mode; a Fees row shows when it is not 0 |
+| `shipping` | `Money` | — | The shipping lines' sum in the display mode; a Shipping row shows when it is not 0 |
 | `total` | `Money` | required | The total to display |
 | `taxInclusive` | `boolean` | — | Tax is already in the subtotal, so its rows read "incl." rather than add up |
 | `afterSubtotal` | `ReactNode` | — | Rows rendered directly under Subtotal, e.g. a platform's coupon chips |
