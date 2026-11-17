@@ -7,6 +7,7 @@
  * (ADR-080 amendment 1), by the server's rule. WCPOS's `attributeRefunds` fallbacks (allocations,
  * `refunded_amount`) are not ported: the store attributes each refund to a tender in `byMethod`.
  */
+import { tillPayments } from '../pos-order/till-payments';
 import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 
@@ -36,7 +37,7 @@ export type LedgerRow = {
  * A locked store payment (storePaymentId set) is the store's earlier money, not this till's, and is left out (ADR-090 gate 11).
  */
 export function paymentLedgerRows(orders: readonly Pick<PosOrder, 'sessionId' | 'payments'>[]): LedgerRow[] {
-  return orders.flatMap((order) => order.payments.filter((payment) => payment.storePaymentId === undefined).map((payment) => ({
+  return orders.flatMap((order) => tillPayments(order.payments).map((payment) => ({
     session_id: order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
     status: 'captured', amountMinor: payment.amountMinor,
   })));

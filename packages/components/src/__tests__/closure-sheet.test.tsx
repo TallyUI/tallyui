@@ -205,6 +205,22 @@ it.each([
     ? "This register's sales used more than one tax rounding method. Each sale's tax is as its receipt showed." : null);
 });
 
+// ADR-090 ruling 38: a session holding a reopened sale says its tax rates include what was paid earlier in the store.
+it.each([[true], [false]])('shows the store-paid tax note only when the flag is set (reopened sale: %s)', async (reopened) => {
+  const session = await seedSession(db, 10000);
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 10000 } });
+  // Only what a closure reads from a sale. A reopened sale carries one locked leg (storePaymentId set): the label needs it, and it is
+  // the store's earlier money, not takings, so the count is unchanged. A till sale has no payments.
+  const sale = { id: 'a', sessionId: session.id, syncStatus: 'applied', pricesIncludeTax: false, lines: [], taxMinor: 0,
+    payments: reopened ? [{ id: 'p1', storePaymentId: 'p1', method: 'cash', amountMinor: 500 }] : [],
+    ...(reopened ? { storeOrderId: '41' } : {}) } as unknown as PosOrder;
+  await writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000,
+    otherTenders: {}, movements: [], softwareVersion: '1.0.0', orders: [sale] });
+  await renderClosure();
+  expect(screen.queryByTestId('closure-tax-store-paid')?.textContent ?? null)
+    .toBe(reopened ? 'Tax rates include tax on amounts paid earlier in the store.' : null);
+});
+
 it('renders nothing before any session has closed', async () => {
   render(
     <RegisterHarness db={db}>

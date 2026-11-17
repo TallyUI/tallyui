@@ -26,7 +26,7 @@ export { labelKeys, ENGLISH_CLOSURE_LABELS } from './document-labels';
 export { clampClosureScope, selectClosureRows } from './closure-rows';
 export type { ClosureScope } from './closure-rows';
 export { minorToDecimal, formatDecimalMoney } from './money';
-export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, createClosureContext } from './closure-document';
+export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, TAX_STORE_PAID_NOTE, createClosureContext } from './closure-document';
 export type { ClosureContext, CreateClosureContextOptions } from './closure-document';
 export { registerFactsLogger, recordRegisterFact, type Actor, type RegisterFact } from './facts';
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError } from './use-register-session';

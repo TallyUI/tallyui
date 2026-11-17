@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
-import { countVariance, TAX_ROUNDING_MIXED_NOTE, varianceText } from '@tallyui/pos';
+import { countVariance, TAX_ROUNDING_MIXED_NOTE, TAX_STORE_PAID_NOTE, varianceText } from '@tallyui/pos';
 
 import { useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { errorText } from '../lib/error-text';
@@ -192,6 +192,11 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
         {closure.breakdowns.tax_rounding_mixed === true && (
           <Text testID="closure-tax-rounding-mixed" className="text-muted-foreground">
             {TAX_ROUNDING_MIXED_NOTE}
+          </Text>
+        )}
+        {closure.breakdowns.tax_includes_store_paid === true && (
+          <Text testID="closure-tax-store-paid" className="text-muted-foreground">
+            {TAX_STORE_PAID_NOTE}
           </Text>
         )}
         {!!error && (
