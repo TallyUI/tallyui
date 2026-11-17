@@ -110,7 +110,47 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
         <Text testID="closure-number" className="text-muted-foreground min-h-11">{`Closure #${closure.number}`}</Text>
         {!blind && (
           <View testID="closure-figures" className="gap-3">
-            {methods.map((method) => {
+            {methods.includes('cash') && (() => {
+              // v2's closure hero (closure-body.tsx): the signed cash variance, then Counted and Expected boxes.
+              const money = (minor: number) => formatMoney({ amount: minor, currency }) ?? '';
+              const countedMinor = closure.counted.cash ?? 0;
+              const expectedMinor = closure.expected.cash ?? 0;
+              const varianceMinor = closure.variance.cash ?? countVariance(countedMinor, expectedMinor);
+              const word = varianceWord(
+                varianceMinor === 0 ? 'register.exact' : varianceMinor < 0 ? 'register.short' : 'register.over',
+              );
+              const signed =
+                varianceMinor < 0
+                  ? `−${money(Math.abs(varianceMinor))}`
+                  : varianceMinor > 0
+                    ? `+${money(Math.abs(varianceMinor))}`
+                    : money(0);
+              const tone =
+                varianceMinor < 0 ? 'text-destructive' : varianceMinor > 0 ? 'text-success' : 'text-foreground';
+              return (
+                <View key="cash" className="gap-3">
+                  <View className="items-center gap-1">
+                    <Text testID="closure-variance-eyebrow" className="text-muted-foreground text-xs font-semibold uppercase">
+                      {`Variance · ${word}`}
+                    </Text>
+                    <Text testID="closure-variance-cash" className={`text-4xl font-bold tabular-nums text-center ${tone}`}>
+                      {signed}
+                    </Text>
+                  </View>
+                  <View className="flex-row gap-2">
+                    {([['Counted', 'closure-counted-cash', countedMinor], ['Expected', 'closure-expected-cash', expectedMinor]] as const).map(
+                      ([label, testID, minor]) => (
+                        <View key={testID} className="border-border flex-1 rounded-lg border px-3 py-2.5">
+                          <Text className="text-muted-foreground text-sm">{label}</Text>
+                          <Text testID={testID} className="text-xl font-bold tabular-nums">{money(minor)}</Text>
+                        </View>
+                      ),
+                    )}
+                  </View>
+                </View>
+              );
+            })()}
+            {methods.filter((method) => method !== 'cash').map((method) => {
               const countedMinor = closure.counted[method] ?? 0;
               const expectedMinor = closure.expected[method] ?? 0;
               const varianceMinor = closure.variance[method] ?? countVariance(countedMinor, expectedMinor);
