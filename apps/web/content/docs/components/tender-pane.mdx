@@ -28,6 +28,8 @@ The headline shows the total, or what remains once money is paid (pending legs n
 
 While a balance remains, the cashier picks Cash or Card terminal and sets the entry on the keypad, where digits shift in from the right, or, for cash, with a quick-cash chip: the exact amount, then the next 5, 10 and 50. A chip or a keypad press only sets the entry. A hint under it reads the change, what is left after a part payment, or that the method can't give change. `Take {amount} in {method}` records the leg with `sale.addTender`, and the entry is pre-typed with the next leg's amount. Card terminal also takes a terminal reference.
 
+While something is due, Split on the headline shows Split the rest with 2 to 6 equal ways; after a typed amount, the ways divide what is left after this payment. A way sets the plan and the entry is pre-typed with each share. A method tile keeps the share that is due, and pressing Split again clears the plan.
+
 Complete sale is enabled once nothing is due and no leg is in motion, and calls `sale.complete`. Back calls `sale.cancelTender`. The sale's error and its Continue control show as the sale state requires.
 
 ## Props
