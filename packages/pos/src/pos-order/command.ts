@@ -1,4 +1,4 @@
-import type { OrderCreateEnvelope, OrderUpdateEnvelope } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderCreatePayload, OrderUpdateEnvelope, OrderUpdatePayload } from '@tallyui/core';
 import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
 import type { PosOrder, PosOrderLine } from './types';
 
@@ -24,6 +24,9 @@ export const PAYLOAD_STRING_MAX = 255;
 
 /** A store revision's bound (ADR-090): an opaque token, e.g. WooCommerce's 71-character `sha256:` + 64 hex. One number for core's order.reopen and order.update shapes, the rebuild and pos_orders. */
 export const REVISION_MAX = 128;
+
+/** order.update's lowest order.create version (ADR-090, desk Q1 2026-11-17): fees and shipping travel from 5, so an update never drops the store's. */
+const ORDER_UPDATE_MIN_CREATE_VERSION = 5;
 
 /** A non-empty string of at most `max` UTF-16 units with no NUL: what order.create's shape check accepts. */
 export const sendable = (value: unknown, max: number): value is string =>
@@ -110,7 +113,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
   return createEnvelope(order, deviceId, attempt, options);
 }
 
-function createEnvelope(order: PosOrder, deviceId: string, attempt: number, options?: { maxVersion?: number }): OrderCreateEnvelope {
+function createEnvelope(order: PosOrder, deviceId: string, attempt: number, options?: { maxVersion?: number }, floor?: 5): OrderCreateEnvelope {
   const grossMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
   const content = contentVersion(order);
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
@@ -121,8 +124,9 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   if (taxAddress && cap !== undefined && cap < TAX_ADDRESS_ORDER_CREATE_VERSION) {
     throw new UnsupportedOrderVersionError(TAX_ADDRESS_ORDER_CREATE_VERSION, cap);
   }
+  if (floor !== undefined && cap !== undefined && cap < floor) throw new UnsupportedOrderVersionError(floor, cap);
   // Version 4 only when the cap allows it (the server advertises 4, and no sentVersion holds the order lower).
-  const base = (content === 3 && cap !== undefined && cap >= 4 ? 4
+  const base = Math.max(floor ?? 1, content === 3 && cap !== undefined && cap >= 4 ? 4
     : Math.min(content, cap ?? content)) as 1 | 2 | 3 | 4 | 5 | 6;
   // Version 7 (ADR-083) is 6 plus the note: only for a sale with one, with figures (3+), when the cap allows 7.
   // Every other field follows `base`, so a note changes nothing else in the payload.
@@ -203,17 +207,38 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   };
 }
 
-/** A reopened sale's `order.update` v1 (ADR-090 decision 4): the `order.create` payload at the version `toOrderCreateEnvelope` would pick,
- * plus the store order's id, its base revision and the store ids of kept lines, fees, shipping and payments. */
+/** Gate 8 (ADR-090): each kept item's store id goes on the update item with the same client id, never by position. */
+export function pairStoreIds(payload: OrderCreatePayload, order: PosOrder): Pick<OrderUpdatePayload, 'lines' | 'payments' | 'fees' | 'shipping'> {
+  const lines = new Map<string, string | undefined>(order.lines.map((line) => [line.id, line.storeLineId]));
+  const fees = new Map<string, string | undefined>((order.fees ?? []).map((fee) => [fee.id, fee.storeLineId]));
+  const shipping = new Map<string, string | undefined>((order.shipping ?? []).map((charge) => [charge.id, charge.storeLineId]));
+  const payments = new Map<string, string | undefined>(order.payments.map((payment) => [payment.id, payment.storePaymentId]));
+  return {
+    lines: payload.lines.map((line) => {
+      const id = lines.get(line.clientLineId); return id !== undefined ? { ...line, storeLineId: id } : line;
+    }),
+    payments: payload.payments.map((payment) => {
+      const id = payments.get(payment.clientPaymentId); return id !== undefined ? { ...payment, paymentId: id } : payment;
+    }),
+    ...(payload.fees ? { fees: payload.fees.map((fee) => {
+      const id = fees.get(fee.clientFeeId); return id !== undefined ? { ...fee, storeLineId: id } : fee;
+    }) } : {}),
+    ...(payload.shipping ? { shipping: payload.shipping.map((charge) => {
+      const id = shipping.get(charge.clientShippingId); return id !== undefined ? { ...charge, storeLineId: id } : charge;
+    }) } : {}),
+  };
+}
+
+/** Builds at order.create version 5 or more (a store's cap below 5 throws UnsupportedOrderVersionError(5, cap)).
+ * Refuses a row without baseRevision or figures, and pairs store ids by client id. */
 export function toOrderUpdateEnvelope(order: PosOrder, deviceId: string, attempt = 1, options?: { maxVersion?: number }): OrderUpdateEnvelope {
   if (order.storeOrderId === undefined) throw new Error(`Order ${order.id} has no storeOrderId: it is sent as order.create`);
-  const create = createEnvelope(order, deviceId, attempt, options);
+  if (order.baseRevision === undefined) throw new Error(`Order ${order.id} reopened store order ${order.storeOrderId} without its base revision: order.update needs it (ADR-090)`);
+  if (!order.display || !order.taxByRate) throw new Error(`Order ${order.id} has no figures: order.update goes at order.create version 5 or more, which needs them (ADR-090)`);
+  const create = createEnvelope(order, deviceId, attempt, options, ORDER_UPDATE_MIN_CREATE_VERSION);
   return { id: create.id, type: 'order.update', version: 1, createdAt: create.createdAt,
     deviceId: create.deviceId, attempt: create.attempt, payload: { ...create.payload, orderId: order.storeOrderId,
-      ...(order.baseRevision !== undefined ? { baseRevision: order.baseRevision } : {}), createVersion: create.version,
-      lines: create.payload.lines.map((line, i) => order.lines[i].storeLineId !== undefined ? { ...line, storeLineId: order.lines[i].storeLineId } : line),
-      payments: create.payload.payments.map((payment, i) => order.payments[i].storePaymentId !== undefined ? { ...payment, paymentId: order.payments[i].storePaymentId } : payment),
-      ...(create.payload.fees ? { fees: create.payload.fees.map((fee, i) => order.fees![i].storeLineId !== undefined ? { ...fee, storeLineId: order.fees![i].storeLineId } : fee) } : {}),
-      ...(create.payload.shipping ? { shipping: create.payload.shipping.map((charge, i) => order.shipping![i].storeLineId !== undefined ? { ...charge, storeLineId: order.shipping![i].storeLineId } : charge) } : {}),
+      baseRevision: order.baseRevision, createVersion: create.version,
+      ...pairStoreIds(create.payload, order),
     } };
 }
