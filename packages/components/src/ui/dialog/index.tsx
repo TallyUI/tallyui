@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { View, Text, Pressable, Animated, Dimensions } from 'react-native';
+import { View, Text, Pressable, Animated, Dimensions, Platform } from 'react-native';
 import { Dialog as DialogPrimitive, TextClassContext } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
-import { useSheetMotion } from './motion';
+import { useOverlayMotion, SHEET_MOTION, DIALOG_MOTION } from './motion';
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -35,10 +35,10 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: keyof typeof SIDE_CLASS }
 >(function DialogContent({ className, children, side = 'center', ...props }, ref) {
   const { open } = DialogPrimitive.useRootContext();
-  const { mounted, scrim, panel } = useSheetMotion(open, side === 'right');
+  const { mounted, scrim, panel } = useOverlayMotion(open, true, side === 'right' ? SHEET_MOTION : DIALOG_MOTION);
   const [width, setWidth] = React.useState(() => Dimensions.get('window').width);
 
-  // WCPOS v2 panel-in-right / panel-out-right; the centred dialog follows in a later job.
+  // WCPOS v2 panel-in-right / panel-out-right.
   if (side === 'right') {
     if (!mounted) return null;
     const { style, ...propsWithoutStyle } = props;
@@ -60,15 +60,21 @@ const DialogContent = React.forwardRef<
     );
   }
 
+  if (!mounted) return null;
+  const { style, ...propsWithoutStyle } = props;
+  // WCPOS v2 dialog-in / dialog-out.
   return (
-    <DialogPortal>
-      <DialogOverlay />
-      <DialogPrimitive.Content
-        ref={ref}
-        className={cn(SIDE_CLASS[side], className)}
-        {...props}
-      >
-        {children}
+    <DialogPortal forceMount>
+      <Animated.View className="fixed inset-0 z-50" style={{ opacity: scrim }} pointerEvents={open ? 'auto' : 'none'}>
+        <DialogOverlay forceMount className="absolute inset-0" />
+      </Animated.View>
+      <DialogPrimitive.Content forceMount asChild ref={ref} className={cn(SIDE_CLASS.center, className)} {...propsWithoutStyle}>
+        <Animated.View
+          style={[style, { opacity: panel, transform: Platform.OS === 'web' ? [{ scale: panel.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) }] : undefined }]}
+          pointerEvents={open ? 'auto' : 'none'}
+        >
+          {children}
+        </Animated.View>
       </DialogPrimitive.Content>
     </DialogPortal>
   );

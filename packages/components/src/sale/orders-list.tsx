@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings } from '@tallyui/core';
-import { isRequeueableOrder, needsAttention, noteDelivery, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { NOTE_NOT_SENT, orderReference } from './order-reference';
 import { sinceText } from './since-text';
 
@@ -89,6 +89,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             </View>;
           }
           const count = order.lines.reduce((sum, line) => sum + line.quantity, 0);
+          const refundDueMinor = refundDueOf(order);
           const key = `${section.title}:${order.id}`;
           const isExpanded = expanded.has(key);
           // The order's own stuck entry: its clock and latest reason, not the earliest across all stuck orders.
@@ -119,6 +120,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               {order.payments.map((payment) => <Text key={payment.id} className="text-muted-foreground">
                 {`${payment.method === 'cash' ? 'Cash' : 'Card terminal'} ${formatMoney({ amount: payment.amountMinor, currency: order.currency })}${payment.reference ? ` · ${payment.reference}` : ''}`}
               </Text>)}
+              {refundDueMinor > 0 ? <Text testID={`order-refund-due-${order.id}`} className="text-foreground">
+                {`Refund due ${formatMoney({ amount: refundDueMinor, currency: order.currency })}`}</Text> : null}
               {order.note ? <Text testID={`order-note-${order.id}`} className="text-foreground">{`Customer note: ${order.note}`}</Text> : null}
             </View> : null}
             {stuckEntry ? <Text className="text-destructive">

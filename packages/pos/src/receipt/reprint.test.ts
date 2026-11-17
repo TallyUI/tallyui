@@ -32,6 +32,30 @@ const withoutLabels = (receipt: ReceiptData) => receipt.totals.taxLines.map(({ l
 const total = (rows: Array<{ amountMinor: number }>) => rows.reduce((sum, row) => sum + row.amountMinor, 0);
 
 describe('reprint receipt data', () => {
+  it('reprints a stored refund-due and no change', () => {
+    const { posOrder } = finalizedSale(false);
+    const receipt = buildReceiptDataFromPosOrder({
+      ...posOrder, refundDueMinor: 800, totalMinor: 4200, display: { ...posOrder.display!, totalMinor: 4200 },
+      payments: [{ id: 'p1', storePaymentId: 'store-p1', method: 'external', amountMinor: 5000 }],
+    }, config);
+    expect(receipt.refundDueMinor).toBe(800);
+    expect(receipt.changeDueMinor).toBe(0);
+  });
+
+  it('computes refund-due on reprint for a row without the stored value', () => {
+    const { posOrder } = finalizedSale(false);
+    const receipt = buildReceiptDataFromPosOrder({
+      ...posOrder, totalMinor: 4200, display: { ...posOrder.display!, totalMinor: 4200 },
+      payments: [{ id: 'p1', storePaymentId: 'store-p1', method: 'external', amountMinor: 5000 }],
+    }, config);
+    expect(receipt.refundDueMinor).toBe(800);
+    expect(receipt.changeDueMinor).toBe(0);
+  });
+
+  it("leaves refundDueMinor out of an ordinary sale's reprint", () => {
+    expect(buildReceiptDataFromPosOrder(finalizedSale(false).posOrder, config)).not.toHaveProperty('refundDueMinor');
+  });
+
   it.each([[6, true], [7, false], [undefined, false]] as const)('marks a note not sent when it went at version %s: %s (ADR-083)', (sentVersion, notSent) => {
     const { posOrder } = finalizedSale(false);
     const footer = buildReceiptDataFromPosOrder({ ...posOrder, sentVersion }, config).footer;

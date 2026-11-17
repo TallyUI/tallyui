@@ -1,5 +1,6 @@
 import type { StoreOrder } from '@tallyui/core';
 import { noteDelivery } from '../pos-order/note-delivery';
+import { refundDueOf } from '../pos-order/refund-due';
 import type { PosOrder } from '../pos-order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import { recordedTaxByRate, taxedLinesFor } from '../tax/taxed-lines';
@@ -34,6 +35,7 @@ const sum = (amounts: number[]) => amounts.reduce((total, amount) => total + amo
 export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptConfig): ReceiptData {
   const { header, ...blocks } = reprintBlocks(config, order.customer);
   const { display, taxRounding: rounding } = order;
+  const refundDueMinor = refundDueOf(order);
   const lineTaxMicros = (line: PosOrder['lines'][number]) => line.taxLines.reduce((total, row) => total + BigInt(row.taxMicros), 0n);
   let taxSoFar = order.pricesIncludeTax ? 0n : order.lines.reduce((total, line) => line.taxInclusive === undefined ? total + lineTaxMicros(line) : total, 0n);
   const lineTotals = order.lines.map((line) => {
@@ -92,6 +94,7 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
       },
     payments: order.payments.map((p) => ({ method: p.method, amountMinor: p.tenderedMinor ?? p.amountMinor, reference: p.reference })),
     changeDueMinor: sum(order.payments.map((p) => p.changeMinor ?? 0)),
+    ...(refundDueMinor > 0 ? { refundDueMinor } : {}),
     footer: { note: order.note || undefined, ...(noteDelivery(order) === 'not_sent' ? { noteNotSent: true as const } : {}), barcode: order.id },
     currency: order.currency,
   };

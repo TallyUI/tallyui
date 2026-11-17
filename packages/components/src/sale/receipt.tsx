@@ -87,6 +87,7 @@ export function Receipt(props: ReceiptProps) {
       : order || payment.method === 'external' ? 'Card terminal' : payment.method,
       money(payment.amountMinor) + (payment.reference ? ` · ${payment.reference}` : ''), false, index))}
     {order || receipt.changeDueMinor > 0 ? row('Change', money(receipt.changeDueMinor)) : null}
+    {receipt.refundDueMinor ? row('Refund due', money(receipt.refundDueMinor)) : null}
     {receipt.footer.note ? <View testID="receipt-note" className="gap-1">
       <Text className="text-foreground">{receipt.footer.note}</Text>
       {/* ADR-083 condition 2: for the cashier, so it is not printed. */}

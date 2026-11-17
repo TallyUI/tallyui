@@ -6,7 +6,7 @@ description: SettingsRow lays out a label and optional description beside an act
 ## Import
 
 ```tsx
-import { SettingsRow } from '@tallyui/components';
+import { SettingsRow, Switch } from '@tallyui/components';
 ```
 
 ## Usage
@@ -15,7 +15,7 @@ import { SettingsRow } from '@tallyui/components';
 <SettingsRow
   label="Dark Mode"
   description="Toggle the app's color scheme"
-  action={<Switch value={darkMode} onValueChange={setDarkMode} />}
+  action={<Switch checked={darkMode} onCheckedChange={setDarkMode} />}
 />
 ```
 
