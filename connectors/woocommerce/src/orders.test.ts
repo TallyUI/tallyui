@@ -46,6 +46,9 @@ describe('WooCommerce orders', () => {
       payments: [{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 3291 }],
       refunds: [{ id: '140', amountMinor: 350, reason: 'Damaged' }],
     });
+    expect(order.fees).toStrictEqual([{ id: '31', name: 'Loyalty', totalMinor: -100, taxMinor: 0, taxStatus: 'none' }]);
+    expect(order.shipping).toStrictEqual([{ id: '32', name: 'Delivery', totalMinor: 400, taxMinor: 0, methodId: 'flat_rate' }]);
+    expect(order.payments[0]).not.toHaveProperty('id');
     expect(order.lines[0]!.clientLineId).toBe('00000000-0000-4000-8000-000000001370');
   });
 
@@ -95,8 +98,8 @@ describe('WooCommerce orders', () => {
       ] } }],
     });
     expect(order.payments).toStrictEqual([
-      { method: 'pos_cash', kind: 'cash', amountMinor: 500 },
-      { method: 'pos_card', kind: 'external', amountMinor: 710 },
+      { id: '1', method: 'pos_cash', kind: 'cash', amountMinor: 500 },
+      { id: '2', method: 'pos_card', kind: 'external', amountMinor: 710 },
     ]);
   });
 
@@ -185,6 +188,60 @@ describe('WooCommerce orders', () => {
     expect(order.payments).toStrictEqual([{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 1510 }]);
   });
 
+  it('reads the store revision only when it is a non-empty string', () => {
+    const raw = {
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '0',
+    };
+    expect(toWooStoreOrder({ ...raw, _rxdb_revision: 'sha256:abc' }).revision).toBe('sha256:abc');
+    for (const revision of [{}, { _rxdb_revision: '' }, { _rxdb_revision: 7 }]) {
+      expect(toWooStoreOrder({ ...raw, ...revision })).not.toHaveProperty('revision');
+    }
+  });
+
+  it('reads the recorded fee id, tax status and tax class only when defined', () => {
+    const order = toWooStoreOrder({
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '2.00',
+      fee_lines: [
+        { id: 7, name: 'Fee', total: '1.00', total_tax: '0', tax_status: 'taxable', tax_class: 'reduced-rate' },
+        { id: 0, name: 'Fee', total: '1.00', total_tax: '0', tax_status: 'shipping', tax_class: '' },
+      ],
+    });
+    expect(order.fees).toStrictEqual([
+      { id: '7', name: 'Fee', totalMinor: 100, taxMinor: 0, taxStatus: 'taxable', taxClass: 'reduced-rate' },
+      { name: 'Fee', totalMinor: 100, taxMinor: 0 },
+    ]);
+  });
+
+  it('reads the recorded shipping id and method without fee tax fields', () => {
+    const order = toWooStoreOrder({
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '2.00',
+      shipping_lines: [
+        { id: 9, method_title: 'Delivery', method_id: 'pos', total: '1.00', total_tax: '0' },
+        { method_title: 'Delivery', method_id: '', total: '1.00', total_tax: '0' },
+      ],
+    });
+    expect(order.shipping).toStrictEqual([
+      { id: '9', name: 'Delivery', totalMinor: 100, taxMinor: 0, methodId: 'pos' },
+      { name: 'Delivery', totalMinor: 100, taxMinor: 0 },
+    ]);
+  });
+
+  it('leaves out absent or empty captured payment ids', () => {
+    const order = toWooStoreOrder({
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '2.00',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_cash', amount: '1.00', status: 'captured' },
+        { id: '', method_id: 'pos_cash', amount: '1.00', status: 'captured' },
+      ] } }],
+    });
+    expect(order.payments).toHaveLength(2);
+    for (const payment of order.payments) expect(payment).not.toHaveProperty('id');
+  });
+
   it('maps a "-0.00" fee to a positive zero', () => {
     const fee = toWooStoreOrder({ ...list[1], fee_lines: [{ ...list[1]!.fee_lines[0]!, total: '-0.00' }] }).fees[0]!;
     expect(fee.totalMinor).toBe(0);
@@ -243,7 +300,7 @@ describe('WooCommerce orders', () => {
 
   it('maps a negative 6dp fee symmetrically', () => {
     const fee = toWooStoreOrder({ ...list[1], fee_lines: [{ ...list[1]!.fee_lines[0]!, total: '-0.125000', total_tax: '-0.025000' }] }).fees[0]!;
-    expect(fee).toStrictEqual({ name: 'Loyalty', totalMinor: -13, taxMinor: -2 });
+    expect(fee).toStrictEqual({ id: '31', name: 'Loyalty', totalMinor: -13, taxMinor: -2, taxStatus: 'none' });
   });
 
   it('throws a server error on an unparseable tax amount', () => {

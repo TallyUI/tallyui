@@ -60,7 +60,9 @@ function storePayments(raw: Row, currency: string, totalMinor: number): StoreOrd
       const method = nonEmpty(row.method_id);
       if (!method || (typeof row.currency === 'string' && row.currency !== currency)) throw unexpected();
       const kind = PAYMENT_KINDS[method];
+      const id = nonEmpty(row.id);
       return {
+        ...(id ? { id } : {}),
         method, ...(title ? { title } : {}), ...(kind ? { kind } : {}), amountMinor: minor(row.amount, currency),
       };
     });
@@ -92,12 +94,14 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     : null;
 
   const clientOrderId = posUuid(raw.meta_data);
+  const revision = nonEmpty(raw._rxdb_revision);
   const totalMinor = minor(raw.total, currency);
 
   return {
     id: String(raw.id),
     reference: String(raw.number ?? raw.id),
     ...(clientOrderId ? { clientOrderId } : {}),
+    ...(revision ? { revision } : {}),
     status: String(raw.status),
     placedAt: placed.toISOString(),
     currency,
@@ -123,9 +127,14 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
       };
     }),
     fees: rows(raw.fee_lines).map((fee) => ({
+      ...(positiveId(fee.id) ? { id: positiveId(fee.id) } : {}),
+      ...(fee.tax_status === 'taxable' || fee.tax_status === 'none' ? { taxStatus: fee.tax_status } : {}),
+      ...(nonEmpty(fee.tax_class) ? { taxClass: nonEmpty(fee.tax_class) } : {}),
       name: String(fee.name), totalMinor: minor(fee.total, currency), taxMinor: grossTax(fee.total, fee.total_tax, currency),
     })),
     shipping: rows(raw.shipping_lines).map((line) => ({
+      ...(positiveId(line.id) ? { id: positiveId(line.id) } : {}),
+      ...(nonEmpty(line.method_id) ? { methodId: nonEmpty(line.method_id) } : {}),
       name: String(line.method_title), totalMinor: minor(line.total, currency), taxMinor: grossTax(line.total, line.total_tax, currency),
     })),
     coupons: rows(raw.coupon_lines).map((coupon) => ({

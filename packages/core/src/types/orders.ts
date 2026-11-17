@@ -24,9 +24,23 @@ export interface StoreOrderLine {
 
 /** A fee or shipping line: excluding tax, the tax beside it. A fee may be negative.
  * `taxMinor` is such that `totalMinor + taxMinor` is the gross rounded once. */
-export interface StoreOrderCharge { name: string; totalMinor: number; taxMinor: number }
+export interface StoreOrderCharge {
+  /** The store's order-item id, which `OrderUpdateFee.storeLineId` / `OrderUpdateShipping.storeLineId` names; absent when the store gives none. */
+  id?: string;
+  name: string;
+  totalMinor: number;
+  taxMinor: number;
+  /** The tax status the store recorded on a fee; absent when the store does not record one (WooCommerce shipping). */
+  taxStatus?: 'taxable' | 'none';
+  /** The fee's recorded tax class; absent means the standard class. */
+  taxClass?: string;
+  /** A shipping line's recorded method id. */
+  methodId?: string;
+}
 
 export interface StoreOrderPayment {
+  /** The store's payment record id, which `OrderUpdatePayment.paymentId` names; absent when the store keeps no per-payment record. */
+  id?: string;
   /** The store's own method id, e.g. WooCommerce's `pos_cash`. */
   method: string;
   /** The store's name for it, e.g. "Cash". */
@@ -45,8 +59,10 @@ export interface StoreOrder {
   id: string;
   /** The number the store shows (`CommandServerRefs.displayId`). */
   reference: string;
-  /** The till's `PosOrder.id` when a till created the order; absent otherwise. */
+  /** The till's `PosOrder.id` when a till created the order; absent otherwise. It is also what an `order.reopen` sends as `clientOrderId`. */
   clientOrderId?: string;
+  /** The store's current revision of the order, which `OrderReopenPayload.baseRevision` and `OrderUpdatePayload.baseRevision` carry; absent when the store has none. */
+  revision?: string;
   /** The platform's own status word (WooCommerce: `completed`, `refunded`, …); the app labels it. */
   status: string;
   /** ISO 8601, UTC. */
