@@ -8,7 +8,7 @@ const taxContext = { getTaxRatePpm: () => 100000, pricesIncludeTax: false };
 
 function fixture(status: 'applied' | 'duplicate' = 'applied') {
   const read: StoreOrder = {
-    id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:a', status: 'completed',
+    id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', status: 'completed',
     placedAt: '2026-11-17T10:00:00.000Z', currency: 'EUR', pricesIncludeTax: false, customer: null,
     lines: [
       { id: '7', productId: 'coffee', name: 'Coffee', quantity: 2,
@@ -20,10 +20,10 @@ function fixture(status: 'applied' | 'duplicate' = 'applied') {
     taxMinor: 300, totalMinor: 3300,
     payments: [{ id: 'p1', method: 'pos_cash', amountMinor: 1000 }],
   };
-  const reread: StoreOrder = { ...read, status: 'pos-open', revision: 'sha256:b' };
+  const reread: StoreOrder = { ...read, status: 'pos-open', revision: 'sha256:0dde575797fdab13e429b1132686c07af48e46096a03ea7adc6c3027082b8d2a' };
   const send = vi.fn<CommandTransport<OrderReopenEnvelope>['send']>().mockImplementation(async ([envelope]) => ({
     kind: 'results', results: [{
-      id: envelope.id, status, reopen: { orderId: '41', status: 'pos-open', revision: 'sha256:b' },
+      id: envelope.id, status, reopen: { orderId: '41', status: 'pos-open', revision: 'sha256:0dde575797fdab13e429b1132686c07af48e46096a03ea7adc6c3027082b8d2a' },
     }],
   }));
   const getOrders = vi.fn<(ids: readonly string[]) => Promise<StoreOrder[]>>().mockResolvedValue([reread]);
@@ -42,7 +42,7 @@ describe('reopenStoreOrder', () => {
     const outcome = await reopenStoreOrder(read, deps);
     expect(outcome).toStrictEqual({ kind: 'reopened', duplicate: false, order: expect.any(Object) });
     if (outcome.kind !== 'reopened') throw new Error('Expected reopened');
-    expect(outcome.order.storeOrder).toStrictEqual({ id: '41', revision: 'sha256:b', uuid: 'u-1' });
+    expect(outcome.order.storeOrder).toStrictEqual({ id: '41', revision: 'sha256:0dde575797fdab13e429b1132686c07af48e46096a03ea7adc6c3027082b8d2a', uuid: 'u-1' });
     expect(outcome.order.totalMinor).toBe(reread.totalMinor);
     expect(outcome.order.taxMinor).toBe(reread.taxMinor);
     expect(outcome.order.payments).toHaveLength(1);
@@ -57,7 +57,7 @@ describe('reopenStoreOrder', () => {
       id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/), type: 'order.reopen', version: 1,
       createdAt: '2026-11-17T10:00:00.000Z', deviceId: 'till-1', attempt: 1,
       payload: {
-        orderId: '41', clientOrderId: 'u-1', baseRevision: 'sha256:a', cashierRef: '7',
+        orderId: '41', clientOrderId: 'u-1', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', cashierRef: '7',
         registerId: 'register-1', createdAt: '2026-11-17T10:00:00.000Z',
       },
     }]]);
@@ -185,7 +185,7 @@ describe('reopenStoreOrder', () => {
     const resend: OrderReopenEnvelope = {
       id: '019a9295-dd00-7000-8000-000000000001', type: 'order.reopen', version: 1,
       createdAt: '2026-11-17T10:00:00.000Z', deviceId: 'till-1', attempt: 1,
-      payload: { orderId: '42', baseRevision: 'sha256:a', cashierRef: '7', registerId: 'register-1', createdAt: '2026-11-17T10:00:00.000Z' },
+      payload: { orderId: '42', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', cashierRef: '7', registerId: 'register-1', createdAt: '2026-11-17T10:00:00.000Z' },
     };
     await expect(reopenStoreOrder(read, { ...deps, resend })).rejects.toThrow('reopenStoreOrder: resend is for another order');
     expect(send).not.toHaveBeenCalled();
@@ -258,7 +258,7 @@ describe('reopenStoreOrder', () => {
 
   it('refuses a stale reread', async () => {
     const { read, reread, deps } = fixture();
-    reread.revision = 'sha256:old';
+    reread.revision = 'sha256:8750ca58e4ac509f76e614b0359eaa93454a56c95ea0c6c690729fb5a5498099';
     expect(await reopenStoreOrder(read, deps)).toStrictEqual({
       kind: 'reopened_unloadable', reason: 'reread',
       message: `${REOPENED_NOT_LOADED} The order read back does not match the reopen.`,
@@ -267,10 +267,10 @@ describe('reopenStoreOrder', () => {
 
   it('loads any reread revision when the reopen result has no revision', async () => {
     const { read, reread, send, deps } = fixture();
-    reread.revision = 'sha256:old';
+    reread.revision = 'sha256:8750ca58e4ac509f76e614b0359eaa93454a56c95ea0c6c690729fb5a5498099';
     send.mockImplementation(async ([envelope]) => ({
       kind: 'results', results: [{ id: envelope.id, status: 'applied', reopen: { orderId: '41', status: 'pos-open' } }],
     }));
-    expect(await reopenStoreOrder(read, deps)).toMatchObject({ kind: 'reopened', order: { storeOrder: { revision: 'sha256:old' } } });
+    expect(await reopenStoreOrder(read, deps)).toMatchObject({ kind: 'reopened', order: { storeOrder: { revision: 'sha256:8750ca58e4ac509f76e614b0359eaa93454a56c95ea0c6c690729fb5a5498099' } } });
   });
 });

@@ -27,7 +27,7 @@ function order(i: number): PosOrder {
 }
 function reopened(i: number): PosOrder {
   const input = order(i);
-  return { ...input, storeOrderId: 'store-' + i, baseRevision: 'rev-' + i,
+  return { ...input, storeOrderId: 'store-' + i, baseRevision: `sha256:${String(i).repeat(64)}`,
     lines: [{ ...input.lines[0], storeLineId: '11' }], payments: [{ ...input.payments[0], storePaymentId: '21' }] };
 }
 function applied(batch: Array<OrderCreateEnvelope | OrderUpdateEnvelope>): CommandResult[] {

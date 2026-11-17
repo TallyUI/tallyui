@@ -24,7 +24,7 @@ async function resumeSale(covered = false) {
   const { pos_drafts: drafts, pos_orders: orders } = await db.addCollections({
     pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection(),
   });
-  const builder = createOrderBuilder({ currency: 'EUR', taxContext, storeOrder: { id: '41', revision: 'sha256:a' } });
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext, storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
   builder.addLine({ productId: 'coffee', name: 'Coffee', storeLineId: '7', unitPrice: { amount: 1000, currency: 'EUR' } });
   builder.addPayment({
     method: 'external', amountMinor: covered ? builder.getSnapshot().totalMinor : 500,
@@ -63,7 +63,7 @@ async function emptySale() {
 }
 
 function reopenedBuilder(taxes = taxContext) {
-  const builder = createOrderBuilder({ currency: 'EUR', taxContext: taxes, storeOrder: { id: '41', revision: 'sha256:a' } });
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: taxes, storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
   builder.addLine({ productId: 'coffee', name: 'Coffee', storeLineId: '7', unitPrice: { amount: 1000, currency: 'EUR' } });
   builder.addPayment({ method: 'external', amountMinor: 500, reference: 'Cash', storePaymentId: 'p1', locked: true });
   return builder;
@@ -149,7 +149,7 @@ describe('useSale locked legs', () => {
     const { result } = await emptySale();
     const builder = createOrderBuilder({
       currency: 'EUR', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: true },
-      storeOrder: { id: '41', revision: 'sha256:a' },
+      storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' },
     });
     builder.addLine({
       productId: 'coffee', name: 'Coffee', storeLineId: '7',
@@ -224,7 +224,7 @@ describe('useSale locked legs', () => {
 
   it('resume keeps the store order, the kept line id and the locked leg', async () => {
     const { result, lockedLeg } = await resumeSale();
-    expect(result.current.order.storeOrder).toEqual({ id: '41', revision: 'sha256:a' });
+    expect(result.current.order.storeOrder).toEqual({ id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' });
     expect(result.current.order.lineItems).toMatchObject([{ storeLineId: '7' }]);
     expect(lockedLeg).toEqual({
       id: expect.any(String), method: 'external', amountMinor: 500,

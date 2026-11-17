@@ -18,7 +18,7 @@ function sale() {
   return finalizeOrder(builder.getSnapshot(), { now: new Date('2026-11-17T10:00:00.000Z'), capabilities: { orderCreate: 9 } });
 }
 const withoutIds = sale();
-const reopened: PosOrder = { ...withoutIds, storeOrderId: '4711', baseRevision: '3-abc',
+const reopened: PosOrder = { ...withoutIds, storeOrderId: '4711', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298',
   lines: [{ ...withoutIds.lines[0], storeLineId: '11' }, withoutIds.lines[1]],
   fees: [{ ...withoutIds.fees![0], storeLineId: '12' }], shipping: [{ ...withoutIds.shipping![0], storeLineId: '13' }],
   payments: [{ ...withoutIds.payments[0], storePaymentId: '21' }, withoutIds.payments[1]] };
@@ -37,7 +37,7 @@ describe('order.update v1', () => {
     const update = toOrderUpdateEnvelope(reopened, 'device-1', 1, { maxVersion });
     expect(update).toMatchObject({ id: reopened.commandId, type: 'order.update', version: 1,
       createdAt: create.createdAt, deviceId: create.deviceId, attempt: create.attempt });
-    expect(update.payload).toMatchObject({ orderId: '4711', baseRevision: '3-abc', createVersion: create.version });
+    expect(update.payload).toMatchObject({ orderId: '4711', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', createVersion: create.version });
     expect(createPart(update.payload)).toStrictEqual(create.payload);
     expect(updatePayloadErrors(update.payload)).toEqual([]);
     expect(update.payload.lines[0].storeLineId).toBe('11');

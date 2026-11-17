@@ -163,7 +163,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(14);
+  expect(posOrderSchema.version).toBe(15);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -233,7 +233,7 @@ it('stores schema-13 coupon line shares and refuses malformed shares', async () 
   } finally { await db.remove(); }
 });
 
-it("stores a reopened sale's store ids (schema 14) and refuses empty or over-long ones", async () => {
+it("stores a reopened sale's store ids (schema 15) and refuses empty or over-long ones", async () => {
   const db = await createRxDatabase({ name: `storeids${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -244,20 +244,38 @@ it("stores a reopened sale's store ids (schema 14) and refuses empty or over-lon
     builder.addShipping({ name: 'Delivery', amountMinor: 30, taxStatus: 'none', methodId: 'flat_rate' });
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
-    const recorded = { ...order, storeOrderId: '4711', baseRevision: '3-abc',
+    const recorded = { ...order, storeOrderId: '4711', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298',
       lines: [{ ...order.lines[0], storeLineId: '11' }], fees: [{ ...order.fees![0], storeLineId: '12' }],
       shipping: [{ ...order.shipping![0], storeLineId: '13' }], payments: [{ ...order.payments[0], storePaymentId: '21' }] };
     await orders.insert(recorded);
     expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(recorded);
+    await orders.insert({ ...recorded, id: uuidv7(), baseRevision: 'x'.repeat(128) });
+    for (const baseRevision of ['', 'x'.repeat(129)]) {
+      await expect(orders.insert({ ...recorded, id: uuidv7(), baseRevision })).rejects.toMatchObject({ code: 'VD2' });
+    }
     for (const value of ['', 'x'.repeat(65)]) {
       for (const malformed of [
-        { storeOrderId: value }, { baseRevision: value },
+        { storeOrderId: value },
         { lines: [{ ...recorded.lines[0], storeLineId: value }] },
         { fees: [{ ...recorded.fees[0], storeLineId: value }] },
         { shipping: [{ ...recorded.shipping[0], storeLineId: value }] },
         { payments: [{ ...recorded.payments[0], storePaymentId: value }] },
       ]) await expect(orders.insert({ ...recorded, id: uuidv7(), ...malformed })).rejects.toMatchObject({ code: 'VD2' });
     }
+  } finally { await db.remove(); }
+});
+
+it('stores refundDueMinor as a non-negative integer (schema 15)', async () => {
+  const db = await createRxDatabase({ name: `refund${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const orders = await addPosOrderCollection(db);
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const order = finalizeOrder(builder.getSnapshot());
+    for (const refundDueMinor of [0, 250]) expect((await orders.insert({ ...order, id: uuidv7(), refundDueMinor })).refundDueMinor).toBe(refundDueMinor);
+    for (const refundDueMinor of [-1, 2.5]) await expect(orders.insert({ ...order, id: uuidv7(), refundDueMinor })).rejects.toMatchObject({ code: 'VD2' });
   } finally { await db.remove(); }
 });
 

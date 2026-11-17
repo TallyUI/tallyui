@@ -2,7 +2,7 @@ import type { StoreOrder, StoreOrderLine } from '@tallyui/core';
 import type { CustomerSummary } from './types';
 import { createOrderBuilder, type OrderBuilder } from './order-builder';
 import type { TaxContext } from '../tax/types';
-import { sendable, PAYLOAD_STRING_MAX, customerRefusal } from '../pos-order/command';
+import { sendable, PAYLOAD_STRING_MAX, REVISION_MAX, customerRefusal } from '../pos-order/command';
 
 /** Why the till cannot rebuild a store order as a reopened cart (ADR-090 D7c5). */
 export type StoreOrderRebuildReason =
@@ -49,7 +49,7 @@ export function orderBuilderFromStoreOrder(read: StoreOrder, options: {
 }): OrderBuilder {
   if (read.currency.toUpperCase() !== options.currency.toUpperCase()) throw new StoreOrderRebuildError('currency');
   if (read.pricesIncludeTax !== options.taxContext.pricesIncludeTax) throw new StoreOrderRebuildError('tax_mode');
-  if (!sendable(read.revision, PAYLOAD_STRING_MAX)) throw new StoreOrderRebuildError('revision');
+  if (!sendable(read.revision, REVISION_MAX)) throw new StoreOrderRebuildError('revision');
   if (!sendable(read.id, 64) || (read.clientOrderId !== undefined && !sendable(read.clientOrderId, 64))
     || read.lines.some((line) => !sendable(line.id, 64))
     || [...read.fees, ...read.shipping].some((charge) => !sendable(charge.id, 64))

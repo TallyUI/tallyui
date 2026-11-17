@@ -8,7 +8,7 @@ const options = { currency: 'EUR', taxContext, catalogue: () => ({}) };
 
 function storeOrder(): StoreOrder {
   return {
-    id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:a', status: 'completed',
+    id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', status: 'completed',
     placedAt: '2026-11-17T10:00:00.000Z', currency: 'EUR', pricesIncludeTax: false, customer: null,
     lines: [
       { id: '7', productId: 'coffee', name: 'Coffee', quantity: 2,

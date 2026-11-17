@@ -8,11 +8,11 @@ const envelope: OrderReopenEnvelope = {
   id: '019d0e2e-0000-7000-8000-000000000001', type: 'order.reopen', version: 1,
   createdAt: '2026-10-07T10:00:00.000Z', deviceId: 'till-1', attempt: 1,
   payload: {
-    orderId: 'order-1', baseRevision: 'rev-1', cashierRef: '7', registerId: 'register-1',
+    orderId: 'order-1', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', cashierRef: '7', registerId: 'register-1',
     createdAt: '2026-10-07T10:00:00.000Z',
   },
 };
-const reopen: OrderReopenResult = { orderId: 'order-1', status: 'pos-open', revision: 'rev-2' };
+const reopen: OrderReopenResult = { orderId: 'order-1', status: 'pos-open', revision: 'sha256:0dde575797fdab13e429b1132686c07af48e46096a03ea7adc6c3027082b8d2a' };
 const applied: CommandResult = { id: envelope.id, status: 'applied', reopen };
 
 describe('sendOrderReopen', () => {

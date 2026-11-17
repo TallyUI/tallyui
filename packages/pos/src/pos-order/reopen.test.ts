@@ -100,7 +100,7 @@ it.each([
 });
 
 it.each(['rejected', 'pending'] as const)('refuses a rejected row carrying a store order and writes no draft (gate 6)', async (syncStatus) => {
-  const order = { ...storedOrder(), storeOrderId: '41', baseRevision: 'sha256:a' };
+  const order = { ...storedOrder(), storeOrderId: '41', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' };
   order.syncStatus = syncStatus;
   if (syncStatus === 'pending') delete order.error;
   await db.pos_orders.insert(order);

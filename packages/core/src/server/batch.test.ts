@@ -92,7 +92,7 @@ describe('validateBatch', () => {
 
 describe('precheckCommand', () => {
   const update = { ...command, type: 'order.update' as const, version: 1 as const,
-    payload: { ...fixture.payload, orderId: 'order-1', baseRevision: 'revision-1', createVersion: 9,
+    payload: { ...fixture.payload, orderId: 'order-1', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', createVersion: 9,
       lines: fixture.payload.lines.map((line, i) => ({ ...line, discountMinor: [169, 37][i], storeLineId: `line-${i}` })),
       discountMinor: 206, payments: fixture.payload.payments.map(payment => ({ ...payment, paymentId: 'payment-1' })) } }
   const updateServer = { orderCreate: [1, 6, 9], register: [1], orderUpdate: [1] }

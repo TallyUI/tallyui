@@ -96,6 +96,8 @@ export interface PosOrder {
   discountMinor: number;
   taxMinor: number;
   totalMinor: number;
+  /** What the store owes back on a reopened sale whose locked payments exceed its new total, in minor units (pos_orders v15, ADR-090); written at finalize, absent elsewhere. */
+  refundDueMinor?: number;
   payments: PosOrderPayment[];
   /** `billing` and `shipping` (#722) are frozen copies of the customer's addresses, stored only with `taxAddress`. */
   customer: { id?: string; name?: string; email?: string; billing?: OrderAddress; shipping?: OrderAddress } | null;

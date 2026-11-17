@@ -5,7 +5,7 @@ import { SUPPORTED_ORDER_UPDATE_VERSIONS, updatePayloadErrors } from './index'
 import { orderCreatePart } from './update-payload-shape'
 
 const payload = {
-  ...fixture.payload, orderId: 'order-1', baseRevision: 'revision-1', createVersion: 9,
+  ...fixture.payload, orderId: 'order-1', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', createVersion: 9,
   lines: fixture.payload.lines.map((line, i) => ({ ...line, discountMinor: [169, 37][i], storeLineId: `line-${i}` })),
   discountMinor: 206,
   payments: fixture.payload.payments.map(payment => ({ ...payment, paymentId: 'payment-1' })),
@@ -46,7 +46,8 @@ it.each([null, undefined, 'update', 1, [], new Date()])('rejects a non-plain obj
 
 it.each([
   [{ orderId: undefined }, 'orderId: expected a non-empty string of at most 64 characters'],
-  [{ baseRevision: 'x'.repeat(65) }, 'baseRevision: expected a non-empty string of at most 64 characters'],
+  [{ baseRevision: 'x'.repeat(129) }, 'baseRevision: expected a non-empty string of at most 128 characters'],
+  [{ orderId: 'x'.repeat(65) }, 'orderId: expected a non-empty string of at most 64 characters'],
   [{ createVersion: 0 }, 'createVersion: expected a positive safe integer'],
   [{ createVersion: 1.5 }, 'createVersion: expected a positive safe integer'],
   [{ createVersion: Number.MAX_SAFE_INTEGER + 1 }, 'createVersion: expected a positive safe integer'],

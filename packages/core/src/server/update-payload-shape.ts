@@ -9,7 +9,8 @@ function updateOnlyErrors(payload: unknown): string[] {
     || (Object.getPrototypeOf(payload) !== Object.prototype && Object.getPrototypeOf(payload) !== null)) return ['payload: expected an object']
   const body = payload as Record<string, unknown>
   const id = (value: unknown, field: string) => {
-    check(typeof value === 'string' && value.length > 0 && value.length <= 64, field, 'a non-empty string of at most 64 characters')
+    const max = field === 'baseRevision' ? 128 : 64
+    check(typeof value === 'string' && value.length > 0 && value.length <= max, field, `a non-empty string of at most ${max} characters`)
     if (typeof value === 'string') check(!value.includes('\u0000'), field, 'no NUL character')
   }
   id(body.orderId, 'orderId')

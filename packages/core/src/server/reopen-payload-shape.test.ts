@@ -3,6 +3,8 @@ import { expect, it } from 'vitest'
 import type { OrderReopenPayload } from '../types/commands'
 import { reopenPayloadErrors, SUPPORTED_ORDER_REOPEN_VERSIONS } from './index'
 
+const REV_A = 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298'
+
 const payload: OrderReopenPayload = {
   orderId: 'order-1', cashierRef: 'cashier-1', registerId: 'register-1', createdAt: '2026-01-01T08:00:00.000Z',
 }
@@ -10,7 +12,7 @@ const payload: OrderReopenPayload = {
 it('accepts required fields, optional ids and null-prototype payloads (ADR-090)', () => {
   expect(SUPPORTED_ORDER_REOPEN_VERSIONS).toEqual([1])
   expect(reopenPayloadErrors(payload)).toEqual([])
-  expect(reopenPayloadErrors({ ...payload, clientOrderId: 'client-order', baseRevision: 'revision-1', storeId: 'store-1' })).toEqual([])
+  expect(reopenPayloadErrors({ ...payload, clientOrderId: 'client-order', baseRevision: REV_A, storeId: 'store-1' })).toEqual([])
   expect(reopenPayloadErrors(Object.assign(Object.create(null), payload))).toEqual([])
 })
 
@@ -18,7 +20,7 @@ it.each([null, undefined, 'reopen', 1, [], new Date()])('rejects a non-object pa
   expect(reopenPayloadErrors(value)).toEqual(['payload: expected an object'])
 })
 
-it.each(['orderId', 'cashierRef', 'registerId', 'clientOrderId', 'baseRevision', 'storeId'])(
+it.each(['orderId', 'cashierRef', 'registerId', 'clientOrderId', 'storeId'])(
   'checks the id %s and refuses NUL', field => {
     expect(reopenPayloadErrors({ ...payload, [field]: 'x'.repeat(64) })).toEqual([])
     for (const value of ['', 'x'.repeat(65), null, 7]) {
@@ -28,6 +30,14 @@ it.each(['orderId', 'cashierRef', 'registerId', 'clientOrderId', 'baseRevision',
     expect(reopenPayloadErrors({ ...payload, [field]: 'x\u0000' })).toEqual([`${field}: expected no NUL character`])
   },
 )
+
+it('checks baseRevision up to 128 characters (ADR-090)', () => {
+  for (const baseRevision of [REV_A, 'x'.repeat(128)]) expect(reopenPayloadErrors({ ...payload, baseRevision })).toEqual([])
+  for (const baseRevision of ['', 'x'.repeat(129), null, 7]) {
+    expect(reopenPayloadErrors({ ...payload, baseRevision })).toEqual(['baseRevision: expected a non-empty string of at most 128 characters'])
+  }
+  expect(reopenPayloadErrors({ ...payload, baseRevision: 'x\u0000' })).toEqual(['baseRevision: expected no NUL character'])
+})
 
 it.each(['orderId', 'cashierRef', 'registerId'])('requires %s', field => {
   expect(reopenPayloadErrors({ ...payload, [field]: undefined }))
