@@ -12,7 +12,7 @@ import { ProductCard } from '@tallyui/components';
 ## Usage
 
 ```tsx
-<ProductCard doc={productDocument} onPress={() => addToCart(doc)} />
+<ProductCard doc={productDocument} onPress={() => addToCart(productDocument)} />
 ```
 
 Combines ProductImage, ProductTitle, and ProductPrice into a single tappable card. When `onPress` is provided, the entire card becomes pressable.
@@ -24,7 +24,8 @@ Combines ProductImage, ProductTitle, and ProductPrice into a single tappable car
 | `doc` | `any` | required | RxDB product document |
 | `onPress` | `() => void` | — | Tap handler (wraps card in Pressable) |
 | `imageSize` | `number` | `80` | Image width/height in pixels |
-| `currencySymbol` | `string` | `'$'` | Currency symbol for price |
+| `currencySymbol` | `string` | — | Currency symbol for price |
+| `notSoldLabel` | `string` | `'Not sold here'` | Shown in place of the price when the channel doesn't sell this product. |
 | `className` | `string` | — | Override card container styles |
 
 **Default classes:** `items-center rounded-lg border border-border bg-card p-3`
