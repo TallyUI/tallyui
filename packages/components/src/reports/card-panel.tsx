@@ -69,8 +69,8 @@ function panelCells(card: SalesPanelId, figures: SalesFigures, money: (minor: nu
   }
 }
 
-// Approximates a text-sm tabular digit (8 px) per character plus the cell's px-2 padding (16 px).
-const columnWidth = (longestCellLength: number) => longestCellLength * 8 + 16;
+// 9 px per character covers text-sm digits and currency letters, plus the px-2 padding (16 px).
+const columnWidth = (longestCellLength: number) => longestCellLength * 9 + 16;
 
 function Cells({ cells, widths, head }: { cells: string[]; widths: number[]; head?: boolean }): JSX.Element {
   const Cell = head ? TableHead : TableCell;
@@ -98,7 +98,7 @@ export function SalesCardPanel({ card, figures, currency, scope, onClose, onExpo
   return (
     <Dialog open={card !== null} onOpenChange={(open) => !open && onClose()}>
       {card !== null && cells && (
-        <DialogContent side="right" testID="detail-panel" className="max-w-xl">
+        <DialogContent side="right" testID="detail-panel" className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{TITLES[card]}</DialogTitle>
             {scope && <DialogDescription testID="detail-panel-scope">{scope}</DialogDescription>}
