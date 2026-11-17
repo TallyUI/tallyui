@@ -14,13 +14,16 @@ const search = (query: string) => new Promise<Customer[]>((resolve) => setTimeou
 
 export default function CustomerDropdownScreen() {
   const [selected, setSelected] = useState<Customer | null>(null);
+  const [hasAddress, setHasAddress] = useState(false);
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="p-4 gap-6" testID="customer-dropdown-screen">
       <Stack.Screen options={{ title: 'CustomerDropdown' }} />
       {/* v2's cart head row. */}
       <View className="max-w-md rounded-lg border border-border bg-card">
         <View className="border-b border-border px-2 py-2">
-          <CustomerDropdown search={search} selected={selected} onSelect={setSelected} online />
+          {/* The pin's toggle stands in for the app's address editor. */}
+          <CustomerDropdown search={search} selected={selected} onSelect={setSelected} online
+            onEditAddress={() => setHasAddress((on) => !on)} hasAddress={hasAddress} />
         </View>
       </View>
     </ScrollView>
