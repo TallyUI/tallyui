@@ -210,31 +210,35 @@ describe('startSyncCadence', () => {
 
   it('a slower tick that settles after a newer one does not overwrite it', async () => {
     const t0 = Date.now();
-    let resolve!: () => void;
+    let reject!: (error: Error) => void;
     const slow = target();
-    slow.reSync.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+    slow.reSync.mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
     const { runner: r } = start({ targets: [slow] });
     await vi.advanceTimersByTimeAsync(60_000);
     r.tickNow();
     expect(r.lastTick()).toEqual({ atMs: t0 + 60_000, status: 'ok' });
-    resolve();
+    // An overwrite would show { atMs: t0 + 65_000, status: 'error' }.
+    vi.advanceTimersByTime(5_000);
+    reject(new Error('slow'));
     await vi.advanceTimersByTimeAsync(0);
     expect(r.lastTick()).toEqual({ atMs: t0 + 60_000, status: 'ok' });
   });
 
   it('stop completes the last-tick stream, keeps the last tick and records nothing later', async () => {
     const t0 = Date.now();
-    let resolve!: () => void;
+    let reject!: (error: Error) => void;
     const t = target();
     const { runner: r } = start({ targets: [t] });
     vi.advanceTimersByTime(60_000);
-    t.reSync.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+    t.reSync.mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
     r.tickNow();
     let completed = false;
     r.lastTick$.subscribe({ complete: () => { completed = true; } });
     r.stop();
     expect(completed).toBe(true);
-    resolve();
+    // A post-stop record would show { atMs: t0 + 65_000, status: 'error' }.
+    vi.advanceTimersByTime(5_000);
+    reject(new Error('late'));
     await vi.advanceTimersByTimeAsync(0);
     expect(r.lastTick()).toEqual({ atMs: t0 + 60_000, status: 'ok' });
   });
