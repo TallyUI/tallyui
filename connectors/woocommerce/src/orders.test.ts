@@ -85,7 +85,7 @@ describe('WooCommerce orders', () => {
     const order = toWooStoreOrder({
       id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
       discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
-      payment_method: 'pos_card', payment_method_title: 'Card', date_paid_gmt: '2026-10-06T04:54:03',
+      payment_method: 'pos_card', payment_method_title: 'Cash + Card', date_paid_gmt: '2026-10-06T04:54:03',
       meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
         { id: '1', method_id: 'pos_cash', amount: '5.00', currency: 'USD', status: 'captured' },
         { id: '2', method_id: 'pos_card', amount: '7.10', currency: 'USD', status: 'captured' },
@@ -96,20 +96,69 @@ describe('WooCommerce orders', () => {
     });
     expect(order.payments).toStrictEqual([
       { method: 'pos_cash', kind: 'cash', amountMinor: 500 },
-      { method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 710 },
+      { method: 'pos_card', kind: 'external', amountMinor: 710 },
     ]);
   });
 
-  it('reports no payments for a ledger with no captured row even when date_paid_gmt is set', () => {
-    const order = toWooStoreOrder({
+  it('falls back to the paid rule for a ledger with no captured row', () => {
+    const raw = {
       id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
       discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
-      payment_method: 'pos_card', date_paid_gmt: '2026-10-06T04:54:03',
+      payment_method: 'pos_card', payment_method_title: 'Card', date_paid_gmt: '2026-10-06T04:54:03',
       meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
         { id: '1', method_id: 'pos_card', amount: '15.10', currency: 'USD', status: 'pending' },
       ] } }],
+    };
+    expect(toWooStoreOrder(raw).payments).toStrictEqual([{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 1510 }]);
+    expect(toWooStoreOrder({ ...raw, date_paid_gmt: undefined }).payments).toStrictEqual([]);
+  });
+
+  it('gives the title to ledger rows that all share the order method', () => {
+    const order = toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '10.00',
+      payment_method: 'pos_card', payment_method_title: 'Card',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_card', amount: '4.00', currency: 'USD', status: 'captured' },
+        { method_id: 'pos_card', amount: '6.00', currency: 'USD', status: 'captured' },
+      ] } }],
     });
-    expect(order.payments).toStrictEqual([]);
+    expect(order.payments).toStrictEqual([
+      { method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 400 },
+      { method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 600 },
+    ]);
+  });
+
+  it('treats date_paid alone as paid', () => {
+    const order = toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      payment_method: 'cod', date_paid: '2026-10-06T04:54:03',
+    });
+    expect(order.payments).toStrictEqual([{ method: 'cod', amountMinor: 1510 }]);
+  });
+
+  it('throws a server error for a captured ledger row without a method', () => {
+    const call = () => toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: '', amount: '5.00', currency: 'USD', status: 'captured' },
+      ] } }],
+    });
+    expect(call).toThrow(CustomerServiceError);
+    expect(call).toThrow(expect.objectContaining({ code: 'server', message: 'unexpected response' }));
+  });
+
+  it('reads a 2.0 order with a 6dp total and 2dp ledger amounts', () => {
+    const order = toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '9.900000',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_cash', amount: '9.90', currency: 'USD', status: 'captured' },
+      ] } }],
+    });
+    expect(order.payments).toStrictEqual([{ method: 'pos_cash', kind: 'cash', amountMinor: 990 }]);
   });
 
   it('throws a server error for a captured ledger row in another currency', () => {

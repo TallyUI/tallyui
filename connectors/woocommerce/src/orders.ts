@@ -49,14 +49,16 @@ function posUuid(metaData: unknown): string | undefined {
 
 const PAYMENT_KINDS: Record<string, PaymentMethodKind> = { pos_cash: 'cash', pos_card: 'external' };
 
-/** Captured ledger rows are the store's counting rule. */
+/** Captured rows are the store's counting rule; with none, its paid state decides, as its balance and reopen adoption do. */
 function storePayments(raw: Row, currency: string, totalMinor: number): StoreOrder['payments'] {
   const ledger = rows(raw.meta_data).find((meta) => meta.key === '_wcpos_payments')?.value;
-  if (isRow(ledger) && ledger.schema === 1 && Array.isArray(ledger.payments)) {
-    return rows(ledger.payments).filter((row) => row.status === 'captured').map((row) => {
+  const captured = isRow(ledger) && ledger.schema === 1 && Array.isArray(ledger.payments)
+    ? rows(ledger.payments).filter((row) => row.status === 'captured') : [];
+  if (captured.length) {
+    const title = captured.every((row) => row.method_id === raw.payment_method) ? nonEmpty(raw.payment_method_title) : undefined;
+    return captured.map((row) => {
       const method = nonEmpty(row.method_id);
       if (!method || (typeof row.currency === 'string' && row.currency !== currency)) throw unexpected();
-      const title = method === raw.payment_method ? nonEmpty(raw.payment_method_title) : undefined;
       const kind = PAYMENT_KINDS[method];
       return {
         method, ...(title ? { title } : {}), ...(kind ? { kind } : {}), amountMinor: minor(row.amount, currency),
