@@ -1,21 +1,44 @@
 import { useState } from 'react';
-import { Text as RNText, View } from 'react-native';
+import { View } from 'react-native';
 import { Stack } from 'expo-router';
-import { AppShell, RegisterBar, Text, type ShellNavItem } from '@tallyui/components';
+import {
+  ActivityHeartbeatIcon,
+  AppShell,
+  CashRegisterIcon,
+  ChartLineIcon,
+  DiscountIcon,
+  GiftIcon,
+  MessageQuestionIcon,
+  ReceiptIcon,
+  RegisterBar,
+  SettingsIcon,
+  Text,
+  UsersIcon,
+  type ShellNavItem,
+} from '@tallyui/components';
 import { useDemoRegister } from '../../lib/use-demo-register';
 
-/** A text glyph stands in for an app's icon set: it takes the nav item's tint like an SVG icon would. */
-function Glyph({ children }: { children: string }) {
-  return <RNText style={{ fontSize: 20, lineHeight: 24, textAlign: 'center' }}>{children}</RNText>;
-}
-
-/** v2's drawer routes (apps/main/app/(app)/(drawer)/_layout.tsx), a subset, with Settings in the bottom group. */
+/**
+ * v2's nine drawer routes in its order, with its icons (`DRAWER_ICONS` and the `Drawer.Screen` list in
+ * apps/main/app/(app)/(drawer)/_layout.tsx): health starts the bottom group and carries v2's only count.
+ * Icons are drawn at v2's rail size and stroke.
+ */
 const NAV: ShellNavItem[] = [
-  { id: 'pos', label: 'POS', icon: <Glyph>$</Glyph> },
-  { id: 'products', label: 'Products', icon: <Glyph>▦</Glyph> },
-  { id: 'orders', label: 'Orders', icon: <Glyph>≡</Glyph>, badge: 2 },
-  { id: 'customers', label: 'Customers', icon: <Glyph>☺</Glyph> },
-  { id: 'settings', label: 'Settings', icon: <Glyph>⚙</Glyph>, group: 'bottom' },
+  { id: 'pos', label: 'POS', icon: <CashRegisterIcon size={24} strokeWidth={1.5} /> },
+  { id: 'products', label: 'Products', icon: <GiftIcon size={24} strokeWidth={1.5} /> },
+  { id: 'orders', label: 'Orders', icon: <ReceiptIcon size={24} strokeWidth={1.5} /> },
+  { id: 'coupons', label: 'Coupons', icon: <DiscountIcon size={24} strokeWidth={1.5} /> },
+  { id: 'customers', label: 'Customers', icon: <UsersIcon size={24} strokeWidth={1.5} /> },
+  { id: 'reports', label: 'Reports', icon: <ChartLineIcon size={24} strokeWidth={1.5} /> },
+  {
+    id: 'health',
+    label: 'Store health',
+    icon: <ActivityHeartbeatIcon size={24} strokeWidth={1.5} />,
+    badge: 2,
+    group: 'bottom',
+  },
+  { id: 'settings', label: 'Settings', icon: <SettingsIcon size={24} strokeWidth={1.5} />, group: 'bottom' },
+  { id: 'support', label: 'Support', icon: <MessageQuestionIcon size={24} strokeWidth={1.5} />, group: 'bottom' },
 ];
 
 export default function AppShellScreen() {
@@ -24,7 +47,8 @@ export default function AppShellScreen() {
   const page = NAV.find((item) => item.id === active)?.label;
   return (
     <>
-      <Stack.Screen options={{ title: 'AppShell' }} />
+      {/* v2's drawer screens set headerShown: false (every screen carries its own bar). */}
+      <Stack.Screen options={{ title: 'AppShell', headerShown: false }} />
       <AppShell
         navItems={NAV}
         activeId={active}
