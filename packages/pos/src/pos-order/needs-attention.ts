@@ -4,7 +4,7 @@ import type { PosOrder } from './types';
 
 /** The `error.code` the outbox puts on a pending reopened sale whose `order.update` it cannot build (ADR-090 W4b). The row stays pending: unsent. */
 export const UPDATE_UNSENDABLE = 'update_unsendable';
-export const UPDATE_UNSENDABLE_MESSAGE = "This order can't be sent to the store as an update. Check the order in the store before redoing it.";
+export const UPDATE_UNSENDABLE_MESSAGE = "The store can't accept this change yet. Ask the owner to update the POS plugin, then press Retry.";
 
 /**
  * The orders a cashier must look at: rejected, applied with a known warning, taken after their
