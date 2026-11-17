@@ -88,6 +88,14 @@ describe('useSale locked legs', () => {
     expect(await result.current.holdsStoreOrder('41')).toBe(true);
   });
 
+  it('does not hold another store order that is parked', async () => {
+    const { result } = await emptySale();
+    act(() => { expect(result.current.openStoreOrder(reopenedBuilder().getSnapshot())).toBeNull(); });
+    await act(async () => { expect(await result.current.switchSale(null)).toBeNull(); });
+    expect(await result.current.holdsStoreOrder('42')).toBe(false);
+    expect(await result.current.holdsStoreOrder('41')).toBe(true);
+  });
+
   it('ignores a draft whose data does not parse', async () => {
     const { result, drafts } = await emptySale();
     await drafts.insert({ id: 'bad-data', data: 'not json' });

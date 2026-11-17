@@ -226,6 +226,16 @@ describe('reopenStoreOrder', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('passes no customer to taxContextFor for a customer the rebuild refuses', async () => {
+    const { read, send, deps } = fixture();
+    read.customer = { id: 'x'.repeat(65), name: 'Ada' };
+    const taxContextFor = vi.fn(() => ({ taxContext }));
+    expect(await reopenStoreOrder(read, { ...deps, taxContextFor })).toMatchObject({ kind: 'refused', reason: 'customer' });
+    expect(taxContextFor).toHaveBeenCalledTimes(1);
+    expect(taxContextFor).toHaveBeenCalledWith(null);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('builds the cart from the reread when a line has been removed', async () => {
     const { read, reread, deps } = fixture();
     reread.lines = reread.lines.filter((line) => line.id === '7');
