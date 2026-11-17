@@ -9,6 +9,8 @@ async function expectSameBox(locator: Locator, before: { x: number; y: number; w
 }
 
 test.describe('Line price keypad over the till', () => {
+  const SUBPIXEL = 1; // onLayout heights are whole pixels, boundingBox() is fractional
+
   test('opens beside the line at 1280x720 with the till left in place, and applies a quick discount', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto('/pos/sale-charges?editor=popover');
@@ -28,10 +30,10 @@ test.describe('Line price keypad over the till', () => {
     await expectSameBox(addShirt, shirtBefore);
     await expectSameBox(mug, mugBefore);
     const box = (await popover.boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.y).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(1280);
-    expect(box.y + box.height).toBeLessThanOrEqual(720);
+    expect(box.x).toBeGreaterThanOrEqual(-SUBPIXEL);
+    expect(box.y).toBeGreaterThanOrEqual(-SUBPIXEL);
+    expect(box.x + box.width).toBeLessThanOrEqual(1280 + SUBPIXEL);
+    expect(box.y + box.height).toBeLessThanOrEqual(720 + SUBPIXEL);
     for (const percent of [5, 10, 15]) await expect(page.getByTestId(`price-discount-${percent}`)).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('line-keypad-1280x720.png') });
 
