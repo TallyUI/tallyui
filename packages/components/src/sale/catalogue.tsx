@@ -43,7 +43,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
   viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categoryBrowse = 'chips', categories, pickAnyOptions = false,
-  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner }: {
+  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -119,6 +119,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
    * here, { onDetected: camera.offer, onOpen: camera.reset, scanCount: camera.scanCount }, plus height, permission,
    * viewfinder, decoder and readiness; its useBarcodeScanner then handles camera scans like device scans. */
   cameraScanner?: Omit<CameraScannerPanelProps, 'onClose'>;
+  /** v2's table row extras in table view: thumbnail leads the row, addButton ends it with the + (> for a product
+   * with variants) that does what a row press does. Default: neither. */
+  tableRow?: { thumbnail?: boolean; addButton?: boolean };
 }) {
   const [initial] = useState<{
     state: CatalogueViewState; loaded?: CatalogueViewState; pending?: Promise<unknown>; failed?: boolean; error?: unknown;
@@ -362,7 +365,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
         onRoot={() => { setAllOpen(false); changeState({ type: 'setCategory', categoryId: null }); }} /> : null}
       {state.view === 'table' ? (
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
-          sortItems={false} onSelect={selectProduct} emptyState={emptyState} />
+          sortItems={false} onSelect={selectProduct} emptyState={emptyState}
+          showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton} />
       ) : <ProductGrid items={results} numColumns={columns}
         renderItem={(product: Doc) => {
           const id = traits.getId(product);
