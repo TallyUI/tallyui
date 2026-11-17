@@ -82,11 +82,47 @@ The static exports `woocommerceConnector`, `medusaConnector`, `medusaAdminUserCo
 
 All four connectors ship with pull-only product replication adapters. Each adapter knows how to pull changes from its API using checkpoint-based pagination. The POS never writes catalogue data back. See the [Replication guide](/docs/replication) for setup and usage.
 
+## The TallyConnector contract
+
+`TallyConnector` is exported from `@tallyui/core`; only the required members are needed to pull a catalogue, while the optional members switch features on.
+
+| Member | Required | What it does |
+| --- | --- | --- |
+| `id` | yes | Uniquely identifies the connector. |
+| `name` | yes | Gives the connector a human-readable name. |
+| `description` | yes | Describes the backend the connector connects to. |
+| `icon` | no | Provides an icon or logo URL. |
+| `auth` | yes | Configures authentication. |
+| `schemas` | yes | Provides RxDB schemas for each collection. |
+| `traits` | yes | Extracts standard data from connector-specific documents. |
+| `sync` | yes (deprecated) | Configures legacy pull-based sync for each collection; use `replication` instead. |
+| `replication` | no | Provides per-collection adapters for the RxDB replication protocol. |
+| `reconcile` | no | Periodically re-reads state that replication misses. |
+| `storeSettings(context, choice?)` | no | Reads the store's currency, tax inclusivity, tax rates and pricing context once after sign-in without writing to the store. |
+| `capabilities(context)` | no | Re-reads contract capabilities for a restored session, returning `undefined` for an inconclusive read and potentially throwing when the store refuses it. |
+| `paymentMethods(context)` | no | Reads payment methods in display order; when absent, the till uses `defaultPaymentMethods()`. |
+| `receiptTemplates(context, kind?)` | no | Reads renderable store print templates online in store order for a kind (default `receipt`), returning `[]` when none exist; when absent, the till keeps its built-in layouts. |
+| `searchCustomers(context, query, options?)` | no | Searches customers online; an empty or whitespace query may list a first page, or returns `[]` if the connector cannot list customers. |
+| `searchCustomersPage(context, query, options?)` | no | Searches customers online with a total match count and a 1-based page number that defaults to 1. |
+| `createCustomer(context, input)` | no | Creates a customer online when the connector supports customers. |
+| `updateCustomer(context, id, patch)` | no | Edits a customer online and returns the store's updated customer, rejecting credential failures with `ConnectorUnauthorizedError` and invalid, server or network failures with `CustomerServiceError`. |
+| `getCustomer(context, id)` | no | Looks up a customer online when the connector supports customers. |
+| `emailReceipt(context, orderId, email, options?)` | no | Emails an existing store order's receipt online once per call without automatic retries after timeouts, optionally saving the billing email where supported. |
+| `listOrders(context, query?)` | no | Reads store orders online, newest first and one page per call, rejecting unsupported filter fields with `UnsupportedOrderFilterError`. |
+| `orderFilters` | no | Declares the filter fields `listOrders` honours; when absent or empty, `listOrders` refuses every filter field. |
+| `getOrders(context, ids)` | no | Reads orders online by store ID in the requested order, omitting IDs the store does not have. |
+| `listRegisters(context)` | no | Reads the store's register directory online, rejecting credential failures with `ConnectorUnauthorizedError` and other failures with connector-specific errors. |
+| `cashier(context)` | no | Reads the signed-in cashier and neutral POS permissions mapped from platform roles or capabilities, returning `null` if there is no cashier; when absent, the till allows everything. |
+| `classifyFailure(error)` | no | Synchronously and purely maps request failures to connectivity or update-required verdicts, returning `null` when unrelated to connectivity; when absent, `neutralFailureClass` applies. |
+| `displaySignalling` | no | Provides signalling for a customer display on a second device; when absent, the same-device display still works. |
+
+`traits.product` (`ProductTraits`) is required and `traits.customer` (`CustomerTraits`) is optional; both types are exported from `@tallyui/core`.
+
 ## Building a Custom Connector
 
 Implement the `TallyConnector` interface from `@tallyui/core`:
 
-```typescript
+```ts
 import type { TallyConnector } from '@tallyui/core';
 
 export const myConnector: TallyConnector = {
@@ -97,6 +133,7 @@ export const myConnector: TallyConnector = {
   auth: { /* ... */ },
   schemas: { products: myProductSchema },
   traits: { product: myProductTraits },
+  sync: { products: myProductSync }, // deprecated, still required
   replication: { products: myProductReplication },
 };
 ```
