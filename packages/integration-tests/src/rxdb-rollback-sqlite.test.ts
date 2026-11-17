@@ -79,7 +79,7 @@ it('the fixture and its snapshots are present', () => {
 
           const pending = expected.filter((order) => order.syncStatus === 'pending').map((order) => order.commandId).sort();
           expect(pending).toHaveLength(10);
-          const outbox = createOrderOutbox({ collection, deviceId: 'rollback-device', random: () => 0.5, transport: { send: async (batch) => {
+          const outbox = createOrderOutbox({ collection, deviceId: 'rollback-device', random: () => 0.5, transport: { send: async (batch: OrderCreateEnvelope[]) => {
             sent.push(...structuredClone(batch));
             return { kind: 'results', results: batch.map((command) => ({ id: command.id, status: 'applied' as const,
               serverRefs: { orderId: `server-${command.id}`, totalMinor: command.payload.totalMinor } })) };

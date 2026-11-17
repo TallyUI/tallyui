@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { CommandEnvelope, OrderCreateEnvelope, OrderCreatePayload, StoreSettings as PricingSettings } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderUpdateEnvelope, StoreSettings as PricingSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import type { LogEntry } from '../logging';
 import { createOrderBuilder, orderDraftSchema, type CustomerSummary } from '../order';
@@ -572,7 +572,7 @@ describe('late sale', () => {
     const { db, sessions, sessionId } = await withOpenSession();
     await db.addCollections({ closures: { schema: closureSchema } });
     const orders = await addPosOrderCollection(db);
-    const sent: CommandEnvelope<OrderCreatePayload>[] = [];
+    const sent: Array<OrderCreateEnvelope | OrderUpdateEnvelope> = [];
     const outbox = createOrderOutbox({ collection: orders, deviceId: 'device-1', random: () => 0.5,
       transport: { send: async (batch) => { sent.push(...batch); return { kind: 'retry', reason: 'offline' }; } } });
     try {

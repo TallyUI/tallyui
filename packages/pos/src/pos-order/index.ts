@@ -2,7 +2,7 @@ export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment,
 export { uuidv7 } from './uuidv7';
 export { finalizeOrder } from './finalize';
 export type { FinalizeOptions } from './finalize';
-export { toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
+export { toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError } from './command';
 export { posOrderSchema, posOrderCollection } from './schema';
 export { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from './open';
 export { getDeviceId } from './device-id';

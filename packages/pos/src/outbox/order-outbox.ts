@@ -1,9 +1,9 @@
-import type { OrderCreateEnvelope } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderUpdateEnvelope } from '@tallyui/core';
 import { deepEqual, type RxCollection, type RxDocumentData } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { outboxLogger } from './logger';
 import type { LogSyncRecord, SyncRecordOutcome } from '../logging';
-import { toOrderCreateEnvelope, UnsupportedOrderVersionError, uuidv7, replacedOrderIds, type PosOrder, type PosOrderServerFailures } from '../pos-order';
+import { toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, uuidv7, replacedOrderIds, type PosOrder, type PosOrderServerFailures } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
@@ -43,7 +43,7 @@ const validMax = (max: unknown) => (typeof max === 'number' && Number.isSafeInte
 
 export interface OrderOutboxOptions {
   collection: RxCollection<PosOrder>;
-  transport: CommandTransport<OrderCreateEnvelope>;
+  transport: CommandTransport<OrderCreateEnvelope | OrderUpdateEnvelope>;
   deviceId: string;
   getMaxOrderCreateVersion?: () => number | undefined | Promise<number | undefined>;
   refreshCapabilities?: () => Promise<void>;
@@ -75,6 +75,9 @@ export interface OrderOutbox {
 
 export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const { collection, transport, deviceId } = options;
+  // A reopened sale goes as order.update, never order.create (ADR-090 decision 4).
+  const toEnvelope = (order: PosOrder, attempt: number, maxVersion: number) => order.storeOrderId !== undefined
+    ? toOrderUpdateEnvelope(order, deviceId, attempt, { maxVersion }) : toOrderCreateEnvelope(order, deviceId, attempt, { maxVersion });
   const batchSize = Math.min(options.batchSize ?? 10, 10);
   const initialBackoff = options.initialBackoffMs ?? DEFAULT_INITIAL_BACKOFF_MS;
   const maxBackoff = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
@@ -292,19 +295,19 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         const frozen = freezeSentForm(order);
         const attempt = (attempts.get(order.commandId) ?? 0) + 1;
         attempts.set(order.commandId, attempt);
-        let envelope: OrderCreateEnvelope;
+        let envelope: OrderCreateEnvelope | OrderUpdateEnvelope;
         try {
-          envelope = toOrderCreateEnvelope(frozen, deviceId, attempt, { maxVersion: order.sentVersion ?? serverMax });
+          envelope = toEnvelope(frozen, attempt, order.sentVersion ?? serverMax);
         } catch (cause) {
           // Content that cannot downgrade goes at its required version: the server's refusal rejects it.
           if (!(cause instanceof UnsupportedOrderVersionError)) throw cause;
-          envelope = toOrderCreateEnvelope(frozen, deviceId, attempt, { maxVersion: cause.needed >= 5 ? cause.needed : 3 });
+          envelope = toEnvelope(frozen, attempt, cause.needed >= 5 ? cause.needed : 3);
         }
         // Bounds apply when frozen: persist older tills' sent forms before sending (Front desk, 2026-09-29). A first
         // send's version is stored, awaited, before the batch request leaves, so a crash in between keeps it.
         if (frozen !== order || order.sentVersion === undefined) {
           await (await collection.findOne(order.id).exec())?.incrementalModify((data) =>
-            ({ ...freezeSentForm(data), sentVersion: data.sentVersion ?? envelope.version }));
+            ({ ...freezeSentForm(data), sentVersion: data.sentVersion ?? (envelope.type === 'order.update' ? envelope.payload.createVersion : envelope.version) }));
         }
         localOrders.set(envelope.id, frozen);
         return envelope;
@@ -378,7 +381,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         const current = await collection.findOne(order.id).exec();
         if (!current) continue;
         let error = result.error;
-        if (result.status === 'rejected' && error?.code === 'unsupported_version' && options.getMaxOrderCreateVersion) {
+        if (stored.storeOrderId === undefined && result.status === 'rejected' && error?.code === 'unsupported_version' && options.getMaxOrderCreateVersion) {
           if (!capabilitiesRefreshed) {
             await refreshCapabilities();
             // The rejection's own advertised max wins; otherwise ask the store's capabilities.
