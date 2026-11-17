@@ -6,6 +6,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, orderDraftSchema, writeOrderDraft } from '../order';
+import { posOrderCollection } from '../pos-order';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { useSale } from './use-sale';
@@ -19,7 +20,9 @@ async function resumeSale(covered = false) {
     name: `lockedlegs${Math.random().toString(36).slice(2)}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false,
   });
-  const { pos_drafts: drafts } = await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+  const { pos_drafts: drafts, pos_orders: orders } = await db.addCollections({
+    pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection(),
+  });
   const builder = createOrderBuilder({ currency: 'EUR', taxContext, storeOrder: { id: '41', revision: 'sha256:a' } });
   builder.addLine({ productId: 'coffee', name: 'Coffee', storeLineId: '7', unitPrice: { amount: 1000, currency: 'EUR' } });
   builder.addPayment({
@@ -33,10 +36,11 @@ async function resumeSale(covered = false) {
   }
   const hook = renderHook(() => useSale(pricing, {
     registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 2 }, drafts,
+    onSaleCompleted: async (order) => { await orders.insert(order); },
   }), { wrapper: Wrapper });
   await act(async () => { expect(await hook.result.current.resume(snapshot.id)).toBeNull(); });
   const lockedLeg = hook.result.current.order.payments.find((payment) => payment.storePaymentId === 'p1')!;
-  return { ...hook, lockedLeg };
+  return { ...hook, lockedLeg, orders };
 }
 
 afterEach(async () => {
@@ -79,6 +83,34 @@ describe('useSale locked legs', () => {
     ]);
     expect(result.current.order.payments[1]).not.toHaveProperty('storePaymentId');
     expect(result.current.order.payments[1]).not.toHaveProperty('locked');
+  });
+
+  it('setTenderStatus refuses to fail a captured locked leg', async () => {
+    const { result, lockedLeg } = await resumeSale();
+    act(() => { expect(result.current.setTenderStatus(lockedLeg.id, 'failed')).toBe(false); });
+    expect(result.current.order.payments).toEqual([lockedLeg]);
+    expect(result.current.order.payments[0].status ?? 'captured').toBe('captured');
+    expect(result.current.order.payments[0].locked).toBe(true);
+  });
+
+  it.each([
+    ['addFee', 'fees', 'f9'], ['addShipping', 'shipping', 's9'],
+  ] as const)('%s drops a caller-supplied store id', async (add, collection, storeLineId) => {
+    const { result } = await resumeSale();
+    act(() => {
+      expect(result.current[add]({ name: 'Handling', amountMinor: 100, storeLineId })).toEqual({ id: expect.any(String) });
+    });
+    expect(result.current.order[collection]).toHaveLength(1);
+    expect(result.current.order[collection]![0]).not.toHaveProperty('storeLineId');
+  });
+
+  it('complete refuses a fully tendered reopened cart without writing an order', async () => {
+    const { result, orders } = await resumeSale();
+    act(() => { result.current.startTender('external'); });
+    expect(result.current.order.balanceDueMinor).toBe(0);
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBe('finalize: a reopened store order cannot be completed by this version of TallyUI');
+    expect(await orders.find().exec()).toEqual([]);
   });
 
   it('a cash tender and a cancelled tender keep the locked leg', async () => {

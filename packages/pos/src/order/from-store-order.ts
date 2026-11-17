@@ -47,6 +47,8 @@ export function orderBuilderFromStoreOrder(read: StoreOrder, options: {
     || read.lines.some((line) => !sendable(line.id, 64))
     || [...read.fees, ...read.shipping].some((charge) => !sendable(charge.id, 64))
     || read.payments.some((payment) => !sendable(payment.id, 64))) throw new StoreOrderRebuildError('store_id');
+  if (new Set([...read.lines, ...read.fees, ...read.shipping].map((item) => item.id)).size !== read.lines.length + read.fees.length + read.shipping.length
+    || new Set(read.payments.map((payment) => payment.id)).size !== read.payments.length) throw new StoreOrderRebuildError('store_id');
   if (read.refunds.length > 0) throw new StoreOrderRebuildError('refund');
   if (read.paymentRecordUnreadable === true) throw new StoreOrderRebuildError('payment_record');
   if (read.coupons.length > 0) throw new StoreOrderRebuildError('coupon');
@@ -63,7 +65,7 @@ export function orderBuilderFromStoreOrder(read: StoreOrder, options: {
   })) throw new StoreOrderRebuildError('charge');
   if (read.customer?.id && customerRefusal(read.customer) !== null) throw new StoreOrderRebuildError('customer');
   if (read.payments.some((payment) => !Number.isInteger(payment.amountMinor) || payment.amountMinor <= 0
-    || !sendable(payment.title ?? payment.method, PAYLOAD_STRING_MAX))) throw new StoreOrderRebuildError('payment');
+    || !sendable(payment.method, PAYLOAD_STRING_MAX))) throw new StoreOrderRebuildError('payment');
 
   const builder = createOrderBuilder({
     currency: options.currency, taxContext: options.taxContext,
@@ -100,7 +102,7 @@ export function orderBuilderFromStoreOrder(read: StoreOrder, options: {
   const snapshot = builder.getSnapshot();
   if (snapshot.totalMinor !== read.totalMinor || snapshot.taxMinor !== read.taxMinor) throw new StoreOrderRebuildError('totals');
   for (const payment of read.payments) builder.addPayment({
-    method: 'external', amountMinor: payment.amountMinor, reference: payment.title ?? payment.method,
+    method: 'external', amountMinor: payment.amountMinor, reference: payment.method,
     storePaymentId: payment.id, locked: true,
   });
   return builder;

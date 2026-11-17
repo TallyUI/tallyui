@@ -482,7 +482,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     /** ADR-075: adds a fee; returns its id or the builder's refusal. */
     addFee(input: ChargeInput): { id: string } | string {
       if (locked()) return SALE_SAVING;
-      try { return { id: builderNow.current.addFee(input) }; }
+      const { storeLineId: _storeLineId, ...charge } = input;
+      try { return { id: builderNow.current.addFee(charge) }; }
       catch (error) { if (error instanceof Error) return error.message; throw error; }
     },
     /** ADR-075: updates a fee; returns a refusal or null. */
@@ -500,7 +501,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     /** ADR-075: adds shipping; returns its id or the builder's refusal. */
     addShipping(input: ChargeInput & { methodId?: string }): { id: string } | string {
       if (locked()) return SALE_SAVING;
-      try { return { id: builderNow.current.addShipping(input) }; }
+      const { storeLineId: _storeLineId, ...charge } = input;
+      try { return { id: builderNow.current.addShipping(charge) }; }
       catch (error) { if (error instanceof Error) return error.message; throw error; }
     },
     /** ADR-075: updates shipping; returns a refusal or null. */

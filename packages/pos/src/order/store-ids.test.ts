@@ -75,6 +75,23 @@ describe('store ids on reopened carts', () => {
     expect('storeLineId' in builder.getSnapshot().fees!.find((fee) => fee.id === plainId)!).toBe(false);
   });
 
+  it('charge patches cannot set, change or clear store ids', () => {
+    const builder = createOrderBuilder(options);
+    const feeId = builder.addFee({ name: 'Handling', amountMinor: 500, storeLineId: 'f1' });
+    const shippingId = builder.addShipping({ name: 'Delivery', amountMinor: 800, storeLineId: 's1' });
+    builder.updateFee(feeId, { amountMinor: 700, storeLineId: 'other' });
+    builder.updateShipping(shippingId, { amountMinor: 900, storeLineId: 'other' });
+    expect(builder.getSnapshot().fees).toMatchObject([{ id: feeId, amountMinor: 700, storeLineId: 'f1' }]);
+    expect(builder.getSnapshot().shipping).toMatchObject([{ id: shippingId, amountMinor: 900, storeLineId: 's1' }]);
+    builder.updateFee(feeId, { storeLineId: undefined });
+    builder.updateShipping(shippingId, { storeLineId: undefined });
+    expect(builder.getSnapshot().fees).toMatchObject([{ id: feeId, storeLineId: 'f1' }]);
+    expect(builder.getSnapshot().shipping).toMatchObject([{ id: shippingId, storeLineId: 's1' }]);
+    const plainId = builder.addFee({ name: 'Gift wrap', amountMinor: 100 });
+    builder.updateFee(plainId, { storeLineId: 'x' });
+    expect(builder.getSnapshot().fees!.find((fee) => fee.id === plainId)).not.toHaveProperty('storeLineId');
+  });
+
   it('a locked payment cannot be removed or moved', () => {
     const builder = createOrderBuilder(options);
     builder.addLine(line);

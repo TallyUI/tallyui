@@ -47,16 +47,16 @@ describe('orderBuilderFromStoreOrder', () => {
     expect(snapshot.taxMinor).toBe(read.taxMinor);
   });
 
-  it("every store payment is a locked external leg with the store's method in its reference", () => {
+  it("every store payment is a locked external leg with the store's method in its reference, ignoring its title", () => {
     const read = storeOrder();
     const snapshot = orderBuilderFromStoreOrder(read, options).getSnapshot();
     expect(snapshot.payments).toEqual([
-      { id: expect.any(String), method: 'external', amountMinor: 1000, reference: 'Cash', storePaymentId: 'p1', locked: true },
+      { id: expect.any(String), method: 'external', amountMinor: 1000, reference: 'pos_cash', storePaymentId: 'p1', locked: true },
     ]);
     expect(snapshot.payments[0]).not.toHaveProperty('status');
     expect(snapshot.paidMinor).toBe(1000);
     expect(snapshot.balanceDueMinor).toBe(read.totalMinor - 1000);
-    delete read.payments[0].title;
+    read.payments[0].title = 'Something else';
     expect(orderBuilderFromStoreOrder(read, options).getSnapshot().payments[0].reference).toBe('pos_cash');
   });
 
@@ -114,6 +114,10 @@ describe('orderBuilderFromStoreOrder', () => {
     { reason: 'store_id', change: (read) => { delete read.payments[0].id; } },
     { reason: 'store_id', change: (read) => { read.clientOrderId = 'x'.repeat(65); } },
     { reason: 'store_id', change: (read) => { read.id = 'x'.repeat(65); } },
+    { reason: 'store_id', change: (read) => { read.lines.push({ ...read.lines[0] }); } },
+    { reason: 'store_id', change: (read) => { read.fees[0].id = read.lines[0].id; } },
+    { reason: 'store_id', change: (read) => { read.shipping[0].id = read.fees[0].id; } },
+    { reason: 'store_id', change: (read) => { read.payments.push({ ...read.payments[0] }); } },
     { reason: 'refund', change: (read) => { read.refunds = [{ id: 'r1', amountMinor: 100 }]; } },
     { reason: 'payment_record', change: (read) => { read.paymentRecordUnreadable = true; } },
     { reason: 'coupon', change: (read) => { read.coupons = [{ code: 'ten', discountMinor: 100, discountTaxMinor: 10 }]; } },
@@ -125,9 +129,10 @@ describe('orderBuilderFromStoreOrder', () => {
     { reason: 'unit_price', change: (read) => { read.lines[0].subtotalMinor = 2001; read.lines[0].totalMinor = 2001; } },
     { reason: 'charge', change: (read) => { read.fees[0].totalMinor = -100; } },
     { reason: 'charge', change: (read) => { delete read.fees[0].taxStatus; } },
+    { reason: 'charge', change: (read) => { delete read.shipping[0].taxStatus; } },
     { reason: 'customer', change: (read) => { read.customer = { id: '5', name: 'Jane', email: 'x'.repeat(255) }; } },
     { reason: 'payment', change: (read) => { read.payments[0].amountMinor = 0; } },
-    { reason: 'payment', change: (read) => { read.payments[0].title = 'x'.repeat(256); } },
+    { reason: 'payment', change: (read) => { read.payments[0].method = 'x'.repeat(256); } },
     { reason: 'totals', change: (read) => { read.totalMinor += 1; } },
     { reason: 'totals', change: (read) => { read.taxMinor += 1; } },
   ])('refuses what the till cannot rebuild', ({ reason, change, inclusiveContext }) => {

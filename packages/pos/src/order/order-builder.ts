@@ -541,7 +541,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     updateFee(id, patch) {
       const fee = fees.find((entry) => entry.id === id);
       if (!fee) throw new Error(`Unknown fee ${id}`);
-      const updated = recalculateCharge(id, { ...fee, ...patch });
+      const { storeLineId: _storeLineId, ...changes } = patch;
+      const updated = recalculateCharge(id, { ...fee, ...changes });
       fees = fees.map((entry) => entry.id === id ? updated : entry); emit();
     },
     removeFee(id) {
@@ -555,7 +556,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     updateShipping(id, patch) {
       const charge = shipping.find((entry) => entry.id === id);
       if (!charge) throw new Error(`Unknown shipping ${id}`);
-      const input = { ...charge, ...patch };
+      const { storeLineId: _storeLineId, ...changes } = patch;
+      const input = { ...charge, ...changes };
       const updated = { ...recalculateCharge(id, input, true), methodId: input.methodId };
       shipping = shipping.map((entry) => entry.id === id ? updated : entry); emit();
     },
