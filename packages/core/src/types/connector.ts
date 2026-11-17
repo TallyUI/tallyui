@@ -128,6 +128,7 @@ export function parseTaxRounding(value: unknown, warn?: (reason: string) => void
   return undefined;
 }
 
+/** Reads an info response's lineTax capability: { none, classes } as two booleans, or undefined when absent or malformed (with warn only when malformed). */
 export function parseLineTax(value: unknown, warn?: (reason: string) => void): { none: boolean; classes: boolean } | undefined {
   if (value === undefined) return undefined;
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
