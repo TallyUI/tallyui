@@ -69,13 +69,16 @@ function panelCells(card: SalesPanelId, figures: SalesFigures, money: (minor: nu
   }
 }
 
-function Cells({ cells, head }: { cells: string[]; head?: boolean }): JSX.Element {
+// Approximates a text-sm tabular digit (8 px) per character plus the cell's px-2 padding (16 px).
+const columnWidth = (longestCellLength: number) => longestCellLength * 8 + 16;
+
+function Cells({ cells, widths, head }: { cells: string[]; widths: number[]; head?: boolean }): JSX.Element {
   const Cell = head ? TableHead : TableCell;
   return (
     <>
       {cells.map((cell, i) => (
-        <Cell key={i} style={{ flex: i === 0 ? 2 : 1 }} className="px-2 py-2">
-          <Text numberOfLines={1} className={cn(!head && 'text-sm', i > 0 && 'text-right tabular-nums')}>{cell}</Text>
+        <Cell key={i} style={i === 0 ? { flex: 1, minWidth: 0 } : { width: widths[i] }} className="px-2 py-2">
+          <Text numberOfLines={i === 0 ? 1 : undefined} className={cn(!head && 'text-sm', i > 0 && 'text-right tabular-nums')}>{cell}</Text>
         </Cell>
       ))}
     </>
@@ -87,25 +90,27 @@ export function SalesCardPanel({ card, figures, currency, scope, onClose, onExpo
   const money = (minor: number) => formatMoney({ amount: minor, currency }) ?? '';
   const { totals } = figures;
   const cells = card === null ? null : panelCells(card, figures, money);
+  const lines = cells ? [cells.head, ...cells.rows, cells.total] : [];
+  const widths = (cells?.head ?? []).map((_, i) => columnWidth(Math.max(...lines.map((line) => line[i]?.length ?? 0))));
   const costMissing = (card === 'products' || card === 'categories') && totals.margin.missingLines > 0
     ? ` · cost missing on ${totals.margin.missingQuantity} of ${totals.items} items` : '';
 
   return (
     <Dialog open={card !== null} onOpenChange={(open) => !open && onClose()}>
       {card !== null && cells && (
-        <DialogContent side="right" testID="detail-panel">
+        <DialogContent side="right" testID="detail-panel" className="max-w-xl">
           <DialogHeader>
             <DialogTitle>{TITLES[card]}</DialogTitle>
             {scope && <DialogDescription testID="detail-panel-scope">{scope}</DialogDescription>}
           </DialogHeader>
           <Table testID="detail-panel-table" className="flex-1">
-            <TableHeader><TableRow><Cells cells={cells.head} head /></TableRow></TableHeader>
+            <TableHeader><TableRow><Cells cells={cells.head} widths={widths} head /></TableRow></TableHeader>
             <ScrollView className="flex-1">
               <TableBody>
-                {cells.rows.map((row, i) => <TableRow key={i} testID={`detail-panel-row-${i}`}><Cells cells={row} /></TableRow>)}
+                {cells.rows.map((row, i) => <TableRow key={i} testID={`detail-panel-row-${i}`}><Cells cells={row} widths={widths} /></TableRow>)}
               </TableBody>
             </ScrollView>
-            <TableFooter><TableRow testID="detail-panel-total" className="border-0"><Cells cells={cells.total} /></TableRow></TableFooter>
+            <TableFooter><TableRow testID="detail-panel-total" className="border-0"><Cells cells={cells.total} widths={widths} /></TableRow></TableFooter>
           </Table>
           <DialogFooter testID="detail-panel-footer" className="flex-row items-center gap-2">
             <Text testID="detail-panel-status" className="flex-1 text-sm text-muted-foreground">
