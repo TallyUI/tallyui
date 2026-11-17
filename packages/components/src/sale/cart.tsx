@@ -4,6 +4,7 @@ import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
 import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
 import { CartChargeLine } from '../cart/cart-charge-line';
+import { CartLineStrip } from '../cart/cart-line-strip';
 import { MotionRows } from '../cart/cart-row-motion';
 import { cartShowsPrice } from '../cart/cart-columns';
 import type { CartColumnSettings } from '../cart/cart-columns';
@@ -78,8 +79,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     const refused = sale.splitLine(lineId);
     setSplitError(refused === null ? null : { lineId, message: refused });
   };
-  // One open form: a line's discount or price, the order's discount (lineId null), or a charge.
-  const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' } | null>(null);
+  // One open form: a line's discount or price, the order's discount (lineId null), a new charge, or a charge's edit.
+  const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' }
+    | { type: 'edit-charge'; kind: 'fees' | 'shipping'; id: string } | null>(null);
   const chargesOffered = (sale.capabilities?.orderCreate ?? 0) >= 5;
   const showOrderDiscount = order.lineItems.length > 0 && (orderActions || order.discounts.length > 0);
   const showCharge = orderActions && chargesOffered;
@@ -150,15 +152,18 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       {(['fees', 'shipping'] as const).map((kind) => <MotionRows key={kind} items={order[kind] ?? []} keyOf={(charge) => charge.id}
         pulseKey={() => 0} identity={order.id} renderItem={(charge, index) =>
         <View testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`}>
-          <CartChargeLine name={charge.name} price={money(charge.amountMinor)}
-            total={money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor)}
-            showPrice={showPrice} columns={columns} />
-          <View className="flex-row px-3 pb-2">
-            <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${charge.name}`}
-              onPress={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}
-              className="rounded-md border border-border bg-card px-3 py-2 min-h-11 items-center justify-center">
-              <Text className="text-foreground">Remove</Text></Pressable>
-          </View>
+          <CartLineStrip name={charge.name} onEdit={() => setForm({ type: 'edit-charge', kind, id: charge.id })}
+            onRemove={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}>
+            {(wrapTotal) => <CartChargeLine name={charge.name} price={money(charge.amountMinor)}
+              total={money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor)}
+              showPrice={showPrice} columns={columns} testID="cart-charge-line" wrapTotal={wrapTotal} />}
+          </CartLineStrip>
+          {form?.type === 'edit-charge' && form.kind === kind && form.id === charge.id ? <ChargeForm key={charge.id}
+            kind={kind === 'fees' ? 'fee' : 'shipping'} initial={charge} currency={order.currency} lineTax={sale.capabilities?.lineTax}
+            taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
+            onClose={() => setForm(null)} onApply={({ name, amountMinor, taxStatus, taxClass }) => kind === 'fees'
+              ? sale.updateFee(charge.id, { name, amountMinor, taxStatus, taxClass })
+              : sale.updateShipping(charge.id, { name, amountMinor, taxStatus, taxClass })} /> : null}
         </View>} />)}
       {showOrderDiscount || showCharge ? <View className="gap-3 px-3 py-2">
       {showOrderDiscount ? <>

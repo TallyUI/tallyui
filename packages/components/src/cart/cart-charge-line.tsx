@@ -19,28 +19,34 @@ export interface CartChargeLineProps extends Omit<HStackProps, 'children'> {
   columns?: CartColumnSettings;
   locale?: string;
   className?: string;
+  /** The line strip's press target (`CartLineStrip`): wraps the Total cell's content, or the last visible cell's when
+   * Total is hidden, as v2's table does. */
+  wrapTotal?: (content: ReactNode) => ReactNode;
 }
 
-export function CartChargeLine({ name, price, total, showPrice = true, columns, locale, className, ...rest }: CartChargeLineProps): JSX.Element {
+export function CartChargeLine({ name, price, total, showPrice = true, columns, locale, className, wrapTotal, ...rest }: CartChargeLineProps): JSX.Element {
   const formatMoney = useFormatMoney();
-  const cells: Record<ReturnType<typeof cartColumnSlots>[number], ReactNode> = {
-    fill: <View key="fill" className="flex-1" />,
-    quantity: <View key="quantity" className={CART_COLUMNS.quantity.cell} />,
-    image: <View key="image" className={CART_COLUMNS.image.cell} />,
+  const slots = cartColumnSlots(columns, { showPrice });
+  const target = slots.includes('total') ? 'total' : slots[slots.length - 1];
+  const wrap = (id: (typeof slots)[number], content: ReactNode) => wrapTotal && id === target ? wrapTotal(content) : content;
+  const cells: Record<(typeof slots)[number], ReactNode> = {
+    fill: <View key="fill" className="flex-1">{wrap('fill', null)}</View>,
+    quantity: <View key="quantity" className={CART_COLUMNS.quantity.cell}>{wrap('quantity', null)}</View>,
+    image: <View key="image" className={CART_COLUMNS.image.cell}>{wrap('image', null)}</View>,
     name: <View key="name" className={CART_COLUMNS.name.cell}>
-      <Text className="text-sm" numberOfLines={2}>{name}</Text>
+      {wrap('name', <Text className="text-sm" numberOfLines={2}>{name}</Text>)}
     </View>,
-    sku: <View key="sku" className={CART_COLUMNS.sku.cell} />,
+    sku: <View key="sku" className={CART_COLUMNS.sku.cell}>{wrap('sku', null)}</View>,
     price: <View key="price" className={CART_COLUMNS.price.cell}>
-      <Text testID="cart-charge-price" className="text-right text-sm tabular-nums text-muted-foreground">{formatMoney(price, locale) ?? '—'}</Text>
+      {wrap('price', <Text testID="cart-charge-price" className="text-right text-sm tabular-nums text-muted-foreground">{formatMoney(price, locale) ?? '—'}</Text>)}
     </View>,
     total: <View key="total" className={CART_COLUMNS.total.cell}>
-      <Text testID="cart-charge-total" className="text-right text-sm tabular-nums">{formatMoney(total, locale) ?? '—'}</Text>
+      {wrap('total', <Text testID="cart-charge-total" className="text-right text-sm tabular-nums">{formatMoney(total, locale) ?? '—'}</Text>)}
     </View>,
   };
   return (
     <HStack space="none" className={cn('py-2.5', className)} {...rest}>
-      {cartColumnSlots(columns, { showPrice }).map((id) => cells[id])}
+      {slots.map((id) => cells[id])}
     </HStack>
   );
 }

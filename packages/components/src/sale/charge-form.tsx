@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { useCurrencySymbol } from '@tallyui/core';
+import { minorUnitDigits, useCurrencySymbol } from '@tallyui/core';
 import { useT } from '../i18n';
 import { Label } from '../ui/label';
 import { parsePrice } from './price-form';
@@ -13,6 +13,8 @@ export interface ChargeFormProps {
   /** Given, the form is that kind only and the kind row is not shown (v2's separate Add Fee / Add Shipping /
    * Add Miscellaneous Product entries); absent, the form opens on Fee with the row. */
   kind?: 'fee' | 'shipping' | 'custom';
+  /** Given, the form edits that charge: prefilled, titled `Edit <name>` as v2's record dialog. */
+  initial?: { name: string; amountMinor: number; taxStatus?: 'taxable' | 'none'; taxClass?: string };
   onApply: (charge: { kind: 'fee' | 'shipping' | 'custom'; name: string; amountMinor: number;
     taxStatus?: 'none'; taxClass?: string }) => string | null;
   onClose: () => void;
@@ -24,25 +26,27 @@ const AMOUNT_LABEL_ID = 'charge-form-amount-label';
 const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center justify-center';
 
 /** `onApply` returns a refusal to show inline, or null once applied. */
-export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, kind: fixedKind, onApply, onClose }: ChargeFormProps) {
+export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, kind: fixedKind, initial, onApply, onClose }: ChargeFormProps) {
   const currencySymbol = useCurrencySymbol();
   const t = useT();
   const [stateKind, setKind] = useState<'fee' | 'shipping' | 'custom'>('fee');
   const kind = fixedKind ?? stateKind;
-  const title = fixedKind === undefined ? 'Add charge'
+  const title = initial ? `Edit ${initial.name}` : fixedKind === undefined ? 'Add charge'
     : fixedKind === 'fee' ? 'Add fee' : fixedKind === 'shipping' ? 'Add shipping' : 'Add custom item';
-  const [name, setName] = useState('');
-  const [text, setText] = useState('');
-  const [noTax, setNoTax] = useState(false);
-  const [taxClass, setTaxClass] = useState('');
+  const digits = minorUnitDigits(currency);
+  const [name, setName] = useState(initial?.name ?? '');
+  const [text, setText] = useState(initial ? (initial.amountMinor / 10 ** digits).toFixed(digits) : '');
+  const [noTax, setNoTax] = useState(initial?.taxStatus === 'none');
+  const [taxClass, setTaxClass] = useState(initial?.taxClass ?? '');
   const [error, setError] = useState<string | null>(null);
   const storeShipping = kind === 'shipping' && shippingTaxFromStore;
   function apply() {
     const parsed = parsePrice(text, currency);
+    // A control that is not shown keeps the edited charge's own value.
     const refused = !name.trim() ? 'Enter a name.' : typeof parsed === 'string' ? parsed : onApply({
       kind, name: name.trim(), amountMinor: parsed,
-      taxStatus: !storeShipping && lineTax?.none && noTax ? 'none' : undefined,
-      taxClass: !storeShipping && lineTax?.classes && taxClasses?.length ? taxClass || undefined : undefined,
+      taxStatus: !storeShipping && lineTax?.none ? (noTax ? 'none' : undefined) : initial?.taxStatus === 'none' ? 'none' : undefined,
+      taxClass: !storeShipping && lineTax?.classes && taxClasses?.length ? taxClass || undefined : initial?.taxClass,
     });
     setError(refused);
     if (refused === null) onClose();
