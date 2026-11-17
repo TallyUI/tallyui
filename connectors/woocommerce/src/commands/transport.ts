@@ -119,22 +119,24 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   };
   const line_items = [];
   for (const line of p.lines) {
+    const inclusive = line.taxInclusive ?? p.pricesIncludeTax;
+    const stored = local?.lines.find((entry) => entry.id === line.clientLineId);
     let total = major(line.unitPriceMinor * line.quantity - (line.discountMinor ?? 0));
     let subtotal = total;
-    if (line.taxInclusive ?? p.pricesIncludeTax) {
-      const net = inclusiveNet(local?.lines.find((stored) => stored.id === line.clientLineId)?.netMicros, line.clientLineId);
+    if (inclusive) {
+      const net = inclusiveNet(stored?.netMicros, line.clientLineId);
       if (typeof net !== 'string') return net;
       subtotal = total = net;
     }
     const custom = line.custom;
     let price = major(line.unitPriceMinor);
     if (p.coupons?.length) {
-      const discount = (line.taxInclusive ?? p.pricesIncludeTax) && (line.discountMinor ?? 0) > 0
-        ? local?.lines.find((stored) => stored.id === line.clientLineId)?.discountMinor : line.discountMinor ?? 0;
+      const discount = inclusive && (line.discountMinor ?? 0) > 0
+        ? stored?.discountMinor : line.discountMinor ?? 0;
       if (discount === undefined) return { error: { code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } };
       const quantity = BigInt(line.quantity), minor = BigInt(line.unitPriceMinor) * quantity - BigInt(discount);
-      if (line.taxInclusive ?? p.pricesIncludeTax) {
-        const net = inclusiveNet(preCouponNetMicros(minor, digits, local?.lines.find((stored) => stored.id === line.clientLineId)), line.clientLineId);
+      if (inclusive) {
+        const net = inclusiveNet(preCouponNetMicros(minor, digits, stored), line.clientLineId);
         if (typeof net !== 'string') return net;
         subtotal = total = net;
       }
