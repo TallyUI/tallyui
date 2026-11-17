@@ -25,6 +25,29 @@ test.describe('AppShell at 1280x800', () => {
     const settings = await page.getByTestId('nav-item-settings').boundingBox();
     expect(settings!.y).toBeGreaterThan(600);
   });
+
+  test("lists v2's nine routes in v2's order with icons, and no stack header", async ({ page }) => {
+    const rail = page.getByRole('navigation', { name: 'Main' });
+    await expect(rail).toBeVisible();
+    const ids = await rail
+      .locator('[data-testid^="nav-item-"]:not([data-testid$="-badge"])')
+      .evaluateAll((items) => items.map((item) => item.getAttribute('data-testid')));
+    expect(ids).toEqual([
+      'nav-item-pos',
+      'nav-item-products',
+      'nav-item-orders',
+      'nav-item-coupons',
+      'nav-item-customers',
+      'nav-item-reports',
+      'nav-item-health',
+      'nav-item-settings',
+      'nav-item-support',
+    ]);
+    await expect(page.getByTestId('nav-item-pos').locator('svg')).toHaveCount(1);
+    await expect(page.getByTestId('nav-item-health-badge')).toHaveText('2');
+    await expect(page.getByText('AppShell', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('pos', { exact: true })).toHaveCount(0);
+  });
 });
 
 test.describe('AppShell at 360x640', () => {
