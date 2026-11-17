@@ -36,7 +36,7 @@ async function resumeSale(covered = false) {
     return <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
   }
   const hook = renderHook(() => useSale(pricing, {
-    registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 2 }, drafts,
+    registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 5 }, drafts,
     onSaleCompleted: async (order) => { await orders.insert(order); },
   }), { wrapper: Wrapper });
   await act(async () => { expect(await hook.result.current.resume(snapshot.id)).toBeNull(); });

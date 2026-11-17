@@ -136,6 +136,20 @@ describe('finalizeOrder on a reopened cart (ADR-090 D7c5)', () => {
     expect(() => finalizeOrder(locked.getSnapshot())).toThrow(message);
   });
 
+  it('refuses a reopened cart when the store cannot take order.update', () => {
+    const message = "finalize: a reopened store order needs the store to accept order.create version 5; update the store's TallyUI plugin";
+    const builder = reopenedCart();
+    builder.removeFee(builder.getSnapshot().fees![0].id);
+    builder.removeShipping(builder.getSnapshot().shipping![0].id);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().balanceDueMinor });
+    const order = builder.getSnapshot();
+    expect(() => finalizeOrder(order)).toThrow(message);
+    for (const orderCreate of [3, 4]) expect(() => finalizeOrder(order, { capabilities: { orderCreate } })).toThrow(message);
+    const row = finalizeOrder(order, { capabilities: { orderCreate: 5 } });
+    expect(row.display).toBeDefined();
+    expect(row.taxByRate).toBeDefined();
+  });
+
   it('refuses a store payment that is not a locked external leg', () => {
     const cash = reopenedCart();
     cash.addPayment({ method: 'cash', amountMinor: cash.getSnapshot().balanceDueMinor, storePaymentId: 'p9', locked: true });

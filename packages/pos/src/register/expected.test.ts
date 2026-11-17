@@ -34,7 +34,7 @@ it('gate 11 on a finalize-written row: locked pos_cash and card legs never count
     payments: [{ id: 'p1', method: 'pos_cash', amountMinor: 500 }, { id: 'p2', method: 'stripe', amountMinor: 700 }],
   }, { currency: 'EUR', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false } });
   builder.addPayment({ method: 'cash', amountMinor: 1200 });
-  const row = finalizeOrder(builder.getSnapshot());
+  const row = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
   expect(row.payments.map(({ reference }) => reference)).toEqual(['pos_cash', 'stripe', undefined]);
   expect(paymentLedgerRows([{ ...row, sessionId: 'session' }])).toEqual([
     { session_id: 'session', kind: 'cash', method_id: 'cash', status: 'captured', amountMinor: 1000 },

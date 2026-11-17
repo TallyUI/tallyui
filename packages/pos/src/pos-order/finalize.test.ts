@@ -33,7 +33,7 @@ describe('finalizeOrder', () => {
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     const order = builder.getSnapshot();
     const revision = 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298';
-    expect(finalizeOrder({ ...order, storeOrder: { id: '123', revision } }))
+    expect(finalizeOrder({ ...order, storeOrder: { id: '123', revision } }, { capabilities: { orderCreate: 5 } }))
       .toMatchObject({ storeOrderId: '123', baseRevision: revision, refundDueMinor: 0, totalMinor: order.totalMinor });
     expect(() => finalizeOrder(order)).not.toThrow();
     let n = 0;

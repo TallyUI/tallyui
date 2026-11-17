@@ -138,6 +138,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     && (options.capabilities?.orderCreate ?? 1) < 5) {
     throw new Error("finalize: fees, shipping and custom lines need the store to accept order.create version 5; update the store's TallyUI plugin");
   }
+  if (order.storeOrder && (options.capabilities?.orderCreate ?? 1) < 5) throw new Error("finalize: a reopened store order needs the store to accept order.create version 5; update the store's TallyUI plugin");
   if (order.coupons?.length && (options.capabilities?.orderCreate ?? 1) < 6) {
     throw new Error("finalize: coupons need the store to accept order.create version 6; update the store's TallyUI plugin");
   }
