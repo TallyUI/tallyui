@@ -3,15 +3,19 @@ import { cn } from '@tallyui/theme';
 import { VStack, type VStackProps } from '../ui';
 import { PaymentMethodCard } from './payment-method-card';
 
-export interface PaymentMethod {
+/** One method the selector offers. */
+export interface PaymentSelectorMethod {
   id: string;
   label: string;
   icon?: ReactNode;
 }
 
+/** @deprecated Use `PaymentSelectorMethod`; `@tallyui/pos` exports a different `PaymentMethod`. */
+export type PaymentMethod = PaymentSelectorMethod;
+
 export interface PaymentSelectorProps extends Omit<VStackProps, 'children'> {
   /** Available payment methods */
-  methods: PaymentMethod[];
+  methods: PaymentSelectorMethod[];
   /** ID of the currently selected method */
   selected: string;
   /** Called when a method is selected */

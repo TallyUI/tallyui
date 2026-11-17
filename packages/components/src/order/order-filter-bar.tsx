@@ -6,7 +6,7 @@
  */
 import { Fragment, useState, type JSX, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import type { OrderFilterField } from '@tallyui/core';
+import type { OrderFilterField, PaymentKind } from '@tallyui/core';
 import { presetRange, type DayRange, type OrderFilterValue } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { rangeLabel } from '../reports/date-range-menu';
@@ -19,7 +19,8 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSepa
 import { Text as UIText } from '../ui/text';
 
 export interface OrderFilterOption { value: string; label: string }
-export type PaymentMethodKind = 'cash' | 'card' | 'stored_value' | 'bank_transfer' | 'other';
+/** @deprecated Use `PaymentKind` from `@tallyui/core`; in core, `PaymentMethodKind` is the order's wire method. */
+export type PaymentMethodKind = PaymentKind;
 export interface OrderFilterBarProps {
   value: OrderFilterValue;
   onChange(next: OrderFilterValue): void;
@@ -30,7 +31,7 @@ export interface OrderFilterBarProps {
   options?: {
     status?: OrderFilterOption[];
     /** Grouped by kind in this order, with a separator between groups: cash, card, stored_value, bank_transfer, other. */
-    paymentMethod?: (OrderFilterOption & { kind?: PaymentMethodKind })[];
+    paymentMethod?: (OrderFilterOption & { kind?: PaymentKind })[];
     customer?: OrderFilterOption[];
     cashier?: OrderFilterOption[];
     register?: OrderFilterOption[];
@@ -46,7 +47,7 @@ export interface OrderFilterBarProps {
   testID?: string;
 }
 
-const KINDS: readonly PaymentMethodKind[] = ['cash', 'card', 'stored_value', 'bank_transfer', 'other'];
+const KINDS: readonly PaymentKind[] = ['cash', 'card', 'stored_value', 'bank_transfer', 'other'];
 // The chip look is ProductFilterBar's; the trigger inside it drops the form-field look of SelectTrigger/ComboboxTrigger.
 const chipClass = (on: boolean) => cn('min-h-11 flex-row items-center gap-1.5 rounded-full border px-3',
   on ? 'border-primary/30 bg-primary/10' : 'border-border bg-card');
