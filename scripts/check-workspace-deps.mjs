@@ -71,6 +71,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'daysOf',
   // the cart tabs (v2 cart/tab-chip.tsx): the one pure test of a partly paid sale the tab chip shows, never a hook or the store.
   'isPartlyPaid',
+  // the Sales room panels (v2 panels/export-csv.ts): the pure CSV the Export CSV button hands over, never a hook or the store.
+  'csvFromCells',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

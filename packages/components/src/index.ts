@@ -254,6 +254,7 @@ export {
 // Reports components
 export {
   SalesRoom, type SalesRoomProps, SalesHero, type SalesHeroProps, SalesCards, type SalesCardsProps, type SalesCardId,
+  SalesCardPanel, type SalesCardPanelProps, type SalesPanelId,
   SalesFiltersBar, type SalesFiltersBarProps, type SalesFilters, type SalesOption,
   DateRangeMenu, type DateRangeMenuProps,
 } from './reports';
