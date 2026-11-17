@@ -47,6 +47,12 @@ it("closing slides the sheet out over 200ms on v2's exit ease, and unmounts only
       toValue: 1, duration: 150, easing: EASE,
     }));
   });
+  let exitEnd: Animated.EndCallback | undefined;
+  vi.spyOn(Animated, 'parallel').mockImplementation(() => ({
+    start: (cb: Animated.EndCallback) => { exitEnd = cb; },
+    stop: () => {},
+    reset: () => {},
+  }) as unknown as Animated.CompositeAnimation);
   rerender(<Harness open={false} />);
   expect(screen.getByTestId('sheet')).toBeTruthy();
   expect(Animated.timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
@@ -55,7 +61,8 @@ it("closing slides the sheet out over 200ms on v2's exit ease, and unmounts only
   expect(Animated.timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
     toValue: 0, duration: 200, easing: EASE,
   }));
-  await waitFor(() => expect(screen.queryByTestId('sheet')).toBeNull(), { timeout: 2000 });
+  act(() => exitEnd?.({ finished: true }));
+  expect(screen.queryByTestId('sheet')).toBeNull();
 });
 
 it('under reduced motion the sheet opens in place and unmounts at once on close', async () => {
