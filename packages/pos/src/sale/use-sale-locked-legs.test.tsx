@@ -6,10 +6,11 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, orderDraftSchema, writeOrderDraft } from '../order';
+import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import { posOrderCollection } from '../pos-order';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
-import { useSale } from './use-sale';
+import { SALE_PARTLY_PAID, useSale } from './use-sale';
 
 const pricing: StoreSettings = { currency: 'EUR', pricesIncludeTax: false, taxRatesPpm: { default: 0 } };
 const taxContext = { getTaxRatePpm: () => 0, pricesIncludeTax: false };
@@ -43,6 +44,31 @@ async function resumeSale(covered = false) {
   return { ...hook, lockedLeg, orders };
 }
 
+async function emptySale() {
+  db = await createRxDatabase({
+    name: `lockedlegs${Math.random().toString(36).slice(2)}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false,
+  });
+  const { pos_drafts: drafts, pos_orders: orders } = await db.addCollections({
+    pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection(),
+  });
+  function Wrapper({ children }: { children: ReactNode }) {
+    return <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
+  }
+  const hook = renderHook(() => useSale(pricing, {
+    registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 2 }, drafts,
+    onSaleCompleted: async (order) => { await orders.insert(order); },
+  }), { wrapper: Wrapper });
+  return { ...hook, drafts };
+}
+
+function reopenedBuilder(taxes = taxContext) {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: taxes, storeOrder: { id: '41', revision: 'sha256:a' } });
+  builder.addLine({ productId: 'coffee', name: 'Coffee', storeLineId: '7', unitPrice: { amount: 1000, currency: 'EUR' } });
+  builder.addPayment({ method: 'external', amountMinor: 500, reference: 'Cash', storePaymentId: 'p1', locked: true });
+  return builder;
+}
+
 afterEach(async () => {
   cleanup();
   if (db) await db.remove();
@@ -50,6 +76,104 @@ afterEach(async () => {
 });
 
 describe('useSale locked legs', () => {
+  it('openStoreOrder loads the kept line, locked leg and totals into an empty cart', async () => {
+    const { result } = await emptySale();
+    const order = reopenedBuilder().getSnapshot();
+    act(() => { expect(result.current.openStoreOrder(order)).toBeNull(); });
+    expect(result.current.order.storeOrder).toEqual(order.storeOrder);
+    expect(result.current.order.lineItems).toMatchObject([{ storeLineId: '7' }]);
+    expect(result.current.order.payments).toEqual([{ ...order.payments[0], id: expect.any(String) }]);
+    expect(result.current.order.totalMinor).toBe(order.totalMinor);
+    expect(result.current.order.taxMinor).toBe(order.taxMinor);
+    expect(result.current.stage).toEqual({ kind: 'cart' });
+  });
+
+  it('openStoreOrder refuses a non-empty cart without changing it', async () => {
+    const { result } = await emptySale();
+    act(() => { expect(result.current.addCustomLine({ name: 'Cake', priceMinor: 200 })).toEqual({ id: expect.any(String) }); });
+    const before = result.current.order;
+    act(() => { expect(result.current.openStoreOrder(reopenedBuilder().getSnapshot())).toBe('Park or clear the current sale first'); });
+    expect(result.current.order).toBe(before);
+  });
+
+  it('openStoreOrder refuses another currency', async () => {
+    const { result } = await emptySale();
+    const before = result.current.order;
+    act(() => {
+      expect(result.current.openStoreOrder({ ...reopenedBuilder().getSnapshot(), currency: 'USD' })).toBe('That order is in another currency');
+    });
+    expect(result.current.order).toBe(before);
+  });
+
+  it('openStoreOrder refuses totals changed by taxing a fee in the sale context', async () => {
+    const { result } = await emptySale();
+    const builder = reopenedBuilder({ getTaxRatePpm: () => 100000, pricesIncludeTax: false });
+    builder.addFee({ name: 'Handling', amountMinor: 500, taxStatus: 'taxable', storeLineId: 'f1' });
+    const order = builder.getSnapshot();
+    expect(order.taxMinor).toBe(150);
+    expect(order.totalMinor).toBe(1650);
+    const before = result.current.order;
+    act(() => { expect(result.current.openStoreOrder(order)).toBe(STORE_ORDER_REBUILD_REFUSALS.totals); });
+    expect(result.current.order).toBe(before);
+    expect(result.current.order.lineItems).toEqual([]);
+    expect(result.current.order.payments).toEqual([]);
+  });
+
+  it('openStoreOrder throws for an order without storeOrder', async () => {
+    const { result } = await emptySale();
+    const order = createOrderBuilder({ currency: 'EUR', taxContext }).getSnapshot();
+    expect(() => result.current.openStoreOrder(order)).toThrow('useSale: openStoreOrder() takes a reopened store order');
+  });
+
+  it('closeSale clears a reopened cart whose only paid legs are locked', async () => {
+    const { result } = await emptySale();
+    act(() => { expect(result.current.openStoreOrder(reopenedBuilder().getSnapshot())).toBeNull(); });
+    act(() => { expect(result.current.closeSale()).toBeNull(); });
+    expect(result.current.order.lineItems).toEqual([]);
+    expect(result.current.order.payments).toEqual([]);
+    expect(result.current.order.storeOrder).toBeUndefined();
+  });
+
+  it('closeSale refuses after an unlocked captured leg is added', async () => {
+    const { result } = await emptySale();
+    act(() => { expect(result.current.openStoreOrder(reopenedBuilder().getSnapshot())).toBeNull(); });
+    act(() => { expect(result.current.addTender({ method: 'external', amountMinor: 100, status: 'captured' })).toEqual(expect.any(String)); });
+    expect(result.current.order.payments[1]).toMatchObject({ amountMinor: 100, status: 'captured' });
+    expect(result.current.order.payments[1].locked).toBeUndefined();
+    expect(result.current.stage).toEqual({ kind: 'cart' });
+    const before = result.current.order;
+    act(() => { expect(result.current.closeSale()).toBe(SALE_PARTLY_PAID); });
+    expect(result.current.order).toBe(before);
+  });
+
+  it('switchSale parks a reopened cart with a balance due and only locked legs', async () => {
+    const { result, drafts } = await emptySale();
+    const order = reopenedBuilder().getSnapshot();
+    act(() => { expect(result.current.openStoreOrder(order)).toBeNull(); });
+    expect(result.current.order.balanceDueMinor).toBeGreaterThan(0);
+    await act(async () => { expect(await result.current.switchSale(null)).toBeNull(); });
+    const parked = await drafts.find().exec();
+    expect(parked).toHaveLength(1);
+    expect(JSON.parse(parked[0].toJSON().data).storeOrder).toEqual(order.storeOrder);
+    expect(result.current.order.lineItems).toEqual([]);
+    expect(result.current.order.payments).toEqual([]);
+    expect(result.current.order.storeOrder).toBeUndefined();
+  });
+
+  it('switchSale refuses an unlocked captured leg with a balance due', async () => {
+    const { result, drafts } = await emptySale();
+    act(() => { expect(result.current.openStoreOrder(reopenedBuilder().getSnapshot())).toBeNull(); });
+    act(() => { expect(result.current.addTender({ method: 'external', amountMinor: 100, status: 'captured' })).toEqual(expect.any(String)); });
+    expect(result.current.order.payments[1]).toMatchObject({ amountMinor: 100, status: 'captured' });
+    expect(result.current.order.payments[1].locked).toBeUndefined();
+    expect(result.current.order.balanceDueMinor).toBeGreaterThan(0);
+    expect(result.current.stage).toEqual({ kind: 'cart' });
+    const before = result.current.order;
+    await act(async () => { expect(await result.current.switchSale(null)).toBe(SALE_PARTLY_PAID); });
+    expect(result.current.order).toBe(before);
+    expect(await drafts.find().exec()).toEqual([]);
+  });
+
   it('resume keeps the store order, the kept line id and the locked leg', async () => {
     const { result, lockedLeg } = await resumeSale();
     expect(result.current.order.storeOrder).toEqual({ id: '41', revision: 'sha256:a' });

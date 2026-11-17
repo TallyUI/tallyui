@@ -4,6 +4,7 @@ import type { ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax }
 import { paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
+import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
@@ -780,6 +781,20 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       resetSale();
       return null;
     },
+    /** Loads a reopened store order (from reopenStoreOrder) into an empty sale, or returns why not. */
+    openStoreOrder(order: Order): string | null {
+      if (locked()) return SALE_SAVING;
+      if (!order.storeOrder) throw new Error('useSale: openStoreOrder() takes a reopened store order');
+      const liveSnapshot = builderNow.current.getSnapshot();
+      if (stageNow.current.kind !== 'cart' || liveSnapshot.lineItems.length || liveSnapshot.fees?.length || liveSnapshot.shipping?.length) return 'Park or clear the current sale first';
+      if (order.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That order is in another currency';
+      const restoredTax = contextFor(order.customer && !customerRefusal(order.customer) ? order.customer : null);
+      const builder = restoreOrderDraft(order, { currency: settings.currency, taxContext: restoredTax.taxContext });
+      const snapshot = builder.getSnapshot();
+      if (snapshot.totalMinor !== order.totalMinor || snapshot.taxMinor !== order.taxMinor) return STORE_ORDER_REBUILD_REFUSALS.totals;
+      resetSale(null, builder, restoredTax);
+      return null;
+    },
     /** Resumes a draft into an empty cart; resolves to a refusal message, or null once resumed. */
     async resume(draftId: string, options?: { keepParkedPrices?: boolean }): Promise<string | null> {
       if (locked()) return SALE_SAVING;
@@ -853,7 +868,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const builder = builderNow.current;
       const snapshot = builder.getSnapshot();
       if (draftId === snapshot.id) return null;
-      if (capturedMinor(snapshot.payments) > 0 && snapshot.balanceDueMinor > 0) return SALE_PARTLY_PAID;
+      if (capturedMinor(snapshot.payments.filter((payment) => !payment.locked)) > 0 && snapshot.balanceDueMinor > 0) return SALE_PARTLY_PAID;
       if (snapshot.payments.some(isInMotion)) return PAYMENT_IN_MOTION;
       if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
       if (stageNow.current.kind !== 'receipt' && (snapshot.lineItems.length || snapshot.fees?.length || snapshot.shipping?.length)) {
@@ -863,11 +878,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       resetSale();
       return draftId === null ? null : result.resume(draftId);
     },
-    /** Discards the current sale (nothing is parked) and starts an empty one; refused while saving, once a leg of an unfinished sale took or holds money, or in the tender stage. */
+    /** Discards the current sale (nothing is parked) and starts an empty one; refused while saving, once a leg of an unfinished sale took or holds money, or in the tender stage.
+     * A reopened sale's locked store legs do not stop it closing; the store order stays reopened, as in v2. */
     closeSale(): string | null {
       if (locked()) return SALE_SAVING;
       const { payments } = builderNow.current.getSnapshot();
-      if (stageNow.current.kind !== 'receipt' && (capturedMinor(payments) > 0 || payments.some(isInMotion))) return SALE_PARTLY_PAID;
+      if (stageNow.current.kind !== 'receipt' && (capturedMinor(payments.filter((payment) => !payment.locked)) > 0 || payments.some(isInMotion))) return SALE_PARTLY_PAID;
       if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
       resetSale();
       return null;
