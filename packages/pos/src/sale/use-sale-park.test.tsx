@@ -176,7 +176,7 @@ describe('useSale park and resume', () => {
 
   it("a parked reopened store order keeps the store's prices on resume", async () => {
     const read: StoreOrder = {
-      id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:a', status: 'completed',
+      id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', status: 'completed',
       placedAt: '2026-11-17T10:00:00.000Z', currency: pricing.currency, pricesIncludeTax: false, customer: null,
       lines: [{ id: '7', productId: 'shirt', variantId: 'blue', name: 'Shirt', quantity: 1,
         subtotalMinor: 1000, totalMinor: 1000, subtotalTaxMinor: 250, taxMinor: 250 }],
@@ -192,7 +192,7 @@ describe('useSale park and resume', () => {
     await act(async () => { expect(await result.current.resume(snapshot.id)).toBeNull(); });
     expect(result.current.order.lineItems).toMatchObject([{ variantId: 'blue', unitPriceMinor: 1000 }]);
     expect(result.current.error).toBeNull();
-    expect(result.current.order.storeOrder).toEqual({ id: '41', revision: 'sha256:a', uuid: 'u-1' });
+    expect(result.current.order.storeOrder).toEqual({ id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', uuid: 'u-1' });
   });
 
   it.each(['keepParkedPrices', 'without currentPrice', 'unknown variant'])(

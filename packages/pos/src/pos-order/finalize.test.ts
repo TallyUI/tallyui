@@ -32,7 +32,7 @@ describe('finalizeOrder', () => {
     const builder = sale();
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     const order = builder.getSnapshot();
-    expect(() => finalizeOrder({ ...order, storeOrder: { id: '123', revision: 'r1' } }))
+    expect(() => finalizeOrder({ ...order, storeOrder: { id: '123', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } }))
       .toThrow('finalize: a reopened store order cannot be completed by this version of TallyUI');
     expect(() => finalizeOrder(order)).not.toThrow();
   });

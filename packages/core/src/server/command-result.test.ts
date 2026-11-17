@@ -151,7 +151,7 @@ it.each([
   expect((error as Error).message).toBe(`Invalid ${field}`)
 })
 
-it.each([{ orderId: 'order-1', status: 'pos-open' }, { orderId: 'order-1', status: 'pos-open', revision: 'rev-1' }])(
+it.each([{ orderId: 'order-1', status: 'pos-open' }, { orderId: 'order-1', status: 'pos-open', revision: 'sha256:0dde575797fdab13e429b1132686c07af48e46096a03ea7adc6c3027082b8d2a' }])(
   'parses an applied reopen without serverRefs and drops undeclared fields (ADR-090): %j', reopen => {
     const value = { id: 'c', status: 'applied', reopen }
     expect(parseCommandResult(value)).toStrictEqual(value)

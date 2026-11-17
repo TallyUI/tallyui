@@ -9,7 +9,7 @@ const options = { currency: 'EUR', taxContext };
 
 function storeOrder(): StoreOrder {
   return {
-    id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:a', status: 'completed',
+    id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', status: 'completed',
     placedAt: '2026-11-17T10:00:00.000Z', currency: 'EUR', pricesIncludeTax: false,
     customer: { id: '5', name: 'Jane', email: 'jane@example.test' },
     lines: [
@@ -32,7 +32,7 @@ describe('orderBuilderFromStoreOrder', () => {
   it("rebuilds a store order as a reopened cart with its ids and the store's prices", () => {
     const read = storeOrder();
     const snapshot = orderBuilderFromStoreOrder(read, options).getSnapshot();
-    expect(snapshot.storeOrder).toEqual({ id: '41', revision: 'sha256:a', uuid: 'u-1' });
+    expect(snapshot.storeOrder).toEqual({ id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', uuid: 'u-1' });
     expect(snapshot.id).not.toBe('41');
     expect(snapshot.id).not.toBe('u-1');
     expect(snapshot.lineItems).toHaveLength(3);

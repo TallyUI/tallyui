@@ -226,7 +226,7 @@ describe('WooCommerce orders', () => {
       id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
       discount_total: '0', discount_tax: '0', total_tax: '0', total: '0',
     };
-    expect(toWooStoreOrder({ ...raw, _rxdb_revision: 'sha256:abc' }).revision).toBe('sha256:abc');
+    expect(toWooStoreOrder({ ...raw, _rxdb_revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' }).revision).toBe('sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298');
     for (const revision of [{}, { _rxdb_revision: '' }, { _rxdb_revision: 7 }]) {
       expect(toWooStoreOrder({ ...raw, ...revision })).not.toHaveProperty('revision');
     }

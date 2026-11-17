@@ -5,7 +5,7 @@ import type { Order, StoreOrderRef } from './types';
 
 const taxContext = { getTaxRatePpm: () => 100000, pricesIncludeTax: false };
 const options = { currency: 'EUR', taxContext };
-const storeOrder: StoreOrderRef = { id: '41', revision: 'sha256:a', uuid: 'u-1' };
+const storeOrder: StoreOrderRef = { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', uuid: 'u-1' };
 const line = { productId: 'coffee', name: 'Coffee', unitPrice: { amount: 1000, currency: 'EUR' } };
 
 describe('store ids on reopened carts', () => {

@@ -19,8 +19,9 @@ export function reopenPayloadErrors(payload: unknown): string[] {
   for (const field of ['orderId', 'cashierRef', 'registerId', 'clientOrderId', 'baseRevision', 'storeId']) {
     const value = payload[field]
     if (['clientOrderId', 'baseRevision', 'storeId'].includes(field) && value === undefined) continue
-    check(typeof value === 'string' && value.length > 0 && value.length <= 64,
-      field, 'a non-empty string of at most 64 characters')
+    const max = field === 'baseRevision' ? 128 : 64
+    check(typeof value === 'string' && value.length > 0 && value.length <= max,
+      field, `a non-empty string of at most ${max} characters`)
     noNul(value, field)
   }
   check(typeof payload.createdAt === 'string' && payload.createdAt.length > 0 && !Number.isNaN(Date.parse(payload.createdAt)),

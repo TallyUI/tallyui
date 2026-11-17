@@ -22,6 +22,9 @@ export class UnsupportedOrderVersionError extends Error {
  */
 export const PAYLOAD_STRING_MAX = 255;
 
+/** A store revision's bound (ADR-090): an opaque token, e.g. WooCommerce's 71-character `sha256:` + 64 hex. One number for core's order.reopen and order.update shapes, the rebuild and pos_orders. */
+export const REVISION_MAX = 128;
+
 /** A non-empty string of at most `max` UTF-16 units with no NUL: what order.create's shape check accepts. */
 export const sendable = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= max && !value.includes('\u0000');
