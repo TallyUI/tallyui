@@ -1,7 +1,8 @@
 import * as React from 'react';
-import { View } from 'react-native';
+import { View, Animated, Platform } from 'react-native';
 import { AlertDialog as AlertDialogPrimitive, TextClassContext } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
+import { useOverlayMotion, DIALOG_MOTION } from '../dialog/motion';
 
 const AlertDialog = AlertDialogPrimitive.Root;
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
@@ -25,18 +26,31 @@ const AlertDialogContent = React.forwardRef<
   React.ComponentRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
 >(function AlertDialogContent({ className, children, ...props }, ref) {
+  const { open } = AlertDialogPrimitive.useRootContext();
+  const { mounted, scrim, panel } = useOverlayMotion(open, true, DIALOG_MOTION);
+  if (!mounted) return null;
+  const { style, ...propsWithoutStyle } = props;
+  // WCPOS v2 dialog-in / dialog-out.
   return (
-    <AlertDialogPortal>
-      <AlertDialogOverlay />
+    <AlertDialogPortal forceMount>
+      <Animated.View className="fixed inset-0 z-50" style={{ opacity: scrim }} pointerEvents={open ? 'auto' : 'none'}>
+        <AlertDialogOverlay forceMount className="absolute inset-0" />
+      </Animated.View>
       <AlertDialogPrimitive.Content
+        forceMount asChild
         ref={ref}
         className={cn(
           'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-background p-6 shadow-lg',
           className,
         )}
-        {...props}
+        {...propsWithoutStyle}
       >
-        {children}
+        <Animated.View
+          style={[style, { opacity: panel, transform: Platform.OS === 'web' ? [{ scale: panel.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) }] : undefined }]}
+          pointerEvents={open ? 'auto' : 'none'}
+        >
+          {children}
+        </Animated.View>
       </AlertDialogPrimitive.Content>
     </AlertDialogPortal>
   );

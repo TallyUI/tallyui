@@ -6,10 +6,15 @@ import { useReducedMotion } from '../../lib/use-reduced-motion';
 export const EASE = Easing.bezier(0.2, 0.7, 0.2, 1);
 // WCPOS v2 packages/components/src/lib/motion.ts:33.
 export const EASE_EXIT = Easing.bezier(0.4, 0, 1, 1);
+export type OverlayMotion = {
+  enterMs: number; exitMs: number; scrimInMs: number; scrimOutMs: number; exitEasing: (value: number) => number;
+};
 // WCPOS v2 apps/main/global.css:174-181.
-export const SHEET_MOTION = { enterMs: 250, exitMs: 200, scrimInMs: 150, scrimOutMs: 200 } as const;
+export const SHEET_MOTION: OverlayMotion = { enterMs: 250, exitMs: 200, scrimInMs: 150, scrimOutMs: 200, exitEasing: EASE_EXIT };
+// WCPOS v2 apps/main/global.css:174-177.
+export const DIALOG_MOTION: OverlayMotion = { enterMs: 150, exitMs: 150, scrimInMs: 150, scrimOutMs: 200, exitEasing: EASE };
 
-export function useSheetMotion(open: boolean, enabled: boolean): {
+export function useOverlayMotion(open: boolean, enabled: boolean, motion: OverlayMotion): {
   mounted: boolean; scrim: Animated.Value; panel: Animated.Value;
 } {
   const scrim = useRef(new Animated.Value(0)).current;
@@ -29,14 +34,14 @@ export function useSheetMotion(open: boolean, enabled: boolean): {
     const animation = Animated.parallel([
       Animated.timing(scrim, {
         toValue: open ? 1 : 0,
-        duration: open ? SHEET_MOTION.scrimInMs : SHEET_MOTION.scrimOutMs,
+        duration: open ? motion.scrimInMs : motion.scrimOutMs,
         easing: EASE,
         useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(panel, {
         toValue: open ? 1 : 0,
-        duration: open ? SHEET_MOTION.enterMs : SHEET_MOTION.exitMs,
-        easing: open ? EASE : EASE_EXIT,
+        duration: open ? motion.enterMs : motion.exitMs,
+        easing: open ? EASE : motion.exitEasing,
         useNativeDriver: Platform.OS !== 'web',
       }),
     ]);
@@ -44,7 +49,7 @@ export function useSheetMotion(open: boolean, enabled: boolean): {
       if (finished && !open) setMounted(false);
     });
     return () => animation.stop();
-  }, [open, mounted, reduced, enabled, scrim, panel]);
+  }, [open, mounted, reduced, enabled, scrim, panel, motion]);
 
   return { mounted: enabled && reduced !== true ? mounted || open : open, scrim, panel };
 }
