@@ -174,7 +174,10 @@ export { RegisterSessionRequiredError, RegisterSessionClosedError, RegisterNeeds
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';
 export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows, ENGLISH_CLOSURE_LABELS } from './register';
 export type { Correction, RecordedFigures, ClosureScope } from './register';
-export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact, createClosureContext, formatDecimalMoney, type CreateClosureContextOptions } from './register';
+export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact, createClosureContext, formatDecimalMoney, type CreateClosureContextOptions } from './register';
+import { minorToDecimal as registerMinorToDecimal } from './register';
+/** @deprecated Use `minorToMajor(minor, digits)` from `@tallyui/core`, which also rejects an amount that is not a safe integer. */
+export const minorToDecimal: (minor: number, exponent: number) => string = registerMinorToDecimal;
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
 export { roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';
