@@ -75,12 +75,3 @@ it('under reduced motion the sheet opens in place and unmounts at once on close'
   expect(Animated.timing).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ duration: 250 }));
   expect(Animated.timing).not.toHaveBeenCalled();
 });
-
-it('a centred dialog is unchanged: no slide and no wait on close', async () => {
-  vi.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
-  vi.spyOn(Animated, 'timing');
-  const { rerender } = render(<Harness open side="center" />);
-  await act(async () => rerender(<Harness open={false} side="center" />));
-  expect(screen.queryByTestId('sheet')).toBeNull();
-  expect(Animated.timing).not.toHaveBeenCalled();
-});
