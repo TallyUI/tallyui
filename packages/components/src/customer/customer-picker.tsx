@@ -29,6 +29,17 @@ const EMAIL_MAX = 254;
 /** A simple shape, not RFC 5322: one `@`, a non-empty local part, a domain with text either side of a dot, no whitespace or NUL. */
 const EMAIL_SHAPE = /^[^\s@\u0000]+@[^\s@\u0000]+\.[^\s@\u0000]+$/u;
 
+/** The cashier's text for a customer search or create error (CustomerPicker's and CustomerDropdown's). */
+export function customerErrorText(error: unknown): string {
+  if (error instanceof CustomerServiceError) {
+    return error.code === 'network' ? "Couldn't reach the store. Try again."
+      : error.code === 'server' ? "The store couldn't do that. Try again." : error.message;
+  }
+  return error instanceof ConnectorUnauthorizedError && error.code === 'unauthorized' ? 'Sign in again to continue.'
+    : error instanceof ConnectorUnauthorizedError && error.code === 'forbidden' ? "Your account isn't allowed to do this on this store. Ask the store owner."
+      : 'Something went wrong. Try again.';
+}
+
 export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-picker-search' }: CustomerPickerProps) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -42,15 +53,8 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
   const [noResults, setNoResults] = useState(false);
 
   function handleError(error: unknown) {
-    if (error instanceof CustomerServiceError) {
-      setError(error.code === 'network' ? "Couldn't reach the store. Try again."
-        : error.code === 'server' ? "The store couldn't do that. Try again." : error.message);
-    } else {
-      setError(error instanceof ConnectorUnauthorizedError && error.code === 'unauthorized' ? 'Sign in again to continue.'
-        : error instanceof ConnectorUnauthorizedError && error.code === 'forbidden' ? "Your account isn't allowed to do this on this store. Ask the store owner."
-          : 'Something went wrong. Try again.');
-      onError?.(error);
-    }
+    setError(customerErrorText(error));
+    if (!(error instanceof CustomerServiceError)) onError?.(error);
   }
 
   useEffect(() => {

@@ -12,6 +12,7 @@ const screens = [
   { href: '/pos/open-sale-tabs', label: 'OpenSaleTabs' },
   { href: '/pos/discount-badge', label: 'DiscountBadge' },
   { href: '/pos/cart-note-input', label: 'CartNoteInput' },
+  { href: '/pos/customer-dropdown', label: 'CustomerDropdown' },
   { href: '/pos/cart-panel', label: 'CartPanel' },
   { href: '/pos/sale-charges', label: 'Cart charges' },
   { href: '/pos/sale-note', label: 'Cart note' },

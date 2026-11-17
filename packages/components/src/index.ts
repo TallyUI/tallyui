@@ -112,6 +112,8 @@ export {
   type CustomerFormValues,
   CustomerOrderHistory,
   type CustomerOrderHistoryProps,
+  CustomerDropdown,
+  type CustomerDropdownProps,
 } from './customer';
 
 // Checkout components

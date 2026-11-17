@@ -1,0 +1,29 @@
+---
+title: CustomerDropdown
+description: The cart header's customer chip; pressing it opens a search dropdown anchored to it, Guest first, then the results.
+---
+
+## Import
+
+```tsx
+import { CustomerDropdown } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CustomerDropdown search={searchCustomers} selected={customer} onSelect={setCustomer} online={online} />
+```
+
+The chip names the sale's customer, or Guest. While the dropdown is open it reads "Select Customer"; the search is debounced, a stale response is dropped and nothing is sent for a blank query or offline. Guest is always the first row. On the web the arrow keys move between the field and the rows, Enter or Space picks, Escape closes. `CustomerPicker` stays for the modal and inline picker.
+
+## Props
+
+- `search` (`(query: string) => Promise<Customer[]>`, required): the connector's searchCustomers, bound by the app.
+- `selected` (`Customer | null`, required): the sale's customer; `null` is Guest.
+- `onSelect` (`(customer: Customer | null) => void`, required): called with the picked customer, or `null` for Guest.
+- `onError` (`(error: unknown) => void`): errors the dropdown can't explain to the cashier, as CustomerPicker's.
+- `online` (`boolean`, required): `false` disables search; Guest stays selectable.
+- `debounceMs` (`number`, default `250`): wait before a search, ms.
+- `className` (`string`): classes for the row holding the label and the chip.
+- `testID` (`string`, default `'customer-dropdown-chip'`): testID of the chip.
