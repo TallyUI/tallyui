@@ -51,5 +51,5 @@ export function useOverlayMotion(open: boolean, enabled: boolean, motion: Overla
     return () => animation.stop();
   }, [open, mounted, reduced, enabled, scrim, panel, motion]);
 
-  return { mounted: enabled && reduced !== true ? mounted || open : open, scrim, panel };
+  return { mounted: enabled && reduced === false ? mounted || open : open, scrim, panel };
 }
