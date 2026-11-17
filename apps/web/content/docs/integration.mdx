@@ -32,14 +32,16 @@ If an order fails the new schema's validation, `addPosOrderCollection` rejects w
 Rolling a till back to a build with an older `pos_orders` schema version, then upgrading it again, is unsupported. For example, a till that goes from version 1 back to version 0 and then on to version 2 holds two older versions at once. Its first `addPosOrderCollection` then rejects with DM4, and the next call migrates the rest. No order is lost.
 
 ```ts
-import { createTallyDatabase, connectorCollection, getStorage } from '@tallyui/database';
+import { createTallyDatabase, connectorCollection } from '@tallyui/database';
+import { getRxStorageSQLiteWasm } from '@tallyui/storage-sqlite/web';
 import { addPosOrderCollection } from '@tallyui/pos';
 import type { TallyConnector } from '@tallyui/core';
 import type { RxJsonSchema } from 'rxdb';
 
 declare const connector: TallyConnector, deviceSettingsSchema: RxJsonSchema<unknown>;
 
-const db = await createTallyDatabase({ connector, storage: getStorage() });
+const workerInput = new URL('@tallyui/storage-sqlite/web-worker', import.meta.url);
+const db = await createTallyDatabase({ connector, storage: getRxStorageSQLiteWasm({ workerInput }) });
 await db.addCollections({ device_settings: connectorCollection(deviceSettingsSchema) });
 const posOrders = await addPosOrderCollection(db);
 ```
