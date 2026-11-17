@@ -63,6 +63,23 @@ it('shows the offline pill', () => {
   expect(screen.getByTestId('register-bar-pill').textContent).toBe('Offline');
 });
 
+it('counts the sales to send in the offline pill', () => {
+  render(
+    <RegisterBar register={stub()} registerId="r" online={false} awaitingStore={2} multiRegister={false} onOpenPanel={vi.fn()} />,
+  );
+  expect(screen.getByTestId('register-bar-pill').textContent).toBe('Offline · 2 sales to send');
+});
+
+it('draws the pill as a warning dot and its word, not a filled badge', () => {
+  render(<RegisterBar register={stub()} registerId="r" online={false} multiRegister={false} onOpenPanel={vi.fn()} />);
+  const pill = screen.getByTestId('register-bar-pill');
+  const dot = pill.querySelector('[aria-hidden]');
+  expect(dot).not.toBeNull();
+  expect(dot?.className).toContain('bg-warning');
+  expect(pill.className).not.toContain('bg-warning');
+  expect(pill.textContent).toBe('Offline');
+});
+
 it('shows the choose-a-register pill ahead of offline', () => {
   render(
     <RegisterBar register={stub()} registerId={null} online={false} multiRegister={false} onOpenPanel={vi.fn()} />,

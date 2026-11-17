@@ -7,7 +7,6 @@ import { MinTargetBand, useMinTarget } from '../scale/min-target';
 import { usePointer } from '../scale/use-pointer';
 import { useShell } from '../shell/shell-context';
 import { Avatar, avatarInitials } from '../ui/avatar';
-import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { HStack } from '../ui/hstack';
 import { IconButton } from '../ui/icon-button';
@@ -22,6 +21,8 @@ export interface RegisterBarProps {
   registerId: string | null;
   /** `false` when the store, or the app itself, can't be reached — reads to the cashier as offline. */
   online: boolean;
+  /** Sales taken that the store has still to hear: "Offline · N sales to send" offline, "N sales awaiting store" online when no other pill shows (v2). */
+  awaitingStore?: number;
   /** Hidden when `multiRegister` is `false`: a single-register store doesn't need to name it. */
   registerName?: string;
   multiRegister: boolean;
@@ -39,6 +40,17 @@ export interface RegisterBarProps {
   className?: string;
 }
 
+// v2's StatusBadge (packages/components/src/status-badge): the dot carries the warning colour, the word stays in
+// the foreground, so the state never reads by colour alone. MIT, WCPOS.
+function PillDot({ label, testID }: { label: string; testID?: string }) {
+  return (
+    <View testID={testID} className="shrink flex-row items-center gap-1.5">
+      <View aria-hidden className="size-2 shrink-0 rounded-full bg-warning" />
+      <Text className="shrink text-sm text-foreground" numberOfLines={1}>{label}</Text>
+    </View>
+  );
+}
+
 /**
  * The till's one status bar: the menu (phones), the place (the store, and the register for
  * multi-register stores), one status pill (LEDGER 48), the sync state, the button that opens the
@@ -53,6 +65,7 @@ export function RegisterBar({
   register,
   registerId,
   online,
+  awaitingStore,
   registerName,
   multiRegister,
   onOpenPanel,
@@ -72,6 +85,7 @@ export function RegisterBar({
   const pill = describeRegisterBarPill({
     registerId,
     online,
+    awaitingStore,
     sessionStatus: session?.status ?? null,
     overdue,
     approvalRequired: session?.approval_required,
@@ -101,10 +115,10 @@ export function RegisterBar({
       </View>
       {pill && (onPressPill ? (
         <Pressable testID="register-bar-pill" accessibilityRole="button" accessibilityLabel={pill} onPress={onPressPill}>
-          <Badge label={pill} variant="warning" />
+          <PillDot label={pill} />
         </Pressable>
       ) : (
-        <Badge testID="register-bar-pill" label={pill} variant="warning" />
+        <PillDot testID="register-bar-pill" label={pill} />
       ))}
       {syncStatus}
       {(session || lastClosure) && (
