@@ -6413,7 +6413,10 @@ interface OrderCreatePayload {
      - **Payload v1** (strict, ADR-070; `reopenPayloadErrors`): `orderId` (the platform's order id), `clientOrderId?`
        (the till's id for the sale, when it has one), `baseRevision?` (the store's revision as last read, for platforms
        that check it), `cashierRef` and `registerId` (the identity the store records), `storeId?`, each a non-empty
-       string of at most 64 characters with no NUL, and `createdAt` (a valid date). No lines and no totals.
+       string of at most 64 characters with no NUL (`baseRevision` at most 128: a Woo `_rxdb_revision` is
+       `sha256:` plus 64 hex, 71 characters, and the revision is an opaque token, never stripped; desk Q3,
+       2026-11-17), and `createdAt` (a valid date). No lines and no totals. The `order.update` payload and the
+       till's rebuild use the same 128 bound for `baseRevision`; ids stay at 64.
      - **Applied result:** `reopen: { orderId, status, revision? }`. The till then reads the order with the
        connector's `getOrder` and builds the cart from that read, never from the list it opened the detail from. A
        `duplicate` (already open with this identity) counts as applied.
@@ -6446,6 +6449,9 @@ interface OrderCreatePayload {
      `order.reopen` lists `order.update`. Its core types land with phase c, because the spike (phase b) settles the
      line and payment shapes.
   5. **`pos_orders` gains `storeOrderId?` and `baseRevision?`** in phase c: a schema bump, one-way (ADR-069).
+     Version 15 (W4-0, desk Q3 and Q4, 2026-11-17) is an identity migration: `baseRevision` goes to at most 128
+     characters, and an optional `refundDueMinor` (an integer of at least 0) is added for a reopened sale that ends
+     overpaid. Finalize writes it; readers use the stored value.
   6. **WooCommerce mapping** (WCPOS >= 2.0.0; `orderReopen` is advertised only from that plugin version):
      - `order.reopen` is a `wcpos/v2/push/orders` `operation: 'update'` with `recordId` = the order's
        `_woocommerce_pos_uuid`, `baseRevision`, `If-Match`, and `Idempotency-Key` = the command id. The payload is
