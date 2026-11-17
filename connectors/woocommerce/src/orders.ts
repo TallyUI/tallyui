@@ -49,6 +49,28 @@ function posUuid(metaData: unknown): string | undefined {
 
 const PAYMENT_KINDS: Record<string, PaymentMethodKind> = { pos_cash: 'cash', pos_card: 'external' };
 
+/** Captured ledger rows are the store's counting rule. */
+function storePayments(raw: Row, currency: string, totalMinor: number): StoreOrder['payments'] {
+  const ledger = rows(raw.meta_data).find((meta) => meta.key === '_wcpos_payments')?.value;
+  if (isRow(ledger) && ledger.schema === 1 && Array.isArray(ledger.payments)) {
+    return rows(ledger.payments).filter((row) => row.status === 'captured').map((row) => {
+      const method = nonEmpty(row.method_id);
+      if (!method || (typeof row.currency === 'string' && row.currency !== currency)) throw unexpected();
+      const title = method === raw.payment_method ? nonEmpty(raw.payment_method_title) : undefined;
+      const kind = PAYMENT_KINDS[method];
+      return {
+        method, ...(title ? { title } : {}), ...(kind ? { kind } : {}), amountMinor: minor(row.amount, currency),
+      };
+    });
+  }
+  const method = nonEmpty(raw.payment_method);
+  const title = nonEmpty(raw.payment_method_title);
+  const kind = method ? PAYMENT_KINDS[method] : undefined;
+  return method && (nonEmpty(raw.date_paid_gmt) || nonEmpty(raw.date_paid)) ? [{
+    method, ...(title ? { title } : {}), ...(kind ? { kind } : {}), amountMinor: totalMinor,
+  }] : [];
+}
+
 /** Maps a WooCommerce order resource (as WCPOS `wcpos/v2/orders` serves it) to a `StoreOrder` (ADR-081). */
 export function toWooStoreOrder(raw: unknown): StoreOrder {
   if (!isRow(raw) || raw.id === undefined || raw.id === null || typeof raw.currency !== 'string' || typeof raw.date_created_gmt !== 'string') {
@@ -69,9 +91,6 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
 
   const clientOrderId = posUuid(raw.meta_data);
   const totalMinor = minor(raw.total, currency);
-  const paymentMethod = nonEmpty(raw.payment_method);
-  const paymentTitle = nonEmpty(raw.payment_method_title);
-  const paymentKind = paymentMethod ? PAYMENT_KINDS[paymentMethod] : undefined;
 
   return {
     id: String(raw.id),
@@ -125,9 +144,7 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     discountTaxMinor: minor(raw.discount_tax, currency),
     taxMinor: minor(raw.total_tax, currency),
     totalMinor,
-    payments: paymentMethod ? [{
-      method: paymentMethod, ...(paymentTitle ? { title: paymentTitle } : {}), ...(paymentKind ? { kind: paymentKind } : {}), amountMinor: totalMinor,
-    }] : [],
+    payments: storePayments(raw, currency, totalMinor),
     refunds: rows(raw.refunds).map((refund) => {
       const reason = nonEmpty(refund.reason);
       return { id: String(refund.id), amountMinor: Math.abs(minor(refund.total, currency)), ...(reason ? { reason } : {}) };
