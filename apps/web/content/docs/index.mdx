@@ -41,12 +41,11 @@ pnpm add @tallyui/core @tallyui/database @tallyui/storage-sqlite @tallyui/compon
 
 ```tsx
 import { useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
 import { ConnectorProvider } from '@tallyui/core';
 import { createTallyDatabase, startReplication, type TallyDatabase } from '@tallyui/database';
 import { getRxStorageSQLiteWasm } from '@tallyui/storage-sqlite/web';
 import { createMedusaConnector } from '@tallyui/connector-medusa';
-import { ProductCard } from '@tallyui/components';
+import { ProductCard, VStack } from '@tallyui/components';
 
 // One connector per store session: a new connector and database on each sign-in or store change.
 async function openStore(baseUrl: string, apiToken: string) {
@@ -66,9 +65,9 @@ function Products({ db }: { db: TallyDatabase }) {
     return () => subscription.unsubscribe();
   }, [query]);
   return (
-    <View className="gap-2">
+    <VStack className="gap-2">
       {products.map((doc) => <ProductCard key={doc.primary} doc={doc} />)}
-    </View>
+    </VStack>
   );
 }
 
