@@ -1,4 +1,4 @@
-import type { OrderCreateEnvelope } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderUpdateEnvelope } from '@tallyui/core';
 import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
 import type { PosOrder, PosOrderLine } from './types';
 
@@ -99,9 +99,15 @@ function wireNote(note: string | undefined): string | undefined {
  * the stored addresses; every other field follows the version its content makes, as at 7.
  * Version 9 sends every coupon's stored line shares when the cap allows it, keeping notes and any tax address.
  * Orders with Any picks (#495) need version 6 too, carrying a line's `anyAttributes`, and coupons only when they have some.
+ * A reopened sale (`storeOrderId`) throws: it goes as `order.update` (`toOrderUpdateEnvelope`).
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
   options?: { maxVersion?: number }): OrderCreateEnvelope {
+  if (order.storeOrderId !== undefined) throw new Error(`Order ${order.id} reopened store order ${order.storeOrderId}: it is sent as order.update, never order.create (ADR-090)`);
+  return createEnvelope(order, deviceId, attempt, options);
+}
+
+function createEnvelope(order: PosOrder, deviceId: string, attempt: number, options?: { maxVersion?: number }): OrderCreateEnvelope {
   const grossMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
   const content = contentVersion(order);
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
@@ -192,4 +198,19 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       ...(withTaxAddress ? { taxAddress } : {}),
     },
   };
+}
+
+/** A reopened sale's `order.update` v1 (ADR-090 decision 4): the `order.create` payload at the version `toOrderCreateEnvelope` would pick,
+ * plus the store order's id, its base revision and the store ids of kept lines, fees, shipping and payments. */
+export function toOrderUpdateEnvelope(order: PosOrder, deviceId: string, attempt = 1, options?: { maxVersion?: number }): OrderUpdateEnvelope {
+  if (order.storeOrderId === undefined) throw new Error(`Order ${order.id} has no storeOrderId: it is sent as order.create`);
+  const create = createEnvelope(order, deviceId, attempt, options);
+  return { id: create.id, type: 'order.update', version: 1, createdAt: create.createdAt,
+    deviceId: create.deviceId, attempt: create.attempt, payload: { ...create.payload, orderId: order.storeOrderId,
+      ...(order.baseRevision !== undefined ? { baseRevision: order.baseRevision } : {}), createVersion: create.version,
+      lines: create.payload.lines.map((line, i) => order.lines[i].storeLineId !== undefined ? { ...line, storeLineId: order.lines[i].storeLineId } : line),
+      payments: create.payload.payments.map((payment, i) => order.payments[i].storePaymentId !== undefined ? { ...payment, paymentId: order.payments[i].storePaymentId } : payment),
+      ...(create.payload.fees ? { fees: create.payload.fees.map((fee, i) => order.fees![i].storeLineId !== undefined ? { ...fee, storeLineId: order.fees![i].storeLineId } : fee) } : {}),
+      ...(create.payload.shipping ? { shipping: create.payload.shipping.map((charge, i) => order.shipping![i].storeLineId !== undefined ? { ...charge, storeLineId: order.shipping![i].storeLineId } : charge) } : {}),
+    } };
 }

@@ -89,11 +89,11 @@ describe('order.create v9 store-priced coupon lines (#790)', () => {
     expect(JSON.stringify(envelope(taxed, 8))).toBe(JSON.stringify(envelope(withoutLines(taxed), 8)));
   });
 
-  it("never sends a reopened sale's store ids in order.create", () => {
+  it("never sends kept lines', fees', shipping's or payments' store ids in order.create", () => {
     const withoutIds: PosOrder = { ...sale(),
       fees: [{ id: 'fee-1', name: 'Bag', amountMinor: 20, taxStatus: 'none', netMinor: 20, taxMicros: '0', taxLines: [] }],
       shipping: [{ id: 'shipping-1', name: 'Delivery', amountMinor: 30, taxStatus: 'none', netMinor: 30, taxMicros: '0', taxLines: [] }] };
-    const withIds: PosOrder = { ...withoutIds, storeOrderId: '4711', baseRevision: '3-abc',
+    const withIds: PosOrder = { ...withoutIds,
       lines: [{ ...withoutIds.lines[0], storeLineId: '11' }], fees: [{ ...withoutIds.fees![0], storeLineId: '12' }],
       shipping: [{ ...withoutIds.shipping![0], storeLineId: '13' }], payments: [{ ...withoutIds.payments[0], storePaymentId: '21' }] };
     for (const maxVersion of [6, 8, 9]) {
@@ -101,6 +101,11 @@ describe('order.create v9 store-priced coupon lines (#790)', () => {
       expect(sent).toBe(JSON.stringify(envelope(withoutIds, maxVersion)));
       for (const field of ['storeOrderId', 'baseRevision', 'storeLineId', 'storePaymentId']) expect(sent).not.toContain(field);
     }
+  });
+
+  it('refuses to build order.create for a reopened sale', () => {
+    const withoutIds = sale();
+    expect(() => toOrderCreateEnvelope({ ...withoutIds, storeOrderId: '4711' }, 'device_golden')).toThrow('order.update');
   });
 
   it('keeps a WooCommerce replay coupon at today’s version and bytes', () => {
