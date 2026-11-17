@@ -3,6 +3,7 @@
  * BalanceHeadline and LedgerLegs from ledger-pane.tsx, then the method tiles, entry, quick-cash chips,
  * keypad and commit from tender-pane.tsx's TenderKeypad. Copy is read with useT, under v2's catalogue keys. Every figure
  * comes from pos (useSale's captured-only totals, tenderRounding, quickTenderedAmounts, planLegs).
+ * The caption row and the hero figure follow tender-pane.tsx's caption row and AmountFigure (v2 :390-459).
  */
 import { useEffect, useState, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
@@ -77,6 +78,8 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
   const left = balance + figures.roundingMinor - figures.appliedMinor;
   const noChange = method !== null && !givesChange && figures.entryMinor > balance;
   const changeLeads = !noChange && entryChange > 0;
+  // v2 tender-pane.tsx:405-410: the caption names the balance only when it differs from the figure shown.
+  const balanceInCaption = balance === 0 || figures.entryMinor !== balance;
   const rows = rowsSince(order.payments, state.plan?.from ?? 0).map(({ title, amountMinor }) => ({ title, minor: amountMinor }));
   const plan = activePlan(state.plan, rows.length, balance);
   const planned = plan ? planLegs(plan, rows, balance) : null;
@@ -111,18 +114,32 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
   }
 
   return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
-    <View testID="tender-headline" className="gap-1">
-      <View className="flex-row flex-wrap items-center gap-2">
-        <Text className="text-sm text-muted-foreground">{order.paidMinor > 0 ? t('pos_checkout.remaining') : t('common.total')}</Text>
+    <View testID="tender-headline" className="items-center gap-1">
+      <View className="flex-row flex-wrap items-center justify-center gap-2">
+        <Text testID="tender-caption" className="text-xs uppercase tracking-wide text-muted-foreground">
+          {order.paidMinor > 0 ? t('pos_checkout.remaining') : t('pos_checkout.to_pay')}
+          {balanceInCaption ? <>{' '}<Text testID="tender-balance">{money(balance)}</Text></> : null}
+        </Text>
         {balance > 0 ? <Pressable testID="tender-split-chip" accessibilityRole="button" aria-pressed={splitOn} className={cn(button, splitOn && 'border-primary bg-muted')}
           onPress={() => dispatch(splitOn ? { type: 'clear-plan', balanceMinor: balance } : { type: 'open-split' })}>
           <Text className="font-semibold text-foreground">{t('pos_checkout.split')}</Text>
         </Pressable> : null}
       </View>
-      <Text testID="tender-balance" className="text-4xl font-bold text-foreground">{money(balance)}</Text>
       {order.paidMinor > 0 ? <Text testID="tender-paid" className="text-sm text-muted-foreground">{t('pos_checkout.paid_of_total', { paid: money(order.paidMinor), total: money(order.totalMinor) })}</Text> : null}
       {order.changeDueMinor > 0 ? <Text testID="tender-change" className="text-lg font-semibold text-success">{t('pos_checkout.change_due', { amount: money(order.changeDueMinor) })}</Text> : null}
     </View>
+
+    {balance > 0 ? <View testID="tender-figure" className="items-center gap-1">
+      {changeLeads ? <>
+        <Text testID="tender-entry-hint" className="text-4xl font-bold text-success">{hint}</Text>
+        <Text testID="tender-tendered-line" className="min-h-6 text-sm text-muted-foreground">{t('pos_checkout.tendered')} <Text testID="tender-entry-amount" className="font-semibold text-foreground">{money(figures.entryMinor)}</Text>{order.totalMinor !== balance ? ` · ${t('common.total')} ${money(order.totalMinor)}` : ''}</Text>
+        {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
+      </> : <>
+        <Text testID="tender-entry-amount" className={cn('text-4xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
+        {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
+        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange ? 'text-warning' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
+      </>}
+    </View> : null}
 
     <View testID="tender-ledger" className="gap-1">
       {order.payments.length === 0 ? <Text className="text-muted-foreground">{t('pos_checkout.no_payments_yet')}</Text> : order.payments.map((leg) => {
@@ -174,15 +191,6 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
         ))}
       </View>
       {planned ? <Text testID="tender-plan" className="text-sm text-muted-foreground">{t('pos_checkout.n_of_ways', { n: planned.label.n, ways: planned.label.ways })}</Text> : null}
-      {changeLeads ? <>
-        <Text testID="tender-entry-hint" className="text-4xl font-bold text-success">{hint}</Text>
-        <Text testID="tender-tendered-line" className="min-h-6 text-sm text-muted-foreground">{t('pos_checkout.tendered')} <Text testID="tender-entry-amount" className="font-semibold text-foreground">{money(figures.entryMinor)}</Text>{order.totalMinor !== balance ? ` · ${t('common.total')} ${money(order.totalMinor)}` : ''}</Text>
-        {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-      </> : <>
-        <Text testID="tender-entry-amount" className={cn('text-3xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
-        {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-        <Text testID="tender-entry-hint" className={cn('min-h-6 text-sm', noChange ? 'text-warning' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
-      </>}
       {method?.id === 'external' ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
         value={reference} onChangeText={setReference} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
       {state.splitView && !plan ? <>
@@ -202,7 +210,7 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
           </View>)}
         </ScrollView>
       </> : null}
-      {chips.length ? <View testID="tender-quick" className="flex-row flex-wrap gap-2">
+      {chips.length ? <View testID="tender-quick" className="flex-row flex-wrap justify-center gap-2">
         {chips.map((minor, index) => <Pressable key={minor} testID={index === 0 ? 'tender-quick-exact' : `tender-quick-${minor}`} accessibilityRole="button"
           onPress={() => dispatch({ type: 'set-entry', minor })} className={cn(button, state.entryDirty && figures.entryMinor === minor && 'border-primary')}>
           <Text className="font-semibold text-foreground">{index === 0 ? t('pos_checkout.exact_amount', { amount: money(minor) }) : money(minor)}</Text>
