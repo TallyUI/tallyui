@@ -121,6 +121,7 @@ export {
   type PaymentMethodCardProps,
   type PaymentSelectorProps,
   type PaymentMethod,
+  type PaymentSelectorMethod,
   OrderSummaryLine,
   OrderSummary,
   type OrderSummaryLineProps,
