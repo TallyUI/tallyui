@@ -6,10 +6,10 @@
 // (2026-09-27 review): "redirects Orders to login when signed out" (session/routing, stays in the app, not
 // OrdersList) and "shows retry seconds and updates the countdown" (exercises `<SyncStatus>` directly, not
 // OrdersList). Every other test here is TallyUI's own, written from OrdersList's code.
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
-import type { PosOrder } from '@tallyui/pos';
+import { UPDATE_UNSENDABLE_MESSAGE, type PosOrder } from '@tallyui/pos';
 import { OrdersList, type OrderHistoryRow } from '../sale/orders-list';
 import { orderReference } from '../sale/order-reference';
 
@@ -154,6 +154,49 @@ const refusals = {
   underpaid: 'The online store refused this sale: the payments add up to less than the total.',
   unsupported_currency: "The online store refused this sale: the store doesn't take this currency.",
 };
+
+const reopenAgain = "This order was changed in the online store after it was reopened here, so your change wasn't sent. Reopen the order and make the change again.";
+
+describe('OrdersList reopened sale (ADR-090 W4c)', () => {
+  it('shows an unsendable update under Needs attention with a working Retry', async () => {
+    const onRetry = vi.fn(async () => 1);
+    render(<OrdersList orders={[order('u', { storeOrderId: 's1', error: { code: 'update_unsendable', message: 'x' } })]}
+      onRetry={onRetry} />);
+    expect(headers()).toEqual(['Needs attention', 'Recent']);
+    const attention = within(screen.getByRole('heading', { name: 'Needs attention' }).parentElement!);
+    expect(attention.getByTestId('order-row-u')).toBeTruthy();
+    expect(attention.getByText(UPDATE_UNSENDABLE_MESSAGE)).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
+    await act(async () => { fireEvent.click(attention.getByRole('button', { name: 'Retry' })); });
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onRetry).toHaveBeenCalledWith(['u']);
+  });
+
+  it.each(['reopen_required', 'revision_conflict'])('asks to reopen again without Retry for a reopened %s', (code) => {
+    render(<OrdersList orders={[order('r', { syncStatus: 'rejected', storeOrderId: 's1', error: { code, message: 'x' } })]}
+      onRetry={async () => 0} />);
+    expect(screen.getAllByText(reopenAgain)).toHaveLength(2);
+    expect(screen.queryByText(refusals.platform_error)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it.each(['reopen_required', 'revision_conflict'])('keeps the fallback sentence and Retry for a new sale with %s', (code) => {
+    render(<OrdersList orders={[order('r', { syncStatus: 'rejected', error: { code, message: 'x' } })]}
+      onRetry={async () => 0} />);
+    expect(screen.getAllByText(refusals.platform_error)).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
+  });
+
+  it.each([false, true])('shows neither sentence nor Retry for pending without an error (stuck: %s)', (isStuck) => {
+    const entry = { commandId: 'command-p', since: 0, reason: 'status_503' };
+    render(<OrdersList orders={[order('p', { storeOrderId: 's1' })]} onRetry={async () => 0}
+      stuck={isStuck ? { ...entry, commandIds: [entry.commandId], orders: [entry] } : undefined} />);
+    expect(screen.queryByText(UPDATE_UNSENDABLE_MESSAGE)).toBeNull();
+    expect(screen.queryByText(reopenAgain)).toBeNull();
+    expect(screen.queryByText(refusals.platform_error)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+});
 
 describe('OrdersList', () => {
   it('says there are no sales yet when the list is empty', () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings } from '@tallyui/core';
-import { isRequeueable, needsAttention, noteDelivery, refundDueOf, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { NOTE_NOT_SENT, orderReference } from './order-reference';
 import { sinceText } from './since-text';
 
@@ -32,6 +32,7 @@ const REFUSAL_SENTENCES = new Map([
 ]);
 // Any other code, or none: platform_error's sentence, as the generic fallback (approved by the Front desk, 2026-09-30).
 const refusalSentence = (code: string | undefined) => REFUSAL_SENTENCES.get(code ?? '') ?? REFUSAL_SENTENCES.get('platform_error')!;
+const REOPEN_AGAIN_SENTENCE = "This order was changed in the online store after it was reopened here, so your change wasn't sent. Reopen the order and make the change again.";
 
 /** Keeps an unparseable value as is, like medusapos's date util, since `Intl` throws on an invalid date. */
 function defaultFormatDate(iso: string) {
@@ -93,6 +94,10 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const isExpanded = expanded.has(key);
           // The order's own stuck entry: its clock and latest reason, not the earliest across all stuck orders.
           const stuckEntry = order.syncStatus === 'pending' ? stuck?.orders.find((entry) => entry.commandId === order.commandId) : undefined;
+          const sentence = order.syncStatus === 'rejected'
+            ? order.storeOrderId !== undefined && ['reopen_required', 'revision_conflict'].includes(order.error?.code ?? '')
+              ? REOPEN_AGAIN_SENTENCE : refusalSentence(order.error?.code)
+            : order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE ? UPDATE_UNSENDABLE_MESSAGE : undefined;
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
             <Pressable accessibilityRole="button" aria-expanded={isExpanded}
@@ -124,7 +129,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               {`Hasn't reached the online store since ${sinceText(stuckEntry)}.`}
             </Text> : null}
             {/* The code's sentence alone: the cashier sees no error code and never the store's message. */}
-            {order.syncStatus === 'rejected' ? <Text className="text-destructive">{refusalSentence(order.error?.code)}</Text> : null}
+            {sentence ? <Text className="text-destructive">{sentence}</Text> : null}
             {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
             {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
             {order.localWarnings?.map((warning, index) => <Text key={index} className="text-foreground">
@@ -133,8 +138,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
                 : "The terminal's payment reference couldn't be kept; the payment is recorded without it."}
             </Text>)}
             {noteDelivery(order) === 'not_sent' ? <Text testID={`order-note-not-sent-${order.id}`} className="text-foreground">{NOTE_NOT_SENT}</Text> : null}
-            {/* Retry is offered only for a code the outbox resends (isRequeueable). */}
-            {section.title === 'Needs attention' && order.syncStatus === 'rejected' && isRequeueable(order.error?.code)
+            {/* Retry is offered only for an order the outbox resends (isRequeueableOrder). */}
+            {section.title === 'Needs attention' && isRequeueableOrder(order)
               ? <Pressable accessibilityRole="button" disabled={retryingIds.has(order.id)} onPress={async () => {
                 if (retrying.current.has(order.id)) return;
                 retrying.current.add(order.id);
