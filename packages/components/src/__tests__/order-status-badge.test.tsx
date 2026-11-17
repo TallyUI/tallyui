@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { OrderStatusBadge } from '../order/order-status-badge';
+import { OrderStatusBadge, type OrderStatus } from '../order/order-status-badge';
 
 // react-native-web atomizes className into hashed classes, so copy it to a data attribute.
 vi.mock('react-native', async (importOriginal) => {
@@ -49,7 +49,9 @@ describe('OrderStatusBadge', () => {
     const labels = screen.getAllByText('Cancelled');
     expect(labels).toHaveLength(2);
     expect(labels[1].getAttribute('data-class')).toBe(labels[0].getAttribute('data-class'));
-    expect(labels[0].getAttribute('data-class')).toContain('text-muted-foreground');
+    expect(labels[0].getAttribute('data-class')).toContain('text-foreground');
+    const dotClasses = (labels[0].previousElementSibling?.getAttribute('data-class') ?? '').split(/\s+/);
+    expect(dotClasses).toContain('bg-muted-foreground');
   });
 
   it.each([
@@ -57,6 +59,9 @@ describe('OrderStatusBadge', () => {
     ['failed', 'Failed', 'bg-destructive'],
     ['pos-open', 'POS open', 'bg-info'],
     ['pos-partial', 'POS partial', 'bg-warning'],
+    ['refunded', 'Refunded', 'bg-muted-foreground'],
+    ['trash', 'Trash', 'bg-muted-foreground'],
+    ['checkout-draft', 'Draft', 'bg-primary'],
   ] as const)('renders v2\'s label and tone for %s', (status, label, dot) => {
     render(<OrderStatusBadge status={status} />);
     const text = screen.getByText(label);
@@ -65,5 +70,14 @@ describe('OrderStatusBadge', () => {
     const dotClasses = (text.previousElementSibling?.getAttribute('data-class') ?? '').split(/\s+/);
     expect(dotClasses).toContain(dot);
     expect(text.getAttribute('data-class')).toContain('text-foreground');
+  });
+
+  it.each(['wc-custom-status', 'toString'])('shows an unknown status as its raw string in the default tone', (status) => {
+    render(<OrderStatusBadge status={status as OrderStatus} />);
+    const text = screen.getByText(status);
+    expect(text).toBeDefined();
+    expect(screen.queryByText('Pending')).toBeNull();
+    const dotClasses = (text.previousElementSibling?.getAttribute('data-class') ?? '').split(/\s+/);
+    expect(dotClasses).toContain('bg-primary');
   });
 });
