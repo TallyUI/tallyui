@@ -6,6 +6,16 @@ import { encode, MAX_MESSAGE_BYTES, messageBytes } from './snapshot';
 /** A display clock that also tells the time, for the snapshot re-send and the idle clear. */
 export interface ServiceClock extends DisplayClock { now(): number }
 
+/** The real timers and `Date.now`: every display module's default clock. */
+export const systemClock: ServiceClock = {
+  now: () => Date.now(),
+  setTimeout: (run, ms) => setTimeout(run, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+/** The sale states a display shows: its current event, which the snapshot carries. */
+export const SALE_ACTIONS: ReadonlySet<string> = new Set(['cart.updated', 'payment.state', 'display.idle']);
+
 export interface SnapshotBody { v: 1; seq: number; config: DisplayConfig; event: DisplayEnvelope }
 
 export interface SnapshotSenderOptions {

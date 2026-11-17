@@ -1,19 +1,24 @@
 import type { ReceiptData } from '../receipt/types';
 import { displayCart, makeEnvelope, type DisplayConfig, type DisplayEnvelope, type DisplayPayment } from './protocol';
+import { systemClock } from './snapshot-fallback';
 import type { DisplayTransport } from './transport';
 
 export interface DisplayClock { setTimeout(run: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
-
-const systemClock: DisplayClock = {
-  setTimeout: (run, ms) => setTimeout(run, ms),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
 
 export interface DisplayLink {
   /** The order as it stands; null, or no lines, fees or shipping, shows idle. */
   showCart(receipt: ReceiptData | null): void;
   showPayment(receipt: ReceiptData, payment: DisplayPayment): void;
   close(): void;
+}
+
+/** One `DisplayLink` call as data: the cart (null shows idle) or a payment. */
+export type DisplayCall = ['cart', ReceiptData | null] | ['payment', ReceiptData, DisplayPayment];
+
+/** Makes `call` on `link`. */
+export function callDisplay(link: DisplayLink, call: DisplayCall): void {
+  if (call[0] === 'cart') link.showCart(call[1]);
+  else link.showPayment(call[1], call[2]);
 }
 
 /**
