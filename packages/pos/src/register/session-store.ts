@@ -581,7 +581,7 @@ export async function writeClosure({
       // The session's sales used more than one tax rounding (#287): the Z report says so.
       ...(roundings.size > 1 ? { tax_rounding_mixed: true } : {}),
       // A reopened sale's tax rates are its whole order's, including tax on what was paid earlier in the store (ADR-090 ruling 38).
-      ...(bound.some((order) => order.storeOrderId !== undefined) ? { tax_includes_store_paid: true } : {}),
+      ...(bound.some((order) => tillPayments(order.payments).length < order.payments.length) ? { tax_includes_store_paid: true } : {}),
       opening_float: {
         expected_minor: session.expected_float_minor ?? null,
         counted_minor: session.counted_float_minor,

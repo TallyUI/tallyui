@@ -653,14 +653,14 @@ it('counts two registers in one store on their own: sale counters and closure nu
 });
 
 // ADR-090 ruling 38: a reopened sale, built as the till builds it, on the Z. Store order 1100 (tax 100), 500 paid in the store.
-function reopenedRow(sessionId: string): PosOrder {
+function reopenedRow(sessionId: string, paidInStore = 500): PosOrder {
   const builder = orderBuilderFromStoreOrder({
     id: '41', reference: '41', clientOrderId: 'u-1', revision: `sha256:${'a'.repeat(64)}`, status: 'completed', placedAt: '2026-11-17T10:00:00.000Z',
     currency: 'EUR', pricesIncludeTax: false, customer: null, fees: [], shipping: [], coupons: [], refunds: [], discountMinor: 0, discountTaxMinor: 0,
     lines: [{ id: '7', productId: 'coffee', name: 'Coffee', quantity: 1, subtotalMinor: 1000, totalMinor: 1000, subtotalTaxMinor: 100, taxMinor: 100 }],
-    taxLines: [], taxMinor: 100, totalMinor: 1100, payments: [{ id: 'p1', method: 'pos_cash', title: 'Cash', amountMinor: 500 }],
+    taxLines: [], taxMinor: 100, totalMinor: 1100, payments: paidInStore ? [{ id: 'p1', method: 'pos_cash', title: 'Cash', amountMinor: paidInStore }] : [],
   }, { currency: 'EUR', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false } });
-  builder.addPayment({ method: 'cash', amountMinor: 600 });
+  builder.addPayment({ method: 'cash', amountMinor: 1100 - paidInStore });
   return { ...finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } }), sessionId };
 }
 const closeWith = async (orders: (sessionId: string) => PosOrder[]) => {
@@ -679,4 +679,15 @@ it('labels tax rates when the session holds a reopened order', async () => {
   // Whole-order figures, the store-paid 500 included: unchanged by the label.
   expect(reopened.tax_rates).toEqual({ 100000: { name: 'Tax 10%', net_minor: 1000, tax_minor: 100, gross_minor: 1100 } });
   expect((await closeWith((id) => [tillRow(id)])).breakdowns).not.toHaveProperty('tax_includes_store_paid');
+});
+it('does not label tax rates for a reopened order the store held no money for', async () => {
+  const unpaid = (id: string) => reopenedRow(id, 0);
+  expect(unpaid('s').storeOrderId).toBeDefined();
+  expect(unpaid('s').payments.every((payment) => payment.storePaymentId === undefined)).toBe(true);
+  expect((await closeWith((id) => [tillRow(id), unpaid(id)])).breakdowns).not.toHaveProperty('tax_includes_store_paid');
+});
+it('labels tax rates only from orders bound to this session', async () => {
+  const closure = await closeWith((id) => [tillRow(id), reopenedRow('another-session')]);
+  expect(closure.breakdowns.transaction_count).toBe(1);
+  expect(closure.breakdowns).not.toHaveProperty('tax_includes_store_paid');
 });
