@@ -563,7 +563,7 @@ export async function writeClosure({
     perpetual_sales_total_minor: 0,
     perpetual_refunds_total_minor: 0,
     unsynced_count: unsynced.length,
-    unsynced_total_minor: sum(unsynced.flatMap((order) => order.payments.map((payment) => payment.amountMinor))),
+    unsynced_total_minor: sum(unsynced.flatMap((order) => order.payments.filter((payment) => payment.storePaymentId === undefined).map((payment) => payment.amountMinor))),
     software_version: softwareVersion,
     printed_at: null,
     print_count: 0,

@@ -99,6 +99,18 @@ it.each([
   expect(await db.order_drafts.count().exec()).toBe(1);
 });
 
+it.each(['rejected', 'pending'] as const)('refuses a rejected row carrying a store order and writes no draft (gate 6)', async (syncStatus) => {
+  const order = { ...storedOrder(), storeOrderId: '41', baseRevision: 'sha256:a' };
+  order.syncStatus = syncStatus;
+  if (syncStatus === 'pending') delete order.error;
+  await db.pos_orders.insert(order);
+  const refused = reopenRefusedOrder(order.id, deps());
+  await expect(refused).rejects.toBeInstanceOf(ReopenRefusedOrderError);
+  await expect(refused).rejects.toMatchObject({ reason: 'store_order' });
+  expect(await db.order_drafts.count().exec()).toBe(0);
+  expect((await db.pos_orders.findOne(order.id).exec())!.reopenedAt).toBeUndefined();
+});
+
 it('keeps line attributes on the reopened sale', async () => {
   const order = storedOrder();
   order.lines[0].attributes = { Size: 'M', Color: 'Black' };

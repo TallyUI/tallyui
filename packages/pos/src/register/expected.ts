@@ -31,9 +31,12 @@ export type LedgerRow = {
   amountMinor: number;
 };
 
-/** The ledger rows of these orders' payments. Each payment is captured, and a cash payment's amount is already net of change. */
+/**
+ * The ledger rows of these orders' payments. Each payment is captured, and a cash payment's amount is already net of change.
+ * A locked store payment (storePaymentId set) is the store's earlier money, not this till's, and is left out (ADR-090 gate 11).
+ */
 export function paymentLedgerRows(orders: readonly Pick<PosOrder, 'sessionId' | 'payments'>[]): LedgerRow[] {
-  return orders.flatMap((order) => order.payments.map((payment) => ({
+  return orders.flatMap((order) => order.payments.filter((payment) => payment.storePaymentId === undefined).map((payment) => ({
     session_id: order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
     status: 'captured', amountMinor: payment.amountMinor,
   })));

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { deriveExpected, refundAmounts, type RefundRow } from './expected';
+import { deriveExpected, paymentLedgerRows, refundAmounts, type RefundRow } from './expected';
 
 // Fixtures are minor units at exponent 2 (GBP-style): WCPOS's server four-decimal amount '50'
 // (£50.00) becomes 5000; '100' (£100.00) becomes 10000. The numbers are kept real-world
@@ -12,6 +12,16 @@ import { deriveExpected, refundAmounts, type RefundRow } from './expected';
 //   - 'moves succeeded split allocations to the refund session without moving legacy refunds'
 //   - 'uses cash fallback when the only allocation is %s'
 //   - 'debits the unallocated remainder to cash without adding a remainder to a fully allocated refund'
+
+it('paymentLedgerRows leaves out locked store payments (gate 11)', () => {
+  const rows = paymentLedgerRows([{ sessionId: 'session', payments: [
+    { id: 'a', method: 'external', amountMinor: 4000, reference: 'pos_cash', storePaymentId: '901' },
+    { id: 'b', method: 'cash', amountMinor: 1500 },
+  ] }]);
+  expect(rows).toEqual([
+    { session_id: 'session', kind: 'cash', method_id: 'cash', status: 'captured', amountMinor: 1500 },
+  ]);
+});
 
 it('derives captured session cash and card net of refunds and non-voided movements', () => {
   // Refund attribution is deferred: this row carries no refund data, so cash nets only

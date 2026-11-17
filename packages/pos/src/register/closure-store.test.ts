@@ -155,6 +155,21 @@ it('freezes the count figures and breakdowns; retries reuse one number and one p
   const afterDelete = await writeClosure({ ...input, orders: [], movements: [] });
   expect(afterDelete.toJSON()).toEqual(row.toJSON());
 });
+it('a locked store cash leg (external, reference pos_cash) never counts in the close figures (gate 11)', async () => {
+  const input = await seed();
+  input.orders[0] = order('order', input.session.id, [
+    { method: 'cash', amountMinor: 5000 },
+    { method: 'external', amountMinor: 3000 },
+    { method: 'external', amountMinor: 2500, reference: 'pos_cash', storePaymentId: '901' },
+  ]);
+  const row = await writeClosure(input);
+  expect(row.toJSON()).toMatchObject({
+    till_expected: { cash: 16500, external: 3000 },
+    variance: { cash: -1500 },
+    period_sales_total_minor: 8000,
+    unsynced_total_minor: 8000,
+  });
+});
 it('resumes after the insert or perpetual write was interrupted without minting or adding twice', async () => {
   const input = await seed();
   const insert = vi.spyOn(db.closures, 'insert').mockRejectedValueOnce(new Error('disk write'));
