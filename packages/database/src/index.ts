@@ -42,7 +42,7 @@ export {
 } from './sync-cadence-store';
 export type { SyncCadenceDoc, SyncCadenceCollection, SyncCadenceProfile } from './sync-cadence-store';
 export { startSyncCadence, jitteredIntervalMs } from './sync-cadence-runner';
-export type { SyncCadenceTarget, StartSyncCadenceOptions, SyncCadenceRunner, SyncCadenceTick } from './sync-cadence-runner';
+export type { SyncCadenceTarget, StartSyncCadenceOptions, SyncCadenceRunner, SyncCadenceTicker, SyncCadenceTick } from './sync-cadence-runner';
 export {
   REQUEST_METRICS_HOUR_MS, REQUEST_METRICS_MAX_BUCKETS, createRequestMetrics, isRequestMetricsBucket, meteredFetch,
 } from './request-metrics';

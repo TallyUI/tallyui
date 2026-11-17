@@ -4,14 +4,14 @@ import type { UpdateRequired } from '@tallyui/core';
 
 import { createConnectivityTracker, type ConnectivityTracker } from './connectivity';
 import type { SyncCadence } from './sync-cadence';
-import { jitteredIntervalMs, startSyncCadence, type SyncCadenceRunner, type SyncCadenceTick } from './sync-cadence-runner';
+import { jitteredIntervalMs, startSyncCadence, type SyncCadenceRunner, type SyncCadenceTick, type SyncCadenceTicker } from './sync-cadence-runner';
 
 const balanced: SyncCadence = { checkIntervalMs: 60_000, pullBatchSize: 50 };
 const till: UpdateRequired = { reason: 'till_update_required', fixedBy: 'till', status: 426 };
 const target = (paused?: boolean) => ({ reSync: vi.fn(), ...(paused === undefined ? {} : { isPaused: vi.fn(() => paused) }) });
 
 describe('startSyncCadence', () => {
-  let runner: SyncCadenceRunner | undefined;
+  let runner: SyncCadenceTicker | undefined;
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => {
     runner?.stop();
@@ -241,5 +241,11 @@ describe('startSyncCadence', () => {
     reject(new Error('late'));
     await vi.advanceTimersByTimeAsync(0);
     expect(r.lastTick()).toEqual({ atMs: t0 + 60_000, status: 'ok' });
+  });
+
+  it('a SyncCadenceRunner without lastTick still type-checks', () => {
+    const fake: SyncCadenceRunner = { nextDueAtMs$: new BehaviorSubject<number | undefined>(undefined), tickNow: () => {}, stop: () => {} };
+    expect(() => fake.tickNow()).not.toThrow();
+    expect('lastTick' in fake).toBe(false);
   });
 });

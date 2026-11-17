@@ -4,7 +4,11 @@ import type { ConnectivityTracker } from './connectivity';
 import type { SyncCadence } from './sync-cadence';
 
 /** What a tick asks to check again. RxDB's replication state (and TallyReplicationState) fits as is. */
-export interface SyncCadenceTarget { reSync(): void; isPaused?(): boolean }
+export interface SyncCadenceTarget {
+  /** A returned promise that rejects counts the tick as an error. */
+  reSync(): void | PromiseLike<unknown>;
+  isPaused?(): boolean;
+}
 
 export interface StartSyncCadenceOptions {
   targets: readonly SyncCadenceTarget[];
@@ -23,14 +27,17 @@ export interface SyncCadenceTick { atMs: number; status: 'ok' | 'error' }
 export interface SyncCadenceRunner {
   /** When the next tick is due (the `now()` clock), or undefined before the first cadence value and after stop. */
   readonly nextDueAtMs$: Observable<number | undefined>;
-  /** The last finished tick on subscribe, then each new one; null before the first. Completes on stop. */
-  readonly lastTick$: Observable<SyncCadenceTick | null>;
-  /** The last finished tick, or null before the first. Still readable after stop. */
-  lastTick(): SyncCadenceTick | null;
   /** Tick now ("Check now"), then re-arm from now. A no-op after stop. */
   tickNow(): void;
   /** Clears the timer, unsubscribes from cadence$, and emits undefined then completes nextDueAtMs$. Idempotent. */
   stop(): void;
+}
+
+export interface SyncCadenceTicker extends SyncCadenceRunner {
+  /** The last finished tick on subscribe, then each new one; null before the first. Completes on stop. */
+  readonly lastTick$: Observable<SyncCadenceTick | null>;
+  /** The last finished tick, or null before the first. Still readable after stop. */
+  lastTick(): SyncCadenceTick | null;
 }
 
 /** v2's ±20 % jitter (sync-engine change-signal/tick-cadence.ts). Exported for tests and for a "next check in" line. */
@@ -50,7 +57,7 @@ const isThenable = (value: unknown): value is PromiseLike<unknown> =>
  */
 export function startSyncCadence({
   targets, cadence$, connectivity, random = Math.random, now = Date.now,
-}: StartSyncCadenceOptions): SyncCadenceRunner {
+}: StartSyncCadenceOptions): SyncCadenceTicker {
   const nextDueAtMs$ = new BehaviorSubject<number | undefined>(undefined);
   const lastTick$ = new BehaviorSubject<SyncCadenceTick | null>(null);
   let tickSeq = 0;
