@@ -49,7 +49,7 @@ export function NavRail({ items, activeId, onNavigate, className, testID = 'nav-
       role="navigation"
       aria-label="Main"
       testID={testID}
-      className={cn('z-10 w-16 items-center border-r border-border bg-card py-2', className)}
+      className={cn('z-10 w-16 items-center border-r border-sidebar-border bg-sidebar py-2', className)}
     >
       <View className="gap-2">{top.map(renderItem)}</View>
       {bottom.length > 0 && <View className="mt-auto gap-2">{bottom.map(renderItem)}</View>}

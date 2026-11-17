@@ -116,7 +116,7 @@ export function NavDrawer({ open, onOpenChange, items, activeId, onNavigate, hea
         aria-modal
         aria-label="Menu"
         testID={`${testID}-panel`}
-        className="absolute bottom-0 left-0 top-0 border-r border-border bg-card shadow-lg"
+        className="absolute bottom-0 left-0 top-0 border-r border-sidebar-border bg-sidebar shadow-lg"
         style={{ width: DRAWER_WIDTH, transform: [{ translateX: offset }] }}
       >
         {header}
