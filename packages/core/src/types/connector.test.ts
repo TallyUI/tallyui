@@ -110,6 +110,16 @@ describe('parseLineTax (ADR-075)', () => {
 });
 
 describe('parseInfoCapabilities (ADR-062, #287)', () => {
+  it('reads the highest order.update capability (ADR-090)', () => {
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1], 'order.update': [1, 2] } }))
+      .toStrictEqual({ orderCreate: 1, orderUpdate: 2 });
+  });
+
+  it.each([undefined, null, [], [0, -1, 1.5, '1'], 1, {}])('omits missing or malformed order.update %j', (update) => {
+    expect(parseInfoCapabilities({ contracts: { 'order.create': [1], 'order.update': update } }))
+      .toStrictEqual({ orderCreate: 1 });
+  });
+
   it('reads the order.reopen capability (ADR-090)', () => {
     expect(parseInfoCapabilities({ contracts: { 'order.create': [1], 'order.reopen': [1] } }))
       .toStrictEqual({ orderCreate: 1, orderReopen: 1 });

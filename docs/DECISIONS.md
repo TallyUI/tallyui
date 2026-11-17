@@ -6426,7 +6426,8 @@ interface OrderCreatePayload {
   4. **`order.update` v1, the outbox command for a reopened sale's checkout.** A `pos_orders` row with `storeOrderId`
      goes out as `order.update`, never `order.create`. Its payload is the `order.create` payload at the till's version
      plus `orderId` and `baseRevision`; `lines` and `payments` are the whole new state, and payments already on the
-     order carry their store `paymentId` and are not re-taken. Its result has `order.create`'s `serverRefs`. New
+     order carry their store `paymentId` and are not re-taken. The body names the `order.create` version it follows in `createVersion` and is checked by that version's rules;
+     kept lines carry the store's `storeLineId`. Its result has `order.create`'s `serverRefs`. New
      refusals: `payment_in_motion`; `reopen_required` (the store order is no longer open: the sale goes to Needs
      attention and the cashier may reopen again); `revision_conflict`. Capability `orderUpdate`: a store that lists
      `order.reopen` lists `order.update`. Its core types land with phase c, because the spike (phase b) settles the
