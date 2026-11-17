@@ -1,6 +1,6 @@
 import type { RxCollection } from 'rxdb';
 import type { PosOrder } from '../../pos-order/types';
-import type { SaleCoupon, SaleCouponSource } from './coupons';
+import { wooCustomerId, type SaleCoupon, type SaleCouponSource } from './coupons';
 
 /** How long an applied order still counts when no pull has rewritten its coupon: a refetch that finds the coupon unchanged writes nothing, and the store is authoritative (ADR-077 amendment 2). */
 export const APPLIED_USE_GRACE_MS = 600_000;
@@ -30,9 +30,9 @@ export function createSaleCouponSource(deps: {
       const usedBy = [...(data.used_by ?? [])];
       for (const order of counted) {
         // Mirrors the identifier validate.ts compares: wooCustomerId, else the email.
-        const id = Number(order.customer?.id);
+        const id = wooCustomerId(order.customer);
         const email = order.customer?.email;
-        if (Number.isSafeInteger(id) && id > 0) usedBy.push(String(id));
+        if (id !== null) usedBy.push(String(id));
         else if (typeof email === 'string' && email.length > 0) usedBy.push(email.toLowerCase());
       }
       const fields = [
