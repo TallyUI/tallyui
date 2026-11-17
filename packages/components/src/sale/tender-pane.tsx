@@ -5,10 +5,10 @@
  * comes from pos (useSale's captured-only totals, tenderRounding, quickTenderedAmounts, planLegs).
  */
 import { useEffect, useState, type JSX } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { defaultPaymentMethods, useFormatMoney, minorUnitDigits, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
-  activePlan, canVoidLeg, changeMinor, countsTowardPaid, isInMotion, legStatus, planLegs, quickTenderedAmounts, tenderRounding,
+  activePlan, canVoidLeg, changeMinor, countsTowardPaid, evenSplitShareMinor, isInMotion, legStatus, planLegs, quickTenderedAmounts, tenderRounding,
   type PaymentLegStatus, type TenderAction, type TenderKey, type TenderState, type useSale,
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
@@ -47,6 +47,8 @@ const STATUS_TONE: Record<PaymentLegStatus, string> = {
 const keypadRows = (t: ReturnType<typeof useT>) => [...DIGIT_ROWS,
   [{ name: 'clear', label: t('pos_checkout.clear_amount'), text: 'C' }, { name: '0', label: '0' }, { name: 'backspace', label: t('common.backspace'), text: '⌫' }]];
 const button = 'min-h-11 justify-center rounded-md border border-border bg-card px-4 py-2';
+/** v2 tender-pane.tsx "Split the rest" strip: 2 to 6 equal ways. */
+const SPLIT_WAYS = [2, 3, 4, 5, 6];
 
 /** The captured legs since the plan began, as the reducer's `tender-recorded` and `planLegs` read them. */
 const rowsSince = (payments: readonly Leg[], from: number) =>
@@ -78,6 +80,12 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
   const rows = rowsSince(order.payments, state.plan?.from ?? 0).map(({ title, amountMinor }) => ({ title, minor: amountMinor }));
   const plan = activePlan(state.plan, rows.length, balance);
   const planned = plan ? planLegs(plan, rows, balance) : null;
+  const counted = order.payments.filter(countsTowardPaid).length;
+  const splitOn = state.splitView || plan !== null;
+  // v2 tender-figures.ts: a typed part payment comes first, and the ways divide what is left after it.
+  const typed = state.entryDirty && figures.appliedMinor > 0 && figures.appliedMinor < balance;
+  const restMinor = balance - (typed ? figures.appliedMinor : 0);
+  const thisPaymentMinor = planned ? planned.thisPaymentMinor : balance;
   const dueMinor = planned && planned.thisPaymentMinor < balance ? planned.thisPaymentMinor : figures.roundedDueMinor;
   const chips = givesChange ? quickTenderedAmounts(dueMinor, QUICK_CASH_STEPS.map((step) => step * 10 ** minorUnitDigits(order.currency))) : [];
   const settled = order.payments.some(countsTowardPaid);
@@ -104,7 +112,13 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
 
   return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
     <View testID="tender-headline" className="gap-1">
-      <Text className="text-sm text-muted-foreground">{order.paidMinor > 0 ? t('pos_checkout.remaining') : t('common.total')}</Text>
+      <View className="flex-row flex-wrap items-center gap-2">
+        <Text className="text-sm text-muted-foreground">{order.paidMinor > 0 ? t('pos_checkout.remaining') : t('common.total')}</Text>
+        {balance > 0 ? <Pressable testID="tender-split-chip" accessibilityRole="button" aria-pressed={splitOn} className={cn(button, splitOn && 'border-primary bg-muted')}
+          onPress={() => dispatch(splitOn ? { type: 'clear-plan', balanceMinor: balance } : { type: 'open-split' })}>
+          <Text className="font-semibold text-foreground">{t('pos_checkout.split')}</Text>
+        </Pressable> : null}
+      </View>
       <Text testID="tender-balance" className="text-4xl font-bold text-foreground">{money(balance)}</Text>
       {order.paidMinor > 0 ? <Text testID="tender-paid" className="text-sm text-muted-foreground">{t('pos_checkout.paid_of_total', { paid: money(order.paidMinor), total: money(order.totalMinor) })}</Text> : null}
       {order.changeDueMinor > 0 ? <Text testID="tender-change" className="text-lg font-semibold text-success">{t('pos_checkout.change_due', { amount: money(order.changeDueMinor) })}</Text> : null}
@@ -149,7 +163,7 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
                 <Pressable key={tile.id} testID={`tender-method-${tile.id}`} accessibilityRole="button" accessibilityState={{ selected: tile.id === state.methodId }}
                   // react-native-web does not render accessibilityState.selected.
                   aria-selected={tile.id === state.methodId}
-                  onPress={() => dispatch({ type: 'pick-method', methodId: tile.id, prefillMinor: balance, readerId: null })}
+                  onPress={() => dispatch({ type: 'pick-method', methodId: tile.id, prefillMinor: state.view === 'amount' ? state.entryMinor : thisPaymentMinor, readerId: null })}
                   className={cn('min-h-16 items-center justify-center gap-1 rounded-md border bg-card px-2 py-2', selected ? 'border-primary bg-muted' : 'border-border')}>
                   <Icon size={20} testID={`tender-method-${tile.id}-icon`} />
                   <Text numberOfLines={2} className="text-center font-semibold text-foreground">{tile.title}</Text>
@@ -171,6 +185,23 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
       </>}
       {method?.id === 'external' ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
         value={reference} onChangeText={setReference} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
+      {state.splitView && !plan ? <>
+        <Text testID="tender-split-heading" className="text-center text-sm text-muted-foreground">
+          {typed ? t('pos_checkout.after_this_payment', { amount: money(restMinor) }) : t('pos_checkout.split_the_rest')}
+        </Text>
+        <ScrollView horizontal testID="tender-split-ways" showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerClassName="grow gap-2">
+          {SPLIT_WAYS.map((count) => <View key={count} className="min-w-28 flex-1">
+            <Pressable testID={`tender-split-even-${count}`} accessibilityRole="button"
+              onPress={() => dispatch({ type: 'set-plan', balanceMinor: balance, plan: typed
+                ? { kind: 'fixed', firstMinor: figures.appliedMinor, title: null, thenWays: count, from: counted }
+                : { kind: 'even', ways: count, from: counted } })}
+              className="min-h-16 items-center justify-center gap-1 rounded-md border border-border bg-card px-2 py-2">
+              <Text className="font-semibold text-foreground">{t('pos_checkout.n_ways', { ways: count })}</Text>
+              <Text className="text-sm text-muted-foreground">{t('pos_checkout.amount_each', { amount: money(evenSplitShareMinor(restMinor, count)) })}</Text>
+            </Pressable>
+          </View>)}
+        </ScrollView>
+      </> : null}
       {chips.length ? <View testID="tender-quick" className="flex-row flex-wrap gap-2">
         {chips.map((minor, index) => <Pressable key={minor} testID={index === 0 ? 'tender-quick-exact' : `tender-quick-${minor}`} accessibilityRole="button"
           onPress={() => dispatch({ type: 'set-entry', minor })} className={cn(button, state.entryDirty && figures.entryMinor === minor && 'border-primary')}>

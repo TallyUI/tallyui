@@ -34,7 +34,7 @@ describe('Tender', () => {
   it('lists each leg with its status; the headline counts captured legs only', () => {
     start(5000);
     expect(text('tender-ledger')).toBe('No payments yet');
-    expect(text('tender-headline')).toBe(`Total${money(5000)}`);
+    expect(text('tender-headline')).toBe(`TotalSplit${money(5000)}`);
     act(() => { sale.addTender({ method: 'cash', amountMinor: 1000 }); });
     act(() => { sale.addTender({ method: 'external', amountMinor: 1500, status: 'pending' }); });
     act(() => { sale.addTender({ method: 'external', amountMinor: 500, status: 'authorized' }); });
@@ -43,7 +43,7 @@ describe('Tender', () => {
     expect(text(`tender-leg-${leg(2)}-status`)).toBe('Authorized');
     expect(within(screen.getByTestId(`tender-leg-${leg(1)}`)).getByText('Next')).toBeTruthy();
     expect(within(screen.getByTestId(`tender-leg-${leg(2)}`)).queryByText('Next')).toBeNull();
-    expect(text('tender-headline')).toBe(`Remaining${money(4000)}${money(1000)} of ${money(5000)} paid`);
+    expect(text('tender-headline')).toBe(`RemainingSplit${money(4000)}${money(1000)} of ${money(5000)} paid`);
     expect(disabled('tender-complete')).toBe(true);
   });
 
