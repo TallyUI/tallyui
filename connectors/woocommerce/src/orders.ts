@@ -96,6 +96,9 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
   const clientOrderId = posUuid(raw.meta_data);
   const revision = nonEmpty(raw._rxdb_revision);
   const totalMinor = minor(raw.total, currency);
+  const ledgerEntry = rows(raw.meta_data).find((meta) => meta.key === '_wcpos_payments');
+  const paymentRecordUnreadable = ledgerEntry && (!isRow(ledgerEntry.value)
+    || ledgerEntry.value.schema !== 1 || !Array.isArray(ledgerEntry.value.payments));
 
   return {
     id: String(raw.id),
@@ -156,6 +159,7 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     taxMinor: minor(raw.total_tax, currency),
     totalMinor,
     payments: storePayments(raw, currency, totalMinor),
+    ...(paymentRecordUnreadable ? { paymentRecordUnreadable: true } : {}),
     refunds: rows(raw.refunds).map((refund) => {
       const reason = nonEmpty(refund.reason);
       return { id: String(refund.id), amountMinor: Math.abs(minor(refund.total, currency)), ...(reason ? { reason } : {}) };
@@ -204,14 +208,22 @@ export function createWooOrders(): Required<Pick<TallyConnector, 'listOrders' | 
       if (before !== undefined) params.set('before', wooGmtSecond(before, 0));
       const { body, headers } = await customerRequest(context, `orders?${params}`, { method: 'GET' });
       if (!Array.isArray(body)) throw unexpected();
-      const orders = body.map(toWooStoreOrder);
+      let unreadable = 0;
+      const orders = body.flatMap((row) => {
+        try {
+          return [toWooStoreOrder(row)];
+        } catch {
+          unreadable += 1;
+          return [];
+        }
+      });
       const totalPages = headers.get('X-WP-TotalPages');
       const hasMore = totalPages !== null && /^\d+$/.test(totalPages.trim())
         ? page < Number.parseInt(totalPages, 10)
-        : orders.length === perPage;
+        : body.length === perPage;
       // X-WP-Total counts every order the query matches.
       const total = headers.get('X-WP-Total');
-      return { orders, hasMore, ...(total && /^\d+$/.test(total) ? { total: Number(total) } : {}) };
+      return { orders, hasMore, ...(unreadable ? { unreadable } : {}), ...(total && /^\d+$/.test(total) ? { total: Number(total) } : {}) };
     },
 
     async getOrders(context: SyncContext, ids: readonly string[]) {

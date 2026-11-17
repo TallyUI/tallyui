@@ -188,6 +188,38 @@ describe('WooCommerce orders', () => {
     expect(order.payments).toStrictEqual([{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 1510 }]);
   });
 
+  it.each([
+    { schema: 2, payments: [] }, { schema: 1 }, { schema: 1, payments: 'x' }, 'x',
+  ])('flags an unreadable payment ledger %j while keeping the paid-state fallback', (value) => {
+    const order = toWooStoreOrder({
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      date_paid_gmt: '2026-10-06T04:54:03', payment_method: 'pos_cash',
+      meta_data: [{ key: '_wcpos_payments', value }],
+    });
+    expect(order.paymentRecordUnreadable).toBe(true);
+    expect(order.payments).toStrictEqual([{ method: 'pos_cash', kind: 'cash', amountMinor: 1510 }]);
+  });
+
+  it('leaves out the unreadable flag for absent or readable payment ledgers', () => {
+    for (const meta_data of [
+      [],
+      [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_cash', amount: '15.10', currency: 'USD', status: 'captured' },
+      ] } }],
+      [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_cash', amount: '15.10', currency: 'USD', status: 'pending' },
+      ] } }],
+    ]) {
+      const order = toWooStoreOrder({
+        id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+        discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+        date_paid_gmt: '2026-10-06T04:54:03', payment_method: 'pos_cash', meta_data,
+      });
+      expect(order).not.toHaveProperty('paymentRecordUnreadable');
+    }
+  });
+
   it('reads the store revision only when it is a non-empty string', () => {
     const raw = {
       id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
@@ -335,6 +367,29 @@ describe('WooCommerce orders', () => {
     expect(first.hasMore).toBe(true);
     await expect(orders.listOrders(context, { page: 2, perPage: 10, search: ' ' })).resolves.toMatchObject({ hasMore: false });
     expect(spy).toHaveBeenNthCalledWith(2, `${context.baseUrl}/orders?page=2&per_page=10&orderby=date&order=desc`, request);
+  });
+
+  it('leaves out and counts an unreadable order without ending paging early', async () => {
+    const badRow = { ...list[1], meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+      { method_id: 'pos_cash', amount: '5.00', currency: 'EUR', status: 'captured' },
+    ] } }] };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json([list[0], badRow]));
+    const result = await orders.listOrders(context, { perPage: 2 });
+    expect(result.orders.map((order) => order.id)).toStrictEqual(['136']);
+    expect(result).toMatchObject({ unreadable: 1, hasMore: true });
+  });
+
+  it('leaves out unreadable when every order on the page is readable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(list));
+    await expect(orders.listOrders(context)).resolves.not.toHaveProperty('unreadable');
+  });
+
+  it('rejects a lookup of an unreadable order', async () => {
+    const badRow = { ...list[1], meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+      { method_id: 'pos_cash', amount: '5.00', currency: 'EUR', status: 'captured' },
+    ] } }] };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json([badRow]));
+    await expect(orders.getOrders(context, ['137'])).rejects.toEqual(expect.objectContaining({ code: 'server' }));
   });
 
   describe('listOrders total', () => {

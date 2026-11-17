@@ -82,6 +82,10 @@ export interface StoreOrder {
   taxMinor: number;
   totalMinor: number;
   payments: StoreOrderPayment[];
+  /** The store keeps a per-payment record for this order in a shape the connector cannot read
+   * (WooCommerce: a WCPOS payment ledger of another schema); `payments` is then the order's paid-state
+   * fallback, and a reopen must refuse the order. Absent otherwise. */
+  paymentRecordUnreadable?: true;
   refunds: StoreOrderRefund[];
 }
 
@@ -121,6 +125,8 @@ export interface ListOrdersQuery {
 export interface StoreOrderPage {
   orders: StoreOrder[];
   hasMore: boolean;
+  /** Orders on this page the connector could not read and left out; absent when every order read. */
+  unreadable?: number;
   /** Every order the query matches across all pages; undefined when the store gives no count. */
   total?: number;
 }
