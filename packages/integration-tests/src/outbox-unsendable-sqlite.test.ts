@@ -53,6 +53,8 @@ function applied(batch: Array<OrderCreateEnvelope | OrderUpdateEnvelope>): Comma
         const outbox = createOrderOutbox({ collection, deviceId: 'device-1', transport: { send: async (batch) => {
           sent.push(...batch); return { kind: 'results', results: applied(batch) };
         } } });
+        const states: Array<{ lastRetryReason?: string }> = [];
+        outbox.state$.subscribe((state) => states.push(state));
         try {
           const a = reopened(1), b = reopened(2), c = reopened(3), d = reopened(4), e = order(5);
           b.storeOrderId = c.storeOrderId = a.storeOrderId; delete b.baseRevision;
@@ -64,6 +66,14 @@ function applied(batch: Array<OrderCreateEnvelope | OrderUpdateEnvelope>): Comma
             error: { code: UPDATE_UNSENDABLE, message: UPDATE_UNSENDABLE_MESSAGE } });
           const held = rows.find(({ id }) => id === c.id)!;
           expect(held.syncStatus).toBe('pending'); expect(held.error).toBeUndefined(); expect(held.sentVersion).toBeUndefined();
+          const plain = order(6), later = { ...reopened(7), storeOrderId: a.storeOrderId };
+          await collection.bulkInsert([plain, later]); await outbox.flush();
+          const after = await readFresh(collection, { selector: {} });
+          expect(after.find(({ id }) => id === plain.id)?.syncStatus).toBe('applied');
+          expect(after.find(({ id }) => id === later.id)?.syncStatus).toBe('pending');
+          expect(after.find(({ id }) => id === later.id)?.error).toBeUndefined();
+          expect(sent.map(({ id }) => id)).toEqual([a.commandId, d.commandId, e.commandId, plain.commandId]);
+          expect(states.at(-1)?.lastRetryReason?.startsWith('error:')).not.toBe(true);
         } finally { outbox.stop(); }
       } finally { await db.close(); }
     } finally { handle.raw.close(); }

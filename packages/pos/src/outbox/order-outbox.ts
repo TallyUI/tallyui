@@ -265,7 +265,11 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       const holds = new Map<string, string>();
       for (const order of unsendable) if (order.storeOrderId !== undefined
         && (!holds.has(order.storeOrderId) || order.createdAt < holds.get(order.storeOrderId)!)) holds.set(order.storeOrderId, order.createdAt);
-      const hold = holds.size ? { $nor: [...holds].map(([storeOrderId, createdAt]) => ({ storeOrderId, createdAt: { $gte: createdAt } })) } : {};
+      const hold = holds.size ? { $or: [
+        { storeOrderId: { $exists: false } },
+        { storeOrderId: { $nin: [...holds.keys()] } },
+        ...[...holds].map(([storeOrderId, createdAt]) => ({ storeOrderId, createdAt: { $lt: createdAt } })),
+      ] } : {};
       if (!restored) await restore();
       await updateState({ sending: true, nextAttemptAt: undefined });
       insertedDuringRun = false;
@@ -320,7 +324,18 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
             || order.sentVersion !== undefined || readMax !== undefined)) return { order, unsendable: cause };
           // Content that cannot downgrade goes at its required version: the server's refusal rejects it.
           if (!(cause instanceof UnsupportedOrderVersionError)) throw cause;
-          envelope = toEnvelope(frozen, attempt, cause.needed >= 5 ? cause.needed : 3);
+          let max = cause.needed >= 5 ? cause.needed : 3;
+          // Including the first build above, try at most three times, only while the needed version rises.
+          for (let build = 2; ; build++) {
+            try { envelope = toEnvelope(frozen, attempt, max); break; }
+            catch (error) {
+              if (build < 3 && error instanceof UnsupportedOrderVersionError && error.needed > max) {
+                max = error.needed; continue;
+              }
+              if (order.storeOrderId !== undefined) return { order, unsendable: error };
+              throw error;
+            }
+          }
         }
         return { order, frozen, attempt, envelope };
       });
@@ -331,7 +346,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       for (const entry of built) if ('unsendable' in entry) {
         const { order, unsendable: cause } = entry;
         await (await collection.findOne(order.id).exec())?.incrementalModify((data) =>
-          ({ ...data, error: { code: UPDATE_UNSENDABLE, message: UPDATE_UNSENDABLE_MESSAGE } }));
+          data.syncStatus === 'pending' && data.commandId === order.commandId
+            ? { ...data, error: { code: UPDATE_UNSENDABLE, message: UPDATE_UNSENDABLE_MESSAGE } } : data);
         outboxLogger.warn('Order update cannot be built; held until a person acts', { orderId: order.id, storeOrderId: order.storeOrderId, cause });
       }
       const batch = await Promise.all(built.filter((entry) => 'envelope' in entry)

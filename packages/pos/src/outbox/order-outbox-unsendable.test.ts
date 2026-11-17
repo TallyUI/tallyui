@@ -62,6 +62,31 @@ afterEach(async () => {
 });
 
 describe('unsendable order updates', () => {
+  it.each([
+    { content: 'coupon', fields: { coupons: [{ code: 'save', couponId: '1', discountMinor: 1, discountTaxMinor: 0 }] }, version: 6 },
+    { content: 'tax address', fields: { taxAddress: 'billing' as const, customer: { billing: { country: 'ES', postcode: '28001' } } }, version: 8 },
+  ])('sends a reopened sale with $content and a plain sale together when the maximum is unknown', async ({ fields, version }) => {
+    const input = { ...reopened(1), ...fields }, plain = order(2);
+    await collection.bulkInsert([input, plain]);
+    const { outbox, send, states } = setup(); await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toMatchObject([
+      { id: input.commandId, type: 'order.update', payload: { createVersion: version } },
+      { id: plain.commandId, type: 'order.create' },
+    ]);
+    for (const row of [input, plain]) expect((await stored(row.id)).syncStatus).toBe('applied');
+    expect(states.at(-1)?.lastRetryReason).toBeUndefined();
+  });
+  it.each([{ syncStatus: 'rejected' as const }, { commandId: uuidv7() }])('does not mark a row changed before the mark is written: %j', async (change) => {
+    const input = reopened(1); delete input.baseRevision; await collection.insert(input);
+    const { outbox } = setup({ getMaxOrderCreateVersion: async () => {
+      await (await collection.findOne(input.id).exec())!.incrementalModify((data) => ({ ...data, ...change }));
+      outbox.stop(); return 5;
+    } });
+    await outbox.flush();
+    expect(await stored(input.id)).toMatchObject(change);
+    expect((await stored(input.id)).error).toBeUndefined();
+  });
   it('skips a reopened sale without a base revision, sends the rest of the batch, and marks it pending', async () => {
     const plain = order(0), input = reopened(1); delete input.baseRevision;
     await collection.bulkInsert([plain, input]);
