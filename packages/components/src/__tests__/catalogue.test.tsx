@@ -19,8 +19,8 @@ vi.mock('../product', () => ({
       ))}
     </div>
   ),
-  ViewToggle: ({ value, onChange }: ViewToggleProps) => (
-    <div data-testid="view-toggle">
+  ViewToggle: ({ value, onChange, variant }: ViewToggleProps) => (
+    <div data-testid="view-toggle" data-variant={variant}>
       {(['grid', 'table'] as const).map((view) => (
         <button key={view} data-testid={`view-toggle-${view}`} aria-pressed={value === view} onClick={() => onChange(view)}>{view}</button>
       ))}
@@ -634,6 +634,7 @@ describe('Catalogue view state', () => {
     const row = within(screen.getByTestId('catalogue-search-row'));
     const search = row.getByPlaceholderText('Search or scan barcode / SKU');
     const toggle = row.getByTestId('view-toggle');
+    expect(toggle.getAttribute('data-variant')).toBe('icon');
     const extra = row.getByTestId('search-accessory');
     expect(search.compareDocumentPosition(toggle)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(toggle.compareDocumentPosition(extra)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);

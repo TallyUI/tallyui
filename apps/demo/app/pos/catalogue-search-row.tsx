@@ -1,5 +1,5 @@
 // The v2 search row proof: the view toggle and the app's own control beside the search (v2's PageBar children).
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { Stack } from 'expo-router';
 import { Cart, Catalogue } from '@tallyui/components';
 import { medusaConnector } from '@tallyui/connector-medusa';
@@ -17,6 +17,9 @@ const products = [
 
 function Sale() {
   const sale = useSale(settings, { registerId: 'demo-register', cashierRef: 'demo-cashier', capabilities: { orderCreate: 5, lineTax: { none: true, classes: true } } });
+  // v2's phone boundary (lib/device.ts:15-24): no cart column, so a phone-width shot shows the catalogue.
+  const { width, height } = useWindowDimensions();
+  const phone = width < 768 || height < 480;
   return <View className="flex-1 flex-row bg-background" testID="catalogue-search-row-screen">
     <Stack.Screen options={{ title: 'Catalogue search row' }} />
     <View className="flex-1">
@@ -26,7 +29,7 @@ function Sale() {
           <Text className="text-sm text-foreground">Settings</Text>
         </Pressable>} />
     </View>
-    <View className="w-96 border-l border-border"><Cart sale={sale} /></View>
+    {phone ? null : <View className="w-96 border-l border-border"><Cart sale={sale} /></View>}
   </View>;
 }
 

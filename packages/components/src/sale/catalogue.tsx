@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { cn } from '@tallyui/theme';
 import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory, type VariantSummary } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
   catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE,
@@ -20,6 +21,11 @@ import { SearchInput } from '../input';
 import { VStack } from '../ui';
 import { useMinTarget } from '../scale/min-target';
 import { usePointer } from '../scale/use-pointer';
+
+// Below either number the window is a phone (v2 packages/components/src/lib/device.ts:15-24), and the search
+// field is not capped: v2 caps it only at wide widths (packages/components/src/page-bar/index.tsx:138-139).
+const WIDE_MIN_WIDTH = 768;
+const WIDE_MIN_HEIGHT = 480;
 
 // locale/hour12/now are injected (rather than read from the device or the clock inside this
 // function) so the formatting is testable without the device; callers default them to the
@@ -89,7 +95,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   onViewStateError?: (error: unknown) => void;
   /** Loaded state or a cashier's next state (requested state when controlled). */
   onStateChange?: (state: CatalogueViewState) => void;
-  /** Show the grid/table toggle in the search row, beside the search field as in v2. Default false. */
+  /** Show v2's single view-mode icon button (grid/table) in the search row, beside the search field as in v2. Default false. */
   showViewToggle?: boolean;
   /** Show the category nav in the header. Default false. */
   showCategoryNav?: boolean;
@@ -214,6 +220,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // The search row is shorter than a control's band at Compact: under a coarse pointer it is the band's height.
   const band = useMinTarget();
   const coarse = usePointer() === 'coarse';
+  const window = useWindowDimensions();
+  const phone = window.width < WIDE_MIN_WIDTH || window.height < WIDE_MIN_HEIGHT;
   // The chooser is live (medusapos ADR 0007): it holds only the chosen product's id and derives its choices
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.
   const [chooserId, setChooserId] = useState<string | null>(null);
@@ -322,9 +330,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       <View className="gap-2 border-b border-border bg-card px-4 pb-3 pt-3">
         {(cameraScan && cameraScanner) || showViewToggle || draws(searchAccessory) ? (
           <View testID="catalogue-search-row" className="flex-row items-center gap-2" style={coarse ? { minHeight: band } : undefined}>
-            <View className="flex-1">{searchInput}</View>
+            <View className="min-w-0 flex-1 flex-row"><View testID="catalogue-search" className={cn('min-w-0 flex-1', !phone && 'max-w-160')}>{searchInput}</View></View>
             {cameraScan && cameraScanner ? <CameraScanButton open={scannerOpen} onPress={() => setScannerOpen((open) => !open)} /> : null}
-            {showViewToggle ? <ViewToggle className="self-center" value={state.view} onChange={(view) => changeState({ type: 'setView', view })} /> : null}
+            {showViewToggle ? <ViewToggle variant="icon" className="self-center" value={state.view} onChange={(view) => changeState({ type: 'setView', view })} /> : null}
             {draws(searchAccessory) ? searchAccessory : null}
           </View>
         ) : searchInput}

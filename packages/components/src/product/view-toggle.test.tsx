@@ -30,3 +30,26 @@ describe('ViewToggle', () => {
     expect(screen.getByRole('radio', { name: 'Rows' }).textContent).toBe('Rows');
   });
 });
+
+describe('ViewToggle variant="icon"', () => {
+  it('draws one button that switches to the other view', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<ViewToggle variant="icon" value="grid" onChange={onChange} />);
+    expect(screen.getByTestId('view-toggle')).toBeTruthy();
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Switch to table view' })).toBe(screen.getByTestId('view-toggle-table'));
+    expect(screen.queryByTestId('view-toggle-grid')).toBeNull();
+    fireEvent.click(screen.getByTestId('view-toggle-table'));
+    expect(onChange.mock.calls).toEqual([['table']]);
+    onChange.mockClear();
+    rerender(<ViewToggle variant="icon" value="table" onChange={onChange} />);
+    expect(screen.getByRole('button', { name: 'Switch to grid view' })).toBe(screen.getByTestId('view-toggle-grid'));
+    expect(screen.queryByTestId('view-toggle-table')).toBeNull();
+    fireEvent.click(screen.getByTestId('view-toggle-grid'));
+    expect(onChange.mock.calls).toEqual([['grid']]);
+  });
+  it('uses the label of the view it switches to', () => {
+    render(<ViewToggle variant="icon" value="grid" onChange={vi.fn()} labels={{ table: 'Rows' }} />);
+    expect(screen.getByRole('button', { name: 'Rows' })).toBeTruthy();
+  });
+});
