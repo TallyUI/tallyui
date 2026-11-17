@@ -10,6 +10,7 @@ import { ProductVariantPicker } from '../product/product-variant-picker';
 import { STOCK_STATUS_LABELS } from '../product/product-stock-badge';
 import { VariationPicker } from '../product/variation-picker';
 import { InCartBadge } from '../product/in-cart-badge';
+import { PressVeil } from '../product/press-veil';
 import { Popover } from '@tallyui/primitives';
 import { CameraScanButton } from '../product/camera-scan-button';
 import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/camera-scanner-panel';
@@ -372,13 +373,16 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           const tile = (
             <Pressable accessibilityRole="button" testID={`product-tile-${traits.getName(product)}`}
               onPress={groups.length > 0 ? () => { closePicker(); setChooserId(null); } : () => selectProduct(product)}>
+              {({ pressed }) => <>
               <VStack space="sm" className="items-center rounded-lg border border-border bg-card p-3">
                 <ProductImage doc={product} size={80} className="rounded-md" />
                 <ProductTitle doc={product} className="text-sm" numberOfLines={2} />
                 <ProductPrice doc={product} />
                 <ProductStockBadge doc={product} showAsOf={false} className="self-center" />
               </VStack>
+              <PressVeil pressed={pressed} className="rounded-lg" />
               <InCartBadge count={quantities.get(id) ?? 0} className="absolute right-2 top-2" testID={`in-cart-${id}`} />
+              </>}
             </Pressable>
           );
           if (groups.length === 0) return tile;

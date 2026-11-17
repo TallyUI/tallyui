@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ConnectorProvider, formatMoney } from '@tallyui/core';
 import { ProductCard } from '../product/product-card';
 import { createTestConnector, medusaDoc, wooDoc } from './helpers';
@@ -42,6 +42,38 @@ describe('ProductCard', () => {
     // Click on the product name text element
     fireEvent.click(screen.getByText('Espresso Machine Pro'));
     expect(onPress).toHaveBeenCalled();
+  });
+
+  it("shows v2's press veil while pressed", () => {
+    const connector = createTestConnector('woo');
+    const ui = <ConnectorProvider connector={connector}>
+      <ProductCard doc={wooDoc} onPress={vi.fn()} testID="product-card" />
+    </ConnectorProvider>;
+    const { rerender } = render(ui);
+    rerender(ui);
+    const card = screen.getByTestId('product-card').parentElement!;
+    expect(screen.queryByTestId('product-card-pressed')).toBeNull();
+    vi.useFakeTimers();
+    fireEvent.mouseDown(card);
+    act(() => vi.advanceTimersByTime(100));
+    expect(screen.getByTestId('product-card-pressed')).toBeDefined();
+    fireEvent.mouseUp(card);
+    expect(screen.queryByTestId('product-card-pressed')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('an unsellable card shows no veil', () => {
+    const connector = createTestConnector('medusa');
+    const ui = <ConnectorProvider connector={connector}>
+      <ProductCard doc={{ ...medusaDoc, status: 'draft' }} onPress={vi.fn()} />
+    </ConnectorProvider>;
+    const { rerender } = render(ui);
+    rerender(ui);
+    vi.useFakeTimers();
+    fireEvent.mouseDown(screen.getByText('Not sold here').closest('[aria-disabled]')!);
+    act(() => vi.advanceTimersByTime(100));
+    expect(screen.queryByTestId('product-card-pressed')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('shows a muted "Not sold here" state and ignores a press for an unsellable product', () => {

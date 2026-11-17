@@ -9,6 +9,8 @@ export interface OpenSale {
   totalMinor: number;
   paidMinor: number;
   balanceDueMinor: number;
+  /** When a parked sale was last parked (ISO); absent on the current sale. The tab's age reads it. */
+  parkedAt?: string;
   /** The sale on the till now. */
   current: boolean;
 }
@@ -28,6 +30,7 @@ export function openSales(order: Order, parked: readonly ParkedOrderSummary[]): 
   const sales: OpenSale[] = parked.filter((draft) => draft.id !== order.id).map((draft) => ({
     id: draft.id, customerName: draft.customerName, itemCount: draft.itemCount, firstItem: draft.firstItem,
     totalMinor: draft.totalMinor, paidMinor: draft.paidMinor ?? 0, balanceDueMinor: draft.balanceDueMinor ?? 0, current: false,
+    parkedAt: draft.parkedAt || undefined,
   }));
   if (live) {
     sales.push({

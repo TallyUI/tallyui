@@ -1,8 +1,27 @@
-import type { JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useFormatMoney } from '@tallyui/core';
 import { isPartlyPaid, type OpenSale } from '@tallyui/pos';
 import { Text } from '../ui/text';
+
+const AGE_TICK_MS = 60_000; // Ages tick once a minute (v2).
+const STALE_AFTER_MS = 60 * 60_000; // A sale parked for an hour is one somebody forgot (v2).
+
+function useNowMs(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+function staleAge(parkedAt: string | undefined, nowMs: number): string | null {
+  if (!parkedAt) return null;
+  const parsed = Date.parse(parkedAt);
+  if (Number.isNaN(parsed) || nowMs - parsed < STALE_AFTER_MS) return null;
+  return `${Math.round((nowMs - parsed) / 3_600_000)} h`;
+}
 
 /** Pass `openSales(sale.order, useParkedSales(drafts).parked)`; `onSelect` and `onNew` call `sale.switchSale(id)` and `sale.switchSale(null)`. */
 export interface OpenSaleTabsProps {
@@ -25,12 +44,14 @@ function who(sale: OpenSale): string {
  */
 export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsProps): JSX.Element {
   const formatMoney = useFormatMoney();
+  const now = useNowMs(AGE_TICK_MS);
   const blank = !sales.some((sale) => sale.current);
   return (
     <View testID="open-sale-tabs" className="h-14 flex-row items-stretch border-t border-border bg-card">
       <ScrollView horizontal accessibilityRole="tablist" showsHorizontalScrollIndicator={false} className="min-w-0 flex-1">
         {sales.map((sale) => {
           const partly = isPartlyPaid(sale);
+          const age = staleAge(sale.parkedAt, now);
           const status = `Partly paid · ${formatMoney({ amount: sale.balanceDueMinor, currency })} due`;
           return (
             <Pressable key={sale.id} testID={`open-sale-tab-${sale.id}`} accessibilityRole="tab"
@@ -49,6 +70,7 @@ export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsP
               ) : (
                 <Text testID={`open-sale-tab-${sale.id}-amount`} className="text-xs text-muted-foreground tabular-nums">
                   {formatMoney({ amount: sale.totalMinor, currency })}
+                  {age !== null && <> · <Text testID={`open-sale-tab-${sale.id}-age`} className="text-xs font-semibold text-warning">{age}</Text></>}
                 </Text>
               )}
             </Pressable>

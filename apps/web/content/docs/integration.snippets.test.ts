@@ -1,4 +1,4 @@
-// Guards `integration.mdx`'s code blocks against API rot: every fenced ts/tsx
+// Guards `integration.mdx` and `pos.mdx` against API rot: every fenced ts/tsx
 // block is extracted and typechecked against the real workspace packages, so
 // a renamed or removed export the guide still shows breaks this test, not a
 // reader copying the snippet into their app.
@@ -11,7 +11,6 @@ import ts from 'typescript';
 // from `process.cwd()` rather than `import.meta.url`: Vite's dev transform
 // can rewrite this file's `import.meta.url` to a non-`file:` scheme.
 const repoRoot = `${process.cwd()}/`;
-const mdxPath = path.join(repoRoot, 'apps/web/content/docs/integration.mdx');
 const rootTsconfigPath = path.join(repoRoot, 'tsconfig.json');
 // `@tallyui/*` imports resolve via the root tsconfig's `paths` regardless of
 // this directory; a snippet's own npm imports (`rxdb`, `react`) resolve from
@@ -79,13 +78,17 @@ function formatDiagnostics(diagnostics: readonly ts.Diagnostic[]): string {
   });
 }
 
-describe('integration.mdx snippets', () => {
+describe.each([
+  { page: 'integration.mdx', count: 8 },
+  { page: 'pos.mdx', count: 11 },
+])('$page snippets', ({ page, count }) => {
+  const mdxPath = path.join(repoRoot, 'apps/web/content/docs', page);
   const mdx = readFileSync(mdxPath, 'utf8');
   const snippets = extractSnippets(mdx);
 
   it('extracts one snippet per documented section', () => {
-    // Building a POS app documents 8 sections, each with exactly one code block.
-    expect(snippets).toHaveLength(8);
+    // Pin each page's count so code blocks cannot silently lose coverage.
+    expect(snippets).toHaveLength(count);
   });
 
   it(

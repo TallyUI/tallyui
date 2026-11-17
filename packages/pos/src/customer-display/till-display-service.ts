@@ -10,11 +10,14 @@ import { createTillPeerLink, type PeerFactory, type PeerLink, type PeerLinkState
 
 export type { ServiceClock } from './snapshot-fallback';
 
-/** How often the till drains its signal inbox while a link is connecting; TallyUI's choice. */
+/** How often the till drains its signal inbox while a link is connecting; TallyUI's choice.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const SIGNAL_POLL_MS = 1000;
-/** How often the till lists its displays; TallyUI's choice. */
+/** How often the till lists its displays; TallyUI's choice.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const LIST_POLL_MS = 10_000;
-/** How long a link may stay connecting before it counts as a drop; TallyUI's choice. */
+/** How long a link may stay connecting before it counts as a drop; TallyUI's choice.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const CONNECT_TIMEOUT_MS = 30_000;
 
 export interface TillDisplayServiceOptions {

@@ -10,62 +10,71 @@ import { shopifyProductReplication } from './replication/products';
  *
  * Connects to Shopify stores via the Admin REST API.
  * Products are stored in RxDB using a schema that mirrors the Shopify API shape.
+ * Build one per store session, as the other connectors' factories do.
  *
  * ```ts
- * import { shopifyConnector } from '@tallyui/connector-shopify';
+ * import { createShopifyConnector } from '@tallyui/connector-shopify';
  * import { ConnectorProvider } from '@tallyui/core';
  *
- * <ConnectorProvider connector={shopifyConnector}>
+ * const connector = useMemo(() => createShopifyConnector(), [store]);
+ * <ConnectorProvider connector={connector}>
  *   <App />
  * </ConnectorProvider>
  * ```
  */
-export const shopifyConnector: TallyConnector = {
-  id: 'shopify',
-  name: 'Shopify',
-  description: 'Connect to Shopify stores via the Admin REST API',
-  icon: undefined,
+export function createShopifyConnector(): TallyConnector {
+  return {
+    id: 'shopify',
+    name: 'Shopify',
+    description: 'Connect to Shopify stores via the Admin REST API',
+    icon: undefined,
 
-  auth: {
-    type: 'Shopify Admin API',
-    fields: [
-      {
-        key: 'store',
-        label: 'Store Name',
-        type: 'text',
-        placeholder: 'my-store (from my-store.myshopify.com)',
-        required: true,
-      },
-      {
-        key: 'access_token',
-        label: 'Access Token',
-        type: 'password',
-        placeholder: 'shpat_...',
-        required: true,
-      },
-    ],
-    getHeaders: (credentials) => ({
-      'X-Shopify-Access-Token': credentials.access_token,
-      'Content-Type': 'application/json',
-    }),
-  },
+    auth: {
+      type: 'Shopify Admin API',
+      fields: [
+        {
+          key: 'store',
+          label: 'Store Name',
+          type: 'text',
+          placeholder: 'my-store (from my-store.myshopify.com)',
+          required: true,
+        },
+        {
+          key: 'access_token',
+          label: 'Access Token',
+          type: 'password',
+          placeholder: 'shpat_...',
+          required: true,
+        },
+      ],
+      getHeaders: (credentials) => ({
+        'X-Shopify-Access-Token': credentials.access_token,
+        'Content-Type': 'application/json',
+      }),
+    },
 
-  schemas: {
-    products: shopifyProductSchema,
-  },
+    schemas: {
+      products: shopifyProductSchema,
+    },
 
-  traits: {
-    product: shopifyProductTraits,
-  },
+    traits: {
+      product: shopifyProductTraits,
+    },
 
-  sync: {
-    products: shopifyProductSync,
-  },
+    sync: {
+      products: shopifyProductSync,
+    },
 
-  replication: {
-    products: shopifyProductReplication,
-  },
-};
+    replication: {
+      products: shopifyProductReplication,
+    },
+  };
+}
+
+/**
+ * @deprecated Use createShopifyConnector(), the factory every other connector has.
+ */
+export const shopifyConnector: TallyConnector = createShopifyConnector();
 
 // Re-export pieces for advanced usage
 export { shopifyProductSchema } from './schemas/products';

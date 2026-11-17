@@ -1,4 +1,7 @@
-/** ISO 4217 minor-unit exponent as resolved by Intl (which rejects malformed codes); depends on the runtime's ICU data. */
+/**
+ * ISO 4217 minor-unit exponent as resolved by Intl (which rejects malformed codes); depends on the runtime's ICU data.
+ * @deprecated Use `minorUnitDigits` (exported here and from `@tallyui/core`). It returns 2 for a code Intl rejects, where this throws.
+ */
 export function currencyDecimals(currency: string): number {
   return new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits!
 }

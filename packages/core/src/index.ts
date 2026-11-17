@@ -87,6 +87,7 @@ export {
 
 // Money helpers
 export { currencySymbol, formatMoney, type MoneyFormat, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from './money';
+export { minorToMajor } from './server/money';
 export { findVariantByCode } from './variants';
 export { knownWarnings } from './known-warnings';
 export { compareIds } from './utils/compare-ids';

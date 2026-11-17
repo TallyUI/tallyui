@@ -1,7 +1,8 @@
 import * as React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Animated, Dimensions } from 'react-native';
 import { Dialog as DialogPrimitive, TextClassContext } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
+import { useSheetMotion } from './motion';
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -22,9 +23,10 @@ const DialogOverlay = React.forwardRef<
 });
 DialogOverlay.displayName = 'DialogOverlay';
 
-/** Where the content sits: centred (the default), or a full-height sheet on the right edge, full width on a phone. */
+/** Where the content sits: centred (the default), or a full-height sheet on the left or right edge, full width on a phone. */
 const SIDE_CLASS = {
   center: 'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-background p-6 shadow-lg',
+  left: 'fixed left-0 top-0 bottom-0 z-50 h-full w-full max-w-lg gap-4 rounded-none border-r border-border bg-background p-6 shadow-lg',
   right: 'fixed right-0 top-0 bottom-0 z-50 h-full w-full max-w-lg gap-4 rounded-none border-l border-border bg-background p-6 shadow-lg',
 } as const;
 
@@ -32,6 +34,32 @@ const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: keyof typeof SIDE_CLASS }
 >(function DialogContent({ className, children, side = 'center', ...props }, ref) {
+  const { open } = DialogPrimitive.useRootContext();
+  const { mounted, scrim, panel } = useSheetMotion(open, side === 'right');
+  const [width, setWidth] = React.useState(() => Dimensions.get('window').width);
+
+  // WCPOS v2 panel-in-right / panel-out-right; the centred dialog follows in a later job.
+  if (side === 'right') {
+    if (!mounted) return null;
+    const { style, ...propsWithoutStyle } = props;
+    return (
+      <DialogPortal forceMount>
+        <Animated.View className="fixed inset-0 z-50" style={{ opacity: scrim }} pointerEvents={open ? 'auto' : 'none'}>
+          <DialogOverlay forceMount className="absolute inset-0" />
+        </Animated.View>
+        <DialogPrimitive.Content forceMount asChild ref={ref} className={cn(SIDE_CLASS.right, className)} {...propsWithoutStyle}>
+          <Animated.View
+            style={[style, { transform: [{ translateX: panel.interpolate({ inputRange: [0, 1], outputRange: [width, 0] }) }] }]}
+            pointerEvents={open ? 'auto' : 'none'}
+            onLayout={(e) => { if (e.nativeEvent.layout.width) setWidth(e.nativeEvent.layout.width); }}
+          >
+            {children}
+          </Animated.View>
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    );
+  }
+
   return (
     <DialogPortal>
       <DialogOverlay />

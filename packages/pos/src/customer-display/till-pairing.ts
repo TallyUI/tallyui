@@ -2,7 +2,8 @@ import { DisplaySignallingError, type DisplaySignalling, type PendingPairing, ty
 import { quietly, systemClock, type ServiceClock } from './snapshot-fallback';
 import type { TillDisplayService } from './till-display-service';
 
-/** How often the till lists the claims on its code while it shows one; TallyUI's choice. */
+/** How often the till lists the claims on its code while it shows one; TallyUI's choice.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const PENDING_POLL_MS = 2000;
 
 export type PairingError = 'forbidden' | 'limit' | 'expired' | 'not_found' | 'network' | 'server';
