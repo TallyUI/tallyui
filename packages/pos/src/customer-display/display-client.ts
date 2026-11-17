@@ -8,13 +8,17 @@ import { systemClock, SALE_ACTIONS, quietly } from './snapshot-fallback';
 import { DISPLAY_TEMPLATE, HELLO_RETRY_MS } from './use-customer-display';
 import { createDisplayPeerLink, type PeerFactory, type PeerLink, type PeerLinkState } from './webrtc';
 
-/** TallyUI's choice: how often a waiting display asks whether the cashier has confirmed. */
+/** TallyUI's choice: how often a waiting display asks whether the cashier has confirmed.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const COLLECT_POLL_MS = 2000;
-/** TallyUI's choice: how often a paired display drains its inbox while no link is open. */
+/** TallyUI's choice: how often a paired display drains its inbox while no link is open.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const DISPLAY_SIGNAL_POLL_MS = 1000;
-/** TallyUI's choice: how often it drains its inbox while a link is open, so a re-linking till's offer is still seen. */
+/** TallyUI's choice: how often it drains its inbox while a link is open, so a re-linking till's offer is still seen.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const OPEN_SIGNAL_POLL_MS = 5000;
-/** TallyUI's choice: how often it reads the snapshot fallback while no link is open. */
+/** TallyUI's choice: how often it reads the snapshot fallback while no link is open.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const SNAPSHOT_POLL_MS = 2000;
 
 /** Where the display keeps its token; U8 binds it to a local collection that is never replicated (ADR-085 d5). */

@@ -4,7 +4,8 @@ import { makeEnvelope, type DisplayTemplate } from './protocol';
 import type { DisplayTransport } from './transport';
 
 export const DISPLAY_TEMPLATE: DisplayTemplate = { id: 'default', version: 1 };
-/** The hello is re-sent until a config answers it, so a till opened after the display still finds it. */
+/** The hello is re-sent until a config answers it, so a till opened after the display still finds it.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const HELLO_RETRY_MS = 2000;
 
 /**
