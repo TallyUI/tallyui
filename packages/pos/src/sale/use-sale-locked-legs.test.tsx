@@ -5,7 +5,7 @@ import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreSettings } from '@tallyui/core';
-import { createOrderBuilder, orderDraftSchema, writeOrderDraft } from '../order';
+import { createOrderBuilder, orderDraftSchema, restoreOrderDraft, writeOrderDraft } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import { posOrderCollection } from '../pos-order';
 import { TaxProvider } from '../tax';
@@ -117,6 +117,28 @@ describe('useSale locked legs', () => {
     expect(result.current.order).toBe(before);
     expect(result.current.order.lineItems).toEqual([]);
     expect(result.current.order.payments).toEqual([]);
+  });
+
+  it('openStoreOrder refuses a matching total whose tax differs', async () => {
+    const { result } = await emptySale();
+    const builder = createOrderBuilder({
+      currency: 'EUR', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: true },
+      storeOrder: { id: '41', revision: 'sha256:a' },
+    });
+    builder.addLine({
+      productId: 'coffee', name: 'Coffee', storeLineId: '7',
+      unitPrice: { amount: 1100, currency: 'EUR', taxInclusive: true },
+    });
+    builder.addFee({ name: 'Handling', amountMinor: 550, taxStatus: 'taxable', storeLineId: 'f1' });
+    builder.addPayment({ method: 'external', amountMinor: 500, reference: 'Cash', storePaymentId: 'p1', locked: true });
+    const order = builder.getSnapshot();
+    const rebuilt = restoreOrderDraft(order, { currency: 'EUR', taxContext }).getSnapshot();
+    expect(rebuilt.totalMinor).toBe(order.totalMinor);
+    expect(rebuilt.taxMinor).not.toBe(order.taxMinor);
+    const before = result.current.order;
+    act(() => { expect(result.current.openStoreOrder(order)).toBe(STORE_ORDER_REBUILD_REFUSALS.totals); });
+    expect(result.current.order).toBe(before);
+    expect(result.current.order.lineItems).toEqual([]);
   });
 
   it('openStoreOrder throws for an order without storeOrder', async () => {
