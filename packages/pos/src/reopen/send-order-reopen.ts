@@ -55,6 +55,7 @@ export async function sendOrderReopen(
 export function isOrderReopenInFlight(orderId: string): boolean { return inFlight.has(orderId); }
 
 /** Re-open is offered only when the store lists order.reopen, the till is online, storage is not degraded and no reopen of the order is in flight (ADR-090 decision 2). */
-export function isReopenOffered(input: { orderReopen?: number; online: boolean; storageDegraded: boolean; orderId: string }): boolean {
-  return (input.orderReopen ?? 0) >= 1 && input.online && !input.storageDegraded && !isOrderReopenInFlight(input.orderId);
+export function isReopenOffered(input: { orderReopen?: number; orderCreate?: number; online: boolean; storageDegraded: boolean; orderId: string }): boolean {
+  // order.update follows the till's order.create version; fees, shipping and custom lines need version 5 or more (writer Q2).
+  return (input.orderReopen ?? 0) >= 1 && (input.orderCreate ?? 0) >= 5 && input.online && !input.storageDegraded && !isOrderReopenInFlight(input.orderId);
 }
