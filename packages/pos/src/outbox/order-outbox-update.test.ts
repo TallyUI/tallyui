@@ -4,7 +4,9 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandResult, OrderCreateEnvelope, OrderUpdateEnvelope } from '@tallyui/core';
-import { posOrderCollection, toOrderUpdateEnvelope, uuidv7, type PosOrder } from '../pos-order';
+import { updatePayloadErrors } from '@tallyui/core/server';
+import { orderBuilderFromStoreOrder } from '../order/from-store-order';
+import { finalizeOrder, posOrderCollection, toOrderCreateEnvelope, toOrderUpdateEnvelope, uuidv7, type PosOrder } from '../pos-order';
 import { createOrderOutbox, type OrderOutbox, type OrderOutboxOptions } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
@@ -174,5 +176,36 @@ describe('order outbox updates', () => {
     expect(second.id).not.toBe(first.id);
     expect(second.payload).toStrictEqual(first.payload);
     expect(await stored(input.id)).toMatchObject({ syncStatus: 'applied', commandId: second.id });
+  });
+
+  it('a row written by finalizeOrder for a reopened cart leaves only as order.update', async () => {
+    const builder = orderBuilderFromStoreOrder({
+      id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298',
+      status: 'completed', placedAt: '2026-11-17T10:00:00.000Z', currency: 'EUR', pricesIncludeTax: false, customer: null,
+      lines: [
+        { id: '7', productId: 'coffee', name: 'Coffee', quantity: 2, subtotalMinor: 2000, totalMinor: 2000, subtotalTaxMinor: 200, taxMinor: 200 },
+        { id: '9', productId: 'tea', name: 'Tea', quantity: 1, subtotalMinor: 600, totalMinor: 600, subtotalTaxMinor: 60, taxMinor: 60 },
+      ],
+      fees: [{ id: 'f1', name: 'Handling', totalMinor: 500, taxMinor: 50, taxStatus: 'taxable' }],
+      shipping: [{ id: 's1', name: 'Delivery', totalMinor: 800, taxMinor: 80, taxStatus: 'taxable', methodId: 'flat_rate' }],
+      coupons: [], refunds: [], discountMinor: 0, discountTaxMinor: 0, taxLines: [], taxMinor: 390, totalMinor: 4290,
+      payments: [{ id: 'p1', method: 'pos_cash', title: 'Cash', amountMinor: 1000 }],
+    }, { currency: 'EUR', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false } });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().balanceDueMinor + 500 });
+    const row = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 9 } });
+    await collection.insert(row);
+    const { outbox, send } = setup();
+    await outbox.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    const batch = send.mock.calls[0][0];
+    expect(batch).toHaveLength(1);
+    const command = batch[0] as OrderUpdateEnvelope;
+    expect(command.type).toBe('order.update');
+    expect(command.payload.orderId).toBe(row.storeOrderId);
+    expect(command.payload.baseRevision).toBe(row.baseRevision);
+    expect(command.payload.payments[0]).toMatchObject({ paymentId: 'p1', method: 'external', amountMinor: 1000 });
+    expect(command.payload.payments[0]).not.toHaveProperty('storePaymentId');
+    expect(updatePayloadErrors(command.payload)).toEqual([]);
+    expect(() => toOrderCreateEnvelope(row, 'device-1')).toThrow('it is sent as order.update, never order.create');
   });
 });

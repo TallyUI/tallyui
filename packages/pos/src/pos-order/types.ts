@@ -96,7 +96,7 @@ export interface PosOrder {
   discountMinor: number;
   taxMinor: number;
   totalMinor: number;
-  /** What the store owes back on a reopened sale whose locked payments exceed its new total, in minor units (pos_orders v15, ADR-090); written at finalize, absent elsewhere. */
+  /** What the store owes back on a reopened sale whose locked payments exceed its new total, in minor units (pos_orders v15, ADR-090). `finalizeOrder` writes it on every reopened sale, 0 when nothing is due; absent on a till sale. */
   refundDueMinor?: number;
   payments: PosOrderPayment[];
   /** `billing` and `shipping` (#722) are frozen copies of the customer's addresses, stored only with `taxAddress`. */

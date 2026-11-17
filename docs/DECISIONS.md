@@ -6524,6 +6524,15 @@ interface OrderCreatePayload {
       - Readers use the stored `refundDueMinor`. `refundDueOf` computes `sum(payments) − total` only for a row without it.
       - On the live receipt, the figure is the locked legs beyond the new total, and it is taken out of `changeDueMinor`. So every reader of the receipt data (template, ESC/POS, customer display) stops showing it as change.
       - Their own refund-due rows, and the tender pane, are a separate PR that gates phase e wiring (desk Q4, 2026-11-17).
+    - **The writer (W4f).** `finalizeOrder` completes a reopened sale; the backstop that refused one is gone.
+      - It writes `storeOrderId`, `baseRevision` and `refundDueMinor` on every reopened row, 0 included. It also writes `storeLineId` on each kept line, fee and shipping line, and `storePaymentId` on each payment the store already holds. W4 alone writes these (desk ruling); a till sale gets none of them, and its stored form is unchanged.
+      - Before any id is minted it refuses what core's `updatePayloadErrors` would refuse:
+        - gate 1: a store id over 64 characters, a revision over 128, an empty value, or a NUL (desk Q3);
+        - gate 3: a `storeLineId` used twice across lines, fees and shipping, or a `storePaymentId` used twice.
+        - A drift test pins the till's rule to core's.
+      - A payment the store holds must be locked, `external`, and carry its store id (desk Q7). Store ids or locked legs on a sale that reopened nothing are refused.
+      - When the locked legs cover the new total, the sale completes as refund due (`locked − total`), with no till leg and no change (desk Q6). Otherwise change comes only from unlocked cash, and the refund due is 0.
+      - The reconcile is `sum(payments) − refundDue = total`.
   - **Read model.** A reopen fills an empty `_pos_user_created` with the reopening cashier. A storefront order
     reopened at the till then reads as created by that cashier.
 - **The edited total below what is already paid (desk condition 4).**

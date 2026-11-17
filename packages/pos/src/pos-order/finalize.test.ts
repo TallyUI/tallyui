@@ -28,13 +28,21 @@ function discountedSale() {
 }
 
 describe('finalizeOrder', () => {
-  it('refuses a fully paid reopened store order while a plain order still finalizes', () => {
+  it("finalizes a fully paid reopened store order; a plain order's output is unchanged", () => {
     const builder = sale();
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     const order = builder.getSnapshot();
-    expect(() => finalizeOrder({ ...order, storeOrder: { id: '123', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } }))
-      .toThrow('finalize: a reopened store order cannot be completed by this version of TallyUI');
+    const revision = 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298';
+    expect(finalizeOrder({ ...order, storeOrder: { id: '123', revision } }, { capabilities: { orderCreate: 5 } }))
+      .toMatchObject({ storeOrderId: '123', baseRevision: revision, refundDueMinor: 0, totalMinor: order.totalMinor });
     expect(() => finalizeOrder(order)).not.toThrow();
+    let n = 0;
+    const { saleId, ...plain } = finalizeOrder(order, { newId: () => `id-${n++}`, now: new Date('2026-11-17T10:00:00.000Z') });
+    expect(saleId).toBe(order.id);
+    // Taken from this same call before the reopen writer landed: a till sale's stored form is byte-identical.
+    expect(JSON.stringify(plain)).toMatchInlineSnapshot(`"{"id":"id-0","createdAt":"2026-11-17T10:00:00.000Z","updatedAt":"2026-11-17T10:00:00.000Z","commandId":"id-4","syncStatus":"pending","currency":"EUR","pricesIncludeTax":false,"lines":[{"id":"id-1","productId":"p1","variantId":"v1","name":"Item 1","sku":"SKU1","quantity":2,"unitPriceMinor":850,"discountMinor":0,"netMinor":1700,"taxLines":[{"ratePpm":190000,"taxMicros":"323000000"}]},{"id":"id-2","productId":"p2","name":"Item 2","sku":"","quantity":1,"unitPriceMinor":1200,"discountMinor":0,"netMinor":1200,"taxLines":[{"ratePpm":190000,"taxMicros":"228000000"}]}],"payments":[{"id":"id-3","method":"cash","amountMinor":3451,"tenderedMinor":3451,"changeMinor":0}],"subtotalMinor":2900,"discountMinor":0,"taxMinor":551,"totalMinor":3451,"taxRounding":{"granularity":"per_order","mode":"half_away_from_zero"},"customer":null}"`);
+    expect(plain).not.toHaveProperty('storeOrderId');
+    expect(plain).not.toHaveProperty('refundDueMinor');
   });
 
   it.each(['pending', 'authorized', 'failed', 'voided'] as const)('rejects a %s payment leg', (status) => {
