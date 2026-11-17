@@ -90,6 +90,7 @@ export { currencySymbol, formatMoney, type MoneyFormat, minorUnitDigits, moneyFr
 export { findVariantByCode } from './variants';
 export { knownWarnings } from './known-warnings';
 export { compareIds } from './utils/compare-ids';
+export { fnv1a32 } from './fnv1a32';
 export { STOCK_LEVELS_LAST_PASS, withStockOverlay, getProductStock } from './stock-overlay';
 export { combinePullAdapters } from './replication/combine';
 export { createReconcileFeed } from './replication/reconcile-feed';
