@@ -1,6 +1,9 @@
 import { ScrollView, View } from 'react-native';
 import { Stack } from 'expo-router';
-import { Badge, Text } from '@tallyui/components';
+import { Badge, StatusBadge, Text } from '@tallyui/components';
+
+const STATES = [['default', 'Default'], ['ok', 'Signed in'], ['warning', 'Sign in again'], ['bad', 'Out of stock'], ['info', 'Syncing'], ['muted', 'Debug']] as const;
+const LEVELS = [['default', 'action'], ['muted', 'info'], ['warning', 'warn'], ['bad', 'error'], ['info', 'sync'], ['muted', 'debug']] as const;
 
 export default function BadgeScreen() {
   return (
@@ -92,6 +95,12 @@ export default function BadgeScreen() {
               <Text className="text-xs font-semibold text-foreground">Styled</Text>
             </Badge>
           </View>
+        </View>
+
+        <View testID="status-badge-demo" className="gap-3">
+          <Text className="text-lg font-bold">StatusBadge</Text>
+          <View className="gap-2">{STATES.map(([variant, label]) => <StatusBadge key={label} variant={variant} label={label} />)}</View>
+          <View className="gap-2">{LEVELS.map(([variant, label]) => <StatusBadge key={label} size="caption" variant={variant} label={label} />)}</View>
         </View>
       </ScrollView>
     </>
