@@ -33,50 +33,61 @@ Tally UI sits between your backend API and your UI. A **connector** maps each ba
 
 ## Quick Start
 
-Install the core packages and a connector:
+Web and native storage is [RxDB Premium](https://rxdb.info/premium/)'s SQLite, so your app needs a Premium licence key (see [Storage](/docs/replication#storage)).
 
 ```bash
-pnpm add @tallyui/core @tallyui/database @tallyui/components @tallyui/primitives @tallyui/theme @tallyui/connector-woocommerce
+pnpm add @tallyui/core @tallyui/database @tallyui/storage-sqlite @tallyui/components @tallyui/primitives @tallyui/theme @tallyui/connector-medusa rxdb rxjs
 ```
 
-Wrap your app with the connector provider:
-
 ```tsx
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { View } from 'react-native';
 import { ConnectorProvider } from '@tallyui/core';
-import { createWooCommerceConnector } from '@tallyui/connector-woocommerce';
+import { createTallyDatabase, startReplication, type TallyDatabase } from '@tallyui/database';
+import { getRxStorageSQLiteWasm } from '@tallyui/storage-sqlite/web';
+import { createMedusaConnector } from '@tallyui/connector-medusa';
+import { ProductCard } from '@tallyui/components';
 
-function App({ session }: { session: object }) {
-  // One connector per store session: a new one on each sign-in or store change.
-  const connector = useMemo(() => createWooCommerceConnector(), [session]);
+// One connector per store session: a new connector and database on each sign-in or store change.
+async function openStore(baseUrl: string, apiToken: string) {
+  const connector = createMedusaConnector();
+  const context = { connectorId: connector.id, baseUrl, headers: connector.auth.getHeaders({ api_token: apiToken }) };
+  const workerInput = new URL('@tallyui/storage-sqlite/web-worker', import.meta.url);
+  const db = await createTallyDatabase({ connector, storage: getRxStorageSQLiteWasm({ workerInput }) });
+  startReplication({ collection: db.products, adapter: connector.replication!.products!, context });
+  return { connector, db };
+}
+
+function Products({ db }: { db: TallyDatabase }) {
+  const query = useMemo(() => db.products.find(), [db]);
+  const [products, setProducts] = useState<Awaited<ReturnType<typeof query.exec>>>([]);
+  useEffect(() => {
+    const subscription = query.$.subscribe(setProducts);
+    return () => subscription.unsubscribe();
+  }, [query]);
+  return (
+    <View className="gap-2">
+      {products.map((doc) => <ProductCard key={doc.primary} doc={doc} />)}
+    </View>
+  );
+}
+
+function App({ connector, db }: Awaited<ReturnType<typeof openStore>>) {
   return (
     <ConnectorProvider connector={connector}>
-      <YourPOSApp />
+      <Products db={db} />
     </ConnectorProvider>
   );
 }
 ```
 
-Use components that work with any backend. Style with Tailwind classes via [Uniwind](https://uniwind.dev):
-
-```tsx
-import { ProductTitle, ProductPrice } from '@tallyui/components';
-
-function ProductCard({ doc }) {
-  return (
-    <View className="bg-card rounded-lg p-4 gap-1">
-      <ProductTitle doc={doc} className="text-lg font-bold" />
-      <ProductPrice doc={doc} currencySymbol="$" />
-    </View>
-  );
-}
-```
+Next, [Building a POS app](/docs/integration) adds store settings, tax, selling and the live tab.
 
 ## What's Next?
 
 <Cards>
-  <Card title="Architecture" href="/docs/architecture" />
   <Card title="Building a POS app" href="/docs/integration" />
+  <Card title="Architecture" href="/docs/architecture" />
   <Card title="Replication" href="/docs/replication" />
   <Card title="Live Tab" href="/docs/live-tab" />
   <Card title="Design System" href="/docs/design-system" />

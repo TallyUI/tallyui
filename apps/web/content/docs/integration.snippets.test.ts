@@ -1,4 +1,4 @@
-// Guards `integration.mdx`'s code blocks against API rot: every fenced ts/tsx
+// Guards `integration.mdx` and `index.mdx` against API rot: every fenced ts/tsx
 // block is extracted and typechecked against the real workspace packages, so
 // a renamed or removed export the guide still shows breaks this test, not a
 // reader copying the snippet into their app.
@@ -86,6 +86,24 @@ describe('integration.mdx snippets', () => {
   it('extracts one snippet per documented section', () => {
     // Building a POS app documents 8 sections, each with exactly one code block.
     expect(snippets).toHaveLength(8);
+  });
+
+  it(
+    'typechecks every snippet against the workspace packages, using only real, exported APIs',
+    () => {
+      const diagnostics = typecheckSnippets(snippets);
+      expect(diagnostics, formatDiagnostics(diagnostics)).toHaveLength(0);
+    },
+    60_000,
+  );
+});
+
+describe('index.mdx snippets', () => {
+  const mdx = readFileSync(path.join(repoRoot, 'apps/web/content/docs/index.mdx'), 'utf8');
+  const snippets = extractSnippets(mdx);
+
+  it('extracts one Quick Start snippet', () => {
+    expect(snippets).toHaveLength(1);
   });
 
   it(
