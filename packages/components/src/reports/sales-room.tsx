@@ -15,14 +15,16 @@ export interface SalesRoomProps extends SalesFiltersBarProps {
   currency: string;
   /** Opens a card's panel. */
   onOpenCard?: (card: SalesCardId) => void;
+  /** Forwarded to SalesCards as `hide`. */
+  hideCards?: SalesCardId[];
 }
 
-export function SalesRoom({ figures, filters, onFiltersChange, currency, onOpenCard, ...bar }: SalesRoomProps): JSX.Element {
+export function SalesRoom({ figures, filters, onFiltersChange, currency, onOpenCard, hideCards, ...bar }: SalesRoomProps): JSX.Element {
   return (
     <View testID="sales-room" className="gap-4">
       <SalesFiltersBar filters={filters} onFiltersChange={onFiltersChange} {...bar} />
       <SalesHero figures={figures} filters={filters} onFiltersChange={onFiltersChange} currency={currency} />
-      <SalesCards figures={figures} currency={currency} onOpenCard={onOpenCard} />
+      <SalesCards figures={figures} currency={currency} onOpenCard={onOpenCard} hide={hideCards} />
     </View>
   );
 }
