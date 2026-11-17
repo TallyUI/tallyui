@@ -36,7 +36,7 @@ function Sale({ capabilities }: { capabilities: ServerCapabilities }) {
         <Text className="text-foreground">Add {traits.getName(entry.product)}</Text>
       </Pressable>)}
     </View>
-    <Cart sale={sale} taxClasses={taxClasses} />
+    <Cart sale={sale} taxClasses={taxClasses} showTotal={false} checkout={{ onCheckout: () => sale.startTender('cash') }} />
   </View>;
 }
 
