@@ -60,7 +60,9 @@ function storePayments(raw: Row, currency: string, totalMinor: number): StoreOrd
       const method = nonEmpty(row.method_id);
       if (!method || (typeof row.currency === 'string' && row.currency !== currency)) throw unexpected();
       const kind = PAYMENT_KINDS[method];
+      const id = nonEmpty(row.id);
       return {
+        ...(id ? { id } : {}),
         method, ...(title ? { title } : {}), ...(kind ? { kind } : {}), amountMinor: minor(row.amount, currency),
       };
     });
@@ -92,12 +94,17 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     : null;
 
   const clientOrderId = posUuid(raw.meta_data);
+  const revision = nonEmpty(raw._rxdb_revision);
   const totalMinor = minor(raw.total, currency);
+  const ledgerEntry = rows(raw.meta_data).find((meta) => meta.key === '_wcpos_payments');
+  const paymentRecordUnreadable = ledgerEntry && (!isRow(ledgerEntry.value)
+    || ledgerEntry.value.schema !== 1 || !Array.isArray(ledgerEntry.value.payments));
 
   return {
     id: String(raw.id),
     reference: String(raw.number ?? raw.id),
     ...(clientOrderId ? { clientOrderId } : {}),
+    ...(revision ? { revision } : {}),
     status: String(raw.status),
     placedAt: placed.toISOString(),
     currency,
@@ -123,9 +130,15 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
       };
     }),
     fees: rows(raw.fee_lines).map((fee) => ({
+      ...(positiveId(fee.id) ? { id: positiveId(fee.id) } : {}),
+      ...(fee.tax_status === 'taxable' || fee.tax_status === 'none' ? { taxStatus: fee.tax_status } : {}),
+      ...(nonEmpty(fee.tax_class) ? { taxClass: nonEmpty(fee.tax_class) } : {}),
       name: String(fee.name), totalMinor: minor(fee.total, currency), taxMinor: grossTax(fee.total, fee.total_tax, currency),
     })),
     shipping: rows(raw.shipping_lines).map((line) => ({
+      ...(positiveId(line.id) ? { id: positiveId(line.id) } : {}),
+      ...(line.tax_status === 'taxable' || line.tax_status === 'none' ? { taxStatus: line.tax_status } : {}),
+      ...(nonEmpty(line.method_id) ? { methodId: nonEmpty(line.method_id) } : {}),
       name: String(line.method_title), totalMinor: minor(line.total, currency), taxMinor: grossTax(line.total, line.total_tax, currency),
     })),
     coupons: rows(raw.coupon_lines).map((coupon) => ({
@@ -147,6 +160,7 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     taxMinor: minor(raw.total_tax, currency),
     totalMinor,
     payments: storePayments(raw, currency, totalMinor),
+    ...(paymentRecordUnreadable ? { paymentRecordUnreadable: true } : {}),
     refunds: rows(raw.refunds).map((refund) => {
       const reason = nonEmpty(refund.reason);
       return { id: String(refund.id), amountMinor: Math.abs(minor(refund.total, currency)), ...(reason ? { reason } : {}) };
@@ -195,14 +209,23 @@ export function createWooOrders(): Required<Pick<TallyConnector, 'listOrders' | 
       if (before !== undefined) params.set('before', wooGmtSecond(before, 0));
       const { body, headers } = await customerRequest(context, `orders?${params}`, { method: 'GET' });
       if (!Array.isArray(body)) throw unexpected();
-      const orders = body.map(toWooStoreOrder);
+      let unreadable = 0;
+      const orders = body.flatMap((row) => {
+        try {
+          return [toWooStoreOrder(row)];
+        } catch (error) {
+          if (!(error instanceof CustomerServiceError)) throw error;
+          unreadable += 1;
+          return [];
+        }
+      });
       const totalPages = headers.get('X-WP-TotalPages');
       const hasMore = totalPages !== null && /^\d+$/.test(totalPages.trim())
         ? page < Number.parseInt(totalPages, 10)
-        : orders.length === perPage;
+        : body.length === perPage;
       // X-WP-Total counts every order the query matches.
       const total = headers.get('X-WP-Total');
-      return { orders, hasMore, ...(total && /^\d+$/.test(total) ? { total: Number(total) } : {}) };
+      return { orders, hasMore, ...(unreadable ? { unreadable } : {}), ...(total && /^\d+$/.test(total) ? { total: Number(total) } : {}) };
     },
 
     async getOrders(context: SyncContext, ids: readonly string[]) {
