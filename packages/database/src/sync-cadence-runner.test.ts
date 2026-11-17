@@ -4,14 +4,14 @@ import type { UpdateRequired } from '@tallyui/core';
 
 import { createConnectivityTracker, type ConnectivityTracker } from './connectivity';
 import type { SyncCadence } from './sync-cadence';
-import { jitteredIntervalMs, startSyncCadence, type SyncCadenceRunner } from './sync-cadence-runner';
+import { jitteredIntervalMs, startSyncCadence, type SyncCadenceRunner, type SyncCadenceTick, type SyncCadenceTicker } from './sync-cadence-runner';
 
 const balanced: SyncCadence = { checkIntervalMs: 60_000, pullBatchSize: 50 };
 const till: UpdateRequired = { reason: 'till_update_required', fixedBy: 'till', status: 426 };
 const target = (paused?: boolean) => ({ reSync: vi.fn(), ...(paused === undefined ? {} : { isPaused: vi.fn(() => paused) }) });
 
 describe('startSyncCadence', () => {
-  let runner: SyncCadenceRunner | undefined;
+  let runner: SyncCadenceTicker | undefined;
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => {
     runner?.stop();
@@ -146,5 +146,106 @@ describe('startSyncCadence', () => {
     vi.advanceTimersByTime(60_000);
     expect(targets[0].reSync).toHaveBeenCalledTimes(2);
     expect(targets[1].reSync).toHaveBeenCalledTimes(2);
+  });
+
+  it('records an ok tick with its time', () => {
+    const t0 = Date.now();
+    const { runner: r } = start();
+    const seen: (SyncCadenceTick | null)[] = [];
+    r.lastTick$.subscribe((value) => seen.push(value));
+    expect(r.lastTick()).toBeNull();
+    expect(seen).toEqual([null]);
+    vi.advanceTimersByTime(60_000);
+    expect(r.lastTick()).toEqual({ atMs: t0 + 60_000, status: 'ok' });
+    expect(seen).toEqual([null, { atMs: t0 + 60_000, status: 'ok' }]);
+  });
+
+  it('records an error tick when a target throws', () => {
+    const t0 = Date.now();
+    const failing = target();
+    failing.reSync.mockImplementationOnce(() => { throw new Error('boom'); });
+    const { targets, runner: r } = start({ targets: [failing, target()] });
+    vi.advanceTimersByTime(60_000);
+    expect(r.lastTick()).toEqual({ atMs: t0 + 60_000, status: 'error' });
+    expect(targets[1].reSync).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000);
+    expect(r.lastTick()).toEqual({ atMs: t0 + 120_000, status: 'ok' });
+  });
+
+  it("records an error tick when a target's reSync rejects", async () => {
+    const rejecting = target();
+    rejecting.reSync.mockImplementation(() => Promise.reject(new Error('boom')));
+    const { runner: r } = start({ targets: [rejecting, target()] });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(r.lastTick()?.status).toBe('error');
+    r.stop();
+
+    let resolve!: () => void;
+    const later = target();
+    later.reSync.mockImplementation(() => new Promise<void>((done) => { resolve = done; }));
+    const { runner: r2 } = start({ targets: [later] });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(later.reSync).toHaveBeenCalledTimes(1);
+    expect(r2.lastTick()).toBeNull();
+    resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(r2.lastTick()?.status).toBe('ok');
+  });
+
+  it('a skipped tick leaves the last tick alone', () => {
+    const connectivity = createConnectivityTracker({ connector: { classifyFailure: () => ({ updateRequired: till }) } });
+    connectivity.recordFailure(new Error('gate'));
+    const { runner: r } = start({ connectivity });
+    vi.advanceTimersByTime(60_000);
+    expect(r.lastTick()).toBeNull();
+  });
+
+  it('tickNow records a tick', () => {
+    const t0 = Date.now();
+    const { runner: r } = start();
+    vi.advanceTimersByTime(20_000);
+    r.tickNow();
+    expect(r.lastTick()?.atMs).toBe(t0 + 20_000);
+  });
+
+  it('a slower tick that settles after a newer one does not overwrite it', async () => {
+    const t0 = Date.now();
+    let reject!: (error: Error) => void;
+    const slow = target();
+    slow.reSync.mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
+    const { runner: r } = start({ targets: [slow] });
+    await vi.advanceTimersByTimeAsync(60_000);
+    r.tickNow();
+    expect(r.lastTick()).toEqual({ atMs: t0 + 60_000, status: 'ok' });
+    // An overwrite would show { atMs: t0 + 65_000, status: 'error' }.
+    vi.advanceTimersByTime(5_000);
+    reject(new Error('slow'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(r.lastTick()).toEqual({ atMs: t0 + 60_000, status: 'ok' });
+  });
+
+  it('stop completes the last-tick stream, keeps the last tick and records nothing later', async () => {
+    const t0 = Date.now();
+    let reject!: (error: Error) => void;
+    const t = target();
+    const { runner: r } = start({ targets: [t] });
+    vi.advanceTimersByTime(60_000);
+    t.reSync.mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
+    r.tickNow();
+    let completed = false;
+    r.lastTick$.subscribe({ complete: () => { completed = true; } });
+    r.stop();
+    expect(completed).toBe(true);
+    // A post-stop record would show { atMs: t0 + 65_000, status: 'error' }.
+    vi.advanceTimersByTime(5_000);
+    reject(new Error('late'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(r.lastTick()).toEqual({ atMs: t0 + 60_000, status: 'ok' });
+  });
+
+  it('a SyncCadenceRunner without lastTick still type-checks', () => {
+    const fake: SyncCadenceRunner = { nextDueAtMs$: new BehaviorSubject<number | undefined>(undefined), tickNow: () => {}, stop: () => {} };
+    expect(() => fake.tickNow()).not.toThrow();
+    expect('lastTick' in fake).toBe(false);
   });
 });
