@@ -76,6 +76,24 @@ afterEach(async () => {
 });
 
 describe('useSale locked legs', () => {
+  it('holds a store order in the live sale and after parking it', async () => {
+    const { result } = await emptySale();
+    expect(await result.current.holdsStoreOrder('41')).toBe(false);
+    act(() => { expect(result.current.openStoreOrder(reopenedBuilder().getSnapshot())).toBeNull(); });
+    expect(await result.current.holdsStoreOrder('41')).toBe(true);
+    expect(await result.current.holdsStoreOrder('42')).toBe(false);
+    await act(async () => { expect(await result.current.switchSale(null)).toBeNull(); });
+    expect(result.current.order.lineItems).toEqual([]);
+    expect(result.current.order.storeOrder).toBeUndefined();
+    expect(await result.current.holdsStoreOrder('41')).toBe(true);
+  });
+
+  it('ignores a draft whose data does not parse', async () => {
+    const { result, drafts } = await emptySale();
+    await drafts.insert({ id: 'bad-data', data: 'not json' });
+    expect(await result.current.holdsStoreOrder('41')).toBe(false);
+  });
+
   it('openStoreOrder loads the kept line, locked leg and totals into an empty cart', async () => {
     const { result } = await emptySale();
     const order = reopenedBuilder().getSnapshot();

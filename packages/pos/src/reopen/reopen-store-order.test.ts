@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { OrderReopenEnvelope, StoreOrder, StoreOrderLine } from '@tallyui/core';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import type { CommandTransport } from '../outbox/types';
-import { reopenStoreOrder, REOPENED_NOT_LOADED } from './reopen-store-order';
+import { reopenStoreOrder, REOPENED_NOT_LOADED, STORE_ORDER_OPEN_HERE } from './reopen-store-order';
 
 const taxContext = { getTaxRatePpm: () => 100000, pricesIncludeTax: false };
 
@@ -28,7 +28,7 @@ function fixture(status: 'applied' | 'duplicate' = 'applied') {
   }));
   const getOrders = vi.fn<(ids: readonly string[]) => Promise<StoreOrder[]>>().mockResolvedValue([reread]);
   const deps = {
-    transport: { send }, getOrders,
+    transport: { send }, getOrders, openHere: vi.fn().mockReturnValue(false),
     identity: { cashierRef: '7', registerId: 'register-1', deviceId: 'till-1' },
     currency: 'EUR', taxContext, catalogue: (_line: StoreOrderLine) => ({}),
     now: () => Date.parse('2026-11-17T10:00:00.000Z'),
@@ -109,7 +109,7 @@ describe('reopenStoreOrder', () => {
     send.mockImplementation(async ([envelope]) => ({
       kind: 'results', results: [{ id: envelope.id, status: 'rejected', error }],
     }));
-    expect(await reopenStoreOrder(read, deps)).toStrictEqual({ kind: 'not_reopened', outcome: { kind: 'rejected', error } });
+    expect(await reopenStoreOrder(read, deps)).toStrictEqual({ kind: 'not_reopened', outcome: { kind: 'rejected', error }, envelope: expect.objectContaining({ type: 'order.reopen' }) });
     expect(getOrders).not.toHaveBeenCalled();
   });
 
@@ -118,6 +118,7 @@ describe('reopenStoreOrder', () => {
     send.mockRejectedValue(new Error('failed'));
     expect(await reopenStoreOrder(read, deps)).toStrictEqual({
       kind: 'not_reopened', outcome: { kind: 'unknown', reason: 'transport_error' },
+      envelope: expect.objectContaining({ type: 'order.reopen' }),
     });
     expect(getOrders).not.toHaveBeenCalled();
   });
@@ -156,5 +157,110 @@ describe('reopenStoreOrder', () => {
     await expect(reopenStoreOrder(read, { ...deps, catalogue: () => { throw boom; } })).rejects.toBe(boom);
     expect(send).not.toHaveBeenCalled();
     expect(getOrders).not.toHaveBeenCalled();
+  });
+
+  it('carries the sent envelope when the answer is unknown', async () => {
+    const { read, send, deps } = fixture();
+    send.mockRejectedValue(new Error('failed'));
+    const outcome = await reopenStoreOrder(read, deps);
+    expect(outcome).toMatchObject({ kind: 'not_reopened', outcome: { kind: 'unknown' } });
+    if (outcome.kind !== 'not_reopened') throw new Error('Expected not_reopened');
+    expect(outcome.envelope).toStrictEqual(send.mock.calls[0][0][0]);
+  });
+
+  it('resends the same envelope with an incremented attempt without calling now', async () => {
+    const { read, send, deps } = fixture('duplicate');
+    send.mockRejectedValueOnce(new Error('failed'));
+    const first = await reopenStoreOrder(read, deps);
+    if (first.kind !== 'not_reopened') throw new Error('Expected not_reopened');
+    const now = vi.fn();
+    const outcome = await reopenStoreOrder(read, { ...deps, resend: first.envelope, now });
+    expect(send.mock.calls[1][0][0]).toStrictEqual({ ...first.envelope, attempt: 2 });
+    expect(outcome).toMatchObject({ kind: 'reopened', duplicate: true });
+    expect(now).not.toHaveBeenCalled();
+  });
+
+  it('throws without sending when the resend is for another order', async () => {
+    const { read, send, deps } = fixture();
+    const resend: OrderReopenEnvelope = {
+      id: '019a9295-dd00-7000-8000-000000000001', type: 'order.reopen', version: 1,
+      createdAt: '2026-11-17T10:00:00.000Z', deviceId: 'till-1', attempt: 1,
+      payload: { orderId: '42', baseRevision: 'sha256:a', cashierRef: '7', registerId: 'register-1', createdAt: '2026-11-17T10:00:00.000Z' },
+    };
+    await expect(reopenStoreOrder(read, { ...deps, resend })).rejects.toThrow('reopenStoreOrder: resend is for another order');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('refuses an order already open here before sending (async: %s)', async (async) => {
+    const { read, send, getOrders, deps } = fixture();
+    if (async) deps.openHere.mockResolvedValue(true);
+    else deps.openHere.mockReturnValue(true);
+    expect(await reopenStoreOrder(read, deps)).toStrictEqual({ kind: 'refused', reason: 'open_here', message: STORE_ORDER_OPEN_HERE });
+    expect(deps.openHere).toHaveBeenCalledWith('41');
+    expect(send).not.toHaveBeenCalled();
+    expect(getOrders).not.toHaveBeenCalled();
+  });
+
+  it('runs the pre-check before checking whether the order is already open here', async () => {
+    const { read, deps } = fixture();
+    read.status = 'cancelled';
+    deps.openHere.mockReturnValue(true);
+    expect(await reopenStoreOrder(read, deps)).toMatchObject({ kind: 'refused', reason: 'status' });
+    expect(deps.openHere).not.toHaveBeenCalled();
+  });
+
+  it('pre-checks both reads in the customer tax context', async () => {
+    const { read, reread, send, deps } = fixture();
+    read.customer = { id: 'c1', name: 'Ada' };
+    read.lines = read.lines.map((line) => ({ ...line, subtotalTaxMinor: line.subtotalMinor / 5, taxMinor: line.totalMinor / 5 }));
+    read.taxMinor = 600;
+    read.totalMinor = 3600;
+    Object.assign(reread, { customer: read.customer, lines: read.lines, taxMinor: read.taxMinor, totalMinor: read.totalMinor });
+    const taxContextFor = vi.fn(() => ({ taxContext: { getTaxRatePpm: () => 200000, pricesIncludeTax: false } }));
+    expect(await reopenStoreOrder(read, { ...deps, taxContextFor })).toMatchObject({ kind: 'reopened' });
+    expect(taxContextFor).toHaveBeenCalledTimes(2);
+    expect(taxContextFor).toHaveBeenNthCalledWith(1, { id: 'c1', name: 'Ada' });
+    expect(taxContextFor).toHaveBeenNthCalledWith(2, { id: 'c1', name: 'Ada' });
+    send.mockClear();
+    expect(await reopenStoreOrder(read, deps)).toMatchObject({ kind: 'refused', reason: 'totals' });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('builds the cart from the reread when a line has been removed', async () => {
+    const { read, reread, deps } = fixture();
+    reread.lines = reread.lines.filter((line) => line.id === '7');
+    reread.taxMinor = 200;
+    reread.totalMinor = 2200;
+    const outcome = await reopenStoreOrder(read, deps);
+    expect(outcome.kind).toBe('reopened');
+    if (outcome.kind !== 'reopened') throw new Error('Expected reopened');
+    expect(outcome.order.lineItems).toHaveLength(1);
+    expect(outcome.order.lineItems[0]).toMatchObject({ storeLineId: '7' });
+    expect(outcome.order.totalMinor).toBe(2200);
+    expect(outcome.order.payments).toMatchObject([{ storePaymentId: 'p1', amountMinor: 1000, locked: true }]);
+  });
+
+  it('checks the catalogue again for the reread', async () => {
+    const { read, send, deps } = fixture();
+    const catalogue = (line: StoreOrderLine) => send.mock.calls.length > 0 && line.id === '8' ? null : {};
+    expect(await reopenStoreOrder(read, { ...deps, catalogue })).toMatchObject({ kind: 'reopened_unloadable', reason: 'catalogue' });
+  });
+
+  it('refuses a stale reread', async () => {
+    const { read, reread, deps } = fixture();
+    reread.revision = 'sha256:old';
+    expect(await reopenStoreOrder(read, deps)).toStrictEqual({
+      kind: 'reopened_unloadable', reason: 'reread',
+      message: `${REOPENED_NOT_LOADED} The order read back does not match the reopen.`,
+    });
+  });
+
+  it('loads any reread revision when the reopen result has no revision', async () => {
+    const { read, reread, send, deps } = fixture();
+    reread.revision = 'sha256:old';
+    send.mockImplementation(async ([envelope]) => ({
+      kind: 'results', results: [{ id: envelope.id, status: 'applied', reopen: { orderId: '41', status: 'pos-open' } }],
+    }));
+    expect(await reopenStoreOrder(read, deps)).toMatchObject({ kind: 'reopened', order: { storeOrder: { revision: 'sha256:old' } } });
   });
 });

@@ -781,6 +781,18 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       resetSale();
       return null;
     },
+    /** Whether the live sale or a parked draft holds this store order; unreadable drafts do not count. */
+    async holdsStoreOrder(orderId: string): Promise<boolean> {
+      if (builderNow.current.getSnapshot().storeOrder?.id === orderId) return true;
+      if (!opts.drafts) return false;
+      const drafts = await opts.drafts.find().exec();
+      return drafts.some((doc) => {
+        try {
+          const saved: Order = JSON.parse(doc.toJSON().data);
+          return saved.storeOrder?.id === orderId;
+        } catch { return false; }
+      });
+    },
     /** Loads a reopened store order (from reopenStoreOrder) into an empty sale, or returns why not. */
     openStoreOrder(order: Order): string | null {
       if (locked()) return SALE_SAVING;

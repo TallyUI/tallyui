@@ -1,4 +1,5 @@
 import type { StoreOrder, StoreOrderLine } from '@tallyui/core';
+import type { CustomerSummary } from './types';
 import { createOrderBuilder, type OrderBuilder } from './order-builder';
 import type { TaxContext } from '../tax/types';
 import { sendable, PAYLOAD_STRING_MAX, customerRefusal } from '../pos-order/command';
@@ -32,6 +33,12 @@ export class StoreOrderRebuildError extends Error {
     super(STORE_ORDER_REBUILD_REFUSALS[reason]);
     this.name = 'StoreOrderRebuildError';
   }
+}
+
+/** The customer a rebuilt cart carries for this read, or null (none, or one the rebuild refuses). */
+export function storeOrderCustomer(read: StoreOrder): CustomerSummary | null {
+  if (!read.customer?.id || customerRefusal(read.customer) !== null) return null;
+  return { id: read.customer.id, name: read.customer.name ?? '', ...(read.customer.email ? { email: read.customer.email } : {}) };
 }
 
 export function orderBuilderFromStoreOrder(read: StoreOrder, options: {
@@ -85,9 +92,8 @@ export function orderBuilderFromStoreOrder(read: StoreOrder, options: {
       ...(tax?.taxStatus !== undefined ? { taxStatus: tax.taxStatus } : {}),
     });
   }
-  if (read.customer?.id) builder.setCustomer({
-    id: read.customer.id, name: read.customer.name ?? '', ...(read.customer.email ? { email: read.customer.email } : {}),
-  });
+  const customer = storeOrderCustomer(read);
+  if (customer) builder.setCustomer(customer);
   for (const charge of read.fees) builder.addFee({
     name: charge.name, amountMinor: charge.totalMinor + (read.pricesIncludeTax ? charge.taxMinor : 0),
     taxStatus: charge.taxStatus, storeLineId: charge.id,
