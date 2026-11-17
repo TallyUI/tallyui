@@ -3,6 +3,7 @@ import { minorUnitDigits, ORDER_NOTE_MAX, type CustomerAddress, type OrderAddres
 import type { Order, SentOrder } from '../order/types';
 import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
+import { taxedLinesFor } from '../tax/taxed-lines';
 import { outboxLogger } from '../outbox/logger';
 import { cutText, PAYLOAD_STRING_MAX, sendable } from './command';
 import type { PosOrder, PosOrderLocalWarning, PosOrderPayment } from './types';
@@ -250,8 +251,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
         })),
       })),
     };
-    const taxedLines = [...order.lineItems, ...[...(order.fees ?? []), ...(order.shipping ?? [])]
-      .map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
+    const taxedLines = taxedLinesFor(order.lineItems, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
     taxByRate = taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding).map(({ ratePpm, code, netMinor, amountMinor }) => ({
       ratePpm, ...(code !== undefined ? { code } : {}), netMinor, amountMinor, grossMinor: netMinor + amountMinor,
     }));

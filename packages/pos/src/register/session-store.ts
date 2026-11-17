@@ -12,6 +12,7 @@
  */
 import type { RxCollection } from 'rxdb';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
+import { taxedLinesFor } from '../tax/taxed-lines';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund } from '../refund/pos-refund';
@@ -520,8 +521,8 @@ export async function writeClosure({
     }
   }
   // Same per-rate split a receipt shows (`taxLinesByRate`), run per order so each order's rates
-  // add up to its own taxMinor, then summed across the session's orders by rate. A line's own
-  // taxInclusive overrides the order's, matching PosOrderLine's own fallback convention. Each order is split by the
+  // add up to its own taxMinor, then summed across the session's orders by rate. Each line is in the mode
+  // its receipt rounded it in (`taxedLinesFor`). Each order is split by the
   // tax rounding it recorded (#287), so its rows are its receipt's; absent is the default, today's split.
   const taxRates = new Map<string, { ratePpm: number; net_minor: number; tax_minor: number }>();
   const roundings = new Set<string>();
@@ -530,9 +531,7 @@ export async function writeClosure({
     const recorded = order.taxRounding ?? DEFAULT_TAX_ROUNDING;
     const rounding = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
     roundings.add(rounding.granularity === 'woocommerce' ? `woocommerce ${rounding.roundAtSubtotal}` : `${rounding.granularity} ${rounding.mode}`);
-    const lines = order.lines.map((line) => ({ ...line, taxInclusive: line.taxInclusive ?? order.pricesIncludeTax }));
-    const taxedLines = [...lines, ...[...(order.fees ?? []), ...(order.shipping ?? [])]
-      .map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
+    const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
     for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding)) {
       const existing = taxRates.get(String(ratePpm));
       taxRates.set(String(ratePpm), {
