@@ -27,10 +27,30 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe('CustomerDropdown', () => {
   it("shows Guest on the chip, then the picked customer's name", () => {
     const { rerender } = render(ui(props()));
-    expect(chip().textContent).toContain('Guest');
+    // v2's GuestAvatar: a glyph, never initials.
+    expect(chip().textContent).toBe('Guest');
     expect(chip().getAttribute('aria-label')).toBe('Customer: Guest');
     rerender(ui(props({ selected: alice })));
+    expect(chip().textContent).toContain('AM');
     expect(chip().textContent).toContain('Alice Martin');
+  });
+
+  it('no pin without onEditAddress', () => {
+    render(ui(props()));
+    expect(screen.queryByTestId('customer-dropdown-address')).toBeNull();
+  });
+
+  it('the pin opens the address editor, not the search', () => {
+    const onEditAddress = vi.fn();
+    render(ui(props({ onEditAddress })));
+    const pin = screen.getByLabelText('Edit Customer Address');
+    fireEvent.click(pin);
+    expect(onEditAddress).toHaveBeenCalledOnce();
+    expect(field()).toBeNull();
+    expect(chip().textContent).not.toContain('Select Customer');
+    fireEvent.click(chip());
+    expect(field()).not.toBeNull();
+    expect(screen.queryByTestId('customer-dropdown-address')).toBeNull();
   });
 
   it('opens a search panel with Guest first and searches only a typed query', async () => {

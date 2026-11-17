@@ -6,6 +6,7 @@ import { CustomerServiceError, type Customer } from '@tallyui/core';
 import { Popover } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 import { Avatar, avatarInitials, Input, UserIcon } from '../ui';
+import { MapPinIcon } from '../ui/icon/map-pin-icon';
 import { customerErrorText } from './customer-picker';
 
 /** line-popover.tsx's focus targets: here the search field and the rows. */
@@ -27,10 +28,19 @@ export interface CustomerDropdownProps {
   className?: string;
   /** testID of the chip. Default `customer-dropdown-chip`. */
   testID?: string;
+  /** Opens the app's editor for the sale's addresses (v2's split pin beside the chip). Absent: no pin. */
+  onEditAddress?: () => void;
+  /** Default `false`; false greys the pin until the sale's billing has an address, as in v2. */
+  hasAddress?: boolean;
+}
+
+/** v2's GuestAvatar: the Guest is not a person, so a neutral glyph on a muted circle, never initials. */
+function GuestGlyph() {
+  return <View className="h-6 w-6 items-center justify-center rounded-full bg-muted text-muted-foreground"><UserIcon size={14} /></View>;
 }
 
 /** v2's cart-header customer chip (the sale's customer, or Guest); it opens a search panel anchored under it, Guest first. */
-export function CustomerDropdown({ search, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-dropdown-chip' }: CustomerDropdownProps) {
+export function CustomerDropdown({ search, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-dropdown-chip', onEditAddress, hasAddress = false }: CustomerDropdownProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -63,16 +73,29 @@ export function CustomerDropdown({ search, selected, onSelect, onError, online, 
   // Each open starts, and each close leaves, an empty query with no results.
   const openChange = (next: boolean) => { setQuery(''); setCustomers([]); setOpen(next); };
   const pick = (customer: Customer | null) => { openChange(false); onSelect(customer); };
+  const split = onEditAddress !== undefined && !open;
+
+  // The products column's filter pill, as in v2; lit while open like a pill that is on. With onEditAddress and closed it is
+  // the left cell of v2's split chip, the pill frame on the wrapper below.
+  const trigger = <Popover.Trigger ref={chip} testID={testID} accessibilityLabel={`Customer: ${name}`}
+    className={split ? 'flex-row items-center gap-1.5 rounded-l-full px-3 web:hover:bg-accent'
+      : cn('min-h-11 flex-row items-center gap-1.5 rounded-full border border-border px-3', open ? 'border-primary/30 bg-primary/10' : 'bg-card')}>
+    {open ? <><View className="text-muted-foreground"><UserIcon size={16} /></View><Text className="text-foreground">Select Customer</Text></>
+      : <>{selected ? <Avatar tone="primary" className="h-6 w-6" fallback={avatarInitials(selected.name)} aria-hidden /> : <GuestGlyph />}
+        <Text numberOfLines={1} className="text-foreground">{name}</Text></>}
+  </Popover.Trigger>;
 
   return <View className={cn('flex-row items-center gap-2', className)}>
     <Text className="text-muted-foreground">Customer</Text>
     <Popover.Root open={open} onOpenChange={openChange}>
-      {/* The products column's filter pill, as in v2; lit while open like a pill that is on. */}
-      <Popover.Trigger ref={chip} testID={testID} accessibilityLabel={`Customer: ${name}`}
-        className={cn('min-h-11 flex-row items-center gap-1.5 rounded-full border border-border px-3', open ? 'border-primary/30 bg-primary/10' : 'bg-card')}>
-        {open ? <><View className="text-muted-foreground"><UserIcon size={16} /></View><Text className="text-foreground">Select Customer</Text></>
-          : <><Avatar tone="primary" className="h-6 w-6" fallback={avatarInitials(name)} aria-hidden /><Text numberOfLines={1} className="text-foreground">{name}</Text></>}
-      </Popover.Trigger>
+      {/* The wrapper stays while open (no frame, no pin) so the trigger is not remounted and focus can return to it on close. */}
+      {onEditAddress ? <View className={cn('flex-row', split && 'min-h-11 items-stretch rounded-full border border-border bg-card')}>
+        {trigger}
+        {split && <Pressable role="button" accessibilityLabel="Edit Customer Address" testID="customer-dropdown-address" onPress={onEditAddress}
+          className="min-w-11 items-center justify-center rounded-r-full border-l border-border web:hover:bg-accent">
+          <View className={hasAddress ? 'text-foreground' : 'text-muted-foreground'}><MapPinIcon size={16} /></View>
+        </Pressable>}
+      </View> : trigger}
       <Popover.Portal>
         <Popover.Overlay style={StyleSheet.absoluteFill} />
         <Popover.Content testID="customer-dropdown" align="start" sideOffset={4} className="z-50 w-80 rounded-md border border-border bg-popover p-2 shadow-md outline-none">
@@ -84,7 +107,7 @@ export function CustomerDropdown({ search, selected, onSelect, onError, online, 
             {/* Guest first, always: v2's cart dropdown prepends it, so a search with no matches shows Guest alone. */}
             <ScrollView className="max-h-60">
               <Pressable role="option" aria-selected={selected === null} testID="customer-dropdown-option-guest" accessibilityLabel="Guest" onPress={() => pick(null)} className={row}>
-                <View className="h-6 w-6 items-center justify-center rounded-full bg-muted text-muted-foreground"><UserIcon size={14} /></View>
+                <GuestGlyph />
                 <Text className="text-foreground">Guest</Text>
               </Pressable>
               {customers.map((customer) => <Pressable key={customer.id} role="option" aria-selected={selected?.id === customer.id} testID={`customer-dropdown-option-${customer.id}`}
