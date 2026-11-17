@@ -15,7 +15,7 @@ import { NavRail } from '@tallyui/components';
 <NavRail items={navItems} activeId="pos" onNavigate={(id) => router.navigate(`/${id}`)} />
 ```
 
-`AppShell` renders it on wide windows, so most apps never use it directly. It is a `navigation` landmark labelled "Main". Items with `group: 'bottom'` sit at the foot of the column. Each item is icon-only, and its label shows to the right on hover or keyboard focus. The rail is 16 spacing units wide, so it follows the scale step.
+`AppShell` renders it on wide windows, so most apps never use it directly. It is a `navigation` landmark labelled "Main". Items with `group: 'bottom'` sit at the foot of the column. Each item is icon-only, and its label shows to the right on hover or keyboard focus. The rail is 16 spacing units wide, so it follows the scale step. It paints the `sidebar` tokens, and the active item lifts to the `rail-selected` square, as WCPOS v2's rail.
 
 ## Props
 

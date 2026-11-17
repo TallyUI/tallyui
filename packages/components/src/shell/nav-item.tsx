@@ -27,12 +27,15 @@ type NavButtonProps = Omit<PressableProps, 'children'> & {
   labelled?: boolean;
 };
 
-/** One nav entry: `h-12 rounded-lg` as v2's drawer size, lifted onto the primary tint when active. */
+/**
+ * One nav entry: `h-12 rounded-lg` as v2's drawer size. On the sidebar wash the active square lifts
+ * to `rail-selected` with the selected ink.
+ */
 export const NavButton = React.forwardRef<View, NavButtonProps>(function NavButton(
   { item, active, labelled = false, className, ...props },
   ref,
 ) {
-  const tint = active ? 'text-primary' : 'text-muted-foreground';
+  const tint = active ? 'text-rail-selected-foreground' : 'text-sidebar-foreground';
   return (
     <Pressable
       ref={ref}
@@ -43,7 +46,7 @@ export const NavButton = React.forwardRef<View, NavButtonProps>(function NavButt
       className={cn(
         'h-12 flex-row items-center rounded-lg web:transition-colors',
         labelled ? 'gap-3 px-3' : 'w-12 justify-center',
-        active ? 'bg-primary/10' : 'web:hover:bg-accent active:bg-accent',
+        active ? 'bg-rail-selected' : 'web:hover:bg-rail-accent active:bg-rail-accent',
         'web:focus-visible:outline-none web:focus-visible:ring-2 web:focus-visible:ring-ring',
         typeof className === 'string' ? className : undefined,
       )}
@@ -61,7 +64,7 @@ export const NavButton = React.forwardRef<View, NavButtonProps>(function NavButt
         )}
       </View>
       {labelled && (
-        <Text className={cn('flex-1 text-base', active ? 'font-semibold text-primary' : 'text-foreground')} numberOfLines={1}>
+        <Text className={cn('flex-1 text-base', active ? 'text-rail-selected-foreground' : 'text-sidebar-foreground')} numberOfLines={1}>
           {item.label}
         </Text>
       )}

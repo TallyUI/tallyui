@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Text } from 'react-native';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -6,10 +7,13 @@ import { AppShell, type ShellNavItem } from '../shell';
 import { RegisterBar } from '../register/register-bar';
 
 const dimensions = { width: 1280, height: 800, scale: 1, fontScale: 1 };
-vi.mock('react-native', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('react-native')>()),
-  useWindowDimensions: () => dimensions,
-}));
+// react-native-web atomizes className into hashed classes, so copy it to a data attribute.
+vi.mock('react-native', async (importOriginal) => {
+  const rn = await importOriginal<typeof import('react-native')>();
+  const withClass = (Base: React.ElementType) =>
+    React.forwardRef((props: { className?: string }, ref) => <Base ref={ref} {...props} dataSet={{ class: props.className }} />);
+  return { ...rn, View: withClass(rn.View), Pressable: withClass(rn.Pressable), Text: withClass(rn.Text), useWindowDimensions: () => dimensions };
+});
 
 const items: ShellNavItem[] = [
   { id: 'pos', label: 'POS', icon: <Text>p</Text> },
@@ -142,4 +146,25 @@ it('keeps Tab inside the open drawer', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', cancelable: true }));
   });
   expect(document.activeElement).toBe(screen.getByTestId('nav-item-pos'));
+});
+
+it('lifts the active rail item onto the rail-selected square and paints the rail on the sidebar wash', () => {
+  render(<Shell />);
+  const active = screen.getByTestId('nav-item-pos').getAttribute('data-class');
+  expect(active).toContain('bg-rail-selected');
+  expect(active).not.toContain('bg-primary/10');
+  const idle = screen.getByTestId('nav-item-orders').getAttribute('data-class');
+  expect(idle).toContain('web:hover:bg-rail-accent');
+  expect(idle).not.toContain('bg-rail-selected');
+  expect(screen.getByTestId('nav-rail').getAttribute('data-class')).toContain('bg-sidebar');
+});
+
+it('paints the drawer panel and its active row like the rail', () => {
+  Object.assign(dimensions, { width: 360, height: 640 });
+  render(<Shell />);
+  fireEvent.click(screen.getByTestId('register-bar-menu'));
+  expect(screen.getByTestId('nav-item-pos').getAttribute('data-class')).toContain('bg-rail-selected');
+  const label = screen.getByText('POS').getAttribute('data-class');
+  expect(label).toContain('text-rail-selected-foreground');
+  expect(label).not.toContain('font-semibold');
 });

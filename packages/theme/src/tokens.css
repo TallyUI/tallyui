@@ -53,6 +53,14 @@
   --color-input: #d1d5db;
   --color-ring: #5b5ef0;
 
+  /* Rail and drawer (WCPOS v2's sidebar wash and selected square) */
+  --color-sidebar: #e4eaf5;
+  --color-sidebar-foreground: #35383d;
+  --color-sidebar-border: #d2d8e1;
+  --color-rail-accent: #c2ddff;
+  --color-rail-selected: #ffffff;
+  --color-rail-selected-foreground: #5b5ef0;
+
   /* Scrim (modal backdrops) */
   --color-scrim: #14161b47;
 
@@ -112,6 +120,14 @@
     --color-input: #d1d5db;
     --color-ring: #5b5ef0;
 
+    /* Rail and drawer (WCPOS v2's sidebar wash and selected square) */
+    --color-sidebar: #e4eaf5;
+    --color-sidebar-foreground: #35383d;
+    --color-sidebar-border: #d2d8e1;
+    --color-rail-accent: #c2ddff;
+    --color-rail-selected: #ffffff;
+    --color-rail-selected-foreground: #5b5ef0;
+
     /* Scrim (modal backdrops) */
     --color-scrim: #14161b47;
 
@@ -169,6 +185,14 @@
     --color-border: #3d444d;
     --color-input: #636c76;
     --color-ring: #818cf8;
+
+    /* Rail and drawer (WCPOS v2's sidebar wash and selected square) */
+    --color-sidebar: #050e18;
+    --color-sidebar-foreground: #9ba6b1;
+    --color-sidebar-border: #1a222b;
+    --color-rail-accent: #161b22;
+    --color-rail-selected: #262a4b;
+    --color-rail-selected-foreground: #818cf8;
 
     /* Scrim (modal backdrops) */
     --color-scrim: #00000280;
