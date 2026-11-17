@@ -1,4 +1,5 @@
 import type { Discount, SentOrder } from '../order/types';
+import { lockedRefundDueMinor } from '../pos-order/refund-due';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import { taxedLinesFor } from '../tax/taxed-lines';
 import type { ReceiptConfig, ReceiptData } from './types';
@@ -26,6 +27,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
   });
   const label = (d: Discount) => d.label ?? d.couponCode ?? `${d.type} discount`;
   const customer = order.customer?.name || order.customer?.email;
+  const refundDueMinor = lockedRefundDueMinor(order);
 
   return {
     schemaVersion: RECEIPT_SCHEMA_VERSION,
@@ -77,7 +79,8 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
       amountMinor: p.amountMinor,
       reference: p.reference,
     })),
-    changeDueMinor: order.changeDueMinor,
+    changeDueMinor: order.changeDueMinor - refundDueMinor,
+    ...(refundDueMinor > 0 ? { refundDueMinor } : {}),
     footer: {
       note: order.note || undefined,
       barcode: order.id,

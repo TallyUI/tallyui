@@ -88,6 +88,26 @@ const config: ReceiptConfig = {
   taxLabels: { 100000: 'VAT 10%', 50000: 'Reduced VAT 5%' },
 };
 
+describe('live receipt refund-due', () => {
+  it('shows refund-due on a live reopened sale paid beyond its new total by locked legs, and no change', () => {
+    const receipt = buildReceiptData({
+      ...baseOrder, payments: [{ id: 'p1', method: 'external', amountMinor: 5000, locked: true }],
+      totalMinor: 4200, display: { ...baseOrder.display, totalMinor: 4200 }, changeDueMinor: 800,
+    }, config);
+    expect(receipt.refundDueMinor).toBe(800);
+    expect(receipt.changeDueMinor).toBe(0);
+  });
+
+  it('keeps a cash overpayment on a reopened sale as change, with no refund-due', () => {
+    const receipt = buildReceiptData({
+      ...baseOrder, payments: [{ id: 'p1', method: 'external', amountMinor: 3000, locked: true }, { id: 'p2', method: 'cash', amountMinor: 2000 }],
+      totalMinor: 4200, display: { ...baseOrder.display, totalMinor: 4200 }, changeDueMinor: 800,
+    }, config);
+    expect(receipt.changeDueMinor).toBe(800);
+    expect(receipt).not.toHaveProperty('refundDueMinor');
+  });
+});
+
 describe('receipt schema 1.4 blocks', () => {
   it('fills the 1.4 defaults', () => {
     const receipt = buildReceiptData(baseOrder, config);

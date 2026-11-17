@@ -271,6 +271,19 @@ describe('Receipt with a prebuilt receipt', () => {
   };
   const receipt = buildReceiptDataFromStoreOrder(storeOrder, { storeName: 'Reprint Shop', register: 'register-1', registerName: 'Front till' });
 
+  it('shows a Refund due row and a zero Change on a reopened sale paid beyond its new total', () => {
+    render(<Receipt receipt={{ ...receipt, refundDueMinor: 800, changeDueMinor: 0 }} newSale={() => {}} />);
+    const amount = formatMoney({ amount: 800, currency: receipt.currency })!;
+    expect(screen.getByText('Refund due')).toBeTruthy();
+    expect(screen.getByLabelText(`Refund due: ${amount}`).textContent).toBe(`Refund due${amount}`);
+    expect(screen.queryByLabelText(/^Change:/)).toBeNull();
+  });
+
+  it('shows no Refund due row without refund-due', () => {
+    render(<Receipt receipt={receipt} newSale={() => {}} />);
+    expect(screen.queryByText('Refund due')).toBeNull();
+  });
+
   it('renders a prebuilt reprint receipt', () => {
     const newSale = vi.fn();
     render(<Receipt receipt={receipt} newSale={newSale} doneLabel="Done" formatDate={(iso) => `date:${iso}`} />);

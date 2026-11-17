@@ -35,6 +35,21 @@ function historyRow(id: string, overrides: Partial<OrderHistoryRow> = {}): Order
 const formatDate = (iso: string) => `date:${iso.slice(0, 10)}`;
 const headers = () => screen.getAllByRole('heading').map((heading) => heading.textContent);
 
+describe('OrdersList refund-due', () => {
+  it('shows Refund due in an expanded order that the store owes money back on', () => {
+    render(<OrdersList orders={[order('o1', { refundDueMinor: 800 })]} onRetry={async () => 0} />);
+    expect(screen.queryByTestId('order-refund-due-o1')).toBeNull();
+    fireEvent.click(screen.getByTestId('order-row-o1'));
+    expect(screen.getByTestId('order-refund-due-o1').textContent).toBe(`Refund due ${formatMoney({ amount: 800, currency: 'EUR' })}`);
+  });
+
+  it('shows no Refund due line for an ordinary order', () => {
+    render(<OrdersList orders={[order('o1')]} onRetry={async () => 0} />);
+    fireEvent.click(screen.getByTestId('order-row-o1'));
+    expect(screen.queryByTestId('order-refund-due-o1')).toBeNull();
+  });
+});
+
 describe('OrdersList sale note (ADR-083 condition 2)', () => {
   it.each<[string, Partial<PosOrder>, boolean]>([
     ['capped below 7', { note: 'Deliver after 5', sentVersion: 6, syncStatus: 'applied' }, true],

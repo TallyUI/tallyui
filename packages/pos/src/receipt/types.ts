@@ -56,6 +56,8 @@ export interface ReceiptData {
   };
   payments: { method: string; amountMinor: number; reference?: string }[];
   changeDueMinor: number;
+  /** What the store owes back on a reopened sale (ADR-090); present only when above 0. Never part of changeDueMinor. */
+  refundDueMinor?: number;
   footer: {
     note?: string;
     /** ADR-083 condition 2: set only on a reprint of a till order whose note was not sent to the store. */
