@@ -27,7 +27,7 @@ function Sale({ capabilities, editor }: { capabilities: ServerCapabilities; edit
         registerId="demo-register" newSale={sale.newSale} />
     </ScrollView>;
   }
-  if (stage.kind === 'tender') return <ScrollView className="flex-1"><Tender sale={sale} /></ScrollView>;
+  if (stage.kind === 'tender') return <View className="flex-1 flex-row"><ScrollView className="flex-1"><Tender sale={sale} ledger={false} /></ScrollView><View testID="sale-charges-cart" className="w-96 border-l border-border"><Cart sale={sale} taxClasses={taxClasses} showTotal={false} tenderLedger={{}} /></View></View>;
   return <View className="flex-1">
     <View className="flex-row flex-wrap gap-2 p-3">
       {entries.map((entry) => <Pressable key={entry.variant.id} accessibilityRole="button"

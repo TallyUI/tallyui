@@ -30,3 +30,4 @@ Renders only during the sale's tender stage. The headline shows the total, or wh
 |------|------|---------|-------------|
 | `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |
 | `methods` | `PaymentMethodDescriptor[]` | `defaultPaymentMethods()` | The methods offered; only `cash` and `external` are shown |
+| `ledger` | `boolean` | `true` | Draws the payments ledger in the [TenderPane](/docs/components/tender-pane); pass `false` when Cart's `tenderLedger` shows it in the cart column |

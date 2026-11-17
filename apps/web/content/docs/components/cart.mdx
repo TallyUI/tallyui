@@ -43,5 +43,6 @@ The lines sit under [CartColumnHeads](/docs/components/cart-column-heads) (Qty, 
 | `checkout` | `{ onCheckout: () => void; actions?: readonly CartFootAction[] }` | --- | Swaps the Cash and Card terminal buttons for [CartFoot](/docs/components/cart-foot)'s Checkout button and ⋮ menu |
 | `noteSheet` | `{ label?: string }` | --- | With `checkout`: puts "Order details" first in the ⋮ menu and draws the note row from the sale's note; both open [OrderNoteSheet](/docs/components/order-note-sheet), which writes through `sale.setNote` |
 | `showTotal` | `boolean` | `true` | Draws the totals' Total row; pass `false` for v2's cart, where the total is on the [CartFoot](/docs/components/cart-foot) Checkout button |
+| `tenderLedger` | `{ methods?: PaymentMethodDescriptor[] }` | --- | WCPOS v2's checkout cart: during the tender stage, a Payments section under the totals lists each leg with its status and Cancel payment, then Total, Paid and Remaining, in place of the foot. `methods` names the legs, as on [Tender](/docs/components/tender); pair it with `<Tender ledger={false} />` |
 
 The totals and the foot sit 8 px inside the cart's edge and 8 px apart, WCPOS v2's cart foot inset.
