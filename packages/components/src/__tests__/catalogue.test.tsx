@@ -26,8 +26,8 @@ vi.mock('../product', () => ({
       ))}
     </div>
   ),
-  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState }: ProductTableProps) => (
-    <div data-testid="table" data-sort-items={String(sortItems)}>
+  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton }: ProductTableProps) => (
+    <div data-testid="table" data-sort-items={String(sortItems)} data-show-thumbnail={showThumbnail} data-show-add-button={showAddButton}>
       <button data-testid="table-sort" onClick={() => onSortChange?.({ field: 'name', dir: sort?.dir === 'asc' ? 'desc' : 'asc' })}>Sort</button>
       {items.length ? items.map((item) => <button key={item.id} data-testid={`table-row-${item.id}`} onClick={() => onSelect?.(item)}>{item.title}</button>) : emptyState}
     </div>
@@ -652,6 +652,14 @@ describe('Catalogue view state', () => {
     expect(screen.getByTestId('table')).toBeTruthy();
     expect(onStateChange.mock.calls).toEqual([[tableState]]);
     expect(saveViewState).not.toHaveBeenCalled();
+  });
+
+  it('passes tableRow to the table as showThumbnail and showAddButton', () => {
+    const flags = ['data-show-thumbnail', 'data-show-add-button'];
+    const { rerender } = render(<Catalogue {...props} defaultViewState={{ view: 'table' }} tableRow={{ thumbnail: true, addButton: true }} />);
+    expect(flags.map((flag) => screen.getByTestId('table').getAttribute(flag))).toEqual(['true', 'true']);
+    rerender(<Catalogue {...props} defaultViewState={{ view: 'table' }} />);
+    expect(flags.map((flag) => screen.getByTestId('table').getAttribute(flag))).toEqual([null, null]);
   });
 
   it('fills a synchronous load from defaultViewState', () => {

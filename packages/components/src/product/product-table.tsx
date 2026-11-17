@@ -3,7 +3,10 @@ import { FlatList, Pressable, View, type ViewProps } from 'react-native';
 import { useProductTraits, useTraitContext, useStockOverlaid, type ProductTraits, type TraitContext } from '@tallyui/core';
 import { productSortValue, sortProducts, type ProductSort, type ProductSortValue } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Text, VStack } from '../ui';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Text, VStack, IconButton, PlusIcon, ChevronRightIcon } from '../ui';
+import { MinTargetBand } from '../scale/min-target';
+import { usePointer } from '../scale/use-pointer';
+import { ProductImage } from './product-image';
 import { ProductTitle } from './product-title';
 import { ProductSku } from './product-sku';
 import { ProductPrice } from './product-price';
@@ -15,6 +18,14 @@ const INITIAL_ROWS = 8;
 const BATCH_ROWS = 8;
 // Keep nearby rows mounted without rendering the whole 2,000-product catalogue.
 const WINDOW_SIZE = 5;
+
+// v2 PosterThumb sizes: sm (size-10) under a fine pointer, md (size-14) under a coarse one.
+const THUMB_FINE = 40;
+const THUMB_COARSE = 56;
+// The thumbnail column adds the cells' px-3 (12 px each side) to the image.
+const CELL_PAD_X = 24;
+// The add column: a 40 px md IconButton centred with 8 px either side.
+const ACTION_WIDTH = 56;
 
 // Place column content horizontally inside column-direction Views.
 const ALIGN = { left: 'items-start', center: 'items-center', right: 'items-end' } as const;
@@ -53,6 +64,12 @@ export interface ProductTableProps extends Omit<ViewProps, 'children'> {
   showUnsellable?: boolean;
   /** Passed to the default price column's ProductPrice. */
   currencySymbol?: string;
+  /** Lead each row with the product's thumbnail, as v2's image column: 40 px, 56 px under a coarse pointer, an
+   * initial tile when there is no image. Needs a ConnectorProvider. Default false. */
+  showThumbnail?: boolean;
+  /** End each row with v2's add control, which calls onSelect(item) exactly as a row press does: a + labelled
+   * "Add to cart", or a > labelled "Variations" for a product with more than one variant. Needs onSelect. Default false. */
+  showAddButton?: boolean;
   className?: string;
 }
 
@@ -81,7 +98,8 @@ export function useDefaultProductColumns(options?: { currencySymbol?: string }):
 
 export function ProductTable({
   items, columns, sort, defaultSort = null, onSortChange, sortItems = true, onSelect,
-  searchSlot, filterSlot, emptyState, showUnsellable = false, currencySymbol, className, ...viewProps
+  searchSlot, filterSlot, emptyState, showUnsellable = false, currencySymbol, showThumbnail = false,
+  showAddButton = false, className, ...viewProps
 }: ProductTableProps): JSX.Element {
   // Without a ConnectorProvider, custom columns can render without traits.
   let traits: ReturnType<typeof useProductTraits> | undefined;
@@ -91,6 +109,9 @@ export function ProductTable({
     traits = undefined;
   }
   const context = useTraitContext();
+  const thumb = usePointer() === 'coarse' ? THUMB_COARSE : THUMB_FINE;
+  const thumbnail = showThumbnail && traits !== undefined;
+  const addButton = showAddButton && onSelect !== undefined;
   const resolvedColumns = useMemo(() => columns ?? (traits
     ? defaultProductColumns(traits, context, { currencySymbol }) : []), [columns, traits, context, currencySymbol]);
   const [internalSort, setInternalSort] = useState(defaultSort);
@@ -115,6 +136,7 @@ export function ProductTable({
         <Table className="flex-1">
           <TableHeader>
             <TableRow>
+              {thumbnail ? <TableHead aria-label="Image" style={{ width: thumb + CELL_PAD_X }} className="h-9 flex-none px-3 py-0" /> : null}
               {resolvedColumns.map((column) => (
                 <TableHead key={column.id} style={{ flex: column.flex ?? 1 }}
                   className={cn('h-9 justify-center px-3 py-0', column.align && ALIGN[column.align])}
@@ -129,6 +151,7 @@ export function ProductTable({
                   ) : <Text numberOfLines={1}>{column.hideHeader ? '' : column.header}</Text>}
                 </TableHead>
               ))}
+              {addButton ? <TableHead aria-label="Actions" style={{ width: ACTION_WIDTH }} className="h-9 flex-none px-3 py-0" /> : null}
             </TableRow>
           </TableHeader>
           <TableBody className="flex-1">
@@ -140,16 +163,28 @@ export function ProductTable({
               windowSize={WINDOW_SIZE}
               renderItem={({ item, index }) => {
                 const key = String(item.id ?? index);
+                const variations = addButton && traits !== undefined && traits.getVariantCount(item) > 1;
                 const row = (
                   <TableRow testID={onSelect ? undefined : 'product-row-' + key}>
+                    {thumbnail ? <TableCell style={{ width: thumb + CELL_PAD_X }} className="flex-none px-3 py-1.5">
+                      <ProductImage doc={item} size={thumb} showPlaceholder className="rounded-md" /></TableCell> : null}
                     {resolvedColumns.map((column) => (
                       <TableCell key={column.id} style={{ flex: column.flex ?? 1 }}
                         className={cn('px-3 py-1.5', column.align && ALIGN[column.align])}>{column.render(item)}</TableCell>
                     ))}
+                    {addButton ? (
+                      <TableCell style={{ width: ACTION_WIDTH }} className="flex-none items-center justify-center px-0 py-1.5">
+                        <IconButton testID={'product-row-add-' + key} accessibilityLabel={variations ? 'Variations' : 'Add to cart'}
+                          onPress={(event) => { event.stopPropagation?.(); onSelect!(item); }}>
+                          <View className="text-muted-foreground">{variations ? <ChevronRightIcon size={18} /> : <PlusIcon size={18} />}</View>
+                          <MinTargetBand square />
+                        </IconButton>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 );
                 return onSelect ? (
-                  <Pressable accessibilityRole="button" testID={'product-row-' + key} onPress={() => onSelect(item)}>
+                  <Pressable accessibilityRole={addButton ? undefined : 'button'} testID={'product-row-' + key} onPress={() => onSelect(item)}>
                     {row}
                   </Pressable>
                 ) : row;
