@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Animated, Easing, Platform, Text } from 'react-native';
 import { cn } from '@tallyui/theme';
-import { COUNT_FADE, COUNT_SWELL, EASE, useReducedMotion } from '../lib/motion';
+import { COUNT_FADE, COUNT_SWELL, EASE } from '../lib/motion';
+import { useReducedMotion } from '../lib/use-reduced-motion';
 
 export interface InCartBadgeProps {
   /** How many of the product the cart holds (e.g. from `cartQuantities`); nothing renders at 0. */
@@ -39,7 +40,7 @@ export function InCartBadge({ count, className, testID, identity = '' }: InCartB
       return;
     }
     if (text === null) return;
-    if (reduced) {
+    if (reduced !== false) {
       pop.setValue(1);
       change.setValue(1);
       return;
@@ -59,7 +60,7 @@ export function InCartBadge({ count, className, testID, identity = '' }: InCartB
   return (
     <Animated.View testID={testID} accessibilityLabel={`${count} in cart`} style={{ transform: [{ scaleX }, { scaleY: pop }] }}
       className={cn('h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5', className)}>
-      {!reduced && wasText !== null && wasText !== text ? (
+      {reduced === false && wasText !== null && wasText !== text ? (
         <Animated.View testID={testID ? `${testID}-was` : undefined} aria-hidden className="absolute inset-0 items-center justify-center"
           style={{ opacity: change.interpolate({ inputRange: [0, 0.45], outputRange: [1, 0], extrapolate: 'clamp' }) }}>
           <Text className="text-xs font-semibold tabular-nums text-primary-foreground">{wasText}</Text>

@@ -58,6 +58,16 @@ describe('InCartBadge', () => {
     expect(screen.getByTestId('badge').textContent).toBe('2');
   });
 
+  it('while reduced motion is not known yet nothing animates', () => {
+    vi.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockReturnValue(new Promise<boolean>(() => {}));
+    const { rerender } = render(<InCartBadge count={1} testID="badge" />);
+    rerender(<InCartBadge count={2} testID="badge" />);
+    expect(Animated.timing).not.toHaveBeenCalled();
+    expect(Animated.spring).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('badge-was')).toBeNull();
+    expect(screen.getByTestId('badge').textContent).toBe('2');
+  });
+
   it('renders nothing at 0', async () => {
     render(<InCartBadge count={0} testID="badge" />);
     await act(async () => {});
