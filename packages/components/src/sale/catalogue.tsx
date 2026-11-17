@@ -43,7 +43,7 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
   viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categoryBrowse = 'chips', categories, pickAnyOptions = false,
-  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow }: {
+  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow, rowsSlot }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -122,6 +122,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** v2's table row extras in table view: thumbnail leads the row, addButton ends it with the + (> for a product
    * with variants) that does what a row press does. Default: neither. */
   tableRow?: { thumbnail?: boolean; addButton?: boolean };
+  /** v2's rows between the chips and the products (its ListColumn `rows`): notices such as "Price check only until
+   * the register is open.", rendered under the header and above the grid, table or category tiles. Default none. */
+  rowsSlot?: ReactNode;
 }) {
   const [initial] = useState<{
     state: CatalogueViewState; loaded?: CatalogueViewState; pending?: Promise<unknown>; failed?: boolean; error?: unknown;
@@ -359,6 +362,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           </View>
         ) : null}
       </View>
+      {rowsSlot != null ? <View testID="catalogue-rows" className="gap-4 p-4">{rowsSlot}</View> : null}
       {atRoot ? <CategoryBrowseGrid categories={categoryList} counts={counts} total={shown.length} columns={columns}
         onOpen={(id) => { if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }} /> : <>
       {browsing && (activeCategory || allOpen) ? <CategoryCrumb here={activeCategory?.name ?? 'All products'}

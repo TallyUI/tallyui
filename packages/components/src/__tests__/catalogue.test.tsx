@@ -756,6 +756,21 @@ describe('Catalogue view state', () => {
     expect(screen.getByTestId('grid').getAttribute('data-columns')).toBe('3');
   });
 
+  it('renders rowsSlot between the header and the products, in grid and table view, and nothing without it', () => {
+    const rows = <span>Price check only</span>;
+    const { rerender } = render(<Catalogue {...props} rowsSlot={rows} />);
+    for (const body of ['grid', 'table']) {
+      const slot = screen.getByTestId('catalogue-rows');
+      expect(slot.textContent).toBe('Price check only');
+      const search = screen.getByPlaceholderText('Search or scan barcode / SKU');
+      expect(search.compareDocumentPosition(slot)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(slot.compareDocumentPosition(screen.getByTestId(body))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      rerender(<Catalogue {...props} rowsSlot={rows} viewState={{ ...gridState, view: 'table' }} />);
+    }
+    rerender(<Catalogue {...props} />);
+    expect(screen.queryByTestId('catalogue-rows')).toBeNull();
+  });
+
   it('shows supplied items in their order despite query and sort, and reports query text', () => {
     const onQueryChange = vi.fn();
     const items = [products[1], products[0]];
