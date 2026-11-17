@@ -26,10 +26,11 @@ vi.mock('../product', () => ({
       ))}
     </div>
   ),
-  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton }: ProductTableProps) => (
+  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton, cartQuantity }: ProductTableProps) => (
     <div data-testid="table" data-sort-items={String(sortItems)} data-show-thumbnail={showThumbnail} data-show-add-button={showAddButton}>
       <button data-testid="table-sort" onClick={() => onSortChange?.({ field: 'name', dir: sort?.dir === 'asc' ? 'desc' : 'asc' })}>Sort</button>
-      {items.length ? items.map((item) => <button key={item.id} data-testid={`table-row-${item.id}`} onClick={() => onSelect?.(item)}>{item.title}</button>) : emptyState}
+      {items.length ? items.map((item) => <button key={item.id} data-testid={`table-row-${item.id}`} data-in-cart={cartQuantity?.(item)}
+        onClick={() => onSelect?.(item)}>{item.title}</button>) : emptyState}
     </div>
   ),
   ProductGrid: ({ items, renderItem, emptyState, numColumns }: ComponentProps<typeof ProductGrid>) => (
@@ -660,6 +661,13 @@ describe('Catalogue view state', () => {
     expect(flags.map((flag) => screen.getByTestId('table').getAttribute(flag))).toEqual(['true', 'true']);
     rerender(<Catalogue {...props} defaultViewState={{ view: 'table' }} />);
     expect(flags.map((flag) => screen.getByTestId('table').getAttribute(flag))).toEqual([null, null]);
+  });
+
+  it("passes the cart's summed quantities to the table", () => {
+    render(<Catalogue {...props} defaultViewState={{ view: 'table' }}
+      cartLines={[{ productId: 'shirt', quantity: 2 }, { productId: 'shirt', quantity: 1 }]} />);
+    expect(screen.getByTestId('table-row-shirt').getAttribute('data-in-cart')).toBe('3');
+    expect(screen.getByTestId('table-row-hat').getAttribute('data-in-cart')).toBe('0');
   });
 
   it('fills a synchronous load from defaultViewState', () => {

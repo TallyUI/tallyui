@@ -366,7 +366,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       {state.view === 'table' ? (
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
           sortItems={false} onSelect={selectProduct} emptyState={emptyState}
-          showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton} />
+          showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton}
+          cartQuantity={(doc) => quantities.get(traits.getId(doc)) ?? 0} />
       ) : <ProductGrid items={results} numColumns={columns}
         renderItem={(product: Doc) => {
           const id = traits.getId(product);

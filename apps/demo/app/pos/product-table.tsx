@@ -1,4 +1,4 @@
-// The v2 product table row: a thumbnail leads each row and a + (or > for variants) ends it, on a real sale.
+// The v2 product table row: a thumbnail leads each row and a + (or > for variants) ends it, on a real sale; once a product is in the cart its count takes the +'s place.
 import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { Cart, Catalogue } from '@tallyui/components';
