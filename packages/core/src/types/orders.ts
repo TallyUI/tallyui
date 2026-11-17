@@ -30,9 +30,9 @@ export interface StoreOrderCharge {
   name: string;
   totalMinor: number;
   taxMinor: number;
-  /** The tax status the store recorded on a fee; absent when the store does not record one (WooCommerce shipping). */
+  /** The tax status the store recorded on the fee or shipping line; absent when the store's response carries none. */
   taxStatus?: 'taxable' | 'none';
-  /** The fee's recorded tax class; absent means the standard class. */
+  /** A fee's recorded tax class; absent means the standard class. Shipping lines carry none. */
   taxClass?: string;
   /** A shipping line's recorded method id. */
   methodId?: string;
@@ -127,6 +127,6 @@ export interface StoreOrderPage {
   hasMore: boolean;
   /** Orders on this page the connector could not read and left out; absent when every order read. */
   unreadable?: number;
-  /** Every order the query matches across all pages; undefined when the store gives no count. */
+  /** Every order the query matches across all pages; undefined when the store gives no count. It still counts orders left out as `unreadable`. */
   total?: number;
 }

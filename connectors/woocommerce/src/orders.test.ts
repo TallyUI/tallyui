@@ -189,7 +189,7 @@ describe('WooCommerce orders', () => {
   });
 
   it.each([
-    { schema: 2, payments: [] }, { schema: 1 }, { schema: 1, payments: 'x' }, 'x',
+    { schema: 2, payments: [] }, { schema: 1 }, { schema: 1, payments: 'x' }, 'x', null,
   ])('flags an unreadable payment ledger %j while keeping the paid-state fallback', (value) => {
     const order = toWooStoreOrder({
       id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
@@ -204,6 +204,7 @@ describe('WooCommerce orders', () => {
   it('leaves out the unreadable flag for absent or readable payment ledgers', () => {
     for (const meta_data of [
       [],
+      [{ key: '_wcpos_payments', value: { schema: 1, payments: [] } }],
       [{ key: '_wcpos_payments', value: { schema: 1, payments: [
         { method_id: 'pos_cash', amount: '15.10', currency: 'USD', status: 'captured' },
       ] } }],
@@ -246,18 +247,20 @@ describe('WooCommerce orders', () => {
     ]);
   });
 
-  it('reads the recorded shipping id and method without fee tax fields', () => {
+  it('reads the recorded shipping id, method and tax status', () => {
     const order = toWooStoreOrder({
       id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
       discount_total: '0', discount_tax: '0', total_tax: '0', total: '2.00',
       shipping_lines: [
-        { id: 9, method_title: 'Delivery', method_id: 'pos', total: '1.00', total_tax: '0' },
-        { method_title: 'Delivery', method_id: '', total: '1.00', total_tax: '0' },
+        { id: 9, method_title: 'Delivery', method_id: 'pos', total: '1.00', total_tax: '0', tax_status: 'taxable' },
+        { method_title: 'Delivery', method_id: '', total: '1.00', total_tax: '0', tax_status: 'shipping' },
+        { method_title: 'Delivery', total: '1.00', total_tax: '0', tax_status: 'none', tax_class: 'reduced-rate' },
       ],
     });
     expect(order.shipping).toStrictEqual([
-      { id: '9', name: 'Delivery', totalMinor: 100, taxMinor: 0, methodId: 'pos' },
+      { id: '9', name: 'Delivery', totalMinor: 100, taxMinor: 0, methodId: 'pos', taxStatus: 'taxable' },
       { name: 'Delivery', totalMinor: 100, taxMinor: 0 },
+      { name: 'Delivery', totalMinor: 100, taxMinor: 0, taxStatus: 'none' },
     ]);
   });
 
@@ -382,6 +385,15 @@ describe('WooCommerce orders', () => {
   it('leaves out unreadable when every order on the page is readable', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(list));
     await expect(orders.listOrders(context)).resolves.not.toHaveProperty('unreadable');
+  });
+
+  it('rejects a non-data error while reading a row instead of counting it as unreadable', async () => {
+    const error = new TypeError('boom');
+    const row = { ...list[0], get status() { throw error; } };
+    const response = new Response();
+    vi.spyOn(response, 'json').mockResolvedValueOnce([row]);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response);
+    await expect(orders.listOrders(context)).rejects.toBe(error);
   });
 
   it('rejects a lookup of an unreadable order', async () => {

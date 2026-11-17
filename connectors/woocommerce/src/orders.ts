@@ -137,6 +137,7 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     })),
     shipping: rows(raw.shipping_lines).map((line) => ({
       ...(positiveId(line.id) ? { id: positiveId(line.id) } : {}),
+      ...(line.tax_status === 'taxable' || line.tax_status === 'none' ? { taxStatus: line.tax_status } : {}),
       ...(nonEmpty(line.method_id) ? { methodId: nonEmpty(line.method_id) } : {}),
       name: String(line.method_title), totalMinor: minor(line.total, currency), taxMinor: grossTax(line.total, line.total_tax, currency),
     })),
@@ -212,7 +213,8 @@ export function createWooOrders(): Required<Pick<TallyConnector, 'listOrders' | 
       const orders = body.flatMap((row) => {
         try {
           return [toWooStoreOrder(row)];
-        } catch {
+        } catch (error) {
+          if (!(error instanceof CustomerServiceError)) throw error;
           unreadable += 1;
           return [];
         }
