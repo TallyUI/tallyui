@@ -4,6 +4,7 @@ import { Path, Rect } from 'react-native-svg';
 import type { DrawerTerms, RegisterSession } from '@tallyui/pos';
 
 import { useFormatMoney } from '@tallyui/core';
+import { Avatar, avatarInitials } from '../ui/avatar';
 import { Button } from '../ui/button';
 import { DialogDescription, DialogTitle } from '../ui/dialog';
 import { createSvgIcon } from '../ui/icon/svg-icon';
@@ -24,24 +25,25 @@ const clock = (date: Date) => `${String(date.getHours()).padStart(2, '0')}:${Str
 
 /**
  * v2's header line (`register-panel.tsx:318-326`): store · open since {time} (or closed {time})
- * · age · opener. The session row holds only the opener's id, never a name, so the opener is
- * v2's own fallback, "Cashier" (`register.unknown_cashier`).
+ * · age · opener. The session row holds only the opener's id, never a name, so the host may name
+ * the opener (`openerName`); otherwise it is v2's own fallback, "Cashier" (`register.unknown_cashier`).
  */
-export function describeSession(session: RegisterSession | null, storeName: string | undefined, now: Date) {
+export function describeSession(session: RegisterSession | null, storeName: string | undefined, now: Date, openerName?: string) {
   const parts = [storeName];
   if (session) {
     const opened = new Date(session.opened_at_gmt);
     const closed = session.status === 'closed' && session.closed_at_gmt ? new Date(session.closed_at_gmt) : null;
     const minutes = Math.max(0, Math.floor(((closed ?? now).getTime() - opened.getTime()) / 60_000));
     parts.push(closed ? `closed ${clock(closed)}` : `open since ${clock(opened)}`,
-      minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} m` : `${minutes} m`, 'Cashier');
+      minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} m` : `${minutes} m`, openerName || 'Cashier');
   }
   return parts.filter(Boolean).join(' · ');
 }
 
 /** The sheet's title block: the register mark, the register's name and the header line. */
-export function RegisterSideHeader({ session, registerName, storeName, now }: {
+export function RegisterSideHeader({ session, registerName, storeName, now, openedBy }: {
   session: RegisterSession | null; registerName?: string; storeName?: string; now?: () => Date;
+  openedBy?: { name: string; avatar?: string };
 }) {
   return (
     <View className="flex-1 flex-row items-center gap-3">
@@ -53,9 +55,27 @@ export function RegisterSideHeader({ session, registerName, storeName, now }: {
           <Text testID="register-panel-amount">{registerName ?? 'Register'}</Text>
         </DialogTitle>
         <DialogDescription testID="register-panel-description">
-          {describeSession(session, storeName, now ? now() : new Date())}
+          {describeSession(session, storeName, now ? now() : new Date(), openedBy?.name)}
         </DialogDescription>
       </View>
+    </View>
+  );
+}
+
+/** v2's opener line (`user-sheet.tsx:141-159`): "opened HH:MM by" and the opener's avatar or initials. */
+export function RegisterSideOpener({ session, openedBy }: { session: RegisterSession; openedBy: { name: string; avatar?: string } }) {
+  return (
+    <View testID="register-panel-opened-by" className="flex-row items-center gap-1">
+      <Text className="text-muted-foreground text-sm">{`opened ${clock(new Date(session.opened_at_gmt))} by`}</Text>
+      <Avatar
+        size="sm"
+        tone="primary"
+        src={openedBy.avatar}
+        alt={openedBy.name}
+        fallback={avatarInitials(openedBy.name)}
+        accessibilityLabel={openedBy.name}
+        testID="register-panel-opener-avatar"
+      />
     </View>
   );
 }

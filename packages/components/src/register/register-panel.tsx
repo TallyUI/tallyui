@@ -11,7 +11,7 @@ import { XIcon } from '../ui/icon/x-icon';
 import { Text } from '../ui/text';
 import { MovementSheet } from './movement-sheet';
 import { tenderLabel } from './register-count';
-import { RegisterSideFooter, RegisterSideHeader, RegisterSideHero, RegisterSideLedger } from './register-side-sheet';
+import { RegisterSideFooter, RegisterSideHeader, RegisterSideHero, RegisterSideLedger, RegisterSideOpener } from './register-side-sheet';
 
 /** Margin kept clear above and below the dialog (LEDGER-free layout fix, 2026-09-28 review):
  * a phone-height viewport must never let the panel's top go under the page header. */
@@ -45,6 +45,12 @@ export interface RegisterPanelProps {
   onPrintXReport?: () => void | Promise<void>;
   /** `'side'`: the clock for the session's age; defaults to `new Date()`. */
   now?: () => Date;
+  /**
+   * `'side'`: who opened the session (WCPOS v2's opener: its display name and avatar URL). Its name
+   * ends the header line in place of "Cashier", and v2's "opened HH:MM by" line with its avatar (or
+   * initials) sits under the drawer figure. Without it, the header reads "Cashier" and there is no line.
+   */
+  openedBy?: { name: string; avatar?: string };
 }
 
 /**
@@ -57,7 +63,7 @@ export interface RegisterPanelProps {
  * Z, reprint and the print sheet, the last-closure badge, and the Reports deep link.
  */
 export function RegisterPanel({
-  register, currency, registerName, open, onOpenChange, reapprove, className, presentation = 'dialog', storeName, onPrintXReport, now,
+  register, currency, registerName, open, onOpenChange, reapprove, className, presentation = 'dialog', storeName, onPrintXReport, now, openedBy,
 }: RegisterPanelProps) {
   const formatMoney = useFormatMoney();
   const { session, expected, salesCount, blind, movements, lastClosure, approvalNeeded, actions, terms } = register;
@@ -102,7 +108,7 @@ export function RegisterPanel({
             header (the Front desk review, 2026-09-28) — only the body below it scrolls. */}
         <View className="flex-row items-center justify-between gap-2">
           {side ? (
-            <RegisterSideHeader session={session} registerName={registerName} storeName={storeName} now={now} />
+            <RegisterSideHeader session={session} registerName={registerName} storeName={storeName} now={now} openedBy={openedBy} />
           ) : (
             <DialogTitle testID="register-panel-amount">{registerName ?? 'Register'}</DialogTitle>
           )}
@@ -148,6 +154,7 @@ export function RegisterPanel({
             </View>
           )}
           {side && <RegisterSideHero terms={terms} blind={blind} currency={currency} salesCount={salesCount} />}
+          {side && session && openedBy && <RegisterSideOpener session={session} openedBy={openedBy} />}
           <View className="flex-row gap-2">
             {(['paid_in', 'paid_out', 'no_sale'] as const).map((type) => (
               <Button

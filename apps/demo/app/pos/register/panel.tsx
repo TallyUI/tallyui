@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { Button, RegisterPanel, Text } from '@tallyui/components';
 import { openSession, recordMovement } from '@tallyui/pos';
 import { useDemoRegister, type DemoRegisterDb } from '../../../lib/use-demo-register';
@@ -18,6 +18,10 @@ async function seed(db: DemoRegisterDb) {
 export default function RegisterPanelScreen() {
   const { register, ready } = useDemoRegister({ seed });
   const [open, setOpen] = useState(true);
+  const { side } = useLocalSearchParams<{ side?: string }>();
+  const sideProps = side === '1'
+    ? { presentation: 'side' as const, storeName: 'Demo store', openedBy: { name: 'Demo cashier' } }
+    : {};
   return (
     <>
       <Stack.Screen options={{ title: 'RegisterPanel' }} />
@@ -26,7 +30,7 @@ export default function RegisterPanelScreen() {
           <Text>Open panel</Text>
         </Button>
         {ready && open && (
-          <RegisterPanel register={register} currency="EUR" registerName="Front counter" open onOpenChange={setOpen} />
+          <RegisterPanel register={register} currency="EUR" registerName="Front counter" open onOpenChange={setOpen} {...sideProps} />
         )}
       </View>
     </>
