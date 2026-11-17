@@ -15,8 +15,9 @@ function updateOnlyErrors(payload: unknown): string[] {
   id(body.orderId, 'orderId')
   if (body.baseRevision !== undefined) id(body.baseRevision, 'baseRevision')
   check(Number.isSafeInteger(body.createVersion) && (body.createVersion as number) >= 1, 'createVersion', 'a positive safe integer')
-  for (const [field, key] of [['lines', 'storeLineId'], ['payments', 'paymentId']] as const) {
-    const items = body[field], seen = new Set<unknown>()
+  const seenIds = { storeLineId: new Set<unknown>(), paymentId: new Set<unknown>() }
+  for (const [field, key] of [['lines', 'storeLineId'], ['fees', 'storeLineId'], ['shipping', 'storeLineId'], ['payments', 'paymentId']] as const) {
+    const items = body[field], seen = seenIds[key]
     if (!Array.isArray(items)) continue
     for (const [index, item] of items.entries()) {
       if (typeof item !== 'object' || item === null || Array.isArray(item) || item[key] === undefined) continue
@@ -35,11 +36,11 @@ export function updatePayloadErrors(payload: unknown): string[] {
   return [...errors, ...payloadShapeErrors(orderCreatePart(payload as Record<string, unknown>))].slice(0, 10)
 }
 
-/** Copies the order.create body without the update's store identities or createVersion (ADR-090). */
+/** Copies the body without orderId, baseRevision, createVersion, lines/fees/shipping storeLineId or payments paymentId (ADR-090). */
 export function orderCreatePart(payload: Record<string, unknown>): Record<string, unknown> {
   const part = { ...payload }
   for (const key of ['orderId', 'baseRevision', 'createVersion']) delete part[key]
-  for (const [field, key] of [['lines', 'storeLineId'], ['payments', 'paymentId']] as const) {
+  for (const [field, key] of [['lines', 'storeLineId'], ['fees', 'storeLineId'], ['shipping', 'storeLineId'], ['payments', 'paymentId']] as const) {
     const items = part[field]
     if (Array.isArray(items)) part[field] = items.map(item => {
       if (typeof item !== 'object' || item === null || Array.isArray(item)) return item

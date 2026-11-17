@@ -75,14 +75,19 @@ export interface OrderReopenPaymentInMotionData { paymentId?: string; attemptId?
 /** The order state preventing a reopen and the store's refusal code (ADR-090). */
 export interface OrderReopenOrderStateData { state: string; storeCode?: string }
 
-/** A kept line's store identity, absent on a new line (ADR-090). */
+/** A kept line's store order-item id, absent on a new line (ADR-090). */
 export type OrderUpdateLine = OrderCreateLine & { storeLineId?: string };
+/** A kept fee's store order-item id, absent on a new fee (ADR-090). */
+export type OrderUpdateFee = OrderCreateFee & { storeLineId?: string };
+/** A kept shipping charge's store order-item id, absent on a new charge (ADR-090). */
+export type OrderUpdateShipping = OrderCreateShipping & { storeLineId?: string };
 /** A payment already on the order carries its store id and is never re-taken (ADR-090). */
 export type OrderUpdatePayment = OrderCreatePayment & { paymentId?: string };
 /** The reopened sale's whole new state, checked by its named order.create version (ADR-090). */
-export interface OrderUpdatePayload extends Omit<OrderCreatePayload, 'lines' | 'payments'> {
+export interface OrderUpdatePayload extends Omit<OrderCreatePayload, 'lines' | 'payments' | 'fees' | 'shipping'> {
   orderId: string; baseRevision?: string; createVersion: OrderCreateEnvelope['version'];
   lines: OrderUpdateLine[]; payments: OrderUpdatePayment[];
+  fees?: OrderUpdateFee[]; shipping?: OrderUpdateShipping[];
 }
 /** An order.update v1 command with the shared idempotency envelope (ADR-090). */
 export type OrderUpdateEnvelope<P = OrderUpdatePayload> =

@@ -19,6 +19,7 @@ import type {
   RegisterCommandEnvelope,
   RegisterCommandType,
 } from '@tallyui/core';
+import type { OrderCreateFee, OrderCreateShipping } from './commands';
 
 describe('command types', () => {
   it('permits an OrderUpdateEnvelope in AnyCommandEnvelope (ADR-090)', () => {
@@ -28,6 +29,11 @@ describe('command types', () => {
     expectTypeOf<OrderUpdatePayload['createVersion']>().toEqualTypeOf<OrderCreateEnvelope['version']>();
     expectTypeOf<OrderUpdatePayload['lines'][number]['storeLineId']>().toEqualTypeOf<string | undefined>();
     expectTypeOf<OrderUpdatePayload['payments'][number]['paymentId']>().toEqualTypeOf<string | undefined>();
+  });
+
+  it('keeps required fee and shipping fields with optional store ids (ADR-090)', () => {
+    expectTypeOf<NonNullable<OrderUpdatePayload['fees']>[number]>().toEqualTypeOf<OrderCreateFee & { storeLineId?: string }>();
+    expectTypeOf<NonNullable<OrderUpdatePayload['shipping']>[number]>().toEqualTypeOf<OrderCreateShipping & { storeLineId?: string }>();
   });
 
   it('permits an OrderReopenEnvelope in AnyCommandEnvelope (ADR-090)', () => {

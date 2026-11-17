@@ -62,6 +62,9 @@ const firstTen = (errors: readonly string[]) => errors.slice(0, 10).join('; ')
  * claim, in the executor (order.create; register commands follow ADR-068). It pushes any result
  * one of those steps returns and moves on.
  *
+ * For order.update the shape check is updatePayloadErrors (ADR-090): it adds the update's store ids, and below
+ * createVersion 5 precheckCommand does not repeat it.
+ *
  * The replay lookup goes before precheckCommand so an already-applied command always replays
  * as `duplicate`, even once a later @tallyui/core tightens what precheckCommand accepts.
  *

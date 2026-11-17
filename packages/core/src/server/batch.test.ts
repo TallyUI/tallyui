@@ -129,13 +129,14 @@ describe('precheckCommand', () => {
     expect(precheckCommand({ ...update, payload: { ...update.payload, createVersion: 6, note: 'Keep this note' } }, updateServer)).toEqual({
       id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: 'note requires version 7' },
     })
+    // As order.create v1: below version 5 the body's shape is the plugin's pre-lookup updatePayloadErrors check.
     expect(precheckCommand({ ...update, payload: { orderId: 'order-1', createVersion: 1 } }, updateServer)).toBeUndefined()
     expect(precheckCommand({ ...update, payload: { ...update.payload, lines: undefined } }, updateServer)).toEqual({
       id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: 'lines: expected a non-empty array' },
     })
   })
 
-  it('accepts a valid update after stripping store identities', () => {
+  it('accepts a valid update', () => {
     expect(precheckCommand(update, updateServer)).toBeUndefined()
   })
 
