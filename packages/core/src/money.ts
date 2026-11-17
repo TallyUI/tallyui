@@ -67,7 +67,10 @@ export function moneyFromDecimalString(text: string, currency: string): Money | 
   return Number.isSafeInteger(amount) ? { amount, currency: code } : undefined;
 }
 
-/** Converts Money back to a major-unit number, e.g. for Intl formatting. */
+/**
+ * Converts Money back to a major-unit number, e.g. for Intl formatting.
+ * @deprecated Use `minorToMajor(money.amount, minorUnitDigits(money.currency))`, which returns an exact decimal string instead of a float.
+ */
 export function moneyToMajor(money: Money): number {
   return money.amount / 10 ** minorUnitDigits(money.currency);
 }
