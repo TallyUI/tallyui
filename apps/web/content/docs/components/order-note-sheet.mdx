@@ -1,0 +1,40 @@
+---
+title: OrderNoteSheet
+description: OrderNoteSheet edits a controlled note live in WCPOS v2's Order details sheet, with a customizable field label.
+---
+
+## Import
+
+```tsx
+import { OrderNoteSheet } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useState } from 'react';
+
+function NoteEditor() {
+  const [note, setNote] = useState('');
+  const [open, setOpen] = useState(true);
+
+  return open ? (
+    <OrderNoteSheet
+      value={note}
+      onChangeText={setNote}
+      onOpenChange={setOpen}
+    />
+  ) : null;
+}
+```
+
+This is WCPOS v2's Order details sheet, opening on the left so the cart's note row stays in view. It writes on every keystroke, and Close calls `onOpenChange(false)`; [Cart](/docs/components/cart) opens it for you when given `noteSheet`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `string` | required | Current note text |
+| `onChangeText` | `(text: string) => void` | required | Called on every edit with the untrimmed text |
+| `onOpenChange` | `(open: boolean) => void` | required | Called when the dialog requests an open state change; Close calls it with `false` |
+| `label` | `string` | `'Customer note'` | The field's label and accessible name; the placeholder is "Add" plus the label in lower case |
