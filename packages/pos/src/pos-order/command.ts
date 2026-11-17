@@ -117,6 +117,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   const grossMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
   const content = contentVersion(order);
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
+  if (floor !== undefined && cap !== undefined && cap < floor) throw new UnsupportedOrderVersionError(floor, cap);
   if (content === 5 && cap !== undefined && cap < 5) throw new UnsupportedOrderVersionError(5, cap);
   if (content === 6 && cap !== undefined && cap < 6) throw new UnsupportedOrderVersionError(6, cap);
   if (grossMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
@@ -124,7 +125,6 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   if (taxAddress && cap !== undefined && cap < TAX_ADDRESS_ORDER_CREATE_VERSION) {
     throw new UnsupportedOrderVersionError(TAX_ADDRESS_ORDER_CREATE_VERSION, cap);
   }
-  if (floor !== undefined && cap !== undefined && cap < floor) throw new UnsupportedOrderVersionError(floor, cap);
   // Version 4 only when the cap allows it (the server advertises 4, and no sentVersion holds the order lower).
   const base = Math.max(floor ?? 1, content === 3 && cap !== undefined && cap >= 4 ? 4
     : Math.min(content, cap ?? content)) as 1 | 2 | 3 | 4 | 5 | 6;

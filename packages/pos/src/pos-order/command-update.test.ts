@@ -77,6 +77,13 @@ describe('order.update v1', () => {
     expect(() => toOrderUpdateEnvelope({ ...plainReopened, sentVersion: cap }, 'device-1')).toThrow(new UnsupportedOrderVersionError(5, cap));
   });
 
+  it('refuses a discounted reopened sale at a cap below 5 with the floor, not the discount version', () => {
+    const discounted = { ...plainReopened,
+      lines: [{ ...plainReopened.lines[0], discountMinor: 10, netMinor: 90 }, plainReopened.lines[1]] };
+    expect(() => toOrderUpdateEnvelope(discounted, 'device-1', 1, { maxVersion: 1 }))
+      .toThrow(expect.objectContaining({ name: 'UnsupportedOrderVersionError', needed: 5, supported: 1 }));
+  });
+
   it('refuses to build order.update without a base revision', () => {
     const { baseRevision: _revision, ...order } = reopened;
     expect(() => toOrderUpdateEnvelope(order, 'device-1')).toThrow(`Order ${reopened.id} reopened store order 4711 without its base revision: order.update needs it (ADR-090)`);
