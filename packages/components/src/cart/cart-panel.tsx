@@ -2,6 +2,7 @@ import type { JSX, ReactNode } from 'react';
 import { ScrollView, View } from 'react-native';
 import { cn } from '@tallyui/theme';
 import { VStack, type VStackProps } from '../ui';
+import { MotionRows } from './cart-row-motion';
 
 export interface CartPanelProps<T> extends Omit<VStackProps, 'children'> {
   /** Cart line items to render */
@@ -20,6 +21,10 @@ export interface CartPanelProps<T> extends Omit<VStackProps, 'children'> {
   footerClassName?: string;
   /** Content shown when items is empty */
   emptyState?: ReactNode;
+  /** A value per row whose change pulses it (e.g. the quantity); with it, rows pulse when added and tint and collapse when removed, as in WCPOS v2. Without it, nothing animates. */
+  pulseKey?: (item: T) => string | number;
+  /** What the rows belong to (e.g. the order id): a change rebaselines without a pulse. */
+  identity?: string;
   className?: string;
 }
 
@@ -55,6 +60,8 @@ export function CartPanel<T>({
   footer,
   footerClassName,
   emptyState,
+  pulseKey,
+  identity,
   className,
   ...props
 }: CartPanelProps<T>): JSX.Element {
@@ -65,7 +72,8 @@ export function CartPanel<T>({
       {header && <View className="border-b border-border px-3 py-2">{header}</View>}
 
       <ScrollView className="flex-1 min-h-0" contentContainerClassName="flex-grow">
-        {hasItems
+        {pulseKey ? <MotionRows items={items} keyOf={keyExtractor ?? defaultKey} pulseKey={pulseKey} identity={identity}
+          renderItem={renderItem} empty={emptyState ?? null} /> : hasItems
           ? items.map((item, index) => (
               <View key={keyExtractor ? keyExtractor(item, index) : defaultKey(item, index)}>
                 {renderItem(item, index)}
