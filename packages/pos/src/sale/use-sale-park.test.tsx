@@ -4,9 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { StoreSettings } from '@tallyui/core';
+import type { StoreOrder, StoreSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
-import { orderDraftSchema } from '../order';
+import { orderDraftSchema, writeOrderDraft } from '../order';
+import { orderBuilderFromStoreOrder } from '../order/from-store-order';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { catalogueEntries } from './catalogue';
@@ -171,6 +172,27 @@ describe('useSale park and resume', () => {
     expect(result.current.order.totalMinor).toBe(5000);
     expect(result.current.error).toBe("Prices changed since this sale was parked: 1 line updated to today's price.");
     expect(await db.pos_drafts.findOne(draftId).exec()).toBeNull();
+  });
+
+  it("a parked reopened store order keeps the store's prices on resume", async () => {
+    const read: StoreOrder = {
+      id: '41', reference: '41', clientOrderId: 'u-1', revision: 'sha256:a', status: 'completed',
+      placedAt: '2026-11-17T10:00:00.000Z', currency: pricing.currency, pricesIncludeTax: false, customer: null,
+      lines: [{ id: '7', productId: 'shirt', variantId: 'blue', name: 'Shirt', quantity: 1,
+        subtotalMinor: 1000, totalMinor: 1000, subtotalTaxMinor: 250, taxMinor: 250 }],
+      fees: [], shipping: [], coupons: [], refunds: [], taxLines: [], payments: [],
+      discountMinor: 0, discountTaxMinor: 0, taxMinor: 250, totalMinor: 1250,
+    };
+    const snapshot = orderBuilderFromStoreOrder(read, {
+      currency: pricing.currency, taxContext: { getTaxRatePpm: () => 250000, pricesIncludeTax: false },
+    }).getSnapshot();
+    await writeOrderDraft(db.pos_drafts, snapshot);
+    const prices = new Map([['blue', 1250]]);
+    const { result } = renderSale({ currentPrice: (id) => prices.get(id) });
+    await act(async () => { expect(await result.current.resume(snapshot.id)).toBeNull(); });
+    expect(result.current.order.lineItems).toMatchObject([{ variantId: 'blue', unitPriceMinor: 1000 }]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.order.storeOrder).toEqual({ id: '41', revision: 'sha256:a', uuid: 'u-1' });
   });
 
   it.each(['keepParkedPrices', 'without currentPrice', 'unknown variant'])(

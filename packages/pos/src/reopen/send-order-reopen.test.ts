@@ -123,7 +123,7 @@ describe('sendOrderReopen', () => {
       .mockResolvedValue({ kind: 'results', results: [applied] });
     const first = sendOrderReopen({ send }, envelope);
     expect(isOrderReopenInFlight('order-1')).toBe(true);
-    expect(isReopenOffered({ orderReopen: 1, online: true, storageDegraded: false, orderId: 'order-1' })).toBe(false);
+    expect(isReopenOffered({ orderReopen: 1, orderCreate: 5, online: true, storageDegraded: false, orderId: 'order-1' })).toBe(false);
     expect(await sendOrderReopen({ send }, { ...envelope, id: '019d0e2e-0000-7000-8000-000000000002' }))
       .toStrictEqual({ kind: 'in_flight' });
     expect(send).toHaveBeenCalledTimes(1);
@@ -158,13 +158,16 @@ describe('sendOrderReopen', () => {
 describe('isReopenOffered', () => {
   const input = { online: true, storageDegraded: false, orderId: 'order-1' };
   it('offers reopening when supported, online, storage healthy and no reopen pending', () => {
-    expect(isReopenOffered({ ...input, orderReopen: 1 })).toBe(true);
+    expect(isReopenOffered({ ...input, orderReopen: 1, orderCreate: 5 })).toBe(true);
+    expect(isReopenOffered({ ...input, orderReopen: 1, orderCreate: 9 })).toBe(true);
   });
   it.each([
     {},
     { orderReopen: 0 },
-    { orderReopen: 1, online: false },
-    { orderReopen: 1, storageDegraded: true },
+    { orderReopen: 1, orderCreate: 5, online: false },
+    { orderReopen: 1, orderCreate: 5, storageDegraded: true },
+    { orderReopen: 1, orderCreate: 4 },
+    { orderReopen: 1 },
   ])('does not offer reopening with %j', (overrides) => {
     expect(isReopenOffered({ ...input, ...overrides })).toBe(false);
   });
