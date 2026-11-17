@@ -616,7 +616,7 @@ describe('Catalogue view state', () => {
     const onStateChange = vi.fn();
     const saveViewState = vi.fn();
     render(<Catalogue {...props} showViewToggle statusText="Synced" onStateChange={onStateChange} saveViewState={saveViewState} />);
-    expect(within(screen.getByTestId('catalogue-status-row')).getByTestId('view-toggle')).toBeTruthy();
+    expect(within(screen.getByTestId('catalogue-search-row')).getByTestId('view-toggle')).toBeTruthy();
     fireEvent.click(screen.getByTestId('view-toggle-grid'));
     expect(onStateChange).not.toHaveBeenCalled();
     expect(saveViewState).not.toHaveBeenCalled();
@@ -625,6 +625,31 @@ describe('Catalogue view state', () => {
     expect(screen.queryByTestId('grid')).toBeNull();
     expect(onStateChange.mock.calls).toEqual([[tableState]]);
     expect(saveViewState.mock.calls).toEqual([[tableState]]);
+  });
+
+  it('puts the view toggle and searchAccessory in the search row, in v2\'s order', () => {
+    const accessory = <span data-testid="search-accessory">Settings</span>;
+    const { rerender } = render(<Catalogue {...props} showViewToggle searchAccessory={accessory} />);
+    const row = within(screen.getByTestId('catalogue-search-row'));
+    const search = row.getByPlaceholderText('Search or scan barcode / SKU');
+    const toggle = row.getByTestId('view-toggle');
+    const extra = row.getByTestId('search-accessory');
+    expect(search.compareDocumentPosition(toggle)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(toggle.compareDocumentPosition(extra)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.queryByTestId('catalogue-status-row')).toBeNull();
+    rerender(<Catalogue {...props} searchAccessory={accessory} />);
+    const only = within(screen.getByTestId('catalogue-search-row'));
+    expect(only.getByTestId('search-accessory')).toBeTruthy();
+    expect(screen.queryByTestId('view-toggle')).toBeNull();
+  });
+
+  it('renders no search row for an empty searchAccessory', () => {
+    for (const empty of [false, null, undefined, '']) {
+      const { unmount } = render(<Catalogue {...props} searchAccessory={empty} />);
+      expect(screen.queryByTestId('catalogue-search-row')).toBeNull();
+      expect(screen.getByPlaceholderText('Search or scan barcode / SKU')).toBeTruthy();
+      unmount();
+    }
   });
 
   it('uses a synchronous load on the first render and reports without saving', () => {
