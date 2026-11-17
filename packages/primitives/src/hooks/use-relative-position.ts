@@ -232,6 +232,7 @@ function getContentStyle({
   dimensions,
 }: GetContentStyleArgs) {
   return Object.assign(
+    {},
     POSITION_ABSOLUTE,
     getSidePosition({
       side,
