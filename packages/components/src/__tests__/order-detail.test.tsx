@@ -38,9 +38,25 @@ describe('OrderDetail', () => {
     expect(screen.getByText('Paid with Cash')).toBeDefined();
   });
 
-  const base = { orderNumber: '#1042', status: 'completed' as const, lineItems, subtotal: '20.00', tax: '2.00', total: '22.00' };
-  const extras = { discount: '-$2.00', couponCodes: 'SAVE10, VIP', shipping: '$5.00', shippingMethod: 'Flat rate', fees: '$1.50' };
-  const taxLines = [{ label: 'US 10%', amount: '$9.20' }, { label: 'US AL 2%', amount: '$2.02' }];
+  const base = {
+    orderNumber: '#1042',
+    status: 'completed' as const,
+    lineItems,
+    subtotal: '20.00',
+    tax: '2.00',
+    total: '22.00',
+  };
+  const extras = {
+    discount: '-$2.00',
+    couponCodes: 'SAVE10, VIP',
+    shipping: '$5.00',
+    shippingMethod: 'Flat rate',
+    fees: '$1.50',
+  };
+  const taxLines = [
+    { label: 'US 10%', amount: '$9.20' },
+    { label: 'US AL 2%', amount: '$2.02' },
+  ];
 
   it('renders the meta line joined with " · ", dropping empty parts', () => {
     render(<OrderDetail {...base} meta={['Today · 14:30', '', 'US Store', 'Brenda Walsh']} />);
@@ -54,17 +70,23 @@ describe('OrderDetail', () => {
   });
   it('renders discount with coupon chip, shipping with method, and fees', () => {
     render(<OrderDetail {...base} {...extras} />);
-    for (const t of ['Discount', '-$2.00', 'SAVE10, VIP', 'Shipping', '· Flat rate', '$5.00', 'Fees', '$1.50']) expect(screen.getByText(t)).toBeDefined();
+    for (const t of ['Discount', '-$2.00', 'SAVE10, VIP', 'Shipping', '· Flat rate', '$5.00', 'Fees', '$1.50']) {
+      expect(screen.getByText(t)).toBeDefined();
+    }
   });
   it('hides discount, shipping and fees rows when omitted', () => {
     const { rerender } = render(<OrderDetail {...base} />);
-    for (const t of ['Discount', 'Shipping', 'Fees']) expect(screen.queryByText(t)).toBeNull();
+    for (const t of ['Discount', 'Shipping', 'Fees']) {
+      expect(screen.queryByText(t)).toBeNull();
+    }
     rerender(<OrderDetail {...base} discount="" />);
     expect(screen.queryByText('Discount')).toBeNull();
   });
   it('renders tax lines under Tax', () => {
     render(<OrderDetail {...base} taxLines={taxLines} />);
-    for (const t of ['US 10%', '$9.20', 'US AL 2%', '$2.02']) expect(screen.getByText(t)).toBeDefined();
+    for (const t of ['US 10%', '$9.20', 'US AL 2%', '$2.02']) {
+      expect(screen.getByText(t)).toBeDefined();
+    }
     expect(screen.getByTestId('order-detail-tax-line-1').textContent).toContain('US AL 2%');
   });
   it('orders the totals as v2 does', () => {

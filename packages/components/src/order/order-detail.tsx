@@ -51,7 +51,13 @@ export function OrderDetail({
   subtotal,
   tax,
   total,
-  meta, discount, couponCodes, shipping, shippingMethod, fees, taxLines,
+  meta,
+  discount,
+  couponCodes,
+  shipping,
+  shippingMethod,
+  fees,
+  taxLines,
   customerSlot,
   paymentSlot,
   footerSlot,
@@ -66,7 +72,11 @@ export function OrderDetail({
           <Text className="text-lg font-bold text-foreground">{orderNumber}</Text>
           <OrderStatusBadge status={status} />
         </View>
-        {metaLine ? <Text testID="order-detail-meta" className="text-xs text-muted-foreground">{metaLine}</Text> : null}
+        {metaLine ? (
+          <Text testID="order-detail-meta" className="text-xs text-muted-foreground">
+            {metaLine}
+          </Text>
+        ) : null}
 
         {customerSlot && <View className="border-b border-border pb-3">{customerSlot}</View>}
 
@@ -91,7 +101,11 @@ export function OrderDetail({
             <View testID="order-detail-discount" className="flex-row justify-between">
               <View className="flex-row items-center gap-2">
                 <Text className="text-sm text-muted-foreground">Discount</Text>
-                {couponCodes ? <View className="rounded bg-primary/10 px-1.5 py-0.5"><Text className="text-xs font-medium text-primary">{couponCodes}</Text></View> : null}
+                {couponCodes ? (
+                  <View className="rounded bg-primary/10 px-1.5 py-0.5">
+                    <Text className="text-xs font-medium text-primary">{couponCodes}</Text>
+                  </View>
+                ) : null}
               </View>
               <Text className="text-sm text-foreground">{discount}</Text>
             </View>
