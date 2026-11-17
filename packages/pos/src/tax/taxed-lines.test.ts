@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { taxedLinesFor } from './taxed-lines';
+import { recordedTaxByRate, taxedLinesFor } from './taxed-lines';
 
 describe('taxedLinesFor', () => {
   it.each([false, true])('uses the store mode %s for WooCommerce lines with netMicros', (pricesIncludeTax) => {
@@ -45,5 +45,32 @@ describe('taxedLinesFor', () => {
       { name: 'Fee', netMinor: 3, taxInclusive: false },
       { name: 'Shipping', netMinor: 4, taxInclusive: false },
     ]);
+  });
+});
+
+describe('recordedTaxByRate', () => {
+  const taxByRate = [{ ratePpm: 200000, amountMinor: 1 }];
+
+  it.each([false, true])('refuses a WooCommerce split for a converted line with taxInclusive %s', (taxInclusive) => {
+    expect(recordedTaxByRate({ taxByRate, lines: [{ netMicros: '1000000', taxInclusive }],
+      taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false } })).toBeUndefined();
+  });
+
+  it('keeps a WooCommerce split when netMicros lines have no stored tax mode', () => {
+    expect(recordedTaxByRate({ taxByRate, lines: [{ netMicros: '1000000' }],
+      taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false } })).toBe(taxByRate);
+  });
+
+  it('keeps a per_order split for a line with a stored tax mode', () => {
+    expect(recordedTaxByRate({ taxByRate, lines: [{ netMicros: '1000000', taxInclusive: true }],
+      taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' } })).toBe(taxByRate);
+  });
+
+  it('keeps a split without taxRounding', () => {
+    expect(recordedTaxByRate({ taxByRate, lines: [{ netMicros: '1000000', taxInclusive: true }] })).toBe(taxByRate);
+  });
+
+  it('returns undefined without taxByRate', () => {
+    expect(recordedTaxByRate({ lines: [] })).toBeUndefined();
   });
 });

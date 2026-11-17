@@ -5,7 +5,9 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder, withSentForm } from '../pos-order/finalize';
+import type { PosOrder } from '../pos-order/types';
 import { buildReceiptData } from '../receipt/build-receipt-data';
+import { buildReceiptDataFromPosOrder } from '../receipt/reprint';
 import type { ReceiptConfig } from '../receipt/types';
 import { ensureRegister } from '../register/register-document';
 import { closureSchema, registerSessionCreator } from '../register/schemas';
@@ -18,6 +20,8 @@ import { reportOrderFromPosOrder } from './adapters';
 
 describe('a WooCommerce sale with a converted line: receipt, recorded taxByRate, Reports and the Z report agree per rate', () => {
   let db: RxDatabase<{ register_sessions: RegisterSessionCollection; closures: ClosureCollection }>;
+  let posOrder: PosOrder;
+  let config: ReceiptConfig;
   let splits: Record<'receipt' | 'recorded' | 'reportsFallback' | 'zReport', {
     ratePpm: number; netMinor?: number | null; amountMinor: number;
   }[]>;
@@ -44,9 +48,9 @@ describe('a WooCommerce sale with a converted line: receipt, recorded taxByRate,
     });
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     const order = builder.getSnapshot();
-    const posOrder = finalizeOrder(order, { capabilities: { orderCreate: 6 }, registerId: 'register' });
+    posOrder = finalizeOrder(order, { capabilities: { orderCreate: 6 }, registerId: 'register' });
     const legacyOrder = finalizeOrder(order, { capabilities: { orderCreate: 2 }, registerId: 'register' });
-    const config: ReceiptConfig = { storeName: 'Tax probe' };
+    config = { storeName: 'Tax probe' };
     const receipt = buildReceiptData(withSentForm(order, posOrder), config);
 
     db = await createRxDatabase({
@@ -98,5 +102,19 @@ describe('a WooCommerce sale with a converted line: receipt, recorded taxByRate,
 
   it('live receipt equals Z report per-rate figures', () => {
     expect(splits.zReport.map(({ ratePpm, amountMinor }) => ({ ratePpm, amountMinor }))).toEqual(splits.receipt);
+  });
+
+  it('reprint and Reports recompute a stale stored split', () => {
+    expect(posOrder.lines.some((line) => line.netMicros !== undefined && line.taxInclusive !== undefined)).toBe(true);
+    const staleOrder = { ...posOrder,
+      taxByRate: posOrder.taxByRate!.map((row) => ({ ...row, amountMinor: row.ratePpm === 200000 ? 2 : 0 })),
+    };
+    expect(staleOrder.taxByRate.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(staleOrder.taxMinor);
+    expect(buildReceiptDataFromPosOrder(staleOrder, config).totals.taxLines
+      .map(({ ratePpm, amountMinor }) => ({ ratePpm, amountMinor }))
+      .sort((a, b) => a.ratePpm - b.ratePpm)).toEqual(splits.receipt);
+    expect(reportOrderFromPosOrder(staleOrder).taxes
+      .map(({ ratePpm, taxMinor }) => ({ ratePpm, amountMinor: taxMinor }))
+      .sort((a, b) => a.ratePpm - b.ratePpm)).toEqual(splits.receipt);
   });
 });
