@@ -25,14 +25,14 @@ const recordedBilling = { firstName: 'Gee', lastName: 'Four', company: input.com
 const customer = { id: '3', name: 'Gee Four', ...input, billing: recordedBilling, createdAt: `${search[0]!.date_created_gmt}Z` };
 const { createdAt: _undated, ...undatedCustomer } = customer;
 const customers = createWooCustomers({ newId: () => createRequest.mutationId });
-// Hand-built from a recorded 1.10.20 row; recorded rows have every address key but all values empty.
+// Hand-built from a recorded 1.10.20 row; recorded rows have every address key, with only billing's contact fields filled.
 // Only existing keys are filled (one set to null); no key the recorded row lacks is added.
 const addressedRow = {
   ...search[0]!,
   billing: { ...search[0]!.billing, address_1: '1 Park Row', city: 'Leeds', postcode: 'LS1 5AB', country: 'GB' },
   shipping: {
     ...search[0]!.shipping, first_name: 'Gee', last_name: 'Four', address_1: '2 Dock St', city: 'Leeds', postcode: 'LS10 1JF',
-    country: 'GB', state: null,
+    country: 'GB', state: null, phone: '0113 496 0000',
   },
 };
 
@@ -280,7 +280,7 @@ describe('WooCommerce customers', () => {
       firstName: 'Gee', lastName: 'Four', company: input.company, address1: '1 Park Row', city: 'Leeds', postcode: 'LS1 5AB', country: 'GB',
       email: input.email, phone: input.phone,
     });
-    expect(mapped.shipping).toStrictEqual({ firstName: 'Gee', lastName: 'Four', address1: '2 Dock St', city: 'Leeds', postcode: 'LS10 1JF', country: 'GB' });
+    expect(mapped.shipping).toStrictEqual({ firstName: 'Gee', lastName: 'Four', address1: '2 Dock St', city: 'Leeds', postcode: 'LS10 1JF', country: 'GB', phone: '0113 496 0000' });
     // The recorded row as captured: billing keeps only its non-empty contact fields; the all-blank shipping maps to no key.
     const captured = toWooCustomer(search[0]!);
     expect(captured.billing).toStrictEqual(recordedBilling);
