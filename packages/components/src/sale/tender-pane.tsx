@@ -33,6 +33,7 @@ export interface TenderPaneProps {
   methods?: PaymentMethodDescriptor[];
   /** Draws the payments ledger in the pane. Pass `false` when the host shows it in the cart column, as v2 does (Cart's `tenderLedger`). Default `true`. */
   ledger?: boolean;
+  /** Draws the Back button (`sale.cancelTender`). Pass `false` when the host leaves the tender stage itself, as v2's phone checkout does. Default `true`. */ back?: boolean;
 }
 
 /** order.create's bound on `payments[].reference`, in UTF-16 units. */
@@ -50,7 +51,7 @@ const SPLIT_WAYS = [2, 3, 4, 5, 6];
 const rowsSince = (payments: readonly Leg[], from: number) =>
   payments.filter(countsTowardPaid).slice(from).map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
 
-export function TenderPane({ sale, state, dispatch, methods, ledger = true }: TenderPaneProps): JSX.Element | null {
+export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true }: TenderPaneProps): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const { order, stage } = sale;
   const t = useT();
@@ -224,6 +225,6 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true }: Te
         <Text className="text-center font-semibold text-primary-foreground">{t('tender.continue')}</Text>
       </Pressable>
     </> : null}
-    <Pressable accessibilityRole="button" onPress={sale.cancelTender} className={button}><Text className="text-center text-foreground">{t('common.back')}</Text></Pressable>
+    {back ? <Pressable accessibilityRole="button" onPress={sale.cancelTender} className={button}><Text className="text-center text-foreground">{t('common.back')}</Text></Pressable> : null}
   </View>;
 }
