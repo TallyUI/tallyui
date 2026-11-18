@@ -19,7 +19,7 @@ import { ShoppingCartIcon } from '../ui';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
 export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, noteSheet, tenderLedger, lineEditor = 'inline',
-  columns,
+  lineCommit = 'apply', columns,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
@@ -55,6 +55,10 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
      * price popover. Default `inline`: the − / + buttons and Price form. */
     lineEditor?: 'inline' | 'popover';
+    /** With `lineEditor="popover"`, `close` gives the quantity popover v2's grow keypad (LinePopover's `commit="close"`):
+     * − / + steppers that write at once, − turning into Remove at 1 (in place of the Remove action), and Done; Escape
+     * closes without writing, any other close writes what was typed. The price popover keeps Apply / Cancel. Default `apply`. */
+    lineCommit?: 'apply' | 'close';
     /** v2's Cart Settings › Columns: which columns show, a Split link under a quantity above 1 (`quantity.split`) and the
      * SKU under the name (`name.sku`). The defaults are today's cart: Qty, Item, Price (folding as before) and Total. */
     columns?: CartColumnSettings;
@@ -112,10 +116,11 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice}
       columns={columns} sku={line.sku} imageUrl={line.imageUrl} onSplit={() => split(line.id)}
       quantitySlot={lineEditor === 'popover' ? <LinePopover kind="quantity" lineName={line.name} currency={order.currency}
-        value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} actions={[
+        value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} commit={lineCommit}
+        onRemove={lineCommit === 'close' ? () => sale.remove(line.id) : undefined} actions={[
           ...(!pricePopover ? [{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }] : []),
           ...(canEditPrice && !pricePopover ? [{ id: 'price', label: 'Price', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
-          { id: 'remove', label: 'Remove', destructive: true, onPress: () => sale.remove(line.id) },
+          ...(lineCommit === 'close' ? [] : [{ id: 'remove', label: 'Remove', destructive: true, onPress: () => sale.remove(line.id) }]),
         ]} /> : undefined}
       priceSlot={pricePopover ? <LinePopover kind="price" lineName={line.name} currency={order.currency} value={line.unitPriceMinor}
         regularValue={line.regularUnitPriceMinor} actions={[{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }]}

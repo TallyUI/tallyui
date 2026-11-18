@@ -90,3 +90,80 @@ it('an action closes the popover, then calls its onPress, and writes nothing', (
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(onApply).not.toHaveBeenCalled();
 });
+
+it('commit="close": − and + write the quantity at once, with no Apply or Cancel drawn', () => {
+  const onApply = vi.fn((_value: number): string | null => null);
+  const ui = (value: number) => <><LinePopover kind="quantity" lineName="Shirt" currency="EUR" value={value} onApply={onApply}
+    commit="close" /><PortalHost /></>;
+  const { rerender } = render(ui(3));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit quantity of Shirt' }));
+  fireEvent.click(screen.getByTestId('quantity-popover-step-up'));
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(4);
+  rerender(ui(4));
+  expect(screen.getByTestId('quantity-popover-value').textContent).toBe('4');
+  fireEvent.click(screen.getByRole('button', { name: 'One fewer' }));
+  expect(onApply.mock.calls).toEqual([[4], [3]]);
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(screen.queryByTestId('quantity-popover-apply')).toBeNull();
+  expect(screen.queryByTestId('quantity-popover-cancel')).toBeNull();
+});
+
+it('commit="close": − at quantity 1 reads Remove, calls onRemove and writes nothing', () => {
+  const onRemove = vi.fn();
+  const onApply = open({ kind: 'quantity', value: 1, commit: 'close', onRemove });
+  expect(screen.queryByTestId('quantity-popover-step-down')).toBeNull();
+  const remove = screen.getByTestId('quantity-popover-remove');
+  expect(remove.getAttribute('aria-label')).toBe('Remove');
+  fireEvent.click(remove);
+  expect(onRemove).toHaveBeenCalledOnce();
+  expect(onApply).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  cleanup();
+  const alone = open({ kind: 'quantity', value: 1, commit: 'close' });
+  expect(screen.queryByTestId('quantity-popover-remove')).toBeNull();
+  const down = screen.getByTestId('quantity-popover-step-down');
+  expect(down.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(down);
+  expect(alone).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+it('commit="close": Done writes the typed quantity; Escape closes and writes nothing; a press outside writes it', () => {
+  const onApply = open({ kind: 'quantity', commit: 'close' });
+  const reopen = () => fireEvent.click(screen.getByRole('button', { name: 'Edit quantity of Shirt' }));
+  keys('5');
+  fireEvent.click(screen.getByTestId('quantity-popover-done'));
+  expect(onApply.mock.calls).toEqual([[5]]);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  reopen();
+  keys('7');
+  physical('Escape');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply.mock.calls).toEqual([[5]]);
+  reopen();
+  keys('8');
+  fireEvent.click(screen.getByTestId('quantity-popover-overlay'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply.mock.calls).toEqual([[5], [8]]);
+});
+
+it('commit="close": a refused step shows the refusal and the stored quantity again', () => {
+  const onApply = open({ kind: 'quantity', value: 2, commit: 'close', onApply: () => 'No more stock' });
+  keys('6');
+  fireEvent.click(screen.getByRole('button', { name: 'One more' }));
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(7);
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).getByRole('alert').textContent).toBe('No more stock');
+  expect(screen.getByTestId('quantity-popover-value').textContent).toBe('2');
+});
+
+it('without commit, Apply and Cancel are drawn and there is no stepper row or Done', () => {
+  const onApply = open({ kind: 'quantity', onRemove: vi.fn() });
+  expect(screen.getByTestId('quantity-popover-apply')).toBeTruthy();
+  expect(screen.getByTestId('quantity-popover-cancel')).toBeTruthy();
+  for (const id of ['step-down', 'step-up', 'remove', 'done']) expect(screen.queryByTestId(`quantity-popover-${id}`)).toBeNull();
+  keys('4');
+  fireEvent.click(screen.getByTestId('quantity-popover-overlay'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply).not.toHaveBeenCalled();
+});
