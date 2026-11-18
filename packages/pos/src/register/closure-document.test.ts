@@ -409,3 +409,15 @@ it("matches the WCPOS closure fixture's key tree for buildXReportDocument, apart
   expect([...docTree].filter((key) => !fixtureTree.has(key)).sort()).toEqual([...xreportLocalOnly].sort());
   expect([...fixtureTree].filter((key) => !docTree.has(key)).sort()).toEqual(xreportServerOnly);
 });
+it('reads a tender named like an Object.prototype member as its own entry, not an inherited one', () => {
+  const doc = buildClosureDocument({
+    ...row,
+    till_expected: { cash: 18000, constructor: 500 },
+    expected: { cash: 18000, constructor: 500 },
+    counted: { cash: 17800, constructor: 500 },
+    variance: { cash: -200 },
+  }, context);
+  expect(doc.closure.tenders.find((tender) => tender.name === 'constructor')).toMatchObject({
+    label: 'Constructor', expected: '5.00', counted: '5.00', has_variance: false,
+  });
+});

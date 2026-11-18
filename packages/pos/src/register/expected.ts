@@ -73,11 +73,12 @@ export function deriveExpected({
   ledgerRowsBySession: readonly LedgerRow[];
   refunds?: readonly RefundRow[];
 }): Record<string, number> {
-  const totals: Record<string, number> = { cash: session.countedFloatMinor };
+  // A Map, so a method id named like an Object.prototype member (`__proto__`) stays an ordinary key.
+  const totals = new Map<string, number>([['cash', session.countedFloatMinor]]);
+  const plus = (method: string, amount: number) => totals.set(method, (totals.get(method) ?? 0) + amount);
   for (const row of ledgerRowsBySession) {
     if (row.session_id !== session.id || row.status !== 'captured') continue;
-    const method = row.kind === 'cash' ? 'cash' : row.method_id;
-    totals[method] = (totals[method] ?? 0) + row.amountMinor;
+    plus(row.kind === 'cash' ? 'cash' : row.method_id, row.amountMinor);
   }
   const voids = new Set(
     movements
@@ -86,14 +87,14 @@ export function deriveExpected({
   );
   for (const row of movements) {
     if (row.session_id !== session.id || row.voided_by || voids.has(row.id)) continue;
-    if (row.type === 'paid_in') totals.cash += row.amountMinor;
-    if (row.type === 'paid_out') totals.cash -= row.amountMinor;
+    if (row.type === 'paid_in') plus('cash', row.amountMinor);
+    if (row.type === 'paid_out') plus('cash', -row.amountMinor);
   }
   for (const refund of refunds ?? []) {
     if (refund.status !== 'applied' || refund.sessionId !== session.id) continue;
-    for (const [method, amount] of refundAmounts(refund)) totals[method] = (totals[method] ?? 0) - amount;
+    for (const [method, amount] of refundAmounts(refund)) plus(method, -amount);
   }
-  return totals;
+  return Object.fromEntries(totals);
 }
 
 export interface DrawerTerm { amountMinor: number; count: number }
@@ -127,12 +128,14 @@ export function deriveDrawerTerms(input: Parameters<typeof deriveExpected>[0]): 
     target.count += 1;
   };
   const [cashSales, cashRefunds, paidIn, paidOut] = [term(), term(), term(), term()];
-  const otherTenders: Record<string, DrawerTerm> = {};
+  // A Map, so a `__proto__` method id never writes onto Object.prototype.
+  const others = new Map<string, DrawerTerm>();
+  const other = (method: string) => others.get(method) ?? others.set(method, term()).get(method)!;
   let noSales = 0;
   for (const row of ledgerRowsBySession) {
     if (row.session_id !== session.id || row.status !== 'captured') continue;
     const method = row.kind === 'cash' ? 'cash' : row.method_id;
-    add(method === 'cash' ? cashSales : (otherTenders[method] ??= term()), row.amountMinor);
+    add(method === 'cash' ? cashSales : other(method), row.amountMinor);
   }
   const voids = new Set(movements.filter((row) => row.session_id === session.id && row.type === 'void').map((row) => row.voids));
   for (const row of movements) {
@@ -145,9 +148,10 @@ export function deriveDrawerTerms(input: Parameters<typeof deriveExpected>[0]): 
     if (refund.status !== 'applied' || refund.sessionId !== session.id) continue;
     for (const [method, amount] of refundAmounts(refund)) {
       if (method === 'cash') add(cashRefunds, amount);
-      else add((otherTenders[method] ??= term()), -amount);
+      else add(other(method), -amount);
     }
   }
+  const otherTenders = Object.fromEntries(others);
   const otherMinor = Object.values(otherTenders).reduce((sum, row) => sum + row.amountMinor, 0);
   return {
     floatMinor: session.countedFloatMinor, cashSales, cashRefunds, paidIn, paidOut, noSales, otherTenders,

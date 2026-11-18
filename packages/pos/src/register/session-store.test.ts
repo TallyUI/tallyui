@@ -129,6 +129,16 @@ describe('closure refunds (ADR-080 amendment 1)', () => {
     expect(closure.till_expected.voucher).toBe(-300);
   });
 
+  it('keeps a __proto__ method id as an ordinary own key in the persisted payment methods', async () => {
+    const args = await closedInput();
+    const byMethod = JSON.parse('{"__proto__":300}') as Record<string, number>;
+    const closure = await writeClosure({ ...args, refunds: [refund('proto', args.session.id, byMethod)] });
+    const methods = closure.toJSON().breakdowns.payment_methods as Record<string, unknown>;
+    expect(Object.hasOwn(methods, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(methods, '__proto__')?.value).toStrictEqual({ sales_minor: 0, refunds_minor: 300 });
+    expect(Object.getPrototypeOf(methods)).toBe(Object.prototype);
+  });
+
   it('keeps tillExpected authoritative while counting refund totals', async () => {
     const args = await closedInput();
     const tillExpected = { cash: 123, external: 456 };

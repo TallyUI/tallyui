@@ -189,14 +189,15 @@ function envelope<R extends Values>(row: R, context: ClosureContext, xreport = f
   const counted = (row.counted ?? {}) as Record<string, string>;
   const expected = (row.expected ?? {}) as Record<string, string>;
   const variances = (row.variance ?? {}) as Record<string, string>;
+  const own = <V>(map: Record<string, V>, key: string): V | undefined => (Object.hasOwn(map, key) ? map[key] : undefined);
   const tenders = [...new Set([...Object.keys(counted), ...Object.keys(expected)])].map((name) => {
-    const variance = variances[name] ?? '';
-    const method = Object.values(methods).find((m) => m.method === name) ?? methods[name];
+    const variance = own(variances, name) ?? '';
+    const method = Object.values(methods).find((m) => m.method === name) ?? own(methods, name);
     return money(
       {
         name,
         label: method?.name || name.charAt(0).toUpperCase() + name.slice(1),
-        expected: expected[name] ?? '', counted: counted[name] ?? '', variance,
+        expected: own(expected, name) ?? '', counted: own(counted, name) ?? '', variance,
         has_variance: Number(variance || 0) !== 0,
         variance_label:
           variance === '' ? '' : context.i18n[Number(variance) > 0 ? 'over' : Number(variance) < 0 ? 'short' : 'exact'],
