@@ -130,7 +130,7 @@ export interface RegisterCountProps {
     approval?: string;
     approvedVariance?: Record<string, number>;
   } | null>;
-  /** The host's Z-report print, as `ClosureSheet`'s: given, Close reads "Close & print" and awaits it once the close lands. */
+  /** The host's Z-report print, as `ClosureSheet`'s: given, Close reads "Close & print" and awaits it after a successful close; a print failure is the host's to show. */
   onPrint?: () => void | Promise<void>;
   className?: string;
 }
@@ -198,11 +198,27 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
   // lands, and a cashier may enter the count by keys alone, so the keypad collapses when focus
   // LEAVES the region (to a tile, another tender, the footer), never on a move within it (v2).
   const regionRef = useRef<View>(null);
+  const pressing = useRef(false);
+  const cancelFold = useRef(() => {});
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const mark = (event: Event) => { pressing.current = event.type === 'pointerdown'; };
+    for (const type of ['pointerdown', 'pointerup']) document.addEventListener(type, mark, true);
+    return () => {
+      for (const type of ['pointerdown', 'pointerup']) document.removeEventListener(type, mark, true);
+      cancelFold.current();
+    };
+  }, []);
   const leaveRegion = (event?: { nativeEvent?: unknown }) => {
     const next = (event?.nativeEvent as { relatedTarget?: unknown } | undefined)?.relatedTarget;
     const region = regionRef.current as unknown as { contains?: (node: unknown) => boolean } | null;
-    if (next && region?.contains?.(next)) return;
-    if (valid) setKeypadOpen(false);
+    if ((next && region?.contains?.(next)) || !valid) return;
+    if (!pressing.current) return setKeypadOpen(false);
+    // A press blurs on pointerdown; folding then shifts the layout before release and swallows its click.
+    const fold = () => { cancelFold.current(); setKeypadOpen(false); };
+    cancelFold.current();
+    cancelFold.current = () => ['pointerup', 'click'].forEach((type) => window.removeEventListener(type, fold));
+    ['pointerup', 'click'].forEach((type) => window.addEventListener(type, fold));
   };
   const pressKey = (key: string) => {
     // Leaving the tiles starts a fresh count: the typed buffer behind them is stale. So does a zero

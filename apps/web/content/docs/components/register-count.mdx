@@ -31,5 +31,5 @@ Renders the cash amount with its keypad, which folds away once a valid amount lo
 | `register` | `ReturnType<typeof useRegisterSession>` | required | Session, expected amounts, blind state, variance threshold, and back-to-selling and close actions |
 | `currency` | `string` | required | ISO 4217 code used for denomination faces, parsing, and display |
 | `approve` | `(input: { counted: Record<string, number> }) => Promise<{ approvedBy: string; approvedByName?: string; approval?: string; approvedVariance?: Record<string, number> } \| null>` | --- | Requested above `register.varianceThreshold` with the count; `null` refuses without changing the count, omission refuses with `APPROVAL_REQUIRED_TEXT`, and the approval fields are passed to `closeSession` |
-| `onPrint` | `() => void \| Promise<void>` | --- | The host's Z-report print, as `ClosureSheet`'s; awaited after a successful close, its error shown like a close error |
+| `onPrint` | `() => void \| Promise<void>` | --- | The host's Z-report print, as `ClosureSheet`'s; awaited after a successful close; a print failure is the host's to show |
 | `className` | `string` | --- | Override container styles |
