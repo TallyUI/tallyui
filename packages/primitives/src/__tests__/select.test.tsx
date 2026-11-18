@@ -143,5 +143,64 @@ describe('Select', () => {
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.queryByTestId('dialog-content')).toBeNull();
     });
+
+    it('S5: Escape fired inside the Select content closes only the Select', () => {
+      render(
+        <div>
+          <PortalHost />
+          <Dialog.Root defaultOpen>
+            <Dialog.Portal>
+              <Dialog.Content testID="dialog-content">
+                <Select.Root defaultOpen>
+                  <Select.Trigger testID="trigger">
+                    <Select.Value placeholder="Pick a fruit" />
+                  </Select.Trigger>
+                  <Select.Portal>
+                    <Select.Content testID="content">
+                      <Select.Item value="apple" label="Apple" testID="item-apple">
+                        <Select.ItemText />
+                      </Select.Item>
+                    </Select.Content>
+                  </Select.Portal>
+                </Select.Root>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
+        </div>
+      );
+      expect(screen.getByTestId('content')).toBeTruthy();
+      fireEvent.keyDown(screen.getByTestId('item-apple'), { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
+      expect(screen.getByTestId('dialog-content')).toBeTruthy();
+    });
+
+    it('S6: a closed force-mounted Select after an open Dialog does not take its Escape', () => {
+      render(
+        <div>
+          <PortalHost />
+          <Dialog.Root defaultOpen>
+            <Dialog.Portal>
+              <Dialog.Content testID="dialog-content" />
+            </Dialog.Portal>
+          </Dialog.Root>
+          <Select.Root>
+            <Select.Trigger testID="trigger">
+              <Select.Value placeholder="Pick a fruit" />
+            </Select.Trigger>
+            <Select.Portal forceMount>
+              <Select.Content testID="content" forceMount>
+                <Select.Item value="apple" label="Apple">
+                  <Select.ItemText />
+                </Select.Item>
+              </Select.Content>
+            </Select.Portal>
+          </Select.Root>
+        </div>
+      );
+      expect(screen.getByTestId('content')).toBeTruthy();
+      expect(screen.getByTestId('dialog-content')).toBeTruthy();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(screen.queryByTestId('dialog-content')).toBeNull();
+    });
   });
 });

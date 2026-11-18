@@ -434,5 +434,11 @@ describe('Combobox', () => {
       expect(screen.queryByTestId('content')).toBeNull();
       expect(input.value).toBe('ban');
     });
+
+    it('C4: Escape fired on the focused input itself closes the list', () => {
+      renderCombobox({ defaultOpen: true });
+      fireEvent.keyDown(screen.getByTestId('input'), { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
+    });
   });
 });

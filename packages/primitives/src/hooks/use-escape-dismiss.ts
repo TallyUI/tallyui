@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { isTopLayer, pushLayer, removeLayer } from '../layer-stack';
 
 // Web only: while `active`, this content is a layer in layer-stack.ts, and Escape
-// on the document closes it when it is the top layer (one Escape, one layer).
+// in the capture phase (a focused input cannot swallow it) closes it when top, then is stopped (one Escape, one layer).
 // `onEscapeKeyDown` runs first and may call preventDefault() to keep it open.
 export function useEscapeDismiss(
   active: boolean,
@@ -22,11 +22,13 @@ export function useEscapeDismiss(
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !isTopLayer(id)) return;
       onEscapeKeyDownRef.current?.(event);
-      if (!event.defaultPrevented) closeRef.current();
+      if (event.defaultPrevented) return;
+      closeRef.current();
+      event.stopPropagation();
     };
-    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keydown', onKeyDown, true);
     return () => {
-      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keydown', onKeyDown, true);
       removeLayer(id);
     };
   }, [active, id]);

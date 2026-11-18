@@ -36,4 +36,37 @@ test.describe('Escape dismiss', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByText('Qwik', { exact: true })).not.toBeVisible();
   });
+
+  test.describe('Overlays in a Dialog', () => {
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/ui/dialog');
+      await page.getByRole('button', { name: 'Open dialog with overlays', exact: true }).click();
+    });
+
+    test('E5: Escape closes the nested Select first, then the Dialog', async ({ page }) => {
+      await page.getByTestId('nested-select-trigger').click();
+      await expect(page.getByTestId('nested-select-content')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('nested-select-content')).not.toBeVisible();
+      await expect(page.getByPlaceholder('Nested combobox', { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByPlaceholder('Nested combobox', { exact: true })).not.toBeVisible();
+    });
+
+    test('E6: Escape in the focused nested Combobox input closes only its list', async ({ page }) => {
+      await page.getByPlaceholder('Nested combobox', { exact: true }).click();
+      await expect(page.getByText('One', { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByText('One', { exact: true })).not.toBeVisible();
+      await expect(page.getByPlaceholder('Nested combobox', { exact: true })).toBeVisible();
+    });
+
+    test('E7: Escape closes the nested DropdownMenu and leaves the Dialog open', async ({ page }) => {
+      await page.getByTestId('nested-dropdown-menu-trigger').click();
+      await expect(page.getByText('Nested menu item', { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByText('Nested menu item', { exact: true })).not.toBeVisible();
+      await expect(page.getByPlaceholder('Nested combobox', { exact: true })).toBeVisible();
+    });
+  });
 });
