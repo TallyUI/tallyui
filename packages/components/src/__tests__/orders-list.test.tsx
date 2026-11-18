@@ -60,6 +60,25 @@ describe('OrdersList row hint on web', () => {
     }
     expect(ids[0]).not.toBe(ids[1]);
   });
+
+  it('gives an order shown in both sections a different hint id in each', () => {
+    const since = new Date(2026, 8, 29, 14, 2).getTime();
+    const stuck = order('s', { createdAt: '2026-09-25T09:00:00.000Z' });
+    render(<OrdersList orders={[stuck, order('p'), order('x', { commandId: 'command-a', syncStatus: 'applied' })]} onRetry={async () => 0}
+      formatDate={formatDate} stuck={{ commandIds: ['command-s', 'command-a'], reason: 'status_503', since,
+        orders: ['command-s', 'command-a'].map((commandId) => ({ commandId, since, reason: 'status_503' })) }} />);
+    const rows = screen.getAllByTestId('order-row-s');
+    expect(rows).toHaveLength(2);
+    const ids = rows.map((row) => row.getAttribute('aria-describedby')!);
+    expect(ids[0]).not.toBe(ids[1]);
+    for (const id of ids) {
+      expect(id).toBeTruthy();
+      expect(id).not.toMatch(/\s/);
+      const matches = document.querySelectorAll(`[id="${id}"]`);
+      expect(matches).toHaveLength(1);
+      expect(matches[0].textContent).toBe('Shows the items and payments of this sale');
+    }
+  });
 });
 
 describe('OrdersList sale note (ADR-083 condition 2)', () => {

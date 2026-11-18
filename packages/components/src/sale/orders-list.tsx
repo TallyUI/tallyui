@@ -121,7 +121,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
     return bTime - aTime;
   });
   return <ScrollView className="flex-1 bg-background p-4">
-    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section) => (
+    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section, sectionIndex) => (
       <View key={section.title} className="mb-6 gap-3">
         <Text accessibilityRole="header" className="text-xl font-semibold text-foreground">{section.title}</Text>
         {section.title === 'Recent' && orders.length === 0 && shown.length === 0 ? <Text testID="orders-empty" className="text-muted-foreground">No sales yet. Completed sales appear here.</Text> : null}
@@ -145,8 +145,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
             {/* RN-web drops accessibilityHint; aria-describedby carries it on web. */}
-            <Text id={`${hintId}-${order.id}`} className="hidden">Shows the items and payments of this sale</Text>
-            <Pressable accessibilityRole="button" aria-expanded={isExpanded} aria-describedby={`${hintId}-${order.id}`}
+            <Text id={`${hintId}-${sectionIndex}-${order.id}`} className="hidden">Shows the items and payments of this sale</Text>
+            <Pressable accessibilityRole="button" aria-expanded={isExpanded} aria-describedby={`${hintId}-${sectionIndex}-${order.id}`}
               accessibilityHint="Shows the items and payments of this sale" testID={`order-row-${order.id}`} className="gap-1"
               onPress={() => setExpanded((current) => {
                 const next = new Set(current);
