@@ -1,7 +1,7 @@
 // Port of WCPOS v2 (monorepo main) pos/cart/customer.tsx and components/customer-select.tsx (CustomerSearch, CustomerList,
 // CustomerSelectItem): the cart header's customer chip and its search dropdown; MIT, WCPOS.
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { CustomerServiceError, type Customer } from '@tallyui/core';
 import { Popover } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
@@ -12,12 +12,14 @@ import { customerErrorText } from './customer-picker';
 /** line-popover.tsx's focus targets: here the search field and the rows. */
 const FOCUSABLE = 'button, [href], input, [tabindex]:not([tabindex="-1"])';
 const row = 'min-h-11 flex-row items-center gap-2 rounded-md px-2 py-1.5 web:focus:bg-accent';
+/** v2's SEARCH_SELECT_PAGE_SIZE (monorepo packages/core/src/query/search-select.ts:28): a page shorter than this is the last one. */
+const PAGE_SIZE = 50;
 
 export interface CustomerDropdownProps {
-  /** The connector's searchCustomers, bound to its context by the app. */
-  search: (query: string) => Promise<Customer[]>;
-  /** The first customers to list for an empty query (v2's customer browse, e.g. the first 50 by last name). Absent: an empty query lists Guest alone. */
-  browse?: () => Promise<Customer[]>;
+  /** The connector's searchCustomers, bound to its context by the app. `page` (1-based) asks for the next 50 when the cashier reaches the end of the list; absent means the first page. */
+  search: (query: string, page?: number) => Promise<Customer[]>;
+  /** The first customers to list for an empty query (v2's customer browse, e.g. the first 50 by last name). Absent: an empty query lists Guest alone. `page` (1-based) asks for the next 50 when the cashier reaches the end of the list; absent means the first page. */
+  browse?: (page?: number) => Promise<Customer[]>;
   selected: Customer | null;
   /** A customer, or null for Guest. */
   onSelect: (customer: Customer | null) => void;
@@ -56,26 +58,61 @@ export function CustomerDropdown({ search, browse, selected, onSelect, onError, 
   onErrorRef.current = onError;
   const chip = useRef<View>(null);
   const name = selected?.name ?? 'Guest';
+  // The shown rows' paging: their generation (any newer first page makes older pages stale), query, last page loaded
+  // (0 until the first page resolves), whether there is no more, and v2's latch (one later page in flight).
+  const paging = useRef({ gen: 0, query: '', page: 0, done: false, busy: false });
 
   // CustomerPicker's search: debounced, a stale response dropped; nothing sent offline; a blank query sends `browse` while
   // open (when given), else nothing.
   useEffect(() => {
-    let stale = false;
+    paging.current = { gen: paging.current.gen + 1, query, page: 0, done: false, busy: false };
+    const p = paging.current;
+    const stale = () => paging.current.gen !== p.gen;
     setError(null);
     const blank = !query.trim();
     if (!online || (blank && (!canBrowse || !open))) { setCustomers([]); return; }
     const timer = setTimeout(async () => {
       try {
         const results = await (blank ? browseRef.current?.() ?? [] : searchRef.current(query));
-        if (!stale) setCustomers(results);
+        if (stale()) return;
+        setCustomers(results);
+        p.page = 1;
+        p.done = results.length < PAGE_SIZE;
       } catch (error) {
-        if (stale) return;
+        if (stale()) return;
         setError(customerErrorText(error));
         if (!(error instanceof CustomerServiceError)) onErrorRef.current?.(error);
       }
     }, blank ? 0 : debounceMs);
-    return () => { clearTimeout(timer); stale = true; };
+    return () => { clearTimeout(timer); paging.current.gen++; };
   }, [query, online, debounceMs, open, canBrowse]);
+
+  // v2's next page at the end of the list: the next 50 for the query the rows came from, one request at a time, never
+  // offline; rows are kept by customer id.
+  const more = async () => {
+    const p = paging.current;
+    if (!online || !open || p.page < 1 || p.done || p.busy) return;
+    p.busy = true;
+    const next = p.page + 1;
+    try {
+      const results = await (p.query.trim() ? searchRef.current(p.query, next) : browseRef.current?.(next) ?? []);
+      if (paging.current.gen !== p.gen) return;
+      const held = new Set(customers.map((customer) => customer.id));
+      const fresh = results.filter((customer) => !held.has(customer.id));
+      setCustomers((rows) => [...rows, ...fresh]);
+      p.page = next;
+      if (results.length < PAGE_SIZE) p.done = true;
+      if (!fresh.length) p.done = true;
+    } catch (error) {
+      if (paging.current.gen !== p.gen) return;
+      setError(customerErrorText(error));
+      if (!(error instanceof CustomerServiceError)) onErrorRef.current?.(error);
+    } finally { p.busy = false; }
+  };
+  // v2's onEndReachedThreshold={0.1}: within a tenth of the visible height of the end.
+  const onScroll = ({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (contentSize.height - (contentOffset.y + layoutMeasurement.height) <= 0.1 * layoutMeasurement.height) void more();
+  };
 
   // Each open starts, and each close leaves, an empty query with no results.
   const openChange = (next: boolean) => { setQuery(''); setCustomers([]); setOpen(next); };
@@ -112,7 +149,7 @@ export function CustomerDropdown({ search, browse, selected, onSelect, onError, 
             {!online && <Text className="text-sm text-muted-foreground">Connect to search customers.</Text>}
             {error && <Text accessibilityRole="alert" className="text-sm text-destructive">{error}</Text>}
             {/* Guest first, always: v2's cart dropdown prepends it, so a search with no matches shows Guest alone. */}
-            <ScrollView className="max-h-60">
+            <ScrollView className="max-h-60" testID="customer-dropdown-list" onScroll={onScroll} scrollEventThrottle={16}>
               <Pressable role="option" aria-selected={selected === null} testID="customer-dropdown-option-guest" accessibilityLabel="Guest" onPress={() => pick(null)} className={row}>
                 <GuestGlyph />
                 <Text className="text-foreground">Guest</Text>
