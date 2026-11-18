@@ -38,6 +38,12 @@ export interface CashierSheetHandTo {
   /** v2's `busy` (a busy switch): every row is disabled. */ disabled?: boolean;
   /** v2's `countingHere`: a count is open on this register; rows are disabled and the header says why. */ counting?: boolean;
 }
+export interface CashierSheetPlace {
+  /** The current store's or register's name. */ name: string;
+  /** "Switch" was pressed: the app opens its own picker (`RegisterPicker` for registers). Absent hides the verb (v2 shows it with two or more). */ onSwitch?: () => void;
+  /** Why Switch is held (v2: "Needs the store to switch" offline; the open-sale reason for registers). Drawn under the row unless `paying`, and disables Switch. */ heldReason?: string;
+  /** v2's `busy`: Switch is disabled, with no line. */ disabled?: boolean;
+}
 
 export interface CashierSheetProps {
   cashier: { name: string; avatar?: string };
@@ -55,18 +61,20 @@ export interface CashierSheetProps {
   /** v2's "Hand the till to": the other cashiers; pressing a row calls `onHandTo(id)`. Hidden when absent or empty. */ handTo?: CashierSheetHandTo;
   /** v2's `paying` hold: shows "Finish the payment first" and disables the hand-to rows (Sign out keeps `signOutDisabled`). */ paying?: boolean;
   /** The sales the store has still to hear; the notice is hidden at 0 or undefined. */ awaitingStore?: number;
+  /** v2's Store row; hidden when absent. */ store?: CashierSheetPlace;
+  /** v2's Register row; hidden when absent. The app passes it only when bound with two or more registers, as v2 does. */ register?: CashierSheetPlace;
 }
 
 /**
  * The cashier's sheet on the right edge: the header, "Your sales today", the drawer door, the awaiting-store and payment hold
- * notices, "Hand the till to" and Sign out (v2 parity S9a-S9c). The app
+ * notices, "Hand the till to", the Store and Register rows and Sign out (v2 parity S9a-S9d). The app
  * mounts it while open, as `SwitchConfirm` and `MovementSheet` are mounted. Port provenance: WCPOS v2 monorepo
  * `main` ec022c989 `packages/core/src/screens/main/pos/cart/user-sheet.tsx` (:632 the container, :654-676 the
  * header, :680-687 the sales row, :688-691 the drawer door from :120-165 and :180-229, :693-723 the notices and "Hand the
- * till to" from :231-289, :800-821 Sign out), with its English copy (`core.json` `register.*`). Literal
- * English, as the other register components carry it. Not here: the Store and Register rows and the Woo footer.
+ * till to" from :231-289, :724-753 the Store and Register rows with `StoreRow` from :436-475, :800-821 Sign out), with its English copy (`core.json` `register.*`). Literal
+ * English, as the other register components carry it. Not here: v2's in-sheet store and register panes (the app opens its own picker) and the Woo footer.
  */
-export function CashierSheet({ cashier, description, salesToday, onSignOut, signOutDisabled = false, onOpenChange, drawer, handTo, paying = false, awaitingStore = 0 }: CashierSheetProps) {
+export function CashierSheet({ cashier, description, salesToday, onSignOut, signOutDisabled = false, onOpenChange, drawer, handTo, paying = false, awaitingStore = 0, store, register }: CashierSheetProps) {
   const formatMoney = useFormatMoney();
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -94,6 +102,10 @@ export function CashierSheet({ cashier, description, salesToday, onSignOut, sign
           </View>}
           {paying && <View testID="cashier-sheet-hold" className="bg-info/10 mx-3 mt-2 rounded-md p-3"><Text className="font-semibold">Finish the payment first</Text></View>}
           {handTo && handTo.cashiers.length > 0 && <HandTo handTo={handTo} paying={paying} />}
+          {(store || register) && <View testID="cashier-sheet-places" className="mt-2">
+            {store && <PlaceRow id="store" label="Store" place={store} paying={paying} />}
+            {register && <PlaceRow id="register" label="Register" place={register} paying={paying} />}
+          </View>}
         </View>
         <DialogFooter bordered>
           <Button variant="destructive" testID="cashier-sheet-sign-out" disabled={signOutDisabled} onPress={onSignOut}>
@@ -102,6 +114,22 @@ export function CashierSheet({ cashier, description, salesToday, onSignOut, sign
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** v2's `PropertyRow` key · value · verb line (property-row/index.tsx) for the Store and Register rows (user-sheet.tsx:436-475, :724-753). */
+function PlaceRow({ id, label, place, paying }: { id: 'store' | 'register'; label: string; place: CashierSheetPlace; paying: boolean }) {
+  return (
+    <View testID={`cashier-sheet-${id}`} className="px-3 py-2">
+      <View className="min-h-11 flex-row items-center gap-3">
+        <Text className="w-32 shrink-0 text-sm text-muted-foreground">{label}</Text>
+        <Text className="min-w-0 flex-1" numberOfLines={1}>{place.name}</Text>
+        {place.onSwitch && <Button variant="link" size="sm" testID={`cashier-sheet-${id}-switch`} disabled={!!place.disabled || paying || !!place.heldReason} onPress={place.onSwitch}>
+          <Text>Switch</Text>
+        </Button>}
+      </View>
+      {!!place.heldReason && !paying && <Text testID={`cashier-sheet-${id}-held`} className="text-sm text-muted-foreground">{place.heldReason}</Text>}
+    </View>
   );
 }
 
