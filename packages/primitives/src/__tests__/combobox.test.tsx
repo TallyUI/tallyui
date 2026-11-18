@@ -291,6 +291,62 @@ describe('Combobox', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Input inside Trigger
+  // -------------------------------------------------------------------------
+
+  describe('Input inside Trigger', () => {
+    const renderNested = () =>
+      render(
+        <div>
+          <PortalHost />
+          <Combobox.Root>
+            <Combobox.Trigger testID="trigger">
+              <Combobox.Input testID="input" />
+            </Combobox.Trigger>
+            <Combobox.Portal>
+              <Combobox.Content testID="content">
+                <Combobox.Item value="apple" label="Apple">
+                  <Combobox.ItemText />
+                </Combobox.Item>
+              </Combobox.Content>
+            </Combobox.Portal>
+          </Combobox.Root>
+        </div>
+      );
+
+    it('a click on the input opens the list and leaves it open', () => {
+      renderNested();
+      const input = screen.getByTestId('input');
+
+      fireEvent.focus(input);
+      fireEvent.click(input);
+      expect(screen.getByTestId('content')).toBeTruthy();
+
+      fireEvent.click(input);
+      expect(screen.getByTestId('content')).toBeTruthy();
+    });
+
+    it('a click on a focused input reopens a closed list', () => {
+      renderNested();
+      expect(screen.queryByTestId('content')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('input'));
+      expect(screen.getByTestId('content')).toBeTruthy();
+    });
+
+    it('a press on the Trigger outside the input toggles the list', () => {
+      renderNested();
+      const trigger = screen.getByTestId('trigger');
+
+      fireEvent.click(trigger);
+      expect(screen.getByTestId('content')).toBeTruthy();
+
+      fireEvent.click(trigger);
+      expect(screen.queryByTestId('content')).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // positioning
   // -------------------------------------------------------------------------
 
