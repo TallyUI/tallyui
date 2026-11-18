@@ -97,6 +97,7 @@ export function CustomerDropdown({ search, browse, selected, onSelect, onError, 
     try {
       const results = await (p.query.trim() ? searchRef.current(p.query, next) : browseRef.current?.(next) ?? []);
       if (paging.current.gen !== p.gen) return;
+      setError(null);
       const held = new Set(customers.map((customer) => customer.id));
       const fresh = results.filter((customer) => !held.has(customer.id));
       setCustomers((rows) => [...rows, ...fresh]);
