@@ -9,6 +9,7 @@ export { LinePopover, type LinePopoverProps } from './line-popover';
 export { ChargeForm, type ChargeFormProps } from './charge-form';
 export { Catalogue, formatStockSyncTime } from './catalogue';
 export { Receipt } from './receipt';
+export { ReceiptSheet, type ReceiptSheetProps, type ReceiptSheetTemplate } from './receipt-sheet';
 export { orderReference } from './order-reference';
 export { injectPrintStyle } from './print-style';
 export { SyncStatus, syncStatusQuiet } from './sync-status';
