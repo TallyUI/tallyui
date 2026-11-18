@@ -24,6 +24,9 @@ const NAME_LABEL_ID = 'charge-form-name-label';
 const AMOUNT_LABEL_ID = 'charge-form-amount-label';
 
 const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center justify-center';
+/** A blank name takes v2's default for the kind: add-fee.tsx:71 (`pos_cart.fee`), add-shipping.tsx:73
+ * (`common.shipping`) and add-misc-product.tsx:91 (`common.product`), WCPOS monorepo packages/core/src/screens/main/pos/cart. */
+const DEFAULT_NAME: Record<'fee' | 'shipping' | 'custom', string> = { fee: 'Fee', shipping: 'Shipping', custom: 'Product' };
 
 /** `onApply` returns a refusal to show inline, or null once applied. */
 export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, kind: fixedKind, initial, onApply, onClose }: ChargeFormProps) {
@@ -41,10 +44,15 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
   const [error, setError] = useState<string | null>(null);
   const storeShipping = kind === 'shipping' && shippingTaxFromStore;
   function apply() {
-    const parsed = parsePrice(text, currency);
+    // v2's fee rules (add-fee.tsx:48-55): `pos_cart.fee_amount_negative`, and zero refused with
+    // `pos_cart.discount_amount_invalid` (climb F28). Shipping and custom items accept zero.
+    // The negative check comes first, so a fee never shows parsePrice's "0 or more".
+    const price = parsePrice(text, currency);
+    const parsed = kind === 'fee' && Number(text.trim().replace(',', '.')) < 0 ? 'A fee cannot be negative. Use Add Discount instead.'
+      : kind === 'fee' && price === 0 ? 'Enter an amount greater than zero' : price;
     // A control that is not shown keeps the edited charge's own value.
-    const refused = !name.trim() ? 'Enter a name.' : typeof parsed === 'string' ? parsed : onApply({
-      kind, name: name.trim(), amountMinor: parsed,
+    const refused = typeof parsed === 'string' ? parsed : onApply({
+      kind, name: name.trim() || DEFAULT_NAME[kind], amountMinor: parsed,
       taxStatus: !storeShipping && lineTax?.none ? (noTax ? 'none' : undefined) : initial?.taxStatus === 'none' ? 'none' : undefined,
       taxClass: !storeShipping && lineTax?.classes && taxClasses?.length ? taxClass || undefined : initial?.taxClass,
     });
