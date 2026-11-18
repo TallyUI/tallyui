@@ -17,6 +17,9 @@ async function seed(db: DemoRegisterDb) {
 export default function RegisterCountScreen() {
   const { register, ready } = useDemoRegister({ seed, varianceThreshold: 500 });
   const [showClosure, setShowClosure] = useState(false);
+  // No real printer here: the Z report "prints" by showing a line.
+  const [printed, setPrinted] = useState(false);
+  const onPrint = () => setPrinted(true);
   // A close passes through an intermediate 'closed, closure not yet written' snapshot before
   // `lastClosure` is set, so this remembers "was counting" across that gap rather than reading
   // only the immediately preceding render's status.
@@ -33,8 +36,9 @@ export default function RegisterCountScreen() {
     <>
       <Stack.Screen options={{ title: 'RegisterCount' }} />
       <View className="flex-1 bg-background p-4" testID="register-count-screen">
-        {!ready ? <Text>Loading…</Text> : <RegisterCount register={register} currency="EUR" />}
-        {showClosure && <ClosureSheet register={register} currency="EUR" onDone={() => setShowClosure(false)} />}
+        {!ready ? <Text>Loading…</Text> : <RegisterCount register={register} currency="EUR" onPrint={onPrint} />}
+        {printed && <Text testID="demo-z-printed">Z report sent to the demo printer</Text>}
+        {showClosure && <ClosureSheet register={register} currency="EUR" onPrint={onPrint} onDone={() => setShowClosure(false)} />}
       </View>
     </>
   );

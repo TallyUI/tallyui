@@ -187,6 +187,7 @@ for (const size of sizes) {
     test('RegisterCount counts two notes, and the total updates', async ({ page }) => {
       await page.goto('/pos/register/count');
       await expect(page.getByTestId('register-count')).toBeVisible();
+      await page.getByTestId('count-denominations').click();
       await page.getByTestId('den-tile-5000').click();
       await page.getByTestId('den-tile-5000').click();
       await expect(page.getByTestId('den-count-5000')).toHaveText('2');
@@ -197,6 +198,7 @@ for (const size of sizes) {
 
     test('RegisterCount labels whole notes without decimals', async ({ page }) => {
       await page.goto('/pos/register/count');
+      await page.getByTestId('count-denominations').click();
       await expect(page.getByTestId('den-tile-5000')).toHaveAttribute('aria-label', '€50');
       await expect(page.getByTestId('den-tile-1')).toHaveAttribute('aria-label', '€0.01');
     });
@@ -210,10 +212,33 @@ for (const size of sizes) {
 
     test('RegisterCount typing an amount clears the tiles', async ({ page }) => {
       await page.goto('/pos/register/count');
+      await page.getByTestId('count-denominations').click();
       await page.getByTestId('den-tile-5000').click();
       await expect(page.getByTestId('den-count-5000')).toHaveText('1');
       await page.getByTestId('count-amount').fill('123.45');
       await expect(page.getByTestId('den-count-5000')).toHaveText('0');
+    });
+
+    test('RegisterCount opens notes and coins with one press after typing by keys', async ({ page }) => {
+      await page.goto('/pos/register/count');
+      await page.getByTestId('count-key-5').click();
+      await page.getByTestId('count-denominations').click();
+      await expect(page.getByTestId('count-denomination-tiles')).toBeVisible();
+    });
+
+    test('RegisterCount counts a tile with one press after typing by keys', async ({ page }) => {
+      await page.goto('/pos/register/count');
+      await page.getByTestId('count-denominations').click();
+      await page.getByTestId('count-key-5').click();
+      await page.getByTestId('den-tile-5000').click();
+      await expect(page.getByTestId('den-count-5000')).toHaveText('1');
+    });
+
+    test('RegisterCount folds the keypad after a press outside the entry', async ({ page }) => {
+      await page.goto('/pos/register/count');
+      await page.getByTestId('count-key-5').click();
+      await page.getByTestId('count-variance').click();
+      await expect(page.getByTestId('count-tap-to-change')).toBeVisible();
     });
 
     test('RegisterCount blind mode shows no variance', async ({ page }) => {
