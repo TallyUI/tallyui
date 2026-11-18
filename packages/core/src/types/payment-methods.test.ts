@@ -47,10 +47,20 @@ describe('wireMethodOf (condition 5)', () => {
 });
 
 describe('legMethodId', () => {
-  it('is the leg\'s methodId, else its wire method', () => {
-    expect(legMethodId({ method: 'cash', methodId: 'cod' })).toBe('cod');
-    expect(legMethodId({ method: 'external', methodId: 'stripe' })).toBe('stripe');
+  it('is the wire method plus the leg\'s methodId, else the wire method alone', () => {
+    expect(legMethodId({ method: 'cash', methodId: 'cod' })).toBe('cash:cod');
+    expect(legMethodId({ method: 'external', methodId: 'stripe' })).toBe('external:stripe');
     expect(legMethodId({ method: 'cash' })).toBe('cash');
     expect(legMethodId({ method: 'external' })).toBe('external');
+  });
+
+  it('keeps a non-cash method whose id is `cash` apart from cash', () => {
+    expect(legMethodId({ method: 'external', methodId: 'cash' })).toBe('external:cash');
+    expect(legMethodId({ method: 'external', methodId: 'cash' })).not.toBe(legMethodId({ method: 'cash' }));
+  });
+
+  it('is the wire method alone when the id equals it', () => {
+    expect(legMethodId({ method: 'cash', methodId: 'cash' })).toBe('cash');
+    expect(legMethodId({ method: 'external', methodId: 'external' })).toBe('external');
   });
 });

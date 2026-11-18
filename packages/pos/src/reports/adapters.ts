@@ -38,7 +38,8 @@ export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin, method
     }),
     payments: till.map((payment) => {
       const method = legMethodId(payment);
-      const label = payment.methodId !== undefined ? methodTitle?.(method) : undefined;
+      // The title is looked up by the platform's own id, never the kind+id key; an id the host cannot name labels itself.
+      const label = payment.methodId !== undefined && payment.methodId !== payment.method ? methodTitle?.(payment.methodId) ?? payment.methodId : undefined;
       return { method, ...(label ? { label } : {}), amountMinor: payment.amountMinor };
     }),
     ...(order.storeOrderId !== undefined ? { paidEarlierMinor: amountOf(order.payments) - amountOf(till) } : {}),

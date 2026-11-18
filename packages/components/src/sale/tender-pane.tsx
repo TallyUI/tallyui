@@ -7,7 +7,7 @@
  */
 import { useEffect, useState, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { defaultPaymentMethods, useFormatMoney, minorUnitDigits, type PaymentMethodDescriptor } from '@tallyui/core';
+import { useFormatMoney, minorUnitDigits, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
   activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, isInMotion, legStatus, lockedRefundDueMinor, planLegs, quickTenderedAmounts, tenderRounding, tillLegsTheStoreRefuses,
   type TenderAction, type TenderKey, type TenderState, type useSale,
@@ -16,6 +16,7 @@ import { cn } from '@tallyui/theme';
 import { QUICK_CASH_STEPS } from '../checkout/cash-tendered';
 import { useT } from '../i18n';
 import { DIGIT_ROWS, Keypad } from '../input/keypad';
+import { offeredMethods, tenderOf } from './offered-methods';
 import { TenderLedger } from './tender-ledger';
 import { BanknoteIcon } from '../ui/icon/banknote-icon';
 import { CreditCardIcon } from '../ui/icon/credit-card-icon';
@@ -28,7 +29,7 @@ export interface TenderPaneProps {
   /** The tender reducer's state (`tenderReducer` in @tallyui/pos); the host owns the reducer. */
   state: TenderState;
   dispatch: (action: TenderAction) => void;
-  /** Defaults to `defaultPaymentMethods()`; only `cash` and `external`, the order.create methods, are offered. */
+  /** Defaults to `defaultPaymentMethods()`. Each manual-capture method is offered, recorded as its wire method (`wireMethodOf`) plus its own id. */
   methods?: PaymentMethodDescriptor[];
   /** Draws the payments ledger in the pane. Pass `false` when the host shows it in the cart column, as v2 does (Cart's `tenderLedger`). Default `true`. */
   ledger?: boolean;
@@ -62,7 +63,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true }: Te
   }, [order.payments, balance, state.entryDirty, state.plan, dispatch]);
   if (stage.kind !== 'tender') return null;
 
-  const offered = (methods ?? defaultPaymentMethods()).filter(({ id }) => id === 'cash' || id === 'external');
+  const offered = offeredMethods(methods);
   const descriptorOf = (id: string) => offered.find((method) => method.id === id);
   const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
   const method = state.methodId ? descriptorOf(state.methodId) ?? null : null;
@@ -102,9 +103,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true }: Te
 
   function take() {
     if (!method) return;
-    const id = method.id === 'cash'
-      ? sale.addTender({ method: 'cash', amountMinor: figures.entryMinor })
-      : sale.addTender({ method: 'external', amountMinor: figures.appliedMinor, ...(reference ? { reference } : {}) });
+    const tender = tenderOf(method);
+    const id = tender.method === 'cash'
+      ? sale.addTender({ ...tender, amountMinor: figures.entryMinor })
+      : sale.addTender({ ...tender, amountMinor: figures.appliedMinor, ...(reference ? { reference } : {}) });
     if (id === null) { setRefusal(true); return; }
     setRefusal(false);
     setReference('');
@@ -142,8 +144,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true }: Te
 
     {ledger ? <TenderLedger sale={sale} methods={methods} /> : null}
 
+    {/* cardReference holds only for an external leg; the edit keeps that leg's method and its own methodId. */}
     {cardReference ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
-      value={onlyLeg.reference ?? ''} onChangeText={(text) => sale.setTender({ method: 'external', amountMinor: onlyLeg.amountMinor, reference: text })}
+      value={onlyLeg.reference ?? ''} onChangeText={(text) => sale.setTender({ method: 'external', ...(onlyLeg.methodId !== undefined ? { methodId: onlyLeg.methodId } : {}), amountMinor: onlyLeg.amountMinor, reference: text })}
       className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
 
     {balance > 0 ? <View testID="tender-entry" className="gap-3">

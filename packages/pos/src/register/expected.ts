@@ -158,13 +158,14 @@ export function deriveDrawerTerms(input: Parameters<typeof deriveExpected>[0]): 
 
 /**
  * Takings per payment method for one session, for the closure sheet: this till's captured payments (`tillPayments`) of the
- * orders whose `sessionId` is `sessionId`, keyed by `legMethodId`, with the number of payments behind each. Local only,
- * never synced: register rows and payloads keep `method_id: payment.method` (#256, ADR-070 decision 1). A leg with no
- * methodId keys exactly as deriveDrawerTerms does (`cash` or its method); the figures sum to deriveDrawerTerms' cash sales
- * plus other tenders for the same orders. Refunds and movements are not here: they are keyed by the wire method.
+ * orders whose `sessionId` is `sessionId`, keyed by `legMethodId`'s kind plus id (`external:stripe`), with the number of
+ * payments behind each. Local only, never synced: register rows and payloads keep `method_id: payment.method` (#256, ADR-070
+ * decision 1). A leg with no methodId keys exactly as deriveDrawerTerms does (`cash` or its method); the figures sum to
+ * deriveDrawerTerms' cash sales plus other tenders for the same orders. Refunds and movements are not here: they are keyed
+ * by the wire method. The map has no prototype, so a platform id such as `__proto__` or `toString` is a key like any other.
  */
 export function takingsByMethod(orders: readonly Pick<PosOrder, 'sessionId' | 'payments'>[], sessionId: string): Record<string, DrawerTerm> {
-  const takings: Record<string, DrawerTerm> = {};
+  const takings: Record<string, DrawerTerm> = Object.create(null);
   for (const order of orders) {
     if (order.sessionId !== sessionId) continue;
     for (const payment of tillPayments(order.payments)) {

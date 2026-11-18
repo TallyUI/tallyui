@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatMoney, paymentMethodOf } from '@tallyui/core';
+import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { createOrderBuilder, CUSTOMER_RETAX_REFUSED, type useSale } from '@tallyui/pos';
 import { Tender } from '../sale/tender';
 import { blue, click, pricing, SaleHarness, sale, traits } from './sale-harness';
@@ -237,5 +237,64 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     await act(async () => { click('Complete sale'); });
     expect(sale.error).toBeNull();
     expect(sale.stage.kind).toBe('receipt');
+  });
+});
+
+describe("Tender with the host's own methods (ruling A, methodId)", () => {
+  /** A host's descriptor: today's cash or card shape, under its own id, title, kind and capture mode. */
+  const own = (id: string, title: string, kind: string, mode = 'manual'): PaymentMethodDescriptor =>
+    ({ ...paymentMethodOf(kind === 'cash' ? 'cash' : 'external'), id, title, kind, capture: { mode, provider: null, hardware: null } });
+  const host = [own('pos_cash', 'Till cash', 'cash'), own('cheque', 'Cheque', 'other'), own('stripe_terminal', 'Stripe reader', 'card', 'device')];
+  /** A ledger row reads its title, then the amount and status. */
+  const ledgerRow = (index: number) => text(`tender-leg-${leg(index)}`);
+
+  it('records the default cash and card legs with no methodId at all', () => {
+    start(3000);
+    for (const key of ['1', '0', '0', '0']) press(key);
+    click(`Take ${money(1000)} in Cash`);
+    click('Card terminal');
+    click(`Take ${money(2000)} in Card terminal`);
+    expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 1000 }, { method: 'external', amountMinor: 2000 }]);
+    for (const payment of sale.order.payments) expect(payment).not.toHaveProperty('methodId');
+  });
+
+  it('draws a tile per manual-capture method and none for a device method', () => {
+    start(2500, 'cash', host);
+    const tiles = within(screen.getByTestId('tender-methods')).getAllByRole('button');
+    expect(tiles.map((tile) => tile.getAttribute('data-testid'))).toEqual(['tender-method-pos_cash', 'tender-method-cheque']);
+    expect(screen.queryByTestId('tender-method-stripe_terminal')).toBeNull();
+  });
+
+  it("takes the host's cash method as cash under its own id, with change, titled in the ledger", () => {
+    start(2500, 'cash', host);
+    for (const key of ['3', '0', '0', '0']) press(key);
+    expect(text('tender-entry-hint')).toBe(`Change ${money(500)}`);
+    click(`Take ${money(2500)} in Till cash`);
+    expect(sale.order.payments).toMatchObject([{ method: 'cash', methodId: 'pos_cash', amountMinor: 3000 }]);
+    expect(text('tender-change')).toBe(`Change ${money(500)}`);
+    expect(ledgerRow(0)).toBe(`Till cash${money(3000)}CapturedCancel payment`);
+  });
+
+  it("takes the host's cheque as an external leg under its own id, titled in the ledger", () => {
+    start(2500, 'cash', host);
+    fireEvent.click(screen.getByTestId('tender-method-cheque'));
+    click(`Take ${money(2500)} in Cheque`);
+    expect(sale.order.payments).toMatchObject([{ method: 'external', methodId: 'cheque', amountMinor: 2500 }]);
+    expect(ledgerRow(0)).toBe(`Cheque${money(2500)}CapturedCancel payment`);
+  });
+
+  it("keeps the leg's methodId when its reference is edited", () => {
+    start(1500, 'cash', host);
+    fireEvent.click(screen.getByTestId('tender-method-cheque'));
+    click(`Take ${money(1500)} in Cheque`);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Terminal reference' }), { target: { value: 'CHQ-12' } });
+    expect(sale.order.payments).toMatchObject([{ method: 'external', methodId: 'cheque', amountMinor: 1500, reference: 'CHQ-12' }]);
+  });
+
+  it("opens on the offered method that records startTender's cash when no method has the id 'cash'", () => {
+    start(2500, 'cash', [own('cheque', 'Cheque', 'other'), own('pos_cash', 'Till cash', 'cash')]);
+    expect(screen.getByTestId('tender-method-pos_cash').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('tender-method-cheque').getAttribute('aria-selected')).toBe('false');
+    expect(text('tender-take')).toBe(`Take ${money(2500)} in Till cash`);
   });
 });
