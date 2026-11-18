@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings } from '@tallyui/core';
 import { isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
@@ -102,6 +102,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
   onOpen?: (row: PosOrder | OrderHistoryRow) => void;
 }) {
   const formatMoney = useFormatMoney();
+  const hintId = useId();
   const retrying = useRef(new Set<string>());
   const [retryingIds, setRetryingIds] = useState(new Set<string>());
   const [expanded, setExpanded] = useState(new Set<string>());
@@ -143,7 +144,9 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const isExpanded = expanded.has(key);
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
-            <Pressable accessibilityRole="button" aria-expanded={isExpanded}
+            {/* RN-web drops accessibilityHint; aria-describedby carries it on web. */}
+            <Text id={`${hintId}-${order.id}`} className="hidden">Shows the items and payments of this sale</Text>
+            <Pressable accessibilityRole="button" aria-expanded={isExpanded} aria-describedby={`${hintId}-${order.id}`}
               accessibilityHint="Shows the items and payments of this sale" testID={`order-row-${order.id}`} className="gap-1"
               onPress={() => setExpanded((current) => {
                 const next = new Set(current);

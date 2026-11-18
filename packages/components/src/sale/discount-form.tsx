@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { formatMoney, useFormatMoney, minorUnitDigits, moneyFromDecimalString, type Money } from '@tallyui/core';
 import type { AppliedDiscount, Discount } from '@tallyui/pos';
@@ -44,6 +44,7 @@ function CouponTab({ coupons, onApplyCoupon, onClose, onNewCoupon, newCouponDisa
   coupons: readonly DiscountCoupon[]; onApplyCoupon: (code: string) => Promise<string | null>; onClose: () => void;
   onNewCoupon?: () => void; newCouponDisabledReason?: string;
 }) {
+  const hintId = useId();
   const [search, setSearch] = useState('');
   const [picked, setPicked] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,10 +89,13 @@ function CouponTab({ coupons, onApplyCoupon, onClose, onNewCoupon, newCouponDisa
       {/* v2 add-coupon.tsx:110-143: "+" beside the picker; a disabled one gives its reason as tooltip and accessibilityHint. */}
       {onNewCoupon ? <Tooltip><TooltipTrigger asChild>
         <IconButton variant="ghost" testID="add-coupon-new" accessibilityLabel="New coupon" disabled={!!newCouponDisabledReason}
-          accessibilityHint={newCouponDisabledReason || undefined} onPress={onNewCoupon}>
+          accessibilityHint={newCouponDisabledReason || undefined} onPress={onNewCoupon}
+          aria-describedby={newCouponDisabledReason ? hintId : undefined}>
           <View className="text-foreground"><PlusIcon size={20} /></View>
         </IconButton>
       </TooltipTrigger><TooltipContent><Text>{newCouponDisabledReason || 'New coupon'}</Text></TooltipContent></Tooltip> : null}
+      {/* RN-web drops accessibilityHint; aria-describedby carries it on web. */}
+      {onNewCoupon && newCouponDisabledReason ? <Text id={hintId} className="hidden">{newCouponDisabledReason}</Text> : null}
     </View>
     <DialogFooter>
       <Pressable accessibilityRole="button" onPress={onClose} className={`${button} bg-card`}><Text className="text-foreground">Cancel</Text></Pressable>

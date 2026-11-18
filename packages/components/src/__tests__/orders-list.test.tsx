@@ -50,6 +50,18 @@ describe('OrdersList refund-due', () => {
   });
 });
 
+describe('OrdersList row hint on web', () => {
+  it('describes each row by its own hidden hint element (aria-describedby)', () => {
+    render(<OrdersList orders={[order('o1'), order('o2')]} onRetry={async () => 0} />);
+    const ids = ['o1', 'o2'].map((id) => screen.getByTestId(`order-row-${id}`).getAttribute('aria-describedby'));
+    for (const id of ids) {
+      expect(id).toBeTruthy();
+      expect(document.getElementById(id!)?.textContent).toBe('Shows the items and payments of this sale');
+    }
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+});
+
 describe('OrdersList sale note (ADR-083 condition 2)', () => {
   it.each<[string, Partial<PosOrder>, boolean]>([
     ['capped below 7', { note: 'Deliver after 5', sentVersion: 6, syncStatus: 'applied' }, true],
@@ -633,15 +645,17 @@ describe('OrdersList history rows (ADR-052 amendment 1)', () => {
       order('early', { createdAt: '2026-09-25T08:00:00.000Z' }),
       order('rej', { syncStatus: 'rejected', createdAt: '2026-09-25T10:00:00.000Z' }),
     ];
-    const original = render(<OrdersList orders={orders} onRetry={async () => 0} />).container.innerHTML;
+    // Each render takes a fresh useId for the row hints, so the hint ids are blanked before comparing.
+    const html = (container: HTMLElement) => container.innerHTML.replace(/(\bid|aria-describedby)="[^"]*"/g, '$1=""');
+    const original = html(render(<OrdersList orders={orders} onRetry={async () => 0} />).container);
     expect(screen.getAllByTestId(/^(order|history)-row-/).map((row) => row.getAttribute('data-testid')).slice(-3)).toEqual([
       'order-row-late', 'order-row-early', 'order-row-rej',
     ]);
     cleanup();
-    const empty = render(<OrdersList orders={orders} history={[]} onRetry={async () => 0} />).container.innerHTML;
+    const empty = html(render(<OrdersList orders={orders} history={[]} onRetry={async () => 0} />).container);
     expect(empty).toBe(original);
     cleanup();
-    const hidden = render(<OrdersList orders={orders} history={[historyRow('x', { clientOrderId: 'late' })]} onRetry={async () => 0} />).container.innerHTML;
+    const hidden = html(render(<OrdersList orders={orders} history={[historyRow('x', { clientOrderId: 'late' })]} onRetry={async () => 0} />).container);
     expect(hidden).toBe(original);
   });
 

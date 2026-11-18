@@ -285,6 +285,21 @@ describe('DiscountForm coupon tab', () => {
       press('add-discount-kind-quick');
       expect(screen.queryByTestId('add-coupon-new')).toBeNull();
     });
+
+    it('T5: on web, a disabled button is described by a hidden element holding the reason (aria-describedby)', () => {
+      renderNew({ onNewCoupon: vi.fn(), newCouponDisabledReason: OFFLINE });
+      press('add-discount-kind-coupon');
+      const describedBy = screen.getByTestId('add-coupon-new').getAttribute('aria-describedby');
+      expect(describedBy).toBeTruthy();
+      expect(document.getElementById(describedBy!)?.textContent).toBe(OFFLINE);
+    });
+
+    it('T6: an enabled button has no aria-describedby and no hidden reason', () => {
+      renderNew({ onNewCoupon: vi.fn() });
+      press('add-discount-kind-coupon');
+      expect(screen.getByTestId('add-coupon-new').hasAttribute('aria-describedby')).toBe(false);
+      expect(document.body.textContent).not.toContain(OFFLINE);
+    });
   });
 });
 
