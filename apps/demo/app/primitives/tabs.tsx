@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Tabs } from '@tallyui/primitives';
 import { MUTED_FOREGROUND } from '../../lib/theme-colors';
