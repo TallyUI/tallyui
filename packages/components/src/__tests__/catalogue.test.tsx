@@ -11,7 +11,10 @@ import type { CategoryNavProps, ProductGrid, ProductStockBadge, ProductTableProp
 // product/input/ui modules the same way medusapos mocked `@tallyui/components`: the tile is composed
 // directly in catalogue.tsx (ProductCard has no children slot), so only ProductTitle and ProductStockBadge
 // need to render real content for the tests below.
-vi.mock('../product', () => ({
+// Loading with no items, the table view renders the real ProductTable, so its header and skeleton rows can be read.
+vi.mock('../product', async () => {
+  const { ProductTable: ActualProductTable } = await vi.importActual<typeof import('../product/product-table')>('../product/product-table');
+  return {
   CategoryNav: ({ categories, selectedId, onSelect }: CategoryNavProps) => (
     <div data-testid="category-nav">
       {categories.map(({ id, name }) => (
@@ -26,7 +29,8 @@ vi.mock('../product', () => ({
       ))}
     </div>
   ),
-  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton, cartQuantity }: ProductTableProps) => (
+  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton, cartQuantity, ...rest }: ProductTableProps) => rest.loading && !items.length
+    ? <ActualProductTable {...{ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton, cartQuantity, ...rest }} /> : (
     <div data-testid="table" data-sort-items={String(sortItems)} data-show-thumbnail={showThumbnail} data-show-add-button={showAddButton}>
       <button data-testid="table-sort" onClick={() => onSortChange?.({ field: 'name', dir: sort?.dir === 'asc' ? 'desc' : 'asc' })}>Sort</button>
       {items.length ? items.map((item) => <button key={item.id} data-testid={`table-row-${item.id}`} data-in-cart={cartQuantity?.(item)}
@@ -44,7 +48,8 @@ vi.mock('../product', () => ({
   ProductStockBadge: ({ doc, showAsOf }: ComponentProps<typeof ProductStockBadge>) => (
     <span data-testid={`stock-badge-${doc.id}`} data-as-of={String(showAsOf)}>{traits.getStock(doc).status}</span>
   ),
-}));
+  };
+});
 vi.mock('../input', () => ({
   SearchInput: ({ value, onChangeText, onSubmitEditing, placeholder, autoFocus }:
     { value: string; onChangeText: (text: string) => void; onSubmitEditing?: (event: unknown) => void; placeholder?: string; autoFocus?: boolean }) => (
@@ -53,7 +58,8 @@ vi.mock('../input', () => ({
       onKeyDown={(event) => { if (event.key === 'Enter') onSubmitEditing?.({}); }} />
   ),
 }));
-vi.mock('../ui', () => ({
+vi.mock('../ui', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../ui')>(),
   VStack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -297,7 +303,7 @@ describe('Catalogue', () => {
   });
   it('says Loading products… on an empty grid before the first sync completes', () => {
     mount([]);
-    expect(screen.getByText('Loading products…')).toBeTruthy();
+    expect(screen.getByLabelText('Loading products…')).toBeTruthy();
     expect(screen.queryByText('No products yet.')).toBeNull();
   });
   it('a loading={false} override shows No products yet. even without a sync', () => {
@@ -311,13 +317,43 @@ describe('Catalogue', () => {
   });
   it('still says Loading products… before the first sync with a null pullError', () => {
     render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} pullError={null} />);
-    expect(screen.getByText('Loading products…')).toBeTruthy();
+    expect(screen.getByLabelText('Loading products…')).toBeTruthy();
     expect(screen.queryByText('No products yet.')).toBeNull();
   });
   it('a loading={true} override says Loading products… even with a pullError', () => {
     render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} loading={true} pullError={new Error('offline')} />);
-    expect(screen.getByText('Loading products…')).toBeTruthy();
+    expect(screen.getByLabelText('Loading products…')).toBeTruthy();
     expect(screen.queryByText('No products yet.')).toBeNull();
+  });
+  it('draws skeleton tiles in the grid while the first pull runs', () => {
+    mount([]);
+    const columns = Number(screen.getByTestId('grid').getAttribute('data-columns'));
+    const tiles = screen.getAllByTestId('catalogue-loading-tile');
+    expect(columns).toBeGreaterThan(0);
+    expect(tiles.length).toBeGreaterThan(0);
+    expect(tiles.length % columns).toBe(0);
+    expect(within(screen.getByTestId('catalogue-loading')).getAllByTestId('catalogue-loading-tile')).toHaveLength(tiles.length);
+    expect(screen.queryByText('Loading products…')).toBeNull();
+  });
+  it('draws no skeleton once loaded or with a pullError', () => {
+    const props = { products: [], traits, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null };
+    const view = render(<Catalogue {...props} loading={false} />);
+    expect(screen.queryByTestId('catalogue-loading')).toBeNull();
+    expect(screen.getByText('No products yet.')).toBeTruthy();
+    view.rerender(<Catalogue {...props} pullError={new Error('offline')} />);
+    expect(screen.queryByTestId('catalogue-loading')).toBeNull();
+    expect(screen.getByText('No products yet.')).toBeTruthy();
+  });
+  it('the table view draws the header and skeleton rows while loading', () => {
+    render(
+      <ConnectorProvider connector={medusaConnector}>
+        <Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} defaultViewState={{ view: 'table' }} />
+      </ConnectorProvider>,
+    );
+    expect(screen.getByText('Name')).toBeTruthy();
+    expect(screen.getByText('Price')).toBeTruthy();
+    expect(screen.getAllByTestId('product-table-skeleton-row').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('catalogue-loading')).toBeNull();
   });
   it('still shows the no-match message while loading', () => {
     const { input } = mount([]);

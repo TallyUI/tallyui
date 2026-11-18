@@ -219,3 +219,23 @@ describe('ProductTable row extras', () => {
     expect(screen.queryAllByTestId(/^product-row-in-cart-/)).toHaveLength(0);
   });
 });
+
+describe('ProductTable loading', () => {
+  it('loading with no items draws the header and one line placeholder per column per row', () => {
+    render(table({ items: [], loading: true, emptyState: <Text>Nothing here</Text> }));
+    expect(screen.getAllByRole('columnheader').map((head) => head.textContent))
+      .toEqual(['Name', 'SKU', 'Barcode', 'Price', 'Stock', 'Category']);
+    expect(screen.queryByText('Nothing here')).toBeNull();
+    const [first] = screen.getAllByTestId('product-table-skeleton-row');
+    const cells = within(first).getAllByRole('cell');
+    expect(cells).toHaveLength(6);
+    for (const cell of cells) expect(cell.querySelectorAll('[aria-busy="true"]')).toHaveLength(1);
+    expect(screen.getByLabelText('Loading').getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('loading with items draws the items', () => {
+    render(table({ loading: true }));
+    expect(rowIds()).toEqual(['product-row-1', 'product-row-2', 'product-row-3']);
+    expect(screen.queryAllByTestId('product-table-skeleton-row')).toHaveLength(0);
+  });
+});

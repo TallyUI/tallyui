@@ -29,6 +29,7 @@ export { AlertTriangleIcon } from './icon/alert-triangle-icon';
 export { AlertCircleIcon } from './icon/alert-circle-icon';
 export { InfoCircleIcon } from './icon/info-circle-icon';
 export { Loader, loaderVariants, type LoaderProps } from './loader';
+export { Skeleton, skeletonCount, SKELETON_MAX_ROWS, type SkeletonProps } from './skeleton';
 export { Badge, badgeVariants, badgeTextVariants, type BadgeProps } from './badge';
 export { StatusBadge, statusDotVariants, type StatusBadgeProps } from './status-badge';
 export { ToneDisc, type ToneDiscProps, type ToneDiscTone } from './tone-disc';

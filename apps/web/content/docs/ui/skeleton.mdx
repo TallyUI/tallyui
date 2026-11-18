@@ -1,0 +1,60 @@
+---
+title: Skeleton
+description: A still, muted placeholder in the shape of the content that is still loading, ported from WCPOS v2.
+---
+
+## Import
+
+```tsx
+import { Skeleton, skeletonCount, SKELETON_MAX_ROWS } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<Skeleton shape="line" className="w-3/4" />
+```
+
+A Skeleton holds a slot in the shape of what is coming, so the screen does not jump when the real content lands. It is static: no pulse and no shimmer, so there is nothing for reduced motion to turn off. Every Skeleton carries `aria-busy`.
+
+## Shapes
+
+| Shape | Size |
+|-------|------|
+| `block` (default) | fills its box (`flex-1 w-full`) |
+| `line` | one text line (`h-5`); give it a width such as `w-3/4` |
+| `row` | full width, the scale's row height (`--spacing-row`) |
+| `tile` | full width, the scale's tile height (`--spacing-tile`) |
+| `chip` | `w-24`, full radius, the scale's control height (`--spacing-ctl`) |
+
+The `row`, `tile` and `chip` heights are read from `useScale()` as style numbers, the way `ListRow` does, because `scale.css` is opt-in. A `style` you pass is applied after the scale height, so it wins.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `shape` | `'block' \| 'line' \| 'row' \| 'tile' \| 'chip'` | `'block'` | The placeholder's shape |
+| `className` | `string` | — | Additional classes, merged with `bg-muted rounded-lg` and the shape's classes |
+
+Plus all React Native `ViewProps`.
+
+## Counting rows
+
+`skeletonCount(extent, rowHeight)` returns how many placeholder rows fill a measured height: `ceil(extent / rowHeight)`, at least 1 and at most `SKELETON_MAX_ROWS` (12). A non-finite or non-positive input returns 1, so a body that has not been laid out yet draws one row.
+
+```tsx
+const [height, setHeight] = useState(0);
+
+<View className="flex-1 overflow-hidden" onLayout={(event) => setHeight(event.nativeEvent.layout.height)}>
+  {Array.from({ length: skeletonCount(height, 48) }, (_, row) => (
+    <View key={row} className="border-b border-border px-3 py-1.5">
+      <Skeleton shape="line" className="w-3/4" />
+    </View>
+  ))}
+</View>
+```
+
+## Where TallyUI uses it
+
+- `Catalogue`: while the first pull runs, the grid view draws muted tiles in the product tile's frame, and the table view passes `loading` to `ProductTable`. The container is labelled "Loading products…" for screen readers.
+- `ProductTable`: with `loading` and no items, the real header stands over skeleton rows, one line placeholder per column cell, in the columns' own widths.

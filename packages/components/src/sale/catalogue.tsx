@@ -19,6 +19,7 @@ import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type
 import { CategoryBrowseGrid, CategoryCrumb } from './category-browse';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
+import { skeletonCount } from '../ui/skeleton';
 import { useMinTarget } from '../scale/min-target';
 import { usePointer } from '../scale/use-pointer';
 
@@ -26,6 +27,15 @@ import { usePointer } from '../scale/use-pointer';
 // field is not capped: v2 caps it only at wide widths (packages/components/src/page-bar/index.tsx:138-139).
 const WIDE_MIN_WIDTH = 768;
 const WIDE_MIN_HEIGHT = 480;
+// A loading tile in the grid tile's frame (the tile below, as ProductCard): its 80 px image, then the band under it,
+// gap-2 (8) + a one-line title, the price and the stock badge with their gaps: 75 px at the regular scale, measured in
+// the demo (a tile with no image is 101 px: 75 + p-3 + border).
+const TILE_IMAGE = 80;
+const TILE_BAND = 8 + 75;
+// One grid row: the tile's p-3 and border (12 + 1 each side) and the grid cell's p-1 (4 each side) around image and band.
+// TallyUI difference: v2 counts rows at the tile's width plus its band, as its poster image is the tile's width; here the
+// image is a fixed 80 px, so the row is a fixed height.
+const TILE_ROW = TILE_IMAGE + TILE_BAND + 2 * (12 + 1 + 4);
 
 // locale/hour12/now are injected (rather than read from the device or the clock inside this
 // function) so the formatting is testable without the device; callers default them to the
@@ -226,6 +236,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.
   const [chooserId, setChooserId] = useState<string | null>(null);
   const [width, setWidth] = useState(0);
+  const [loadingHeight, setLoadingHeight] = useState(0);
   const columns = resolveGridColumns(state.gridColumns, width);
   const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
   // v2's In Stock pill drops backorders unless inStockKeepsBackorder is set; a stock the backend did not report stays.
@@ -312,11 +323,29 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     setPopoverId(null);
   }
 
-  const emptyState = <Text className="mt-10 text-center text-sm text-muted-foreground">
-    {query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
-      : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
-      : isLoading ? 'Loading products…' : 'No products yet.'}
-  </Text>;
+  const emptyText = query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
+    : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
+    : isLoading ? 'Loading products…' : 'No products yet.';
+  // Where the text would say "Loading products…", v2 holds the screen in the shape of what is coming; the words stay
+  // as the accessible label.
+  const showLoading = emptyText === 'Loading products…';
+  const emptyState = showLoading && state.view !== 'table' ? (
+    <View accessibilityLabel="Loading products…" aria-busy testID="catalogue-loading" className="flex-1 overflow-hidden p-1"
+      onLayout={(event) => setLoadingHeight(event.nativeEvent.layout.height)}>
+      {Array.from({ length: skeletonCount(loadingHeight, TILE_ROW) }, (_, row) => (
+        <View key={row} className="flex-row">
+          {Array.from({ length: columns }, (_, column) => (
+            <View key={column} style={{ width: `${100 / columns}%` }} className="p-1">
+              <View testID="catalogue-loading-tile" aria-busy className="items-center rounded-lg border border-transparent bg-muted p-3">
+                <View style={{ width: TILE_IMAGE, height: TILE_IMAGE }} />
+                <View style={{ height: TILE_BAND }} />
+              </View>
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  ) : <Text className="mt-10 text-center text-sm text-muted-foreground">{emptyText}</Text>;
 
   const searchInput = <SearchInput value={query} onChangeText={(text) => { setQuery(text); onQueryChange?.(text); }} placeholder="Search or scan barcode / SKU" autoFocus
     onSubmitEditing={() => {
@@ -385,7 +414,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
         onRoot={() => { setAllOpen(false); changeState({ type: 'setCategory', categoryId: null }); }} /> : null}
       {state.view === 'table' ? (
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
-          sortItems={false} onSelect={selectProduct} emptyState={emptyState}
+          sortItems={false} onSelect={selectProduct} emptyState={emptyState} loading={showLoading}
           showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton}
           cartQuantity={(doc) => quantities.get(traits.getId(doc)) ?? 0} />
       ) : <ProductGrid items={results} numColumns={columns}
