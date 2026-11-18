@@ -5,7 +5,7 @@
  */
 import type { JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { useFormatMoney, type PaymentMethodDescriptor } from '@tallyui/core';
+import { useFormatMoney, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { canVoidLeg, countsTowardPaid, legStatus, type PaymentLegStatus, type useSale } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { useT } from '../i18n';
@@ -28,7 +28,8 @@ export function TenderLedger({ sale, methods, closing = false }: { sale: ReturnT
   if (stage.kind !== 'tender') return null;
 
   const offered = offeredMethods(methods);
-  const descriptorOf = (id: string) => offered.find((method) => method.id === id);
+  /** The leg's offered descriptor: its own id and its wire method both match, so a card-kind `cash` id never reads as Cash. */
+  const descriptorOf = (leg: { method: string; methodId?: string }) => offered.find((method) => method.id === (leg.methodId ?? leg.method) && wireMethodOf(method) === leg.method);
   const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
   const balance = order.balanceDueMinor;
   const settled = order.payments.some(countsTowardPaid);
@@ -38,7 +39,7 @@ export function TenderLedger({ sale, methods, closing = false }: { sale: ReturnT
     {order.payments.length === 0 ? <Text className="text-muted-foreground">{t('pos_checkout.no_payments_yet')}</Text> : order.payments.map((leg) => {
       const status = legStatus(leg);
       const voided = status === 'voided';
-      const descriptor = descriptorOf(leg.methodId ?? leg.method);
+      const descriptor = descriptorOf(leg);
       return <View key={leg.id} testID={`tender-leg-${leg.id}`} className="gap-1 border-b border-border py-2">
         <View className="flex-row items-center gap-2">
           <Text className={cn('flex-1 font-semibold text-foreground', voided && 'line-through')}>{descriptor?.title ?? leg.methodId ?? leg.method}</Text>

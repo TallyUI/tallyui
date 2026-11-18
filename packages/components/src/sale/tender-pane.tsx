@@ -7,7 +7,7 @@
  */
 import { useEffect, useState, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { useFormatMoney, minorUnitDigits, type PaymentMethodDescriptor } from '@tallyui/core';
+import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
   activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, isInMotion, legStatus, lockedRefundDueMinor, planLegs, quickTenderedAmounts, tenderRounding, tillLegsTheStoreRefuses,
   type TenderAction, type TenderKey, type TenderState, type useSale,
@@ -67,7 +67,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true }: Te
   const descriptorOf = (id: string) => offered.find((method) => method.id === id);
   const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
   const method = state.methodId ? descriptorOf(state.methodId) ?? null : null;
-  const givesChange = method?.capabilities.change === true;
+  // ADR-072: change comes only from cash, so a non-cash method's `change: true` gives none (take() records no change for it).
+  const givesChange = method !== null && wireMethodOf(method) === 'cash' && method.capabilities.change === true;
   const figures = tenderRounding(state, balance, method);
   const entryChange = changeMinor(figures.entryMinor, figures.appliedMinor, givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;

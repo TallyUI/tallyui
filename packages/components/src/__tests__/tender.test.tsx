@@ -283,6 +283,22 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     expect(ledgerRow(0)).toBe(`Cheque${money(2500)}CapturedCancel payment`);
   });
 
+  it('gives no change from a non-cash method that claims change: no hint, no chips, the no-change warning and no Take, as for the card', () => {
+    const cheque = own('cheque', 'Cheque', 'other');
+    const changingCheque = { ...cheque, capabilities: { ...cheque.capabilities, change: true } };
+    const overpay = (tile: string) => { fireEvent.click(screen.getByTestId(tile)); for (const key of ['1', '5', '0', '0']) press(key); };
+    start(1000);
+    overpay('tender-method-external');
+    const card = { hint: text('tender-entry-hint'), chips: screen.queryByTestId('tender-quick'), take: disabled('tender-take') };
+    expect(card).toEqual({ hint: `Only ${money(1000)} is due — Card terminal can't give change`, chips: null, take: true });
+    cleanup();
+    start(1000, 'cash', [own('pos_cash', 'Till cash', 'cash'), changingCheque]);
+    overpay('tender-method-cheque');
+    expect(text('tender-entry-hint')).toBe(`Only ${money(1000)} is due — Cheque can't give change`);
+    expect(screen.queryByTestId('tender-quick')).toBeNull();
+    expect(disabled('tender-take')).toBe(true);
+  });
+
   it("keeps the leg's methodId when its reference is edited", () => {
     start(1500, 'cash', host);
     fireEvent.click(screen.getByTestId('tender-method-cheque'));

@@ -63,4 +63,11 @@ describe('Cart tenderLedger', () => {
     expect(screen.getByTestId(`tender-leg-${leg(1)}-void`)).toBeTruthy();
     expect(screen.queryByTestId(`tender-leg-${leg(2)}-void`)).toBeNull();
   });
+
+  it("never reads an external leg with methodId 'cash' as the default Cash: titled by its id, with no Cancel payment", () => {
+    start(5000);
+    act(() => { sale.addTender({ method: 'external', methodId: 'cash', amountMinor: 1000 }); });
+    expect(text(`tender-leg-${leg(0)}`)?.split(money(1000))[0]).toBe('cash');
+    expect(screen.queryByTestId(`tender-leg-${leg(0)}-void`)).toBeNull();
+  });
 });
