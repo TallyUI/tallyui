@@ -70,6 +70,7 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
   const methods = Object.keys(closure.counted);
   const approvedByName = closure.breakdowns.approved_by_name;
   const approvedById = closure.breakdowns.approved_by;
+  const note = closure.breakdowns.variance_note;
   const approvedBy =
     typeof approvedByName === 'string' && approvedByName
       ? approvedByName
@@ -187,6 +188,10 @@ export function ClosureSheet({ register, currency, onPrint, onDone }: ClosureShe
               </Text>
             )}
           </View>
+        )}
+        {/* v2's note line: words, not money, so it shows blind too. */}
+        {typeof note === 'string' && !!note.trim() && (
+          <Text testID="closure-variance-note" className="text-muted-foreground">{`Note · ${note}`}</Text>
         )}
         {/* Not a figure either (#287). The wording is approved by the Front desk, 2026-09-30. */}
         {closure.breakdowns.tax_rounding_mixed === true && (

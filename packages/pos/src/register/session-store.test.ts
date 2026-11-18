@@ -384,6 +384,12 @@ it('a blank note is stored as null', async () => {
   expect(closed.count_note).toBeNull();
 });
 
+it('closeSession stores the note trimmed', async () => {
+  const doc = await openSession(db.register_sessions, input);
+  const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, note: '  short by 5  ' });
+  expect(closed.count_note).toBe('short by 5');
+});
+
 it("a repeat close keeps the first close's note", async () => {
   const doc = await openSession(db.register_sessions, input);
   await closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, note: 'First' });

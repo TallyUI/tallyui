@@ -175,6 +175,26 @@ it('marks the approver "not yet verified" until the store applies the closure wi
   expect(screen.getByTestId('closure-sheet').textContent).not.toContain('proof-z');
 });
 
+it('shows the variance note when there is one', async () => {
+  const session = await seedSession(db, 10000);
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 9000 }, note: 'Float short' });
+  await writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 9000,
+    otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0' });
+  await renderClosure({ blind: true });
+  expect(screen.getByTestId('closure-variance-note').textContent).toBe('Note · Float short');
+});
+
+it('draws no note line for a blank or missing note', async () => {
+  const closure = await closeWithCount(10000);
+  await renderClosure();
+  expect(screen.queryByTestId('closure-variance-note')).toBeNull();
+  cleanup();
+  // closeSession already nulls a blank note, so the blank reaches the frozen breakdowns by hand.
+  await closure.incrementalPatch({ breakdowns: { ...closure.breakdowns, variance_note: '  ' } });
+  await renderClosure();
+  expect(screen.queryByTestId('closure-variance-note')).toBeNull();
+});
+
 it('shows no approved-by line without an approver', async () => {
   await closeWithCount(10000);
   await renderClosure();

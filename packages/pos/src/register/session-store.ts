@@ -326,7 +326,7 @@ export async function closeSession(
     business_day: session.business_day || businessDayOf(session.opened_at_gmt, input.timezone ?? 'device'),
     counted: input.counted,
     closed_by: input.closedBy ?? null,
-    count_note: input.note?.trim() ? input.note : null,
+    count_note: input.note?.trim() || null,
     ...(input.approvedBy ? { approved_by: input.approvedBy } : {}),
     ...(input.approval ? { approver_token: input.approval } : {}),
     closure_id: id,
