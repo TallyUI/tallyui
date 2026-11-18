@@ -714,8 +714,11 @@ not started. The shared scanner rules are merged (#825–#827).
 |---|---|---|
 | ![v2](screens/v2/cashier.jpg) | ![medusapos](screens/medusapos/cashier.jpg) | ![vendurepos](screens/vendurepos/cashier.jpg) |
 
-**Closes it:** PLAN unit 33 is done for the shared sheet; vendurepos adopts
-it (`cashier()` is not started in any connector).
+**Closes it:** the shared sheet is ready-queue row S9: `CashierSheet` (S9a,
+#982) has the header, Your sales today and Sign out; the rest of v2's sheet
+(S9b–d) is open. PLAN unit 33 is the handover slip and switch confirm, not
+the sheet. vendurepos adopts the sheet (`cashier()` is not started in any
+connector).
 
 ## Offline
 
