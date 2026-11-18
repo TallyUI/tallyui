@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Text } from 'react-native';
 import { OrderDetail } from '../order/order-detail';
 
@@ -94,5 +94,32 @@ describe('OrderDetail', () => {
     const order = ['Subtotal', 'Discount', 'Shipping', 'Fees', 'Tax', 'US 10%'].map((label) => text.indexOf(label));
     order.push(text.indexOf('Total', order[5]));
     order.forEach((at, i) => expect(at).toBeGreaterThan(i === 0 ? -1 : order[i - 1]));
+  });
+
+  it('draws no actions row when no action is passed', () => {
+    render(<OrderDetail {...base} footerSlot={<Text>Note</Text>} />);
+    expect(screen.queryByTestId('order-detail-actions')).toBeNull();
+  });
+  it('each action button shows only when its callback is passed and calls it', () => {
+    const actions = { onReceipt: 'order-detail-receipt', onSync: 'order-detail-sync', onReopen: 'order-detail-reopen' };
+    for (const [prop, id] of Object.entries(actions)) {
+      const fn = vi.fn();
+      render(<OrderDetail {...base} {...{ [prop]: fn }} />);
+      expect(screen.getByTestId('order-detail-actions')).toBeDefined();
+      for (const other of Object.values(actions)) {
+        if (other !== id) expect(screen.queryByTestId(other)).toBeNull();
+      }
+      fireEvent.click(screen.getByTestId(id));
+      expect(fn).toHaveBeenCalledTimes(1);
+      cleanup();
+    }
+  });
+  it('reopenDisabled disables Re-open', () => {
+    const onReopen = vi.fn();
+    render(<OrderDetail {...base} onReopen={onReopen} reopenDisabled />);
+    const reopen = screen.getByTestId('order-detail-reopen');
+    expect(reopen.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(reopen);
+    expect(onReopen).not.toHaveBeenCalled();
   });
 });
