@@ -3,10 +3,11 @@
 // to the WooCommerce payload, totals the same as the server's own tax on that payload.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { woocommerceTax, type OrderCreateEnvelope, type SyncContext } from '@tallyui/core';
-import { toWooOrderPayload, wooStoreSettings } from '@tallyui/connector-woocommerce';
+import { toWooCustomer, toWooOrderPayload, wooStoreSettings } from '@tallyui/connector-woocommerce';
 import { createOrderBuilder, finalizeOrder, saleTaxContexts, toOrderCreateEnvelope, type CustomerSummary } from '@tallyui/pos';
 import stores from '../../../connectors/woocommerce/src/__tests__/fixtures/taxes-1.10.20/stores.json';
 import classes from '../../../connectors/woocommerce/src/__tests__/fixtures/taxes-1.10.20/tax-classes.json';
+import searchNameFirst from '../../../connectors/woocommerce/src/__tests__/fixtures/customers-1.10.20/search-name-first.json';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -126,5 +127,24 @@ describe('WooCommerce tax on the customer\'s address, till against server (#722)
     expect(metaOf(payload)).toBeUndefined();
     expect({ taxMinor: order.taxMinor, totalMinor: order.totalMinor }).toStrictEqual({ taxMinor: atBase.order.taxMinor, totalMinor: atBase.order.totalMinor });
     expect(serverTotals(payload)).toStrictEqual({ taxMinor: order.taxMinor, totalMinor: order.totalMinor });
+  });
+
+  it('(f) #930: basis base, a customer read through the Woo customer read with NY billing: tax, payload and stored order as without addresses', async () => {
+    const [row] = searchNameFirst;
+    const customer = toWooCustomer({ ...row,
+      billing: { ...row.billing, address_1: '1 State St', city: 'Albany', state: 'NY', postcode: '12207', country: 'US' },
+      shipping: { ...row.shipping, city: 'Austin', state: 'TX', postcode: '78701', country: 'US' } });
+    expect([customer.billing?.country, customer.billing?.state, customer.shipping?.state]).toStrictEqual(['US', 'NY', 'TX']);
+    const { order, envelope, payload } = await sell('base', customer);
+    expect(order.taxMinor).toBe(232);
+    expect(serverTotals(payload)).toStrictEqual({ taxMinor: order.taxMinor, totalMinor: order.totalMinor });
+    expect(envelope.version).toBeLessThanOrEqual(7);
+    expect(metaOf(payload)).toBeUndefined();
+    expect(payload.shipping).toBeUndefined();
+    for (const key of ['country', 'state', 'postcode', 'city', 'address_1']) expect(payload.billing ?? {}).not.toHaveProperty(key);
+    expect(order.taxAddress).toBeUndefined();
+    expect(order.customer).toBeTruthy();
+    expect(order.customer).not.toHaveProperty('billing');
+    expect(order.customer).not.toHaveProperty('shipping');
   });
 });

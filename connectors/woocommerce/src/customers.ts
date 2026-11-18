@@ -9,10 +9,8 @@ type WooCustomerRow = {
   last_name?: string | null;
   email?: string | null;
   date_created_gmt?: string | null;
-  billing?: {
-    first_name?: string | null; last_name?: string | null; email?: string | null;
-    phone?: string | null; company?: string | null;
-  } | null;
+  billing?: WooAddressRow | null;
+  shipping?: Omit<WooAddressRow, 'email'> | null;
   meta_data?: { key?: string; value?: unknown }[];
   _rxdb_revision?: unknown;
 };
@@ -23,6 +21,18 @@ const WOO_ADDRESS = [
   ['address_2', 'address2'], ['city', 'city'], ['postcode', 'postcode'], ['country', 'country'], ['state', 'state'],
   ['email', 'email'], ['phone', 'phone'],
 ] as const;
+
+type WooAddressRow = { [key in (typeof WOO_ADDRESS)[number][0]]?: string | null };
+
+/** The inverse of toWooAddress: the non-empty fields of a read Woo address, or undefined when none is left. */
+function fromWooAddress(raw: WooAddressRow | null | undefined, kind: 'billing' | 'shipping'): CustomerAddress | undefined {
+  const address: CustomerAddress = {};
+  for (const [key, field] of WOO_ADDRESS) {
+    const value: unknown = raw?.[key];
+    if ((kind === 'billing' || key !== 'email') && typeof value === 'string' && value.length > 0) address[field] = value;
+  }
+  return Object.keys(address).length > 0 ? address : undefined;
+}
 
 /** The whole Woo address, '' for an absent field, so a patch replaces the stored address rather than merging into it. */
 function toWooAddress(address: CustomerAddress, kind: 'billing' | 'shipping'): Record<string, string> {
@@ -57,6 +67,10 @@ export function toWooCustomer(raw: WooCustomerRow): Customer {
   ] as const) {
     if (typeof value === 'string' && value.length > 0) customer[key] = value;
   }
+  const billing = fromWooAddress(raw.billing, 'billing');
+  if (billing) customer.billing = billing;
+  const shipping = fromWooAddress(raw.shipping, 'shipping');
+  if (shipping) customer.shipping = shipping;
   const created = raw.date_created_gmt; // UTC without a zone suffix; `date_created` is site-local
   if (typeof created === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(created)) customer.createdAt = `${created}Z`;
   customer.name = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.company || customer.email || customer.id;
