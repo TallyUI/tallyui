@@ -66,6 +66,7 @@
     "customer-display-screen",
     "customer-display-pairing",
     "orders-list",
+    "order-sync-notices",
     "sync-status",
     "---Order---",
     "order-status-badge",
