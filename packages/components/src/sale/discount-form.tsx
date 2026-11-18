@@ -4,6 +4,9 @@ import { formatMoney, useFormatMoney, minorUnitDigits, moneyFromDecimalString, t
 import type { AppliedDiscount, Discount } from '@tallyui/pos';
 import { DiscountBadge } from '../cart';
 import { DialogFooter } from '../ui/dialog';
+import { IconButton } from '../ui/icon-button';
+import { PlusIcon } from '../ui/icon/plus-icon';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '../ui/combobox';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 
@@ -37,8 +40,9 @@ export type DiscountCoupon = { code: string; detail?: string; amountLabel?: stri
 const FAILED_COUPON = 'Failed to apply coupon.'; // v2 core.json:1119, also v2's fallback for an empty refusal.
 
 /** v2 add-coupon.tsx: pick one of the app's coupons, Apply through the app; a refusal stays inline and the dialog open. */
-function CouponTab({ coupons, onApplyCoupon, onClose }: {
+function CouponTab({ coupons, onApplyCoupon, onClose, onNewCoupon, newCouponDisabledReason }: {
   coupons: readonly DiscountCoupon[]; onApplyCoupon: (code: string) => Promise<string | null>; onClose: () => void;
+  onNewCoupon?: () => void; newCouponDisabledReason?: string;
 }) {
   const [search, setSearch] = useState('');
   const [picked, setPicked] = useState<string | null>(null);
@@ -81,6 +85,13 @@ function CouponTab({ coupons, onApplyCoupon, onClose }: {
           </ComboboxContent>
         </Combobox>
       </View>
+      {/* v2 add-coupon.tsx:110-143: "+" beside the picker; a disabled one gives its reason as tooltip and accessibilityHint. */}
+      {onNewCoupon ? <Tooltip><TooltipTrigger asChild>
+        <IconButton variant="ghost" testID="add-coupon-new" accessibilityLabel="New coupon" disabled={!!newCouponDisabledReason}
+          accessibilityHint={newCouponDisabledReason || undefined} onPress={onNewCoupon}>
+          <View className="text-foreground"><PlusIcon size={20} /></View>
+        </IconButton>
+      </TooltipTrigger><TooltipContent><Text>{newCouponDisabledReason || 'New coupon'}</Text></TooltipContent></Tooltip> : null}
     </View>
     <DialogFooter>
       <Pressable accessibilityRole="button" onPress={onClose} className={`${button} bg-card`}><Text className="text-foreground">Cancel</Text></Pressable>
@@ -92,12 +103,16 @@ function CouponTab({ coupons, onApplyCoupon, onClose }: {
 }
 
 /** `onApply` returns a refusal to show inline (the capability gate), or null once applied. `layout="dialog"`: v2's Add Discount body. */
-export function DiscountForm({ title, currency, onApply, onClose, layout = 'inline', onApplyCoupon, coupons = [] }: {
+export function DiscountForm({ title, currency, onApply, onClose, layout = 'inline', onApplyCoupon, coupons = [], onNewCoupon, newCouponDisabledReason }: {
   title?: string; currency: string; onApply: (discount: Discount) => string | null; onClose: () => void; layout?: 'inline' | 'dialog';
   /** layout="dialog" only: with this, the dialog shows v2's Quick discount / Coupon tabs. Resolve a refusal to show, or null once applied (e.g. sale.applyCoupon). */
   onApplyCoupon?: (code: string) => Promise<string | null>;
   /** The coupons the Coupon tab lists (the app's data). Default []. */
   coupons?: readonly DiscountCoupon[];
+  /** With this, the Coupon tab shows v2's "New coupon" (+) button; creating the coupon is the app's job. */
+  onNewCoupon?: () => void;
+  /** Already-translated reason the New coupon button is disabled (e.g. offline); shown as its tooltip and accessibility hint. */
+  newCouponDisabledReason?: string;
 }) {
   const dialog = layout === 'dialog';
   const [kind, setKind] = useState<'quick' | 'coupon'>('quick'); // v2 add-discount-sheet.tsx:14 opens on Quick discount.
@@ -127,7 +142,8 @@ export function DiscountForm({ title, currency, onApply, onClose, layout = 'inli
       <Text className="text-sm text-foreground">{id === 'quick' ? 'Quick discount' : 'Coupon'}</Text></ToggleGroupItem>)}
   </ToggleGroup> : null;
   if (tabs && onApplyCoupon && kind === 'coupon') return <View role="group" accessibilityLabel={title ?? 'Discount'} className="gap-2 px-3 py-2">
-    {tabs}<CouponTab coupons={coupons} onApplyCoupon={onApplyCoupon} onClose={onClose} /></View>;
+    {tabs}<CouponTab coupons={coupons} onApplyCoupon={onApplyCoupon} onClose={onClose}
+      onNewCoupon={onNewCoupon} newCouponDisabledReason={newCouponDisabledReason} /></View>;
   return <View role="group" accessibilityLabel={title ?? 'Discount'} className="gap-2 px-3 py-2">
     {tabs}
     {title === undefined || dialog ? null : <Text className="font-semibold text-foreground">{title}</Text>}
