@@ -41,5 +41,5 @@ Complete sale is enabled once nothing is due and no leg is in motion, and calls 
 | `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |
 | `state` | `TenderState` | required | The tender reducer's state, from `tenderReducer` in `@tallyui/pos` |
 | `dispatch` | `(action: TenderAction) => void` | required | The reducer's dispatch; the pane sends method picks, keypad keys, entries and recorded legs |
-| `methods` | `PaymentMethodDescriptor[]` | `defaultPaymentMethods()` | The methods offered; only `cash` and `external` are shown |
+| `methods` | `PaymentMethodDescriptor[]` | `defaultPaymentMethods()` | The methods offered: each manual-capture descriptor gets a tile and records its wire method (`cash` or `external`) plus its own id as `methodId`; other capture modes are not shown |
 | `ledger` | `boolean` | `true` | Draws the payments ledger in the pane; pass `false` when Cart's `tenderLedger` shows it in the cart column |

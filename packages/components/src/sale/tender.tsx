@@ -1,12 +1,20 @@
 import { useReducer, type JSX } from 'react';
-import type { PaymentMethodDescriptor } from '@tallyui/core';
+import { wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { initTenderState, tenderReducer, type useSale } from '@tallyui/pos';
+import { offeredMethods } from './offered-methods';
 import { TenderPane } from './tender-pane';
 
 type Sale = ReturnType<typeof useSale>;
 
+/** The offered method `startTender`'s wire method opens on: that id when offered, else the first offered method recording it, else the method itself. */
+function openingMethodId(method: string, methods?: PaymentMethodDescriptor[]): string {
+  const offered = offeredMethods(methods);
+  if (offered.some(({ id }) => id === method)) return method;
+  return offered.find((descriptor) => wireMethodOf(descriptor) === method)?.id ?? method;
+}
+
 function HostedPane({ sale, method, methods, ledger }: { sale: Sale; method: string; methods?: PaymentMethodDescriptor[]; ledger?: boolean }) {
-  const [state, dispatch] = useReducer(tenderReducer, { methodId: method, balanceMinor: sale.order.balanceDueMinor }, initTenderState);
+  const [state, dispatch] = useReducer(tenderReducer, { methodId: openingMethodId(method, methods), balanceMinor: sale.order.balanceDueMinor }, initTenderState);
   return <TenderPane sale={sale} state={state} dispatch={dispatch} methods={methods} ledger={ledger} />;
 }
 

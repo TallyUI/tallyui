@@ -83,6 +83,9 @@ describe('order outbox: payment method ids (conditions 1 and 2)', () => {
     const today = toOrderCreateEnvelope(withoutIds(order), deviceId, 1, { maxVersion: 9 });
     expect(sent.map((command) => command.version)).toEqual([10, today.version]);
     expect(JSON.stringify(sent[1].payload)).toBe(JSON.stringify(today.payload));
+    // The resend is the same command at a lower version: the store dedupes it by the original commandId.
+    expect(sent[1].id).toBe(sent[0].id);
+    expect(sent[1].id).toBe(order.commandId);
     expect(stored).toMatchObject({ syncStatus: 'applied', sentVersion: today.version, downgradedFrom: 10 });
   });
 });

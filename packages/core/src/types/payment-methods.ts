@@ -109,7 +109,12 @@ export function wireMethodOf(descriptor: Pick<PaymentMethodDescriptor, 'kind'>):
   return CASH_KINDS.includes(descriptor.kind) ? 'cash' : 'external';
 }
 
-/** A leg's method id for labels and takings: its own `methodId`, else its wire `method`. Never for cash decisions or register rows. */
+/**
+ * A leg's takings key, for labels, takings and report rows: its wire `method` when it has no `methodId` or the id is the
+ * method itself (exactly the key before methodId), else `${method}:${methodId}`. Kind plus id, so that a non-cash method
+ * whose platform id happens to be `cash` (`{ method: 'external', methodId: 'cash' }`) never merges with cash. Never for
+ * cash decisions or register rows: those read `method`.
+ */
 export function legMethodId(leg: { method: string; methodId?: string }): string {
-  return leg.methodId ?? leg.method;
+  return leg.methodId === undefined || leg.methodId === leg.method ? leg.method : `${leg.method}:${leg.methodId}`;
 }

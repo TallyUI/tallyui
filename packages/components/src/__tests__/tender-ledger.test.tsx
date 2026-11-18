@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { formatMoney } from '@tallyui/core';
+import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { Cart } from '../sale/cart';
 import { Tender } from '../sale/tender';
 import { blue, pricing, SaleHarness, sale, traits } from './sale-harness';
@@ -11,8 +11,8 @@ const settings = { ...pricing, taxRatesPpm: { default: 0 } };
 const money = (amount: number) => formatMoney({ amount, currency: 'EUR' }) ?? '';
 const text = (testID: string) => screen.getByTestId(testID).textContent;
 const leg = (index: number) => sale.order.payments[index].id;
-function start(priceMinor: number) {
-  render(<SaleHarness settings={settings}>{(sale) => <><Tender sale={sale} ledger={false} /><Cart sale={sale} showTotal={false} tenderLedger={{}} /></>}</SaleHarness>);
+function start(priceMinor: number, methods?: PaymentMethodDescriptor[]) {
+  render(<SaleHarness settings={settings}>{(sale) => <><Tender sale={sale} ledger={false} methods={methods} /><Cart sale={sale} showTotal={false} tenderLedger={{ methods }} /></>}</SaleHarness>);
   act(() => sale.add(blue, traits));
   act(() => sale.setUnitPrice(sale.order.lineItems[0].id, priceMinor));
   act(() => sale.startTender('cash'));
@@ -49,5 +49,25 @@ describe('Cart tenderLedger', () => {
     expect(text('tender-ledger-lead')).toBe('Paid in full');
     expect(screen.queryByTestId('tender-ledger-remaining')).toBeNull();
     expect(screen.getAllByText('Paid in full')).toHaveLength(1);
+  });
+
+  it("titles each leg by its own method id's descriptor, else the id itself", () => {
+    const own = (id: string, title: string, kind: string): PaymentMethodDescriptor =>
+      ({ ...paymentMethodOf(kind === 'cash' ? 'cash' : 'external'), id, title, kind });
+    start(5000, [own('pos_cash', 'Till cash', 'cash'), own('cheque', 'Cheque', 'other')]);
+    act(() => { sale.addTender({ method: 'cash', methodId: 'pos_cash', amountMinor: 1000 }); });
+    act(() => { sale.addTender({ method: 'external', methodId: 'cheque', amountMinor: 1500 }); });
+    act(() => { sale.addTender({ method: 'external', methodId: 'gift_voucher', amountMinor: 500 }); });
+    const title = (index: number) => text(`tender-leg-${leg(index)}`)?.split(money(sale.order.payments[index].amountMinor))[0];
+    expect([0, 1, 2].map(title)).toEqual(['Till cash', 'Cheque', 'gift_voucher']);
+    expect(screen.getByTestId(`tender-leg-${leg(1)}-void`)).toBeTruthy();
+    expect(screen.queryByTestId(`tender-leg-${leg(2)}-void`)).toBeNull();
+  });
+
+  it("never reads an external leg with methodId 'cash' as the default Cash: titled by its id, with no Cancel payment", () => {
+    start(5000);
+    act(() => { sale.addTender({ method: 'external', methodId: 'cash', amountMinor: 1000 }); });
+    expect(text(`tender-leg-${leg(0)}`)?.split(money(1000))[0]).toBe('cash');
+    expect(screen.queryByTestId(`tender-leg-${leg(0)}-void`)).toBeNull();
   });
 });

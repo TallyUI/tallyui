@@ -217,11 +217,27 @@ describe('payment method ids (condition 4)', () => {
     expect(reportOrderFromPosOrder(posOrder, undefined, methodTitle)).toStrictEqual(pinned);
   });
 
-  it('reports a leg with an id under it, labelled only when methodTitle names it', () => {
+  it('reports a leg with an id under its kind and id, titled by its raw id', () => {
     const posOrder = withIds(splitSale());
-    expect(reportOrderFromPosOrder(posOrder, undefined, methodTitle).payments)
-      .toStrictEqual([{ method: 'stripe', label: 'Stripe', amountMinor: 500 }, { method: 'cash', amountMinor: 639 }]);
-    expect(reportOrderFromPosOrder(posOrder).payments).toStrictEqual([{ method: 'stripe', amountMinor: 500 }, { method: 'cash', amountMinor: 639 }]);
+    const asked: string[] = [];
+    expect(reportOrderFromPosOrder(posOrder, undefined, (id) => { asked.push(id); return methodTitle(id); }).payments)
+      .toStrictEqual([{ method: 'external:stripe', label: 'Stripe', amountMinor: 500 }, { method: 'cash', amountMinor: 639 }]);
+    expect(asked).toStrictEqual(['stripe']);
+  });
+
+  it('labels a leg whose id the host cannot name with the id itself', () => {
+    const posOrder = withIds(splitSale());
+    expect(reportOrderFromPosOrder(posOrder).payments).toStrictEqual([{ method: 'external:stripe', label: 'stripe', amountMinor: 500 }, { method: 'cash', amountMinor: 639 }]);
+    expect(reportOrderFromPosOrder(posOrder, undefined, () => undefined).payments[0]).toStrictEqual({ method: 'external:stripe', label: 'stripe', amountMinor: 500 });
+  });
+
+  it("keeps an external leg whose id is 'cash' in its own row beside cash", () => {
+    const posOrder = splitSale();
+    const odd: PosOrder = { ...posOrder, payments: [{ ...posOrder.payments[0], methodId: 'cash' }, posOrder.payments[1]] };
+    const { rows, takenMinor } = salesFigures({ orders: [reportOrderFromPosOrder(odd, undefined, methodTitle)], range: { from: '2000-01-01', to: '2100-01-01' }, timezone: 'UTC' }).payments;
+    expect(takenMinor).toBe(1139);
+    expect(rows.map(({ method, label, amountMinor }) => ({ method, label, amountMinor })))
+      .toStrictEqual([{ method: 'cash', label: '', amountMinor: 639 }, { method: 'external:cash', label: 'cash', amountMinor: 500 }]);
   });
 
   it('keeps the takings total over orders with and without ids', () => {

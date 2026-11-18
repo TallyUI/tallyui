@@ -5,10 +5,11 @@
  */
 import type { JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { defaultPaymentMethods, useFormatMoney, type PaymentMethodDescriptor } from '@tallyui/core';
+import { useFormatMoney, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { canVoidLeg, countsTowardPaid, legStatus, type PaymentLegStatus, type useSale } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { useT } from '../i18n';
+import { offeredMethods } from './offered-methods';
 
 /** v2 labels.ts statusLabel, as catalogue keys. */
 const STATUS_LABEL: Record<PaymentLegStatus, string> = {
@@ -26,8 +27,9 @@ export function TenderLedger({ sale, methods, closing = false }: { sale: ReturnT
   const { order, stage } = sale;
   if (stage.kind !== 'tender') return null;
 
-  const offered = (methods ?? defaultPaymentMethods()).filter(({ id }) => id === 'cash' || id === 'external');
-  const descriptorOf = (id: string) => offered.find((method) => method.id === id);
+  const offered = offeredMethods(methods);
+  /** The leg's offered descriptor: its own id and its wire method both match, so a card-kind `cash` id never reads as Cash. */
+  const descriptorOf = (leg: { method: string; methodId?: string }) => offered.find((method) => method.id === (leg.methodId ?? leg.method) && wireMethodOf(method) === leg.method);
   const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
   const balance = order.balanceDueMinor;
   const settled = order.payments.some(countsTowardPaid);
@@ -37,10 +39,10 @@ export function TenderLedger({ sale, methods, closing = false }: { sale: ReturnT
     {order.payments.length === 0 ? <Text className="text-muted-foreground">{t('pos_checkout.no_payments_yet')}</Text> : order.payments.map((leg) => {
       const status = legStatus(leg);
       const voided = status === 'voided';
-      const descriptor = descriptorOf(leg.method);
+      const descriptor = descriptorOf(leg);
       return <View key={leg.id} testID={`tender-leg-${leg.id}`} className="gap-1 border-b border-border py-2">
         <View className="flex-row items-center gap-2">
-          <Text className={cn('flex-1 font-semibold text-foreground', voided && 'line-through')}>{descriptor?.title ?? leg.method}</Text>
+          <Text className={cn('flex-1 font-semibold text-foreground', voided && 'line-through')}>{descriptor?.title ?? leg.methodId ?? leg.method}</Text>
           <Text className={cn('text-foreground', voided && 'line-through')}>{money(leg.amountMinor)}</Text>
           <Text testID={`tender-leg-${leg.id}-status`} className={cn('text-sm font-semibold', STATUS_TONE[status])}>{voided ? t('pos_checkout.cancelled') : t(STATUS_LABEL[status])}</Text>
         </View>
