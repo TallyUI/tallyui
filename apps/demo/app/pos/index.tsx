@@ -48,6 +48,7 @@ const screens = [
   { href: '/pos/settings-group', label: 'SettingsGroup' },
   { href: '/pos/display-settings', label: 'DisplaySettings' },
   { href: '/pos/printing-settings', label: 'PrintingSettings' },
+  { href: '/pos/barcode-scanning-settings', label: 'BarcodeScanningSettings' },
   { href: '/pos/store-settings-choice', label: 'StoreSettingsChoiceScreen' },
 ] as const;
 

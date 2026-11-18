@@ -216,6 +216,9 @@ export {
   type CustomerDisplaySettingsProps,
   PrintingSettings,
   type PrintingSettingsProps,
+  BarcodeScanningSettings,
+  type BarcodeScanningSettingsProps,
+  type BarcodeScanningValues,
 } from './settings';
 
 // Tax components
