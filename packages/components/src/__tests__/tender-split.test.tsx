@@ -79,6 +79,19 @@ describe('Tender split', () => {
     expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 1200 }]);
   });
 
+  it('T6: under a split plan the card chip reads Exact <share>, and a press sets the share', () => {
+    start(1000);
+    fireEvent.click(chip());
+    fireEvent.click(screen.getByTestId('tender-split-even-3'));
+    fireEvent.click(screen.getByTestId('tender-method-external'));
+    expect(text('tender-quick-balance')).toBe(`Exact ${money(333)}`);
+    for (const key of ['Clear', '1', '0', '0']) press(key);
+    expect(text('tender-entry-amount')).toBe(money(100));
+    fireEvent.click(screen.getByTestId('tender-quick-balance'));
+    expect(text('tender-entry-amount')).toBe(money(333));
+    expect(sale.order.payments).toEqual([]);
+  });
+
   it('no Split once nothing is due', () => {
     start(1000);
     act(() => { sale.addTender({ method: 'cash', amountMinor: 1000 }); });

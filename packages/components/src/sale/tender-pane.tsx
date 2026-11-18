@@ -90,6 +90,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const thisPaymentMinor = planned ? planned.thisPaymentMinor : balance;
   const dueMinor = planned && planned.thisPaymentMinor < balance ? planned.thisPaymentMinor : figures.roundedDueMinor;
   const chips = givesChange ? quickTenderedAmounts(dueMinor, QUICK_CASH_STEPS.map((step) => step * 10 ** minorUnitDigits(order.currency))) : [];
+  // v2 tender-pane.tsx:942-954: a method that gives no change gets one chip setting the entry to the due figure; hidden in percent entry, as v2 does.
+  const balanceChip = method !== null && !givesChange && state.entryMode !== 'percent' ? dueMinor : null;
   const [onlyLeg] = order.payments;
   // startTender('external') records the card leg for the total: its reference is edited in place, as before.
   const cardReference = order.payments.length === 1 && onlyLeg.method === 'external' && legStatus(onlyLeg) === 'captured' && balance === 0;
@@ -196,11 +198,16 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
           </View>)}
         </ScrollView>
       </> : null}
-      {chips.length ? <View testID="tender-quick" className="flex-row flex-wrap justify-center gap-2">
+      {chips.length || balanceChip !== null ? <View testID="tender-quick" className="flex-row flex-wrap justify-center gap-2">
         {chips.map((minor, index) => <Pressable key={minor} testID={index === 0 ? 'tender-quick-exact' : `tender-quick-${minor}`} accessibilityRole="button"
           onPress={() => dispatch({ type: 'set-entry', minor })} className={cn(button, state.entryDirty && figures.entryMinor === minor && 'border-primary')}>
           <Text className="font-semibold text-foreground">{index === 0 ? t('pos_checkout.exact_amount', { amount: money(minor) }) : money(minor)}</Text>
         </Pressable>)}
+        {balanceChip !== null ? <Pressable testID="tender-quick-balance" accessibilityRole="button"
+          onPress={() => dispatch({ type: 'set-entry', minor: balanceChip })} className={cn(button, state.entryDirty && figures.entryMinor === balanceChip && 'border-primary')}>
+          <Text className="font-semibold text-foreground">{plan ? t('pos_checkout.exact_amount', { amount: money(balanceChip) })
+            : figures.entryMinor === balanceChip ? t('pos_checkout.full_balance_label') : t('pos_checkout.full_balance', { amount: money(balanceChip) })}</Text>
+        </Pressable> : null}
       </View> : null}
       <Keypad testID="tender-keypad" rows={keypadRows(t)} onPress={(name) => dispatch({ type: 'key', key: name as TenderKey })} />
       {refusal ? <Text accessibilityRole="alert" className="text-destructive">{t('tender.not_taken')}</Text> : null}

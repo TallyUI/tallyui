@@ -13,6 +13,8 @@
 	"pos_checkout.change_due": "Change {amount}",
 	"pos_checkout.clear_amount": "Clear",
 	"pos_checkout.exact_amount": "Exact {amount}",
+	"pos_checkout.full_balance": "Full balance {amount}",
+	"pos_checkout.full_balance_label": "Full balance",
 	"pos_checkout.n_of_ways": "{n} of {ways}",
 	"pos_checkout.n_ways": "{ways} ways",
 	"pos_checkout.next_leg": "Next",
