@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { AccessibilityInfo, Animated, Text } from 'react-native';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
 import { EASE, TIMING_EASE } from '../lib/motion';
+import { cn } from '@tallyui/theme';
 
 type Done = (result: { finished: boolean }) => void;
 let held: Done[] = [];
@@ -35,6 +36,25 @@ function layout(height: number) {
   act(() => inner.__reactLayoutHandler({ nativeEvent: { layout: { x: 0, y: 0, width: 300, height } } }));
 }
 const settle = () => act(async () => {});
+// jsdom renders no NativeWind classes: read the className the nearest View above a host node was rendered with.
+function renderedClassName(node: Element) {
+  const key = Object.keys(node).find((name) => name.startsWith('__reactFiber$'))!;
+  type Fiber = { type?: unknown; memoizedProps?: { className?: string }; return?: Fiber };
+  let fiber = (node as unknown as Record<string, Fiber>)[key];
+  while (fiber && (typeof fiber.type === 'string' || fiber.memoizedProps?.className === undefined)) fiber = fiber.return!;
+  return fiber.memoizedProps?.className;
+}
+function OpenContent({ className }: { className?: string }) {
+  return (
+    <Accordion type="single" collapsible defaultValue="a">
+      <AccordionItem value="a">
+        <AccordionTrigger testID="trigger"><Text>Label</Text></AccordionTrigger>
+        <AccordionContent className={className}><Text>Body</Text></AccordionContent>
+      </AccordionItem>
+    </Accordion>
+  );
+}
+const innerClassName = () => renderedClassName(screen.getByText('Body').parentElement!);
 const reduceMotion = (reduced: boolean) => vi.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(reduced);
 
 describe('Accordion', () => {
@@ -143,6 +163,25 @@ describe('Accordion', () => {
     toggle();
     expect(region()).toBeNull();
     expect(Animated.timing).not.toHaveBeenCalled();
+  });
+
+  it('puts className on the inner padded view, as v2 does', async () => {
+    render(<OpenContent className="pb-0 bg-muted" />);
+    await settle();
+    expect(innerClassName()).toBe(cn('pb-4 pt-0', 'pb-0 bg-muted'));
+    expect(innerClassName()).not.toContain('pb-4');
+  });
+
+  it("keeps the outer content's classes fixed", async () => {
+    render(<OpenContent className="pb-0 bg-muted" />);
+    await settle();
+    expect(renderedClassName(region()!)).toBe('overflow-hidden text-sm web:transition-all');
+  });
+
+  it('without className the inner view keeps pb-4 pt-0', async () => {
+    render(<OpenContent />);
+    await settle();
+    expect(innerClassName()).toBe('pb-4 pt-0');
   });
 
   it('forceMount content does not fold', async () => {

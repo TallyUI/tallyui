@@ -121,12 +121,12 @@ const AccordionContent = React.forwardRef<
     <TextClassContext.Provider value="text-sm">
       <AccordionPrimitive.Content
         ref={ref}
-        className={cn('overflow-hidden text-sm web:transition-all', className)}
+        className="overflow-hidden text-sm web:transition-all"
         forceMount={forceMount || fold.phase === 'closing' ? true : undefined}
         {...props}
       >
         <Animated.View style={fold.phase === 'idle' ? undefined : { height, overflow: 'hidden' }}>
-          <View className="pb-4 pt-0" onLayout={(e) => onLayout(e.nativeEvent.layout.height)}>{children}</View>
+          <View className={cn('pb-4 pt-0', className)} onLayout={(e) => onLayout(e.nativeEvent.layout.height)}>{children}</View>
         </Animated.View>
       </AccordionPrimitive.Content>
     </TextClassContext.Provider>
