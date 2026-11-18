@@ -62,7 +62,7 @@ describe('ConnectorStatus', () => {
     // for this codebase's convention of asserting class names from source instead).
     const here = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(here, '../settings/connector-status.tsx'), 'utf8');
-    expect(source).toContain("unsoldStale ? 'text-muted-foreground' : 'text-warning'");
+    expect(source).toContain("unsoldStale ? 'text-muted-foreground' : 'text-warning-text'");
   });
 
   it('lets a custom formatUnsold win', () => {

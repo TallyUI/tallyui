@@ -419,7 +419,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
           );
         })}
         {!!refusal && (
-          <Text testID="count-manager-line" className="text-warning min-h-11">
+          <Text testID="count-manager-line" className="text-warning-text min-h-11">
             {refusal}
           </Text>
         )}

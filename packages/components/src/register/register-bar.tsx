@@ -129,7 +129,7 @@ export function RegisterBar({
           accessibilityLabel="Open register panel"
           onPress={onOpenPanel}
         >
-          <Text className={overdue ? 'text-warning' : undefined}>Register ›</Text>
+          <Text className={overdue ? 'text-warning-text' : undefined}>Register ›</Text>
         </Button>
       )}
       {cashier && (
