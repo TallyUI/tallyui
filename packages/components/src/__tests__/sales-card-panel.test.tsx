@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
 import { PortalHost } from '@tallyui/primitives';
@@ -111,5 +111,17 @@ describe('SalesCards heads', () => {
     render(<SalesCards figures={payments} currency="EUR" />);
     expect(screen.queryByTestId('card-payments-chevron')).toBeNull();
     expect(screen.queryByTestId('card-payments-open')).toBeNull();
+  });
+});
+
+describe('SalesCards legends', () => {
+  it('folds the rows past the legend limit into one Other row with their total', () => {
+    const methods = ['cash', 'card', 'm3', 'm4', 'm5', 'm6', 'm7'];
+    // Rows sort by amount, so the 200 and 100 payments (m6, m7) fold into Other: 300.
+    const orders = methods.map((method, i) => order(`o${i}`, 700 - i * 100, { payments: [{ method, amountMinor: 700 - i * 100 }] }));
+    render(<SalesCards figures={figuresOf(orders)} currency="EUR" />);
+    // The 300 head row also shows money(300), so read the Other row's own text.
+    const row = within(screen.getByTestId('card-payments')).getByText('Other').parentElement;
+    expect(row?.textContent).toContain(money(300));
   });
 });
