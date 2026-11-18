@@ -10,6 +10,14 @@ async function seed(db: DemoRegisterDb) {
     registerId: 'demo-register', expectedFloatMinor: 20000, countedFloatMinor: 20000,
     openedBy: 'demo-cashier', businessDay: { year: 2026, month: 9, day: 20 },
   });
+  // One card sale, so the count shows an other tender (the shape of the `sale` test helper).
+  await db.pos_orders.insert({
+    id: 'demo-sale-1', commandId: 'command-demo-sale-1', createdAt: '2026-09-20T10:00:00.000Z', updatedAt: '2026-09-20T10:00:00.000Z',
+    currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: 2200, discountMinor: 0, taxMinor: 0, totalMinor: 2200,
+    customer: null, syncStatus: 'pending', sessionId: session.id, cashierRef: 'demo-cashier',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
+    payments: [{ id: 'demo-sale-1-payment-0', method: 'external', amountMinor: 2200 }],
+  });
   await startCounting(db.register_sessions, session.id);
 }
 

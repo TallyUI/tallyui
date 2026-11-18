@@ -226,6 +226,13 @@ for (const size of sizes) {
       await expect(page.getByTestId('count-denomination-tiles')).toBeVisible();
     });
 
+    test('RegisterCount opens other tenders with one press after typing by keys', async ({ page }) => {
+      await page.goto('/pos/register/count');
+      await page.getByTestId('count-key-5').click();
+      await page.getByTestId('count-other-tenders').click();
+      await expect(page.getByTestId('count-tender-external')).toBeVisible();
+    });
+
     test('RegisterCount counts a tile with one press after typing by keys', async ({ page }) => {
       await page.goto('/pos/register/count');
       await page.getByTestId('count-denominations').click();
