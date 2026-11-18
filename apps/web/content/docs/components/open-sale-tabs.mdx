@@ -32,6 +32,8 @@ A parked sale that has waited an hour or more adds its age after the total, in h
 
 The + cell at the end opens a new sale. A blank cart is no tab, so while the till is on one the + cell is its tab: it is underlined, reads `New`, and pressing it does nothing.
 
+On the web, ← and → step between the tabs, and from the last sale onto New, as v2.
+
 ## Open sales
 
 `openSales(order, parked)` from `@tallyui/pos` builds the `sales` prop. It merges the current sale, when it has lines, fees or shipping, with the parked summaries from `useParkedSales(drafts)`, skipping a draft that has the current sale's id. Tabs are sorted by id with numeric collation, so a tab keeps its place across switches. Each entry carries `id`, `customerName`, `itemCount`, `firstItem`, `totalMinor`, `paidMinor`, `balanceDueMinor`, `parkedAt` and `current`.

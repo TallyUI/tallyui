@@ -1,5 +1,5 @@
-import { useEffect, useState, type JSX } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useEffect, useRef, useState, type JSX } from 'react';
+import { Platform, Pressable, ScrollView, View } from 'react-native';
 import { useFormatMoney } from '@tallyui/core';
 import { isPartlyPaid, type OpenSale } from '@tallyui/pos';
 import { Text } from '../ui/text';
@@ -46,15 +46,38 @@ export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsP
   const formatMoney = useFormatMoney();
   const now = useNowMs(AGE_TICK_MS);
   const blank = !sales.some((sale) => sale.current);
+  // v2 cart/tabs.tsx: on a blank cart the active position is the + cell, just past the last sale; no wrap.
+  const activeIndex = blank ? sales.length : sales.findIndex((sale) => sale.current);
+  const focusPending = useRef(false);
+  const step = (delta: number) => {
+    const at = activeIndex + delta;
+    if (at < 0 || at > sales.length) return;
+    focusPending.current = true;
+    if (at === sales.length) onNew(); else onSelect(sales[at].id);
+  };
+  // Once a key step's tab renders active, it takes focus; a press leaves focus where it is (v2).
+  const follow = (active: boolean) => (node: View | null) => {
+    if (node && active && focusPending.current) { focusPending.current = false; node.focus?.(); }
+  };
+  // The arrow keys step from any tab, + included: the strip is their one ancestor (v2, web only).
+  const onKeyDown = Platform.OS === 'web' ? (event: { nativeEvent: { key: string }; target: unknown; defaultPrevented: boolean; preventDefault: () => void }) => {
+    const key = event.nativeEvent.key;
+    const from = (event.target as { getAttribute?: (n: string) => string | null })?.getAttribute?.('role');
+    if (from === 'tab' && (key === 'ArrowLeft' || key === 'ArrowRight') && !event.defaultPrevented) {
+      event.preventDefault();
+      step(key === 'ArrowLeft' ? -1 : 1);
+    }
+  } : undefined;
   return (
-    <View testID="open-sale-tabs" className="h-14 flex-row items-stretch border-t border-border bg-card">
+    <View testID="open-sale-tabs" className="h-14 flex-row items-stretch border-t border-border bg-card"
+      {...{ onKeyDown } /* RN's View types lack onKeyDown; react-native-web passes it to the div. */}>
       <ScrollView horizontal accessibilityRole="tablist" showsHorizontalScrollIndicator={false} className="min-w-0 flex-1">
         {sales.map((sale) => {
           const partly = isPartlyPaid(sale);
           const age = staleAge(sale.parkedAt, now);
           const status = `Partly paid · ${formatMoney({ amount: sale.balanceDueMinor, currency })} due`;
           return (
-            <Pressable key={sale.id} testID={`open-sale-tab-${sale.id}`} accessibilityRole="tab"
+            <Pressable key={sale.id} testID={`open-sale-tab-${sale.id}`} ref={follow(sale.current)} accessibilityRole="tab"
               accessibilityState={{ selected: sale.current }} aria-selected={sale.current} onPress={() => onSelect(sale.id)}
               className={`h-full justify-center border-b-2 px-3 ${sale.current ? 'border-primary' : 'border-transparent'}`}>
               <Text testID={`open-sale-tab-${sale.id}-who`} numberOfLines={1}
@@ -77,7 +100,7 @@ export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsP
           );
         })}
       </ScrollView>
-      <Pressable testID="new-sale-tab" accessibilityRole="tab" accessibilityLabel="New order" accessibilityState={{ selected: blank }} aria-selected={blank}
+      <Pressable testID="new-sale-tab" ref={follow(blank)} accessibilityRole="tab" accessibilityLabel="New order" accessibilityState={{ selected: blank }} aria-selected={blank}
         // Already on the blank cart: + is a place, not an action (v2).
         onPress={() => { if (!blank) onNew(); }}
         className={`h-full flex-row items-center justify-center gap-1.5 px-3 ${blank ? 'border-b-2 border-primary' : ''}`}>
