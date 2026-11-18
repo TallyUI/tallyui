@@ -3,8 +3,8 @@
  * decode it, dedup via the scan session, and emit `hid-pos` ScanEvents. */
 import { isChooserCancel } from './chooser-cancel';
 import { scannerDeviceKey } from './device-identity';
-import { createDeviceScannerStateCell, type DeviceScanner, type DeviceScannerErrorHandler, type DeviceScannerSettings,
-  type ScannerProfileStore } from './device-scanner';
+import { createDeviceLifecycle, createDeviceScannerStateCell, DEVICE_SCANNER_DISCONNECTED, type DeviceScanner,
+  type DeviceScannerErrorHandler, type DeviceScannerSettings, type ScannerProfileStore } from './device-scanner';
 import { decodeHidPosReport } from './hid-pos-decoder';
 import type { ScanEvent } from './scan-events';
 import { createScanSession } from './scan-session';
@@ -40,8 +40,6 @@ export interface HidScannerOptions {
   now?: () => number;
 }
 
-const DISCONNECTED = { connected: false, connectedDeviceKey: null } as const;
-
 const hidDeviceKey = (device: HidDeviceLike) =>
   scannerDeviceKey({ connectionType: 'hid-pos', vendorId: device.vendorId, productId: device.productId });
 
@@ -58,10 +56,6 @@ export function createHidScanner(options: HidScannerOptions): DeviceScanner {
 
   let activeDevice: HidDeviceLike | null = null;
   let activeListener: ((event: HidInputReportEventLike) => void) | null = null;
-  let attachRequest = 0;
-  let lifecycleQueue: Promise<void> = Promise.resolve();
-  let disposed = false;
-  let disposing: Promise<void> | null = null;
 
   const session = createScanSession({
     onAccept: (code, symbology) => {
@@ -75,26 +69,21 @@ export function createHidScanner(options: HidScannerOptions): DeviceScanner {
     const listener = activeListener;
     activeDevice = null;
     activeListener = null;
-    state.set(DISCONNECTED);
+    state.set(DEVICE_SCANNER_DISCONNECTED);
     if (!device) return;
     // Remove the listener before closing, so a report racing the close is never delivered.
     if (listener) device.removeEventListener('inputreport', listener);
     await device.close().catch(() => undefined);
   };
 
-  const isStale = (request: number) => disposed || request !== attachRequest;
+  const lifecycle = createDeviceLifecycle(state, teardown);
 
   const attachDevice = async (device: HidDeviceLike, save: boolean) => {
-    const request = ++attachRequest;
-    let attached = false;
-    const pending = lifecycleQueue.then(async () => {
-      if (isStale(request)) return;
-      await teardown();
-      if (isStale(request)) return;
+    const attached = await lifecycle.attach(async (isStale) => {
       await device.open();
-      if (isStale(request)) {
+      if (isStale()) {
         await device.close().catch(() => undefined);
-        return;
+        return false;
       }
       const listener = (event: HidInputReportEventLike) => {
         // WebHID delivers event.data as the report body *without* the report id (it is carried separately as
@@ -107,10 +96,8 @@ export function createHidScanner(options: HidScannerOptions): DeviceScanner {
       activeListener = listener;
       session.reset();
       state.set({ connected: true, connectedDeviceKey: hidDeviceKey(device) });
-      attached = true;
+      return true;
     });
-    lifecycleQueue = pending.catch(() => undefined);
-    await pending;
     if (!attached || !save) return;
     // Upsert on the canonical key: re-connecting an already-registered scanner refreshes it instead of adding a
     // second row. An absent product name stays empty rather than an invented English label.
@@ -121,7 +108,7 @@ export function createHidScanner(options: HidScannerOptions): DeviceScanner {
   };
 
   const connect = async () => {
-    if (!hid || disposed) return;
+    if (!hid || lifecycle.disposed()) return;
     try {
       const devices = await hid.requestDevice({ filters: [{ usagePage: HID_POS_USAGE_PAGE }] });
       if (devices[0]) await attachDevice(devices[0], true);
@@ -134,10 +121,10 @@ export function createHidScanner(options: HidScannerOptions): DeviceScanner {
   // Silently re-open an already-granted HID device matching a saved hid-pos profile (the browser remembers granted
   // devices across reloads). An HID key always carries vendor and product, so the first match is taken.
   const reopenSaved = async () => {
-    if (!hid || disposed) return;
+    if (!hid || lifecycle.disposed()) return;
     try {
       const [devices, saved] = await Promise.all([hid.getDevices(), profiles.read(['hid-pos'])]);
-      if (disposed) return;
+      if (lifecycle.disposed()) return;
       const savedKeys = new Set(saved.map((profile) => profile.deviceKey));
       const match = devices.find((device) => savedKeys.has(hidDeviceKey(device)));
       if (match) await attachDevice(match, false);
@@ -147,25 +134,11 @@ export function createHidScanner(options: HidScannerOptions): DeviceScanner {
     }
   };
 
-  const queueTeardown = async () => {
-    attachRequest += 1;
-    const pending = lifecycleQueue.then(teardown);
-    lifecycleQueue = pending.catch(() => undefined);
-    await pending;
-    state.set(DISCONNECTED);
-  };
-
   return {
     available: !!hid, connect, reopenSaved,
-    disconnect: () => (disposed ? Promise.resolve() : queueTeardown()),
-    dispose: () => {
-      if (!disposing) {
-        // Release the device and its listener on host teardown (logout, unmount).
-        disposed = true;
-        disposing = queueTeardown();
-      }
-      return disposing;
-    },
+    disconnect: lifecycle.disconnect,
+    // Release the device and its listener on host teardown (logout, unmount).
+    dispose: lifecycle.dispose,
     getState: state.get, subscribe: state.subscribe,
   };
 }
