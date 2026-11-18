@@ -13,16 +13,16 @@ function openingMethodId(method: string, methods?: PaymentMethodDescriptor[]): s
   return offered.find((descriptor) => wireMethodOf(descriptor) === method)?.id ?? method;
 }
 
-function HostedPane({ sale, method, methods, ledger }: { sale: Sale; method: string; methods?: PaymentMethodDescriptor[]; ledger?: boolean }) {
+function HostedPane({ sale, method, methods, ledger, back }: { sale: Sale; method: string; methods?: PaymentMethodDescriptor[]; ledger?: boolean; back?: boolean }) {
   const [state, dispatch] = useReducer(tenderReducer, { methodId: openingMethodId(method, methods), balanceMinor: sale.order.balanceDueMinor }, initTenderState);
-  return <TenderPane sale={sale} state={state} dispatch={dispatch} methods={methods} ledger={ledger} />;
+  return <TenderPane sale={sale} state={state} dispatch={dispatch} methods={methods} ledger={ledger} back={back} />;
 }
 
-type TenderProps = { sale: Sale; methods?: PaymentMethodDescriptor[]; /** Passed to TenderPane: `false` leaves the ledger to Cart's `tenderLedger`. Default `true`. */ ledger?: boolean };
+type TenderProps = { sale: Sale; methods?: PaymentMethodDescriptor[]; /** Passed to TenderPane: `false` leaves the ledger to Cart's `tenderLedger`. Default `true`. */ ledger?: boolean; /** Passed to TenderPane: `false` hides Back (v2's phone checkout). Default `true`. */ back?: boolean };
 
 /** The tender pane with its own reducer, opened on the method `startTender` chose. Renders nothing outside the tender stage. */
-export function Tender({ sale, methods, ledger }: TenderProps): JSX.Element | null {
-  return sale.stage.kind === 'tender' ? <HostedPane sale={sale} method={sale.stage.method} methods={methods} ledger={ledger} /> : null;
+export function Tender({ sale, methods, ledger, back }: TenderProps): JSX.Element | null {
+  return sale.stage.kind === 'tender' ? <HostedPane sale={sale} method={sale.stage.method} methods={methods} ledger={ledger} back={back} /> : null;
 }
 
 /** @deprecated Use Tender: the pane now handles split payments. */

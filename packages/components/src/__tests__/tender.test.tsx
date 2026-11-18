@@ -147,6 +147,14 @@ describe('Tender', () => {
     click('Back');
     expect(sale.stage.kind).toBe('cart');
   });
+
+  it('back={false} draws no Back button and keeps Complete sale', () => {
+    render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} back={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.startTender('cash'));
+    expect(screen.getByTestId('tender-complete').textContent).toBe('Complete sale');
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+  });
 });
 
 describe('Tender on a reopened order (ADR-090 gate 36)', () => {
