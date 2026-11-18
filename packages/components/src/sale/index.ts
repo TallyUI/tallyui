@@ -12,7 +12,7 @@ export { Receipt } from './receipt';
 export { orderReference } from './order-reference';
 export { injectPrintStyle } from './print-style';
 export { SyncStatus, syncStatusQuiet } from './sync-status';
-export { OrdersList, type OrderHistoryRow } from './orders-list';
+export { OrdersList, OrderSyncNotices, type OrderHistoryRow, type OrderSyncNoticesProps } from './orders-list';
 export { ParkedSales, type ParkedSalesProps } from './parked-sales';
 export { OpenSaleTabs, type OpenSaleTabsProps } from './open-sale-tabs';
 export { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters } from './product-filter-bar';

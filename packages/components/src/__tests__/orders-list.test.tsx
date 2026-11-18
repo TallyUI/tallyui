@@ -653,3 +653,18 @@ describe('OrdersList history rows (ADR-052 amendment 1)', () => {
     expect(screen.getByTestId('orders-empty')).toBeTruthy();
   });
 });
+
+describe('OrdersList Retry place', () => {
+  it('puts Retry after the notes and before the store warnings under Needs attention', () => {
+    const rejected = order('r', { syncStatus: 'rejected', error: { code: 'platform_error', message: 'store message' },
+      note: 'Deliver after 5', sentVersion: 6, warnings: [{ code: 'total_mismatch', serverMinor: 1000, expectedMinor: 1200 }] });
+    render(<OrdersList orders={[rejected]} onRetry={async () => 0} />);
+    const [sentence] = screen.getAllByText("The online store refused this sale. Ask the store owner to look at the till's sync log.");
+    const [note] = screen.getAllByTestId('order-note-not-sent-r');
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    const [warning] = screen.getAllByText(`Store total ${formatMoney({ amount: 1000, currency: 'EUR' })} vs POS ${formatMoney({ amount: 1200, currency: 'EUR' })}`);
+    for (const [before, after] of [[sentence, note], [note, retry], [retry, warning]]) {
+      expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+});
