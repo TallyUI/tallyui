@@ -21,6 +21,7 @@ const screens = [
   { href: '/pos/product-variant-picker', label: 'ProductVariantPicker' },
   { href: '/pos/products-screen', label: 'Products screen' },
   { href: '/pos/phone-sale', label: 'Phone sale' },
+  { href: '/pos/split-sale', label: 'Split sale' },
   // Checkout
   { href: '/pos/cash-tendered', label: 'CashTendered' },
   { href: '/pos/change-display', label: 'ChangeDisplay' },
