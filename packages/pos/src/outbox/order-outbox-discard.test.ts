@@ -120,4 +120,18 @@ describe('OrderOutbox.discard', () => {
     expect(send.mock.calls.map(([batch]) => batch.map((command) => [command.id, command.attempt])))
       .toEqual([[[input.commandId, 1]], [[input.commandId, 2]], [[next.commandId, 1]]]);
   });
+
+  it.each(['requeue', 'discard'] as const)('a requeue racing a discard never removes the requeued order (%s first)', async (first) => {
+    const input = rejectedOrder(0);
+    await collection.insert(input);
+    const { outbox } = setup();
+    // Stopped, so requeue starts no flush and a requeued order stays pending.
+    outbox.stop();
+    const [requeued, discarded] = first === 'requeue'
+      ? await Promise.all([outbox.requeue([input.id]), outbox.discard(input.id)])
+      : await Promise.all([outbox.discard(input.id), outbox.requeue([input.id])]).then(([d, r]) => [r, d] as const);
+    const after = await stored(input.id);
+    if (discarded) expect([requeued, after]).toEqual([0, undefined]);
+    else expect([requeued, after?.syncStatus, after?.commandId === input.commandId]).toEqual([1, 'pending', false]);
+  });
 });

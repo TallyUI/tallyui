@@ -562,7 +562,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         let changed = false;
         // The modifier sees the stored state, even when findOne's cached result is stale.
         await (await collection.findOne(order.id).exec())?.incrementalModify((data) => {
-          changed = isRequeueableOrder(data);
+          // A row discard removed is not requeued.
+          changed = !data._deleted && isRequeueableOrder(data);
           if (!changed) return data;
           if (data.syncStatus === 'pending') {
             delete data.error;
@@ -592,10 +593,16 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       await running?.catch(() => {});
       // Rejected only: a pending order may already have reached the store (a timeout, a network drop after the send),
       // so removing it could hide a sale the store took; a rejected one the store refused.
-      const [order] = await readFresh(collection, { selector: { id: orderId, syncStatus: 'rejected' } });
-      if (!order) return false;
-      await (await collection.findOne(order.id).exec())?.remove();
-      const { commandId } = order;
+      let commandId: string | undefined;
+      // Check and remove in one write, as RxDB's incrementalRemove() does: the modifier sees the stored state, so a
+      // requeue that won the race leaves its pending order in place.
+      await (await collection.findOne(orderId).exec())?.incrementalModify((data) => {
+        if (data.syncStatus !== 'rejected') return data;
+        commandId = data.commandId;
+        data._deleted = true;
+        return data;
+      });
+      if (commandId === undefined) return false;
       attempts.delete(commandId); isolated.delete(commandId); clocks.delete(commandId); walk?.failed.delete(commandId);
       if (head?.id === commandId) head = undefined;
       await updateState();
