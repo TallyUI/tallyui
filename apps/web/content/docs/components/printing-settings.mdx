@@ -1,0 +1,44 @@
+---
+title: PrintingSettings
+description: PrintingSettings is the Printers section of Settings › Printing, the printers on this device with Test Print, Edit, Set Default and Delete, ported from WCPOS v2.
+---
+
+## Import
+
+```tsx
+import { PrintingSettings } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<PrintingSettings
+  printers={printers}
+  testingIds={testingIds}
+  onTest={(printer) => runTestPrint(printer)}
+  onEdit={(printer) => openPrinterDialog(printer)}
+  onSetDefault={(id) => setDefaultPrinter(id)}
+  onDelete={(id) => deletePrinter(id)}
+  onAdd={() => openPrinterDialog()}
+/>
+```
+
+Props only: the app passes its `PrinterProfile`s (from `@tallyui/pos`) and wires every callback. The component holds only the delete confirmation; it has no add or edit dialog of its own and shows no toast, so the app opens its own dialog from `onAdd` / `onEdit` and reports the result of `onTest`.
+
+Each printer is a row with its name, a "Default" tag on the default printer, and its connection line: "Print Dialog · built-in" for the Print Dialog (`connectionType: 'system'`), otherwise the address with its port and " · Epson" or " · Star" for those vendors. Actions are Test Print (busy while its id is in `testingIds`), Edit, and a "More actions" menu with Set Default and Delete. A built-in printer has no Edit and no Delete; the default printer has no Set Default. Delete asks first and calls `onDelete` only on confirm.
+
+With only the Print Dialog, the section shows "No printers configured" and a primary Add Printer; once a hardware printer exists, every printer is listed and Add Printer is an outline button. While `loading`, only the section title shows.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `printers` | `readonly PrinterProfile[]` | required | The printers on this device, the Print Dialog included |
+| `loading` | `boolean` | `false` | Show the section title only |
+| `testingIds` | `ReadonlySet<string>` | empty | Ids whose test print is running |
+| `onTest` | `(printer: PrinterProfile) => void` | required | Test Print pressed |
+| `onEdit` | `(printer: PrinterProfile) => void` | required | Edit pressed |
+| `onSetDefault` | `(id: string) => void` | required | Set Default chosen |
+| `onDelete` | `(id: string) => void` | required | Delete confirmed |
+| `onAdd` | `() => void` | required | Add Printer pressed |
+| `className` | `string` | --- | Override container styles |

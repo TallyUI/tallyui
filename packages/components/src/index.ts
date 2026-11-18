@@ -214,6 +214,8 @@ export {
   type TaxCalculationSettingsProps,
   CustomerDisplaySettings,
   type CustomerDisplaySettingsProps,
+  PrintingSettings,
+  type PrintingSettingsProps,
 } from './settings';
 
 // Tax components
