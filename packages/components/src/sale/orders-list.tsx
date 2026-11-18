@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings } from '@tallyui/core';
 import { isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
@@ -102,6 +102,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
   onOpen?: (row: PosOrder | OrderHistoryRow) => void;
 }) {
   const formatMoney = useFormatMoney();
+  const hintId = useId();
   const retrying = useRef(new Set<string>());
   const [retryingIds, setRetryingIds] = useState(new Set<string>());
   const [expanded, setExpanded] = useState(new Set<string>());
@@ -120,7 +121,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
     return bTime - aTime;
   });
   return <ScrollView className="flex-1 bg-background p-4">
-    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section) => (
+    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section, sectionIndex) => (
       <View key={section.title} className="mb-6 gap-3">
         <Text accessibilityRole="header" className="text-xl font-semibold text-foreground">{section.title}</Text>
         {section.title === 'Recent' && orders.length === 0 && shown.length === 0 ? <Text testID="orders-empty" className="text-muted-foreground">No sales yet. Completed sales appear here.</Text> : null}
@@ -143,7 +144,9 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const isExpanded = expanded.has(key);
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
-            <Pressable accessibilityRole="button" aria-expanded={isExpanded}
+            {/* RN-web drops accessibilityHint; aria-describedby carries it on web. */}
+            <Text id={`${hintId}-${sectionIndex}-${order.id}`} className="hidden">Shows the items and payments of this sale</Text>
+            <Pressable accessibilityRole="button" aria-expanded={isExpanded} aria-describedby={`${hintId}-${sectionIndex}-${order.id}`}
               accessibilityHint="Shows the items and payments of this sale" testID={`order-row-${order.id}`} className="gap-1"
               onPress={() => setExpanded((current) => {
                 const next = new Set(current);
