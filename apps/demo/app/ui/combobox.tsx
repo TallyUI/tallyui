@@ -86,10 +86,10 @@ export default function ComboboxScreen() {
         <VStack className="gap-3">
           <Text className="text-lg font-bold">Fixed Width</Text>
           <Combobox>
-            <ComboboxTrigger className="w-64">
+            <ComboboxTrigger className="w-64" testID="combobox-fixed-trigger">
               <ComboboxInput placeholder="Pick a color..." />
             </ComboboxTrigger>
-            <ComboboxContent>
+            <ComboboxContent testID="combobox-fixed-content">
               <ComboboxItem value="red" label="Red">Red</ComboboxItem>
               <ComboboxItem value="green" label="Green">Green</ComboboxItem>
               <ComboboxItem value="blue" label="Blue">Blue</ComboboxItem>

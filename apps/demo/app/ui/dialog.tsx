@@ -11,6 +11,7 @@ import {
   HoverCard, HoverCardTrigger, HoverCardContent,
   Tooltip, TooltipTrigger, TooltipContent,
   ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem,
+  Combobox, ComboboxTrigger, ComboboxInput, ComboboxContent, ComboboxItem,
 } from '@tallyui/components';
 
 export default function DialogScreen() {
@@ -219,6 +220,15 @@ export default function DialogScreen() {
                     <ContextMenuItem><Text>Nested context item</Text></ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>
+                <Combobox>
+                  <ComboboxTrigger className="w-64" testID="nested-combobox-trigger">
+                    <ComboboxInput placeholder="Nested combobox" />
+                  </ComboboxTrigger>
+                  <ComboboxContent testID="nested-combobox-content">
+                    <ComboboxItem value="one" label="One"><Text>One</Text></ComboboxItem>
+                    <ComboboxItem value="two" label="Two"><Text>Two</Text></ComboboxItem>
+                  </ComboboxContent>
+                </Combobox>
               </VStack>
             </DialogContent>
           </Dialog>

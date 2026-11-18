@@ -5,10 +5,13 @@ import {
   TextInput,
   View,
   type GestureResponderEvent,
+  type LayoutChangeEvent,
+  type LayoutRectangle,
   type NativeSyntheticEvent,
   type TextInputChangeEventData,
 } from 'react-native';
-import { useControllableState } from '../hooks';
+import { useAugmentedRef, useControllableState, useRelativePosition, type LayoutPosition } from '../hooks';
+import { measureTrigger } from '../hooks/measure-trigger';
 import { Portal as RNPortal } from '../portal';
 import { Slot } from '../slot';
 import type {
@@ -23,6 +26,31 @@ import type {
   RootProps,
   TriggerProps,
 } from './types';
+
+// Private anchor state: the anchor is the Trigger when one is mounted, otherwise the Input.
+interface AnchorContextType {
+  triggerPosition: LayoutPosition | null;
+  setTriggerPosition: (position: LayoutPosition | null) => void;
+  contentLayout: LayoutRectangle | null;
+  setContentLayout: (layout: LayoutRectangle | null) => void;
+  triggerRef: React.MutableRefObject<View | null>;
+  inputRef: React.MutableRefObject<View | null>;
+}
+
+const AnchorContext = React.createContext<AnchorContextType | null>(null);
+
+// Every caller has already called useRootContext(), which throws outside Root.
+const useAnchorContext = () => React.useContext(AnchorContext)!;
+
+// Stores the mounted node in an anchor ref and clears it on unmount.
+function useAnchorNode(anchorRef: React.MutableRefObject<View | null>, node: React.RefObject<View | null>) {
+  React.useEffect(() => {
+    anchorRef.current = node.current;
+    return () => {
+      anchorRef.current = null;
+    };
+  }, [anchorRef, node]);
+}
 
 // ---------------------------------------------------------------------------
 // Root context
@@ -96,6 +124,11 @@ function Root({
     onChange: onSearchValueChangeProp,
   });
 
+  const [triggerPosition, setTriggerPosition] = React.useState<LayoutPosition | null>(null);
+  const [contentLayout, setContentLayout] = React.useState<LayoutRectangle | null>(null);
+  const triggerRef = React.useRef<View | null>(null);
+  const inputRef = React.useRef<View | null>(null);
+
   return (
     <RootContext.Provider
       value={{
@@ -108,7 +141,11 @@ function Root({
         nativeID,
       }}
     >
-      {children}
+      <AnchorContext.Provider
+        value={{ triggerPosition, setTriggerPosition, contentLayout, setContentLayout, triggerRef, inputRef }}
+      >
+        {children}
+      </AnchorContext.Provider>
     </RootContext.Provider>
   );
 }
@@ -124,6 +161,9 @@ const Input = React.forwardRef<View, InputProps>(function Input(
   ref
 ) {
   const { open, onOpenChange, searchValue, onSearchValueChange } = useRootContext();
+  const { inputRef } = useAnchorContext();
+  const augmentedRef = useAugmentedRef<View>({ ref });
+  useAnchorNode(inputRef, augmentedRef);
 
   const onChange = React.useCallback(
     (ev: NativeSyntheticEvent<TextInputChangeEventData>) => {
@@ -145,7 +185,7 @@ const Input = React.forwardRef<View, InputProps>(function Input(
 
   return (
     <Component
-      ref={ref}
+      ref={augmentedRef}
       role="combobox"
       aria-expanded={open}
       aria-autocomplete="list"
@@ -169,6 +209,9 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
   ref
 ) {
   const { open, onOpenChange } = useRootContext();
+  const { triggerRef } = useAnchorContext();
+  const augmentedRef = useAugmentedRef<View>({ ref });
+  useAnchorNode(triggerRef, augmentedRef);
 
   const onPress = React.useCallback(
     (ev: GestureResponderEvent) => {
@@ -182,7 +225,7 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
 
   return (
     <Component
-      ref={ref}
+      ref={augmentedRef}
       role="button"
       aria-expanded={open}
       onPress={onPress}
@@ -199,6 +242,7 @@ Trigger.displayName = 'ComboboxTrigger';
 
 function Portal({ forceMount, hostName, children }: PortalProps) {
   const rootValue = useRootContext();
+  const anchorValue = useAnchorContext();
 
   if (!forceMount && !rootValue.open) {
     return null;
@@ -206,7 +250,7 @@ function Portal({ forceMount, hostName, children }: PortalProps) {
 
   return (
     <RNPortal hostName={hostName} name={`${rootValue.nativeID}_portal`}>
-      <RootContext.Provider value={rootValue}>{children}</RootContext.Provider>
+      <RootContext.Provider value={rootValue}><AnchorContext.Provider value={anchorValue}>{children}</AnchorContext.Provider></RootContext.Provider>
     </RNPortal>
   );
 }
@@ -218,10 +262,42 @@ Portal.displayName = 'ComboboxPortal';
 // ---------------------------------------------------------------------------
 
 const Content = React.forwardRef<View, ContentProps>(function Content(
-  { asChild, forceMount, ...props },
+  { asChild, forceMount, style, onLayout: onLayoutProp, ...props },
   ref
 ) {
   const { open } = useRootContext();
+  const { triggerPosition, setTriggerPosition, contentLayout, setContentLayout, triggerRef, inputRef } =
+    useAnchorContext();
+
+  React.useEffect(() => {
+    if (!open) return;
+    measureTrigger(triggerRef.current ?? inputRef.current, setTriggerPosition);
+    return () => {
+      setTriggerPosition(null);
+      setContentLayout(null);
+    };
+  }, [open, triggerRef, inputRef, setTriggerPosition, setContentLayout]);
+
+  // Content opens below its anchor, left edges aligned (Select's default), with
+  // v2's 4 px gap (monorepo packages/components/src/popover/anchor.tsx:14), and
+  // is clamped into the window exactly as Select is.
+  const positionStyle = useRelativePosition({
+    align: 'start',
+    avoidCollisions: true,
+    triggerPosition,
+    contentLayout,
+    alignOffset: 0,
+    sideOffset: 4,
+    side: 'bottom',
+  });
+
+  const onLayout = React.useCallback(
+    (event: LayoutChangeEvent) => {
+      setContentLayout(event.nativeEvent.layout);
+      onLayoutProp?.(event);
+    },
+    [onLayoutProp, setContentLayout]
+  );
 
   if (!forceMount && !open) {
     return null;
@@ -229,7 +305,15 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
 
   const Component = asChild ? Slot : View;
 
-  return <Component ref={ref} role="listbox" {...props} />;
+  return (
+    <Component
+      ref={ref}
+      role="listbox"
+      style={[positionStyle, triggerPosition ? { minWidth: triggerPosition.width } : null, style]}
+      onLayout={onLayout}
+      {...props}
+    />
+  );
 });
 
 Content.displayName = 'ComboboxContent';

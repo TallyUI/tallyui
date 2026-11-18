@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Pressable, View } from 'react-native';
 import { describe, it, expect, vi } from 'vitest';
 import * as Combobox from '../combobox';
@@ -288,5 +288,68 @@ describe('Combobox', () => {
 
     fireEvent.click(trigger);
     expect(screen.getByTestId('content')).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // positioning
+  // -------------------------------------------------------------------------
+
+  describe('positioning', () => {
+    it('on web measures the Trigger, not the Input, when it opens', () => {
+      renderCombobox();
+      const trigger = screen.getByTestId('trigger');
+      const input = screen.getByTestId('input');
+      const triggerStub = { measure: vi.fn(), measureInWindow: vi.fn() };
+      const inputStub = { measure: vi.fn(), measureInWindow: vi.fn() };
+      Object.assign(trigger, triggerStub);
+      Object.assign(input, inputStub);
+
+      fireEvent.click(trigger);
+
+      expect(triggerStub.measureInWindow).toHaveBeenCalled();
+      expect(inputStub.measureInWindow).not.toHaveBeenCalled();
+      expect(triggerStub.measure).not.toHaveBeenCalled();
+      expect(inputStub.measure).not.toHaveBeenCalled();
+    });
+
+    it('without a Trigger measures the Input', () => {
+      render(
+        <div>
+          <PortalHost />
+          <Combobox.Root>
+            <Combobox.Input testID="input" placeholder="Search..." />
+            <Combobox.Portal>
+              <Combobox.Content testID="content">
+                <Combobox.Item value="apple" label="Apple">
+                  <Combobox.ItemText />
+                </Combobox.Item>
+              </Combobox.Content>
+            </Combobox.Portal>
+          </Combobox.Root>
+        </div>
+      );
+      const input = screen.getByTestId('input');
+      const measureInWindow = vi.fn();
+      Object.assign(input, { measureInWindow });
+
+      fireEvent.focus(input);
+
+      expect(measureInWindow).toHaveBeenCalled();
+    });
+
+    it("content is at least the anchor's width", async () => {
+      renderCombobox();
+      const trigger = screen.getByTestId('trigger');
+      Object.assign(trigger, {
+        measureInWindow: (cb: (x: number, y: number, width: number, height: number) => void) =>
+          cb(10, 20, 200, 40),
+      });
+
+      fireEvent.click(trigger);
+
+      await waitFor(() => {
+        expect(getComputedStyle(screen.getByTestId('content')).minWidth).toBe('200px');
+      });
+    });
   });
 });
