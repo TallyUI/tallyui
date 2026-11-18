@@ -209,6 +209,18 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     expect(text('tender-refund-due')).toBe(`Refund due ${money(200)}`);
   });
 
+  it('gate 36c, T5: a voided till leg does not block a covered reopened sale', () => {
+    reopen(1000);
+    act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 800)).toBeNull(); });
+    act(() => sale.startTender('cash'));
+    let cash: string | null = null;
+    act(() => { cash = sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    act(() => { expect(sale.voidTender(cash!)).toBe(true); });
+    expect(sale.order.payments.find((payment) => payment.id === cash)?.status).toBe('voided');
+    expect(screen.queryByTestId('tender-store-holds')).toBeNull();
+    expect(disabled('tender-complete')).toBe(false);
+  });
+
   it('gate 36c, desk condition 3: a part-paid reopened sale still takes till cash for the remainder and completes', async () => {
     // A reopened sale's order.create needs version 5 or later (finalize.ts); the other cases never complete.
     reopen(1000, { orderCreate: 9 });

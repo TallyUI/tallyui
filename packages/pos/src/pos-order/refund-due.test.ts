@@ -30,9 +30,18 @@ describe('tillLegsTheStoreRefuses (ADR-090 gate 36c)', () => {
   const storeOrder = { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' };
   const locked = { id: 'l', locked: true as const, amountMinor: 1000 };
 
-  it('H1: the store holds the total, so every unlocked leg, voided or not, is refused', () => {
-    const payments = [locked, { id: 'a', amountMinor: 500 }, { id: 'b', amountMinor: 200 }];
-    expect(tillLegsTheStoreRefuses({ storeOrder, totalMinor: 800, payments })).toEqual(['a', 'b']);
+  it('H1: the store holds the total, so every captured unlocked leg is refused and a voided one is not named', () => {
+    const payments = [locked, { id: 'a', amountMinor: 500 }, { id: 'b', amountMinor: 200, status: 'voided' as const }];
+    expect(tillLegsTheStoreRefuses({ storeOrder, totalMinor: 800, payments })).toEqual(['a']);
+  });
+
+  it('H6: a voided till leg on a covered reopened sale is not named', () => {
+    expect(tillLegsTheStoreRefuses({ storeOrder, totalMinor: 800, payments: [locked, { id: 'a', amountMinor: 300, status: 'voided' }] })).toEqual([]);
+  });
+
+  it('H7: a voided locked leg does not count toward the store\'s cover', () => {
+    const payments = [{ ...locked, status: 'voided' as const }, { id: 'a', amountMinor: 500 }];
+    expect(tillLegsTheStoreRefuses({ storeOrder, totalMinor: 800, payments })).toEqual([]);
   });
 
   it('H2: a part-paid reopened sale keeps its till legs for the remainder', () => {
@@ -67,7 +76,7 @@ describe('tillLegsTheStoreRefuses (ADR-090 gate 36c)', () => {
       builder.setPaymentStatus(builder.addPayment({ method: 'external', amountMinor: 200 }), 'voided');
     });
     const partPaid = reopened(1500, (builder) => { builder.addPayment({ method: 'cash', amountMinor: 600 }); });
-    expect(tillLegsTheStoreRefuses(held)).toHaveLength(2);
+    expect(tillLegsTheStoreRefuses(held)).toHaveLength(1);
     expect(() => finalize(held)).toThrow('the store already holds the new total');
     expect(tillLegsTheStoreRefuses(partPaid)).toEqual([]);
     expect(() => finalize(partPaid)).not.toThrow();

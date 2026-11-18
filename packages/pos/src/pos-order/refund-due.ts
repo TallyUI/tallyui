@@ -1,4 +1,5 @@
 import type { Payment } from '../order/types';
+import { countsTowardPaid } from '../tender/payment-legs';
 import type { PosOrder } from './types';
 
 const sum = (amounts: number[]) => amounts.reduce((total, amount) => total + amount, 0);
@@ -23,11 +24,12 @@ export function lockedRefundDueMinor(order: { payments: readonly Pick<Payment, '
 /**
  * The till legs a reopened sale may not keep (ADR-090 gate 36c): once the store's locked legs cover the total, every
  * unlocked payment is refused. Mirrors finalizeOrder's desk Q6 check (finalize.ts:193-197), so the pane can name and
- * remove them before Complete instead of after it throws. It names voided and failed legs too, which useSale's complete
- * drops before finalizing, so a cashier removes those as well.
+ * remove them before Complete instead of after it throws. It judges only captured legs, the ones useSale's complete
+ * passes to finalizeOrder (use-sale.ts:713), so a voided or failed till leg is never named.
  */
-export function tillLegsTheStoreRefuses(order: { storeOrder?: unknown; totalMinor: number; payments: readonly Pick<Payment, 'id' | 'locked' | 'amountMinor'>[] }): string[] {
+export function tillLegsTheStoreRefuses(order: { storeOrder?: unknown; totalMinor: number; payments: readonly Pick<Payment, 'id' | 'locked' | 'amountMinor' | 'status'>[] }): string[] {
   if (order.storeOrder === undefined) return [];
-  const lockedMinor = sum(order.payments.filter((payment) => payment.locked).map((payment) => payment.amountMinor));
-  return lockedMinor >= order.totalMinor ? order.payments.filter((payment) => !payment.locked).map((payment) => payment.id) : [];
+  const captured = order.payments.filter(countsTowardPaid);
+  const lockedMinor = sum(captured.filter((payment) => payment.locked).map((payment) => payment.amountMinor));
+  return lockedMinor >= order.totalMinor ? captured.filter((payment) => !payment.locked).map((payment) => payment.id) : [];
 }
