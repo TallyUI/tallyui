@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { DropdownMenu } from '@tallyui/primitives';
 import { PRIMARY, MUTED_FOREGROUND } from '../../lib/theme-colors';
