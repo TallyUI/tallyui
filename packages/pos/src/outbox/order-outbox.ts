@@ -77,6 +77,9 @@ export interface OrderOutbox {
   /** Requeues rejected orders with a new commandId, or clears a pending update's unsendable mark, then flushes.
    * Orders isRequeueableOrder refuses are left alone. Resolves to the number requeued. */
   requeue(orderIds?: string[]): Promise<number>;
+  /** Removes the rejected order `orderId` from the collection, after any running flush ends. Resolves to true when
+   * removed; false, with nothing changed, when the id is unknown or the order is not rejected. */
+  discard(orderId: string): Promise<boolean>;
   /** Watches for pending orders and sends them. */
   start(): void;
   /** Stops watching and retrying. */
@@ -559,7 +562,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
         let changed = false;
         // The modifier sees the stored state, even when findOne's cached result is stale.
         await (await collection.findOne(order.id).exec())?.incrementalModify((data) => {
-          changed = isRequeueableOrder(data);
+          // A row discard removed is not requeued.
+          changed = !data._deleted && isRequeueableOrder(data);
           if (!changed) return data;
           if (data.syncStatus === 'pending') {
             delete data.error;
@@ -583,6 +587,27 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       await updateState();
       if (count && !stopped) flush().catch(() => {});
       return count;
+    },
+    async discard(orderId) {
+      // Decide on the stored result of any send in flight.
+      await running?.catch(() => {});
+      // Rejected only: a pending order may already have reached the store (a timeout, a network drop after the send),
+      // so removing it could hide a sale the store took; a rejected one the store refused.
+      let commandId: string | undefined;
+      // Check and remove in one write, as RxDB's incrementalRemove() does: the modifier sees the stored state, so a
+      // requeue that won the race leaves its pending order in place.
+      await (await collection.findOne(orderId).exec())?.incrementalModify((data) => {
+        // The modifier runs again on a write conflict, so it decides on each run.
+        commandId = data.syncStatus === 'rejected' ? data.commandId : undefined;
+        if (commandId === undefined) return data;
+        data._deleted = true;
+        return data;
+      });
+      if (commandId === undefined) return false;
+      attempts.delete(commandId); isolated.delete(commandId); clocks.delete(commandId); walk?.failed.delete(commandId);
+      if (head?.id === commandId) head = undefined;
+      await updateState();
+      return true;
     },
     start() {
       stopped = false;

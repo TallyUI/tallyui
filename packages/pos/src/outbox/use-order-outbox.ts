@@ -54,6 +54,8 @@ export interface UseOrderOutboxResult {
   flush(): Promise<void>;
   /** Moves rejected orders back to pending (see `OrderOutbox.requeue`); resolves to 0 before the current store is ready. */
   requeue(orderIds?: string[]): Promise<number>;
+  /** Removes one rejected order (see `OrderOutbox.discard`); resolves to false before the current store is ready. */
+  discard(orderId: string): Promise<boolean>;
   /**
    * The count of `record()` calls not yet settled (resolved or rejected). An app holds sign-out
    * (closing the store) while this is above 0, because a close that lands under a write stuck in
@@ -128,6 +130,10 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
     async requeue(orderIds) {
       const opened = current.current;
       return opened && opened.storeKey === storeKey ? opened.outbox.requeue(orderIds) : 0;
+    },
+    async discard(orderId) {
+      const opened = current.current;
+      return opened && opened.storeKey === storeKey ? opened.outbox.discard(orderId) : false;
     },
     savesInFlight: savesInFlightCount,
     stuckCommandIds,
