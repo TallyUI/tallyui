@@ -51,6 +51,8 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
   const searchRef = useRef(search);
   searchRef.current = search;
   const [noResults, setNoResults] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   function handleError(error: unknown) {
     setError(customerErrorText(error));
@@ -86,13 +88,15 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
         ...(values.lastName.trim() ? { lastName: values.lastName.trim() } : {}),
         ...(values.phone.trim() ? { phone: values.phone.trim() } : {}),
       });
+      // The host closed the picker while this create was in flight: a late create must not pick a customer.
+      if (!mounted.current) return;
       onSelect(created);
       setValues({ firstName: '', lastName: '', email: '', phone: '', address: '' });
       setShowForm(false);
     } catch (error) {
-      handleError(error);
+      if (mounted.current) handleError(error); else if (!(error instanceof CustomerServiceError)) onError?.(error);
     } finally {
-      setCreating(false);
+      if (mounted.current) setCreating(false);
     }
   }
 
