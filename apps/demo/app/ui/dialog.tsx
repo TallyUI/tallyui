@@ -5,6 +5,7 @@ import {
   Dialog, DialogTrigger, DialogContent, DialogHeader, DialogFooter,
   DialogTitle, DialogDescription, DialogClose,
   Button, Text, VStack, Input, Label,
+  Popover, PopoverTrigger, PopoverContent,
 } from '@tallyui/components';
 
 export default function DialogScreen() {
@@ -117,6 +118,26 @@ export default function DialogScreen() {
                   <Text>Close via State</Text>
                 </Button>
               </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </VStack>
+
+        <VStack className="gap-3">
+          <Text className="text-lg font-bold">Popover in a Dialog</Text>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline"><Text>Open dialog with a popover</Text></Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogTitle>Dialog with a popover</DialogTitle>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline"><Text>Open nested popover</Text></Button>
+                </PopoverTrigger>
+                <PopoverContent>
+                  <Text className="text-sm font-medium">Nested Popover Content</Text>
+                </PopoverContent>
+              </Popover>
             </DialogContent>
           </Dialog>
         </VStack>
