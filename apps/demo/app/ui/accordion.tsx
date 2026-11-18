@@ -49,7 +49,7 @@ export default function AccordionScreen() {
               </AccordionTrigger>
               <AccordionContent>
                 <Text>
-                  Yes. The content area uses CSS transitions on web for smooth expand and collapse.
+                  Yes. The chevron turns and the content folds; both are instant under reduced motion.
                 </Text>
               </AccordionContent>
             </AccordionItem>
@@ -158,6 +158,31 @@ export default function AccordionScreen() {
               </AccordionTrigger>
               <AccordionContent>
                 <Text>Clicking another trigger will swap which section is shown.</Text>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </VStack>
+
+        <VStack className="gap-3">
+          <Text className="text-lg font-bold">Chevron on the left</Text>
+          <Text className="text-sm text-muted-foreground">
+            chevronPosition="left" with headerClassName="flex-1", as in v2's sites list.
+          </Text>
+          <Accordion type="single" collapsible>
+            <AccordionItem value="left-1">
+              <AccordionTrigger chevronPosition="left" headerClassName="flex-1">
+                <Text className="flex-1 pl-2">First store</Text>
+              </AccordionTrigger>
+              <AccordionContent>
+                <Text>The chevron sits before the label and the header fills the row.</Text>
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="left-2">
+              <AccordionTrigger chevronPosition="left" headerClassName="flex-1">
+                <Text className="flex-1 pl-2">Second store</Text>
+              </AccordionTrigger>
+              <AccordionContent>
+                <Text>Each item turns its own chevron as it opens and closes.</Text>
               </AccordionContent>
             </AccordionItem>
           </Accordion>

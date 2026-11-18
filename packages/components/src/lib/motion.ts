@@ -12,3 +12,7 @@ export const EASE_EXIT = Easing.bezier(0.4, 0, 1, 1);
 export const EASE_POINTS = [0.2, 0.7, 0.2, 1] as const;
 // WCPOS v2 packages/components/src/lib/motion.ts:28.
 export const EASE = Easing.bezier(...EASE_POINTS);
+// WCPOS v2 packages/components/src/lib/motion.ts:9.
+export const CROSSFADE = 200;
+// Reanimated 4.7.1 withTiming's default easing (src/animation/timing.ts:91), which v2's accordion chevron uses.
+export const TIMING_EASE = Easing.inOut(Easing.quad);
