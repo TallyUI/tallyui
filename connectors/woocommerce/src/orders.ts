@@ -49,11 +49,18 @@ function posUuid(metaData: unknown): string | undefined {
 
 const PAYMENT_KINDS: Record<string, PaymentMethodKind> = { pos_cash: 'cash', pos_card: 'external' };
 
+/** The `_wcpos_payments` ledger: absent, readable (schema 1 with a payments array), or present but unreadable. */
+function paymentLedger(metaData: unknown): { present: boolean; payments: unknown[] | null } {
+  const entry = rows(metaData).find((meta) => meta.key === '_wcpos_payments');
+  if (!entry) return { present: false, payments: null };
+  const value = entry.value;
+  return { present: true, payments: isRow(value) && value.schema === 1 && Array.isArray(value.payments) ? value.payments : null };
+}
+
 /** Captured rows are the store's counting rule; with none, its paid state decides, as its balance and reopen adoption do. */
 function storePayments(raw: Row, currency: string, totalMinor: number): StoreOrder['payments'] {
-  const ledger = rows(raw.meta_data).find((meta) => meta.key === '_wcpos_payments')?.value;
-  const captured = isRow(ledger) && ledger.schema === 1 && Array.isArray(ledger.payments)
-    ? rows(ledger.payments).filter((row) => row.status === 'captured') : [];
+  const { payments } = paymentLedger(raw.meta_data);
+  const captured = payments ? rows(payments).filter((row) => row.status === 'captured') : [];
   if (captured.length) {
     const title = captured.every((row) => row.method_id === raw.payment_method) ? nonEmpty(raw.payment_method_title) : undefined;
     return captured.map((row) => {
@@ -96,9 +103,8 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
   const clientOrderId = posUuid(raw.meta_data);
   const revision = nonEmpty(raw._rxdb_revision);
   const totalMinor = minor(raw.total, currency);
-  const ledgerEntry = rows(raw.meta_data).find((meta) => meta.key === '_wcpos_payments');
-  const paymentRecordUnreadable = ledgerEntry && (!isRow(ledgerEntry.value)
-    || ledgerEntry.value.schema !== 1 || !Array.isArray(ledgerEntry.value.payments));
+  const ledger = paymentLedger(raw.meta_data);
+  const paymentRecordUnreadable = ledger.present && ledger.payments === null;
 
   return {
     id: String(raw.id),

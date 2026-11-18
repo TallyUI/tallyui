@@ -92,6 +92,13 @@ export async function customerRequest(context: SyncContext, route: string, init:
 
 export function createWooCustomers(options?: { newId?: () => string }) {
   const newId = options?.newId ?? newWooId;
+  /** The one customer row with this numeric id (any role), or undefined when the store has none. */
+  const readCustomerRow = async (context: SyncContext, id: string): Promise<WooCustomerRow | undefined> => {
+    const params = new URLSearchParams({ include: id, per_page: '1', role: 'all' });
+    const { body } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
+    if (!Array.isArray(body)) throw new CustomerServiceError('server', 'unexpected response');
+    return body.find((row: WooCustomerRow) => String(row.id) === id);
+  };
   const api = {
     async searchCustomers(context: SyncContext, query: string, options?: { limit?: number }): Promise<Customer[]> {
       return (await api.searchCustomersPage(context, query, { limit: options?.limit })).customers;
@@ -117,10 +124,7 @@ export function createWooCustomers(options?: { newId?: () => string }) {
 
     async getCustomer(context: SyncContext, id: string): Promise<Customer | null> {
       if (!/^\d+$/.test(id)) return null;
-      const params = new URLSearchParams({ include: id, per_page: '1', role: 'all' });
-      const { body } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
-      if (!Array.isArray(body)) throw new CustomerServiceError('server', 'unexpected response');
-      const raw = body.find((row: WooCustomerRow) => String(row.id) === id);
+      const raw = await readCustomerRow(context, id);
       return raw ? toWooCustomer(raw) : null;
     },
 
@@ -150,10 +154,7 @@ export function createWooCustomers(options?: { newId?: () => string }) {
     async updateCustomer(context: SyncContext, id: string, patch: CustomerPatch): Promise<Customer> {
       if (!/^\d+$/.test(id)) throw new CustomerServiceError('invalid', 'Unknown customer');
       if (patch.shipping?.email) throw new CustomerServiceError('invalid', 'WooCommerce shipping addresses have no email');
-      const params = new URLSearchParams({ include: id, per_page: '1', role: 'all' });
-      const { body: rows } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
-      if (!Array.isArray(rows)) throw new CustomerServiceError('server', 'unexpected response');
-      const row: WooCustomerRow | undefined = rows.find((raw: WooCustomerRow) => String(raw.id) === id);
+      const row = await readCustomerRow(context, id);
       if (!row) throw new CustomerServiceError('invalid', 'Unknown customer');
       const uuid = row.meta_data?.find((entry) => entry.key === WCPOS_UUID_META_KEY)?.value;
       if (typeof uuid !== 'string' || !uuid) throw new CustomerServiceError('server', 'unexpected response');
