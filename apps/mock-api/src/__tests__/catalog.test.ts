@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { products } from '../data/catalog';
-import type { NeutralProduct } from '../data/types';
 
 describe('product catalog', () => {
   it('has at least 25 products', () => {
