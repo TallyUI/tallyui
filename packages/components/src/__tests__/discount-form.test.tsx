@@ -68,6 +68,43 @@ describe('DiscountForm', () => {
     expect(screen.getByRole('alert').textContent).toBe('A percentage can be at most 100.');
     expect(onApply).not.toHaveBeenCalled();
   });
+
+  it('dialog layout: no heading, the field before Percent/Amount, starts at Amount', () => {
+    render(<DiscountForm layout="dialog" title="Order discount" currency="EUR" onApply={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText('Order discount')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Order discount' })).toBeTruthy();
+    const order = screen.getByTestId('discount-amount-input').compareDocumentPosition(screen.getByTestId('discount-percent-switch'));
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Amount' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('dialog layout: Add discount applies a fixed entry and closes', () => {
+    const onApply = vi.fn().mockReturnValue(null);
+    const onClose = vi.fn();
+    render(<DiscountForm layout="dialog" currency="EUR" onApply={onApply} onClose={onClose} />);
+    fireEvent.change(screen.getByTestId('discount-amount-input'), { target: { value: '5' } });
+    fireEvent.click(screen.getByTestId('add-discount-submit'));
+    expect(onApply).toHaveBeenCalledWith({ type: 'fixed', value: 500 });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+  });
+
+  it('dialog layout: a refusal shows inline and stays open; Cancel closes', () => {
+    const onClose = vi.fn();
+    render(<DiscountForm layout="dialog" currency="EUR" onApply={() => 'No discounts'} onClose={onClose} />);
+    fireEvent.change(screen.getByTestId('discount-amount-input'), { target: { value: '5' } });
+    fireEvent.click(screen.getByTestId('add-discount-submit'));
+    expect(screen.getByRole('alert').textContent).toBe('No discounts');
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('no title: the group is labelled Discount and no heading renders', () => {
+    render(<DiscountForm currency="EUR" onApply={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole('group', { name: 'Discount' })).toBeTruthy();
+    expect(screen.queryByText('Discount')).toBeNull();
+  });
 });
 
 describe('DiscountChips', () => {
