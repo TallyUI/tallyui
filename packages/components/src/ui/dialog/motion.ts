@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Platform } from 'react-native';
+import { Animated, Platform } from 'react-native';
 import { useReducedMotion } from '../../lib/use-reduced-motion';
-
-// WCPOS v2 packages/components/src/lib/motion.ts:27.
-export const EASE = Easing.bezier(0.2, 0.7, 0.2, 1);
-// WCPOS v2 packages/components/src/lib/motion.ts:33.
-export const EASE_EXIT = Easing.bezier(0.4, 0, 1, 1);
+import { EASE, EASE_EXIT } from '../../lib/motion';
+export { EASE, EASE_EXIT };
 export type OverlayMotion = {
   enterMs: number; exitMs: number; scrimInMs: number; scrimOutMs: number; exitEasing: (value: number) => number;
 };
