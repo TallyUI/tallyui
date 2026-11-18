@@ -103,6 +103,24 @@ describe('ReceiptSheet', () => {
     expect(screen.queryByTestId('receipt-email-button')).toBeNull();
   });
 
+  it('the header close icon closes the sheet', () => {
+    const { onOpenChange } = setup();
+    const close = screen.getByTestId('receipt-dialog-close');
+    expect(close.getAttribute('aria-label')).toBe('Close');
+    fireEvent.click(close);
+    expect(onOpenChange).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it('Print shows the printer icon, and the loader in its place while printing', () => {
+    setup();
+    expect(print().querySelector('svg')).not.toBeNull();
+    expect(print().querySelector('[role="progressbar"]')).toBeNull();
+    cleanup();
+    setup({ printing: true });
+    expect(print().querySelector('[role="progressbar"]')).not.toBeNull();
+    expect(print().querySelector('svg')).toBeNull();
+  });
+
   it('Close calls onOpenChange(false)', () => {
     const { onOpenChange } = setup();
     fireEvent.click(screen.getByTestId('receipt-close-button'));

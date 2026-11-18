@@ -10,6 +10,9 @@ import { cn } from '@tallyui/theme';
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
+import { IconButton } from '../ui/icon-button';
+import { PrinterIcon } from '../ui/icon/printer-icon';
+import { XIcon } from '../ui/icon/x-icon';
 import { Loader } from '../ui/loader';
 import { Text } from '../ui/text';
 
@@ -80,7 +83,15 @@ export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates,
       <DialogContent side="right" testID="receipt-dialog" className="flex-col">
         <DialogHeader>
           {/* v2 titles a refund document "Refund receipt"; TallyUI's app passes `title` for that. */}
-          <DialogTitle>{title}</DialogTitle>
+          <View className="flex-row items-center justify-between gap-2">
+            <DialogTitle>{title}</DialogTitle>
+            {/* v2's DialogContent draws this close in the corner (icon size-4.5). */}
+            <DialogClose asChild>
+              <IconButton variant="ghost" size="sm" testID="receipt-dialog-close" accessibilityLabel="Close">
+                <XIcon size={18} />
+              </IconButton>
+            </DialogClose>
+          </View>
         </DialogHeader>
         <View>
           {templates.length === 0 ? null : (
@@ -96,7 +107,8 @@ export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates,
         {/* v2 draws its own WebView preview with zoom and loading states; here the app's preview is the child. */}
         <ScrollView className="flex-1" contentContainerClassName="pb-2">{children}</ScrollView>
         {/* v2's footer also has Download PDF and Sync order; TallyUI has neither, and the app opens its own email form. */}
-        <DialogFooter className="gap-2">
+        {/* v2's DialogFooter draws a top border on a side panel. */}
+        <DialogFooter className="gap-2 border-t border-border pt-4">
           <DialogClose asChild>
             <Button variant="outline" testID="receipt-close-button"><Text>Close</Text></Button>
           </DialogClose>
@@ -105,7 +117,7 @@ export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates,
           ) : null}
           <Button testID="receipt-print-button" onPress={onPrint} disabled={printing}
             accessibilityState={{ disabled: printing, busy: printing }}>
-            {printing ? <Loader size="sm" /> : null}
+            {printing ? <Loader size="sm" /> : <PrinterIcon size={16} className="text-primary-foreground" />}
             <Text>{printed ? 'Print again' : 'Print receipt'}</Text>
           </Button>
         </DialogFooter>

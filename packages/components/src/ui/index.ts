@@ -18,6 +18,7 @@ export { PlusIcon } from './icon/plus-icon';
 export { CashRegisterIcon } from './icon/cash-register-icon';
 export { GiftIcon } from './icon/gift-icon';
 export { ReceiptIcon } from './icon/receipt-icon';
+export { PrinterIcon } from './icon/printer-icon';
 export { DiscountIcon } from './icon/discount-icon';
 export { UsersIcon } from './icon/users-icon';
 export { ChartLineIcon } from './icon/chart-line-icon';
