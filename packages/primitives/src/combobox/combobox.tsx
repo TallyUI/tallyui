@@ -209,16 +209,24 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
   ref
 ) {
   const { open, onOpenChange } = useRootContext();
-  const { triggerRef } = useAnchorContext();
+  const { triggerRef, inputRef } = useAnchorContext();
   const augmentedRef = useAugmentedRef<View>({ ref });
   useAnchorNode(triggerRef, augmentedRef);
 
   const onPress = React.useCallback(
     (ev: GestureResponderEvent) => {
-      onOpenChange(!open);
+      // A press on an Input inside the Trigger only opens: the Input's focus has
+      // already opened the list, so a toggle would shut it again. A node without
+      // `contains` falls through to the toggle.
+      const input = inputRef.current as { contains?: (node: unknown) => boolean } | null;
+      if (typeof input?.contains === 'function' && input.contains(ev.target)) {
+        if (!open) onOpenChange(true);
+      } else {
+        onOpenChange(!open);
+      }
       onPressProp?.(ev);
     },
-    [onOpenChange, onPressProp, open]
+    [inputRef, onOpenChange, onPressProp, open]
   );
 
   const Component = asChild ? Slot : Pressable;

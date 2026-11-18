@@ -43,7 +43,7 @@ test.describe('Overlay anchoring', () => {
   // Each overlay's default edge and alignment, from its Content in packages/components/src/ui.
   const overlays: {
     name: string;
-    open: 'click' | 'focus' | 'hover' | 'long-press';
+    open: 'click' | 'hover' | 'long-press';
     edge: string;
     edgeGap: (t: Box, c: Box) => number;
     align: 'start' | 'center';
@@ -58,8 +58,9 @@ test.describe('Overlay anchoring', () => {
     { name: 'tooltip', open: 'hover', edge: 'content bottom vs trigger top - 4', edgeGap: (t, c) => c.y + c.height - (t.y - 4), align: 'center' },
     // side bottom, sideOffset 0, align start; anchored to the trigger box, not the press point
     { name: 'context-menu', open: 'long-press', edge: 'content top vs trigger bottom', edgeGap: (t, c) => c.y - (t.y + t.height), align: 'start' },
-    // side bottom, sideOffset 4 (v2's popover anchor), align start; at least the trigger's width
-    { name: 'combobox', open: 'focus', edge: 'content top vs trigger bottom + 4', edgeGap: (t, c) => c.y - (t.y + t.height + 4), align: 'start' },
+    // side bottom, sideOffset 4 (v2's popover anchor), align start; at least the trigger's width.
+    // A click lands on the trigger's centre, its Input, so the list must open and stay open.
+    { name: 'combobox', open: 'click', edge: 'content top vs trigger bottom + 4', edgeGap: (t, c) => c.y - (t.y + t.height + 4), align: 'start' },
   ];
 
   for (const overlay of overlays) {
@@ -75,9 +76,6 @@ test.describe('Overlay anchoring', () => {
       await expect(trigger).toBeVisible();
       if (overlay.open === 'click') {
         await trigger.click();
-      } else if (overlay.open === 'focus') {
-        // A click on the Trigger opens on the Input's focus, then the Trigger's press toggles it shut.
-        await trigger.getByRole('combobox').focus();
       } else if (overlay.open === 'hover') {
         await trigger.hover();
       } else {
@@ -90,6 +88,11 @@ test.describe('Overlay anchoring', () => {
       }
       const content = page.getByTestId(`nested-${overlay.name}-content`);
       await expect(content).toBeVisible();
+      if (overlay.name === 'combobox') {
+        // Still open after the Trigger's press, which follows the Input's focus.
+        await page.waitForTimeout(300);
+        await expect(content).toBeVisible();
+      }
 
       const boxes = async () => ({ t: (await trigger.boundingBox())!, c: (await content.boundingBox())! });
       const soft = expect.configure({ soft: true });
@@ -128,9 +131,10 @@ test.describe('Overlay anchoring', () => {
     await page.goto('/ui/combobox');
 
     const trigger = page.getByTestId('combobox-fixed-trigger');
-    // Opened by the Input's focus: a click on the Trigger toggles the list shut again.
-    await trigger.getByRole('combobox').focus();
+    // A click on the Input opens the list, and the Trigger's press must leave it open.
+    await trigger.getByRole('combobox').click();
     const content = page.getByTestId('combobox-fixed-content');
+    await page.waitForTimeout(300);
     await expect(content).toBeVisible();
 
     const boxes = async () => ({ t: (await trigger.boundingBox())!, c: (await content.boundingBox())! });
@@ -157,5 +161,23 @@ test.describe('Overlay anchoring', () => {
     const { t, c } = await boxes();
     console.log('combobox-plain trigger', JSON.stringify(t), 'content', JSON.stringify(c));
     await page.screenshot({ path: testInfo.outputPath('combobox-plain-1280x800.png') });
+  });
+
+  test('a Combobox opens on focus, and a press on its Trigger beside the input closes it', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/ui/combobox');
+
+    const trigger = page.getByTestId('combobox-fixed-trigger');
+    const content = page.getByTestId('combobox-fixed-content');
+    await trigger.getByRole('combobox').focus();
+    await expect(content).toBeVisible();
+
+    // The trigger's right padding, outside the Input: a press there toggles.
+    const t = (await trigger.boundingBox())!;
+    await page.mouse.click(t.x + t.width - 4, t.y + t.height / 2);
+    await expect(content).toBeHidden();
+    await page.mouse.click(t.x + t.width - 4, t.y + t.height / 2);
+    await expect(content).toBeVisible();
   });
 });
