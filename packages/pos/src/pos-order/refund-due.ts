@@ -19,3 +19,15 @@ export function refundDueOf(order: Pick<PosOrder, 'refundDueMinor' | 'payments' 
 export function lockedRefundDueMinor(order: { payments: readonly Pick<Payment, 'locked' | 'amountMinor'>[]; totalMinor: number }): number {
   return Math.max(0, sum(order.payments.filter((payment) => payment.locked).map((payment) => payment.amountMinor)) - order.totalMinor);
 }
+
+/**
+ * The till legs a reopened sale may not keep (ADR-090 gate 36c): once the store's locked legs cover the total, every
+ * unlocked payment is refused. Mirrors finalizeOrder's desk Q6 check (finalize.ts:193-197), so the pane can name and
+ * remove them before Complete instead of after it throws. It names voided and failed legs too, which useSale's complete
+ * drops before finalizing, so a cashier removes those as well.
+ */
+export function tillLegsTheStoreRefuses(order: { storeOrder?: unknown; totalMinor: number; payments: readonly Pick<Payment, 'id' | 'locked' | 'amountMinor'>[] }): string[] {
+  if (order.storeOrder === undefined) return [];
+  const lockedMinor = sum(order.payments.filter((payment) => payment.locked).map((payment) => payment.amountMinor));
+  return lockedMinor >= order.totalMinor ? order.payments.filter((payment) => !payment.locked).map((payment) => payment.id) : [];
+}
