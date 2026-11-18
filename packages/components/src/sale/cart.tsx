@@ -48,8 +48,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * names the note (default "Customer note"; a platform whose note the customer never sees passes its own, e.g.
      * "Order note"). Needs `checkout`; when given, it replaces `checkout.note`. */
     noteSheet?: { label?: string };
-    /** v2's checkout cart (stilled-cart.tsx): while `sale.stage` is tender, the payments ledger (each leg with its status and Cancel payment, then Total, Paid and Remaining) sits under the totals in place of the foot. `methods` names the legs, as on Tender. Pair it with `<Tender ledger={false} />`. */
-    tenderLedger?: { methods?: PaymentMethodDescriptor[] };
+    /** v2's checkout cart (stilled-cart.tsx): while `sale.stage` is tender, the payments ledger (each leg with its status and Cancel payment, then Total, Paid and Remaining) sits under the totals in place of the foot. `methods` names the legs, as on Tender. Pair it with `<Tender ledger={false} />`. `confirmVoid` asks v2's "Cancel this payment?" before a leg is voided (default `false`). */
+    tenderLedger?: { methods?: PaymentMethodDescriptor[]; confirmVoid?: boolean };
     /** `popover`: tapping a line's quantity or price opens v2's keypad (WCPOS cart cells/quantity-keypad.tsx and
      * cells/price.tsx), the price one with the quick-discount keys and the struck regular price. Popover mode draws no
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
@@ -197,7 +197,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         shipping={money(shipping.reduce((sum, row) => sum + row.amountMinor, 0))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
-      {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
+      {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} confirmVoid={tenderLedger.confirmVoid} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
         actions={noteSheet ? [{ label: 'Order details', onPress: () => setNoteOpen(true) }, ...(checkout.actions ?? [])] : checkout.actions}
         note={noteSheet ? { text: order.note, onPress: () => setNoteOpen(true) } : checkout.note} disabled={!order.lineItems.length} />
         {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}

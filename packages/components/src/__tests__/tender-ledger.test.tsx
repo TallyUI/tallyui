@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
+import { PortalHost } from '@tallyui/primitives';
 import { Cart } from '../sale/cart';
 import { Tender } from '../sale/tender';
 import { blue, pricing, SaleHarness, sale, traits } from './sale-harness';
@@ -69,5 +70,58 @@ describe('Cart tenderLedger', () => {
     act(() => { sale.addTender({ method: 'external', methodId: 'cash', amountMinor: 1000 }); });
     expect(text(`tender-leg-${leg(0)}`)?.split(money(1000))[0]).toBe('cash');
     expect(screen.queryByTestId(`tender-leg-${leg(0)}-void`)).toBeNull();
+  });
+});
+
+describe('TenderLedger confirmVoid', () => {
+  function asking(priceMinor: number) {
+    render(<><SaleHarness settings={settings}>{(sale) => <><Tender sale={sale} ledger={false} /><Cart sale={sale} showTotal={false} tenderLedger={{ confirmVoid: true }} /></>}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, priceMinor));
+    act(() => sale.startTender('cash'));
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 1000 }); });
+    act(() => { sale.addTender({ method: 'external', amountMinor: 1500 }); });
+  }
+  const question = () => within(screen.getByTestId('tender-leg-void-dialog'));
+
+  it('with confirmVoid, Cancel payment asks first: the leg stays until confirm, then reads Cancelled and Remaining rises', () => {
+    asking(5000);
+    const status = text(`tender-leg-${leg(1)}-status`);
+    expect(screen.queryByTestId('tender-leg-void-dialog')).toBeNull();
+    fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`));
+    expect(question().getByText('Cancel this payment?')).toBeTruthy();
+    expect(text(`tender-leg-${leg(1)}-status`)).toBe(status);
+    expect(text('tender-ledger-remaining')).toBe(money(2500));
+    fireEvent.click(screen.getByTestId('tender-leg-void-dialog-confirm'));
+    expect(text(`tender-leg-${leg(1)}-status`)).toBe('Cancelled');
+    expect(text('tender-ledger-remaining')).toBe(money(4000));
+    expect(text(`tender-leg-${leg(0)}-status`)).toBe(status);
+    expect(screen.queryByTestId('tender-leg-void-dialog')).toBeNull();
+  });
+
+  it('Cancel in the question keeps the leg and Remaining', () => {
+    asking(5000);
+    const status = text(`tender-leg-${leg(0)}-status`);
+    fireEvent.click(screen.getByTestId(`tender-leg-${leg(0)}-void`));
+    expect(question().getByText('Cancel this payment?')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('tender-leg-void-dialog-cancel'));
+    expect(screen.queryByTestId('tender-leg-void-dialog')).toBeNull();
+    expect(text(`tender-leg-${leg(0)}-status`)).toBe(status);
+    expect(text('tender-ledger-remaining')).toBe(money(2500));
+    expect(sale.order.paidMinor).toBe(2500);
+  });
+
+  it('a cash leg\'s question reads "Return €10.00 cash to the customer"', () => {
+    asking(5000);
+    fireEvent.click(screen.getByTestId(`tender-leg-${leg(0)}-void`));
+    expect(question().getByText(`Return ${money(1000)} cash to the customer`)).toBeTruthy();
+    expect(money(1000)).toBe('€10.00');
+  });
+
+  it('an external leg\'s question reads "Void €15.00 on Card terminal"', () => {
+    asking(5000);
+    fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`));
+    expect(question().getByText(`Void ${money(1500)} on Card terminal`)).toBeTruthy();
+    expect(money(1500)).toBe('€15.00');
   });
 });

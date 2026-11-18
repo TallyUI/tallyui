@@ -3,12 +3,13 @@
  * each leg with its status, Next and Cancel payment. `closing` is v2's checkout cart (cart/stilled-cart.tsx): a Payments
  * heading, the legs, then Total, Paid and a Remaining (or Paid in full) lead row. Internal: TenderPane and Cart render it.
  */
-import type { JSX } from 'react';
+import { useState, type JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFormatMoney, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { canVoidLeg, countsTowardPaid, legStatus, type PaymentLegStatus, type useSale } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { useT } from '../i18n';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import { offeredMethods } from './offered-methods';
 
 /** v2 labels.ts statusLabel, as catalogue keys. */
@@ -21,9 +22,13 @@ const STATUS_TONE: Record<PaymentLegStatus, string> = {
   pending: 'text-muted-foreground', authorized: 'text-success', captured: 'text-success', failed: 'text-destructive', voided: 'text-muted-foreground',
 };
 
-export function TenderLedger({ sale, methods, closing = false }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; closing?: boolean }): JSX.Element | null {
+export function TenderLedger({ sale, methods, closing = false, confirmVoid = false }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; closing?: boolean;
+  /** v2's "Cancel this payment?" before a leg is voided (use-tender-flow.ts cancelOne). Default false: Cancel payment voids at once. */
+  confirmVoid?: boolean }): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const t = useT();
+  /** The id of the leg the one question is about (confirmVoid). */
+  const [asking, setAsking] = useState<string | null>(null);
   const { order, stage } = sale;
   if (stage.kind !== 'tender') return null;
 
@@ -34,6 +39,12 @@ export function TenderLedger({ sale, methods, closing = false }: { sale: ReturnT
   const balance = order.balanceDueMinor;
   const settled = order.payments.some(countsTowardPaid);
   const firstPending = order.payments.find((leg) => legStatus(leg) === 'pending');
+  const askedLeg = order.payments.find((leg) => leg.id === asking);
+  const asked = askedLeg && descriptorOf(askedLeg);
+  /** v2 cancelOne's body: cash not captured by the server goes back as cash, anything else is voided on its method. */
+  const question = askedLeg && asked ? asked.kind === 'cash' && asked.capture.mode !== 'server'
+    ? t('pos_checkout.return_cash', { amount: money(askedLeg.amountMinor) })
+    : t('pos_checkout.void_on_method', { amount: money(askedLeg.amountMinor), title: asked.title }) : undefined;
 
   const legs = <View testID="tender-ledger" className="gap-1">
     {order.payments.length === 0 ? <Text className="text-muted-foreground">{t('pos_checkout.no_payments_yet')}</Text> : order.payments.map((leg) => {
@@ -49,12 +60,15 @@ export function TenderLedger({ sale, methods, closing = false }: { sale: ReturnT
         {leg.reference ? <Text className="text-sm text-muted-foreground">{leg.reference}</Text> : null}
         {leg === firstPending ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.next_leg')}</Text> : null}
         {descriptor && canVoidLeg(leg, descriptor) ? <Pressable testID={`tender-leg-${leg.id}-void`} accessibilityRole="button" accessibilityLabel={t('pos_checkout.cancel_payment')}
-          onPress={() => sale.voidTender(leg.id)} className="self-start min-h-11 justify-center px-2">
+          onPress={() => (confirmVoid ? setAsking(leg.id) : sale.voidTender(leg.id))} className="self-start min-h-11 justify-center px-2">
           <Text className="text-destructive">{t('pos_checkout.cancel_payment')}</Text>
         </Pressable> : null}
       </View>;
     })}
     {!closing && balance === 0 && settled ? <Text className="text-sm text-success">{t('pos_checkout.paid_in_full')}</Text> : null}
+    {confirmVoid ? <ConfirmDialog testID="tender-leg-void-dialog" tone="destructive" title={t('pos_checkout.cancel_payment_question')} description={question}
+      confirmLabel={t('pos_checkout.cancel_payment')} open={asking !== null} onOpenChange={(open) => { if (!open) setAsking(null); }}
+      onConfirm={() => { if (asking) sale.voidTender(asking); }} /> : null}
   </View>;
   if (!closing) return legs;
 

@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { createOrderBuilder, CUSTOMER_RETAX_REFUSED, type useSale } from '@tallyui/pos';
+import { PortalHost } from '@tallyui/primitives';
 import { Tender } from '../sale/tender';
 import { blue, click, pricing, SaleHarness, sale, traits } from './sale-harness';
 
@@ -88,6 +89,19 @@ describe('Tender', () => {
     expect(screen.queryByTestId(`tender-leg-${leg(1)}-void`)).toBeNull();
     expect(text('tender-headline')).toBe(`RemainingSplit${money(500)} of ${money(2000)} paid`);
     expect(text('tender-entry-amount')).toBe(money(1500));
+  });
+
+  it("Tender confirmVoid reaches the pane's ledger", () => {
+    render(<><SaleHarness settings={settings}>{(sale) => <Tender sale={sale} confirmVoid />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 2000));
+    act(() => sale.startTender('cash'));
+    act(() => { sale.addTender({ method: 'external', amountMinor: 700 }); });
+    fireEvent.click(within(screen.getByTestId('tender-pane')).getByTestId(`tender-leg-${leg(0)}-void`));
+    expect(within(screen.getByTestId('tender-leg-void-dialog')).getByText(`Void ${money(700)} on Card terminal`)).toBeTruthy();
+    expect(text(`tender-leg-${leg(0)}-status`)).not.toBe('Cancelled');
+    fireEvent.click(screen.getByTestId('tender-leg-void-dialog-confirm'));
+    expect(text(`tender-leg-${leg(0)}-status`)).toBe('Cancelled');
   });
 
   it('completes a zero-balance sale with no leg', async () => {
