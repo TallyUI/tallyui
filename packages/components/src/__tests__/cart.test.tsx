@@ -68,10 +68,12 @@ describe('Cart', () => {
     expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();
     expect(within(footer.getByTestId('cart-total-fees')).getByText(money(sale.order.display.fees![0].amountMinor))).toBeTruthy();
     expect(within(footer.getByTestId('cart-total-shipping')).getByText(money(sale.order.display.shipping![0].amountMinor))).toBeTruthy();
+    click('Edit total of Bag');
     click('Remove Bag');
     expect(screen.queryByTestId('cart-fee-0')).toBeNull();
     expect(sale.order.fees ?? []).toEqual([]);
     expect(footer.queryByTestId('cart-total-fees')).toBeNull();
+    click('Edit total of Delivery');
     click('Remove Delivery');
     expect(screen.queryByTestId('cart-shipping-0')).toBeNull();
     expect(sale.order.shipping ?? []).toEqual([]);
@@ -94,12 +96,42 @@ describe('Cart', () => {
     const fee = screen.getByTestId('cart-fee-0');
     const shipping = screen.getByTestId('cart-shipping-0');
     for (const charge of [fee, shipping]) {
-      const chargeRow = charge.firstElementChild!;
+      const chargeRow = within(charge).getByTestId('cart-charge-line');
       expect(chargeRow.children).toHaveLength(screen.getAllByRole('columnheader').length);
       expect(chargeRow.firstElementChild!.textContent).toBe('');
     }
     expect(screen.getByText('Shirt').compareDocumentPosition(fee) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(fee.compareDocumentPosition(shipping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("edits a fee and a shipping charge from the row's strip", { timeout: 20_000 }, () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    for (const [kind, name, amount] of [['Fee', 'Bag', '1.20'], ['Shipping', 'Delivery', '2.40']]) {
+      click('Add charge');
+      click(kind);
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
+      click('Apply');
+    }
+    click('Edit total of Bag');
+    click('Edit Bag');
+    const feeForm = within(screen.getByRole('group', { name: 'Edit Bag' }));
+    expect(feeForm.getByRole<HTMLInputElement>('textbox', { name: 'Name' }).value).toBe('Bag');
+    expect(feeForm.getByRole<HTMLInputElement>('textbox', { name: 'Amount' }).value).toBe('1.20');
+    fireEvent.change(feeForm.getByRole('textbox', { name: 'Amount' }), { target: { value: '2.00' } });
+    click('Apply');
+    expect(sale.order.fees).toMatchObject([{ name: 'Bag', amountMinor: 200 }]);
+    expect(sale.order.shipping).toMatchObject([{ name: 'Delivery', amountMinor: 240 }]);
+    expect(within(screen.getByTestId('cart-fee-0')).getByTestId('cart-charge-price').textContent).toBe(money(200));
+    click('Edit total of Delivery');
+    click('Edit Delivery');
+    const shippingForm = within(screen.getByRole('group', { name: 'Edit Delivery' }));
+    fireEvent.change(shippingForm.getByRole('textbox', { name: 'Name' }), { target: { value: 'Courier' } });
+    fireEvent.change(shippingForm.getByRole('textbox', { name: 'Amount' }), { target: { value: '3.00' } });
+    click('Apply');
+    expect(sale.order.shipping).toMatchObject([{ name: 'Courier', amountMinor: 300 }]);
+    expect(sale.order.fees).toMatchObject([{ name: 'Bag', amountMinor: 200 }]);
   });
 
   it("folds a charge's Price cell on a phone, as the heads do", () => {

@@ -56,6 +56,8 @@ test.describe('Cart charges (order.create 5)', () => {
       await expect(footer.getByText('Total', { exact: true })).toHaveCount(0);
       await expect(footer.getByRole('button', { name: 'Cash', exact: true })).toHaveCount(0);
 
+      // Remove sits in v2's line strip, opened by pressing the row's Total.
+      await page.getByRole('button', { name: 'Edit total of Bag', exact: true }).click();
       await page.getByRole('button', { name: 'Remove Bag' }).click();
       await expect(page.getByTestId('cart-fee-0')).toHaveCount(0);
       await expect(page.getByTestId('cart-shipping-0')).toContainText('Delivery');
