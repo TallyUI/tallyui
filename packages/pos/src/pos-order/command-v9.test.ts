@@ -10,7 +10,7 @@ import { payloadBoundErrors, payloadShapeErrors, precheckCommand } from '@tallyu
 import { couponPricingBasis, createOrderBuilder } from '../order/order-builder';
 import { createOrderOutbox } from '../outbox/order-outbox';
 import type { CommandTransport } from '../outbox/types';
-import { ORDER_CREATE_MAX_VERSION, toOrderCreateEnvelope } from './command';
+import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
 import { posOrderCollection } from './schema';
 import type { PosOrder } from './types';
@@ -137,11 +137,7 @@ describe('order.create v9 store-priced coupon lines (#790)', () => {
     } finally { await db.remove(); }
   });
 
-  it('pins the stored maxima and golden version to the till maximum of 9', () => {
-    const { properties } = posOrderCollection().schema;
-    expect(ORDER_CREATE_MAX_VERSION).toBe(9);
-    expect(properties.sentVersion.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.downgradedFrom.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(ORDER_CREATE_MAX_VERSION);
+  it('keeps its golden at version 9 (the till maximum is pinned in command-v10.test.ts)', () => {
+    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(9);
   });
 });

@@ -65,6 +65,7 @@ it.each([
   ['payments', 'clientPaymentId', undefined, 'a string'], ['payments', 'method', undefined, 'a string'],
   ['payments', 'amountMinor', '1000', 'a finite number'], ['payments', 'tenderedMinor', NaN, 'a finite number'],
   ['payments', 'changeMinor', null, 'a finite number'], ['payments', 'reference', 1, 'a string'],
+  ['payments', 'methodId', '', 'a non-empty string'], ['payments', 'methodId', 1, 'a non-empty string'],
 ] as const)('rejects invalid %s[0].%s', (field, key, value, expected) => {
   const item = { ...payload[field][0], [key]: value }
   expect(payloadShapeErrors({ ...payload, [field]: [item] })).toEqual([`${field}[0].${key}: expected ${expected}`])
@@ -144,7 +145,7 @@ describe('string bounds and NUL', () => {
   it.each([
     ['clientOrderId', 255], ['createdAt', 255], ['currency', 255], ['registerId', 255], ['cashierRef', 255], ['locationId', 255],
     ['lines[0].clientLineId', 255], ['lines[0].variantId', 255], ['lines[0].title', 255],
-    ['payments[0].clientPaymentId', 255], ['payments[0].method', 255], ['payments[0].reference', 255], ['customer.email', 254],
+    ['payments[0].clientPaymentId', 255], ['payments[0].method', 255], ['payments[0].reference', 255], ['payments[0].methodId', 64], ['customer.email', 254],
   ] as const)('payloadBoundErrors accepts %s at %i characters and refuses one more, which payloadShapeErrors leaves to it', (field, max) => {
     expect(payloadBoundErrors(at(field, 'x'.repeat(max)))).toEqual([])
     expect(payloadBoundErrors(at(field, 'x'.repeat(max + 1)))).toEqual([`${field}: expected at most ${max} characters`])
@@ -171,7 +172,7 @@ describe('string bounds and NUL', () => {
     expect(payloadShapeErrors(at('sessionId', 'x'.repeat(37)))).toEqual(['sessionId: expected a string of at most 36 characters'])
   })
 
-  it.each(['clientOrderId', 'lines[0].title', 'customer.email', 'sessionId', 'customer.customerId', 'payments[0].reference'])('refuses a NUL in %s', field => {
+  it.each(['clientOrderId', 'lines[0].title', 'customer.email', 'sessionId', 'customer.customerId', 'payments[0].reference', 'payments[0].methodId'])('refuses a NUL in %s', field => {
     expect(payloadShapeErrors(at(field, 'a\u0000b'))).toEqual([`${field}: expected no NUL character`])
   })
 

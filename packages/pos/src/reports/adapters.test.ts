@@ -1,10 +1,12 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { StoreOrder, TaxRounding } from '@tallyui/core';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder } from '../pos-order/finalize';
+import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 import { roundMicrosToMinor } from '../tax/exact';
 import { reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './adapters';
+import { salesFigures } from './sales-figures';
 
 function finalizedSale(pricesIncludeTax: boolean, rounding?: TaxRounding, charges = false) {
   const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax, rounding } });
@@ -184,4 +186,48 @@ it('maps only an applied PosRefund, dated when it was made', () => {
   }
   expect(reportRefundFromPosRefund({ ...refund, envelope: { ...refund.envelope, payload: { ...refund.envelope.payload, createdAt: '' } } })?.at)
     .toBe(refund.createdAt);
+});
+
+describe('payment method ids (condition 4)', () => {
+  /** finalizedSale's order, paid by a card leg and a cash leg, as the base build (b1c661e4) finalized it. */
+  function splitSale() {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false } });
+    const lineId = builder.addLine({ productId: 'p1', name: 'Espresso', sku: 'ESP-001', unitPrice: { amount: 450, currency: 'USD' }, quantity: 2 });
+    builder.addLine({ productId: 'p2', name: 'Muffin', sku: 'MUF-001', unitPrice: { amount: 300, currency: 'USD' } });
+    builder.applyLineDiscount(lineId, { type: 'fixed', value: 50, label: 'Regular' });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10, label: 'Staff' });
+    const total = builder.getSnapshot().totalMinor;
+    builder.addPayment({ method: 'external', amountMinor: 500, reference: 'T-1' });
+    builder.addPayment({ method: 'cash', amountMinor: total - 500 + 37 });
+    let next = 0;
+    return finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 6 }, now: new Date('2026-10-14T09:30:00.000Z'), newId: () => `id-${++next}` });
+  }
+  const withIds = (order: PosOrder): PosOrder => ({ ...order, payments: [{ ...order.payments[0], methodId: 'stripe' }, order.payments[1]] });
+  const methodTitle = (methodId: string) => ({ stripe: 'Stripe' } as Record<string, string>)[methodId];
+
+  it('reports an order with no ids exactly as the base build did', () => {
+    const posOrder = splitSale();
+    expect(posOrder.payments).toStrictEqual([{ id: 'id-4', method: 'external', amountMinor: 500, reference: 'T-1' },
+      { id: 'id-5', method: 'cash', amountMinor: 639, tenderedMinor: 676, changeMinor: 37 }]);
+    const pinned = { id: 'id-1', at: '2026-10-14T09:30:00.000Z', totalMinor: 1139, taxMinor: 104, discountMinor: 165, needsPayment: false, refunds: [],
+      lines: [{ key: 'p1', name: 'Espresso', quantity: 2, netMinor: 765, taxMinor: 77 }, { key: 'p2', name: 'Muffin', quantity: 1, netMinor: 270, taxMinor: 27 }],
+      payments: [{ method: 'external', amountMinor: 500 }, { method: 'cash', amountMinor: 639 }],
+      taxes: [{ ratePpm: 100000, label: 'Tax 10%', taxMinor: 104, netMinor: 1035 }] };
+    expect(reportOrderFromPosOrder(posOrder)).toStrictEqual(pinned);
+    expect(reportOrderFromPosOrder(posOrder, undefined, methodTitle)).toStrictEqual(pinned);
+  });
+
+  it('reports a leg with an id under it, labelled only when methodTitle names it', () => {
+    const posOrder = withIds(splitSale());
+    expect(reportOrderFromPosOrder(posOrder, undefined, methodTitle).payments)
+      .toStrictEqual([{ method: 'stripe', label: 'Stripe', amountMinor: 500 }, { method: 'cash', amountMinor: 639 }]);
+    expect(reportOrderFromPosOrder(posOrder).payments).toStrictEqual([{ method: 'stripe', amountMinor: 500 }, { method: 'cash', amountMinor: 639 }]);
+  });
+
+  it('keeps the takings total over orders with and without ids', () => {
+    const figures = (orders: PosOrder[]) => salesFigures({ orders: orders.map((order) => reportOrderFromPosOrder(order, undefined, methodTitle)),
+      range: { from: '2000-01-01', to: '2100-01-01' }, timezone: 'UTC' }).payments.takenMinor;
+    expect(figures([splitSale(), withIds(splitSale())])).toBe(figures([splitSale(), splitSale()]));
+    expect(figures([splitSale()])).toBe(1139);
+  });
 });

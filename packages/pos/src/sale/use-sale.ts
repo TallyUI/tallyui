@@ -323,13 +323,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     }
   }, []);
 
-  function addOne(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string {
+  function addOne(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string {
     // A terminal reference finalize would refuse is dropped as it's entered, never the payment (the money is
     // taken): the tender applies without it, with a message that doesn't block complete() and a
     // localWarnings entry on the stored order naming the payment whose reference was dropped.
     const reason = referenceReason(tender.reference);
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
-    const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor, ...(tender.status !== undefined ? { status: tender.status } : {}) } : tender;
+    const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor,
+      ...(tender.methodId !== undefined ? { methodId: tender.methodId } : {}), ...(tender.status !== undefined ? { status: tender.status } : {}) } : tender;
     const builder = builderNow.current;
     const paymentId = builder.addPayment(kept);
     if (dropped) {
@@ -342,7 +343,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     return paymentId;
   }
 
-  function setTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string } | null) {
+  function setTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string } | null) {
     if (locked()) return;
     const builder = builderNow.current;
     for (const payment of builder.getSnapshot().payments) if (!payment.locked) builder.removePayment(payment.id);
@@ -639,7 +640,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     },
     setTender,
     /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. */
-    addTender(tender: { method: 'cash' | 'external'; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string | null {
+    addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string | null {
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
       if (tender.method === 'cash' && tender.status !== undefined && tender.status !== 'captured') return null;
       if (tender.method === 'external') {

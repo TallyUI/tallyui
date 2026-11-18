@@ -7,6 +7,7 @@
  * (ADR-080 amendment 1), by the server's rule. WCPOS's `attributeRefunds` fallbacks (allocations,
  * `refunded_amount`) are not ported: the store attributes each refund to a tender in `byMethod`.
  */
+import { legMethodId } from '@tallyui/core';
 import { tillPayments } from '../pos-order/till-payments';
 import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
@@ -153,4 +154,24 @@ export function deriveDrawerTerms(input: Parameters<typeof deriveExpected>[0]): 
     sessionSalesMinor: cashSales.amountMinor - cashRefunds.amountMinor + otherMinor,
     expected: deriveExpected(input),
   };
+}
+
+/**
+ * Takings per payment method for one session, for the closure sheet: this till's captured payments (`tillPayments`) of the
+ * orders whose `sessionId` is `sessionId`, keyed by `legMethodId`, with the number of payments behind each. Local only,
+ * never synced: register rows and payloads keep `method_id: payment.method` (#256, ADR-070 decision 1). A leg with no
+ * methodId keys exactly as deriveDrawerTerms does (`cash` or its method); the figures sum to deriveDrawerTerms' cash sales
+ * plus other tenders for the same orders. Refunds and movements are not here: they are keyed by the wire method.
+ */
+export function takingsByMethod(orders: readonly Pick<PosOrder, 'sessionId' | 'payments'>[], sessionId: string): Record<string, DrawerTerm> {
+  const takings: Record<string, DrawerTerm> = {};
+  for (const order of orders) {
+    if (order.sessionId !== sessionId) continue;
+    for (const payment of tillPayments(order.payments)) {
+      const term = (takings[legMethodId(payment)] ??= { amountMinor: 0, count: 0 });
+      term.amountMinor += payment.amountMinor;
+      term.count += 1;
+    }
+  }
+  return takings;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { paymentMethodOf, defaultPaymentMethods } from './payment-methods';
+import { paymentMethodOf, defaultPaymentMethods, legMethodId, wireMethodOf } from './payment-methods';
 
 describe('paymentMethodOf', () => {
   it('describes cash', () => {
@@ -36,5 +36,21 @@ describe('paymentMethodOf', () => {
 describe('defaultPaymentMethods', () => {
   it('offers cash then the card terminal', () => {
     expect(defaultPaymentMethods().map((m) => m.id)).toEqual(['cash', 'external']);
+  });
+});
+
+describe('wireMethodOf (condition 5)', () => {
+  it("is 'cash' for a cash-kind method and 'external' for every other kind, known or not", () => {
+    expect(wireMethodOf({ kind: 'cash' })).toBe('cash');
+    for (const kind of ['card', 'stored_value', 'bank_transfer', 'other', 'gift_voucher']) expect(wireMethodOf({ kind })).toBe('external');
+  });
+});
+
+describe('legMethodId', () => {
+  it('is the leg\'s methodId, else its wire method', () => {
+    expect(legMethodId({ method: 'cash', methodId: 'cod' })).toBe('cod');
+    expect(legMethodId({ method: 'external', methodId: 'stripe' })).toBe('stripe');
+    expect(legMethodId({ method: 'cash' })).toBe('cash');
+    expect(legMethodId({ method: 'external' })).toBe('external');
   });
 });

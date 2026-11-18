@@ -12,7 +12,7 @@ export interface CommandEnvelope<P = unknown> {
    *  7 is 6 plus the sale's `note` (ADR-083), sent only for an order that has one.
    *  8 is 7 plus `taxAddress` and the customer's addresses (#722), sent only for a sale taxed on the customer's address.
    *  9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -101,7 +101,7 @@ export interface OrderUpdateReopenRequiredData { orderStatus: string }
  * 6 is 5 plus coupons, regular prices, line attributes and Any picks (ADR-077, #495).
  * 7 is 6 plus the sale's note (ADR-083). 8 is 7 plus `taxAddress` and the customer's addresses (#722).
  * 9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 };
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -368,6 +368,8 @@ export interface OrderCreatePayment {
   tenderedMinor?: number;
   changeMinor?: number;
   reference?: string;
+  /** Version 10: the payment method's own id on the platform (a Woo gateway id, a Medusa provider id, a Vendure PaymentMethod code), 1–64 characters, no NUL. Informational: `method` still decides cash; core refuses no value by meaning. */
+  methodId?: string;
 }
 
 /** Version 3 (ADR-065): the receipt's display figures, integer minor units of `currency` at `exponent`. */

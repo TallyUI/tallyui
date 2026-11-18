@@ -43,6 +43,9 @@ export function payloadShapeErrors(payload: unknown): string[] {
       if (item[optionalString] !== undefined) {
         check(typeof item[optionalString] === 'string', `${path}.${optionalString}`, 'a string')
       }
+      if (!isLines && item.methodId !== undefined) {
+        check(typeof item.methodId === 'string' && item.methodId.length > 0, `${path}.methodId`, 'a non-empty string')
+      }
       if (isLines && item.taxInclusive !== undefined) {
         check(typeof item.taxInclusive === 'boolean', `${path}.taxInclusive`, 'a boolean')
       }
@@ -241,6 +244,7 @@ function payloadStrings(payload: Record<string, unknown>): Array<[string, string
       if (object(item)) for (const key of field === 'lines' ? ['clientLineId', 'variantId', 'title'] : ['clientPaymentId', 'method', 'reference']) {
         found.push([item[key], `${field}[${index}].${key}`, 255])
       }
+      if (object(item) && field === 'payments') found.push([item.methodId, `payments[${index}].methodId`, 64])
     })
   }
   if (Array.isArray(payload.lines)) payload.lines.forEach((line, index) => {

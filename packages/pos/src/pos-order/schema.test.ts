@@ -163,7 +163,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(15);
+  expect(posOrderSchema.version).toBe(16);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -181,7 +181,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   }
 });
 
-it('stores sentVersion and downgradedFrom, and refuses values outside 1–9', async () => {
+it('stores sentVersion and downgradedFrom, and refuses values outside 1–10', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -204,8 +204,11 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–9', as
     const v8 = { ...order, id: uuidv7(), sentVersion: 8 as const, downgradedFrom: 8 as const };
     await pos_orders.insert(v8);
     expect((await pos_orders.findOne(v8.id).exec())?.toJSON()).toStrictEqual(v8);
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 10 as 9 })).rejects.toThrow();
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 10 as 9 })).rejects.toThrow();
+    const v10 = { ...order, id: uuidv7(), sentVersion: 10 as const, downgradedFrom: 10 as const };
+    await pos_orders.insert(v10);
+    expect((await pos_orders.findOne(v10.id).exec())?.toJSON()).toStrictEqual(v10);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 11 as 10 })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 11 as 10 })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 0 as 1 })).rejects.toThrow();
   } finally {
     await db.remove();

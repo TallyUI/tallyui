@@ -285,6 +285,20 @@ describe('finalizeOrder', () => {
     expect(finalizeOrder(builder.getSnapshot()).payments[0]).toMatchObject({ amountMinor: 3451, tenderedMinor: 3451, changeMinor: 0 });
   });
 
+  it('keeps a sendable methodId on its payment and drops an unsendable one (65 characters, or a NUL), completing the sale (condition 5)', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'external', methodId: 'stripe', amountMinor: 1000 });
+    builder.addPayment({ method: 'external', methodId: 'x'.repeat(65), amountMinor: 1000 });
+    builder.addPayment({ method: 'cash', methodId: 'c\u0000od', amountMinor: 1451 });
+    const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 10 } });
+    expect(order.payments).toEqual([
+      { id: order.payments[0].id, method: 'external', methodId: 'stripe', amountMinor: 1000 },
+      { id: order.payments[1].id, method: 'external', amountMinor: 1000 },
+      { id: order.payments[2].id, method: 'cash', amountMinor: 1451, tenderedMinor: 1451, changeMinor: 0 },
+    ]);
+    expect(order.syncStatus).toBe('pending');
+  });
+
   it('never sends a stamped register session: the order.create envelope is byte-identical with and without it', () => {
     const finalize = () => {
       let n = 0;
