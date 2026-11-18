@@ -52,6 +52,15 @@ const rejected = (id: string, code: 'unsupported_version' | 'invalid_payload', m
 // A server lists at most ten payload errors in one message.
 const firstTen = (errors: readonly string[]) => errors.slice(0, 10).join('; ')
 
+/** The `unsupported_version` result for a command whose version list the server may leave out (absent or empty: it takes none). */
+function unsupportedOptional(envelope: { id: string; type: string; version: number },
+  key: 'orderRefund' | 'orderReopen' | 'orderUpdate', versions: readonly number[], noun: string): CommandResult | undefined {
+  if (versions.includes(envelope.version)) return undefined
+  return rejected(envelope.id, 'unsupported_version',
+    `${envelope.type} version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : `takes no ${noun}`}`,
+    { [key]: versions.length ? Math.max(...versions) : 0 })
+}
+
 /**
  * The rejection a batch returns for this command before any executor runs, or undefined
  * when the command goes on to the plugin's executor. A plugin's batch handler calls
@@ -78,31 +87,11 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   for (const key of ['orderCreate', 'register'] as const) {
     if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
   }
-  if (envelope.type === 'order.refund') {
-    const versions = supported.orderRefund ?? []
-    if (!versions.includes(envelope.version)) {
-      return rejected(envelope.id, 'unsupported_version',
-        `order.refund version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : 'takes no refunds'}`,
-        { orderRefund: versions.length ? Math.max(...versions) : 0 })
-    }
-    return undefined
-  }
-  if (envelope.type === 'order.reopen') {
-    const versions = supported.orderReopen ?? []
-    if (!versions.includes(envelope.version)) {
-      return rejected(envelope.id, 'unsupported_version',
-        `order.reopen version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : 'takes no reopens'}`,
-        { orderReopen: versions.length ? Math.max(...versions) : 0 })
-    }
-    return undefined
-  }
+  if (envelope.type === 'order.refund') return unsupportedOptional(envelope, 'orderRefund', supported.orderRefund ?? [], 'refunds')
+  if (envelope.type === 'order.reopen') return unsupportedOptional(envelope, 'orderReopen', supported.orderReopen ?? [], 'reopens')
   if (envelope.type === 'order.update') {
-    const versions = supported.orderUpdate ?? []
-    if (!versions.includes(envelope.version)) {
-      return rejected(envelope.id, 'unsupported_version',
-        `order.update version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : 'takes no updates'}`,
-        { orderUpdate: versions.length ? Math.max(...versions) : 0 })
-    }
+    const refusal = unsupportedOptional(envelope, 'orderUpdate', supported.orderUpdate ?? [], 'updates')
+    if (refusal) return refusal
     const payload = envelope.payload as Record<string, unknown>
     const createPayload = orderCreatePart(payload)
     const shape = payloadShapeErrors(createPayload)
