@@ -35,9 +35,11 @@ export interface LinePopoverProps {
   actions?: ReadonlyArray<{ id: string; label: string; onPress: () => void; destructive?: boolean }>;
   /** `apply` (default): today's Apply / Cancel. `close`: v2's grow keypad. There is no Apply or Cancel, and a full-width
    * Done writes what was typed. Escape closes without writing, and any other close (a press outside, the overlay) writes
-   * it; a refusal on that path has nowhere to show, as the popover is already closing. A quantity also gets v2's − / +
+   * it; a refusal on that path goes to `onCloseRefused`, as the popover is already closing. A quantity also gets v2's − / +
    * steppers, which write at once. */
   commit?: 'apply' | 'close';
+  /** `commit="close"` only: called with the refusal when the write on a close other than Done is refused; the popover is already closing, so the host shows it. */
+  onCloseRefused?: (message: string) => void;
   /** Quantity with `commit="close"` only: − becomes Remove at a shown quantity of 1 or less, closes without writing and calls this. */
   onRemove?: () => void;
 }
@@ -47,7 +49,7 @@ export interface LinePopoverProps {
  * Apply writes through `onApply`, and Cancel, Escape or a press outside close without writing (`commit="close"` differs).
  */
 export function LinePopover({ kind, lineName, currency, value, onApply, quickDiscounts, textClassName, regularValue,
-  actions, commit = 'apply', onRemove }: LinePopoverProps) {
+  actions, commit = 'apply', onRemove, onCloseRefused }: LinePopoverProps) {
   const formatMoney = useFormatMoney();
   const [open, setOpen] = useState(false);
   // v2's entry: the typed buffer (`.` as its separator), or the lit quick key, a percentage off `value`.
@@ -75,7 +77,10 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
 
   const openChange = (next: boolean) => {
     if (next) { setEntry({ buffer: '' }); setError(null); discard.current = false; }
-    else if (close && !discard.current && typeof draft === 'number' && draft !== value) onApply(draft);
+    else if (close && !discard.current && typeof draft === 'number' && draft !== value) {
+      const refused = onApply(draft);
+      if (refused) onCloseRefused?.(refused);
+    }
     setOpen(next);
   };
   const press = (name: string) => {

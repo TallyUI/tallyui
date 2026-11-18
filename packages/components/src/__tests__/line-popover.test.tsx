@@ -167,3 +167,55 @@ it('without commit, Apply and Cancel are drawn and there is no stepper row or Do
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(onApply).not.toHaveBeenCalled();
 });
+
+it('price commit="close": Done, with no Apply, Cancel or stepper row, writes the typed price once', () => {
+  const onApply = open({ kind: 'price', commit: 'close' });
+  for (const id of ['apply', 'cancel', 'step-down', 'step-up', 'remove']) {
+    expect(screen.queryByTestId(`price-popover-${id}`)).toBeNull();
+    expect(screen.queryByTestId(`quantity-popover-${id}`)).toBeNull();
+  }
+  expect(screen.queryByRole('button', { name: 'One more' })).toBeNull();
+  keys('1', '4', 'Decimal point', '5');
+  fireEvent.click(screen.getByTestId('price-popover-done'));
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(1450);
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('price commit="close": a press outside writes the typed price; Escape after typing writes nothing', () => {
+  const onApply = open({ kind: 'price', commit: 'close' });
+  keys('9');
+  fireEvent.click(screen.getByTestId('price-popover-overlay'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(900);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit price of Shirt' }));
+  keys('7');
+  physical('Escape');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply.mock.calls).toEqual([[900]]);
+});
+
+it('price commit="close": a quick-discount key then a press outside writes the discounted price', () => {
+  const onApply = open({ kind: 'price', commit: 'close', quickDiscounts: [10] });
+  keys('Discount (10%)');
+  fireEvent.click(screen.getByTestId('price-popover-overlay'));
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(1125);
+});
+
+it('price commit="close": a refusal on a press outside goes to onCloseRefused; one on Done shows inline', () => {
+  const onCloseRefused = vi.fn();
+  open({ kind: 'price', commit: 'close', onApply: () => 'No', onCloseRefused });
+  keys('3');
+  fireEvent.click(screen.getByTestId('price-popover-overlay'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onCloseRefused).toHaveBeenCalledExactlyOnceWith('No');
+  fireEvent.click(screen.getByRole('button', { name: 'Edit price of Shirt' }));
+  keys('4');
+  fireEvent.click(screen.getByTestId('price-popover-done'));
+  expect(within(screen.getByRole('dialog')).getByRole('alert').textContent).toBe('No');
+  expect(onCloseRefused).toHaveBeenCalledOnce();
+});
+
+it('price commit="close": the regular price above the value still shows struck through', () => {
+  open({ kind: 'price', commit: 'close', value: 1000, regularValue: 1250 });
+  expect(within(screen.getByRole('dialog')).getByLabelText(`Regular price ${formatMoney({ amount: 1250, currency: 'EUR' })}`)).toBeTruthy();
+});

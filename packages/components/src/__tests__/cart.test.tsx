@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'react-native';
 import { formatMoney } from '@tallyui/core';
-import { SPLIT_FIXED_DISCOUNT } from '@tallyui/pos';
+import { SALE_SAVING, SPLIT_FIXED_DISCOUNT } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
 import { Cart } from '../sale/cart';
 import { blue, click, discount, pricing, SaleHarness, sale, totals, traits } from './sale-harness';
@@ -267,6 +267,10 @@ describe('Cart', () => {
     expect(screen.queryByText('Price', notHead)).toBeNull();
   });
 
+  // The web keyboard's Escape, and keys pressed on the open price keypad.
+  const escape = () => act(() => { fireEvent.keyDown(document, { key: 'Escape' }); });
+  const priceKeys = (...names: string[]) => names.forEach((name) =>
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Price for Shirt' })).getByRole('button', { name })));
   // The actions a line's open popover lists, by their accessible names.
   const popoverActions = (dialog: string) => within(screen.getByRole('dialog', { name: dialog })).getAllByRole('button')
     .map((button) => button.getAttribute('aria-label')).filter((name) => / Shirt$/.test(name ?? ''));
@@ -312,12 +316,14 @@ describe('Cart', () => {
     expect(screen.getByTestId('price-form')).toBeTruthy();
   });
 
-  it('lineCommit="close" opens the quantity keypad with steppers and no Remove action; the price popover keeps Apply', () => {
+  it('lineCommit="close" opens the quantity keypad with steppers and no Remove action; the price popover draws Done, not Apply', () => {
     render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" lineCommit="close" />}</SaleHarness><PortalHost /></>);
     act(() => sale.add(blue, traits));
     click('Edit price of Shirt');
-    expect(screen.getByTestId('price-popover-apply')).toBeTruthy();
-    click('Cancel');
+    expect(screen.getByTestId('price-popover-done')).toBeTruthy();
+    expect(screen.queryByTestId('price-popover-apply')).toBeNull();
+    escape();
+    expect(screen.queryByRole('dialog')).toBeNull();
     click('Edit quantity of Shirt');
     expect(screen.queryByTestId('quantity-popover-action-remove')).toBeNull();
     fireEvent.click(screen.getByTestId('quantity-popover-step-up'));
@@ -326,6 +332,50 @@ describe('Cart', () => {
     expect(sale.order.lineItems[0].quantity).toBe(1);
     fireEvent.click(screen.getByTestId('quantity-popover-remove'));
     expect(sale.order.lineItems).toEqual([]);
+  });
+
+  it('lineCommit="close": a price typed in the price popover is written on a press outside, and reported once', () => {
+    const onPriceChange = vi.fn();
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" lineCommit="close"
+      onPriceChange={onPriceChange} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    const lineId = sale.order.lineItems[0].id;
+    click('Edit price of Shirt');
+    priceKeys('1', '0');
+    fireEvent.click(screen.getByTestId('price-popover-overlay'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(sale.order.lineItems[0].unitPriceMinor).toBe(1000);
+    expect(onPriceChange).toHaveBeenCalledExactlyOnceWith({ lineId, fromMinor: 1250, toMinor: 1000, reason: undefined });
+  });
+
+  it('lineCommit="close": a price refused on a press outside shows under the line until a later write goes through', () => {
+    // The harness's real sale refuses only while saving, so Cart gets the sale with setUnitPrice wrapped to refuse.
+    let refuse = true;
+    render(<><SaleHarness>{(sale) => <Cart canEditPrice lineEditor="popover" lineCommit="close" sale={{ ...sale,
+      setUnitPrice: (lineId, amountMinor) => (refuse ? SALE_SAVING : sale.setUnitPrice(lineId, amountMinor)) }} />}</SaleHarness>
+      <PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('Edit price of Shirt');
+    priceKeys('9');
+    fireEvent.click(screen.getByTestId('price-popover-overlay'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('cart-line-price-error').textContent).toBe(SALE_SAVING);
+    expect(sale.order.lineItems[0].unitPriceMinor).toBe(1250);
+    refuse = false;
+    click('Edit price of Shirt');
+    priceKeys('9');
+    fireEvent.click(screen.getByTestId('price-popover-done'));
+    expect(sale.order.lineItems[0].unitPriceMinor).toBe(900);
+    expect(screen.queryByTestId('cart-line-price-error')).toBeNull();
+  });
+
+  it('without lineCommit, the price popover draws Apply and Cancel', () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('Edit price of Shirt');
+    expect(screen.getByTestId('price-popover-apply')).toBeTruthy();
+    expect(screen.getByTestId('price-popover-cancel')).toBeTruthy();
+    expect(screen.queryByTestId('price-popover-done')).toBeNull();
   });
 
   it('renders lines with their display amount, each discount chip with its own display amount, and the order chip with orderDiscountMinor', () => {
