@@ -51,12 +51,16 @@ const ComboboxContent = React.forwardRef<
         <ComboboxPrimitive.Content
           ref={ref}
           className={cn(
-            'z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md',
+            // v2's list size (monorepo combobox.tsx `max-h-75 w-80`): 20rem wide, 18.75rem tall at
+            // most. The primitive's inline minWidth (the trigger's width) still wins over `w-80`.
+            'z-50 max-h-75 w-80 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md',
             className,
           )}
           {...props}
         >
-          {children}
+          {/* Past the cap the items scroll, as v2's list does. "handled": the first tap on an
+              item, with the Input's keyboard up on native, selects it instead of only closing the keyboard. */}
+          <ScrollView keyboardShouldPersistTaps="handled">{children}</ScrollView>
         </ComboboxPrimitive.Content>
       </TextClassContext.Provider>
     </ComboboxPrimitive.Portal>

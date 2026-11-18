@@ -111,8 +111,9 @@ test.describe('Overlay anchoring', () => {
         await soft
           .poll(async () => {
             const { t, c } = await boxes();
-            return Math.abs(c.width - t.width);
-          }, { message: 'content width vs trigger width' })
+            // v2's `w-80` (320 px), never narrower than the trigger.
+            return Math.abs(c.width - Math.max(320, t.width));
+          }, { message: 'content width vs max(320, trigger width)' })
           .toBeLessThanOrEqual(2);
       }
 
@@ -150,12 +151,21 @@ test.describe('Overlay anchoring', () => {
     await soft
       .poll(async () => {
         const { t, c } = await boxes();
-        return Math.abs(c.width - t.width);
-      }, { message: 'content width vs trigger width' })
+        // v2's `w-80` (320 px), never narrower than the trigger.
+        return Math.abs(c.width - Math.max(320, t.width));
+      }, { message: 'content width vs max(320, trigger width)' })
       .toBeLessThanOrEqual(2);
 
     const { t, c } = await boxes();
     console.log('combobox-plain trigger', JSON.stringify(t), 'content', JSON.stringify(c));
     await page.screenshot({ path: testInfo.outputPath('combobox-plain-1280x800.png') });
+
+    // The country list (eight rows and the empty row) is taller than v2's `max-h-75`: 300 px,
+    // border and padding included (border-box), and its rows scroll past that.
+    await page.getByPlaceholder('Search countries...').focus();
+    const countries = page.getByRole('listbox').filter({ hasText: 'Brazil' });
+    await expect(countries).toBeVisible();
+    await soft.poll(async () => (await countries.boundingBox())!.height, { message: 'country list height' })
+      .toBeLessThanOrEqual(301);
   });
 });
