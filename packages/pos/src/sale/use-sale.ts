@@ -51,6 +51,11 @@ const REFERENCE_DROPPED = "The terminal's payment reference couldn't be kept";
  */
 export const HUNG_SAVE_CHECK_MS = 5000;
 
+/** Runs a builder call; an `Error` it throws becomes the refusal message to show, anything else is rethrown. */
+function refusalOf<T>(run: () => T): T | string {
+  try { return run(); } catch (error) { if (error instanceof Error) return error.message; throw error; }
+}
+
 /** Call under a `TaxProvider`: its tax context and the settings' currency price every sale. */
 export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscountsSequentially'>, opts: {
   registerId: string; cashierRef: string; capabilities?: ServerCapabilities;
@@ -485,47 +490,39 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     addFee(input: ChargeInput): { id: string } | string {
       if (locked()) return SALE_SAVING;
       const { storeLineId: _storeLineId, ...charge } = input;
-      try { return { id: builderNow.current.addFee(charge) }; }
-      catch (error) { if (error instanceof Error) return error.message; throw error; }
+      return refusalOf(() => ({ id: builderNow.current.addFee(charge) }));
     },
     /** ADR-075: updates a fee; returns a refusal or null. */
     updateFee(id: string, patch: Partial<ChargeInput>): string | null {
       if (locked()) return SALE_SAVING;
-      try { builderNow.current.updateFee(id, patch); return null; }
-      catch (error) { if (error instanceof Error) return error.message; throw error; }
+      return refusalOf(() => { builderNow.current.updateFee(id, patch); return null; });
     },
     /** ADR-075: removes a fee; returns a refusal or null. */
     removeFee(id: string): string | null {
       if (locked()) return SALE_SAVING;
-      try { builderNow.current.removeFee(id); return null; }
-      catch (error) { if (error instanceof Error) return error.message; throw error; }
+      return refusalOf(() => { builderNow.current.removeFee(id); return null; });
     },
     /** ADR-075: adds shipping; returns its id or the builder's refusal. */
     addShipping(input: ChargeInput & { methodId?: string }): { id: string } | string {
       if (locked()) return SALE_SAVING;
       const { storeLineId: _storeLineId, ...charge } = input;
-      try { return { id: builderNow.current.addShipping(charge) }; }
-      catch (error) { if (error instanceof Error) return error.message; throw error; }
+      return refusalOf(() => ({ id: builderNow.current.addShipping(charge) }));
     },
     /** ADR-075: updates shipping; returns a refusal or null. */
     updateShipping(id: string, patch: Partial<ChargeInput & { methodId?: string }>): string | null {
       if (locked()) return SALE_SAVING;
-      try { builderNow.current.updateShipping(id, patch); return null; }
-      catch (error) { if (error instanceof Error) return error.message; throw error; }
+      return refusalOf(() => { builderNow.current.updateShipping(id, patch); return null; });
     },
     /** ADR-075: removes shipping; returns a refusal or null. */
     removeShipping(id: string): string | null {
       if (locked()) return SALE_SAVING;
-      try { builderNow.current.removeShipping(id); return null; }
-      catch (error) { if (error instanceof Error) return error.message; throw error; }
+      return refusalOf(() => { builderNow.current.removeShipping(id); return null; });
     },
     /** ADR-075: adds a distinct custom product line; returns its id or the builder's refusal. */
     addCustomLine(input: { name: string; priceMinor: number; quantity?: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; sku?: string }): { id: string } | string {
       if (locked()) return SALE_SAVING;
-      try {
-        return { id: builderNow.current.addLine({ ...input, custom: true, productId: `custom:${uuidv7()}`,
-          unitPrice: { amount: input.priceMinor, currency: madeWith.current.currency.toUpperCase() } }) };
-      } catch (error) { if (error instanceof Error) return error.message; throw error; }
+      return refusalOf(() => ({ id: builderNow.current.addLine({ ...input, custom: true, productId: `custom:${uuidv7()}`,
+        unitPrice: { amount: input.priceMinor, currency: madeWith.current.currency.toUpperCase() } }) }));
     },
     /** Sets a line's unit price in minor units of its own tax mode, recomputing discounts and tax; returns a refusal or null. */
     setUnitPrice(lineId: string, amountMinor: number): string | null {
@@ -572,8 +569,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const refusal = codes.check(normalized, result.found, discountState(builder.getSnapshot(), applied.current));
       if (refusal !== null) return refusal;
       const next = new Map([...applied.current, [normalized, result.found]]);
-      try { codes.apply(builder, discountState(builder.getSnapshot(), next)); }
-      catch (error) { if (error instanceof Error) return error.message; throw error; }
+      const refused = refusalOf(() => { codes.apply(builder, discountState(builder.getSnapshot(), next)); return null; });
+      if (refused !== null) return refused;
       applied.current.set(normalized, result.found);
       appliedWith.current = codes;
       generation.current++;
