@@ -68,7 +68,13 @@ test.describe('Cart charges (order.create 5)', () => {
       await pane.getByTestId('tender-method-cash').click();
       await pane.getByRole('button', { name: `Exact ${due}`, exact: true }).click();
       await pane.getByRole('button', { name: `Take ${due} in Cash`, exact: true }).click();
-      await expect(pane.getByText('Paid in full', { exact: true })).toBeVisible();
+      // Wide shows the ledger in the cart column; v2's phone checkout is the pane alone, ledger included.
+      if (size.width >= 768) {
+        await expect(page.getByTestId('sale-charges-cart').getByTestId('tender-ledger-lead')).toContainText('Paid in full');
+      } else {
+        await expect(pane.getByText('Paid in full', { exact: true })).toBeVisible();
+        await expect(page.getByTestId('sale-charges-cart')).toHaveCount(0);
+      }
       await pane.getByRole('button', { name: 'Complete sale' }).click();
 
       const receipt = page.getByTestId('sale-receipt');
