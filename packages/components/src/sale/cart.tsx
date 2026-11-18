@@ -55,9 +55,10 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
      * price popover. Default `inline`: the − / + buttons and Price form. */
     lineEditor?: 'inline' | 'popover';
-    /** With `lineEditor="popover"`, `close` gives the quantity popover v2's grow keypad (LinePopover's `commit="close"`):
-     * − / + steppers that write at once, − turning into Remove at 1 (in place of the Remove action), and Done; Escape
-     * closes without writing, any other close writes what was typed. The price popover keeps Apply / Cancel. Default `apply`. */
+    /** With `lineEditor="popover"`, `close` gives both popovers v2's grow keypad (LinePopover's `commit="close"`): Done;
+     * Escape closes without writing, any other close writes what was typed, and a refused price on that close shows under
+     * the line. The quantity one adds − / + steppers that write at once, − turning into Remove at 1 (in place of the
+     * Remove action). Default `apply`. */
     lineCommit?: 'apply' | 'close';
     /** v2's Cart Settings › Columns: which columns show, a Split link under a quantity above 1 (`quantity.split`) and the
      * SKU under the name (`name.sku`). The defaults are today's cart: Qty, Item, Price (folding as before) and Total. */
@@ -87,6 +88,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     const refused = sale.splitLine(lineId);
     setSplitError(refused === null ? null : { lineId, message: refused });
   };
+  // A line's price refused on a popover close (lineCommit="close"), shown under it until that line's next price write.
+  const [priceError, setPriceError] = useState<{ lineId: string; message: string } | null>(null);
   // One open form: a line's discount or price, the order's discount (lineId null), a new charge, or a charge's edit.
   const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' }
     | { type: 'edit-charge'; kind: 'fees' | 'shipping'; id: string } | null>(null);
@@ -108,6 +111,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     const fromMinor = line.unitPriceMinor;
     const refused = sale.setUnitPrice(line.id, amount);
     if (refused === null) onPriceChange?.({ lineId: line.id, fromMinor, toMinor: amount, reason });
+    if (refused === null) setPriceError((now) => (now?.lineId === line.id ? null : now));
     return refused;
   };
   const renderItem = (line: typeof order.lineItems[number]) => <>
@@ -124,9 +128,12 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         ]} /> : undefined}
       priceSlot={pricePopover ? <LinePopover kind="price" lineName={line.name} currency={order.currency} value={line.unitPriceMinor}
         regularValue={line.regularUnitPriceMinor} actions={[{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }]}
-        quickDiscounts={quickDiscounts} textClassName="text-right text-muted-foreground" onApply={(amount) => applyPrice(line, amount)} /> : undefined} />
+        quickDiscounts={quickDiscounts} textClassName="text-right text-muted-foreground" onApply={(amount) => applyPrice(line, amount)}
+        commit={lineCommit} onCloseRefused={(message) => setPriceError({ lineId: line.id, message })} /> : undefined} />
     {splitError?.lineId === line.id ? <Text accessibilityRole="alert" testID="cart-line-split-error"
       className="px-3 text-sm text-destructive">{splitError.message}</Text> : null}
+    {priceError?.lineId === line.id ? <Text accessibilityRole="alert" testID="cart-line-price-error"
+      className="px-3 text-sm text-destructive">{priceError.message}</Text> : null}
     <DiscountChips discounts={line.discounts} amounts={display(line.id).discounts} currency={order.currency} onRemove={sale.removeDiscount} />
     {lineEditor === 'inline' ? <CartLineActions actions={[
       { id: 'discount', label: 'Discount', color: 'text-primary', onPress: () => setForm({ type: 'discount', lineId: line.id }) },
