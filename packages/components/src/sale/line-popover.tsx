@@ -6,23 +6,13 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { Popover } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
-import { DIGIT_ROWS, Keypad, type KeypadKey } from '../input/keypad';
+import { decimalRows, typeDecimal } from '../input/decimal-entry';
+import { Keypad } from '../input/keypad';
 import { lessPercent, parsePrice, QuickDiscountKeys, quickKeys } from './price-form';
 
 /** nav-drawer.tsx's focus targets. */
 const FOCUSABLE = 'button, [href], input, [tabindex]:not([tabindex="-1"])';
-const BACKSPACE: KeypadKey = { name: 'backspace', label: 'Delete last digit', text: '⌫' };
 const button = 'min-h-11 flex-1 items-center justify-center rounded-md border border-border px-3 py-2';
-
-/** v2's typeDecimal: `.` once and only with places, a digit past the places refused, a lone 0 replaced. */
-function typeDecimal(buffer: string, key: string, places: number): string {
-  if (key === 'backspace') return buffer.slice(0, -1);
-  if (key === 'decimal') return places > 0 && !buffer.includes('.') ? `${buffer || '0'}.` : buffer;
-  if (!/^[0-9]$/.test(key)) return buffer;
-  const point = buffer.indexOf('.');
-  if (point >= 0) return buffer.length - point > places ? buffer : buffer + key;
-  return buffer === '0' ? key : buffer + key;
-}
 
 export interface LinePopoverProps {
   /** `quantity` takes whole numbers only, with no decimal key (decimal quantities need an ADR first, TallyUI#486). */
@@ -68,9 +58,7 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
   const draft = !price ? (Number.parseInt(typed, 10) > 0 ? Number.parseInt(typed, 10) : undefined)
     : percent !== undefined ? lessPercent(value, percent) : typed ? parsePrice(typed, currency) : undefined;
   const title = `${price ? 'Price' : 'Quantity'} for ${lineName}`;
-  const rows = [...DIGIT_ROWS, places
-    ? [{ name: 'decimal', label: 'Decimal point', text: '.' }, { name: '0', label: '0' }, BACKSPACE]
-    : [{ name: '0', label: '0', span: 2 }, BACKSPACE]];
+  const rows = decimalRows(places);
 
   const openChange = (next: boolean) => {
     if (next) { setEntry({ buffer: '' }); setError(null); }

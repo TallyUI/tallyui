@@ -14,8 +14,12 @@ import {
 
 import { useCurrencySymbol, useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { decimalRows, typeDecimal } from '../input/decimal-entry';
+import { Keypad } from '../input/keypad';
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
+import { ChevronDownIcon } from '../ui/icon/chevron-down-icon';
+import { ChevronRightIcon } from '../ui/icon/chevron-right-icon';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Text } from '../ui/text';
@@ -126,18 +130,22 @@ export interface RegisterCountProps {
     approval?: string;
     approvedVariance?: Record<string, number>;
   } | null>;
+  /** The host's Z-report print, as `ClosureSheet`'s: given, Close reads "Close & print" and awaits it once the close lands. */
+  onPrint?: () => void | Promise<void>;
   className?: string;
 }
 
 /**
- * Counts the drawer at close: denomination tiles or a typed cash amount, other tenders kept as
- * typed, a live variance line, and Close (gated by `approve` over threshold) or Back to selling.
+ * Counts the drawer at close, keypad first as v2: the cash amount typed by its keypad (which folds
+ * away once a valid amount loses focus) or by notes and coins (a section closed by default), other
+ * tenders kept as typed, a live variance line, and Close (gated by `approve` over threshold, then
+ * `onPrint` when given) or Back to selling. Keypad and fold: WCPOS v2 (monorepo main) `register-count.tsx`.
  * Port provenance (ADR-032 amendment 1): WCPOS `next` `3b5331b5c` `register-count.tsx` (LEDGER
  * 59, 60, 65, 67). Leaves out WCPOS's ApproveSheet and server-demanded `approval_required`
  * (registers c2) — `approve` is the host's own gate, and it runs regardless of `blind`: dropping
  * the server flag would otherwise leave a blind count with no gate at all over threshold.
  */
-export function RegisterCount({ register, currency, approve, className }: RegisterCountProps) {
+export function RegisterCount({ register, currency, approve, onPrint, className }: RegisterCountProps) {
   const formatMoney = useFormatMoney();
   const currencySymbol = useCurrencySymbol();
   const { session, expected, blind, varianceThreshold, actions } = register;
@@ -162,6 +170,8 @@ export function RegisterCount({ register, currency, approve, className }: Regist
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [refusal, setRefusal] = useState('');
+  const [keypadOpen, setKeypadOpen] = useState(true);
+  const [notesOpen, setNotesOpen] = useState(false);
 
   const usingTiles = Object.keys(pieces).length > 0;
   const tilesTotal = denominationTotal(pieces);
@@ -184,6 +194,28 @@ export function RegisterCount({ register, currency, approve, className }: Regist
   const shownCount = useRef('');
   shownCount.current = JSON.stringify(counted);
 
+  // The amount and its keypad are one focus region: on the web a key takes focus before its press
+  // lands, and a cashier may enter the count by keys alone, so the keypad collapses when focus
+  // LEAVES the region (to a tile, another tender, the footer), never on a move within it (v2).
+  const regionRef = useRef<View>(null);
+  const leaveRegion = (event?: { nativeEvent?: unknown }) => {
+    const next = (event?.nativeEvent as { relatedTarget?: unknown } | undefined)?.relatedTarget;
+    const region = regionRef.current as unknown as { contains?: (node: unknown) => boolean } | null;
+    if (next && region?.contains?.(next)) return;
+    if (valid) setKeypadOpen(false);
+  };
+  const pressKey = (key: string) => {
+    // Leaving the tiles starts a fresh count: the typed buffer behind them is stale. So does a zero
+    // whose places are full (Clear writes 0.00): a digit could not join it (v2).
+    const fresh = usingTiles;
+    setPieces({});
+    setCashText((previous) => {
+      const point = previous.indexOf('.');
+      const fullZero = Number(previous) === 0 && point >= 0 && previous.length - point - 1 >= digits;
+      return typeDecimal(fresh || fullZero ? '' : previous, key, digits);
+    });
+  };
+
   const attempt = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError('');
@@ -198,8 +230,10 @@ export function RegisterCount({ register, currency, approve, className }: Regist
     }
   };
 
-  const addPieces = (value: number, n: number) =>
+  const addPieces = (value: number, n: number) => {
     setPieces((previous) => ({ ...previous, [value]: (previous[value] ?? 0) + n }));
+    setKeypadOpen(false);
+  };
 
   const onClose = () => {
     setRefusal('');
@@ -225,10 +259,14 @@ export function RegisterCount({ register, currency, approve, className }: Regist
           counted, approvedBy, approvedByName,
           ...(approval ? { approval } : {}), ...(approvedVariance ? { approvedVariance } : {}),
         });
+        await onPrint?.();
       });
       return;
     }
-    void attempt(() => actions.closeSession({ counted }));
+    void attempt(async () => {
+      await actions.closeSession({ counted });
+      await onPrint?.();
+    });
   };
 
   // Guarded as RegisterPanel is, for a caller rendering this before the hook's first snapshot.
@@ -241,6 +279,8 @@ export function RegisterCount({ register, currency, approve, className }: Regist
         <Label testID="count-amount-label" nativeID={AMOUNT_LABEL_ID}>
           {`Cash counted (${currencySymbol(currency)})`}
         </Label>
+        {/* The region: a blur leaving the field or a key for a target outside it collapses the keypad. */}
+        <View ref={regionRef} testID="count-entry" className="gap-3" onBlur={leaveRegion}>
         {/* v2's count: the amount is a hero figure typed in place, its currency symbol in the field. */}
         <Input className="h-16">
           <Input.Left>
@@ -261,8 +301,19 @@ export function RegisterCount({ register, currency, approve, className }: Regist
             keyboardType="decimal-pad"
             accessibilityLabel={`Cash counted (${currencySymbol(currency)})`}
             accessibilityLabelledBy={AMOUNT_LABEL_ID}
+            onBlur={leaveRegion}
+            onFocus={() => setKeypadOpen(true)}
+            onPressIn={() => setKeypadOpen(true)}
           />
         </Input>
+        {keypadOpen ? (
+          <View testID="count-keypad">
+            <Keypad testID="count" rows={decimalRows(digits)} onPress={pressKey} />
+          </View>
+        ) : (
+          <Text testID="count-tap-to-change" className="text-muted-foreground">Tap the amount to edit it</Text>
+        )}
+        </View>
         {!blind && valid && (
           <Text testID="count-variance" className="min-h-11 tabular-nums">
             {`Expected ${formatMoney({ amount: expected.cash ?? 0, currency })} · ${varianceText(
@@ -273,7 +324,18 @@ export function RegisterCount({ register, currency, approve, className }: Regist
             )}`}
           </Text>
         )}
-        <View testID="count-denominations" className="gap-2">
+        <Button
+          testID="count-denominations"
+          variant="ghost"
+          className="min-h-11 flex-row justify-start gap-2 self-start px-0"
+          aria-expanded={notesOpen}
+          onPress={() => setNotesOpen(!notesOpen)}
+        >
+          <View className="text-muted-foreground">{notesOpen ? <ChevronDownIcon size={18} /> : <ChevronRightIcon size={18} />}</View>
+          <Text>Count by notes and coins</Text>
+        </Button>
+        {notesOpen && (
+        <View testID="count-denomination-tiles" className="gap-2">
           {Array.from({ length: Math.ceil(faces.length / columns) }, (_, row) => (
             <View key={row} className="flex-row gap-2">
               {Array.from({ length: columns }, (_, column) => {
@@ -304,6 +366,7 @@ export function RegisterCount({ register, currency, approve, className }: Regist
             <Text>Clear</Text>
           </Button>
         </View>
+        )}
         {otherMethods.map((method) => {
           const labelId = `count-tender-${method}-label`;
           const label = `${tenderLabel(method)} counted (${currencySymbol(currency)})`;
@@ -354,7 +417,7 @@ export function RegisterCount({ register, currency, approve, className }: Regist
           disabled={!valid || otherTendersInvalid || busy}
           onPress={onClose}
         >
-          <Text>{busy ? 'Closing…' : 'Close register'}</Text>
+          <Text>{busy ? 'Closing…' : onPrint ? 'Close & print' : 'Close register'}</Text>
         </Button>
       </View>
     </View>
