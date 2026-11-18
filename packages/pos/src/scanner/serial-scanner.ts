@@ -3,8 +3,8 @@
  * the shared serial-line decoder, dedups via the scan session, and emits `serial` ScanEvents. */
 import { isChooserCancel } from './chooser-cancel';
 import { normalizeUuid, scannerDeviceKey, type ScannerIdentity } from './device-identity';
-import { createDeviceScannerStateCell, type DeviceScanner, type DeviceScannerErrorHandler, type DeviceScannerSettings,
-  type ScannerProfileStore } from './device-scanner';
+import { createDeviceLifecycle, createDeviceScannerStateCell, DEVICE_SCANNER_DISCONNECTED, type DeviceScanner,
+  type DeviceScannerErrorHandler, type DeviceScannerSettings, type ScannerProfileStore } from './device-scanner';
 import type { ScanEvent } from './scan-events';
 import { createScanSession } from './scan-session';
 import { createSerialLineDecoder } from './serial-line-decoder';
@@ -57,8 +57,6 @@ export interface SerialScannerOptions {
   now?: () => number;
 }
 
-const DISCONNECTED = { connected: false, connectedDeviceKey: null } as const;
-
 export function createSerialScanner(options: SerialScannerOptions): DeviceScanner {
   const { serial, profiles, getSettings, emit, onError } = options;
   const now = options.now ?? Date.now;
@@ -67,10 +65,6 @@ export function createSerialScanner(options: SerialScannerOptions): DeviceScanne
   let activePort: SerialPortLike | null = null;
   let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   let closing = false;
-  let attachRequest = 0;
-  let lifecycleQueue: Promise<void> = Promise.resolve();
-  let disposed = false;
-  let disposing: Promise<void> | null = null;
 
   const session = createScanSession({
     onAccept: (code) => {
@@ -104,7 +98,7 @@ export function createSerialScanner(options: SerialScannerOptions): DeviceScanne
       }
     } finally {
       // Only the loop that owns the active port clears the state: a replaced port's loop unwinds late.
-      if (activePort === port) state.set(DISCONNECTED);
+      if (activePort === port) state.set(DEVICE_SCANNER_DISCONNECTED);
     }
   };
 
@@ -113,7 +107,7 @@ export function createSerialScanner(options: SerialScannerOptions): DeviceScanne
     const port = activePort;
     activeReader = null;
     activePort = null;
-    state.set(DISCONNECTED);
+    state.set(DEVICE_SCANNER_DISCONNECTED);
     closing = true;
     try {
       // Cancel the reader before closing the port: an abort signal alone did not release a pending reader.read().
@@ -124,19 +118,14 @@ export function createSerialScanner(options: SerialScannerOptions): DeviceScanne
     }
   };
 
-  const isStale = (request: number) => disposed || request !== attachRequest;
+  const lifecycle = createDeviceLifecycle(state, teardown);
 
   const attachPort = async (port: SerialPortLike, save: boolean) => {
-    const request = ++attachRequest;
-    let attached = false;
-    const pending = lifecycleQueue.then(async () => {
-      if (isStale(request)) return;
-      await teardown();
-      if (isStale(request)) return;
+    const attached = await lifecycle.attach(async (isStale) => {
       await port.open({ baudRate: DEFAULT_SERIAL_BAUD_RATE });
-      if (isStale(request)) {
+      if (isStale()) {
         await port.close().catch(() => undefined);
-        return;
+        return false;
       }
       activePort = port;
       const openedIdentity = serialPortIdentity(port.getInfo());
@@ -145,10 +134,8 @@ export function createSerialScanner(options: SerialScannerOptions): DeviceScanne
       session.reset();
       // The read loop runs for the port's lifetime.
       void readLoop(port).catch(() => undefined);
-      attached = true;
+      return true;
     });
-    lifecycleQueue = pending.catch(() => undefined);
-    await pending;
     if (!attached || !save) return;
     const info = port.getInfo();
     const identity = serialPortIdentity(info);
@@ -166,7 +153,7 @@ export function createSerialScanner(options: SerialScannerOptions): DeviceScanne
   };
 
   const connect = async () => {
-    if (!serial || disposed) return;
+    if (!serial || lifecycle.disposed()) return;
     try {
       // A saved scanner may use a vendor-specific RFCOMM service class; include saved UUIDs so it stays in the chooser.
       const saved = await profiles.read(['bluetooth-spp']);
@@ -185,10 +172,10 @@ export function createSerialScanner(options: SerialScannerOptions): DeviceScanne
 
   // Silently re-open an already-granted port matching a saved profile (the browser remembers grants across reloads).
   const reopenSaved = async () => {
-    if (!serial || disposed) return;
+    if (!serial || lifecycle.disposed()) return;
     try {
       const [ports, saved] = await Promise.all([serial.getPorts(), profiles.read(['usb-serial', 'bluetooth-spp'])]);
-      if (disposed) return;
+      if (lifecycle.disposed()) return;
       // Accepted contract: a key identifies a service or model, not a physical unit (the same ceiling as vid:pid
       // for two identical USB scanners). One unambiguous match reconnects silently; ambiguity waits for a chooser pick.
       const savedKeys = new Set(saved.map((profile) => profile.deviceKey));
@@ -203,25 +190,11 @@ export function createSerialScanner(options: SerialScannerOptions): DeviceScanne
     }
   };
 
-  const queueTeardown = async () => {
-    attachRequest += 1;
-    const pending = lifecycleQueue.then(teardown);
-    lifecycleQueue = pending.catch(() => undefined);
-    await pending;
-    state.set(DISCONNECTED);
-  };
-
   return {
     available: !!serial, connect, reopenSaved,
-    disconnect: () => (disposed ? Promise.resolve() : queueTeardown()),
-    dispose: () => {
-      if (!disposing) {
-        // Release the port and read loop on host teardown (logout, unmount).
-        disposed = true;
-        disposing = queueTeardown();
-      }
-      return disposing;
-    },
+    disconnect: lifecycle.disconnect,
+    // Release the port and read loop on host teardown (logout, unmount).
+    dispose: lifecycle.dispose,
     getState: state.get, subscribe: state.subscribe,
   };
 }

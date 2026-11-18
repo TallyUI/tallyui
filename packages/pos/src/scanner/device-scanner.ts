@@ -60,3 +60,60 @@ export interface DeviceScanner {
   getState: () => DeviceScannerState;
   subscribe: (listener: (state: DeviceScannerState) => void) => () => void;
 }
+
+export const DEVICE_SCANNER_DISCONNECTED: DeviceScannerState = { connected: false, connectedDeviceKey: null };
+
+/** The attach/teardown lifecycle the serial and HID controllers share. One queue runs attaches and teardowns in
+ * order. A newer attach, a disconnect or a dispose makes an older attach stale, and a stale attach backs out.
+ * After dispose, the controller ignores every later call. */
+export interface DeviceLifecycle {
+  readonly disposed: () => boolean;
+  /** Queues `teardown`, then `open`, unless the attach went stale before either step. `open` gets an isStale check
+   * for its own steps and returns true once the device is attached. Resolves to that value (false when stale). */
+  attach: (open: (isStale: () => boolean) => Promise<boolean>) => Promise<boolean>;
+  disconnect: () => Promise<void>;
+  dispose: () => Promise<void>;
+}
+
+export function createDeviceLifecycle(state: DeviceScannerStateCell, teardown: () => Promise<void>): DeviceLifecycle {
+  let attachRequest = 0;
+  let lifecycleQueue: Promise<void> = Promise.resolve();
+  let disposed = false;
+  let disposing: Promise<void> | null = null;
+
+  const attach = async (open: (isStale: () => boolean) => Promise<boolean>) => {
+    const request = ++attachRequest;
+    const isStale = () => disposed || request !== attachRequest;
+    let attached = false;
+    const pending = lifecycleQueue.then(async () => {
+      if (isStale()) return;
+      await teardown();
+      if (isStale()) return;
+      attached = await open(isStale);
+    });
+    lifecycleQueue = pending.catch(() => undefined);
+    await pending;
+    return attached;
+  };
+
+  const queueTeardown = async () => {
+    attachRequest += 1;
+    const pending = lifecycleQueue.then(teardown);
+    lifecycleQueue = pending.catch(() => undefined);
+    await pending;
+    state.set(DEVICE_SCANNER_DISCONNECTED);
+  };
+
+  return {
+    disposed: () => disposed,
+    attach,
+    disconnect: () => (disposed ? Promise.resolve() : queueTeardown()),
+    dispose: () => {
+      if (!disposing) {
+        disposed = true;
+        disposing = queueTeardown();
+      }
+      return disposing;
+    },
+  };
+}
