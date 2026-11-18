@@ -58,7 +58,7 @@ export function ConnectorStatus({
       {lastSync && <Text className="text-xs text-muted-foreground">Last sync: {lastSync}</Text>}
       {error && <Text className="text-xs text-destructive">{error}</Text>}
       {!!unsoldCount && (
-        <Text className={cn('text-xs', unsoldStale ? 'text-muted-foreground' : 'text-warning')}>{formatUnsold(unsoldCount, !!unsoldStale)}</Text>
+        <Text className={cn('text-xs', unsoldStale ? 'text-muted-foreground' : 'text-warning-text')}>{formatUnsold(unsoldCount, !!unsoldStale)}</Text>
       )}
     </View>
   );

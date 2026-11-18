@@ -70,7 +70,7 @@ export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsP
               ) : (
                 <Text testID={`open-sale-tab-${sale.id}-amount`} className="text-xs text-muted-foreground tabular-nums">
                   {formatMoney({ amount: sale.totalMinor, currency })}
-                  {age !== null && <> · <Text testID={`open-sale-tab-${sale.id}-age`} className="text-xs font-semibold text-warning">{age}</Text></>}
+                  {age !== null && <> · <Text testID={`open-sale-tab-${sale.id}-age`} className="text-xs font-semibold text-warning-text">{age}</Text></>}
                 </Text>
               )}
             </Pressable>
