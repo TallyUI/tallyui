@@ -12,7 +12,7 @@ export interface CartTotalProps extends Omit<VStackProps, 'children'> {
   /** The shipping lines' sum in the display tax mode; a "Shipping" row shows when it is not 0, as WCPOS v2. */
   shipping?: Money;
   total: Money;
-  /** The tax is already in the subtotal (an inclusive display), so its rows read "incl." rather than add up. */
+  /** The display tax mode: true tags each tax row "Including tax" (the tax is already in the subtotal), false "Excluding tax", as WCPOS v2; absent draws no tag. */
   taxInclusive?: boolean;
   locale?: string;
   className?: string;
@@ -66,7 +66,9 @@ export function CartTotal({
       {taxLines?.map((line, index) => (
         <Row
           key={index}
-          label={taxInclusive ? `incl. ${line.label}` : line.label}
+          testID={`cart-total-tax-${index}`}
+          label={line.label}
+          beside={taxInclusive === undefined ? undefined : taxInclusive ? 'Including tax' : 'Excluding tax'}
           amount={formatMoney(line.amount, locale) ?? '—'}
         />
       ))}
@@ -79,11 +81,17 @@ export function CartTotal({
   );
 }
 
-/** One muted label with its amount, as every CartTotal row but Total draws it. */
-function Row({ label, amount, testID }: { label: string; amount: string; testID?: string }) {
+/** One muted label with its amount, as every CartTotal row but Total draws it; `beside` sits next to the label at the help size. */
+function Row({ label, amount, testID, beside }: { label: string; amount: string; testID?: string; beside?: string }) {
+  const text = <Text className="text-sm text-muted-foreground">{label}</Text>;
   return (
     <HStack testID={testID} space="none" className="justify-between">
-      <Text className="text-sm text-muted-foreground">{label}</Text>
+      {beside ? (
+        <HStack space="none" className="items-baseline gap-1.5">
+          {text}
+          <Text className="text-xs text-muted-foreground">{beside}</Text>
+        </HStack>
+      ) : text}
       <Text className="text-sm">{amount}</Text>
     </HStack>
   );

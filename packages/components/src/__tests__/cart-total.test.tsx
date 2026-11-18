@@ -86,11 +86,45 @@ describe('CartTotal', () => {
     expect(slot.compareDocumentPosition(discountLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('labels tax rows as included, not added, when taxInclusive', () => {
+  it('tags tax rows as included, not added, when taxInclusive', () => {
     render(<CartTotal subtotal={subtotal} total={total} locale="en" taxInclusive
       taxLines={[{ label: 'VAT 19%', amount: { amount: 479, currency: 'EUR' } }]} />);
-    expect(screen.getByText('incl. VAT 19%')).toBeDefined();
-    expect(screen.queryByText('VAT 19%')).toBeNull();
+    expect(screen.getByText('VAT 19%')).toBeDefined();
+    expect(screen.getByText('Including tax')).toBeDefined();
+    expect(screen.queryByText('incl. VAT 19%')).toBeNull();
+  });
+
+  const twoTaxLines = [
+    { label: 'VAT 19%', amount: { amount: 479, currency: 'EUR' } },
+    { label: 'Local tax', amount: { amount: 51, currency: 'EUR' } },
+  ];
+
+  it('keeps each tax label as passed and tags it "Including tax" when taxInclusive, as WCPOS v2', () => {
+    render(<CartTotal subtotal={subtotal} total={total} locale="en" taxInclusive taxLines={twoTaxLines} />);
+    const row = within(screen.getByTestId('cart-total-tax-0'));
+    expect(row.getByText('VAT 19%')).toBeDefined();
+    expect(row.getByText('Including tax')).toBeDefined();
+    expect(row.getByText('€4.79')).toBeDefined();
+    expect(screen.queryByText(/incl\. VAT 19%/)).toBeNull();
+  });
+
+  it('tags tax rows "Excluding tax" when taxInclusive is false', () => {
+    render(<CartTotal subtotal={subtotal} total={total} locale="en" taxInclusive={false} taxLines={twoTaxLines} />);
+    expect(within(screen.getByTestId('cart-total-tax-0')).getByText('Excluding tax')).toBeDefined();
+    expect(screen.queryByText('Including tax')).toBeNull();
+  });
+
+  it('draws no tax tag when taxInclusive is absent', () => {
+    render(<CartTotal subtotal={subtotal} total={total} locale="en" taxLines={twoTaxLines} />);
+    expect(screen.queryByText('Including tax')).toBeNull();
+    expect(screen.queryByText('Excluding tax')).toBeNull();
+    expect(within(screen.getByTestId('cart-total-tax-0')).getByText('VAT 19%')).toBeDefined();
+  });
+
+  it('tags every tax row and no other row', () => {
+    render(<CartTotal subtotal={subtotal} total={total} locale="en" taxInclusive taxLines={twoTaxLines} />);
+    expect(screen.getAllByText('Including tax')).toHaveLength(2);
+    expect(within(screen.getByText('Subtotal').parentElement!).queryByText('Including tax')).toBeNull();
   });
 
   it('renders supplied zero amounts', () => {
