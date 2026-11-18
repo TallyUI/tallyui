@@ -189,7 +189,8 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
       if (!entry || entry.spent) throw failedClaim(key, now);
       entry.spent = true;
       let checkCode: string;
-      do checkCode = randomDigits(4); while ([...pending.values()].some((other) => other.checkCode === checkCode));
+      // Unique per till: a till lists only its own pending pairings, so only those must differ.
+      do checkCode = randomDigits(4); while ([...pending.values()].some((other) => other.deviceId === entry.deviceId && other.checkCode === checkCode));
       const movingDisplayId = tokenHash === null ? null : (findByTokenHash(tokenHash)?.[0] ?? null);
       pending.set(newId(), { deviceId: entry.deviceId, secretHash, displayName, checkCode, expiresAt: entry.expiresAt, movingDisplayId });
       return { claimSecret, checkCode };
