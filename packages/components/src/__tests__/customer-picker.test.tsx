@@ -14,6 +14,14 @@ function deferred<T>() {
 const typeQuery = (value: string) => fireEvent.change(screen.getByLabelText('Search customers'), { target: { value } });
 const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
 const advance = (ms = 250) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+const searchAlice = async (props: Partial<Parameters<typeof CustomerPicker>[0]> = {}) => {
+  const onSelect = vi.fn();
+  render(<CustomerPicker search={vi.fn(async () => [alice])} selected={null} onSelect={onSelect} online {...props} />);
+  typeQuery('al');
+  await advance();
+  expect(screen.getByRole('option', { name: 'Alice, alice@test.com' })).toBeDefined();
+  return onSelect;
+};
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -323,5 +331,54 @@ describe('CustomerPicker', () => {
     render(<CustomerPicker search={vi.fn(async () => [])} selected={null} onSelect={vi.fn()} online testID="custom-search" />);
     expect(screen.getByTestId('custom-search')).toBe(screen.getByLabelText('Search customers'));
     expect(screen.queryByTestId('customer-picker-search')).toBeNull();
+  });
+
+  it('by default draws no Guest row and no avatar initials (T1)', async () => {
+    await searchAlice();
+    expect(screen.queryByTestId('customer-picker-option-guest')).toBeNull();
+    expect(screen.queryByText('Guest')).toBeNull();
+    expect(screen.queryByText('A')).toBeNull();
+  });
+
+  it('with showAvatar, a result row draws its initials (T2)', async () => {
+    await searchAlice({ showAvatar: true });
+    const row = screen.getByRole('option', { name: 'Alice, alice@test.com' });
+    expect(screen.getByText('A').closest('[aria-hidden="true"]')).toBeTruthy();
+    expect(row.contains(screen.getByText('A'))).toBe(true);
+  });
+
+  it('with withGuest, Guest comes before the results and picks null (T3)', async () => {
+    const onSelect = await searchAlice({ withGuest: true });
+    const guest = screen.getByTestId('customer-picker-option-guest');
+    expect(guest.textContent).toBe('Guest');
+    const options = screen.getAllByRole('option');
+    expect(options[0]).toBe(guest);
+    expect(options.indexOf(screen.getByRole('option', { name: 'Alice, alice@test.com' }))).toBeGreaterThan(0);
+    fireEvent.click(guest);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it('with withGuest, Guest is drawn and pickable offline (T4)', () => {
+    const onSelect = vi.fn();
+    render(<CustomerPicker search={vi.fn()} selected={alice} onSelect={onSelect} online={false} withGuest />);
+    const guest = screen.getByTestId('customer-picker-option-guest');
+    expect(guest.textContent).toBe('Guest');
+    fireEvent.click(guest);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it('with withGuest, Guest is aria-selected only when no customer is selected (T5)', () => {
+    const props = { search: vi.fn(), onSelect: vi.fn(), online: true, withGuest: true };
+    const { rerender } = render(<CustomerPicker {...props} selected={null} />);
+    expect(screen.getByTestId('customer-picker-option-guest').getAttribute('aria-selected')).toBe('true');
+    rerender(<CustomerPicker {...props} selected={alice} />);
+    expect(screen.getByTestId('customer-picker-option-guest').getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('with withGuest, pressing Guest clears the query (T6)', async () => {
+    await searchAlice({ withGuest: true });
+    expect(screen.getByLabelText('Search customers')).toHaveProperty('value', 'al');
+    fireEvent.click(screen.getByTestId('customer-picker-option-guest'));
+    expect(screen.getByLabelText('Search customers')).toHaveProperty('value', '');
   });
 });
