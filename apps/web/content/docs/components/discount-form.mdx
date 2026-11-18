@@ -30,6 +30,16 @@ Renders a title, percentage or fixed-amount selector, discount input, and Apply 
 </DialogContent>
 ```
 
+### Coupon tab
+
+```tsx
+<DiscountForm layout="dialog" currency={currency} onApply={apply} onClose={close}
+  onApplyCoupon={(code) => sale.applyCoupon(code)}
+  coupons={[{ code: 'SUMMER10', detail: 'Percentage discount', amountLabel: '10%' }]} />
+```
+
+With `onApplyCoupon`, the dialog opens on a "Quick discount" tab (the body above) beside a "Coupon" tab, as WCPOS v2's Add Discount sheet does. The Coupon tab picks one of `coupons` from a searchable list ("Search coupons..." matches the code or the detail, without regard to case; "No coupons found" when nothing matches). Apply stays disabled until a coupon is picked and while it is applying. A refusal string shows inline and the dialog stays open; a rejection shows "Failed to apply coupon."; `null` closes the dialog through `onClose`. Only listed coupons can be applied: the store's coupon list is the app's data.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -39,3 +49,15 @@ Renders a title, percentage or fixed-amount selector, discount input, and Apply 
 | `currency` | `string` | required | Currency used to parse fixed amounts into minor units and label the amount input |
 | `onApply` | `(discount: Discount) => string \| null` | required | Receives the parsed discount; return a refusal to show inline or `null` once applied |
 | `onClose` | `() => void` | required | Called on Cancel or after `onApply` returns `null` |
+| `onApplyCoupon` | `(code: string) => Promise<string \| null>` | — | `layout="dialog"` only: shows the Quick discount / Coupon tabs. Resolve a refusal to show inline, or `null` once applied (e.g. `sale.applyCoupon`) |
+| `coupons` | `readonly DiscountCoupon[]` | `[]` | The coupons the Coupon tab lists |
+
+### DiscountCoupon
+
+One of the store's coupons, already formatted by the app (`import type { DiscountCoupon } from '@tallyui/components'`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `code` | `string` | The coupon code, shown on the row and passed to `onApplyCoupon` |
+| `detail` | `string` (optional) | Muted text under the code, e.g. the description or "Percentage discount" |
+| `amountLabel` | `string` (optional) | Shown on the right, e.g. "10%" or "€5.00" |

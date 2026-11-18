@@ -4,6 +4,8 @@ import { formatMoney, useFormatMoney, minorUnitDigits, moneyFromDecimalString, t
 import type { AppliedDiscount, Discount } from '@tallyui/pos';
 import { DiscountBadge } from '../cart';
 import { DialogFooter } from '../ui/dialog';
+import { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '../ui/combobox';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 
 /** The cashier's entry as a TallyUI Discount (a percent, or integer minor units), or the inline error to show. */
 export function parseDiscount(type: Discount['type'], text: string, currency: string): Discount | string {
@@ -29,11 +31,76 @@ export const discountLabel = (discount: AppliedDiscount, currency: string, forma
 
 const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center justify-center';
 
+/** One of the store's coupons, already formatted by the app (v2 add-coupon.tsx:233-286). */
+export type DiscountCoupon = { code: string; detail?: string; amountLabel?: string };
+
+const FAILED_COUPON = 'Failed to apply coupon.'; // v2 core.json:1119, also v2's fallback for an empty refusal.
+
+/** v2 add-coupon.tsx: pick one of the app's coupons, Apply through the app; a refusal stays inline and the dialog open. */
+function CouponTab({ coupons, onApplyCoupon, onClose }: {
+  coupons: readonly DiscountCoupon[]; onApplyCoupon: (code: string) => Promise<string | null>; onClose: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [picked, setPicked] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const needle = search.trim().toLowerCase();
+  const shown = needle ? coupons.filter((c) => [c.code, c.detail ?? ''].some((s) => s.toLowerCase().includes(needle))) : coupons;
+  async function apply() {
+    if (picked === null || applying) return;
+    setApplying(true); setError(null);
+    let refused: string | null;
+    try { refused = await onApplyCoupon(picked); } catch { refused = FAILED_COUPON; }
+    setApplying(false);
+    if (refused === null) onClose(); else setError(refused || FAILED_COUPON);
+  }
+  return <>
+    {error ? <Text accessibilityRole="alert" className="text-destructive">{error}</Text> : null}
+    <View className="flex-row items-center gap-2"><Text className="text-foreground">Coupon</Text>
+      <View className="flex-1">
+        <Combobox value={picked === null ? undefined : { value: picked, label: picked }} searchValue={search}
+          onValueChange={(next) => { setPicked(next?.value ?? null); setError(null); }}
+          onSearchValueChange={(text) => { setSearch(text); setError(null); }}>
+          <ComboboxTrigger testID="add-coupon-combobox"><Text className={picked === null ? 'text-muted-foreground' : 'text-foreground'}>
+            {picked ?? 'Select coupon...'}</Text></ComboboxTrigger>
+          <ComboboxContent>
+            <View className="border-b border-border px-2 py-1.5"><ComboboxInput testID="add-coupon-search-input" placeholder="Search coupons..." /></View>
+            <ComboboxList>
+              {shown.map((coupon) => <ComboboxItem key={coupon.code} testID={`add-coupon-option-${coupon.code}`} value={coupon.code} label={coupon.code}>
+                <View className="flex-1 flex-row items-center justify-between gap-2">
+                  <View className="flex-1 gap-0.5">
+                    <Text className="text-sm font-medium text-popover-foreground">{coupon.code}</Text>
+                    {coupon.detail ? <Text numberOfLines={1} className="text-xs text-muted-foreground">{coupon.detail}</Text> : null}
+                  </View>
+                  {coupon.amountLabel ? <Text className="text-sm font-semibold text-primary">{coupon.amountLabel}</Text> : null}
+                </View>
+              </ComboboxItem>)}
+              {/* ui/combobox's ComboboxEmpty has fixed copy, so v2's "No coupons found" (core.json:1126) is drawn here. */}
+              {shown.length ? null : <View className="py-6"><Text className="text-center text-sm text-muted-foreground">No coupons found</Text></View>}
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
+      </View>
+    </View>
+    <DialogFooter>
+      <Pressable accessibilityRole="button" onPress={onClose} className={`${button} bg-card`}><Text className="text-foreground">Cancel</Text></Pressable>
+      <Pressable testID="add-coupon-submit" accessibilityRole="button" disabled={picked === null || applying}
+        onPress={() => void apply()} className={`${button} bg-primary ${picked === null || applying ? 'opacity-50' : ''}`}>
+        <Text className="font-semibold text-primary-foreground">Apply</Text></Pressable>
+    </DialogFooter>
+  </>;
+}
+
 /** `onApply` returns a refusal to show inline (the capability gate), or null once applied. `layout="dialog"`: v2's Add Discount body. */
-export function DiscountForm({ title, currency, onApply, onClose, layout = 'inline' }: {
+export function DiscountForm({ title, currency, onApply, onClose, layout = 'inline', onApplyCoupon, coupons = [] }: {
   title?: string; currency: string; onApply: (discount: Discount) => string | null; onClose: () => void; layout?: 'inline' | 'dialog';
+  /** layout="dialog" only: with this, the dialog shows v2's Quick discount / Coupon tabs. Resolve a refusal to show, or null once applied (e.g. sale.applyCoupon). */
+  onApplyCoupon?: (code: string) => Promise<string | null>;
+  /** The coupons the Coupon tab lists (the app's data). Default []. */
+  coupons?: readonly DiscountCoupon[];
 }) {
   const dialog = layout === 'dialog';
+  const [kind, setKind] = useState<'quick' | 'coupon'>('quick'); // v2 add-discount-sheet.tsx:14 opens on Quick discount.
   const [type, setType] = useState<Discount['type']>(dialog ? 'fixed' : 'percentage'); // v2 add-discount.tsx:44 opens at Amount.
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +120,16 @@ export function DiscountForm({ title, currency, onApply, onClose, layout = 'inli
     className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-foreground" />;
   const cancel = <Pressable accessibilityRole="button" onPress={onClose} className={`${button} bg-card`}>
     <Text className="text-foreground">Cancel</Text></Pressable>;
+  // v2 add-discount-sheet.tsx:22-34: the Quick discount / Coupon segments, only when the app can apply a coupon.
+  const tabs = dialog && onApplyCoupon ? <ToggleGroup type="single" variant="outline" value={kind} aria-label="Discount kind"
+    onValueChange={(value) => { if (value) setKind(value as 'quick' | 'coupon'); }} className="justify-start">
+    {(['quick', 'coupon'] as const).map((id) => <ToggleGroupItem key={id} value={id} testID={`add-discount-kind-${id}`}>
+      <Text className="text-sm text-foreground">{id === 'quick' ? 'Quick discount' : 'Coupon'}</Text></ToggleGroupItem>)}
+  </ToggleGroup> : null;
+  if (tabs && onApplyCoupon && kind === 'coupon') return <View role="group" accessibilityLabel={title ?? 'Discount'} className="gap-2 px-3 py-2">
+    {tabs}<CouponTab coupons={coupons} onApplyCoupon={onApplyCoupon} onClose={onClose} /></View>;
   return <View role="group" accessibilityLabel={title ?? 'Discount'} className="gap-2 px-3 py-2">
+    {tabs}
     {title === undefined || dialog ? null : <Text className="font-semibold text-foreground">{title}</Text>}
     <View className="flex-row gap-2">
       {dialog ? <>{field}<View testID="discount-percent-switch" className="flex-row gap-2">{toggle}</View></> : <>{toggle}{field}</>}

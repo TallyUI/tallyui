@@ -239,6 +239,7 @@ export {
   CustomerDisplayPairing, type CustomerDisplayPairingProps,
   ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters, type ProductTermFilter, type FilterOption,
 } from './sale';
+export type { DiscountCoupon } from './sale/discount-form';
 
 // Layout components
 export {
