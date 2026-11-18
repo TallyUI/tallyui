@@ -17,28 +17,22 @@ const entries = catalogueEntries([
   { id: 'shirt', title: 'Shirt', status: 'published', variants: [{ id: 'shirt-blue', title: 'Blue', sku: 'SHIRT', prices: [{ amount: 12.5, currency_code: 'eur' }] }] },
   { id: 'mug', title: 'Mug', status: 'published', variants: [{ id: 'mug-white', title: 'White', sku: 'MUG', prices: [{ amount: 8, currency_code: 'eur' }] }] },
 ], traits);
+// The components' two-column split (packages/components/src/layout/checkout-layout.tsx:20); not exported.
+const splitBreakpoint = 768;
 
 function Sale({ capabilities, editor }: { capabilities: ServerCapabilities; editor?: string }) {
   const sale = useSale(settings, { registerId: 'demo-register', cashierRef: 'demo-cashier', capabilities });
-  const { stage } = sale;
   const { width } = useWindowDimensions();
+  const { stage } = sale;
   if (stage.kind === 'receipt') {
     return <ScrollView testID="sale-receipt" className="flex-1">
       <Receipt order={stage.order} posOrder={stage.posOrder} store={{ name: 'Demo store' }} cashier="Demo cashier"
         registerId="demo-register" newSale={sale.newSale} />
     </ScrollView>;
   }
-  if (stage.kind === 'tender') {
-    const cart = <Cart sale={sale} taxClasses={taxClasses} showTotal={false} tenderLedger={{}} />;
-    if (width < 768) return <ScrollView className="flex-1">
-      <Tender sale={sale} ledger={false} />
-      <View testID="sale-charges-cart" className="border-t border-border">{cart}</View>
-    </ScrollView>;
-    return <View className="flex-1 flex-row">
-      <ScrollView className="flex-1"><Tender sale={sale} ledger={false} /></ScrollView>
-      <View testID="sale-charges-cart" className="w-96 border-l border-border">{cart}</View>
-    </View>;
-  }
+  // v2 tender-checkout.tsx:96-100: a phone's checkout is the pane alone, with its own ledger; wide puts it in the cart.
+  if (stage.kind === 'tender' && width < splitBreakpoint) return <ScrollView className="flex-1"><Tender sale={sale} /></ScrollView>;
+  if (stage.kind === 'tender') return <View className="flex-1 flex-row"><ScrollView className="flex-1"><Tender sale={sale} ledger={false} /></ScrollView><View testID="sale-charges-cart" className="w-96 border-l border-border"><Cart sale={sale} taxClasses={taxClasses} showTotal={false} tenderLedger={{}} /></View></View>;
   return <View className="flex-1">
     <View className="flex-row flex-wrap gap-2 p-3">
       {entries.map((entry) => <Pressable key={entry.variant.id} accessibilityRole="button"
