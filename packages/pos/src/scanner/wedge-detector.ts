@@ -27,13 +27,15 @@ export interface WedgeState {
   lastTimeMs: number | null;
   /** Time of the first key of the current burst's stack. */
   startedAtMs: number | null;
+  /** Lowest finite folded average seen (v2); `createWedgeState` starts it at +Infinity. */
+  minAvgGapMs?: number;
   /** An Enter/Tab arrived during the burst — the signature of a scanner terminator. */
   sawTerminator: boolean;
 }
 
 /** @deprecated Internal helper, not supported API; leaves the public entry at the next major. */
 export function createWedgeState(): WedgeState {
-  return { avg: 0, detecting: false, stack: [], lastTimeMs: null, startedAtMs: null, sawTerminator: false };
+  return { avg: 0, detecting: false, stack: [], lastTimeMs: null, startedAtMs: null, minAvgGapMs: Number.POSITIVE_INFINITY, sawTerminator: false };
 }
 
 /** Fold one key, mutating and returning state. Kept bug-for-bug with v2:
@@ -47,6 +49,7 @@ export function foldWedgeKey(state: WedgeState, key: string, timeMs: number, thr
   let gap = Number.POSITIVE_INFINITY;
   if (state.lastTimeMs !== null) gap = timeMs - state.lastTimeMs;
   state.avg = state.avg === 0 ? gap : (state.avg + gap) / 2;
+  if (Number.isFinite(state.avg)) state.minAvgGapMs = Math.min(state.minAvgGapMs ?? Number.POSITIVE_INFINITY, state.avg);
   if (gapRule === 'every' ? gap < threshold : state.detecting || state.avg < threshold) {
     state.detecting = true;
     state.stack.push(key);
@@ -79,6 +82,8 @@ export interface WedgeReplayResult {
   detectedAsScan: boolean;
   /** The barcode the detector would emit, with prefix/suffix stripped. */
   code: string;
+  /** Lowest folded average gap in ms (+Infinity when no gap was measured). */
+  minAvgGapMs: number;
 }
 
 /** Replay the detector over a completed keystroke trace.
@@ -86,8 +91,9 @@ export interface WedgeReplayResult {
 export function replayWedgeDetector(keys: TraceKey[], settings: WedgeSettings): WedgeReplayResult {
   const state = createWedgeState();
   for (const entry of keys) foldWedgeKey(state, entry.key, entry.timeMs, settings.threshold, settings.gapRule);
-  if (!state.detecting) return { detectedAsScan: false, code: '' };
-  return { detectedAsScan: true, code: stripBoundary(state.stack, settings) };
+  const minAvgGapMs = state.minAvgGapMs ?? Number.POSITIVE_INFINITY;
+  if (!state.detecting) return { detectedAsScan: false, code: '', minAvgGapMs };
+  return { detectedAsScan: true, code: stripBoundary(state.stack, settings), minAvgGapMs };
 }
 
 export interface WedgeScanMeta {

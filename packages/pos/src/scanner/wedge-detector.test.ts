@@ -35,20 +35,20 @@ describe('wedge detector', () => {
   const code = '036000291452';
 
   it('reads a fast burst as a scan', () => {
-    expect(replayWedgeDetector(trace(code), DEFAULT_WEDGE_SETTINGS)).toEqual({
+    expect(replayWedgeDetector(trace(code), DEFAULT_WEDGE_SETTINGS)).toMatchObject({
       detectedAsScan: true, code,
     });
   });
 
   it('does not read slow typing as a scan', () => {
-    expect(replayWedgeDetector(trace(code, 120), DEFAULT_WEDGE_SETTINGS)).toEqual({
+    expect(replayWedgeDetector(trace(code, 120), DEFAULT_WEDGE_SETTINGS)).toMatchObject({
       detectedAsScan: false, code: '',
     });
   });
 
   it('strips a configured prefix and suffix only at the edges', () => {
     const settings = { threshold: 24, prefix: '[', suffix: ']' };
-    expect(replayWedgeDetector(trace('[1234]'), settings)).toEqual({ detectedAsScan: true, code: '1234' });
+    expect(replayWedgeDetector(trace('[1234]'), settings)).toMatchObject({ detectedAsScan: true, code: '1234' });
     expect(replayWedgeDetector(trace('[12[34]'), settings).code).toBe('12[34');
     expect(replayWedgeDetector(trace('12]34'), settings).code).toBe('12]34');
     expect(replayWedgeDetector(trace('[1234]'), { ...settings, prefix: '[1' }).code).toBe('234');
@@ -56,17 +56,24 @@ describe('wedge detector', () => {
   });
 
   it('strips a multi-character prefix and suffix', () => {
-    expect(replayWedgeDetector(trace(']E04006381333931'), { threshold: 24, prefix: ']E0', suffix: '' })).toEqual({
+    expect(replayWedgeDetector(trace(']E04006381333931'), { threshold: 24, prefix: ']E0', suffix: '' })).toMatchObject({
       detectedAsScan: true, code: '4006381333931',
     });
-    expect(replayWedgeDetector(trace(']E0123##'), { threshold: 24, prefix: ']E0', suffix: '##' })).toEqual({
+    expect(replayWedgeDetector(trace(']E0123##'), { threshold: 24, prefix: ']E0', suffix: '##' })).toMatchObject({
       detectedAsScan: true, code: '123',
     });
-    expect(replayWedgeDetector(trace('12]E034'), { threshold: 24, prefix: ']E0', suffix: '' })).toEqual({
+    expect(replayWedgeDetector(trace('12]E034'), { threshold: 24, prefix: ']E0', suffix: '' })).toMatchObject({
       detectedAsScan: true, code: '12]E034',
     });
     expect(stripBoundary(']E'.split(''), { threshold: 24, prefix: ']E0', suffix: '' })).toBe(']E');
     expect(stripBoundary('AB'.split(''), { threshold: 24, prefix: 'AB', suffix: 'B' })).toBe('');
+  });
+
+  it('replay reports the lowest folded average gap', () => {
+    // Gaps 20, 8, 30, 30 fold to 20, 14, 22, 26: the average dips to 14, then rises.
+    const keys = [0, 20, 28, 58, 88].map((timeMs, index) => ({ key: String(index), timeMs }));
+    expect(replayWedgeDetector(keys, DEFAULT_WEDGE_SETTINGS)).toEqual({ detectedAsScan: true, code: '01234', minAvgGapMs: 14 });
+    expect(replayWedgeDetector([{ key: '9', timeMs: 0 }], DEFAULT_WEDGE_SETTINGS).minAvgGapMs).toBe(Infinity);
   });
 
   it('emits once after the burst settles', () => {
@@ -107,19 +114,19 @@ describe('gapRule', () => {
 
   it('folded (the default) keeps a burst through one slow gap', () => {
     const expected = { detectedAsScan: true, code: '12345678' };
-    expect(replayWedgeDetector(keys, DEFAULT_WEDGE_SETTINGS)).toEqual(expected);
-    expect(replayWedgeDetector(keys, { ...DEFAULT_WEDGE_SETTINGS, gapRule: 'folded' })).toEqual(expected);
+    expect(replayWedgeDetector(keys, DEFAULT_WEDGE_SETTINGS)).toMatchObject(expected);
+    expect(replayWedgeDetector(keys, { ...DEFAULT_WEDGE_SETTINGS, gapRule: 'folded' })).toMatchObject(expected);
   });
 
   it('every restarts the burst at a slow gap', () => {
-    expect(replayWedgeDetector(keys, { ...DEFAULT_WEDGE_SETTINGS, gapRule: 'every' })).toEqual({
+    expect(replayWedgeDetector(keys, { ...DEFAULT_WEDGE_SETTINGS, gapRule: 'every' })).toMatchObject({
       detectedAsScan: true, code: '5678',
     });
   });
 
   it('every drops a burst ended by a slow key', () => {
     const ended = [...trace('123456789'), { key: 'X', timeMs: 80 }];
-    expect(replayWedgeDetector(ended, { ...DEFAULT_WEDGE_SETTINGS, gapRule: 'every' })).toEqual({
+    expect(replayWedgeDetector(ended, { ...DEFAULT_WEDGE_SETTINGS, gapRule: 'every' })).toMatchObject({
       detectedAsScan: false, code: '',
     });
   });
