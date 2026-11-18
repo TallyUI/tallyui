@@ -10,7 +10,7 @@ vi.mock('react-native', async (importOriginal) => {
   const rn = await importOriginal<typeof import('react-native')>();
   const withClass = (Base: React.ElementType) =>
     React.forwardRef((props: { className?: string }, ref) => <Base ref={ref} {...props} dataSet={{ class: props.className }} />);
-  return { ...rn, Pressable: withClass(rn.Pressable) };
+  return { ...rn, Pressable: withClass(rn.Pressable), View: withClass(rn.View) };
 });
 
 afterEach(cleanup);
@@ -127,5 +127,6 @@ describe('PrintingSettings', () => {
     expect(screen.queryByTestId('printer-row-epson')).toBeNull();
     expect(screen.queryByTestId('printers-empty-state')).toBeNull();
     expect(screen.queryByTestId('printing-add-printer-button')).toBeNull();
+    expect(document.querySelector('[data-class~="border-border"]')).toBeNull(); // no empty card
   });
 });
