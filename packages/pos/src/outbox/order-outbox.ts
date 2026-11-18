@@ -597,8 +597,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       // Check and remove in one write, as RxDB's incrementalRemove() does: the modifier sees the stored state, so a
       // requeue that won the race leaves its pending order in place.
       await (await collection.findOne(orderId).exec())?.incrementalModify((data) => {
-        if (data.syncStatus !== 'rejected') return data;
-        commandId = data.commandId;
+        // The modifier runs again on a write conflict, so it decides on each run.
+        commandId = data.syncStatus === 'rejected' ? data.commandId : undefined;
+        if (commandId === undefined) return data;
         data._deleted = true;
         return data;
       });

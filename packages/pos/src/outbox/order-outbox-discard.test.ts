@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
+import { createRevision, createRxDatabase, now, type RxCollection, type RxDatabase, type RxDocumentData } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandResult, OrderCreateEnvelope } from '@tallyui/core';
@@ -133,5 +133,29 @@ describe('OrderOutbox.discard', () => {
     const after = await stored(input.id);
     if (discarded) expect([requeued, after]).toEqual([0, undefined]);
     else expect([requeued, after?.syncStatus, after?.commandId === input.commandId]).toEqual([1, 'pending', false]);
+  });
+
+  it('discard resolves false when a conflicting write requeues the order between the modifier and the write', async () => {
+    const input = rejectedOrder(0);
+    await collection.insert(input);
+    const { outbox } = setup();
+    outbox.stop();
+    const fresh = uuidv7();
+    let calls = 0;
+    // Runs in the incremental write's preWrite, after the modifier and before the storage write. The hook stays on
+    // the collection; each test has its own database.
+    collection.preSave(async (_data, previous) => {
+      calls += 1;
+      if (calls > 1) return;
+      const before = previous as unknown as RxDocumentData<PosOrder>;
+      const { error: _error, ...rest } = before;
+      const document = { ...rest, syncStatus: 'pending' as const, commandId: fresh,
+        _rev: createRevision(db.token, before), _meta: { ...before._meta, lwt: now() } };
+      const written = await collection.storageInstance.bulkWrite([{ previous: before, document }], 'test-requeue');
+      expect(written.error).toEqual([]);
+    }, false);
+    expect(await outbox.discard(input.id)).toBe(false);
+    expect(await stored(input.id)).toMatchObject({ syncStatus: 'pending', commandId: fresh });
+    expect(calls).toBeGreaterThanOrEqual(2);
   });
 });
