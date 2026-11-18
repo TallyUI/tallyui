@@ -68,7 +68,7 @@ test.describe('Cart charges (order.create 5)', () => {
       await pane.getByTestId('tender-method-cash').click();
       await pane.getByRole('button', { name: `Exact ${due}`, exact: true }).click();
       await pane.getByRole('button', { name: `Take ${due} in Cash`, exact: true }).click();
-      await expect(pane.getByText('Paid in full', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('cart-payments').getByText('Paid in full', { exact: true })).toBeVisible();
       await pane.getByRole('button', { name: 'Complete sale' }).click();
 
       const receipt = page.getByTestId('sale-receipt');
