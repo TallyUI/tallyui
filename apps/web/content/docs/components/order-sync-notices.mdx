@@ -1,0 +1,26 @@
+---
+title: OrderSyncNotices
+description: One sale's sync notices from OrdersList, for an app's own order screen
+---
+
+## Import
+
+```tsx
+import { OrderSyncNotices } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OrderSyncNotices order={order} stuck={outbox.state.stuck}>{retry}</OrderSyncNotices>
+```
+
+Renders, in order: the stuck-since line; the refusal sentence; the late-session notice; the customer or payment-reference local warnings; the note-not-sent notice; then `children`; then the store's warnings (stock, tax rate, customer ignored, figures, total). OrdersList renders this same component under each order and passes its Retry as `children`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `order` | `PosOrder` | required | The sale whose notices are shown |
+| `stuck` | `OutboxState['stuck']` | --- | The outbox's stuck entries, which give a pending order its waiting-since line |
+| `children` | `ReactNode` | --- | Rendered between the notes and the store's warnings, where OrdersList puts Retry |
