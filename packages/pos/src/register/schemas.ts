@@ -1,7 +1,8 @@
 /**
  * The register's local collections (ADR-032): sessions, cash movements and closures. Port
  * provenance (ADR-032 amendment 1): WCPOS `next` `3b5331b5c`, where they are at versions 1, 0
- * and 1; sessions are at version 1 here (ADR-078), movements and closures at version 0.
+ * and 1; sessions are at version 2 here (ADR-078, plus the count note, desk ruling 18 Nov), movements and
+ * closures at version 0.
  *
  * All three are local only, like `pos_orders`: the app creates them and never replicates them
  * (a replicated collection must never take local writes, #53). WCPOS's outbox fields
@@ -50,6 +51,8 @@ export interface RegisterSession {
   /** A server's expected figures; cleared before every money action (`requireOpenSession`). */
   server_expected?: TenderMap | null;
   server_sales_count?: number | null;
+  /** The cashier's note on the close count, written with the count; null when none. */
+  count_note?: string | null;
 }
 
 export interface CashMovement {
@@ -107,7 +110,7 @@ const nullableMinor: JsonSchema = { type: ['integer', 'null'] };
 const tenders: JsonSchema = { type: 'object', additionalProperties: minor };
 
 export const registerSessionSchema: RxJsonSchema<RegisterSession> = {
-  title: 'Register sessions', version: 1, primaryKey: 'id', type: 'object', additionalProperties: false,
+  title: 'Register sessions', version: 2, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id, register_id: id, store_key: nullableText,
     status: { type: 'string', maxLength: 20 },
@@ -125,6 +128,7 @@ export const registerSessionSchema: RxJsonSchema<RegisterSession> = {
     approver_token: { ...nullableText, default: null },
     server_expected: { type: ['object', 'null'], additionalProperties: minor, default: null },
     server_sales_count: { type: ['integer', 'null'], default: null },
+    count_note: nullableText,
   },
   required: ['id', 'register_id', 'status', 'opened_at_gmt', 'counted_float_minor'],
   indexes: [['register_id', 'status']],
@@ -141,6 +145,10 @@ export function registerSessionCreator(): RxCollectionCreator<RegisterSession> {
   return { schema: registerSessionSchema, localDocuments: true, migrationStrategies: { 1: (doc) => {
     // Every migrated row gets the field, the same shape a new row gets from the schema default.
     doc.server_session_id ??= null;
+    return doc;
+  }, 2: (doc) => {
+    // Every migrated row gets the count note, null as on a session closed without one.
+    doc.count_note ??= null;
     return doc;
   } } };
 }

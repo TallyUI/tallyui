@@ -920,6 +920,15 @@ it('passes the store opening day across the session writer boundary', async () =
 });
 
 describe('the session', () => {
+  it('closeSession passes the note to the session and the closure', async () => {
+    const session = await seed();
+    const result = await settled();
+    let closure: Awaited<ReturnType<typeof result.current.actions.closeSession>> | undefined;
+    await act(async () => { closure = await result.current.actions.closeSession({ counted: { cash: 9000 }, note: 'Float short' }); });
+    expect((await db.register_sessions.findOne(session.id).exec())?.count_note).toBe('Float short');
+    expect(closure?.breakdowns.variance_note).toBe('Float short');
+  });
+
   it('is the open or counting one, or an interrupted close, but never a closed session with its closure', async () => {
     const session = await seed();
     const { result } = render();

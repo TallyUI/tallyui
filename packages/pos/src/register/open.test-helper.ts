@@ -1,4 +1,4 @@
-// The same migration contract runs on memory and SQLite, reading both versions beneath RxDB.
+// The same migration contract runs on memory and SQLite, reading every version beneath RxDB.
 import { expect, it } from 'vitest';
 import {
   addRxPlugin, createRxDatabase, fillWithDefaultSettings, getPrimaryKeyOfInternalDocument, getSingleDocument,
@@ -12,7 +12,8 @@ import { registerSessionSchema, type RegisterSession } from './schemas';
 
 addRxPlugin(RxDBLocalDocumentsPlugin);
 
-type VersionZeroSession = Omit<RegisterSession, 'status' | 'server_session_id'> & { status: 'open' | 'counting' | 'closed' };
+type VersionZeroSession = Omit<RegisterSession, 'status' | 'server_session_id' | 'count_note'> & { status: 'open' | 'counting' | 'closed' };
+type VersionOneSession = Omit<RegisterSession, 'count_note'>;
 
 /** The shipped version-0 schema, independent of the current schema. */
 function versionZero(): RxJsonSchema<VersionZeroSession> {
@@ -40,8 +41,36 @@ function versionZero(): RxJsonSchema<VersionZeroSession> {
   };
 }
 
+/** The shipped version-1 schema (ADR-078), a literal copy that does not follow the current schema. */
+function versionOne(): RxJsonSchema<VersionOneSession> {
+  return {
+    title: 'Register sessions', version: 1, primaryKey: 'id', type: 'object', additionalProperties: false,
+    properties: {
+      id: { type: 'string', maxLength: 36 }, register_id: { type: 'string', maxLength: 36 }, store_key: { type: ['string', 'null'] },
+      status: { type: 'string', maxLength: 20 },
+      server_session_id: { type: ['string', 'null'], default: null },
+      business_day: { type: 'string', maxLength: 10 },
+      opened_at_gmt: { type: 'string' }, opened_by: { type: ['string', 'null'] },
+      expected_float_minor: { type: ['integer', 'null'] }, counted_float_minor: { type: 'integer' }, opening_variance_minor: { type: ['integer', 'null'] },
+      counting_started_at_gmt: { type: ['string', 'null'] }, closed_at_gmt: { type: ['string', 'null'] }, closed_by: { type: ['string', 'null'] },
+      approval_required: { type: 'boolean', default: false }, approved_by: { type: ['string', 'null'] },
+      counted: { type: ['object', 'null'], additionalProperties: { type: 'integer' } },
+      closure_id: { type: ['string', 'null'] },
+      pending_status: { type: ['string', 'null'], default: null },
+      server_status: { type: ['string', 'null'], default: null },
+      status_at: { type: ['string', 'null'], default: null },
+      approver_token: { type: ['string', 'null'], default: null },
+      server_expected: { type: ['object', 'null'], additionalProperties: { type: 'integer' }, default: null },
+      server_sales_count: { type: ['integer', 'null'], default: null },
+    },
+    required: ['id', 'register_id', 'status', 'opened_at_gmt', 'counted_float_minor'],
+    indexes: [['register_id', 'status']],
+  };
+}
+
 const olderCollection = () => ({ schema: versionZero(), localDocuments: true });
-const STATUS_ID = getPrimaryKeyOfInternalDocument('register_sessions-v-1', INTERNAL_CONTEXT_MIGRATION_STATUS);
+const versionOneCollection = () => ({ schema: versionOne(), localDocuments: true, migrationStrategies: { 1: (doc: object) => doc } });
+const STATUS_ID = getPrimaryKeyOfInternalDocument('register_sessions-v-2', INTERNAL_CONTEXT_MIGRATION_STATUS);
 
 /** The older app is unvalidated; the upgraded app validates over the same storage. */
 function store(storage: RxStorage<any, any>) {
@@ -54,9 +83,15 @@ function store(storage: RxStorage<any, any>) {
       await step((await db.addCollections({ register_sessions: olderCollection() })).register_sessions);
     } finally { await db.close(); }
   };
+  const versionOneApp = async (step: (sessions: RxCollection<VersionOneSession>) => Promise<unknown>) => {
+    const db = await open(false);
+    try {
+      await step((await db.addCollections({ register_sessions: versionOneCollection() })).register_sessions);
+    } finally { await db.close(); }
+  };
   /** Strip storage metadata and sort by id, including when the old version has been removed. */
   const stored = async () => {
-    const [v0, v1] = await Promise.all([versionZero(), registerSessionSchema].map(async (schema: RxJsonSchema<any>) => {
+    const [v0, v1, v2] = await Promise.all([versionZero(), versionOne(), registerSessionSchema].map(async (schema: RxJsonSchema<any>) => {
       const raw = await storage.createStorageInstance<any>({ databaseName: name, collectionName: 'register_sessions',
         schema: fillWithDefaultSettings(schema), options: {}, multiInstance: false, devMode: false, databaseInstanceToken: 'check' });
       try {
@@ -65,9 +100,9 @@ function store(storage: RxStorage<any, any>) {
         return documents.map(({ _rev, _meta, _attachments, _deleted, ...doc }) => doc);
       } finally { await raw.close(); }
     }));
-    return { v0, v1 };
+    return { v0, v1, v2 };
   };
-  return { open, olderApp, stored };
+  return { open, olderApp, versionOneApp, stored };
 }
 
 const openSession: VersionZeroSession = {
@@ -85,6 +120,10 @@ const closed: VersionZeroSession = {
   status_at: '2026-10-06T10:05:00Z', approver_token: 'approval-1', server_expected: { cash: 18100, card: 25000 }, server_sales_count: 7,
 };
 
+/** A version-0 row as version 2 stores it. */
+const migrated = (row: object) => ({ ...row, server_session_id: null, count_note: null });
+const conflict: VersionOneSession = { ...counting, id: 'session-4', status: 'conflict', server_session_id: 'store-session-4' };
+
 export function addRegisterSessionCollectionTests(makeStorage: () => RxStorage<any, any>) {
   it('migrates every version-0 session byte for byte and keeps the register document', async () => {
     const { open, olderApp, stored } = store(makeStorage());
@@ -100,10 +139,10 @@ export function addRegisterSessionCollectionTests(makeStorage: () => RxStorage<a
     const db = await open();
     try {
       const sessions = await addRegisterSessionCollection(db);
-      expect(sessions.schema.version).toBe(1);
-      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual({ ...row, server_session_id: null });
+      expect(sessions.schema.version).toBe(2);
+      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual(migrated(row));
       expect(await readRegister(sessions)).toStrictEqual(register);
-      expect(await stored()).toStrictEqual({ v0: [], v1: storedRows.map((row) => ({ ...row, server_session_id: null })) });
+      expect(await stored()).toStrictEqual({ v0: [], v1: [], v2: storedRows.map(migrated) });
     } finally { await db.close(); }
   });
 
@@ -127,8 +166,8 @@ export function addRegisterSessionCollectionTests(makeStorage: () => RxStorage<a
     const reopened = await open();
     try {
       const sessions = await addRegisterSessionCollection(reopened);
-      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual({ ...row, server_session_id: null });
-      expect(await stored()).toStrictEqual({ v0: [], v1: storedRows.map((row) => ({ ...row, server_session_id: null })) });
+      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual(migrated(row));
+      expect(await stored()).toStrictEqual({ v0: [], v1: [], v2: storedRows.map(migrated) });
     } finally { await reopened.close(); }
   });
 
@@ -149,8 +188,53 @@ export function addRegisterSessionCollectionTests(makeStorage: () => RxStorage<a
     const reopened = await open();
     try {
       const sessions = await addRegisterSessionCollection(reopened);
-      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual({ ...row, server_session_id: null });
-      expect(await stored()).toStrictEqual({ v0: [], v1: storedRows.map((row) => ({ ...row, server_session_id: null })) });
+      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual(migrated(row));
+      expect(await stored()).toStrictEqual({ v0: [], v1: [], v2: storedRows.map(migrated) });
+    } finally { await reopened.close(); }
+  });
+
+  it('migrates every version-1 session byte for byte and keeps the register document', async () => {
+    const { open, versionOneApp, stored } = store(makeStorage());
+    let register: unknown;
+    await versionOneApp(async (sessions) => {
+      const rows: VersionOneSession[] = [{ ...closed, server_session_id: 'store-session-1' }, counting, openSession, conflict];
+      expect((await sessions.bulkInsert(rows)).error).toEqual([]);
+      await ensureRegister(sessions, 'web');
+      await bindRegister(sessions, 'store-1', { id: openSession.register_id, name: 'Till 1' });
+      await nextSaleCounter(sessions, 'store-1');
+      register = await readRegister(sessions);
+    });
+    const { v1: storedRows } = await stored();
+    expect(storedRows.map((row) => row.server_session_id)).toStrictEqual(['store-session-1', null, null, 'store-session-4']);
+    const db = await open();
+    try {
+      const sessions = await addRegisterSessionCollection(db);
+      expect(sessions.schema.version).toBe(2);
+      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual({ ...row, count_note: null });
+      expect(await readRegister(sessions)).toStrictEqual(register);
+      expect(await stored()).toStrictEqual({ v0: [], v1: [], v2: storedRows.map((row) => ({ ...row, count_note: null })) });
+    } finally { await db.close(); }
+  });
+
+  it('an open from version 1 on a database whose close has begun rejects with the coded error and keeps every session', async () => {
+    const { open, versionOneApp, stored } = store(makeStorage());
+    await versionOneApp(async (sessions) => {
+      expect((await sessions.bulkInsert([closed, counting, openSession, conflict])).error).toEqual([]);
+    });
+    const { v1: storedRows } = await stored();
+    const db = await open();
+    const closing = db.close();
+    try {
+      const error = await addRegisterSessionCollection(db).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(RegisterSessionOpenClosedError);
+      expect(error).toMatchObject({ code: 'REGISTER_SESSION_OPEN_CLOSED' });
+    } finally { await closing; }
+    expect(db.collections.register_sessions).toBeUndefined();
+    const reopened = await open();
+    try {
+      const sessions = await addRegisterSessionCollection(reopened);
+      for (const row of storedRows) expect((await sessions.findOne(row.id).exec())?.toJSON()).toStrictEqual({ ...row, count_note: null });
+      expect(await stored()).toStrictEqual({ v0: [], v1: [], v2: storedRows.map((row) => ({ ...row, count_note: null })) });
     } finally { await reopened.close(); }
   });
 
