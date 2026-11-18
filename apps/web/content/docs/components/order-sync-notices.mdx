@@ -1,0 +1,38 @@
+---
+title: OrderSyncNotices
+description: OrderSyncNotices shows one sale's sync notices, the same ones OrdersList shows under each order, for an app's own order screen.
+---
+
+## Import
+
+```tsx
+import { OrderSyncNotices } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<OrderSyncNotices order={order} stuck={outbox.state.stuck}>
+  {retryButton}
+</OrderSyncNotices>
+```
+
+These are the notices [OrdersList](/docs/components/orders-list) renders under each order, in the same order:
+
+- how long a stuck sale has gone without reaching the online store;
+- the refusal sentence, with no error code and never the store's own message;
+- a sale taken after its register closed;
+- local warnings;
+- a customer note that was not sent;
+- your `children` (OrdersList puts its Retry button here);
+- the store's warnings.
+
+It returns a fragment, so the notices stack in whatever container you give them.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `order` | `PosOrder` | required | The sale whose notices to show |
+| `stuck` | `OutboxState['stuck']` | — | The outbox's `state.stuck`; without it, no "hasn't reached the online store" line is shown |
+| `children` | `ReactNode` | — | Rendered between the notes and the store's warnings, where OrdersList puts Retry |
