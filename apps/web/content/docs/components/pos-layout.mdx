@@ -21,6 +21,18 @@ import { POSLayout } from '@tallyui/components';
 
 On wide screens (at or above the breakpoint), renders a side-by-side split with the browse area taking 3/5 and the cart taking 2/5. On narrow screens, shows a tabbed interface that toggles between Browse and Cart views. The layout mode can be forced via the `layout` prop or left to respond automatically.
 
+On a phone, `tabBar="bottom"` puts WCPOS v2's Products / Cart tab bar at the foot of the screen. Both panes stay mounted, so the catalogue's scan handling and the cart's state survive a tab switch:
+
+```tsx
+<POSLayout
+  layout="stacked"
+  tabBar="bottom"
+  cartCount={itemCount}
+  browseSlot={<Catalogue {...catalogueProps} />}
+  cartSlot={<Cart sale={sale} />}
+/>
+```
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -31,6 +43,8 @@ On wide screens (at or above the breakpoint), renders a side-by-side split with 
 | `layout` | `'split' \| 'stacked'` | auto | Force a layout mode instead of using the breakpoint |
 | `breakpoint` | `number` | `768` | Width threshold for switching between split and stacked |
 | `className` | `string` | --- | Override container styles |
+| `tabBar` | `'top' \| 'bottom'` | `'top'` | Where the stacked layout's tabs sit; `'bottom'` is WCPOS v2's phone tab bar (Products / Cart with icons), with both panes kept mounted |
+| `cartCount` | `number` | --- | The cart's item count, shown over the Cart tab's icon in the bottom bar; hidden at 0 |
 
 ## Slots
 
