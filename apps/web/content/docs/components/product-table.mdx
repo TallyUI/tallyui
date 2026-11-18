@@ -43,6 +43,9 @@ Press a sortable header to cycle through ascending, descending and no sort. The 
 | `loading` | `boolean` | `false` | With no items, draws the header and skeleton rows (one line placeholder per cell) instead of `emptyState`, as WCPOS v2 |
 | `showUnsellable` | `boolean` | `false` | Include products the channel does not sell |
 | `currencySymbol` | `string` | — | Passed to the default price column |
+| `showThumbnail` | `boolean` | `false` | Leads each row with the product's thumbnail, as v2's image column (an initial tile when there is no image); needs a ConnectorProvider |
+| `showAddButton` | `boolean` | `false` | Ends each row with v2's add control, which calls `onSelect(item)` as a row press does: a + labelled “Add to cart”, or a > labelled “Variations” for a product with more than one variant; needs `onSelect` |
+| `cartQuantity` | `(doc: any) => number` | no count | How many of the product the cart holds; in the add column a count above 0 shows in place of the +, labelled “In cart: N”, and pressing it calls `onSelect` |
 | `className` | `string` | — | Override container styles |
 
 Other `ViewProps` are forwarded to the container.

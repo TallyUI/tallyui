@@ -30,6 +30,9 @@ A compact status card showing a connector name, a color-coded status indicator d
 | `lastSync` | `string` | --- | Human-readable last sync time |
 | `error` | `string` | --- | Error message shown in the error state |
 | `className` | `string` | --- | Override container styles |
+| `unsoldCount` | `number` | --- | Products the sales channel doesn't sell; the line is hidden when undefined or 0 |
+| `unsoldStale` | `boolean` | --- | True when that count is from an older pass than the last failure |
+| `formatUnsold` | `(count: number, stale: boolean) => string` | `${n} product(s) not sold in this channel` | The line's text; the default adds ` (last check failed)` when stale |
 
 ### ConnectionStatus
 

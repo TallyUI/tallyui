@@ -27,6 +27,7 @@ Two adjacent radio buttons select Grid or Table. Pressing the selected option do
 | `onChange` | `(view: CatalogueView) => void` | required | Called when the other view is pressed |
 | `labels` | `{ grid?: string; table?: string }` | `{ grid: 'Grid', table: 'Table' }` | Visible and accessible labels |
 | `className` | `string` | — | Override container styles |
+| `variant` | `'segments' \| 'icon'` | `'segments'` | `'segments'` is the Grid/Table radio pair; `'icon'` is v2's single view-mode button, where one press switches to the other view |
 
 Other `ViewProps` are forwarded to the container.
 
