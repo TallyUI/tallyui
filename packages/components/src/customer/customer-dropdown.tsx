@@ -39,7 +39,7 @@ export interface CustomerDropdownProps {
 }
 
 /** v2's GuestAvatar: the Guest is not a person, so a neutral glyph on a muted circle, never initials. */
-function GuestGlyph() {
+export function GuestGlyph() {
   return <View className="h-6 w-6 items-center justify-center rounded-full bg-muted text-muted-foreground"><UserIcon size={14} /></View>;
 }
 

@@ -4,6 +4,7 @@ import { customerTraits, CustomerServiceError, ConnectorUnauthorizedError, type 
 import { cn } from '@tallyui/theme';
 import { CustomerCard } from './customer-card';
 import { CustomerSelect } from './customer-select';
+import { GuestGlyph } from './customer-dropdown';
 import { CustomerForm, type CustomerFormValues } from './customer-form';
 
 export interface CustomerPickerProps {
@@ -22,6 +23,10 @@ export interface CustomerPickerProps {
   className?: string;
   /** testID of the search field, for e2e tests. Default `customer-picker-search`. */
   testID?: string;
+  /** Draws v2's initials avatar on each result row (the selected customer's card above stays without one). Default `false`. */
+  showAvatar?: boolean;
+  /** Draws a Guest row above the results, as v2's `withGuest`; pressing it calls `onSelect(null)`. Default `false`. */
+  withGuest?: boolean;
 }
 
 /** `@tallyui/core/server`'s `payloadBoundErrors` bound on `customer.email`, in UTF-16 code units. */
@@ -40,7 +45,7 @@ export function customerErrorText(error: unknown): string {
       : 'Something went wrong. Try again.';
 }
 
-export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-picker-search' }: CustomerPickerProps) {
+export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-picker-search', showAvatar = false, withGuest = false }: CustomerPickerProps) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +117,12 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
     {!online && <Text className="text-sm text-muted-foreground">Connect to search or add customers.</Text>}
     {noResults && <Text className="text-sm text-muted-foreground">No customers found.</Text>}
     {error && <Text accessibilityRole="alert" className="text-sm text-destructive">{error}</Text>}
-    <CustomerSelect customers={customers} traits={customerTraits} onSearch={setQuery} showSearch={false}
+    {withGuest && <Pressable role="option" aria-selected={selected === null} testID="customer-picker-option-guest" accessibilityLabel="Guest"
+      onPress={() => { onSelect(null); setQuery(''); }} className="min-h-11 flex-row items-center gap-2 rounded-md px-2">
+      <GuestGlyph />
+      <Text className="text-foreground">Guest</Text>
+    </Pressable>}
+    <CustomerSelect customers={customers} traits={customerTraits} onSearch={setQuery} showSearch={false} showAvatar={showAvatar}
       onSelect={(customer) => { onSelect(customer); setQuery(''); }} />
     {create && <Pressable accessibilityRole="button" disabled={!online || creating} onPress={() => setShowForm(true)}
       className={cn('items-center rounded-lg border border-border px-4 py-3', (!online || creating) && 'opacity-50')}>
