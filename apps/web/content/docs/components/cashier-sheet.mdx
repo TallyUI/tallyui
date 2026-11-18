@@ -32,8 +32,9 @@ const [open, setOpen] = useState(false);
 - **Opening:** the app mounts the sheet while it is open, usually from `RegisterBar`'s `cashier.onPress`. Dismissing it calls `onOpenChange(false)`.
 - **Header:** the cashier's avatar (or initials) and name. The `description` line shows as given; the app joins the store, the register (when there are several) and "since HH:mm" with " · ". Without it the line is hidden.
 - **Your sales today:** the app's figure for the cashier's own sales on the store day, formatted in the given currency. Without `salesToday` the row is hidden. The sheet does not compute the figure.
+- **Drawer door:** with `drawer`, an "In the drawer" door sits under "Your sales today". It shows the app's figure: the expected cash, a blind count's number of sales, "—" while figures are pending, or "Register closed · last closure {n}". It also shows the opener line and the register verbs. Pressing it calls `drawer.onOpen` and leaves the sheet open, and `drawer.disabled` blocks it. The sheet computes nothing.
 - **Sign out:** a destructive button that calls `onSignOut`. It never closes the sheet itself: the app decides, for example after `SwitchConfirm` with `kind="signOut"`. `signOutDisabled` disables it while a payment or a switch is in progress.
-- **Not in the sheet yet:** the drawer door, "Hand the till to" and the Store and Register switches.
+- **Not in the sheet yet:** "Hand the till to" and the Store and Register switches.
 
 ## Props
 
@@ -45,3 +46,23 @@ const [open, setOpen] = useState(false);
 | `onSignOut` | `() => void` | required | Called when Sign out is pressed |
 | `signOutDisabled` | `boolean` | `false` | Disables Sign out |
 | `onOpenChange` | `(open: boolean) => void` | required | Called with `false` when the sheet is dismissed |
+| `drawer` | `CashierSheetDrawer` | --- | The drawer door; hidden when absent |
+
+### CashierSheetDrawer
+
+```ts
+type CashierSheetDrawer = {
+  onOpen: () => void; // the door was pressed: open the register panel
+  disabled?: boolean; // a payment or a switch is in progress
+} & (
+  | { state: 'closed'; lastClosure?: string | number } // default "—"
+  | {
+      state: 'open' | 'counting';
+      figure: { kind: 'cash'; amountMinor: number; currency: string } | { kind: 'blind'; salesCount: number } | { kind: 'pending' };
+      openedAt: string; // already formatted, "HH:mm" in the store's zone
+      opener: { name: string; avatar?: string };
+      registerName?: string; // only when there is more than one register
+      countingSince?: string; // state "counting" only, already formatted; default "—"
+    }
+);
+```

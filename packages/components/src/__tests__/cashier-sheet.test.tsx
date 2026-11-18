@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
 import { PortalHost } from '@tallyui/primitives';
-import { CashierSheet, type CashierSheetProps } from '../register/cashier-sheet';
+import { CashierSheet, type CashierSheetDrawer, type CashierSheetProps } from '../register/cashier-sheet';
 
 afterEach(cleanup);
 
@@ -56,5 +56,78 @@ describe('CashierSheet', () => {
     fireEvent.click(button);
     expect(onSignOut).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  describe('drawer door', () => {
+    type OpenDrawer = Extract<CashierSheetDrawer, { state: 'open' | 'counting' }>;
+    const openDrawer = (over: Partial<OpenDrawer> = {}): CashierSheetDrawer => ({
+      state: 'open',
+      figure: { kind: 'cash', amountMinor: 12345, currency: 'USD' },
+      openedAt: '09:05',
+      opener: { name: 'Ada' },
+      onOpen: vi.fn(),
+      ...over,
+    });
+    const text = (testID: string) => screen.getByTestId(testID).textContent;
+
+    it('T1: is not drawn without drawer', () => {
+      show();
+      expect(screen.queryByTestId('cashier-sheet-drawer')).toBeNull();
+    });
+
+    it('T2: open with cash shows the label, the formatted figure, the opener line and the verbs', () => {
+      show({ drawer: openDrawer() });
+      expect(text('cashier-sheet-drawer')).toContain('In the drawer');
+      expect(text('cashier-sheet-drawer-figure')).toBe(formatMoney({ amount: 12345, currency: 'USD' }));
+      expect(text('cashier-sheet-drawer-opener')).toBe('opened 09:05 by');
+      expect(text('cashier-sheet-drawer-verbs')).toBe('Pay in · Pay out · Close register');
+    });
+
+    it('T3: registerName leads the opener line', () => {
+      show({ drawer: openDrawer({ registerName: 'Front' }) });
+      expect(text('cashier-sheet-drawer-opener')).toBe('Front · opened 09:05 by');
+    });
+
+    it('T4: a blind figure counts sales, singular and plural', () => {
+      show({ drawer: openDrawer({ figure: { kind: 'blind', salesCount: 1 } }) });
+      expect(text('cashier-sheet-drawer-figure')).toBe('1 sale');
+      cleanup();
+      show({ drawer: openDrawer({ figure: { kind: 'blind', salesCount: 3 } }) });
+      expect(text('cashier-sheet-drawer-figure')).toBe('3 sales');
+    });
+
+    it('T5: pending figures show a dash and the after-sync line', () => {
+      show({ drawer: openDrawer({ figure: { kind: 'pending' } }) });
+      expect(text('cashier-sheet-drawer-figure')).toBe('—');
+      expect(text('cashier-sheet-drawer-opener')).toBe('Figures arrive with the next sync.');
+    });
+
+    it('T6: counting shows the way back to the count', () => {
+      show({ drawer: openDrawer({ state: 'counting', countingSince: '10:30' }) });
+      expect(text('cashier-sheet-drawer-verbs')).toBe('Counting since 10:30 · back to the count');
+    });
+
+    it('T7: closed shows the last closure, the closed verbs and no opener line', () => {
+      show({ drawer: { state: 'closed', lastClosure: 42, onOpen: vi.fn() } });
+      expect(text('cashier-sheet-drawer-figure')).toBe('Register closed · last closure 42');
+      expect(text('cashier-sheet-drawer-verbs')).toBe('Last closure · Open register');
+      expect(screen.queryByTestId('cashier-sheet-drawer-opener')).toBeNull();
+      cleanup();
+      show({ drawer: { state: 'closed', onOpen: vi.fn() } });
+      expect(text('cashier-sheet-drawer-figure')).toBe('Register closed · last closure —');
+    });
+
+    it('T8: pressing calls onOpen once and not onOpenChange; disabled calls nothing', () => {
+      const onOpen = vi.fn();
+      const { onOpenChange } = show({ drawer: openDrawer({ onOpen }) });
+      fireEvent.click(screen.getByTestId('cashier-sheet-drawer'));
+      expect(onOpen).toHaveBeenCalledTimes(1);
+      expect(onOpenChange).not.toHaveBeenCalled();
+      cleanup();
+      const blocked = vi.fn();
+      show({ drawer: openDrawer({ onOpen: blocked, disabled: true }) });
+      fireEvent.click(screen.getByTestId('cashier-sheet-drawer'));
+      expect(blocked).not.toHaveBeenCalled();
+    });
   });
 });
