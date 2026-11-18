@@ -58,4 +58,27 @@ describe('CustomerDisplayScreen', () => {
     show({ config, view: { screen: 'payment', cart: displayCart({ ...receipt, changeDueMinor: 70 }), payment: { state: 'complete' } } });
     expect(screen.getByTestId('customer-display-payment').textContent).toContain(`Change ${money(70)}Thank you`);
   });
+
+  it('shows a reopened sale\'s refund due under its own label, never as change (ADR-090)', () => {
+    const reopened = displayCart({
+      ...receipt, payments: [{ method: 'external', amountMinor: 1130 }], changeDueMinor: 0, refundDueMinor: 800,
+    });
+    show({ config, view: { screen: 'cart', cart: reopened } });
+    expect(screen.getByTestId('customer-display-refund-due').textContent).toBe(`Refund due${money(800)}`);
+    expect(screen.getByTestId('customer-display-cart').textContent).toContain(`Total${money(330)}Refund due${money(800)}`);
+    cleanup();
+    show({ config, view: { screen: 'payment', cart: reopened, payment: { state: 'started' } } });
+    expect(screen.getByTestId('customer-display-payment').textContent).toContain(`Total${money(330)}Refund due${money(800)}`);
+    cleanup();
+    show({ config, view: { screen: 'payment', cart: reopened, payment: { state: 'complete' } } });
+    const complete = screen.getByTestId('customer-display-payment').textContent;
+    expect(complete).toContain(`Paid in full${money(330)}Refund due ${money(800)}Thank you`);
+    expect(complete).not.toContain('Change');
+    cleanup();
+    show({ config: { ...config, i18n: { refund_due: 'Owed to you' } }, view: { screen: 'payment', cart: reopened, payment: { state: 'complete' } } });
+    expect(screen.getByTestId('customer-display-payment').textContent).toContain(`Owed to you ${money(800)}`);
+    cleanup();
+    show({ config, view: { screen: 'cart', cart } });
+    expect(screen.queryByTestId('customer-display-refund-due')).toBeNull();
+  });
 });

@@ -29,6 +29,8 @@ export interface ReceiptTemplateData {
   total: string;
   payments: { method: string; amount: string; reference: string }[];
   change: string;
+  /** What the store owes back on a reopened sale (ADR-090); present only when above 0. Never shown as change. */
+  refundDue?: string;
   note: string;
   qrPayload: string;
 }
@@ -91,6 +93,7 @@ export function receiptTemplateData(receipt: ReceiptData, options: ReceiptTempla
       method: paymentLabel(payment.method), amount: money(payment.amountMinor), reference: payment.reference ?? '',
     })),
     change: receipt.changeDueMinor > 0 ? money(receipt.changeDueMinor) : '',
+    ...(receipt.refundDueMinor && receipt.refundDueMinor > 0 ? { refundDue: money(receipt.refundDueMinor) } : {}),
     note: receipt.footer.note ?? '',
     qrPayload: fiscal.qr_payload,
   };

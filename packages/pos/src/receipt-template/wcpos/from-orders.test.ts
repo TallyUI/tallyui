@@ -109,6 +109,17 @@ describe('WCPOS receipt sources match TallyUI\'s receipt', () => {
     }, plain).changeMinor).toBe(1000);
   });
 
+  it('a reopened stored PosOrder carries its refund due, and no change', () => {
+    const posOrder = finalize(twoRateSale(false));
+    const source = wcposSourceFromPosOrder({
+      ...posOrder, refundDueMinor: 800, totalMinor: 4200, display: { ...posOrder.display!, totalMinor: 4200 },
+      payments: [{ id: 'p1', storePaymentId: 'store-p1', method: 'external', amountMinor: 5000 }],
+    }, plain);
+    expect(source.refundDueMinor).toBe(800);
+    expect(source.changeMinor).toBe(0);
+    expect(wcposSourceFromPosOrder(posOrder, plain)).not.toHaveProperty('refundDueMinor');
+  });
+
   it.each([undefined, { granularity: 'per_line_items', mode: 'half_up' } as const])('tax-exclusive, two rates on one line (rounding: %o)', (rounding) => {
     const { sent } = expectOracle(twoRateSale(false, rounding));
     expect(sent.lines[0]!.taxes.map((tax) => tax.code)).toEqual(['STATE', 'CITY']);

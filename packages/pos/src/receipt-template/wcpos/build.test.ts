@@ -125,6 +125,14 @@ describe('wcposReceiptData', () => {
     expect(cash.totals).toMatchObject({ paid_total: 30, change_total: 6 });
   });
 
+  it('carries a reopened sale\'s refund due as refund_due_total, never as change (ADR-090)', () => {
+    const payments = [{ methodId: 'card', methodTitle: 'Card', amountMinor: 3200 }];
+    const reopened = build(sale({ payments, changeMinor: 0, refundDueMinor: 800 }));
+    expect(reopened.totals).toMatchObject({ refund_due_total: 8, change_total: 0 });
+    expect(build(sale({ payments, changeMinor: 0 })).totals).not.toHaveProperty('refund_due_total');
+    expect(build(sale({ payments, refundDueMinor: 0 })).totals).not.toHaveProperty('refund_due_total');
+  });
+
   it('§2.16 borrows the register name only for the same register id', () => {
     const register = { id: 'front', name: 'Front till' };
     expect(build(sale({ registerId: 'front' }), inclStore, { register }).register).toEqual(register);
