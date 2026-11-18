@@ -511,16 +511,18 @@ export async function writeClosure({
     });
   const counts = { cash: counted, ...otherTenders };
   const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
-  const payment_methods: Record<string, { sales_minor: number; refunds_minor: number }> = {};
+  // A Map, so a method id named like an Object.prototype member (`__proto__`) stays an ordinary key.
+  const methodTotals = new Map<string, { sales_minor: number; refunds_minor: number }>();
   for (const row of rows) {
     const method = row.kind === 'cash' ? 'cash' : row.method_id;
-    payment_methods[method] = { sales_minor: (payment_methods[method]?.sales_minor ?? 0) + row.amountMinor, refunds_minor: 0 };
+    methodTotals.set(method, { sales_minor: (methodTotals.get(method)?.sales_minor ?? 0) + row.amountMinor, refunds_minor: 0 });
   }
   for (const refund of countedRefunds) {
     for (const [method, amount] of refundAmounts(refund)) {
-      payment_methods[method] = { sales_minor: payment_methods[method]?.sales_minor ?? 0, refunds_minor: (payment_methods[method]?.refunds_minor ?? 0) + amount };
+      methodTotals.set(method, { sales_minor: methodTotals.get(method)?.sales_minor ?? 0, refunds_minor: (methodTotals.get(method)?.refunds_minor ?? 0) + amount });
     }
   }
+  const payment_methods = Object.fromEntries(methodTotals);
   // Same per-rate split a receipt shows (`taxLinesByRate`), run per order so each order's rates
   // add up to its own taxMinor, then summed across the session's orders by rate. Each line is in the mode
   // its receipt rounded it in (`taxedLinesFor`). Each order is split by the
@@ -557,7 +559,7 @@ export async function writeClosure({
     expected: till_expected,
     counted: counts,
     variance: Object.fromEntries(
-      Object.entries(counts).map(([method, value]) => [method, countVariance(value, till_expected[method] ?? 0)]),
+      Object.entries(counts).map(([method, value]) => [method, countVariance(value, Object.hasOwn(till_expected, method) ? till_expected[method] : 0)]),
     ),
     period_sales_total_minor: sum(rows.map((row) => row.amountMinor)),
     period_refunds_total_minor: sum(countedRefunds.flatMap((refund) => refundAmounts(refund).map(([, amount]) => amount))),
