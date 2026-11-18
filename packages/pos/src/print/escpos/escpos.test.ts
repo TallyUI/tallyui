@@ -1,5 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
+import { createOrderBuilder } from '../../order/order-builder';
+import { finalizeOrder } from '../../pos-order/finalize';
+import { buildReceiptDataFromPosOrder } from '../../receipt/reprint';
 import type { ReceiptData } from '../../receipt/types';
 import {
   createEscPosTransport, createPrintQueue, encodeEscPos, escpos, ESCPOS_CODE_PAGES, PrintError, type PrinterProfile,
@@ -63,6 +66,24 @@ describe('encodeEscPos', () => {
       ESC, 'd', 1, ESC, 'a', 1, 'Thank you' + LF, ESC, 'a', 0, ESC, 'd', 3,
       GS, 'V', 0x42, 0,
     ));
+  });
+
+  it('a reopened, overpaid order prints Refund due and no Change line with that amount', () => {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Tea', sku: 'TEA', unitPrice: { amount: 300, currency: 'GBP' } });
+    builder.addPayment({ method: 'cash', amountMinor: 300 });
+    let next = 0;
+    const posOrder = finalizeOrder(builder.getSnapshot(), {
+      capabilities: { orderCreate: 6 }, now: new Date('2026-11-10T09:30:00.000Z'), newId: () => `id-${++next}`,
+    });
+    const reopened = buildReceiptDataFromPosOrder({
+      ...posOrder, refundDueMinor: 800,
+      payments: [{ id: 'p1', storePaymentId: 'store-p1', method: 'external', amountMinor: 1100 }],
+    }, { storeName: 'Corner Cafe' });
+    expect(reopened.refundDueMinor).toBe(800);
+    const lines = textLines(bytes(reopened, 32));
+    expect(lines).toContain(`Refund due${sp(17)}${String.fromCharCode(0x9c)}8.00`);
+    expect(lines.some((line) => line.startsWith('Change'))).toBe(false);
   });
 
   it('wraps names at the column boundary and keeps the amount on the last line', () => {

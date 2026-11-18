@@ -286,6 +286,7 @@ export function wcposReceiptData(
       // Gap §5.4: the tendered sum and the change TallyUI recorded, where v2 defaults to the total and 0.
       paid_total: payments.length > 0 ? major(sum(source.payments.map((payment) => payment.amountMinor))) : totalIncl,
       change_total: major(source.changeMinor ?? 0),
+      ...(source.refundDueMinor && source.refundDueMinor > 0 ? { refund_due_total: major(source.refundDueMinor) } : {}),
       total_qty: lineSum((calc) => calc.qty), line_count: calcs.length,
     },
     tax: {

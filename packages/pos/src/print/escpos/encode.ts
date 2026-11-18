@@ -114,6 +114,7 @@ export function encodeEscPos(receipt: ReceiptData, options: EncodeEscPosOptions)
     pair(payment.reference ? `${payment.method} ${payment.reference}` : payment.method, payment.amount);
   }
   if (data.change) pair('Change', data.change);
+  if (data.refundDue) pair('Refund due', data.refundDue);
   if (data.note) {
     out.feed(1);
     print(block(data.note));

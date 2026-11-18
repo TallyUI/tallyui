@@ -4,10 +4,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { StoreSettings } from '@tallyui/core';
+import type { OrderReopenEnvelope, StoreOrder, StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, orderDraftSchema, restoreOrderDraft, writeOrderDraft } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
+import type { CommandTransport } from '../outbox/types';
 import { posOrderCollection, type PosOrder } from '../pos-order';
+import { isReopenOffered, reopenStoreOrder } from '../reopen';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { SALE_PARTLY_PAID, useSale } from './use-sale';
@@ -180,6 +182,38 @@ describe('useSale locked legs', () => {
     expect(result.current.order.lineItems).toEqual([]);
     expect(result.current.order.payments).toEqual([]);
     expect(result.current.order.storeOrder).toBeUndefined();
+  });
+
+  it('a reopened sale closed with closeSale can be reopened again', async () => {
+    const revision = 'sha256:0dde575797fdab13e429b1132686c07af48e46096a03ea7adc6c3027082b8d2a';
+    const read: StoreOrder = {
+      id: '41', reference: '41', revision, status: 'pos-open', placedAt: '2026-11-17T10:00:00.000Z', currency: 'EUR',
+      pricesIncludeTax: false, customer: null,
+      lines: [{ id: '7', productId: 'coffee', name: 'Coffee', quantity: 1, subtotalMinor: 1000, totalMinor: 1000, subtotalTaxMinor: 0, taxMinor: 0 }],
+      fees: [], shipping: [], coupons: [], refunds: [], discountMinor: 0, discountTaxMinor: 0, taxLines: [],
+      taxMinor: 0, totalMinor: 1000, payments: [{ id: 'p1', method: 'pos_cash', amountMinor: 500 }],
+    };
+    const transport: CommandTransport<OrderReopenEnvelope> = {
+      send: async ([envelope]) => ({
+        kind: 'results', results: [{ id: envelope!.id, status: 'applied', reopen: { orderId: '41', status: 'pos-open', revision } }],
+      }),
+    };
+    const { result } = await emptySale();
+    const reopen = () => reopenStoreOrder(read, {
+      transport, getOrders: async () => [read], openHere: result.current.holdsStoreOrder,
+      identity: { cashierRef: '7', registerId: 'register-1', deviceId: 'till-1' },
+      currency: 'EUR', taxContext, catalogue: () => ({}),
+    });
+    const first = await reopen();
+    if (first.kind !== 'reopened') throw new Error(`Expected reopened, got ${first.kind}`);
+    act(() => { expect(result.current.openStoreOrder(first.order)).toBeNull(); });
+    act(() => { expect(result.current.closeSale()).toBeNull(); });
+    expect(await result.current.holdsStoreOrder('41')).toBe(false);
+    expect(isReopenOffered({ orderReopen: 1, orderCreate: 5, online: true, storageDegraded: false, orderId: '41' })).toBe(true);
+    const second = await reopen();
+    if (second.kind !== 'reopened') throw new Error(`Expected reopened, got ${second.kind}`);
+    act(() => { expect(result.current.openStoreOrder(second.order)).toBeNull(); });
+    expect(result.current.order.storeOrder).toMatchObject({ id: '41', revision });
   });
 
   it('closeSale refuses after an unlocked captured leg is added', async () => {
