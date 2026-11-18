@@ -56,6 +56,18 @@
   --color-bad: #dc2626;
   --color-bad-bg: #fff0ee;
 
+  /* Charts (WCPOS v2): shared categories, independent of theme accents; chart-N = cN */
+  --color-c1: #0031cc;
+  --color-c2: #00a166;
+  --color-c3: #d08300;
+  --color-c4: #a355b4;
+  --color-c5: #8d94a0;
+  --color-chart-1: #0031cc;
+  --color-chart-2: #00a166;
+  --color-chart-3: #d08300;
+  --color-chart-4: #a355b4;
+  --color-chart-5: #8d94a0;
+
   /* Border / Input / Ring */
   --color-border: #e5e7eb;
   --color-input: #d1d5db;
@@ -131,6 +143,18 @@
     --color-bad: #dc2626;
     --color-bad-bg: #fff0ee;
 
+    /* Charts (WCPOS v2): shared categories, independent of theme accents; chart-N = cN */
+    --color-c1: #0031cc;
+    --color-c2: #00a166;
+    --color-c3: #d08300;
+    --color-c4: #a355b4;
+    --color-c5: #8d94a0;
+    --color-chart-1: #0031cc;
+    --color-chart-2: #00a166;
+    --color-chart-3: #d08300;
+    --color-chart-4: #a355b4;
+    --color-chart-5: #8d94a0;
+
     /* Border / Input / Ring */
     --color-border: #e5e7eb;
     --color-input: #d1d5db;
@@ -204,6 +228,18 @@
     --color-warning-bg: #3b2b0d;
     --color-bad: #f85149;
     --color-bad-bg: #442321;
+
+    /* Charts (WCPOS v2): shared categories, independent of theme accents; chart-N = cN */
+    --color-c1: #0069bd;
+    --color-c2: #00a166;
+    --color-c3: #df911a;
+    --color-c4: #a355b4;
+    --color-c5: #95a0ab;
+    --color-chart-1: #0069bd;
+    --color-chart-2: #00a166;
+    --color-chart-3: #df911a;
+    --color-chart-4: #a355b4;
+    --color-chart-5: #95a0ab;
 
     /* Border / Input / Ring */
     --color-border: #3d444d;
