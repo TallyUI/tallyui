@@ -17,7 +17,8 @@ export function SettingsGroup({ title, description, children, className, ...view
         <Text className="text-sm font-semibold text-foreground">{title}</Text>
         {description && <Text className="text-xs text-muted-foreground">{description}</Text>}
       </View>
-      <View className="rounded-lg border border-border bg-card">{children}</View>
+      {/* A group with nothing in it, such as Printers while loading, shows its header and no empty card, as v2's section does. */}
+      {children != null && children !== false && <View className="rounded-lg border border-border bg-card">{children}</View>}
     </View>
   );
 }
