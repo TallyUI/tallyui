@@ -3,7 +3,7 @@ import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
 import {
   Combobox, ComboboxTrigger, ComboboxInput,
-  ComboboxContent, ComboboxItem, ComboboxEmpty,
+  ComboboxContent, ComboboxList, ComboboxItem, ComboboxEmpty,
   Text, VStack,
 } from '@tallyui/components';
 
@@ -47,12 +47,14 @@ export default function ComboboxScreen() {
               <ComboboxInput placeholder="Search frameworks..." />
             </ComboboxTrigger>
             <ComboboxContent>
-              {frameworks.map((f) => (
-                <ComboboxItem key={f.value} value={f.value} label={f.label}>
-                  {f.label}
-                </ComboboxItem>
-              ))}
-              <ComboboxEmpty />
+              <ComboboxList>
+                {frameworks.map((f) => (
+                  <ComboboxItem key={f.value} value={f.value} label={f.label}>
+                    {f.label}
+                  </ComboboxItem>
+                ))}
+                <ComboboxEmpty />
+              </ComboboxList>
             </ComboboxContent>
           </Combobox>
           <Text className="text-sm text-muted-foreground">
@@ -70,12 +72,14 @@ export default function ComboboxScreen() {
               <ComboboxInput placeholder="Search countries..." />
             </ComboboxTrigger>
             <ComboboxContent>
-              {countries.map((c) => (
-                <ComboboxItem key={c.value} value={c.value} label={c.label}>
-                  {c.label}
-                </ComboboxItem>
-              ))}
-              <ComboboxEmpty />
+              <ComboboxList>
+                {countries.map((c) => (
+                  <ComboboxItem key={c.value} value={c.value} label={c.label}>
+                    {c.label}
+                  </ComboboxItem>
+                ))}
+                <ComboboxEmpty />
+              </ComboboxList>
             </ComboboxContent>
           </Combobox>
           <Text className="text-sm text-muted-foreground">
@@ -90,11 +94,13 @@ export default function ComboboxScreen() {
               <ComboboxInput placeholder="Pick a color..." />
             </ComboboxTrigger>
             <ComboboxContent testID="combobox-fixed-content">
-              <ComboboxItem value="red" label="Red">Red</ComboboxItem>
-              <ComboboxItem value="green" label="Green">Green</ComboboxItem>
-              <ComboboxItem value="blue" label="Blue">Blue</ComboboxItem>
-              <ComboboxItem value="purple" label="Purple">Purple</ComboboxItem>
-              <ComboboxEmpty />
+              <ComboboxList>
+                <ComboboxItem value="red" label="Red">Red</ComboboxItem>
+                <ComboboxItem value="green" label="Green">Green</ComboboxItem>
+                <ComboboxItem value="blue" label="Blue">Blue</ComboboxItem>
+                <ComboboxItem value="purple" label="Purple">Purple</ComboboxItem>
+                <ComboboxEmpty />
+              </ComboboxList>
             </ComboboxContent>
           </Combobox>
         </VStack>

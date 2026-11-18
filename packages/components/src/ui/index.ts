@@ -72,7 +72,7 @@ export {
 // Combobox
 export {
   Combobox, ComboboxTrigger, ComboboxInput, ComboboxContent,
-  ComboboxItem, ComboboxEmpty,
+  ComboboxList, ComboboxItem, ComboboxEmpty,
 } from './combobox';
 
 // Dropdown Menu

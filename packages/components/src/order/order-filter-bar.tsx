@@ -12,7 +12,7 @@ import { cn } from '@tallyui/theme';
 import { rangeLabel } from '../reports/date-range-menu';
 import { Button } from '../ui/button';
 import { Calendar } from '../ui/calendar';
-import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxTrigger } from '../ui/combobox';
+import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '../ui/combobox';
 import { XIcon } from '../ui/icon/x-icon';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger } from '../ui/select';
@@ -114,12 +114,14 @@ function ComboboxPill({ id, offLabel, placeholder, value, options, onSearch, onP
         <View className="border-b border-border px-2 py-1.5">
           <ComboboxInput testID={`${id}-search`} placeholder={placeholder} />
         </View>
-        {shown.map((option) => (
-          <ComboboxItem key={option.value} testID={`${id}-${option.value}`} value={option.value} label={option.label}>
-            <Text className="text-sm text-popover-foreground">{option.label}</Text>
-          </ComboboxItem>
-        ))}
-        {shown.length === 0 ? <ComboboxEmpty /> : null}
+        <ComboboxList>
+          {shown.map((option) => (
+            <ComboboxItem key={option.value} testID={`${id}-${option.value}`} value={option.value} label={option.label}>
+              <Text className="text-sm text-popover-foreground">{option.label}</Text>
+            </ComboboxItem>
+          ))}
+          {shown.length === 0 ? <ComboboxEmpty /> : null}
+        </ComboboxList>
       </ComboboxContent>
     </Combobox>
   );

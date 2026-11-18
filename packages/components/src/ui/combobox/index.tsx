@@ -51,7 +51,9 @@ const ComboboxContent = React.forwardRef<
         <ComboboxPrimitive.Content
           ref={ref}
           className={cn(
-            'z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md',
+            // v2's list size (monorepo combobox.tsx `max-h-75 w-80`): 20rem wide, 18.75rem tall at
+            // most. The primitive's inline minWidth (the trigger's width) still wins over `w-80`.
+            'z-50 max-h-75 w-80 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md',
             className,
           )}
           {...props}
@@ -63,6 +65,23 @@ const ComboboxContent = React.forwardRef<
   );
 });
 ComboboxContent.displayName = 'ComboboxContent';
+
+// v2's list (monorepo combobox.tsx ComboboxList): the part of Content that scrolls past the cap,
+// so an Input placed above it in Content stays put. Not v2's flex-1 with basis 0: under a
+// max-height alone that collapses a short list to 0 (Chromium, react-native-web). Grow 0,
+// shrink 1 keeps a short list at its natural height and shrinks a long one to fit the cap.
+const ComboboxList = React.forwardRef<
+  ScrollView,
+  React.ComponentPropsWithoutRef<typeof ScrollView>
+>(function ComboboxList({ className, style, ...props }, ref) {
+  return (
+    // "handled": the first tap on an item, with the Input's keyboard up on native, selects it
+    // instead of only closing the keyboard.
+    <ScrollView ref={ref} keyboardShouldPersistTaps="handled" className={cn(className)}
+      style={[{ flexGrow: 0, flexShrink: 1 }, style]} {...props} />
+  );
+});
+ComboboxList.displayName = 'ComboboxList';
 
 const ComboboxItem = React.forwardRef<
   React.ComponentRef<typeof ComboboxPrimitive.Item>,
@@ -94,5 +113,5 @@ const ComboboxEmpty = React.forwardRef<
 ComboboxEmpty.displayName = 'ComboboxEmpty';
 
 export {
-  Combobox, ComboboxTrigger, ComboboxInput, ComboboxContent, ComboboxItem, ComboboxEmpty,
+  Combobox, ComboboxTrigger, ComboboxInput, ComboboxContent, ComboboxList, ComboboxItem, ComboboxEmpty,
 };
