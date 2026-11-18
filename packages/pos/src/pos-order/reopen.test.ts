@@ -120,6 +120,17 @@ it('keeps line attributes on the reopened sale', async () => {
   expect(saved.lineItems[1]).not.toHaveProperty('attributes');
 });
 
+it("keeps each payment's methodId on the reopened sale and leaves it off a payment without one (condition 5)", async () => {
+  const order = storedOrder();
+  order.payments[1] = { ...order.payments[1], methodId: 'stripe' };
+  await db.pos_orders.insert(order);
+  const saved = await draft(await reopenRefusedOrder(order.id, deps()));
+  expect(saved.payments[1]).toMatchObject({ method: 'external', methodId: 'stripe', reference: 'card-123' });
+  expect(saved.payments[0]).not.toHaveProperty('methodId');
+  expect(restoreOrderDraft(saved, { currency: order.currency, taxContext }).getSnapshot().payments.map((payment) => payment.methodId))
+    .toEqual([undefined, 'stripe']);
+});
+
 it('keeps Any picks on the reopened sale (#495)', async () => {
   const order = storedOrder();
   order.lines[0].attributes = { Size: 'M', Logo: 'Cat' };

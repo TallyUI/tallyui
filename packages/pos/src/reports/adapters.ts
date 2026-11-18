@@ -1,4 +1,4 @@
-import type { StoreOrder } from '@tallyui/core';
+import { legMethodId, type StoreOrder } from '@tallyui/core';
 import { tillPayments } from '../pos-order/till-payments';
 import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
@@ -18,7 +18,7 @@ function joinedLine(line: { productId?: string; variantId?: string; quantity: nu
   };
 }
 
-export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin): ReportOrder {
+export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin, methodTitle?: (methodId: string) => string | undefined): ReportOrder {
   const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
   const taxes = recordedTaxByRate(order) ?? taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding);
   const till = tillPayments(order.payments);
@@ -36,7 +36,11 @@ export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin): Repor
         taxMinor, ...joinedLine(line, join),
       };
     }),
-    payments: till.map(({ method, amountMinor }) => ({ method, amountMinor })),
+    payments: till.map((payment) => {
+      const method = legMethodId(payment);
+      const label = payment.methodId !== undefined ? methodTitle?.(method) : undefined;
+      return { method, ...(label ? { label } : {}), amountMinor: payment.amountMinor };
+    }),
     ...(order.storeOrderId !== undefined ? { paidEarlierMinor: amountOf(order.payments) - amountOf(till) } : {}),
     taxes: taxes.map((row) => ({
       ratePpm: row.ratePpm, ...(row.code !== undefined ? { code: row.code } : {}),

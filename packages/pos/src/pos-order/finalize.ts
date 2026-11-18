@@ -237,7 +237,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const shipping = order.shipping?.map((charge) => ({ ...charge, id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
   const payments: PosOrderPayment[] = order.payments.map((payment) => ({
     id: newId(), ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
-    method: payment.method as PosOrderPayment['method'], amountMinor: payment.amountMinor,
+    method: payment.method as PosOrderPayment['method'],
+    ...(payment.methodId !== undefined && sendable(payment.methodId, 64) ? { methodId: payment.methodId } : {}),
+    amountMinor: payment.amountMinor,
     ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
   }));
   // A warning naming a payment the order no longer has is dropped and logged, never thrown: this runs at sale completion.

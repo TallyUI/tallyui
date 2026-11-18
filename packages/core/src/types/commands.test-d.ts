@@ -64,6 +64,7 @@ describe('command types', () => {
 
   it('defines the payment methods', () => {
     expectTypeOf<OrderCreatePayment['method']>().toEqualTypeOf<'cash' | 'external'>();
+    expectTypeOf<OrderCreatePayment['methodId']>().toEqualTypeOf<string | undefined>();
   });
 
   it('defines the warning codes', () => {
@@ -74,11 +75,11 @@ describe('command types', () => {
     expectTypeOf<Extract<CommandWarning, { code: 'total_mismatch' }>['bridgeMinor']>().toEqualTypeOf<number | undefined>();
   });
 
-  it('pins the envelope versions: 2 for a discounted order.create (ADR-062), 3 for one carrying ADR-065\'s figures, 4 with net discounts (#286), 6 with coupons (ADR-077), 7 with the sale\'s note (ADR-083), 8 with the tax address (#722), 9 with coupon lines (#790)', () => {
-    expectTypeOf<OrderCreateEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9>();
-    expectTypeOf<CommandEnvelope<OrderCreatePayload>['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9>();
+  it('pins the envelope versions: 2 for a discounted order.create (ADR-062), 3 for one carrying ADR-065\'s figures, 4 with net discounts (#286), 6 with coupons (ADR-077), 7 with the sale\'s note (ADR-083), 8 with the tax address (#722), 9 with coupon lines (#790), 10 with payment method ids', () => {
+    expectTypeOf<OrderCreateEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10>();
+    expectTypeOf<CommandEnvelope<OrderCreatePayload>['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10>();
     expectTypeOf<RegisterCommandEnvelope['version']>().toEqualTypeOf<number>();
-    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9>();
+    expectTypeOf<CommandEnvelope['version']>().toEqualTypeOf<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10>();
     expectTypeOf<OrderCreateCoupon['lines']>().toEqualTypeOf<OrderCreateCouponLine[] | undefined>();
     expectTypeOf<OrderCreatePayload['discountMinor']>().toEqualTypeOf<number | undefined>();
     expectTypeOf<OrderCreatePayload['sessionId']>().toEqualTypeOf<string | undefined>();

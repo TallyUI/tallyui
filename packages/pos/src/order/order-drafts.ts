@@ -130,6 +130,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.status !== undefined ? { status: payment.status } : {}),
       ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
       ...(payment.locked !== undefined ? { locked: payment.locked } : {}),
+      ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
     });
   }
   return builder;

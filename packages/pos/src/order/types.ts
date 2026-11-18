@@ -160,6 +160,8 @@ export interface Payment {
   /** A leg the store already holds: never removed or moved, only sent back with its storePaymentId */
   locked?: true;
   method: string;
+  /** The payment method's own id on the platform, kept for labels and takings (`legMethodId`); `method` decides cash. */
+  methodId?: string;
   /** Absent means captured; only captured legs count toward paidMinor. */
   status?: PaymentLegStatus;
   // For cash, record the full amount tendered here, not the capped amount: `finalizeOrder`

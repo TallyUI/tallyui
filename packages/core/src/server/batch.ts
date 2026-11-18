@@ -147,6 +147,8 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   const coupons = Array.isArray(payload.coupons) ? payload.coupons.filter(coupon => typeof coupon === 'object' && coupon !== null && !Array.isArray(coupon)) : []
   const couponLines = coupons.filter(coupon => coupon.lines !== undefined)
   const couponsWithoutLines = coupons.filter(coupon => coupon.lines === undefined)
+  const paymentsWithMethodId = Array.isArray(payload.payments) && payload.payments.some(payment =>
+    typeof payment === 'object' && payment !== null && (payment as { methodId?: unknown }).methodId !== undefined)
   let versionError = command.version < 5 && v5Fields.length ? v5Fields.map(field => `${field} requires version 5`).join('; ')
     : command.version < 6 && v6Fields.length ? v6Fields.map(field => `${field} requires version 6`).join('; ')
     : command.version < 7 && payload.note !== undefined ? 'note requires version 7'
@@ -154,6 +156,7 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     : command.version < 8 && (payload.customer?.billing !== undefined || payload.customer?.shipping !== undefined)
       ? 'customer address requires version 8'
     : command.version < 9 && couponLines.length ? 'coupons[].lines requires version 9'
+    : command.version < 10 && paymentsWithMethodId ? 'payments[].methodId requires version 10'
     : command.version >= 9 && couponsWithoutLines.length ? 'version 9 requires coupons[].lines'
     : command.version === 8 && payload.taxAddress === undefined ? 'version 8 requires taxAddress'
     : command.version >= 9 && payload.taxAddress === undefined && (payload.customer?.billing !== undefined || payload.customer?.shipping !== undefined)
