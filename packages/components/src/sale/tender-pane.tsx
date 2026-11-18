@@ -1,6 +1,6 @@
 /**
  * The tender pane, laid out as WCPOS v2's (monorepo main, packages/core/src/screens/main/pos/checkout/tender/):
- * BalanceHeadline and LedgerLegs from ledger-pane.tsx, then the method tiles, entry, quick-cash chips,
+ * BalanceHeadline from ledger-pane.tsx, LedgerLegs (now tender-ledger.tsx's TenderLedger), then the method tiles, entry, quick-cash chips,
  * keypad and commit from tender-pane.tsx's TenderKeypad. Copy is read with useT, under v2's catalogue keys. Every figure
  * comes from pos (useSale's captured-only totals, tenderRounding, quickTenderedAmounts, planLegs).
  * The caption row and the hero figure follow tender-pane.tsx's caption row and AmountFigure (v2 :390-459).
@@ -9,13 +9,14 @@ import { useEffect, useState, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { defaultPaymentMethods, useFormatMoney, minorUnitDigits, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
-  activePlan, canVoidLeg, changeMinor, countsTowardPaid, evenSplitShareMinor, isInMotion, legStatus, planLegs, quickTenderedAmounts, tenderRounding,
-  type PaymentLegStatus, type TenderAction, type TenderKey, type TenderState, type useSale,
+  activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, isInMotion, legStatus, planLegs, quickTenderedAmounts, tenderRounding,
+  type TenderAction, type TenderKey, type TenderState, type useSale,
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { QUICK_CASH_STEPS } from '../checkout/cash-tendered';
 import { useT } from '../i18n';
 import { DIGIT_ROWS, Keypad } from '../input/keypad';
+import { TenderLedger } from './tender-ledger';
 import { BanknoteIcon } from '../ui/icon/banknote-icon';
 import { CreditCardIcon } from '../ui/icon/credit-card-icon';
 
@@ -29,21 +30,14 @@ export interface TenderPaneProps {
   dispatch: (action: TenderAction) => void;
   /** Defaults to `defaultPaymentMethods()`; only `cash` and `external`, the order.create methods, are offered. */
   methods?: PaymentMethodDescriptor[];
+  /** Draws the payments ledger in the pane. Pass `false` when the host shows it in the cart column, as v2 does (Cart's `tenderLedger`). Default `true`. */
+  ledger?: boolean;
 }
 
 /** order.create's bound on `payments[].reference`, in UTF-16 units. */
 const REFERENCE_MAX = 255;
 /** v2 tender-pane.tsx: five method tiles a row on a wide pane (TileGrid columns). */
 const TILE_COLUMNS = 5;
-/** v2 labels.ts statusLabel, as catalogue keys. */
-const STATUS_LABEL: Record<PaymentLegStatus, string> = {
-  pending: 'pos_checkout.status_pending', authorized: 'pos_checkout.status_authorized', captured: 'pos_checkout.status_captured',
-  failed: 'pos_checkout.status_failed', voided: 'pos_checkout.status_voided',
-};
-/** v2 labels.ts statusVariant: coloured by what the cashier has to do about the leg. */
-const STATUS_TONE: Record<PaymentLegStatus, string> = {
-  pending: 'text-muted-foreground', authorized: 'text-success', captured: 'text-success', failed: 'text-destructive', voided: 'text-muted-foreground',
-};
 /** v2 tender-pane.tsx keypadRows: 123 / 456 / 789, then C, 0, backspace. No decimal key: digits shift in from the right. */
 const keypadRows = (t: ReturnType<typeof useT>) => [...DIGIT_ROWS,
   [{ name: 'clear', label: t('pos_checkout.clear_amount'), text: 'C' }, { name: '0', label: '0' }, { name: 'backspace', label: t('common.backspace'), text: '⌫' }]];
@@ -55,7 +49,7 @@ const SPLIT_WAYS = [2, 3, 4, 5, 6];
 const rowsSince = (payments: readonly Leg[], from: number) =>
   payments.filter(countsTowardPaid).slice(from).map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
 
-export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps): JSX.Element | null {
+export function TenderPane({ sale, state, dispatch, methods, ledger = true }: TenderPaneProps): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const { order, stage } = sale;
   const t = useT();
@@ -91,8 +85,6 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
   const thisPaymentMinor = planned ? planned.thisPaymentMinor : balance;
   const dueMinor = planned && planned.thisPaymentMinor < balance ? planned.thisPaymentMinor : figures.roundedDueMinor;
   const chips = givesChange ? quickTenderedAmounts(dueMinor, QUICK_CASH_STEPS.map((step) => step * 10 ** minorUnitDigits(order.currency))) : [];
-  const settled = order.payments.some(countsTowardPaid);
-  const firstPending = order.payments.find((leg) => legStatus(leg) === 'pending');
   const [onlyLeg] = order.payments;
   // startTender('external') records the card leg for the total: its reference is edited in place, as before.
   const cardReference = order.payments.length === 1 && onlyLeg.method === 'external' && legStatus(onlyLeg) === 'captured' && balance === 0;
@@ -141,27 +133,7 @@ export function TenderPane({ sale, state, dispatch, methods }: TenderPaneProps):
       </>}
     </View> : null}
 
-    <View testID="tender-ledger" className="gap-1">
-      {order.payments.length === 0 ? <Text className="text-muted-foreground">{t('pos_checkout.no_payments_yet')}</Text> : order.payments.map((leg) => {
-        const status = legStatus(leg);
-        const voided = status === 'voided';
-        const descriptor = descriptorOf(leg.method);
-        return <View key={leg.id} testID={`tender-leg-${leg.id}`} className="gap-1 border-b border-border py-2">
-          <View className="flex-row items-center gap-2">
-            <Text className={cn('flex-1 font-semibold text-foreground', voided && 'line-through')}>{descriptor?.title ?? leg.method}</Text>
-            <Text className={cn('text-foreground', voided && 'line-through')}>{money(leg.amountMinor)}</Text>
-            <Text testID={`tender-leg-${leg.id}-status`} className={cn('text-sm font-semibold', STATUS_TONE[status])}>{voided ? t('pos_checkout.cancelled') : t(STATUS_LABEL[status])}</Text>
-          </View>
-          {leg.reference ? <Text className="text-sm text-muted-foreground">{leg.reference}</Text> : null}
-          {leg === firstPending ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.next_leg')}</Text> : null}
-          {descriptor && canVoidLeg(leg, descriptor) ? <Pressable testID={`tender-leg-${leg.id}-void`} accessibilityRole="button" accessibilityLabel={t('pos_checkout.cancel_payment')}
-            onPress={() => sale.voidTender(leg.id)} className="self-start min-h-11 justify-center px-2">
-            <Text className="text-destructive">{t('pos_checkout.cancel_payment')}</Text>
-          </Pressable> : null}
-        </View>;
-      })}
-      {balance === 0 && settled ? <Text className="text-sm text-success">{t('pos_checkout.paid_in_full')}</Text> : null}
-    </View>
+    {ledger ? <TenderLedger sale={sale} methods={methods} /> : null}
 
     {cardReference ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
       value={onlyLeg.reference ?? ''} onChangeText={(text) => sale.setTender({ method: 'external', amountMinor: onlyLeg.amountMinor, reference: text })}

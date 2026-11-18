@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
+import type { PaymentMethodDescriptor } from '@tallyui/core';
 import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
 import { CartChargeLine } from '../cart/cart-charge-line';
 import { MotionRows } from '../cart/cart-row-motion';
@@ -12,10 +13,11 @@ import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
 import { LinePopover } from './line-popover';
 import { OrderNoteSheet } from './order-note-sheet';
+import { TenderLedger } from './tender-ledger';
 import { ShoppingCartIcon } from '../ui';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, noteSheet, lineEditor = 'inline',
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, noteSheet, tenderLedger, lineEditor = 'inline',
   columns,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
@@ -45,6 +47,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * names the note (default "Customer note"; a platform whose note the customer never sees passes its own, e.g.
      * "Order note"). Needs `checkout`; when given, it replaces `checkout.note`. */
     noteSheet?: { label?: string };
+    /** v2's checkout cart (stilled-cart.tsx): while `sale.stage` is tender, the payments ledger (each leg with its status and Cancel payment, then Total, Paid and Remaining) sits under the totals in place of the foot. `methods` names the legs, as on Tender. Pair it with `<Tender ledger={false} />`. */
+    tenderLedger?: { methods?: PaymentMethodDescriptor[] };
     /** `popover`: tapping a line's quantity or price opens v2's keypad (WCPOS cart cells/quantity-keypad.tsx and
      * cells/price.tsx), the price one with the quick-discount keys and the struck regular price. Popover mode draws no
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
@@ -188,7 +192,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         shipping={money(shipping.reduce((sum, row) => sum + row.amountMinor, 0))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
-      {checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
+      {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
         actions={noteSheet ? [{ label: 'Order details', onPress: () => setNoteOpen(true) }, ...(checkout.actions ?? [])] : checkout.actions}
         note={noteSheet ? { text: order.note, onPress: () => setNoteOpen(true) } : checkout.note} disabled={!order.lineItems.length} />
         {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}

@@ -26,6 +26,8 @@ const [state, dispatch] = useReducer(tenderReducer, { methodId: 'cash', balanceM
 
 The headline's caption reads To pay, or Remaining once money is paid (pending legs never count). The balance sits beside it when it differs from the entry, and the entry is the large figure underneath. Under the caption are the amount paid so far and any change. Each payment leg shows its method, amount and status, the next pending leg is marked Next, and Cancel payment shows where the method can void the leg.
 
+Pass `ledger={false}` when the host shows the legs in the cart column with Cart's `tenderLedger`, as WCPOS v2 does.
+
 While a balance remains, the cashier picks Cash or Card terminal and sets the entry on the keypad, where digits shift in from the right, or, for cash, with a quick-cash chip: the exact amount, then the next 5, 10 and 50. A chip or a keypad press only sets the entry. A hint under it reads the change, what is left after a part payment, or that the method can't give change. `Take {amount} in {method}` records the leg with `sale.addTender`, and the entry is pre-typed with the next leg's amount. Card terminal also takes a terminal reference.
 
 While something is due, Split on the headline shows Split the rest with 2 to 6 equal ways; after a typed amount, the ways divide what is left after this payment. A way sets the plan and the entry is pre-typed with each share. A method tile keeps the share that is due, and pressing Split again clears the plan.
@@ -40,3 +42,4 @@ Complete sale is enabled once nothing is due and no leg is in motion, and calls 
 | `state` | `TenderState` | required | The tender reducer's state, from `tenderReducer` in `@tallyui/pos` |
 | `dispatch` | `(action: TenderAction) => void` | required | The reducer's dispatch; the pane sends method picks, keypad keys, entries and recorded legs |
 | `methods` | `PaymentMethodDescriptor[]` | `defaultPaymentMethods()` | The methods offered; only `cash` and `external` are shown |
+| `ledger` | `boolean` | `true` | Draws the payments ledger in the pane; pass `false` when Cart's `tenderLedger` shows it in the cart column |
