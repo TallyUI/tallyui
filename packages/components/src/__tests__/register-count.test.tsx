@@ -64,6 +64,7 @@ async function renderCounting(
 const enter = (value: string) => fireEvent.change(screen.getByTestId('count-amount'), { target: { value } });
 const closeButton = () => screen.getByTestId('count-close') as HTMLButtonElement;
 const openTiles = () => fireEvent.click(screen.getByTestId('count-denominations'));
+const openTenders = async () => fireEvent.click(await screen.findByTestId('count-other-tenders'));
 const amount = () => (screen.getByTestId('count-amount') as HTMLInputElement).value;
 const key = (name: string) => fireEvent.click(screen.getByTestId(`count-key-${name}`));
 
@@ -148,6 +149,7 @@ it('rejects blank, negative-shaped, exponent and overflow counts, keeping Close 
 it('keeps an entered other tender, and closes with both counted in minor units', async () => {
   const session = await renderCounting();
   await sale('order-1', session.id, [{ method: 'external', amountMinor: 2200 }]);
+  await openTenders();
   await waitFor(() => expect(screen.getByTestId('count-tender-external')).toBeTruthy());
   expect(screen.getByTestId('count-tender-external-label').textContent).toBe('Card counted (€)');
   enter('100.00');
@@ -158,6 +160,30 @@ it('keeps an entered other tender, and closes with both counted in minor units',
     const [row] = await db.register_sessions.find({ selector: { status: 'closed' } }).exec();
     expect(row?.counted).toEqual({ cash: 10000, external: 2200 });
   });
+});
+
+it('other tenders fold under Other tenders, closed at first', async () => {
+  const session = await renderCounting();
+  await sale('order-1', session.id, [{ method: 'external', amountMinor: 2200 }]);
+  const toggle = await screen.findByTestId('count-other-tenders');
+  expect(screen.queryByTestId('count-tender-external')).toBeNull();
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(toggle);
+  expect(screen.getByTestId('count-tender-external')).toBeTruthy();
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.change(screen.getByTestId('count-tender-external'), { target: { value: '22' } });
+  fireEvent.click(toggle);
+  expect(screen.queryByTestId('count-tender-external')).toBeNull();
+  fireEvent.click(toggle);
+  expect((screen.getByTestId('count-tender-external') as HTMLInputElement).value).toBe('22');
+});
+
+it('no other tenders, no toggle', async () => {
+  const session = await renderCounting();
+  await sale('order-1', session.id, [{ method: 'cash', amountMinor: 500 }]);
+  enter('1.00');
+  await waitFor(() => expect(screen.getByTestId('count-variance').textContent).toContain('€105.00'));
+  expect(screen.queryByTestId('count-other-tenders')).toBeNull();
 });
 
 it('blind mode hides the variance line but still refuses to close over threshold', async () => {
@@ -296,6 +322,7 @@ it('calls approve with the count typed, cash and other tenders in minor units', 
   const approve = vi.fn(async (_input: { counted: Record<string, number> }) => null);
   const { session } = await renderSpied(approve);
   await sale('order-1', session.id, [{ method: 'external', amountMinor: 2200 }]);
+  await openTenders();
   await waitFor(() => expect(screen.getByTestId('count-tender-external')).toBeTruthy());
   enter('1.00');
   fireEvent.change(screen.getByTestId('count-tender-external'), { target: { value: '21.50' } });

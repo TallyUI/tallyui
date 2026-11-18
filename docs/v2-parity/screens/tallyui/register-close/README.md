@@ -1,4 +1,4 @@
-# Register close: RegisterCount keypad-first (R3a)
+# Register close: RegisterCount keypad-first (R3a) and Other tenders (R3b)
 
 TallyUI demo `/pos/register/count` (apps/demo: a counting session expecting €200.00 cash, `onPrint` wired to a
 demo line), Playwright Chromium, 1280x800, JPEG quality 70, light and dark (`colorScheme`).
@@ -9,11 +9,14 @@ demo line), Playwright Chromium, 1280x800, JPEG quality 70, light and dark (`col
   Tab out of the entry: the keypad has folded away, "Tap the amount to edit it" shows, the variance reads Exact.
 - `tallyui-notes-and-coins-open-light.jpg`, `tallyui-notes-and-coins-open-dark.jpg`: "Count by notes and coins" open,
   two €50 tiles tapped: the amount reads 100.00 and the tile tap has folded the keypad.
+- `tallyui-other-tenders-open-light.jpg`, `tallyui-other-tenders-open-dark.jpg`: after `5` on the keypad, "Other
+  tenders" pressed open (the demo seeds one €22.00 card sale): the keypad has folded, the variance reads €195.00 short,
+  and an empty "Card counted (€)" field shows under the open fold.
 
 No page errors in the run.
 
 ## v2
 
 `docs/v2-parity/screens/v2/register-close.jpg` is v2's register close. This PR ports its keypad-first amount, the
-"Count by notes and coins" fold and the "Close & print" label. Its count note, "Other tenders" fold and Expected /
-Short / Over result band are later PRs.
+"Count by notes and coins" fold and the "Close & print" label. Its count note and Expected / Short / Over result band
+are later PRs.

@@ -22,6 +22,8 @@ import { RegisterCount } from '@tallyui/components';
 
 Renders the cash amount with its keypad, which folds away once a valid amount loses focus (tap the amount to edit it again), a closed "Count by notes and coins" section of denomination tiles, other tender inputs, and Back to selling and Close register buttons. With `onPrint`, Close reads "Close & print" and prints the Z report once the close lands. Non-blind counts show expected cash and variance; closing above the variance threshold requires approval, and no session renders nothing.
 
+The non-cash tender inputs sit under an "Other tenders" toggle, which is closed by default and shown only when the session expects a non-cash tender.
+
 `approve` receives the count Close would use. For a store-verified approval (ADR-082), return the store's opaque `approval` and the `approvedVariance` your approval route was given (read it with `register.actions.closureVariance(counted)`); both go to `closeSession`, whose gate refuses a close whose variance has moved since. If the count is edited while `approve` is pending, or the gate refuses, Close shows `APPROVAL_REQUIRED_TEXT` and asks again on the next press. A zero-argument `approve` still works.
 
 ## Props

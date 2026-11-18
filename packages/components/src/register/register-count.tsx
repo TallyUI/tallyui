@@ -172,6 +172,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
   const [refusal, setRefusal] = useState('');
   const [keypadOpen, setKeypadOpen] = useState(true);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [tendersOpen, setTendersOpen] = useState(false);
 
   const usingTiles = Object.keys(pieces).length > 0;
   const tilesTotal = denominationTotal(pieces);
@@ -383,7 +384,20 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
           </Button>
         </View>
         )}
-        {otherMethods.map((method) => {
+        {/* Deviation from v2: v2 shows this toggle even when there is no other tender to open. */}
+        {otherMethods.length > 0 && (
+        <Button
+          testID="count-other-tenders"
+          variant="ghost"
+          className="min-h-11 flex-row justify-start gap-2 self-start px-0"
+          aria-expanded={tendersOpen}
+          onPress={() => setTendersOpen(!tendersOpen)}
+        >
+          <View className="text-muted-foreground">{tendersOpen ? <ChevronDownIcon size={18} /> : <ChevronRightIcon size={18} />}</View>
+          <Text>Other tenders</Text>
+        </Button>
+        )}
+        {tendersOpen && otherMethods.map((method) => {
           const labelId = `count-tender-${method}-label`;
           const label = `${tenderLabel(method)} counted (${currencySymbol(currency)})`;
           return (
