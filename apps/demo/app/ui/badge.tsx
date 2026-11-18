@@ -1,6 +1,6 @@
 import { ScrollView, View } from 'react-native';
 import { Stack } from 'expo-router';
-import { Badge, StatusBadge, Text } from '@tallyui/components';
+import { Badge, StatusBadge, Text, ToneDisc } from '@tallyui/components';
 
 const STATES = [['default', 'Default'], ['ok', 'Signed in'], ['warning', 'Sign in again'], ['bad', 'Out of stock'], ['info', 'Syncing'], ['muted', 'Debug']] as const;
 const LEVELS = [['default', 'action'], ['muted', 'info'], ['warning', 'warn'], ['bad', 'error'], ['info', 'sync'], ['muted', 'debug']] as const;
@@ -117,6 +117,12 @@ export default function BadgeScreen() {
             <View className="size-14 rounded-full bg-bad-bg" />
             <Text className="text-bad">bad / bad-bg</Text>
           </View>
+        </View>
+
+        <View testID="tone-disc-demo" className="gap-3">
+          <Text className="text-lg font-bold">ToneDisc</Text>
+          <View className="flex-row flex-wrap items-center gap-3">{(['ok', 'warning', 'bad', 'info', 'muted'] as const).map((tone) => <ToneDisc key={tone} tone={tone} />)}</View>
+          <View className="flex-row flex-wrap items-center gap-3">{(['sm', 'default', 'lg'] as const).map((size) => <ToneDisc key={size} tone="ok" size={size} />)}</View>
         </View>
       </ScrollView>
     </>
