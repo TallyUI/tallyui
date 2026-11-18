@@ -120,6 +120,21 @@ describe('CustomerPicker', () => {
     expect(screen.queryByPlaceholderText('email@example.com')).toBeNull();
   });
 
+  it('a create that resolves after unmount selects nothing', async () => {
+    const response = deferred<Customer>();
+    const create = vi.fn<(input: CustomerInput) => Promise<Customer>>(() => response.promise);
+    const onSelect = vi.fn();
+    const { unmount } = render(<CustomerPicker search={vi.fn()} create={create} selected={null} onSelect={onSelect} online />);
+    click('New customer');
+    fireEvent.change(screen.getByPlaceholderText('email@example.com'), { target: { value: 'alice@test.com' } });
+    click('Save Customer');
+    expect(create).toHaveBeenCalledTimes(1);
+    unmount();
+    response.resolve(alice);
+    await act(async () => {});
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it.each([
     { name: 'a network error shows the network message', error: new CustomerServiceError('network', 'offline'), message: "Couldn't reach the store. Try again.", report: false },
     { name: "a server error shows a generic message, never the backend's text", error: new CustomerServiceError('server', 'HTTP 500'), message: "The store couldn't do that. Try again.", report: false },
