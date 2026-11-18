@@ -13,6 +13,8 @@ const money = (amount: number) => formatMoney({ amount, currency: 'EUR' }) ?? ''
 const text = (testID: string) => screen.getByTestId(testID).textContent;
 const disabled = (testID: string) => screen.getByTestId(testID).getAttribute('aria-disabled') === 'true';
 const leg = (index: number) => sale.order.payments[index].id;
+/** The testIDs of the quick row's chips, or null when the row is not drawn. */
+const quick = () => screen.queryByTestId('tender-quick') && within(screen.getByTestId('tender-quick')).getAllByRole('button').map((chip) => chip.getAttribute('data-testid'));
 /**
  * Presses a keypad key by its label, within the keypad. Not `click()`, whose getByRole checks the accessible name
  * and visibility of every button in the pane on each call: with six keypad presses through it, the keypad test
@@ -305,19 +307,19 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     expect(ledgerRow(0)).toBe(`Cheque${money(2500)}CapturedCancel payment`);
   });
 
-  it('gives no change from a non-cash method that claims change: no hint, no chips, the no-change warning and no Take, as for the card', () => {
+  it('gives no change from a non-cash method that claims change: no hint, no cash chips, the no-change warning and no Take, as for the card', () => {
     const cheque = own('cheque', 'Cheque', 'other');
     const changingCheque = { ...cheque, capabilities: { ...cheque.capabilities, change: true } };
     const overpay = (tile: string) => { fireEvent.click(screen.getByTestId(tile)); for (const key of ['1', '5', '0', '0']) press(key); };
     start(1000);
     overpay('tender-method-external');
-    const card = { hint: text('tender-entry-hint'), chips: screen.queryByTestId('tender-quick'), take: disabled('tender-take') };
-    expect(card).toEqual({ hint: `Only ${money(1000)} is due — Card terminal can't give change`, chips: null, take: true });
+    const card = { hint: text('tender-entry-hint'), chips: quick(), take: disabled('tender-take') };
+    expect(card).toEqual({ hint: `Only ${money(1000)} is due — Card terminal can't give change`, chips: ['tender-quick-balance'], take: true });
     cleanup();
     start(1000, 'cash', [own('pos_cash', 'Till cash', 'cash'), changingCheque]);
     overpay('tender-method-cheque');
     expect(text('tender-entry-hint')).toBe(`Only ${money(1000)} is due — Cheque can't give change`);
-    expect(screen.queryByTestId('tender-quick')).toBeNull();
+    expect(quick()).toEqual(['tender-quick-balance']);
     expect(disabled('tender-take')).toBe(true);
   });
 
@@ -342,7 +344,7 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     fireEvent.click(screen.getByTestId('tender-method-cod'));
     for (const key of ['1', '5', '0', '0']) press(key);
     expect(text('tender-entry-hint')).toBe(`Only ${money(1000)} is due — Cash on delivery can't give change`);
-    expect(screen.queryByTestId('tender-quick')).toBeNull();
+    expect(quick()).toEqual(['tender-quick-balance']);
     expect(disabled('tender-take')).toBe(true);
     expect(sale.order.payments).toEqual([]);
     press('Clear');
@@ -351,5 +353,57 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     expect(sale.order.payments).toMatchObject([{ method: 'cash', methodId: 'cod', amountMinor: 1000 }]);
     expect(sale.order.changeDueMinor).toBe(0);
     expect(sale.order.balanceDueMinor).toBe(0);
+  });
+});
+
+describe("Tender's Full balance chip for a method that gives no change (v2 tender-pane.tsx:942-954)", () => {
+  it('T1: the card at the balance reads Full balance, with no Exact or step chips', () => {
+    start(2500);
+    fireEvent.click(screen.getByTestId('tender-method-external'));
+    expect(text('tender-entry-amount')).toBe(money(2500));
+    expect(text('tender-quick-balance')).toBe('Full balance');
+    expect(screen.queryByTestId('tender-quick-exact')).toBeNull();
+    expect(quick()).toEqual(['tender-quick-balance']);
+  });
+
+  it('T2: over the balance it reads Full balance <balance>; a press sets the entry back, clears the no-change hint and takes nothing', () => {
+    start(1000);
+    fireEvent.click(screen.getByTestId('tender-method-external'));
+    for (const key of ['1', '5', '0', '0']) press(key);
+    expect(text('tender-entry-hint')).toBe(`Only ${money(1000)} is due — Card terminal can't give change`);
+    expect(text('tender-quick-balance')).toBe(`Full balance ${money(1000)}`);
+    fireEvent.click(screen.getByTestId('tender-quick-balance'));
+    expect(text('tender-entry-amount')).toBe(money(1000));
+    expect(text('tender-entry-hint')).toBe('');
+    expect(text('tender-quick-balance')).toBe('Full balance');
+    expect(disabled('tender-take')).toBe(false);
+    expect(sale.order.payments).toEqual([]);
+  });
+
+  it('T3: restores full balance from a partial entry', () => {
+    start(5000);
+    fireEvent.click(screen.getByTestId('tender-method-external'));
+    for (const key of ['Clear', '1', '2', '0', '0']) press(key);
+    expect(text('tender-entry-amount')).toBe(money(1200));
+    expect(text('tender-quick-balance')).toBe(`Full balance ${money(5000)}`);
+    fireEvent.click(screen.getByTestId('tender-quick-balance'));
+    expect(text('tender-entry-amount')).toBe(money(5000));
+    expect(text('tender-entry-hint')).toBe('');
+    expect(sale.order.payments).toEqual([]);
+  });
+
+  it('T4: cash keeps Exact and the step chips, and draws no balance chip', () => {
+    start(3451);
+    expect(quick()).toEqual(['tender-quick-exact', 'tender-quick-3500', 'tender-quick-4000', 'tender-quick-5000']);
+    expect(text('tender-quick-exact')).toBe(`Exact ${money(3451)}`);
+    expect(screen.queryByTestId('tender-quick-balance')).toBeNull();
+  });
+
+  it('T5: with no method picked there is no balance chip', () => {
+    start(2500, 'cash', [paymentMethodOf('external')]);
+    expect(screen.getByTestId('tender-method-external').getAttribute('aria-selected')).toBe('false');
+    expect(screen.queryByTestId('tender-take')).toBeNull();
+    expect(screen.queryByTestId('tender-quick-balance')).toBeNull();
+    expect(screen.queryByTestId('tender-quick')).toBeNull();
   });
 });
