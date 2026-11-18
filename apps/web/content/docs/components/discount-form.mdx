@@ -38,7 +38,7 @@ Renders a title, percentage or fixed-amount selector, discount input, and Apply 
   coupons={[{ code: 'SUMMER10', detail: 'Percentage discount', amountLabel: '10%' }]} />
 ```
 
-With `onApplyCoupon`, the dialog opens on a "Quick discount" tab (the body above) beside a "Coupon" tab, as WCPOS v2's Add Discount sheet does. The Coupon tab picks one of `coupons` from a searchable list ("Search coupons..." matches the code or the detail, without regard to case; "No coupons found" when nothing matches). Apply stays disabled until a coupon is picked and while it is applying. A refusal string shows inline and the dialog stays open; a rejection shows "Failed to apply coupon."; `null` closes the dialog through `onClose`. Only listed coupons can be applied: the store's coupon list is the app's data.
+With `onApplyCoupon`, the dialog opens on a "Quick discount" tab (the body above) beside a "Coupon" tab, as WCPOS v2's Add Discount sheet does. The Coupon tab picks one of `coupons` from a searchable list ("Search coupons..." matches the code or the detail, without regard to case; "No coupons found" when nothing matches). Apply stays disabled until a coupon is picked and while it is applying. A refusal string shows inline and the dialog stays open; a rejection shows "Failed to apply coupon."; `null` closes the dialog through `onClose`. Only listed coupons can be applied: the store's coupon list is the app's data. With `onNewCoupon`, a "New coupon" (+) button sits beside the picker and calls it without closing the dialog (creating the coupon is the app's job); with `newCouponDisabledReason` it is disabled and gives that reason as its tooltip and accessibility hint.
 
 ## Props
 
@@ -51,6 +51,8 @@ With `onApplyCoupon`, the dialog opens on a "Quick discount" tab (the body above
 | `onClose` | `() => void` | required | Called on Cancel or after `onApply` returns `null` |
 | `onApplyCoupon` | `(code: string) => Promise<string \| null>` | — | `layout="dialog"` only: shows the Quick discount / Coupon tabs. Resolve a refusal to show inline, or `null` once applied (e.g. `sale.applyCoupon`) |
 | `coupons` | `readonly DiscountCoupon[]` | `[]` | The coupons the Coupon tab lists |
+| `onNewCoupon` | `() => void` | — | Shows the Coupon tab's "New coupon" (+) button, which calls this; the dialog stays open |
+| `newCouponDisabledReason` | `string` | — | Already-translated reason the New coupon button is disabled, e.g. "Coupons are created when the store is reachable"; shown as its tooltip and accessibility hint |
 
 ### DiscountCoupon
 

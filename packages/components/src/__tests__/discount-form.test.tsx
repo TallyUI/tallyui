@@ -4,6 +4,18 @@ import { PortalHost } from '@tallyui/primitives';
 import type { AppliedDiscount } from '@tallyui/pos';
 import { DiscountChips, DiscountForm, discountLabel, parseDiscount, type DiscountCoupon } from '../sale/discount-form';
 
+// react-native-web 0.21 drops accessibilityHint from the DOM, so the real IconButton renders through a wrapper that
+// records the props it was given, by testID.
+const iconButtonProps = vi.hoisted(() => new Map<string, Record<string, unknown>>());
+vi.mock('../ui/icon-button', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../ui/icon-button')>();
+  const { createElement } = await import('react');
+  return { ...actual, IconButton: (props: Record<string, unknown>) => {
+    iconButtonProps.set(String(props.testID), props);
+    return createElement(actual.IconButton, props);
+  } };
+});
+
 describe('parseDiscount', () => {
   it.each([
     ['0.125', 'KWD', { type: 'fixed', value: 125 }],
@@ -219,6 +231,60 @@ describe('DiscountForm coupon tab', () => {
     const row = screen.getByTestId('add-coupon-option-SUMMER10');
     expect(row.textContent).toBe('SUMMER10Summer sale10%');
     expect(screen.getByTestId('add-coupon-option-VIP').textContent).toBe('VIP20%');
+  });
+
+  describe('New coupon button (v2 add-coupon.tsx:110-143)', () => {
+    const OFFLINE = 'Coupons are created when the store is reachable';
+    function renderNew(props: { onNewCoupon?: () => void; newCouponDisabledReason?: string }) {
+      const onApplyCoupon = vi.fn().mockResolvedValue(null);
+      const onClose = vi.fn();
+      render(<><DiscountForm layout="dialog" currency="EUR" onApply={vi.fn()} onClose={onClose}
+        onApplyCoupon={onApplyCoupon} coupons={COUPONS} {...props} /><PortalHost /></>);
+      return { onApplyCoupon, onClose };
+    }
+
+    it('T1: without onNewCoupon there is no New coupon button', () => {
+      renderNew({});
+      press('add-discount-kind-coupon');
+      expect(screen.getByTestId('add-coupon-combobox')).toBeTruthy();
+      expect(screen.queryByTestId('add-coupon-new')).toBeNull();
+    });
+
+    it('T2: with onNewCoupon, "New coupon" calls it once and neither closes nor applies', () => {
+      const onNewCoupon = vi.fn();
+      const { onApplyCoupon, onClose } = renderNew({ onNewCoupon });
+      press('add-discount-kind-coupon');
+      const button = screen.getByRole('button', { name: 'New coupon' });
+      expect(button).toBe(screen.getByTestId('add-coupon-new'));
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      expect(iconButtonProps.get('add-coupon-new')?.accessibilityHint).toBeUndefined();
+      fireEvent.click(button);
+      expect(onNewCoupon).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(onApplyCoupon).not.toHaveBeenCalled();
+    });
+
+    it('T3: with a disabled reason, the button is disabled, does nothing, and its hint is the reason', () => {
+      const onNewCoupon = vi.fn();
+      renderNew({ onNewCoupon, newCouponDisabledReason: OFFLINE });
+      press('add-discount-kind-coupon');
+      const button = screen.getByTestId('add-coupon-new');
+      expect(button.getAttribute('aria-label')).toBe('New coupon');
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      fireEvent.click(button);
+      expect(onNewCoupon).not.toHaveBeenCalled();
+      expect(iconButtonProps.get('add-coupon-new')?.accessibilityHint).toBe(OFFLINE);
+    });
+
+    it('T4: the Quick discount tab never shows the New coupon button', () => {
+      renderNew({ onNewCoupon: vi.fn() });
+      expect(screen.getByTestId('discount-amount-input')).toBeTruthy();
+      expect(screen.queryByTestId('add-coupon-new')).toBeNull();
+      press('add-discount-kind-coupon');
+      expect(screen.getByTestId('add-coupon-new')).toBeTruthy();
+      press('add-discount-kind-quick');
+      expect(screen.queryByTestId('add-coupon-new')).toBeNull();
+    });
   });
 });
 
