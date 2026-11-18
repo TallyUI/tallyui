@@ -227,7 +227,7 @@ export {
   PriceForm, parsePrice, LinePopover, type LinePopoverProps,
   ChargeForm, type ChargeFormProps,
   OrderNoteSheet, type OrderNoteSheetProps,
-  Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, syncStatusQuiet, OrdersList, OrderSyncNotices, type OrderSyncNoticesProps, type OrderHistoryRow, orderReference,
+  Catalogue, formatStockSyncTime, Receipt, ReceiptSheet, type ReceiptSheetProps, type ReceiptSheetTemplate, injectPrintStyle, SyncStatus, syncStatusQuiet, OrdersList, OrderSyncNotices, type OrderSyncNoticesProps, type OrderHistoryRow, orderReference,
   ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps, CustomerDisplayScreen,
   CustomerDisplayPairing, type CustomerDisplayPairingProps,
   ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters,
