@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import * as ContextMenu from '../context-menu';
 import { PortalHost } from '../portal';
@@ -53,6 +53,28 @@ describe('ContextMenu', () => {
     // We verify the trigger does NOT respond to a regular click (unlike DropdownMenu).
     fireEvent.click(trigger);
     expect(screen.queryByTestId('content')).toBeNull();
+  });
+
+  it('on web a long press measures the trigger with measureInWindow, not measure', () => {
+    vi.useFakeTimers();
+    try {
+      renderMenu();
+      const trigger = screen.getByTestId('trigger');
+      const measure = vi.fn();
+      const measureInWindow = vi.fn();
+      Object.assign(trigger, { measure, measureInWindow });
+      // react-native-web's responder starts on mousedown and fires onLongPress after 450 ms.
+      fireEvent.mouseDown(trigger, { button: 0, buttons: 1 });
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      fireEvent.mouseUp(trigger, { button: 0 });
+      expect(screen.getByTestId('content')).toBeTruthy();
+      expect(measureInWindow).toHaveBeenCalled();
+      expect(measure).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('fires item onPress and closes menu', () => {

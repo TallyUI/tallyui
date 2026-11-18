@@ -116,4 +116,15 @@ describe('DropdownMenu', () => {
     fireEvent.click(screen.getByTestId('radio-b'));
     expect(onValueChange).toHaveBeenCalledWith('b');
   });
+
+  it('on web measures the trigger with measureInWindow, not measure', () => {
+    renderMenu();
+    const trigger = screen.getByTestId('trigger');
+    const measure = vi.fn();
+    const measureInWindow = vi.fn();
+    Object.assign(trigger, { measure, measureInWindow });
+    fireEvent.click(trigger);
+    expect(measureInWindow).toHaveBeenCalled();
+    expect(measure).not.toHaveBeenCalled();
+  });
 });
