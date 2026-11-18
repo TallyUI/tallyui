@@ -24,9 +24,14 @@ export { ChartLineIcon } from './icon/chart-line-icon';
 export { ActivityHeartbeatIcon } from './icon/activity-heartbeat-icon';
 export { SettingsIcon } from './icon/settings-icon';
 export { MessageQuestionIcon } from './icon/message-question-icon';
+export { CheckIcon } from './icon/check-icon';
+export { AlertTriangleIcon } from './icon/alert-triangle-icon';
+export { AlertCircleIcon } from './icon/alert-circle-icon';
+export { InfoCircleIcon } from './icon/info-circle-icon';
 export { Loader, loaderVariants, type LoaderProps } from './loader';
 export { Badge, badgeVariants, badgeTextVariants, type BadgeProps } from './badge';
 export { StatusBadge, statusDotVariants, type StatusBadgeProps } from './status-badge';
+export { ToneDisc, type ToneDiscProps, type ToneDiscTone } from './tone-disc';
 export { Avatar, avatarVariants, avatarInitials, type AvatarProps } from './avatar';
 
 // Interactive
