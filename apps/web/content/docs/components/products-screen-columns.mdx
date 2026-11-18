@@ -1,0 +1,46 @@
+---
+title: productsScreenColumns
+description: productsScreenColumns gives ProductTable the read columns of WCPOS v2's Products screen; image, product with its variation count, stock with a Manage switch, stock status, categories and price.
+---
+
+## Import
+
+```tsx
+import { ProductTable, productsScreenColumns, useProductsScreenColumns } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+function ProductsScreen({ products }) {
+  const columns = useProductsScreenColumns({ currencySymbol: '€' });
+  return <ProductTable items={products} columns={columns} />;
+}
+```
+
+`useProductsScreenColumns(options?)` memoises the columns from the `ConnectorProvider` and requires one. `productsScreenColumns(traits, context?, options?)` builds the same columns from traits you pass, the same shape as `defaultProductColumns`.
+
+## Columns
+
+| Id | Header | Shows | Sortable |
+|----|--------|-------|----------|
+| `image` | Image (no head label) | `ProductImage` at 48 px, an initial tile when there is no image | no |
+| `name` | Product | `ProductTitle`; under it, for a product with variants, "15 variations" | yes |
+| `stock` | Stock | The quantity on hand ("—" when not tracked) over a Manage switch, on when stock is tracked | yes |
+| `stockStatus` | Stock Status | `ProductStockBadge`, without the quantity | no |
+| `category` | Categories | Category names joined with commas, "—" when none | yes |
+| `price` | Price | `ProductPrice`, right-aligned; a sale price shows with the price it replaces | yes |
+
+## Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `currencySymbol` | `string` | — | Passed to the price column's `ProductPrice` |
+
+## Differences from WCPOS v2
+
+The columns are read-only. The quantity is text and the Manage switch is disabled; edits go through each platform's own API.
+
+Manage reads the core stock contract: `getStock(doc).quantity` is defined only when every variant is tracked, so the switch is on exactly then.
+
+There is one Price column. v2's separate Regular price and Sale price columns are left out, because `ProductPrice` already shows a sale price next to the price it replaces.
