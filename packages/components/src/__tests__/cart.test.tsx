@@ -64,7 +64,10 @@ describe('Cart', () => {
     expect(fee.compareDocumentPosition(shipping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const footer = within(screen.getByTestId('cart-footer'));
     expect(within(footer.getByText('Subtotal').parentElement!).getByText(money(sale.order.display.subtotalMinor))).toBeTruthy();
-    expect(within(footer.getByText(inclusive ? 'incl. Tax 25%' : 'Tax 25%').parentElement!).getByText(money(sale.order.display.taxMinor))).toBeTruthy();
+    const taxRow = within(footer.getByTestId('cart-total-tax-0'));
+    expect(taxRow.getByText('Tax 25%')).toBeTruthy();
+    expect(taxRow.getByText(inclusive ? 'Including tax' : 'Excluding tax')).toBeTruthy();
+    expect(taxRow.getByText(money(sale.order.display.taxMinor))).toBeTruthy();
     expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();
     expect(within(footer.getByTestId('cart-total-fees')).getByText(money(sale.order.display.fees![0].amountMinor))).toBeTruthy();
     expect(within(footer.getByTestId('cart-total-shipping')).getByText(money(sale.order.display.shipping![0].amountMinor))).toBeTruthy();
@@ -431,7 +434,9 @@ describe('Cart', () => {
       {(sale) => <Cart sale={sale} taxLabel={(ratePpm) => `VAT ${ratePpm / 10000}%`} />}
     </SaleHarness>);
     act(() => sale.add(blue, traits));
-    expect(screen.getByText('incl. VAT 25%')).toBeTruthy();
+    const taxRow = within(screen.getByTestId('cart-total-tax-0'));
+    expect(taxRow.getByText('VAT 25%')).toBeTruthy();
+    expect(taxRow.getByText('Including tax')).toBeTruthy();
   });
 
   it('renders afterSubtotal inside the footer', () => {

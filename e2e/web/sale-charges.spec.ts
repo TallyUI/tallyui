@@ -44,10 +44,10 @@ test.describe('Cart charges (order.create 5)', () => {
       // Total = the product's line + 0.20 + 5.00 + 3.00 + the tax rows the footer shows (prices exclude tax).
       const footer = page.getByTestId('cart-footer');
       const shirt = await amountBeside(page.getByText('Shirt', { exact: true }).locator('xpath=..'));
-      const taxLabels = await footer.getByText(/^Tax \d/).all();
-      expect(taxLabels.length).toBeGreaterThan(0);
+      const taxRows = await footer.getByTestId(/^cart-total-tax-\d+$/).all();
+      expect(taxRows.length).toBeGreaterThan(0);
       let tax = 0;
-      for (const label of taxLabels) tax += await amountBeside(label);
+      for (const row of taxRows) tax += minor(await row.locator('xpath=*[last()]').innerText());
       // The fixture's one rate, 25%, on the shirt, the fee and the shipping; the "No tax" custom item adds none.
       expect(Math.abs(tax - 0.25 * (shirt + 20 + 500))).toBeLessThanOrEqual(1);
       const checkout = footer.getByTestId('cart-checkout');

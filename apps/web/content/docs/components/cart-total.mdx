@@ -27,7 +27,7 @@ Renders rows for subtotal, optional discount, fees and shipping, tax rows and to
 | `fees` | `Money` | — | The fee lines' sum in the display mode; a Fees row shows when it is not 0 |
 | `shipping` | `Money` | — | The shipping lines' sum in the display mode; a Shipping row shows when it is not 0 |
 | `total` | `Money` | required | The total to display |
-| `taxInclusive` | `boolean` | — | Tax is already in the subtotal, so its rows read "incl." rather than add up |
+| `taxInclusive` | `boolean` | — | The display tax mode, as WCPOS v2: `true` tags each tax row "Including tax" (the tax is already in the subtotal), `false` tags it "Excluding tax", and absent draws no tag |
 | `afterSubtotal` | `ReactNode` | — | Rows rendered directly under Subtotal, e.g. a platform's coupon chips |
 | `showTotal` | `boolean` | `true` | Draws the Total row; pass `false` when the total shows elsewhere, e.g. v2's Checkout button |
 | `locale` | `string` | — | Locale for formatting the amounts |
