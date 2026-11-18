@@ -151,11 +151,11 @@ describe('Tender', () => {
 
 describe('Tender on a reopened order (ADR-090 gate 36)', () => {
   /** use-sale-locked-legs.test.tsx's reopenedBuilder: one kept line at €10 and a locked leg the store already holds. */
-  function reopen(lockedMinor: number) {
+  function reopen(lockedMinor: number, capabilities?: { orderCreate: number }) {
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false }, storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
     builder.addLine({ productId: 'coffee', name: 'Coffee', storeLineId: '7', unitPrice: { amount: 1000, currency: 'EUR' } });
     builder.addPayment({ method: 'external', amountMinor: lockedMinor, reference: 'Cash', storePaymentId: 'p1', locked: true });
-    render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} />}</SaleHarness>);
+    render(<SaleHarness settings={settings} capabilities={capabilities}>{(sale) => <Tender sale={sale} />}</SaleHarness>);
     act(() => { expect(sale.openStoreOrder(builder.getSnapshot())).toBeNull(); });
   }
 
@@ -174,6 +174,9 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     click(`Take ${money(3451)} in Cash`);
     expect(text('tender-change')).toBe(`Change ${money(549)}`);
     expect(screen.queryByTestId('tender-refund-due')).toBeNull();
+    // Gate 36c, T3: a till sale has no store order, so its cash overpayment is never refused.
+    expect(screen.queryByTestId('tender-store-holds')).toBeNull();
+    expect(disabled('tender-complete')).toBe(false);
   });
 
   it('a reopened sale with refund due and till cash on top shows both, summing to changeDueMinor', () => {
@@ -187,5 +190,52 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     expect(text('tender-change')).toBe(`Change ${money(500)}`);
     expect(text('tender-refund-due')).toBe(`Refund due ${money(800)}`);
     expect(500 + 800).toBe(sale.order.changeDueMinor);
+  });
+
+  it('gate 36c: the store holds the total, so a till leg blocks Complete until it is removed from the pane', () => {
+    reopen(1000);
+    act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 800)).toBeNull(); });
+    act(() => sale.startTender('cash'));
+    // A restored draft or the sale API is the only way a till leg reaches this state: the entry is hidden at balance 0.
+    let cash: string | null = null;
+    act(() => { cash = sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    expect(cash).not.toBeNull();
+    expect(disabled('tender-complete')).toBe(true);
+    expect(text('tender-store-holds')).toBe(`The store already holds this sale's payment. Remove the ${money(500)} taken here to finish.`);
+    fireEvent.click(screen.getByTestId(`tender-leg-${cash}-remove`));
+    expect(sale.order.payments.map((payment) => payment.id)).not.toContain(cash);
+    expect(screen.queryByTestId('tender-store-holds')).toBeNull();
+    expect(disabled('tender-complete')).toBe(false);
+    expect(text('tender-refund-due')).toBe(`Refund due ${money(200)}`);
+  });
+
+  it('gate 36c, T5: a voided till leg does not block a covered reopened sale', () => {
+    reopen(1000);
+    act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 800)).toBeNull(); });
+    act(() => sale.startTender('cash'));
+    let cash: string | null = null;
+    act(() => { cash = sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    act(() => { expect(sale.voidTender(cash!)).toBe(true); });
+    expect(sale.order.payments.find((payment) => payment.id === cash)?.status).toBe('voided');
+    expect(screen.queryByTestId('tender-store-holds')).toBeNull();
+    expect(disabled('tender-complete')).toBe(false);
+  });
+
+  it('gate 36c, desk condition 3: a part-paid reopened sale still takes till cash for the remainder and completes', async () => {
+    // A reopened sale's order.create needs version 5 or later (finalize.ts); the other cases never complete.
+    reopen(1000, { orderCreate: 9 });
+    act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 1500)).toBeNull(); });
+    act(() => sale.startTender('cash'));
+    expect(screen.getByTestId('tender-entry')).toBeTruthy();
+    click(money(1000));
+    click(`Take ${money(500)} in Cash`);
+    expect(sale.order.payments.filter((payment) => !payment.locked)).toMatchObject([{ method: 'cash', amountMinor: 1000 }]);
+    expect(disabled('tender-complete')).toBe(false);
+    expect(screen.queryByTestId('tender-store-holds')).toBeNull();
+    expect(screen.queryByTestId('tender-refund-due')).toBeNull();
+    expect(text('tender-change')).toBe(`Change ${money(500)}`);
+    await act(async () => { click('Complete sale'); });
+    expect(sale.error).toBeNull();
+    expect(sale.stage.kind).toBe('receipt');
   });
 });
