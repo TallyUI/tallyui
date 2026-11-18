@@ -1,6 +1,6 @@
 ---
 title: CashierSheet
-description: CashierSheet is the signed-in cashier's sheet on the right edge, with the header, "Your sales today" and Sign out.
+description: CashierSheet is the signed-in cashier's sheet on the right edge, with the header, "Your sales today", "Hand the till to" and Sign out.
 ---
 
 ## Import
@@ -34,7 +34,8 @@ const [open, setOpen] = useState(false);
 - **Your sales today:** the app's figure for the cashier's own sales on the store day, formatted in the given currency. Without `salesToday` the row is hidden. The sheet does not compute the figure.
 - **Drawer door:** with `drawer`, an "In the drawer" door sits under "Your sales today". It shows the app's figure: the expected cash, a blind count's number of sales, "—" while figures are pending, or "Register closed · last closure `{n}`". It also shows the opener line and the register verbs. Pressing it calls `drawer.onOpen` and leaves the sheet open, and `drawer.disabled` blocks it. The sheet computes nothing.
 - **Sign out:** a destructive button that calls `onSignOut`. It never closes the sheet itself: the app decides, for example after `SwitchConfirm` with `kind="signOut"`. `signOutDisabled` disables it while a payment or a switch is in progress.
-- **Not in the sheet yet:** "Hand the till to" and the Store and Register switches.
+- **Notices and "Hand the till to":** `awaitingStore` above 0 shows "Awaiting store · `n` sales" with "Sent when you are signed in online."; `paying` shows "Finish the payment first". With `handTo`, a row per other cashier (with "`n` open carts" when above 0) calls `handTo.onHandTo(id)` and leaves the sheet open, so the app can show `SwitchConfirm` with `kind="cashier"`; the rows are disabled while `handTo.disabled`, `paying` or `handTo.counting`, and counting adds "Finish or abandon the count first" to the header unless paying. The app passes the list without the signed-in cashier and counts the carts.
+- **Not in the sheet yet:** the Store and Register switches.
 
 ## Props
 
@@ -47,6 +48,9 @@ const [open, setOpen] = useState(false);
 | `signOutDisabled` | `boolean` | `false` | Disables Sign out |
 | `onOpenChange` | `(open: boolean) => void` | required | Called with `false` when the sheet is dismissed |
 | `drawer` | `CashierSheetDrawer` | --- | The drawer door; hidden when absent |
+| `handTo` | `CashierSheetHandTo` | --- | "Hand the till to"; hidden when absent or empty |
+| `paying` | `boolean` | `false` | Shows "Finish the payment first" and disables the hand-to rows |
+| `awaitingStore` | `number` | `0` | Sales the store has still to hear; the notice is hidden at 0 |
 
 ### CashierSheetDrawer
 
@@ -65,4 +69,22 @@ type CashierSheetDrawer = {
       countingSince?: string; // state "counting" only, already formatted; default "—"
     }
 );
+```
+
+### CashierSheetHandTo
+
+```ts
+interface CashierSheetCashier {
+  id: string;
+  name: string;
+  avatar?: string;
+  openCarts?: number; // this cashier's open carts on this register; hidden at 0
+}
+
+interface CashierSheetHandTo {
+  cashiers: CashierSheetCashier[]; // the other cashiers, without the one signed in
+  onHandTo: (id: string) => void; // a row was pressed: show SwitchConfirm kind="cashier"
+  disabled?: boolean; // a switch is in progress
+  counting?: boolean; // a count is open on this register
+}
 ```
