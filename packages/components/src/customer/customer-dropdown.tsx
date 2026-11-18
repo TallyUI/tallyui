@@ -16,6 +16,8 @@ const row = 'min-h-11 flex-row items-center gap-2 rounded-md px-2 py-1.5 web:foc
 export interface CustomerDropdownProps {
   /** The connector's searchCustomers, bound to its context by the app. */
   search: (query: string) => Promise<Customer[]>;
+  /** The first customers to list for an empty query (v2's customer browse, e.g. the first 50 by last name). Absent: an empty query lists Guest alone. */
+  browse?: () => Promise<Customer[]>;
   selected: Customer | null;
   /** A customer, or null for Guest. */
   onSelect: (customer: Customer | null) => void;
@@ -40,35 +42,40 @@ function GuestGlyph() {
 }
 
 /** v2's cart-header customer chip (the sale's customer, or Guest); it opens a search panel anchored under it, Guest first. */
-export function CustomerDropdown({ search, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-dropdown-chip', onEditAddress, hasAddress = false }: CustomerDropdownProps) {
+export function CustomerDropdown({ search, browse, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-dropdown-chip', onEditAddress, hasAddress = false }: CustomerDropdownProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string | null>(null);
   const searchRef = useRef(search);
   searchRef.current = search;
+  const browseRef = useRef(browse);
+  browseRef.current = browse;
+  const canBrowse = browse !== undefined;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   const chip = useRef<View>(null);
   const name = selected?.name ?? 'Guest';
 
-  // CustomerPicker's search: debounced, a stale response dropped, nothing sent for a blank query or offline.
+  // CustomerPicker's search: debounced, a stale response dropped; nothing sent offline; a blank query sends `browse` while
+  // open (when given), else nothing.
   useEffect(() => {
     let stale = false;
     setError(null);
-    if (!online || !query.trim()) { setCustomers([]); return; }
+    const blank = !query.trim();
+    if (!online || (blank && (!canBrowse || !open))) { setCustomers([]); return; }
     const timer = setTimeout(async () => {
       try {
-        const results = await searchRef.current(query);
+        const results = await (blank ? browseRef.current?.() ?? [] : searchRef.current(query));
         if (!stale) setCustomers(results);
       } catch (error) {
         if (stale) return;
         setError(customerErrorText(error));
         if (!(error instanceof CustomerServiceError)) onErrorRef.current?.(error);
       }
-    }, debounceMs);
+    }, blank ? 0 : debounceMs);
     return () => { clearTimeout(timer); stale = true; };
-  }, [query, online, debounceMs]);
+  }, [query, online, debounceMs, open, canBrowse]);
 
   // Each open starts, and each close leaves, an empty query with no results.
   const openChange = (next: boolean) => { setQuery(''); setCustomers([]); setOpen(next); };

@@ -87,6 +87,68 @@ describe('CustomerDropdown', () => {
     expect(names()).toEqual(['Guest', 'Abby, abby@test.com']);
   });
 
+  it('without browse, a blank query sends nothing and lists Guest alone', async () => {
+    const search = vi.fn(async () => [alice]);
+    render(ui(props({ search })));
+    fireEvent.click(chip());
+    await advance();
+    expect(search).not.toHaveBeenCalled();
+    expect(names()).toEqual(['Guest']);
+    typeQuery('al');
+    await advance();
+    await act(async () => {});
+    expect(names()).toEqual(['Guest', 'Alice Martin, alice@test.com']);
+    typeQuery('');
+    await advance();
+    expect(names()).toEqual(['Guest']);
+    expect(search).toHaveBeenCalledOnce();
+  });
+
+  it('browse lists customers under Guest on open and when the query is cleared', async () => {
+    const browse = vi.fn(async () => [abby, alice]);
+    const search = vi.fn(async () => [alice]);
+    render(ui(props({ search, browse })));
+    expect(browse).not.toHaveBeenCalled();
+    fireEvent.click(chip());
+    await advance(0);
+    await act(async () => {});
+    expect(browse).toHaveBeenCalledExactlyOnceWith();
+    expect(search).not.toHaveBeenCalled();
+    expect(names()).toEqual(['Guest', 'Abby, abby@test.com', 'Alice Martin, alice@test.com']);
+    typeQuery('al');
+    await advance();
+    await act(async () => {});
+    expect(names()).toEqual(['Guest', 'Alice Martin, alice@test.com']);
+    expect(search).toHaveBeenCalledExactlyOnceWith('al');
+    typeQuery('');
+    await advance();
+    await act(async () => {});
+    expect(browse).toHaveBeenCalledTimes(2);
+    expect(names()).toEqual(['Guest', 'Abby, abby@test.com', 'Alice Martin, alice@test.com']);
+    cleanup();
+    const offline = vi.fn(async () => [abby]);
+    render(ui(props({ browse: offline, online: false })));
+    fireEvent.click(chip());
+    await advance();
+    expect(offline).not.toHaveBeenCalled();
+    expect(names()).toEqual(['Guest']);
+  });
+
+  it('drops a stale browse response', async () => {
+    const older = deferred<Customer[]>();
+    const browse = vi.fn(() => older.promise);
+    render(ui(props({ search: vi.fn(async () => [alice]), browse, debounceMs: 50 })));
+    fireEvent.click(chip());
+    await advance(0);
+    expect(browse).toHaveBeenCalledOnce();
+    typeQuery('al');
+    await advance(50);
+    await act(async () => {});
+    expect(names()).toEqual(['Guest', 'Alice Martin, alice@test.com']);
+    await act(async () => older.resolve([abby]));
+    expect(names()).toEqual(['Guest', 'Alice Martin, alice@test.com']);
+  });
+
   it('a search with no matches leaves only Guest and no empty text', async () => {
     render(ui(props({ search: vi.fn(async () => []) })));
     fireEvent.click(chip());
