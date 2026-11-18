@@ -37,7 +37,7 @@ export { Avatar, avatarVariants, avatarInitials, type AvatarProps } from './avat
 // Interactive
 export { Button, buttonVariants, buttonTextVariants, type ButtonProps } from './button';
 export { IconButton, iconButtonVariants, type IconButtonProps } from './icon-button';
-export { ListRow, type ListRowProps } from './list-row';
+export { ListRow, type ListRowProps, type ListRowSize } from './list-row';
 
 // Containers & Form
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
