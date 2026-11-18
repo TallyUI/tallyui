@@ -65,6 +65,19 @@ describe('SalesRoom cards', () => {
     expect(text('card-orders-cost-missing')).toBe('Cost missing on 2 of 2 items');
   });
 
+  it('the Orders card shows Median and Largest', () => {
+    const figures = salesFigures({ orders, range: day, timezone: 'UTC' });
+    setup(figures);
+    expect(text('card-orders-median')).toBe(money(1250));
+    expect(text('card-orders-largest')).toBe(money(1500));
+    cleanup();
+    setup({ ...figures, totals: { ...figures.totals, largestMinor: null } });
+    expect(text('card-orders-largest')).toBe('—');
+    cleanup();
+    setup({ ...figures, totals: { ...figures.totals, largestMinor: undefined } });
+    expect(text('card-orders-largest')).toBe('—');
+  });
+
   it('opens a card\'s panel from its head', () => {
     const { onOpenCard } = setup(salesFigures({ orders, range: day, timezone: 'UTC' }));
     fireEvent.click(screen.getByTestId('card-payments-open'));

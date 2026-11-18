@@ -191,7 +191,7 @@ it('lists inclusive calendar days and returns zeros for an empty period', () => 
   const result = salesFigures({ orders: [], range, timezone: 'UTC' });
   expect(result.totals).toEqual({
     grossMinor: 0, netMinor: 0, taxMinor: 0, discountMinor: 0, refundsMinor: 0, embeddedRefundsMinor: 0,
-    orderCount: 0, averageMinor: 0, items: 0,
+    orderCount: 0, averageMinor: 0, medianMinor: 0, largestMinor: null, items: 0,
     margin: { costedNetMinor: 0, costMinor: 0, profitMinor: 0, marginPct: null, missingLines: 0, missingQuantity: 0 },
   });
   expect(result.series).toEqual([{ day: range.from, grossMinor: 0, orderCount: 0, refundsMinor: 0 }]);
@@ -210,7 +210,7 @@ it('keeps gross separate from dated and embedded refunds', () => {
   ] });
   expect(result.totals).toEqual({
     grossMinor: 1501, netMinor: 1351, taxMinor: 150, discountMinor: 75, refundsMinor: 250, embeddedRefundsMinor: 200,
-    orderCount: 2, averageMinor: 751, items: 1,
+    orderCount: 2, averageMinor: 751, medianMinor: 751, largestMinor: 1000, items: 1,
     margin: { costedNetMinor: 900, costMinor: 600, profitMinor: 300, marginPct: 1 / 3, missingLines: 0, missingQuantity: 0 },
   });
   expect(result.refunds).toEqual({ count: 2, amountMinor: 250, orders: 1 });
@@ -235,4 +235,18 @@ it('sorts product and category ties by quantity then name', () => {
   const result = salesFigures({ range, timezone: 'UTC', orders: [order({ lines })] });
   expect(result.products.map((row) => row.key)).toEqual(['a', 'b', 'z']);
   expect(result.categories.map((row) => row.key)).toEqual(['a', 'b', 'z']);
+});
+
+const spread = (totals: number[]) => salesFigures({ range, timezone: 'UTC', orders: totals.map((totalMinor, index) => order({ id: `o${index}`, totalMinor })) }).totals;
+
+it('median is the middle order total for an odd count', () => {
+  expect(spread([500, 100, 300])).toMatchObject({ medianMinor: 300, largestMinor: 500 });
+});
+
+it('median of an even count is the mean of the two middle totals, rounded', () => {
+  expect(spread([100, 201, 300, 400])).toMatchObject({ medianMinor: 251, largestMinor: 400 });
+});
+
+it('no orders: median 0, largest null', () => {
+  expect(spread([])).toMatchObject({ medianMinor: 0, largestMinor: null });
 });
