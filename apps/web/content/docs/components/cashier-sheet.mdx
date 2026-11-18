@@ -35,7 +35,7 @@ const [open, setOpen] = useState(false);
 - **Drawer door:** with `drawer`, an "In the drawer" door sits under "Your sales today". It shows the app's figure: the expected cash, a blind count's number of sales, "—" while figures are pending, or "Register closed · last closure `{n}`". It also shows the opener line and the register verbs. Pressing it calls `drawer.onOpen` and leaves the sheet open, and `drawer.disabled` blocks it. The sheet computes nothing.
 - **Sign out:** a destructive button that calls `onSignOut`. It never closes the sheet itself: the app decides, for example after `SwitchConfirm` with `kind="signOut"`. `signOutDisabled` disables it while a payment or a switch is in progress.
 - **Notices and "Hand the till to":** `awaitingStore` above 0 shows "Awaiting store · `n` sales" with "Sent when you are signed in online."; `paying` shows "Finish the payment first". With `handTo`, a row per other cashier (with "`n` open carts" when above 0) calls `handTo.onHandTo(id)` and leaves the sheet open, so the app can show `SwitchConfirm` with `kind="cashier"`; the rows are disabled while `handTo.disabled`, `paying` or `handTo.counting`, and counting adds "Finish or abandon the count first" to the header unless paying. The app passes the list without the signed-in cashier and counts the carts.
-- **Not in the sheet yet:** the Store and Register switches.
+- **Store and Register rows:** with `store` and `register`, a row each, Store first, shows "Store" or "Register" with the name. With `onSwitch`, a "Switch" verb calls it and leaves the sheet open, so the app opens its own picker (`RegisterPicker` for registers). Switch is disabled while `disabled`, `paying` or `heldReason`, and `heldReason` shows as a line under the row unless paying. The app passes `register` only when bound with two or more registers, and decides the reason (for example "Needs the store to switch" offline). The sheet writes nothing.
 
 ## Props
 
@@ -51,6 +51,8 @@ const [open, setOpen] = useState(false);
 | `handTo` | `CashierSheetHandTo` | --- | "Hand the till to"; hidden when absent or empty |
 | `paying` | `boolean` | `false` | Shows "Finish the payment first" and disables the hand-to rows |
 | `awaitingStore` | `number` | `0` | Sales the store has still to hear; the notice is hidden at 0 |
+| `store` | `CashierSheetPlace` | --- | The Store row; hidden when absent |
+| `register` | `CashierSheetPlace` | --- | The Register row; hidden when absent |
 
 ### CashierSheetDrawer
 
@@ -86,5 +88,16 @@ interface CashierSheetHandTo {
   onHandTo: (id: string) => void; // a row was pressed: show SwitchConfirm kind="cashier"
   disabled?: boolean; // a switch is in progress
   counting?: boolean; // a count is open on this register
+}
+```
+
+### CashierSheetPlace
+
+```ts
+interface CashierSheetPlace {
+  name: string; // the current store's or register's name
+  onSwitch?: () => void; // "Switch" was pressed: open the app's picker; absent hides the verb
+  heldReason?: string; // why Switch is held; drawn under the row unless paying, and disables Switch
+  disabled?: boolean; // a switch is in progress: Switch is disabled, with no line
 }
 ```

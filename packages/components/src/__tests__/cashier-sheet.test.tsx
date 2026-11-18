@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
 import { PortalHost } from '@tallyui/primitives';
-import { CashierSheet, type CashierSheetDrawer, type CashierSheetHandTo, type CashierSheetProps } from '../register/cashier-sheet';
+import { CashierSheet, type CashierSheetDrawer, type CashierSheetHandTo, type CashierSheetPlace, type CashierSheetProps } from '../register/cashier-sheet';
 
 afterEach(cleanup);
 
@@ -214,6 +214,73 @@ describe('CashierSheet', () => {
     it('T8: an empty cashier list draws no section', () => {
       show({ handTo: handTo({ cashiers: [] }) });
       expect(screen.queryByTestId('cashier-sheet-hand-to')).toBeNull();
+    });
+  });
+
+  describe('store and register rows', () => {
+    it('T1: nothing is drawn without store and register', () => {
+      show();
+      expect(screen.queryByTestId('cashier-sheet-places')).toBeNull();
+    });
+
+    it('T2: store with a name only draws the row without Switch, and no register row', () => {
+      show({ store: { name: 'Main St' } });
+      const row = screen.getByTestId('cashier-sheet-store');
+      expect(row.textContent).toContain('Store');
+      expect(row.textContent).toContain('Main St');
+      expect(screen.queryByTestId('cashier-sheet-store-switch')).toBeNull();
+      expect(screen.queryByTestId('cashier-sheet-register')).toBeNull();
+    });
+
+    it('T3: pressing the store Switch calls onSwitch once and neither onOpenChange nor onSignOut', () => {
+      const onSwitch = vi.fn();
+      const { onOpenChange, onSignOut } = show({ store: { name: 'Main St', onSwitch } });
+      const button = screen.getByTestId('cashier-sheet-store-switch');
+      expect(button.textContent).toBe('Switch');
+      fireEvent.click(button);
+      expect(onSwitch).toHaveBeenCalledTimes(1);
+      expect(onOpenChange).not.toHaveBeenCalled();
+      expect(onSignOut).not.toHaveBeenCalled();
+    });
+
+    it('T4: the register row shows its name and its Switch calls onSwitch once', () => {
+      const onSwitch = vi.fn();
+      show({ register: { name: 'Till 2', onSwitch } });
+      const row = screen.getByTestId('cashier-sheet-register');
+      expect(row.textContent).toContain('Register');
+      expect(row.textContent).toContain('Till 2');
+      fireEvent.click(screen.getByTestId('cashier-sheet-register-switch'));
+      expect(onSwitch).toHaveBeenCalledTimes(1);
+    });
+
+    it('T5: disabled, paying and heldReason each hold Switch', () => {
+      const cases: { store: CashierSheetPlace; paying?: boolean }[] = [
+        { store: { name: 'Main St', onSwitch: vi.fn(), disabled: true } },
+        { store: { name: 'Main St', onSwitch: vi.fn() }, paying: true },
+        { store: { name: 'Main St', onSwitch: vi.fn(), heldReason: 'Needs the store to switch' } },
+      ];
+      for (const props of cases) {
+        show(props);
+        fireEvent.click(screen.getByTestId('cashier-sheet-store-switch'));
+        expect(props.store.onSwitch).not.toHaveBeenCalled();
+        cleanup();
+      }
+    });
+
+    it('T6: heldReason draws the held line, unless paying, which shows the payment hold instead', () => {
+      const store = { name: 'Main St', onSwitch: vi.fn(), heldReason: 'Needs the store to switch' };
+      show({ store });
+      expect(screen.getByTestId('cashier-sheet-store-held').textContent).toBe('Needs the store to switch');
+      cleanup();
+      show({ store, paying: true });
+      expect(screen.queryByTestId('cashier-sheet-store-held')).toBeNull();
+      expect(screen.getByText('Finish the payment first')).toBeTruthy();
+    });
+
+    it('T7: the store row comes before the register row', () => {
+      show({ store: { name: 'Main St' }, register: { name: 'Till 2' } });
+      const rows = screen.getAllByTestId(/^cashier-sheet-(store|register)$/);
+      expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual(['cashier-sheet-store', 'cashier-sheet-register']);
     });
   });
 });
