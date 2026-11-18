@@ -77,6 +77,9 @@ export interface OrderOutbox {
   /** Requeues rejected orders with a new commandId, or clears a pending update's unsendable mark, then flushes.
    * Orders isRequeueableOrder refuses are left alone. Resolves to the number requeued. */
   requeue(orderIds?: string[]): Promise<number>;
+  /** Removes the rejected order `orderId` from the collection, after any running flush ends. Resolves to true when
+   * removed; false, with nothing changed, when the id is unknown or the order is not rejected. */
+  discard(orderId: string): Promise<boolean>;
   /** Watches for pending orders and sends them. */
   start(): void;
   /** Stops watching and retrying. */
@@ -583,6 +586,20 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       await updateState();
       if (count && !stopped) flush().catch(() => {});
       return count;
+    },
+    async discard(orderId) {
+      // Decide on the stored result of any send in flight.
+      await running?.catch(() => {});
+      // Rejected only: a pending order may already have reached the store (a timeout, a network drop after the send),
+      // so removing it could hide a sale the store took; a rejected one the store refused.
+      const [order] = await readFresh(collection, { selector: { id: orderId, syncStatus: 'rejected' } });
+      if (!order) return false;
+      await (await collection.findOne(order.id).exec())?.remove();
+      const { commandId } = order;
+      attempts.delete(commandId); isolated.delete(commandId); clocks.delete(commandId); walk?.failed.delete(commandId);
+      if (head?.id === commandId) head = undefined;
+      await updateState();
+      return true;
     },
     start() {
       stopped = false;
