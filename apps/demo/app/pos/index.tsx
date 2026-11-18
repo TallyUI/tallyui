@@ -19,6 +19,7 @@ const screens = [
   // Product
   { href: '/pos/category-nav', label: 'CategoryNav' },
   { href: '/pos/product-variant-picker', label: 'ProductVariantPicker' },
+  { href: '/pos/products-screen', label: 'Products screen' },
   // Checkout
   { href: '/pos/cash-tendered', label: 'CashTendered' },
   { href: '/pos/change-display', label: 'ChangeDisplay' },

@@ -23,6 +23,8 @@ export {
   type ViewToggleProps,
   defaultProductColumns,
   useDefaultProductColumns,
+  productsScreenColumns,
+  useProductsScreenColumns,
   type ProductTableProps,
   type ProductTableColumn,
   type ProductTitleProps,

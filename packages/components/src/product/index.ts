@@ -7,6 +7,7 @@ export { ProductCard, type ProductCardProps } from './product-card';
 export { ProductGrid, type ProductGridProps } from './product-grid';
 export { ViewToggle, type ViewToggleProps } from './view-toggle';
 export { ProductTable, defaultProductColumns, useDefaultProductColumns, type ProductTableProps, type ProductTableColumn } from './product-table';
+export { productsScreenColumns, useProductsScreenColumns } from './products-screen-columns';
 export { ProductList, type ProductListProps } from './product-list';
 export { CategoryNav, type CategoryNavProps, type CategoryItem } from './category-nav';
 export { ProductVariantPicker, type ProductVariantPickerProps, type VariantOption } from './product-variant-picker';
