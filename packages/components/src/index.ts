@@ -235,7 +235,7 @@ export {
   Catalogue, formatStockSyncTime, Receipt, ReceiptSheet, type ReceiptSheetProps, type ReceiptSheetTemplate, injectPrintStyle, SyncStatus, syncStatusQuiet, OrdersList, OrderSyncNotices, type OrderSyncNoticesProps, type OrderHistoryRow, orderReference,
   ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps, CustomerDisplayScreen,
   CustomerDisplayPairing, type CustomerDisplayPairingProps,
-  ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters,
+  ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters, type ProductTermFilter, type FilterOption,
 } from './sale';
 
 // Layout components

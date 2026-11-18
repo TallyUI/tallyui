@@ -8,17 +8,15 @@ import { Fragment, useState, type JSX, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { OrderFilterField, PaymentKind } from '@tallyui/core';
 import { presetRange, type DayRange, type OrderFilterValue } from '@tallyui/pos';
-import { cn } from '@tallyui/theme';
+import { Chip, ComboboxPill, labelOf, TRIGGER_RESET, type FilterOption } from '../filter/filter-pills';
 import { rangeLabel } from '../reports/date-range-menu';
 import { Button } from '../ui/button';
 import { Calendar } from '../ui/calendar';
-import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '../ui/combobox';
-import { XIcon } from '../ui/icon/x-icon';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger } from '../ui/select';
 import { Text as UIText } from '../ui/text';
 
-export interface OrderFilterOption { value: string; label: string }
+export type OrderFilterOption = FilterOption;
 /** @deprecated Use `PaymentKind` from `@tallyui/core`; in core, `PaymentMethodKind` is the order's wire method. */
 export type PaymentMethodKind = PaymentKind;
 export interface OrderFilterBarProps {
@@ -48,11 +46,6 @@ export interface OrderFilterBarProps {
 }
 
 const KINDS: readonly PaymentKind[] = ['cash', 'card', 'stored_value', 'bank_transfer', 'other'];
-// The chip look is ProductFilterBar's; the trigger inside it drops the form-field look of SelectTrigger/ComboboxTrigger.
-const chipClass = (on: boolean) => cn('min-h-11 flex-row items-center gap-1.5 rounded-full border px-3',
-  on ? 'border-primary/30 bg-primary/10' : 'border-border bg-card');
-const TRIGGER_RESET = 'h-auto min-h-11 w-auto justify-start rounded-none border-0 bg-transparent px-0 py-0';
-const labelOf = (options: OrderFilterOption[] | undefined, value: string) => options?.find((o) => o.value === value)?.label ?? value;
 const sameRange = (a?: DayRange, b?: DayRange) => a?.from === b?.from && a?.to === b?.to;
 // Clear all counts pills, as v2 counts its filters: the store pill's two fields are one.
 const SIMPLE = ['status', 'paymentMethod', 'customerId', 'cashierId', 'registerId'] as const;
@@ -60,22 +53,6 @@ const changedCount = (value: OrderFilterValue, initial: OrderFilterValue) =>
   SIMPLE.filter((key) => value[key] !== initial[key]).length
   + (value.storeId !== initial.storeId || value.createdVia !== initial.createdVia ? 1 : 0)
   + (sameRange(value.dateRange, initial.dateRange) ? 0 : 1);
-
-function Chip({ id, on, label, onClear, trigger }: {
-  id: string; on: boolean; label: string; onClear: () => void; trigger: (children: ReactNode) => ReactNode;
-}) {
-  return (
-    <View className={chipClass(on)}>
-      {trigger(<Text className={cn('text-sm', on ? 'text-primary' : 'text-foreground')}>{label}</Text>)}
-      {on ? (
-        <Pressable testID={`${id}-remove`} role="button" accessibilityLabel="Remove" onPress={onClear}
-          hitSlop={8} className="min-h-11 min-w-8 items-center justify-center text-primary">
-          <XIcon size={14} />
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
 
 function SelectPill({ id, offLabel, selected, onClear, children }: {
   id: string; offLabel: string; selected?: OrderFilterOption; onClear: () => void; children: ReactNode;
@@ -94,36 +71,6 @@ function Item({ id, option, onPress }: { id: string; option: OrderFilterOption; 
     <SelectItem testID={`${id}-${option.value}`} value={option.value} label={option.label} onPress={onPress}>
       <Text className="text-sm text-popover-foreground">{option.label}</Text>
     </SelectItem>
-  );
-}
-
-function ComboboxPill({ id, offLabel, placeholder, value, options, onSearch, onPick, onClear }: {
-  id: string; offLabel: string; placeholder: string; value?: string; options: OrderFilterOption[];
-  onSearch?: (text: string) => void; onPick: (value: string) => void; onClear: () => void;
-}) {
-  const [search, setSearch] = useState('');
-  const selected = value === undefined ? undefined : { value, label: labelOf(options, value) };
-  const needle = search.trim().toLowerCase();
-  const shown = onSearch || !needle ? options : options.filter((o) => o.label.toLowerCase().includes(needle));
-  return (
-    <Combobox value={selected} onValueChange={(next) => { if (next) onPick(next.value); }} searchValue={search}
-      onSearchValueChange={(text) => { setSearch(text); onSearch?.(text); }}>
-      <Chip id={id} on={!!selected} label={selected?.label ?? offLabel} onClear={onClear}
-        trigger={(label) => <ComboboxTrigger testID={id} className={TRIGGER_RESET}>{label}</ComboboxTrigger>} />
-      <ComboboxContent testID={`${id}-menu`}>
-        <View className="border-b border-border px-2 py-1.5">
-          <ComboboxInput testID={`${id}-search`} placeholder={placeholder} />
-        </View>
-        <ComboboxList>
-          {shown.map((option) => (
-            <ComboboxItem key={option.value} testID={`${id}-${option.value}`} value={option.value} label={option.label}>
-              <Text className="text-sm text-popover-foreground">{option.label}</Text>
-            </ComboboxItem>
-          ))}
-          {shown.length === 0 ? <ComboboxEmpty /> : null}
-        </ComboboxList>
-      </ComboboxContent>
-    </Combobox>
   );
 }
 
