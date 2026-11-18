@@ -3,6 +3,8 @@ import { ScrollView, Text, View, type ViewProps } from 'react-native';
 
 import { cn } from '@tallyui/theme';
 
+import { Button } from '../ui/button';
+import { Text as UIText } from '../ui/text';
 import { OrderStatusBadge, type OrderStatus } from './order-status-badge';
 
 export interface OrderDetailLineItem {
@@ -41,6 +43,14 @@ export interface OrderDetailProps extends Omit<ViewProps, 'children'> {
   customerSlot?: ReactNode;
   paymentSlot?: ReactNode;
   footerSlot?: ReactNode;
+  /** Re-open the order; draws the Re-open button in the pinned actions row. */
+  onReopen?: () => void;
+  /** Sync the order with the server; draws the Sync button. */
+  onSync?: () => void;
+  /** Show the order's receipt; draws the Receipt button. */
+  onReceipt?: () => void;
+  /** Disables Re-open, e.g. while it runs or while storage is degraded. Default `false`. */
+  reopenDisabled?: boolean;
   className?: string;
 }
 
@@ -61,11 +71,15 @@ export function OrderDetail({
   customerSlot,
   paymentSlot,
   footerSlot,
+  onReopen,
+  onSync,
+  onReceipt,
+  reopenDisabled = false,
   className,
   ...viewProps
 }: OrderDetailProps) {
   const metaLine = meta?.filter(Boolean).join(' · ');
-  return (
+  const scroll = (
     <ScrollView className={cn('flex-1', className)} {...viewProps}>
       <View className="gap-4 p-4">
         <View className="flex-row items-center justify-between">
@@ -145,5 +159,22 @@ export function OrderDetail({
         {footerSlot && <View className="border-t border-border pt-3">{footerSlot}</View>}
       </View>
     </ScrollView>
+  );
+  if (!onReopen && !onSync && !onReceipt) return scroll;
+  return (
+    <View className="flex-1">
+      {scroll}
+      {/* v2's pinned order footer (orders/edit/view.tsx): Sync on the left, Receipt and Re-open on the right. */}
+      <View testID="order-detail-actions" className="flex-row flex-wrap items-center justify-between gap-2 border-t border-border p-4">
+        <View className="min-w-0 shrink flex-row flex-wrap gap-2">
+          {onSync && <Button variant="outline" testID="order-detail-sync" onPress={onSync}><UIText>Sync</UIText></Button>}
+        </View>
+        <View className="ml-auto flex-row flex-wrap gap-2">
+          {onReceipt && <Button variant="outline" testID="order-detail-receipt" onPress={onReceipt}><UIText>Receipt</UIText></Button>}
+          {onReopen && <Button testID="order-detail-reopen" onPress={onReopen} disabled={reopenDisabled}
+            accessibilityState={{ disabled: reopenDisabled }}><UIText>Re-open</UIText></Button>}
+        </View>
+      </View>
+    </View>
   );
 }
