@@ -47,39 +47,28 @@ export function CartTotal({
   const formatMoney = useFormatMoney();
   return (
     <VStack space="none" className={cn('gap-1.5 px-3 py-3', className)} {...props}>
-      <HStack space="none" className="justify-between">
-        <Text className="text-sm text-muted-foreground">Subtotal</Text>
-        <Text className="text-sm">{formatMoney(subtotal, locale) ?? '—'}</Text>
-      </HStack>
+      <Row label="Subtotal" amount={formatMoney(subtotal, locale) ?? '—'} />
 
       {afterSubtotal}
 
       {discount && discount.amount > 0 && (
-        <HStack space="none" className="justify-between">
-          <Text className="text-sm text-muted-foreground">Discount</Text>
-          <Text className="text-sm">−{formatMoney(discount, locale) ?? '—'}</Text>
-        </HStack>
+        <Row label="Discount" amount={`−${formatMoney(discount, locale) ?? '—'}`} />
       )}
 
       {fees && fees.amount !== 0 && (
-        <HStack testID="cart-total-fees" space="none" className="justify-between">
-          <Text className="text-sm text-muted-foreground">Fees</Text>
-          <Text className="text-sm">{formatMoney(fees, locale) ?? '—'}</Text>
-        </HStack>
+        <Row testID="cart-total-fees" label="Fees" amount={formatMoney(fees, locale) ?? '—'} />
       )}
 
       {shipping && shipping.amount !== 0 && (
-        <HStack testID="cart-total-shipping" space="none" className="justify-between">
-          <Text className="text-sm text-muted-foreground">Shipping</Text>
-          <Text className="text-sm">{formatMoney(shipping, locale) ?? '—'}</Text>
-        </HStack>
+        <Row testID="cart-total-shipping" label="Shipping" amount={formatMoney(shipping, locale) ?? '—'} />
       )}
 
       {taxLines?.map((line, index) => (
-        <HStack key={index} space="none" className="justify-between">
-          <Text className="text-sm text-muted-foreground">{taxInclusive ? `incl. ${line.label}` : line.label}</Text>
-          <Text className="text-sm">{formatMoney(line.amount, locale) ?? '—'}</Text>
-        </HStack>
+        <Row
+          key={index}
+          label={taxInclusive ? `incl. ${line.label}` : line.label}
+          amount={formatMoney(line.amount, locale) ?? '—'}
+        />
       ))}
 
       {showTotal && <HStack space="none" className="mt-1.5 justify-between border-t border-border pt-2">
@@ -87,5 +76,15 @@ export function CartTotal({
         <Text className="font-semibold">{formatMoney(total, locale) ?? '—'}</Text>
       </HStack>}
     </VStack>
+  );
+}
+
+/** One muted label with its amount, as every CartTotal row but Total draws it. */
+function Row({ label, amount, testID }: { label: string; amount: string; testID?: string }) {
+  return (
+    <HStack testID={testID} space="none" className="justify-between">
+      <Text className="text-sm text-muted-foreground">{label}</Text>
+      <Text className="text-sm">{amount}</Text>
+    </HStack>
   );
 }
