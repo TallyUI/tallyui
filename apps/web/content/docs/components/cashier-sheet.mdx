@@ -1,0 +1,47 @@
+---
+title: CashierSheet
+description: CashierSheet is the signed-in cashier's sheet on the right edge, with the header, "Your sales today" and Sign out.
+---
+
+## Import
+
+```tsx
+import { CashierSheet, RegisterBar } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+const [open, setOpen] = useState(false);
+
+<RegisterBar {...barProps} cashier={{ name: 'Sam Lee', onPress: () => setOpen(true) }} />
+{open && (
+  <CashierSheet
+    cashier={{ name: 'Sam Lee' }}
+    description="Main Street · Till 2 · since 09:05"
+    salesToday={{ amountMinor: 123450, currency: 'EUR' }}
+    signOutDisabled={paying}
+    onSignOut={() => setSignOutConfirm(true)}
+    onOpenChange={setOpen}
+  />
+)}
+```
+
+## Behaviour
+
+- **Opening:** the app mounts the sheet while it is open, usually from `RegisterBar`'s `cashier.onPress`. Dismissing it calls `onOpenChange(false)`.
+- **Header:** the cashier's avatar (or initials) and name. The `description` line shows as given; the app joins the store, the register (when there are several) and "since HH:mm" with " · ". Without it the line is hidden.
+- **Your sales today:** the app's figure for the cashier's own sales on the store day, formatted in the given currency. Without `salesToday` the row is hidden. The sheet does not compute the figure.
+- **Sign out:** a destructive button that calls `onSignOut`. It never closes the sheet itself: the app decides, for example after `SwitchConfirm` with `kind="signOut"`. `signOutDisabled` disables it while a payment or a switch is in progress.
+- **Not in the sheet yet:** the drawer door, "Hand the till to" and the Store and Register switches.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `cashier` | `{ name: string; avatar?: string }` | required | The signed-in cashier |
+| `description` | `string` | --- | The header line, already joined; hidden when absent |
+| `salesToday` | `{ amountMinor: number; currency: string }` | --- | "Your sales today" in integer minor units; hidden when absent |
+| `onSignOut` | `() => void` | required | Called when Sign out is pressed |
+| `signOutDisabled` | `boolean` | `false` | Disables Sign out |
+| `onOpenChange` | `(open: boolean) => void` | required | Called with `false` when the sheet is dismissed |
