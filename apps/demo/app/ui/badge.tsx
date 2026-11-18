@@ -119,6 +119,17 @@ export default function BadgeScreen() {
           </View>
         </View>
 
+        <View testID="chart-tokens-demo" className="gap-3">
+          <Text className="text-lg font-bold">Chart tokens</Text>
+          <View className="flex-row flex-wrap gap-3">
+            <View className="items-center gap-1"><View className="size-14 rounded-full bg-c1" /><Text className="text-sm">c1</Text></View>
+            <View className="items-center gap-1"><View className="size-14 rounded-full bg-c2" /><Text className="text-sm">c2</Text></View>
+            <View className="items-center gap-1"><View className="size-14 rounded-full bg-c3" /><Text className="text-sm">c3</Text></View>
+            <View className="items-center gap-1"><View className="size-14 rounded-full bg-c4" /><Text className="text-sm">c4</Text></View>
+            <View className="items-center gap-1"><View className="size-14 rounded-full bg-c5" /><Text className="text-sm">c5</Text></View>
+          </View>
+        </View>
+
         <View testID="tone-disc-demo" className="gap-3">
           <Text className="text-lg font-bold">ToneDisc</Text>
           <View className="flex-row flex-wrap items-center gap-3">{(['ok', 'warning', 'bad', 'info', 'muted'] as const).map((tone) => <ToneDisc key={tone} tone={tone} />)}</View>
