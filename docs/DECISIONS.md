@@ -3623,6 +3623,12 @@ interface OrderCreatePayload {
      There's no register-creation flow in the POS.
   9. **Refunds are out of scope** until Paul's refund model.
      `period_refunds` stays 0, and the server figures exclude refunds.
+     **Amended by ADR-080 (2026-10-07):** refunds are counted in the
+     session that made them. `writeClosure` sets `period_refunds_total_minor`
+     to the sum of the session's applied refund records
+     (`packages/pos/src/register/session-store.ts:563`:
+     `period_refunds_total_minor: sum(countedRefunds.flatMap(...))`), and
+     `deriveSessionFigures` lowers the server figures by them.
   10. **The residual window of ADR-032** (a sale stamped between the
       count gate and `writeClosure`) closes by refusing stamps while the
       session is counting (c2b-1).
