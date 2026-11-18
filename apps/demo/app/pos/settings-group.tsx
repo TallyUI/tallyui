@@ -1,4 +1,4 @@
-import { ScrollView, View } from 'react-native';
+import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
 import { SettingsGroup, SettingsRow, Text, Switch } from '@tallyui/components';
 

@@ -1,4 +1,4 @@
-import { ScrollView, View } from 'react-native';
+import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
 import { Label, Input, Textarea, Text, VStack, HStack } from '@tallyui/components';
 
