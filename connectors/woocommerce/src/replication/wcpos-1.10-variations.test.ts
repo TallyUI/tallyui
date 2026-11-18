@@ -1,5 +1,9 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRxDatabase } from 'rxdb';
+import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
+import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { connectorCollection } from '@tallyui/database';
 import fixture from '../__tests__/fixtures/wcpos-1.10.20-variations.json';
 import { closeTills, context, createFakeStore, startTill } from '../__tests__/fake-store';
 import { toProductDocument, toVariationDocument, wooProductReplication } from './products';
@@ -16,7 +20,7 @@ describe('WCPOS 1.10.20 variation documents', () => {
     const { payload } = fixture.documents.find((doc) => doc.id === id)!;
     expect(toVariationDocument(payload)).toEqual({
       id, sku, barcode, price: '25.00', regular_price: '25.00', sale_price: '', on_sale: false,
-      stock_status: 'instock', stock_quantity: 10, manage_stock: true, backorders: 'no', status: 'publish', purchasable: true,
+      stock_status: 'instock', stock_quantity: 10, low_stock_amount: null, manage_stock: true, backorders: 'no', status: 'publish', purchasable: true,
       tax_class: '', tax_status: 'taxable',
       attributes: [{ id: 0, name: 'Size', option: size }, { id: 0, name: 'Colour', option: colour }],
     });
@@ -24,6 +28,38 @@ describe('WCPOS 1.10.20 variation documents', () => {
 
   it('keeps a product\'s backorders', () => {
     expect(toProductDocument({ id: 1, uuid: 'u1', status: 'publish', backorders: 'notify' }).backorders).toBe('notify');
+  });
+
+  it('a product document keeps low_stock_amount', () => {
+    const product = (extra: object) => toProductDocument({ id: 1, uuid: 'u1', status: 'publish', ...extra });
+    expect(product({ low_stock_amount: 3 }).low_stock_amount).toBe(3);
+    expect(product({ low_stock_amount: null }).low_stock_amount).toBeNull();
+    expect(product({})).not.toHaveProperty('low_stock_amount');
+  });
+
+  it('a variation document keeps low_stock_amount', () => {
+    expect(toVariationDocument({ id: 1, low_stock_amount: 3 }).low_stock_amount).toBe(3);
+    expect(toVariationDocument({ id: 1, low_stock_amount: null }).low_stock_amount).toBeNull();
+    expect(toVariationDocument({ id: 1 })).not.toHaveProperty('low_stock_amount');
+  });
+
+  it('the stored product passes the version 4 schema', async () => {
+    const db = await createRxDatabase({ name: `woo${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    try {
+      await db.addCollections({ products: connectorCollection(wooProductSchema) });
+      for (const [uuid, low] of [['u3', 3], ['un', null]] as const) {
+        await db.products.insert(toProductDocument({ id: 1, uuid, status: 'publish', type: 'variable', low_stock_amount: low,
+          variation_docs: [toVariationDocument({ id: 2, low_stock_amount: low })] }));
+        const stored = (await db.products.findOne(uuid).exec())!.toJSON();
+        expect([stored.low_stock_amount, stored.variation_docs[0].low_stock_amount]).toEqual([low, low]);
+      }
+      // Items under variation_docs accept unknown keys, so a wrong type is what shows the property is declared there.
+      await expect(db.products.insert(toProductDocument({ id: 1, uuid: 'ux', status: 'publish',
+        variation_docs: [toVariationDocument({ id: 2, low_stock_amount: 'x' })] }))).rejects.toThrow();
+    } finally {
+      await db.close();
+    }
   });
 
   it('keeps a global attribute id and drops a non-numeric one', () => {
@@ -43,8 +79,8 @@ describe('WCPOS 1.10.20 variation documents', () => {
 });
 
 describe('WCPOS 1.10.20 variations pull', () => {
-  it('uses product schema version 3 and retains replicated variation tax fields', async () => {
-    expect(wooProductSchema.version).toBe(3);
+  it('uses product schema version 4 and retains replicated variation tax fields', async () => {
+    expect(wooProductSchema.version).toBe(4);
     const store = createFakeStore(1);
     Object.assign(store.rows[0], { id: 102, type: 'variable', variations: [104, 105, 106] });
     store.respond = (url) => url.pathname === '/wp-json/wcpos/v2/variations'
