@@ -21,7 +21,7 @@ import { ChargeForm } from '@tallyui/components';
 />
 ```
 
-Renders a fee, shipping, or custom item selector with name and amount inputs, available tax choices, and Apply and Cancel buttons. A missing name, invalid amount, or refusal from `onApply` is shown inline; successful application calls `onClose`.
+Renders a fee, shipping, or custom item selector with name and amount inputs, available tax choices, and Apply and Cancel buttons. An invalid amount or a refusal from `onApply` is shown inline; successful application calls `onClose`. As in WCPOS v2, a blank name takes the kind's default (Fee, Shipping, or Product), and a fee must be above zero.
 
 Pass `kind` to open the form on one kind without the selector, as WCPOS v2's cart "+" menu does with its separate Add Fee, Add Shipping, and Add Miscellaneous Product entries.
 
