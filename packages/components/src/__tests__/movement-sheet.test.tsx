@@ -120,3 +120,72 @@ it('shows a thrown error by its message alone, without its class name', async ()
   await waitFor(() => expect(screen.getByText('Finish first')).toBeTruthy());
   expect(screen.queryByText(/FooError/)).toBeNull();
 });
+
+const chipIds = () =>
+  Array.from(screen.getByTestId('movement-reason-chips').querySelectorAll('[data-testid^="movement-reason-"]')).map((el) =>
+    el.getAttribute('data-testid'),
+  );
+const reasonInput = () => screen.getByTestId('movement-reason') as HTMLInputElement;
+const pressed = (id: string) => screen.getByTestId(id).getAttribute('aria-pressed');
+
+it("paid out offers v2's reasons as chips", () => {
+  render(
+    <RegisterHarness db={db}>
+      {(register) => <MovementSheet register={register} type="paid_out" currency="EUR" onOpenChange={vi.fn()} />}
+    </RegisterHarness>,
+  );
+  expect(chipIds()).toEqual(['supplier', 'petty-cash', 'bank', 'tips', 'change', 'other'].map((k) => `movement-reason-${k}`));
+  expect(screen.getByTestId('movement-reason-petty-cash').textContent).toBe('Petty cash');
+});
+
+it('a chip fills the reason, a second tap clears it, and the reason records', async () => {
+  render(
+    <RegisterHarness db={db}>
+      {(register) => <MovementSheet register={register} type="paid_out" currency="EUR" onOpenChange={vi.fn()} />}
+    </RegisterHarness>,
+  );
+  fireEvent.change(screen.getByTestId('movement-amount'), { target: { value: '5' } });
+  fireEvent.click(screen.getByTestId('movement-reason-supplier'));
+  expect(reasonInput().value).toBe('Supplier');
+  expect(pressed('movement-reason-supplier')).toBe('true');
+  fireEvent.click(screen.getByTestId('movement-reason-supplier'));
+  expect(reasonInput().value).toBe('');
+  expect(pressed('movement-reason-supplier')).toBe('false');
+  fireEvent.click(screen.getByTestId('movement-reason-supplier'));
+  fireEvent.click(confirmButton());
+  await waitFor(async () => {
+    const [row] = await db.cash_movements.find().exec();
+    expect(row?.toJSON()).toMatchObject({ type: 'paid_out', reason: 'Supplier' });
+  });
+});
+
+it("typing a chip's label turns it on; Other… clears and focuses the field", () => {
+  render(
+    <RegisterHarness db={db}>
+      {(register) => <MovementSheet register={register} type="paid_out" currency="EUR" onOpenChange={vi.fn()} />}
+    </RegisterHarness>,
+  );
+  fireEvent.change(reasonInput(), { target: { value: 'Bank' } });
+  expect(pressed('movement-reason-bank')).toBe('true');
+  fireEvent.click(screen.getByTestId('movement-reason-other'));
+  expect(reasonInput().value).toBe('');
+  expect(document.activeElement).toBe(reasonInput());
+});
+
+it('no sale offers its own reasons, and `reasons` replaces the defaults', () => {
+  const { unmount } = render(
+    <RegisterHarness db={db}>
+      {(register) => <MovementSheet register={register} type="no_sale" currency="EUR" onOpenChange={vi.fn()} />}
+    </RegisterHarness>,
+  );
+  expect(chipIds()).toEqual(['change', 'mistake', 'drawer-check', 'other'].map((k) => `movement-reason-${k}`));
+  unmount();
+  render(
+    <RegisterHarness db={db}>
+      {(register) => (
+        <MovementSheet register={register} type="no_sale" currency="EUR" onOpenChange={vi.fn()} reasons={['Milk run']} />
+      )}
+    </RegisterHarness>,
+  );
+  expect(chipIds()).toEqual(['movement-reason-milk-run', 'movement-reason-other']);
+});
