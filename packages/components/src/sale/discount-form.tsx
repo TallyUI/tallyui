@@ -3,6 +3,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import { formatMoney, useFormatMoney, minorUnitDigits, moneyFromDecimalString, type Money } from '@tallyui/core';
 import type { AppliedDiscount, Discount } from '@tallyui/pos';
 import { DiscountBadge } from '../cart';
+import { DialogFooter } from '../ui/dialog';
 
 /** The cashier's entry as a TallyUI Discount (a percent, or integer minor units), or the inline error to show. */
 export function parseDiscount(type: Discount['type'], text: string, currency: string): Discount | string {
@@ -28,11 +29,12 @@ export const discountLabel = (discount: AppliedDiscount, currency: string, forma
 
 const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center justify-center';
 
-/** `onApply` returns a refusal to show inline (the capability gate), or null once applied. */
-export function DiscountForm({ title, currency, onApply, onClose }: {
-  title: string; currency: string; onApply: (discount: Discount) => string | null; onClose: () => void;
+/** `onApply` returns a refusal to show inline (the capability gate), or null once applied. `layout="dialog"`: v2's Add Discount body. */
+export function DiscountForm({ title, currency, onApply, onClose, layout = 'inline' }: {
+  title?: string; currency: string; onApply: (discount: Discount) => string | null; onClose: () => void; layout?: 'inline' | 'dialog';
 }) {
-  const [type, setType] = useState<Discount['type']>('percentage');
+  const dialog = layout === 'dialog';
+  const [type, setType] = useState<Discount['type']>(dialog ? 'fixed' : 'percentage'); // v2 add-discount.tsx:44 opens at Amount.
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   function apply() {
@@ -41,25 +43,29 @@ export function DiscountForm({ title, currency, onApply, onClose }: {
     setError(refused);
     if (refused === null) onClose();
   }
-  return <View role="group" accessibilityLabel={title} className="gap-2 px-3 py-2">
-    <Text className="font-semibold text-foreground">{title}</Text>
+  const toggle = (['percentage', 'fixed'] as const).map((option) => <Pressable key={option} accessibilityRole="button"
+    accessibilityState={{ selected: type === option }} aria-selected={dialog ? type === option : undefined} onPress={() => setType(option)}
+    className={`${button} ${type === option ? 'bg-primary' : 'bg-card'}`}>
+    <Text className={type === option ? 'text-primary-foreground' : 'text-foreground'}>{option === 'percentage' ? 'Percent' : 'Amount'}</Text>
+  </Pressable>);
+  const field = <TextInput accessibilityLabel="Discount value" value={text} onChangeText={setText} onSubmitEditing={apply}
+    inputMode="decimal" placeholder={type === 'percentage' ? '%' : currency} testID={dialog ? 'discount-amount-input' : undefined}
+    className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-foreground" />;
+  const cancel = <Pressable accessibilityRole="button" onPress={onClose} className={`${button} bg-card`}>
+    <Text className="text-foreground">Cancel</Text></Pressable>;
+  return <View role="group" accessibilityLabel={title ?? 'Discount'} className="gap-2 px-3 py-2">
+    {title === undefined || dialog ? null : <Text className="font-semibold text-foreground">{title}</Text>}
     <View className="flex-row gap-2">
-      {(['percentage', 'fixed'] as const).map((option) => <Pressable key={option} accessibilityRole="button"
-        accessibilityState={{ selected: type === option }} onPress={() => setType(option)}
-        className={`${button} ${type === option ? 'bg-primary' : 'bg-card'}`}>
-        <Text className={type === option ? 'text-primary-foreground' : 'text-foreground'}>{option === 'percentage' ? 'Percent' : 'Amount'}</Text>
-      </Pressable>)}
-      <TextInput accessibilityLabel="Discount value" value={text} onChangeText={setText} onSubmitEditing={apply}
-        inputMode="decimal" placeholder={type === 'percentage' ? '%' : currency}
-        className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-foreground" />
+      {dialog ? <>{field}<View testID="discount-percent-switch" className="flex-row gap-2">{toggle}</View></> : <>{toggle}{field}</>}
     </View>
     {error ? <Text accessibilityRole="alert" className="text-destructive">{error}</Text> : null}
-    <View className="flex-row gap-2">
+    {dialog ? <DialogFooter>{cancel}<Pressable testID="add-discount-submit" accessibilityRole="button" onPress={apply}
+      className={`${button} bg-primary`}><Text className="font-semibold text-primary-foreground">Add discount</Text></Pressable></DialogFooter>
+      : <View className="flex-row gap-2">
       <Pressable accessibilityRole="button" onPress={apply} className={`${button} bg-primary`}>
         <Text className="font-semibold text-primary-foreground">Apply</Text></Pressable>
-      <Pressable accessibilityRole="button" onPress={onClose} className={`${button} bg-card`}>
-        <Text className="text-foreground">Cancel</Text></Pressable>
-    </View>
+      {cancel}
+    </View>}
   </View>;
 }
 
