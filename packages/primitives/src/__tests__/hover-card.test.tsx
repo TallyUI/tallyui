@@ -74,4 +74,15 @@ describe('HoverCard', () => {
     fireEvent.click(screen.getByTestId('overlay'));
     expect(screen.queryByTestId('content')).toBeNull();
   });
+
+  it('on web measures the trigger with measureInWindow, not measure', () => {
+    renderHoverCard();
+    const trigger = screen.getByTestId('trigger');
+    const measure = vi.fn();
+    const measureInWindow = vi.fn();
+    Object.assign(trigger, { measure, measureInWindow });
+    fireEvent.click(trigger);
+    expect(measureInWindow).toHaveBeenCalled();
+    expect(measure).not.toHaveBeenCalled();
+  });
 });

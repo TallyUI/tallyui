@@ -69,6 +69,17 @@ describe('Tooltip', () => {
     expect(screen.queryByTestId('content')).toBeNull();
   });
 
+  it('on web measures the trigger with measureInWindow, not measure', () => {
+    renderTooltip();
+    const trigger = screen.getByTestId('trigger');
+    const measure = vi.fn();
+    const measureInWindow = vi.fn();
+    Object.assign(trigger, { measure, measureInWindow });
+    hover(trigger);
+    expect(measureInWindow).toHaveBeenCalled();
+    expect(measure).not.toHaveBeenCalled();
+  });
+
   it('hover opens at once when delayDuration is omitted', () => {
     renderTooltip();
     hover(screen.getByTestId('trigger'));

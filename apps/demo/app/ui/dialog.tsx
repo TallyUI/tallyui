@@ -1,11 +1,16 @@
 import { useState } from 'react';
-import { ScrollView } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { Stack } from 'expo-router';
 import {
   Dialog, DialogTrigger, DialogContent, DialogHeader, DialogFooter,
   DialogTitle, DialogDescription, DialogClose,
   Button, Text, VStack, Input, Label,
   Popover, PopoverTrigger, PopoverContent,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+  HoverCard, HoverCardTrigger, HoverCardContent,
+  Tooltip, TooltipTrigger, TooltipContent,
+  ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem,
 } from '@tallyui/components';
 
 export default function DialogScreen() {
@@ -138,6 +143,63 @@ export default function DialogScreen() {
                   <Text className="text-sm font-medium">Nested Popover Content</Text>
                 </PopoverContent>
               </Popover>
+            </DialogContent>
+          </Dialog>
+        </VStack>
+
+        <VStack className="gap-3">
+          <Text className="text-lg font-bold">Overlays in a Dialog</Text>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline"><Text>Open dialog with overlays</Text></Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogTitle>Dialog with overlays</DialogTitle>
+              <VStack className="items-start gap-3">
+                <Select>
+                  <SelectTrigger className="w-48" testID="nested-select-trigger">
+                    <SelectValue placeholder="Pick a size" />
+                  </SelectTrigger>
+                  <SelectContent testID="nested-select-content">
+                    <SelectItem value="small" label="Small">Small</SelectItem>
+                    <SelectItem value="large" label="Large">Large</SelectItem>
+                  </SelectContent>
+                </Select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" testID="nested-dropdown-menu-trigger"><Text>Open nested menu</Text></Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent testID="nested-dropdown-menu-content">
+                    <DropdownMenuItem><Text>Nested menu item</Text></DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <HoverCard>
+                  <HoverCardTrigger asChild>
+                    <Button variant="outline" testID="nested-hover-card-trigger"><Text>Nested hover card</Text></Button>
+                  </HoverCardTrigger>
+                  <HoverCardContent testID="nested-hover-card-content">
+                    <Text className="text-sm">Nested hover card content</Text>
+                  </HoverCardContent>
+                </HoverCard>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" testID="nested-tooltip-trigger"><Text>Nested tooltip</Text></Button>
+                  </TooltipTrigger>
+                  <TooltipContent testID="nested-tooltip-content">
+                    <Text>Nested tooltip content</Text>
+                  </TooltipContent>
+                </Tooltip>
+                <ContextMenu>
+                  <ContextMenuTrigger testID="nested-context-menu-trigger">
+                    <View className="h-16 w-56 items-center justify-center rounded-md border border-dashed border-border">
+                      <Text className="text-sm text-muted-foreground">Long-press for nested menu</Text>
+                    </View>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent testID="nested-context-menu-content">
+                    <ContextMenuItem><Text>Nested context item</Text></ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              </VStack>
             </DialogContent>
           </Dialog>
         </VStack>
