@@ -312,12 +312,13 @@ export const backToSelling = (sessions: RegisterSessionCollection, id: string) =
  * without a business day. `approvedBy`, the manager who approved the count, is written in the same
  * write as the close, and a repeat close keeps the first close's approver as it keeps its count.
  * `approval`, the store's opaque proof (ADR-082), is written to `approver_token` in the same
- * write; it never reaches the closure or its breakdowns.
+ * write; it never reaches the closure or its breakdowns. `note`, the cashier's note on the count, is
+ * written with the count (blank is stored as null); a repeat close keeps the first close's note, as it keeps its count.
  */
 export async function closeSession(
   sessions: RegisterSessionCollection,
   id: string,
-  input: { counted: Record<string, number>; closedBy?: string; approvedBy?: string; approval?: string; timezone?: string },
+  input: { counted: Record<string, number>; closedBy?: string; approvedBy?: string; approval?: string; timezone?: string; note?: string },
 ) {
   const session = await sessions.findOne(id).exec();
   if (!session) throw new RegisterSessionRequiredError();
@@ -325,6 +326,7 @@ export async function closeSession(
     business_day: session.business_day || businessDayOf(session.opened_at_gmt, input.timezone ?? 'device'),
     counted: input.counted,
     closed_by: input.closedBy ?? null,
+    count_note: input.note?.trim() ? input.note : null,
     ...(input.approvedBy ? { approved_by: input.approvedBy } : {}),
     ...(input.approval ? { approver_token: input.approval } : {}),
     closure_id: id,
@@ -574,6 +576,8 @@ export async function writeClosure({
       ...labels,
       opened_by: session.opened_by ?? null,
       approved_by: session.approved_by ?? null,
+      // v2's key; the Z shows it when it is not blank.
+      ...(session.count_note?.trim() ? { variance_note: session.count_note } : {}),
       payment_methods,
       tax_rates: Object.fromEntries(
         [...taxRates.values()].map(({ ratePpm, net_minor, tax_minor }) => [
