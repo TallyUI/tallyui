@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'react-native';
 import { PortalHost } from '@tallyui/primitives';
@@ -26,6 +26,10 @@ function setup(props: Partial<ReceiptSheetProps> = {}) {
   return { onOpenChange, onPrint };
 }
 const print = () => screen.getByTestId('receipt-print-button');
+const openForm = () => fireEvent.click(screen.getByTestId('receipt-email-button'));
+const address = () => screen.getByTestId('receipt-email-address') as HTMLInputElement;
+const send = () => screen.getByTestId('receipt-email-send');
+const typeAddress = (value: string) => fireEvent.change(address(), { target: { value } });
 
 describe('ReceiptSheet', () => {
   it('shows the title, the preview, Template and Printer rows, and Close and Print receipt', () => {
@@ -101,6 +105,141 @@ describe('ReceiptSheet', () => {
     cleanup();
     setup();
     expect(screen.queryByTestId('receipt-email-button')).toBeNull();
+  });
+
+  it('with email, Email Receipt opens the form with the address prefilled', () => {
+    setup({ email: { defaultAddress: 'jo@shop.co', onSend: vi.fn() } });
+    expect(screen.queryByTestId('receipt-email-form')).toBeNull();
+    expect(screen.getByTestId('receipt-email-button').textContent).toBe('Email Receipt');
+    openForm();
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+    expect(address().value).toBe('jo@shop.co');
+    expect(address().getAttribute('aria-label')).toBe('Email Address');
+    expect(send().textContent).toBe('Send');
+    expect(screen.queryByTestId('receipt-email-error')).toBeNull();
+  });
+
+  it('Send calls onSend with the trimmed address and the switch value, then closes the form', async () => {
+    const onSend = vi.fn(() => Promise.resolve(null));
+    setup({ email: { saveToCustomer: true, onSend } });
+    openForm();
+    typeAddress('  a@b.co  ');
+    const save = screen.getByTestId('receipt-email-save');
+    expect(save.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(save);
+    expect(save.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(send());
+    expect(onSend).toHaveBeenCalledExactlyOnceWith({ address: 'a@b.co', saveToCustomer: true });
+    await waitFor(() => expect(screen.queryByTestId('receipt-email-form')).toBeNull());
+  });
+
+  it('an address without @ is refused inline and onSend is not called', () => {
+    const onSend = vi.fn(() => null);
+    setup({ email: { onSend } });
+    openForm();
+    typeAddress('ab.co');
+    fireEvent.click(send());
+    expect(screen.getByRole('alert').textContent).toBe('Enter an email address.');
+    expect(screen.getByTestId('receipt-email-error').textContent).toBe('Enter an email address.');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+  });
+
+  it('a refusal from onSend shows and the form stays open with the address', async () => {
+    const onSend = vi.fn(() => 'Store email is off');
+    setup({ email: { onSend } });
+    openForm();
+    typeAddress('a@b.co');
+    fireEvent.click(send());
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('alert').textContent).toBe('Store email is off');
+    expect(address().value).toBe('a@b.co');
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+  });
+
+  it('a rejected onSend shows its message, or a fallback, and the form stays open', async () => {
+    const onSend = vi.fn().mockRejectedValueOnce(new Error('Network down')).mockRejectedValueOnce('nope');
+    setup({ email: { defaultAddress: 'a@b.co', onSend } });
+    openForm();
+    fireEvent.click(send());
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Network down'));
+    fireEvent.click(send());
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Could not send the receipt.'));
+    expect(address().value).toBe('a@b.co');
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+  });
+
+  it('while onSend is pending, Send is busy and cannot be pressed again', async () => {
+    let resolve: (value: string | null) => void = () => {};
+    const onSend = vi.fn(() => new Promise<string | null>((done) => { resolve = done; }));
+    setup({ email: { defaultAddress: 'a@b.co', onSend } });
+    openForm();
+    fireEvent.click(send());
+    expect(send().getAttribute('aria-disabled')).toBe('true');
+    expect(send().querySelector('[role="progressbar"]')).not.toBeNull();
+    fireEvent.click(send());
+    expect(onSend).toHaveBeenCalledTimes(1);
+    await act(async () => { resolve(null); });
+    await waitFor(() => expect(screen.queryByTestId('receipt-email-form')).toBeNull());
+  });
+
+  it('offline: the notice shows and the button reads Send when online', () => {
+    setup({ email: { offline: true, onSend: vi.fn() } });
+    openForm();
+    expect(screen.getByTestId('receipt-email-offline').textContent).toBe(
+      'This device can’t reach your store right now. The receipt will be emailed automatically when the connection returns.');
+    expect(send().textContent).toBe('Send when online');
+    cleanup();
+    setup({ email: { onSend: vi.fn() } });
+    openForm();
+    expect(screen.queryByTestId('receipt-email-offline')).toBeNull();
+    expect(send().textContent).toBe('Send');
+  });
+
+  it('the save switch is drawn only when saveToCustomer is true; without email the form is never drawn and onEmail still works', () => {
+    setup({ email: { saveToCustomer: true, onSend: vi.fn() } });
+    openForm();
+    expect(screen.getByTestId('receipt-email-save-row').textContent).toBe('Save email to the customer');
+    expect(screen.getByTestId('receipt-email-save')).toBeTruthy();
+    cleanup();
+    setup({ email: { onSend: vi.fn() } });
+    openForm();
+    expect(screen.queryByTestId('receipt-email-save')).toBeNull();
+    cleanup();
+    const onEmail = vi.fn();
+    setup({ onEmail });
+    openForm();
+    expect(onEmail).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('receipt-email-form')).toBeNull();
+  });
+
+  it('with email, onEmail is not called, the button toggles the form, and each opening starts fresh', () => {
+    const onEmail = vi.fn();
+    setup({ onEmail, email: { defaultAddress: 'jo@shop.co', saveToCustomer: true, onSend: vi.fn() } });
+    openForm();
+    typeAddress('ab.co');
+    fireEvent.click(screen.getByTestId('receipt-email-save'));
+    fireEvent.click(send());
+    expect(screen.getByRole('alert')).toBeTruthy();
+    openForm();
+    expect(screen.queryByTestId('receipt-email-form')).toBeNull();
+    openForm();
+    expect(address().value).toBe('jo@shop.co');
+    expect(screen.getByTestId('receipt-email-save').getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByTestId('receipt-email-error')).toBeNull();
+    expect(onEmail).not.toHaveBeenCalled();
+  });
+
+  it('closing the sheet closes the form', () => {
+    const props = { templates: TEMPLATES, onPrint: vi.fn(), onOpenChange: vi.fn(), email: { onSend: vi.fn() } };
+    const { rerender } = render(<><ReceiptSheet open {...props}><Text>Preview</Text></ReceiptSheet><PortalHost /></>);
+    openForm();
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+    rerender(<><ReceiptSheet open={false} {...props}><Text>Preview</Text></ReceiptSheet><PortalHost /></>);
+    rerender(<><ReceiptSheet open {...props}><Text>Preview</Text></ReceiptSheet><PortalHost /></>);
+    expect(screen.getByTestId('receipt-email-button')).toBeTruthy();
+    expect(screen.queryByTestId('receipt-email-form')).toBeNull();
   });
 
   it('the header close icon closes the sheet', () => {
