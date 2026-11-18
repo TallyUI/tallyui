@@ -1,7 +1,21 @@
 import * as React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { scaleVariables, type ScaleVariables } from '@tallyui/theme';
 import { ListRow } from '../ui';
+
+// The real provider floors its own variables, so a stub is the only way to see ListRow's own floor.
+let stubVariables: ScaleVariables | undefined;
+vi.mock('../scale/scale-provider', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../scale/scale-provider')>();
+  return {
+    ...actual,
+    useScale: () => {
+      const state = actual.useScale();
+      return stubVariables ? { ...state, variables: stubVariables } : state;
+    },
+  };
+});
 
 // react-native-web atomizes className into hashed classes, so copy it to a data attribute.
 vi.mock('react-native', async (importOriginal) => {
@@ -24,10 +38,12 @@ function finePointer() {
 afterEach(() => {
   cleanup();
   window.matchMedia = matchMedia;
+  stubVariables = undefined;
 });
 
 const classesOf = (el: Element | null) => (el?.getAttribute('data-class') ?? '').split(' ');
 const classes = () => classesOf(screen.getByTestId('row'));
+const minHeight = () => (screen.getByTestId('row') as HTMLElement).style.minHeight;
 
 describe('ListRow', () => {
   it('is a hairline-ruled row with the press wash', () => {
@@ -84,5 +100,68 @@ describe('ListRow', () => {
     finePointer();
     render(<ListRow testID="row" onPress={() => {}} />);
     expect(classes()).toContain('web:hover:bg-accent');
+  });
+
+  it("renders today's row when size and selected are unset", () => {
+    render(<ListRow testID="row" onPress={() => {}} />);
+    const row = screen.getByTestId('row');
+    expect(row.getAttribute('data-class')).toBe(
+      'border-border flex-row items-center gap-3 border-b px-3 py-2 min-h-14 active:bg-accent',
+    );
+    expect(minHeight()).toBe('');
+    expect(row.hasAttribute('aria-selected')).toBe(false);
+    expect(row.hasAttribute('aria-checked')).toBe(false);
+  });
+
+  it('has the row height for a one-line row', () => {
+    render(<ListRow testID="row" size="sm" />);
+    expect(classes()).not.toContain('min-h-14');
+    expect(minHeight()).toBe('44px');
+    cleanup();
+    finePointer();
+    render(<ListRow testID="row" size="sm" />);
+    expect(minHeight()).toBe('44px');
+    cleanup();
+    // Compact's unfloored row (36) under a coarse pointer: the pointer floor lifts it to 44.
+    window.matchMedia = matchMedia;
+    stubVariables = scaleVariables('compact', 'fine');
+    expect(stubVariables['--spacing-row']).toBe(36);
+    render(<ListRow testID="row" size="sm" />);
+    expect(minHeight()).toBe('44px');
+  });
+
+  it("keeps a caller's style over the row height", () => {
+    render(<ListRow testID="row" size="sm" style={{ minHeight: 60 }} />);
+    expect(minHeight()).toBe('60px');
+    cleanup();
+    render(<ListRow testID="row" size="sm" onPress={() => {}} style={() => ({ minHeight: 60 })} />);
+    expect(minHeight()).toBe('60px');
+  });
+
+  it('paints the selected row with the primary bar, and keeps the bar room on the others', () => {
+    render(
+      <>
+        <ListRow testID="on" selected onPress={() => {}} />
+        <ListRow testID="off" selected={false} onPress={() => {}} />
+        <ListRow testID="plain" onPress={() => {}} />
+      </>,
+    );
+    const of = (id: string) => classesOf(screen.getByTestId(id));
+    expect(of('on')).toEqual(expect.arrayContaining(['border-l-2', 'border-l-primary', 'bg-muted', 'pl-2.5']));
+    expect(screen.getByTestId('on').getAttribute('aria-selected')).toBe('true');
+    expect(of('off')).toEqual(expect.arrayContaining(['border-l-2', 'border-l-transparent', 'pl-2.5']));
+    expect(of('off')).not.toContain('bg-muted');
+    expect(screen.getByTestId('off').getAttribute('aria-selected')).toBe('false');
+    for (const mark of ['border-l-2', 'border-l-primary', 'border-l-transparent', 'bg-muted', 'pl-2.5']) {
+      expect(of('plain')).not.toContain(mark);
+    }
+    expect(screen.getByTestId('plain').hasAttribute('aria-selected')).toBe(false);
+  });
+
+  it('leaves a radio its checked state', () => {
+    render(<ListRow testID="row" role="radio" selected onPress={() => {}} />);
+    const row = screen.getByTestId('row');
+    expect(row.getAttribute('aria-checked')).toBe('true');
+    expect(row.hasAttribute('aria-selected')).toBe(false);
   });
 });

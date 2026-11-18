@@ -49,6 +49,27 @@ export default function ListRowScreen() {
         </View>
 
         <View className="gap-3">
+          <Text className="text-lg font-bold">Selected</Text>
+          <View className="bg-card w-80">
+            <ListRow selected bodyClassName="gap-1" onPress={onPress} testID="list-row-on">
+              {person('Order 1042', 'Coffee ×2, Croissant')}
+            </ListRow>
+            <ListRow selected={false} bodyClassName="gap-1" onPress={onPress} testID="list-row-off">
+              {person('Order 1043', 'Tea')}
+            </ListRow>
+          </View>
+        </View>
+
+        <View className="gap-3">
+          <Text className="text-lg font-bold">Small</Text>
+          <View className="bg-card w-80">
+            <ListRow size="sm" trailing={chevron} onPress={onPress} testID="list-row-sm">
+              <Text numberOfLines={1}>Last closure</Text>
+            </ListRow>
+          </View>
+        </View>
+
+        <View className="gap-3">
           <Text className="text-lg font-bold">Read-only</Text>
           <View className="bg-card w-80">
             <ListRow testID="list-row-static">
