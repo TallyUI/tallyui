@@ -257,6 +257,7 @@ export {
 export {
   AppShell, type AppShellProps, NavRail, type NavRailProps, NavDrawer, type NavDrawerProps, type ShellNavItem,
   ConnectivityToast, type ConnectivityToastProps,
+  AddedToCartToast, type AddedToCartToastProps, type AddedToCartEvent,
 } from './shell';
 
 // Reports components
