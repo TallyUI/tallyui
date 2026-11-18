@@ -17,6 +17,11 @@ export interface POSLayoutProps extends Omit<ViewProps, 'children'> {
   tabBar?: 'top' | 'bottom';
   /** The cart's item count, shown over the Cart tab's icon in the bottom bar; hidden at 0 or undefined. */
   cartCount?: number;
+  /** v2's checkout column (pos-columns.tsx:118-162). When given, its result takes the browse column's place and the
+   *  browse slot is not rendered: in 'split' the cart column stays beside it (as the ledger); in 'stacked' it is the
+   *  whole body, with no tabs or tab bar. It is called with the layout in force, so the app can give the pane its own
+   *  ledger when the cart is not on screen. */
+  renderCheckout?: (layout: 'split' | 'stacked') => ReactNode;
 }
 
 export function POSLayout({
@@ -28,11 +33,14 @@ export function POSLayout({
   className,
   tabBar = 'top',
   cartCount,
+  renderCheckout,
   ...viewProps
 }: POSLayoutProps) {
   const { width } = useWindowDimensions();
   const layout = layoutProp ?? (width >= breakpoint ? 'split' : 'stacked');
   const [activeTab, setActiveTab] = useState<'browse' | 'cart'>('browse');
+  const checkout = (mode: 'split' | 'stacked') =>
+    <View testID="pos-checkout-column" className="flex-1 bg-card">{renderCheckout?.(mode)}</View>;
 
   return (
     <View className={cn('flex-1 bg-bg', className)} {...viewProps}>
@@ -40,9 +48,11 @@ export function POSLayout({
 
       {layout === 'split' ? (
         <View className="flex-1 flex-row">
-          <View className="flex-[3]">{browseSlot}</View>
+          <View className="flex-[3]">{renderCheckout ? checkout('split') : browseSlot}</View>
           <View className="flex-[2] border-l border-border">{cartSlot}</View>
         </View>
+      ) : renderCheckout ? (
+        checkout('stacked')
       ) : tabBar === 'bottom' ? (
         // v2's phone tab bar (apps/main/components/pos-phone-tab-bar.tsx). Both panes stay mounted, as v2's
         // `lazy: false` keeps both tabs: the scan handler lives in Products and the cart keeps its state.

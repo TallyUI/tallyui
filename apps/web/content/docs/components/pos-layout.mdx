@@ -33,6 +33,16 @@ On a phone, `tabBar="bottom"` puts WCPOS v2's Products / Cart tab bar at the foo
 />
 ```
 
+At tender, `renderCheckout` is WCPOS v2's checkout column: its result takes the products column's place and the catalogue unmounts. In the split layout the cart stays beside it, so the cart can draw the tender ledger; in the stacked layout it is the whole body, with no tabs, so the pane draws its own ledger:
+
+```tsx
+<POSLayout
+  browseSlot={<Catalogue {...catalogueProps} />}
+  cartSlot={<Cart sale={sale} showTotal={false} tenderLedger={atTender ? {} : undefined} />}
+  renderCheckout={atTender ? (layout) => <Tender sale={sale} ledger={layout === 'stacked'} /> : undefined}
+/>
+```
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -45,11 +55,12 @@ On a phone, `tabBar="bottom"` puts WCPOS v2's Products / Cart tab bar at the foo
 | `className` | `string` | --- | Override container styles |
 | `tabBar` | `'top' \| 'bottom'` | `'top'` | Where the stacked layout's tabs sit; `'bottom'` is WCPOS v2's phone tab bar (Products / Cart with icons), with both panes kept mounted |
 | `cartCount` | `number` | --- | The cart's item count, shown over the Cart tab's icon in the bottom bar; hidden at 0 |
+| `renderCheckout` | `(layout: 'split' \| 'stacked') => ReactNode` | --- | WCPOS v2's checkout column, called with the layout in force. When given, it replaces the browse column in split and the whole body (tabs included) in stacked |
 
 ## Slots
 
 | Slot | Purpose |
 |------|---------|
-| `browseSlot` | Main product browsing area (left side in split, first tab in stacked) |
-| `cartSlot` | Cart panel (right side in split, second tab in stacked) |
+| `browseSlot` | Main product browsing area (left side in split, first tab in stacked); not rendered while `renderCheckout` is set |
+| `cartSlot` | Cart panel (right side in split, second tab in stacked); in stacked, not rendered while `renderCheckout` is set |
 | `headerSlot` | Top bar rendered above the layout with a bottom border |
