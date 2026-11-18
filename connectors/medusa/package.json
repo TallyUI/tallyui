@@ -29,8 +29,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit",
-    "test": "echo \"no tests yet\""
+    "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "@tallyui/core": "workspace:^"
