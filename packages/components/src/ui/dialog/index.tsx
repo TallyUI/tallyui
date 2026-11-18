@@ -35,11 +35,11 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: keyof typeof SIDE_CLASS }
 >(function DialogContent({ className, children, side = 'center', ...props }, ref) {
   const { open } = DialogPrimitive.useRootContext();
-  const { mounted, scrim, panel } = useOverlayMotion(open, true, side === 'right' ? SHEET_MOTION : DIALOG_MOTION);
+  const { mounted, scrim, panel } = useOverlayMotion(open, true, side === 'center' ? DIALOG_MOTION : SHEET_MOTION);
   const [width, setWidth] = React.useState(() => Dimensions.get('window').width);
 
-  // WCPOS v2 panel-in-right / panel-out-right.
-  if (side === 'right') {
+  // WCPOS v2 panel-in-left / panel-out-left and panel-in-right / panel-out-right.
+  if (side === 'left' || side === 'right') {
     if (!mounted) return null;
     const { style, ...propsWithoutStyle } = props;
     return (
@@ -47,9 +47,9 @@ const DialogContent = React.forwardRef<
         <Animated.View className="fixed inset-0 z-50" style={{ opacity: scrim }} pointerEvents={open ? 'auto' : 'none'}>
           <DialogOverlay forceMount className="absolute inset-0" />
         </Animated.View>
-        <DialogPrimitive.Content forceMount asChild ref={ref} className={cn(SIDE_CLASS.right, className)} {...propsWithoutStyle}>
+        <DialogPrimitive.Content forceMount asChild ref={ref} className={cn(SIDE_CLASS[side], className)} {...propsWithoutStyle}>
           <Animated.View
-            style={[style, { transform: [{ translateX: panel.interpolate({ inputRange: [0, 1], outputRange: [width, 0] }) }] }]}
+            style={[style, { transform: [{ translateX: panel.interpolate({ inputRange: [0, 1], outputRange: side === 'left' ? [-width, 0] : [width, 0] }) }] }]}
             pointerEvents={open ? 'auto' : 'none'}
             onLayout={(e) => { if (e.nativeEvent.layout.width) setWidth(e.nativeEvent.layout.width); }}
           >

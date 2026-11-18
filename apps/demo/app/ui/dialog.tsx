@@ -38,6 +38,26 @@ export default function DialogScreen() {
         </VStack>
 
         <VStack className="gap-3">
+          <Text className="text-lg font-bold">Left Sheet</Text>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button testID="open-left-sheet"><Text>Open Left Sheet</Text></Button>
+            </DialogTrigger>
+            <DialogContent side="left" testID="demo-left-sheet">
+              <DialogHeader>
+                <DialogTitle>Left sheet</DialogTitle>
+                <DialogDescription>Slides in from the left edge.</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button testID="demo-left-sheet-done"><Text>Done</Text></Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </VStack>
+
+        <VStack className="gap-3">
           <Text className="text-lg font-bold">Side Sheet</Text>
           <Dialog>
             <DialogTrigger asChild>
