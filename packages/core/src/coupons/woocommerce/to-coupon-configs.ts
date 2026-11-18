@@ -7,15 +7,12 @@ import type { CouponInput } from './types';
  * Map `CouponInput`s (the adapter-prefetched coupon documents) to the replay's
  * `CouponDiscountConfig` shape, keyed by the given (lowercase) codes.
  *
- * Extracted from `settleCart` so a differential harness can replay the composition
- * with the EXACT mapping settle uses — the defaults here (`amount || '0'`, `?? null`,
- * `?? false`, array copies) must never be duplicated. The original caller,
- * `settle.oracle.test.ts`, is retired; `settle-cart-differential.test.ts` in
- * packages/core is the harness that relies on this now (via its own
- * `toLegacyCouponConfigs`, which must stay in step with this function).
+ * The defaults (`amount || '0'`, `?? null`, `?? false`, array copies) live only
+ * here and must not be duplicated by callers. The sale's discount-code step
+ * (`@tallyui/pos` `sale/woocommerce/discount-codes.ts`) passes the accepted
+ * coupons' own codes.
  *
- * Codes absent from the map are skipped; `settleCart`'s missing_coupon gate
- * guarantees presence before this runs, and `recalculateCoupons` zeroes the
+ * Codes absent from the map are skipped; `recalculateCoupons` zeroes the
  * discount for any coupon line without a config.
  */
 export function toCouponConfigs(
