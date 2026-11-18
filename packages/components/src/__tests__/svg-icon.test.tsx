@@ -7,6 +7,7 @@ import {
   DiscountIcon,
   GiftIcon,
   MessageQuestionIcon,
+  PrinterIcon,
   ReceiptIcon,
   SearchIcon,
   SettingsIcon,
@@ -82,6 +83,10 @@ describe("WCPOS v2's nav icons", () => {
     ]],
     ['ReceiptIcon', ReceiptIcon, [
       'M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-3-2l-2 2l-2-2l-2 2l-2-2zM9 7h6m-6 4h6m-2 4h2',
+    ]],
+    ['PrinterIcon', PrinterIcon, [
+      'M17 17h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2m10-8V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4',
+      'M7 15a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z',
     ]],
     ['DiscountIcon', DiscountIcon, [
       'm9 15l6-6',
