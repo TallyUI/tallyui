@@ -11,6 +11,10 @@ const customers: Customer[] = [
 /** Made-up customers matched by name or email, case-insensitive, after a 300 ms wait (a stand-in for the connector). */
 const search = (query: string) => new Promise<Customer[]>((resolve) => setTimeout(() => resolve(customers.filter((customer) =>
   `${customer.name} ${customer.email}`.toLowerCase().includes(query.trim().toLowerCase()))), 300));
+/** v2's customer browse for an empty query: every made-up customer by last name, after the same wait. */
+const lastName = (customer: Customer) => customer.name.split(' ').at(-1) ?? '';
+const browse = () => new Promise<Customer[]>((resolve) => setTimeout(() => resolve([...customers].sort((a, b) =>
+  lastName(a).localeCompare(lastName(b)))), 300));
 
 export default function CustomerDropdownScreen() {
   const [selected, setSelected] = useState<Customer | null>(null);
@@ -22,7 +26,7 @@ export default function CustomerDropdownScreen() {
       <View className="max-w-md rounded-lg border border-border bg-card">
         <View className="border-b border-border px-2 py-2">
           {/* The pin's toggle stands in for the app's address editor. */}
-          <CustomerDropdown search={search} selected={selected} onSelect={setSelected} online
+          <CustomerDropdown search={search} browse={browse} selected={selected} onSelect={setSelected} online
             onEditAddress={() => setHasAddress((on) => !on)} hasAddress={hasAddress} />
         </View>
       </View>
