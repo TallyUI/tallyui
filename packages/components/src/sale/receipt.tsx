@@ -10,7 +10,6 @@ import { NOTE_NOT_SENT, orderReference } from './order-reference';
 const defaultFormatDate = (iso: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 
 type ReceiptProps = {
-  newSale: () => void;
   taxLabel?: (ratePpm: number) => string; topInset?: number; formatDate?: (iso: string) => string;
   /** Prints after the Change row and above the on-screen buttons (e.g. an app's register/software block). */
   footerSlot?: ReactNode;
@@ -30,6 +29,10 @@ type ReceiptProps = {
   /** With it the receipt prints its reference, the same as Orders; without it, the receipt's own order number. */
   posOrder?: PosOrder;
   order?: never; store?: never; cashier?: never; registerId?: never; registerName?: never;
+}) & ({ newSale: () => void; actions?: undefined } | {
+  newSale?: () => void;
+  /** Replaces Print receipt and New sale (never printed), e.g. a host footer as in v2's receipt stage; `false` draws no buttons. */
+  actions: ReactNode | false;
 });
 
 /** `store`/`taxLabel`/`topInset`/`formatDate` replace the app's Medusa settings, hard-coded VAT (default matches
@@ -37,7 +40,7 @@ type ReceiptProps = {
 export function Receipt(props: ReceiptProps) {
   const formatMoney = useFormatMoney();
   const { posOrder, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
-    topInset = 0, formatDate = defaultFormatDate, footerSlot, doneLabel = 'New sale' } = props;
+    topInset = 0, formatDate = defaultFormatDate, footerSlot, doneLabel = 'New sale', actions } = props;
   useEffect(injectPrintStyle, []);
   const order = props.receipt === undefined ? props.order : undefined;
   const receipt = props.receipt === undefined ? buildReceiptData(props.order, {
@@ -95,11 +98,13 @@ export function Receipt(props: ReceiptProps) {
         ? <View dataSet={{ print: 'hide' }}><Text testID="receipt-note-not-sent" className="text-destructive">{NOTE_NOT_SENT}</Text></View> : null}
     </View> : null}
     {footerSlot ? <View testID="receipt-footer" className="mt-3 items-center border-t border-dashed border-border pt-3">{footerSlot}</View> : null}
-    <View dataSet={{ print: 'hide' }} className="flex-row gap-4">
+    {actions === false ? null : <View dataSet={{ print: 'hide' }} className="flex-row gap-4">
+      {actions !== undefined ? actions : <>
       <Pressable accessibilityRole="button" onPress={() => { if (typeof window !== 'undefined' && typeof window.print === 'function') window.print(); }} className="rounded-md border border-border bg-card px-4 py-3">
         <Text className="text-center text-foreground">Print receipt</Text>
       </Pressable>
       <Pressable accessibilityRole="button" onPress={newSale} className="rounded-md bg-primary px-4 py-3"><Text className="text-center font-semibold text-primary-foreground">{doneLabel}</Text></Pressable>
-    </View>
+      </>}
+    </View>}
   </View></>;
 }
