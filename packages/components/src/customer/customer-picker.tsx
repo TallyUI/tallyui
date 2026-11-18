@@ -23,7 +23,7 @@ export interface CustomerPickerProps {
   className?: string;
   /** testID of the search field, for e2e tests. Default `customer-picker-search`. */
   testID?: string;
-  /** Draws v2's initials avatar on each result row and the selected summary. Default `false`. */
+  /** Draws v2's initials avatar on each result row (the selected customer's card above stays without one). Default `false`. */
   showAvatar?: boolean;
   /** Draws a Guest row above the results, as v2's `withGuest`; pressing it calls `onSelect(null)`. Default `false`. */
   withGuest?: boolean;
