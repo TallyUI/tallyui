@@ -18,6 +18,8 @@ import { CartColumnHeads } from '@tallyui/components';
 
 Renders the header row above the cart's lines, with the labels Qty, Item, Price and Total in the same column widths as [CartLine](/docs/components/cart-line). The [Cart](/docs/components/cart) hides the Price column when the cart is under 300 wide, or the window is under 768 wide or 480 tall, as the WCPOS cart does. Pass the same `showPrice` to the heads and to every line.
 
+The heads read `pos_cart.col_qty`, `pos_cart.col_item`, `pos_cart.col_price` and `pos_cart.col_total` from the components' catalogue, so an [I18nProvider](/docs/components/i18n-provider) translates them. The Qty column is narrow, so a translation uses the language's short form, as English uses Qty.
+
 ## Props
 
 | Prop | Type | Default | Description |
