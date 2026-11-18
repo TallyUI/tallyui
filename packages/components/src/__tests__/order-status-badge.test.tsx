@@ -81,3 +81,47 @@ describe('OrderStatusBadge', () => {
     expect(dotClasses).toContain('bg-primary');
   });
 });
+
+describe("drawn as v2's StatusBadge", () => {
+  const classes = (el: Element | null | undefined) => (el?.getAttribute('data-class') ?? '').split(/\s+/);
+  const ALL_STATUSES: OrderStatus[] = [
+    'pending',
+    'processing',
+    'completed',
+    'refunded',
+    'cancelled',
+    'canceled',
+    'on-hold',
+    'failed',
+    'pos-open',
+    'pos-partial',
+    'trash',
+    'checkout-draft',
+  ];
+
+  it.each([...ALL_STATUSES, 'wc-custom-status'])('T1 draws %s with no wash at v2 spacing', (status) => {
+    render(<OrderStatusBadge testID="row" status={status as OrderStatus} />);
+    const row = classes(screen.getByTestId('row'));
+    expect(row).toEqual(expect.arrayContaining(['flex-row', 'items-center', 'gap-1.5', 'self-start']));
+    expect(row.filter((c) => /^(bg-|rounded|px-|py-)/.test(c))).toEqual([]);
+  });
+
+  it("T2 draws v2's size-2 dot and text-sm foreground word", () => {
+    render(<OrderStatusBadge testID="row" status="completed" />);
+    const dot = classes(screen.getByTestId('row').firstElementChild);
+    expect(dot).toEqual(expect.arrayContaining(['size-2', 'rounded-full']));
+    expect(dot).not.toContain('size-1.5');
+    expect(dot).not.toContain('h-1.5');
+    const word = classes(screen.getByText('Completed'));
+    expect(word).toEqual(expect.arrayContaining(['text-sm', 'text-foreground']));
+    expect(word).not.toContain('text-xs');
+    expect(word).not.toContain('font-semibold');
+  });
+
+  it('T3 still lands a caller className on the row', () => {
+    render(<OrderStatusBadge testID="row" status="failed" className="bg-muted rounded-md px-2" />);
+    const row = screen.getByTestId('row');
+    expect(classes(row)).toEqual(expect.arrayContaining(['bg-muted', 'rounded-md', 'px-2', 'self-start']));
+    expect(classes(row.firstElementChild)).toContain('bg-destructive');
+  });
+});

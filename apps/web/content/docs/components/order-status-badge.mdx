@@ -15,7 +15,7 @@ import { OrderStatusBadge } from '@tallyui/components';
 <OrderStatusBadge status="completed" />
 ```
 
-Renders a small pill with a coloured dot and label. Each status maps to a distinct colour so cashiers can scan order states at a glance.
+Renders as `StatusBadge`: a coloured dot and the status word in the foreground colour, with no tinted pill behind it, as WCPOS v2 does. The colour is on the dot, so a status never reads by colour alone.
 
 `'cancelled'` and Medusa's `'canceled'` both show as **Cancelled**.
 
@@ -30,7 +30,7 @@ A status the badge does not know shows the raw string with the default (primary)
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `status` | `OrderStatus` | required | One of `'pending'`, `'processing'`, `'completed'`, `'refunded'`, `'cancelled'`, `'canceled'`, `'on-hold'`, `'failed'`, `'pos-open'`, `'pos-partial'`, `'trash'`, or `'checkout-draft'` |
-| `className` | `string` | — | Override container styles |
+| `className` | `string` | — | Merged onto the row; use it to add a background if an app needs one |
 
 ### OrderStatus
 
