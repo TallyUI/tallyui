@@ -102,6 +102,22 @@ export default function BadgeScreen() {
           <View className="gap-2">{STATES.map(([variant, label]) => <StatusBadge key={label} variant={variant} label={label} />)}</View>
           <View className="gap-2">{LEVELS.map(([variant, label]) => <StatusBadge key={label} size="caption" variant={variant} label={label} />)}</View>
         </View>
+
+        <View testID="tone-tokens-demo" className="gap-3">
+          <Text className="text-lg font-bold">Tone tokens</Text>
+          <View className="flex-row items-center gap-3">
+            <View className="size-14 rounded-full bg-ok-bg" />
+            <Text className="text-ok">ok / ok-bg</Text>
+          </View>
+          <View className="flex-row items-center gap-3">
+            <View className="size-14 rounded-full bg-warning-bg" />
+            <Text className="text-warning-text">warning-text / warning-bg</Text>
+          </View>
+          <View className="flex-row items-center gap-3">
+            <View className="size-14 rounded-full bg-bad-bg" />
+            <Text className="text-bad">bad / bad-bg</Text>
+          </View>
+        </View>
       </ScrollView>
     </>
   );

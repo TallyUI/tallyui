@@ -86,8 +86,29 @@ describe('dark theme contrast', () => {
   });
 });
 
-it.each(['primary', 'ring', 'muted-foreground', 'input', 'success', 'warning', 'info', 'price'])('%s matches in both light blocks', (name) => {
+it.each(['primary', 'ring', 'muted-foreground', 'input', 'success', 'warning', 'info', 'price', 'ok', 'ok-bg', 'warning-text', 'warning-bg', 'bad', 'bad-bg'])('%s matches in both light blocks', (name) => {
   expect(base[name]).toBe(light[name]);
+});
+
+describe.each([['light', light], ['dark', dark]] as const)('%s tone washes', (_, colors) => {
+  // WCAG 1.4.11 non-text contrast: a disc's glyph on its wash.
+  it.each([['ok', 'ok-bg'], ['warning-text', 'warning-bg'], ['bad', 'bad-bg']] as const)('%s glyph on %s meets 3:1', (ink, wash) => {
+    expect(contrast(colors[ink], colors[wash])).toBeGreaterThanOrEqual(3);
+  });
+
+  // A band's words keep the foreground.
+  it.each(['ok-bg', 'warning-bg', 'bad-bg'] as const)('foreground on %s meets AA', (wash) => {
+    expect(contrast(colors.foreground, colors[wash])).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('ok is success and bad is destructive, as in v2', () => {
+    expect(colors.ok).toBe(colors.success);
+    expect(colors.bad).toBe(colors.destructive);
+  });
+});
+
+it('dark warning-text is the dark warning, as in v2', () => {
+  expect(dark['warning-text']).toBe(dark.warning);
 });
 
 function over(fg: string, bg: string, alpha: number): string {
