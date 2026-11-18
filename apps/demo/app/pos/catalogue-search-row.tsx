@@ -1,7 +1,8 @@
 // The v2 search row proof: the view toggle and the app's own control beside the search (v2's PageBar children).
+import { useState } from 'react';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { Cart, Catalogue } from '@tallyui/components';
+import { AddedToCartToast, type AddedToCartEvent, Cart, Catalogue } from '@tallyui/components';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import { ConnectorProvider, type StoreSettings } from '@tallyui/core';
 import { TaxProvider, taxProviderProps, useSale } from '@tallyui/pos';
@@ -22,16 +23,21 @@ function Sale() {
   const phone = width < 768 || height < 480;
   // `?loading=1`: the first pull still running, an empty catalogue drawn as v2's skeleton (grid tiles or table rows).
   const loading = useLocalSearchParams<{ loading?: string }>().loading === '1';
+  const [added, setAdded] = useState<AddedToCartEvent | null>(null);
   return <View className="flex-1 flex-row bg-background" testID="catalogue-search-row-screen">
     <Stack.Screen options={{ title: 'Catalogue search row' }} />
     <View className="flex-1">
       <Catalogue products={loading ? [] : products} loading={loading || undefined} traits={traits} currency="EUR" lastSyncedAt={null} showFilterBar showViewToggle statusText={loading ? "Syncing products" : "2 products"}
-        onSelect={(entry) => sale.add(entry, traits)} cartLines={sale.order.lineItems}
+        onSelect={(entry) => {
+          sale.add(entry, traits);
+          setAdded((prev) => ({ key: (Number(prev?.key) || 0) + 1, name: traits.getName(entry.product) }));
+        }} cartLines={sale.order.lineItems}
         searchAccessory={<Pressable testID="demo-product-settings" accessibilityRole="button" accessibilityLabel="Product settings" className="rounded-md border border-border bg-card px-3 py-2">
           <Text className="text-sm text-foreground">Settings</Text>
         </Pressable>} />
     </View>
     {phone ? null : <View className="w-96 border-l border-border"><Cart sale={sale} /></View>}
+    <AddedToCartToast added={added} />
   </View>;
 }
 
