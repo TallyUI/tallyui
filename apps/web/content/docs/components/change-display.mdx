@@ -1,6 +1,6 @@
 ---
 title: ChangeDisplay
-description: ChangeDisplay calculates change from the tendered cash and order total, displaying zero when the tendered amount is below the total.
+description: ChangeDisplay shows the change due, a `Money` the caller has already computed, formatted with the store's money format.
 ---
 
 ## Import
@@ -12,19 +12,17 @@ import { ChangeDisplay } from '@tallyui/components';
 ## Usage
 
 ```tsx
-<ChangeDisplay tendered={50} total={42.5} />
+<ChangeDisplay change={{ amount: 750, currency: 'USD' }} />
 ```
 
-Calculates and displays the change owed by subtracting the order total from the amount tendered. If the tendered amount is less than the total, change displays as zero.
+Shows a "Change Due" label over the formatted amount. The caller computes the change (a payment flow computes tendered minus total). It shows `—` when the amount cannot be formatted.
 
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `change` | `Money` | required | The change to give back, formatted with `formatMoney` |
-| `tendered` | `number` | required | Amount of cash the customer handed over |
-| `total` | `number` | required | Order total to pay |
-| `locale` | `string` | — | Locale for money formatting |
+| `change` | `Money` | required | Change due, already computed by the caller |
+| `locale` | `string` | — | Locale used to format the amount |
 | `className` | `string` | — | Override container styles |
 
 ## Live demo
