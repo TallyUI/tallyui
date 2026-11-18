@@ -22,6 +22,8 @@ Handles sale prices automatically — regular prices use `text-price`, sale pric
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `doc` | `any` | required | RxDB product document |
+| `currency` | `string` | store currency, then first listed | Currency to show when the product is priced in several |
+| `locale` | `string` | runtime locale | BCP 47 locale for number formatting |
 | `currencySymbol` | `string` | `'$'` | Currency symbol to prepend |
 | `showFromPrice` | `boolean` | `true` | Show the lowest price, formatted by `formatFrom`, when variant prices differ |
 | `formatFrom` | `(price: string) => string` | `` (price) => `from ${price}` `` | Formats the lowest price when variant prices differ, for languages whose word order puts the label after the price |

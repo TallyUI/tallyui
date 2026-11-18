@@ -39,6 +39,7 @@ Checkout is at least 56 px tall and the ⋮ is 44 × 44 px, WCPOS v2's sizes.
 | `total` | `Money` | required | The order total shown in the Checkout label |
 | `onCheckout` | `() => void` | required | Called when Checkout is pressed |
 | `actions` | `readonly { label: string; onPress: () => void; destructive?: boolean }[]` | `[]` | The ⋮ menu's items; `destructive` shows the label in the destructive colour |
+| `note` | `{ text: string; onPress: () => void }` | --- | v2's note row above the buttons: hidden when the text is empty; pressing it calls `onPress` |
 | `disabled` | `boolean` | `false` | Disables Checkout only; the menu stays usable |
 | `locale` | `string` | --- | Locale passed to `formatMoney` |
 | `className` | `string` | --- | Override container styles |

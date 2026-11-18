@@ -28,10 +28,14 @@ A scrollable cart panel that composes line items into a list with optional heade
 |------|------|---------|-------------|
 | `items` | `CartLineItem[]` | required | Cart line items to render |
 | `renderItem` | `(item, index) => ReactNode` | required | Render function for each line |
+| `keyExtractor` | `(item, index) => string` | item `id`, else index | Row key per item; override for items without an `id`, or to key by something else |
 | `header` | `ReactNode` | — | Header slot (e.g. customer info) |
+| `afterItems` | `ReactNode` | — | Content after the lines, inside the scrolling region (e.g. discount chips); shown even with no lines |
 | `footer` | `ReactNode` | — | Footer slot (e.g. totals, checkout button) |
 | `footerClassName` | `string` | — | Classes for the footer's wrapper (default `border-t border-border px-3 py-2`) |
 | `emptyState` | `ReactNode` | — | Content shown when items is empty |
+| `pulseKey` | `(item) => string \| number` | — | A value per row whose change pulses it (e.g. the quantity); with it, rows pulse when added and tint and collapse when removed, as in WCPOS v2; without it nothing animates |
+| `identity` | `string` | — | What the rows belong to (e.g. the order id): a change rebaselines without a pulse |
 | `className` | `string` | — | Override container styles |
 
 ### CartLineItem

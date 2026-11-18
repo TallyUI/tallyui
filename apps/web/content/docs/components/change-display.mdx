@@ -21,8 +21,10 @@ Calculates and displays the change owed by subtracting the order total from the 
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
+| `change` | `Money` | required | The change to give back, formatted with `formatMoney` |
 | `tendered` | `number` | required | Amount of cash the customer handed over |
 | `total` | `number` | required | Order total to pay |
+| `locale` | `string` | — | Locale for money formatting |
 | `className` | `string` | — | Override container styles |
 
 ## Live demo

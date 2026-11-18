@@ -34,5 +34,6 @@ Pass `kind` to open the form on one kind without the selector, as WCPOS v2's car
 | `taxClasses` | `ReadonlyArray<{ id: string; label: string }>` | --- | Tax class choices shown when `lineTax.classes` is enabled and the list is nonempty |
 | `shippingTaxFromStore` | `boolean` | --- | For shipping, replaces tax controls with a store tax class notice and omits tax overrides from the submitted charge |
 | `kind` | `'fee' \| 'shipping' \| 'custom'` | --- | Fixes the form to one kind, hides the kind selector, and names the form Add fee, Add shipping, or Add custom item; without it the form opens on Fee with the selector |
+| `initial` | `{ name: string; amountMinor: number; taxStatus?: 'taxable' \| 'none'; taxClass?: string }` | --- | Edits that charge: the form is prefilled and titled `Edit <name>` |
 | `onApply` | `(charge: { kind: 'fee' \| 'shipping' \| 'custom'; name: string; amountMinor: number; taxStatus?: 'none'; taxClass?: string }) => string \| null` | required | Receives the charge with a trimmed name and amount in minor units; return a refusal or `null` once applied |
 | `onClose` | `() => void` | required | Called on Cancel or after `onApply` returns `null` |
