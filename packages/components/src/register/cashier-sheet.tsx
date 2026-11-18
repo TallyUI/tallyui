@@ -9,6 +9,7 @@ import { ChevronRightIcon } from '../ui/icon/chevron-right-icon';
 import { Text } from '../ui/text';
 import { ToneDisc } from '../ui/tone-disc';
 import { RegisterIcon } from './register-side-sheet';
+import { countLine } from './switch-confirm';
 
 export type CashierSheetDrawer = {
   /** The door was pressed: the app opens its register panel. */ onOpen: () => void;
@@ -27,6 +28,17 @@ export type CashierSheetDrawer = {
     }
 );
 
+export interface CashierSheetCashier {
+  id: string; name: string; avatar?: string;
+  /** This cashier's open carts on this register; the line is hidden at 0 or undefined. */ openCarts?: number;
+}
+export interface CashierSheetHandTo {
+  /** The other cashiers (the app leaves out the one signed in, as v2's UserRows does). */ cashiers: CashierSheetCashier[];
+  /** A row was pressed: the app shows its `SwitchConfirm kind="cashier"`. The sheet stays open. */ onHandTo: (id: string) => void;
+  /** v2's `busy` (a busy switch): every row is disabled. */ disabled?: boolean;
+  /** v2's `countingHere`: a count is open on this register; rows are disabled and the header says why. */ counting?: boolean;
+}
+
 export interface CashierSheetProps {
   cashier: { name: string; avatar?: string };
   /** The header line, already joined: store · register (when there are several) · "since HH:mm". Hidden when absent. */
@@ -40,17 +52,21 @@ export interface CashierSheetProps {
   onOpenChange: (open: boolean) => void;
   /** v2's drawer door under "Your sales today": the app's figures; pressing it opens the app's register panel. Hidden when absent. */
   drawer?: CashierSheetDrawer;
+  /** v2's "Hand the till to": the other cashiers; pressing a row calls `onHandTo(id)`. Hidden when absent or empty. */ handTo?: CashierSheetHandTo;
+  /** v2's `paying` hold: shows "Finish the payment first" and disables the hand-to rows (Sign out keeps `signOutDisabled`). */ paying?: boolean;
+  /** The sales the store has still to hear; the notice is hidden at 0 or undefined. */ awaitingStore?: number;
 }
 
 /**
- * The cashier's sheet on the right edge: the header, "Your sales today", the drawer door and Sign out (v2 parity S9a, S9b). The app
+ * The cashier's sheet on the right edge: the header, "Your sales today", the drawer door, the awaiting-store and payment hold
+ * notices, "Hand the till to" and Sign out (v2 parity S9a-S9c). The app
  * mounts it while open, as `SwitchConfirm` and `MovementSheet` are mounted. Port provenance: WCPOS v2 monorepo
  * `main` ec022c989 `packages/core/src/screens/main/pos/cart/user-sheet.tsx` (:632 the container, :654-676 the
- * header, :680-687 the sales row, :688-691 the drawer door from :120-165 and :180-229, :800-821 Sign out), with its English copy (`core.json` `register.*`). Literal
- * English, as the other register components carry it. Not here: "Hand the till to", the Store and
- * Register rows and the Woo footer.
+ * header, :680-687 the sales row, :688-691 the drawer door from :120-165 and :180-229, :693-723 the notices and "Hand the
+ * till to" from :231-289, :800-821 Sign out), with its English copy (`core.json` `register.*`). Literal
+ * English, as the other register components carry it. Not here: the Store and Register rows and the Woo footer.
  */
-export function CashierSheet({ cashier, description, salesToday, onSignOut, signOutDisabled = false, onOpenChange, drawer }: CashierSheetProps) {
+export function CashierSheet({ cashier, description, salesToday, onSignOut, signOutDisabled = false, onOpenChange, drawer, handTo, paying = false, awaitingStore = 0 }: CashierSheetProps) {
   const formatMoney = useFormatMoney();
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -72,6 +88,12 @@ export function CashierSheet({ cashier, description, salesToday, onSignOut, sign
             </View>
           )}
           {drawer && <DrawerDoor drawer={drawer} />}
+          {awaitingStore > 0 && <View testID="cashier-sheet-awaiting-store" className="bg-warning/10 mx-3 mt-2 gap-1 rounded-md p-3">
+            <Text className="font-semibold">{`Awaiting store · ${countLine(awaitingStore, 'sale', 'sales')}`}</Text>
+            <Text className="text-sm text-muted-foreground">Sent when you are signed in online.</Text>
+          </View>}
+          {paying && <View testID="cashier-sheet-hold" className="bg-info/10 mx-3 mt-2 rounded-md p-3"><Text className="font-semibold">Finish the payment first</Text></View>}
+          {handTo && handTo.cashiers.length > 0 && <HandTo handTo={handTo} paying={paying} />}
         </View>
         <DialogFooter bordered>
           <Button variant="destructive" testID="cashier-sheet-sign-out" disabled={signOutDisabled} onPress={onSignOut}>
@@ -80,6 +102,31 @@ export function CashierSheet({ cashier, description, salesToday, onSignOut, sign
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** v2's "Hand the till to" (user-sheet.tsx:701-723) with `UserRows` and `CashierRow` (:246-322), from the app's list. */
+function HandTo({ handTo, paying }: { handTo: CashierSheetHandTo; paying: boolean }) {
+  const disabled = !!handTo.disabled || paying || !!handTo.counting;
+  return (
+    <View testID="cashier-sheet-hand-to">
+      <View className="mt-2 flex-row items-center justify-between border-b border-border px-3 py-2">
+        <Text className="text-sm text-muted-foreground">Hand the till to</Text>
+        {handTo.counting && !paying && <Text testID="cashier-sheet-count-hold" className="text-sm font-medium">Finish or abandon the count first</Text>}
+      </View>
+      {handTo.cashiers.map(({ id, name, avatar, openCarts = 0 }) => (
+        <Pressable key={id} testID={`cashier-sheet-hand-to-${id}`} accessibilityRole="button" disabled={disabled} onPress={() => handTo.onHandTo(id)} className="flex-row items-center gap-3 px-3 py-2.5">
+          {({ pressed }) => <>
+            <Avatar size="md" src={avatar} alt={name} fallback={avatarInitials(name)} />
+            <View className="min-w-0 flex-1">
+              <Text className="font-medium" numberOfLines={1}>{name}</Text>
+              {openCarts > 0 && <Text testID={`cashier-sheet-open-carts-${id}`} className="text-sm text-muted-foreground">{countLine(openCarts, 'open cart', 'open carts')}</Text>}
+            </View>
+            <PressVeil pressed={pressed} />
+          </>}
+        </Pressable>
+      ))}
+    </View>
   );
 }
 

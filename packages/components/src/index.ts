@@ -202,7 +202,7 @@ export {
   CashierSheet,
   type CashierSheetProps,
 } from './register';
-export type { CashierSheetDrawer } from './register/cashier-sheet';
+export type { CashierSheetCashier, CashierSheetDrawer, CashierSheetHandTo } from './register/cashier-sheet';
 
 // Settings components
 export {

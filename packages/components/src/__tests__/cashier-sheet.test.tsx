@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
 import { PortalHost } from '@tallyui/primitives';
-import { CashierSheet, type CashierSheetDrawer, type CashierSheetProps } from '../register/cashier-sheet';
+import { CashierSheet, type CashierSheetDrawer, type CashierSheetHandTo, type CashierSheetProps } from '../register/cashier-sheet';
 
 afterEach(cleanup);
 
@@ -128,6 +128,92 @@ describe('CashierSheet', () => {
       show({ drawer: openDrawer({ onOpen: blocked, disabled: true }) });
       fireEvent.click(screen.getByTestId('cashier-sheet-drawer'));
       expect(blocked).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('hand the till to and hold notices', () => {
+    const handTo = (over: Partial<CashierSheetHandTo> = {}): CashierSheetHandTo => ({
+      cashiers: [
+        { id: 'ben', name: 'Ben', openCarts: 2 },
+        { id: 'cy', name: 'Cy', openCarts: 1 },
+        { id: 'di', name: 'Di' },
+      ],
+      onHandTo: vi.fn(),
+      ...over,
+    });
+
+    it('T1: nothing is drawn without handTo, paying or awaitingStore, and awaitingStore 0 draws no notice', () => {
+      show();
+      expect(screen.queryByTestId('cashier-sheet-hand-to')).toBeNull();
+      expect(screen.queryByTestId('cashier-sheet-hold')).toBeNull();
+      expect(screen.queryByTestId('cashier-sheet-awaiting-store')).toBeNull();
+      cleanup();
+      show({ awaitingStore: 0 });
+      expect(screen.queryByTestId('cashier-sheet-awaiting-store')).toBeNull();
+    });
+
+    it('T2: the awaiting-store notice counts sales, singular and plural', () => {
+      show({ awaitingStore: 1 });
+      expect(screen.getByText('Awaiting store · 1 sale')).toBeTruthy();
+      expect(screen.getByTestId('cashier-sheet-awaiting-store').textContent).toContain('Sent when you are signed in online.');
+      cleanup();
+      show({ awaitingStore: 3 });
+      expect(screen.getByText('Awaiting store · 3 sales')).toBeTruthy();
+      expect(screen.getByTestId('cashier-sheet-awaiting-store').textContent).toContain('Sent when you are signed in online.');
+    });
+
+    it('T3: paying draws the payment hold', () => {
+      show({ paying: true });
+      expect(screen.getByTestId('cashier-sheet-hold').textContent).toBe('Finish the payment first');
+    });
+
+    it('T4: one row per cashier with its name and open carts, singular and plural', () => {
+      show({ handTo: handTo() });
+      expect(screen.getByTestId('cashier-sheet-hand-to').textContent).toContain('Hand the till to');
+      expect(screen.getByTestId('cashier-sheet-hand-to-ben').textContent).toContain('Ben');
+      expect(screen.getByTestId('cashier-sheet-hand-to-cy').textContent).toContain('Cy');
+      expect(screen.getByTestId('cashier-sheet-hand-to-di').textContent).toContain('Di');
+      expect(screen.getByTestId('cashier-sheet-open-carts-ben').textContent).toBe('2 open carts');
+      expect(screen.getByTestId('cashier-sheet-open-carts-cy').textContent).toBe('1 open cart');
+      expect(screen.queryByTestId('cashier-sheet-open-carts-di')).toBeNull();
+    });
+
+    it("T5: pressing Ben's row calls onHandTo('ben') once and neither onOpenChange nor onSignOut", () => {
+      const onHandTo = vi.fn();
+      const { onOpenChange, onSignOut } = show({ handTo: handTo({ onHandTo }) });
+      fireEvent.click(screen.getByTestId('cashier-sheet-hand-to-ben'));
+      expect(onHandTo).toHaveBeenCalledTimes(1);
+      expect(onHandTo).toHaveBeenCalledWith('ben');
+      expect(onOpenChange).not.toHaveBeenCalled();
+      expect(onSignOut).not.toHaveBeenCalled();
+    });
+
+    it('T6: disabled, paying and counting each block the rows', () => {
+      const cases: Partial<CashierSheetProps>[] = [
+        { handTo: handTo({ disabled: true }) },
+        { handTo: handTo(), paying: true },
+        { handTo: handTo({ counting: true }) },
+      ];
+      for (const props of cases) {
+        show(props);
+        fireEvent.click(screen.getByTestId('cashier-sheet-hand-to-ben'));
+        expect(props.handTo!.onHandTo).not.toHaveBeenCalled();
+        cleanup();
+      }
+    });
+
+    it('T7: counting shows the count hold, unless paying, which shows the payment hold instead', () => {
+      show({ handTo: handTo({ counting: true }) });
+      expect(screen.getByTestId('cashier-sheet-count-hold').textContent).toBe('Finish or abandon the count first');
+      cleanup();
+      show({ handTo: handTo({ counting: true }), paying: true });
+      expect(screen.queryByText('Finish or abandon the count first')).toBeNull();
+      expect(screen.getByText('Finish the payment first')).toBeTruthy();
+    });
+
+    it('T8: an empty cashier list draws no section', () => {
+      show({ handTo: handTo({ cashiers: [] }) });
+      expect(screen.queryByTestId('cashier-sheet-hand-to')).toBeNull();
     });
   });
 });
