@@ -3,6 +3,8 @@ import { View, Text, Pressable, Animated, Dimensions, Platform } from 'react-nat
 import { Dialog as DialogPrimitive, TextClassContext } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 import { useOverlayMotion, SHEET_MOTION, DIALOG_MOTION } from './motion';
+import { IconButton } from '../icon-button';
+import { XIcon } from '../icon/x-icon';
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -32,11 +34,24 @@ const SIDE_CLASS = {
 
 const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: keyof typeof SIDE_CLASS }
->(function DialogContent({ className, children, side = 'center', ...props }, ref) {
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    side?: keyof typeof SIDE_CLASS;
+    /** v2's dialog chrome: a close X in the top-right corner; opt-in so existing dialogs are unchanged (desk ruling 18 Nov). */
+    showClose?: boolean;
+    /** v2's dialog chrome: the close X's accessible name; opt-in so existing dialogs are unchanged (desk ruling 18 Nov). */
+    closeLabel?: string;
+  }
+>(function DialogContent({ className, children, side = 'center', showClose = false, closeLabel = 'Close', ...props }, ref) {
   const { open } = DialogPrimitive.useRootContext();
   const { mounted, scrim, panel } = useOverlayMotion(open, true, side === 'center' ? DIALOG_MOTION : SHEET_MOTION);
   const [width, setWidth] = React.useState(() => Dimensions.get('window').width);
+  const close = showClose ? (
+    <View className="absolute right-1 top-1">
+      <DialogClose asChild>
+        <IconButton variant="ghost" size="sm" testID={props.testID ? `${props.testID}-close` : 'dialog-close'} accessibilityLabel={closeLabel}><XIcon size={18} /></IconButton>
+      </DialogClose>
+    </View>
+  ) : null;
 
   // WCPOS v2 panel-in-left / panel-out-left and panel-in-right / panel-out-right.
   if (side === 'left' || side === 'right') {
@@ -54,6 +69,7 @@ const DialogContent = React.forwardRef<
             onLayout={(e) => { if (e.nativeEvent.layout.width) setWidth(e.nativeEvent.layout.width); }}
           >
             {children}
+            {close}
           </Animated.View>
         </DialogPrimitive.Content>
       </DialogPortal>
@@ -74,6 +90,7 @@ const DialogContent = React.forwardRef<
           pointerEvents={open ? 'auto' : 'none'}
         >
           {children}
+          {close}
         </Animated.View>
       </DialogPrimitive.Content>
     </DialogPortal>
@@ -87,9 +104,12 @@ function DialogHeader({ className, ...props }: React.ComponentPropsWithoutRef<ty
   );
 }
 
-function DialogFooter({ className, ...props }: React.ComponentPropsWithoutRef<typeof View>) {
+function DialogFooter({ className, bordered = false, ...props }: React.ComponentPropsWithoutRef<typeof View> & {
+  /** v2's dialog chrome: a top divider above the actions; opt-in so existing dialogs are unchanged (desk ruling 18 Nov). */
+  bordered?: boolean;
+}) {
   return (
-    <View className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2', className)} {...props} />
+    <View className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2', bordered && 'border-t border-border pt-4', className)} {...props} />
   );
 }
 
