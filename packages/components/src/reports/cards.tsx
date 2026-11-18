@@ -106,11 +106,12 @@ function Legend({ shares }: { shares: Share[] }): JSX.Element {
 }
 
 /** The first rows with their own swatch, the rest folded into Other. */
-function shares<T>(rows: T[], toShare: (row: T) => Omit<Share, 'swatch'>, otherText: (rest: T[]) => string): Share[] {
+function shares<T>(rows: T[], toShare: (row: T) => Omit<Share, 'swatch'>, otherText: (total: number) => string): Share[] {
   const head = rows.slice(0, LEGEND_ROWS).map((row, i) => ({ ...toShare(row), swatch: SWATCHES[i % SWATCHES.length] }));
   const rest = rows.slice(LEGEND_ROWS);
   if (!rest.length) return head;
-  return [...head, { label: 'Other', value: rest.reduce((sum, row) => sum + toShare(row).value, 0), text: otherText(rest), swatch: OTHER_SWATCH }];
+  const total = rest.reduce((sum, row) => sum + toShare(row).value, 0);
+  return [...head, { label: 'Other', value: total, text: otherText(total), swatch: OTHER_SWATCH }];
 }
 
 export function SalesCards({ figures, currency, onOpenCard, hide }: SalesCardsProps): JSX.Element {
@@ -122,14 +123,14 @@ export function SalesCards({ figures, currency, onOpenCard, hide }: SalesCardsPr
   const categoryNet = categories.reduce((sum, row) => sum + row.netMinor, 0);
   const paymentShares = shares(payments.rows, (row) => ({
     label: paymentLabel(row), value: row.amountMinor, text: money(row.amountMinor), note: `${row.orders} orders`,
-  }), (rest) => money(rest.reduce((sum, row) => sum + row.amountMinor, 0)));
+  }), money);
   const categoryShares = shares(categories, (row) => ({
     label: categoryLabel(row), value: row.netMinor, text: money(row.netMinor), note: `${row.quantity} sold`,
-  }), (rest) => money(rest.reduce((sum, row) => sum + row.netMinor, 0)));
+  }), money);
   const taxShares = shares(taxes, (row) => ({
     label: taxLabel(row), value: row.taxMinor, text: money(row.taxMinor),
     note: row.netMinor === null ? undefined : `on ${money(row.netMinor)}`,
-  }), (rest) => money(rest.reduce((sum, row) => sum + row.taxMinor, 0)));
+  }), money);
   const card = { onOpen: onOpenCard };
   const shows = (id: SalesCardId) => !hide?.includes(id);
 
