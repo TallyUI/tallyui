@@ -22,8 +22,7 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "changeset publish",
-    "test:e2e:web": "playwright test",
-    "test:e2e:native": "maestro test .maestro/flows/"
+    "test:e2e:web": "playwright test"
   },
   "packageManager": "pnpm@11.27.0",
   "dependencies": {
