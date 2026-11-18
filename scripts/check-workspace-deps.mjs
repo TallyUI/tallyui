@@ -55,8 +55,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'refundableLines', 'priceRefund',
   // the sale note (ADR-083 condition 2): the one pure test of whether a till order's note reached the store, never a hook or the store.
   'noteDelivery',
-  // ADR-090 W4e: the pure refund-due figure the orders list shows.
-  'refundDueOf',
+  // ADR-090 W4e and gate 36: the pure refund-due figures the orders list and the tender pane show.
+  'refundDueOf', 'lockedRefundDueMinor',
   // Settings › Display (plan unit 22): the two pure lists of choices the app settings parse against, never a hook or the store.
   'UI_SCALES', 'UI_THEMES',
   // the tender pane (plan unit 16): the pure tender reducer, plan, rounding, quick-cash and leg-status maths the pane shows, never a hook or the store.

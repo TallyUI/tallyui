@@ -9,7 +9,7 @@ import { useEffect, useState, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { defaultPaymentMethods, useFormatMoney, minorUnitDigits, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
-  activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, isInMotion, legStatus, planLegs, quickTenderedAmounts, tenderRounding,
+  activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, isInMotion, legStatus, lockedRefundDueMinor, planLegs, quickTenderedAmounts, tenderRounding,
   type TenderAction, type TenderKey, type TenderState, type useSale,
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
@@ -92,6 +92,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true }: Te
     : entryChange > 0 ? t('pos_checkout.change_due', { amount: money(entryChange) })
       : figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
   const canComplete = balance === 0 && !order.payments.some(isInMotion);
+  // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
+  const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
+  const tillChange = order.changeDueMinor - refundDue;
   const cannotTake = figures.appliedMinor <= 0 || noChange;
 
   function take() {
@@ -118,7 +121,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true }: Te
         </Pressable> : null}
       </View>
       {order.paidMinor > 0 ? <Text testID="tender-paid" className="text-sm text-muted-foreground">{t('pos_checkout.paid_of_total', { paid: money(order.paidMinor), total: money(order.totalMinor) })}</Text> : null}
-      {order.changeDueMinor > 0 ? <Text testID="tender-change" className="text-lg font-semibold text-success">{t('pos_checkout.change_due', { amount: money(order.changeDueMinor) })}</Text> : null}
+      {tillChange > 0 ? <Text testID="tender-change" className="text-lg font-semibold text-success">{t('pos_checkout.change_due', { amount: money(tillChange) })}</Text> : null}
+      {refundDue > 0 ? <Text testID="tender-refund-due" className="text-lg font-semibold text-foreground">{`${t('customer_display.refund_due')} ${money(refundDue)}`}</Text> : null}
     </View>
 
     {balance > 0 ? <View testID="tender-figure" className="items-center gap-1">

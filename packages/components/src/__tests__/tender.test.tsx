@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney, paymentMethodOf } from '@tallyui/core';
-import { CUSTOMER_RETAX_REFUSED, type useSale } from '@tallyui/pos';
+import { createOrderBuilder, CUSTOMER_RETAX_REFUSED, type useSale } from '@tallyui/pos';
 import { Tender } from '../sale/tender';
 import { blue, click, pricing, SaleHarness, sale, traits } from './sale-harness';
 
@@ -146,5 +146,46 @@ describe('Tender', () => {
     expect(screen.getByRole('alert').textContent).toBe('finalize: underpaid');
     click('Back');
     expect(sale.stage.kind).toBe('cart');
+  });
+});
+
+describe('Tender on a reopened order (ADR-090 gate 36)', () => {
+  /** use-sale-locked-legs.test.tsx's reopenedBuilder: one kept line at €10 and a locked leg the store already holds. */
+  function reopen(lockedMinor: number) {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false }, storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
+    builder.addLine({ productId: 'coffee', name: 'Coffee', storeLineId: '7', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.addPayment({ method: 'external', amountMinor: lockedMinor, reference: 'Cash', storePaymentId: 'p1', locked: true });
+    render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} />}</SaleHarness>);
+    act(() => { expect(sale.openStoreOrder(builder.getSnapshot())).toBeNull(); });
+  }
+
+  it('a locked €10 leg and a price cut to €2 shows Refund due €8.00, not change', () => {
+    reopen(1000);
+    act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 200)).toBeNull(); });
+    act(() => sale.startTender('cash'));
+    expect(sale.order.changeDueMinor).toBe(800);
+    expect(screen.queryByTestId('tender-change')).toBeNull();
+    expect(text('tender-refund-due')).toBe(`Refund due ${money(800)}`);
+  });
+
+  it('a normal overpaid cash sale shows its change as before and no refund due', () => {
+    start(3451);
+    click(money(4000));
+    click(`Take ${money(3451)} in Cash`);
+    expect(text('tender-change')).toBe(`Change ${money(549)}`);
+    expect(screen.queryByTestId('tender-refund-due')).toBeNull();
+  });
+
+  it('a reopened sale with refund due and till cash on top shows both, summing to changeDueMinor', () => {
+    // This asserts the pane at the tender stage only; finalizeOrder refuses this state at completion (finalize.ts:196).
+    reopen(1000);
+    act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 200)).toBeNull(); });
+    act(() => sale.startTender('cash'));
+    // startTender drops every unlocked leg, so the till cash goes on through the sale API once the tender has begun.
+    act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500 })).not.toBeNull(); });
+    expect(sale.order.changeDueMinor).toBe(1300);
+    expect(text('tender-change')).toBe(`Change ${money(500)}`);
+    expect(text('tender-refund-due')).toBe(`Refund due ${money(800)}`);
+    expect(500 + 800).toBe(sale.order.changeDueMinor);
   });
 });
