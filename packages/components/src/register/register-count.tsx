@@ -173,6 +173,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
   const [keypadOpen, setKeypadOpen] = useState(true);
   const [notesOpen, setNotesOpen] = useState(false);
   const [tendersOpen, setTendersOpen] = useState(false);
+  const [note, setNote] = useState('');
 
   const usingTiles = Object.keys(pieces).length > 0;
   const tilesTotal = denominationTotal(pieces);
@@ -273,7 +274,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
         }
         const { approvedBy, approvedByName, approval, approvedVariance } = result;
         await actions.closeSession({
-          counted, approvedBy, approvedByName,
+          counted, approvedBy, approvedByName, ...(note ? { note } : {}),
           ...(approval ? { approval } : {}), ...(approvedVariance ? { approvedVariance } : {}),
         });
         await onPrint?.();
@@ -281,7 +282,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
       return;
     }
     void attempt(async () => {
-      await actions.closeSession({ counted });
+      await actions.closeSession({ counted, ...(note ? { note } : {}) });
       await onPrint?.();
     });
   };
@@ -341,6 +342,17 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
             )}`}
           </Text>
         )}
+        {/* v2's count note, blind or not; the store keeps a blank one as null. */}
+        <Label testID="count-note-label" nativeID="count-note-label">Note</Label>
+        <Input>
+          <Input.Field
+            testID="count-note"
+            placeholder="Explain any difference"
+            value={note}
+            onChangeText={setNote}
+            accessibilityLabelledBy="count-note-label"
+          />
+        </Input>
         <Button
           testID="count-denominations"
           variant="ghost"

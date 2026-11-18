@@ -235,6 +235,30 @@ it("passes approve()'s approvedBy and approvedByName to closeSession, and the Z 
   expect((await db.register_sessions.findOne(session.id).exec())?.approved_by).toBe('mgr-1');
 });
 
+const typeNote = (value: string) => fireEvent.change(screen.getByTestId('count-note'), { target: { value } });
+
+it('a note typed before Close reaches the closure', async () => {
+  const session = await renderCounting();
+  expect(screen.getByTestId('count-note').getAttribute('placeholder')).toBe('Explain any difference');
+  enter('99.00');
+  typeNote('Float short by a euro');
+  fireEvent.click(closeButton());
+  await waitFor(async () => expect(await db.closures.findOne(session.id).exec()).not.toBeNull());
+  expect((await db.closures.findOne(session.id).exec())?.breakdowns.variance_note).toBe('Float short by a euro');
+  expect((await db.register_sessions.findOne(session.id).exec())?.count_note).toBe('Float short by a euro');
+});
+
+it('the approved close carries the note too', async () => {
+  const approve = vi.fn(async () => ({ approvedBy: 'mgr-1' }));
+  const session = await renderCounting({ varianceThreshold: 500 }, approve);
+  enter('1.00');
+  typeNote('Till skimmed');
+  fireEvent.click(closeButton());
+  await waitFor(async () => expect(await db.closures.findOne(session.id).exec()).not.toBeNull());
+  expect(approve).toHaveBeenCalledTimes(1);
+  expect((await db.closures.findOne(session.id).exec())?.breakdowns.variance_note).toBe('Till skimmed');
+});
+
 // approved-by: the hook gates too. Here the screen is handed no threshold, so only the hook's gate
 // (threshold 500) stands between Close and the write, and its refusal shows the same copy.
 it("shows the hook's RegisterApprovalRequiredError with the refusal copy, and does not close", async () => {
