@@ -338,4 +338,24 @@ describe('CustomerDropdown', () => {
     await advance();
     expect(few).toHaveBeenCalledOnce();
   });
+
+  it("clears a later page's error once the retry loads", async () => {
+    let calls = 0;
+    const browse = vi.fn(async (page?: number) => {
+      if (page !== 2) return many(50);
+      if (calls++ === 0) throw new CustomerServiceError('network', 'offline');
+      return many(10, 50);
+    });
+    render(ui(props({ browse })));
+    fireEvent.click(chip());
+    await advance();
+    await endReached();
+    await advance();
+    expect(screen.getByRole('alert').textContent).toBe("Couldn't reach the store. Try again.");
+    await endReached();
+    await advance();
+    expect(browse.mock.calls).toEqual([[], [2], [2]]);
+    expect(names()).toHaveLength(61);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
 });
