@@ -140,6 +140,8 @@ export function SalesCards({ figures, currency, onOpenCard, hide }: SalesCardsPr
           <View className="gap-2">
             <StatGrid stats={[
               { label: 'Average order', value: money(totals.averageMinor) },
+              { label: 'Median', value: totals.medianMinor === undefined ? UNKNOWN : money(totals.medianMinor), testID: 'card-orders-median' },
+              { label: 'Largest', value: totals.largestMinor == null ? UNKNOWN : money(totals.largestMinor), testID: 'card-orders-largest' },
               { label: 'Items Sold', value: String(totals.items) },
               { label: 'Items per order', value: (totals.items / totals.orderCount).toFixed(1) },
               { label: 'Discounts', value: money(totals.discountMinor) },
