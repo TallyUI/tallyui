@@ -1,12 +1,9 @@
 import { payloadShapeErrors } from './order-payload-shape'
+import { isPlainObject, shapeErrors } from './shape-errors'
 
 function updateOnlyErrors(payload: unknown): string[] {
-  const errors: string[] = []
-  const check = (valid: boolean, field: string, expected: string) => {
-    if (!valid && errors.length < 10) errors.push(`${field}: expected ${expected}`)
-  }
-  if (typeof payload !== 'object' || payload === null
-    || (Object.getPrototypeOf(payload) !== Object.prototype && Object.getPrototypeOf(payload) !== null)) return ['payload: expected an object']
+  const { errors, check } = shapeErrors()
+  if (!isPlainObject(payload)) return ['payload: expected an object']
   const body = payload as Record<string, unknown>
   const id = (value: unknown, field: string) => {
     const max = field === 'baseRevision' ? 128 : 64
