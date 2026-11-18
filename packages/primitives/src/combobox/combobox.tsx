@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useAugmentedRef, useControllableState, useRelativePosition, type LayoutPosition } from '../hooks';
 import { measureTrigger } from '../hooks/measure-trigger';
+import { useEscapeDismiss } from '../hooks/use-escape-dismiss';
 import { Portal as RNPortal } from '../portal';
 import { Slot } from '../slot';
 import type {
@@ -270,10 +271,10 @@ Portal.displayName = 'ComboboxPortal';
 // ---------------------------------------------------------------------------
 
 const Content = React.forwardRef<View, ContentProps>(function Content(
-  { asChild, forceMount, style, onLayout: onLayoutProp, ...props },
+  { asChild, forceMount, style, onLayout: onLayoutProp, onEscapeKeyDown, ...props },
   ref
 ) {
-  const { open } = useRootContext();
+  const { open, onOpenChange } = useRootContext();
   const { triggerPosition, setTriggerPosition, contentLayout, setContentLayout, triggerRef, inputRef } =
     useAnchorContext();
 
@@ -285,6 +286,8 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
       setContentLayout(null);
     };
   }, [open, triggerRef, inputRef, setTriggerPosition, setContentLayout]);
+
+  useEscapeDismiss(open, () => onOpenChange(false), onEscapeKeyDown);
 
   // Content opens below its anchor, left edges aligned (Select's default), with
   // v2's 4 px gap (monorepo packages/components/src/popover/anchor.tsx:14), and
