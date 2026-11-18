@@ -28,6 +28,8 @@ Pass `checkout` to use WCPOS v2's foot, [CartFoot](/docs/components/cart-foot), 
 
 The lines sit under [CartColumnHeads](/docs/components/cart-column-heads) (Qty, Item, Price, Total). Each line shows its variant attributes under the name, and its regular price struck through when the line costs less, from the line's `attributes` and `regularUnitPriceMinor`. The Price column is hidden when the cart is under 300 wide, or the window is under 768 wide or 480 tall. The Discount and Price actions sit with each line's quantity buttons.
 
+With `lineEditor="popover"`, pass `lineCommit="close"` for WCPOS v2's quantity keypad: − and + write at once, − turns into Remove at a quantity of 1, and closing the keypad any way but Escape writes what was typed.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -39,6 +41,7 @@ The lines sit under [CartColumnHeads](/docs/components/cart-column-heads) (Qty, 
 | `onPriceChange` | `(change: { lineId: string; fromMinor: number; toMinor: number; reason?: string }) => void` | --- | Called after a price is applied for the app's audit log; the reason is kept only in this callback |
 | `quickDiscounts` | `readonly number[]` | --- | Quick-discount keys on each line's [PriceForm](/docs/components/price-form), e.g. the app's `cart.quickDiscounts` setting (default `[5, 10, 15]`); needs `canEditPrice` |
 | `lineEditor` | `'inline' \| 'popover'` | `'inline'` | `popover`: tapping a line's quantity or price opens a [LinePopover](/docs/components/line-popover) keypad, the price one with `quickDiscounts` and only with `canEditPrice`, showing the regular price struck through when the line is on sale. The line is one row with no buttons under it: Discount, Price (only when the Price column folds) and Remove are in the quantity popover, and Discount in the price popover. `inline` keeps the − / + buttons and the Price form only |
+| `lineCommit` | `'apply' \| 'close'` | `'apply'` | With `lineEditor="popover"`: `close` gives the quantity popover [LinePopover](/docs/components/line-popover)'s `commit="close"` (− and + steppers, Remove at 1 in place of the Remove action, Done; Escape discards and any other close writes what was typed). The price popover keeps Apply and Cancel |
 | `orderActions` | `boolean` | `true` | Shows Cart's own Order discount button and Add charge control; pass `false` when the app hosts them in its own menu |
 | `checkout` | `{ onCheckout: () => void; actions?: readonly CartFootAction[] }` | --- | Swaps the Cash and Card terminal buttons for [CartFoot](/docs/components/cart-foot)'s Checkout button and ⋮ menu |
 | `noteSheet` | `{ label?: string }` | --- | With `checkout`: puts "Order details" first in the ⋮ menu and draws the note row from the sale's note; both open [OrderNoteSheet](/docs/components/order-note-sheet), which writes through `sale.setNote` |

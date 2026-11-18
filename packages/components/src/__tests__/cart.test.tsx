@@ -312,6 +312,22 @@ describe('Cart', () => {
     expect(screen.getByTestId('price-form')).toBeTruthy();
   });
 
+  it('lineCommit="close" opens the quantity keypad with steppers and no Remove action; the price popover keeps Apply', () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" lineCommit="close" />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('Edit price of Shirt');
+    expect(screen.getByTestId('price-popover-apply')).toBeTruthy();
+    click('Cancel');
+    click('Edit quantity of Shirt');
+    expect(screen.queryByTestId('quantity-popover-action-remove')).toBeNull();
+    fireEvent.click(screen.getByTestId('quantity-popover-step-up'));
+    expect(sale.order.lineItems[0].quantity).toBe(2);
+    fireEvent.click(screen.getByTestId('quantity-popover-step-down'));
+    expect(sale.order.lineItems[0].quantity).toBe(1);
+    fireEvent.click(screen.getByTestId('quantity-popover-remove'));
+    expect(sale.order.lineItems).toEqual([]);
+  });
+
   it('renders lines with their display amount, each discount chip with its own display amount, and the order chip with orderDiscountMinor', () => {
     render(<SaleHarness capabilities={{ orderCreate: 2 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     act(() => { sale.add(blue, traits); sale.add(blue, traits); });
