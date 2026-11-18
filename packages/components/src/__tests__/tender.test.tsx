@@ -313,4 +313,21 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     expect(screen.getByTestId('tender-method-cheque').getAttribute('aria-selected')).toBe('false');
     expect(text('tender-take')).toBe(`Take ${money(2500)} in Till cash`);
   });
+
+  it('a cash-kind method with change false never records above the balance: no Take over it, and at the balance a cash leg with no change', () => {
+    const cod = own('cod', 'Cash on delivery', 'cash');
+    start(1000, 'cash', [{ ...cod, capabilities: { ...cod.capabilities, change: false } }]);
+    fireEvent.click(screen.getByTestId('tender-method-cod'));
+    for (const key of ['1', '5', '0', '0']) press(key);
+    expect(text('tender-entry-hint')).toBe(`Only ${money(1000)} is due — Cash on delivery can't give change`);
+    expect(screen.queryByTestId('tender-quick')).toBeNull();
+    expect(disabled('tender-take')).toBe(true);
+    expect(sale.order.payments).toEqual([]);
+    press('Clear');
+    for (const key of ['1', '0', '0', '0']) press(key);
+    click(`Take ${money(1000)} in Cash on delivery`);
+    expect(sale.order.payments).toMatchObject([{ method: 'cash', methodId: 'cod', amountMinor: 1000 }]);
+    expect(sale.order.changeDueMinor).toBe(0);
+    expect(sale.order.balanceDueMinor).toBe(0);
+  });
 });
