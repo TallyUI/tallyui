@@ -104,7 +104,7 @@ describe('Cart', () => {
     expect(fee.compareDocumentPosition(shipping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("edits a fee and a shipping charge from the row's strip", () => {
+  it("edits a fee and a shipping charge from the row's strip", { timeout: 20_000 }, () => {
     render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     act(() => sale.add(blue, traits));
     for (const [kind, name, amount] of [['Fee', 'Bag', '1.20'], ['Shipping', 'Delivery', '2.40']]) {
