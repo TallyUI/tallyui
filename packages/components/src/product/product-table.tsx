@@ -3,7 +3,8 @@ import { FlatList, Pressable, View, type ViewProps } from 'react-native';
 import { useProductTraits, useTraitContext, useStockOverlaid, type ProductTraits, type TraitContext } from '@tallyui/core';
 import { productSortValue, sortProducts, type ProductSort, type ProductSortValue } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Text, VStack, IconButton, PlusIcon, ChevronRightIcon } from '../ui';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Text, VStack, IconButton, PlusIcon, ChevronRightIcon,
+  Skeleton, skeletonCount } from '../ui';
 import { MinTargetBand } from '../scale/min-target';
 import { usePointer } from '../scale/use-pointer';
 import { ProductImage } from './product-image';
@@ -27,6 +28,8 @@ const THUMB_COARSE = 56;
 const CELL_PAD_X = 24;
 // The add column: a 40 px md IconButton centred with 8 px either side.
 const ACTION_WIDTH = 56;
+// The table has no row height constant, so skeleton rows are counted at v2's DataTableSkeleton figure (48).
+const SKELETON_ROW_HEIGHT = 48;
 
 // Place column content horizontally inside column-direction Views.
 const ALIGN = { left: 'items-start', center: 'items-center', right: 'items-end' } as const;
@@ -75,6 +78,8 @@ export interface ProductTableProps extends Omit<ViewProps, 'children'> {
    * (showAddButton), a count above 0 shows in place of the +, labelled "In cart: N", and pressing it calls onSelect
    * as the + does; a product with variants keeps its >. Default: no count. */
   cartQuantity?: (doc: any) => number;
+  /** With no items, draw the header and skeleton rows instead of emptyState, as WCPOS v2's DataTableSkeleton. */
+  loading?: boolean;
   className?: string;
 }
 
@@ -104,7 +109,7 @@ export function useDefaultProductColumns(options?: { currencySymbol?: string }):
 export function ProductTable({
   items, columns, sort, defaultSort = null, onSortChange, sortItems = true, onSelect,
   searchSlot, filterSlot, emptyState, showUnsellable = false, currencySymbol, showThumbnail = false,
-  showAddButton = false, cartQuantity, className, ...viewProps
+  showAddButton = false, cartQuantity, loading = false, className, ...viewProps
 }: ProductTableProps): JSX.Element {
   // Without a ConnectorProvider, custom columns can render without traits.
   let traits: ReturnType<typeof useProductTraits> | undefined;
@@ -120,6 +125,7 @@ export function ProductTable({
   const resolvedColumns = useMemo(() => columns ?? (traits
     ? defaultProductColumns(traits, context, { currencySymbol }) : []), [columns, traits, context, currencySymbol]);
   const [internalSort, setInternalSort] = useState(defaultSort);
+  const [skeletonHeight, setSkeletonHeight] = useState(0);
   const activeSort = sort === undefined ? internalSort : sort;
   const visibleItems = showUnsellable || !traits ? items : items.filter((item) => traits!.isSellable(item));
   const overlaidItems = useStockOverlaid(visibleItems);
@@ -137,7 +143,7 @@ export function ProductTable({
     <VStack space="none" className={cn('flex-1', className)} {...viewProps}>
       {searchSlot && <View className="px-3 py-2">{searchSlot}</View>}
       {filterSlot && <View className="px-3 pb-2">{filterSlot}</View>}
-      {rows.length ? (
+      {rows.length || (loading && items.length === 0) ? (
         <Table className="flex-1">
           <TableHeader>
             <TableRow>
@@ -159,7 +165,7 @@ export function ProductTable({
               {addButton ? <TableHead aria-label="Actions" style={{ width: ACTION_WIDTH }} className="h-9 flex-none px-3 py-0" /> : null}
             </TableRow>
           </TableHeader>
-          <TableBody className="flex-1">
+          {rows.length ? <TableBody className="flex-1">
             <FlatList
               data={rows}
               keyExtractor={(item, index) => String(item.id ?? index)}
@@ -199,7 +205,23 @@ export function ProductTable({
                 ) : row;
               }}
             />
-          </TableBody>
+          </TableBody> : (
+            // v2's DataTableSkeleton: one placeholder per cell, in the real cells' widths, so the rows that replace them line up.
+            <TableBody className="flex-1 overflow-hidden" accessibilityLabel="Loading" aria-busy
+              onLayout={(event) => setSkeletonHeight(event.nativeEvent.layout.height)}>
+              {Array.from({ length: skeletonCount(skeletonHeight, SKELETON_ROW_HEIGHT) }, (_, row) => (
+                <TableRow key={row} testID="product-table-skeleton-row" className="border-b border-border">
+                  {thumbnail ? <TableCell style={{ width: thumb + CELL_PAD_X }} className="flex-none px-3 py-1.5">
+                    <Skeleton style={{ width: thumb, height: thumb }} className="flex-none rounded-md" /></TableCell> : null}
+                  {resolvedColumns.map((column) => (
+                    <TableCell key={column.id} style={{ flex: column.flex ?? 1 }}
+                      className={cn('px-3 py-1.5', column.align && ALIGN[column.align])}><Skeleton shape="line" className="w-3/4" /></TableCell>
+                  ))}
+                  {addButton ? <TableCell style={{ width: ACTION_WIDTH }} className="flex-none px-0 py-1.5" /> : null}
+                </TableRow>
+              ))}
+            </TableBody>
+          )}
         </Table>
       ) : emptyState ?? null}
     </VStack>
