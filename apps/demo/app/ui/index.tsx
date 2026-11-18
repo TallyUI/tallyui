@@ -15,6 +15,7 @@ const screens = [
   // Interactive
   { href: '/ui/button', label: 'Button' },
   { href: '/ui/icon-button', label: 'IconButton' },
+  { href: '/ui/list-row', label: 'ListRow' },
   // Form
   { href: '/ui/label', label: 'Label' },
   { href: '/ui/input', label: 'Input' },

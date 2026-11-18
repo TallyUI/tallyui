@@ -15,6 +15,7 @@
     "---Interactive---",
     "button",
     "icon-button",
+    "list-row",
     "---Form---",
     "label",
     "input",
