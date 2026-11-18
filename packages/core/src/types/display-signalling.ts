@@ -106,7 +106,7 @@ export interface DisplaySignalling {
   postSnapshot(ctx: SyncContext, deviceId: string, displayId: string, body: unknown): Promise<void>;
   /**
    * Claims a live code: the first claim spends it and records a pending pairing with `displayName` and a fresh 4-digit
-   * check code, unique among live pending pairings, and returns a claim secret (128 bits, base64url, stored only as a
+   * check code, unique among that till's live pending pairings, and returns a claim secret (128 bits, base64url, stored only as a
    * hash); no token. `token` is the display's current token, if any, so a confirm moves it. A claim naming no live code
    * fails and spends nothing. Failed claims are limited per source (10 a minute, IPv6 by /64 via `rateLimitSource`) and
    * store-wide (100 per 10 minutes); over either, every claim is refused and spends nothing. Every refusal is `claim_refused`.
