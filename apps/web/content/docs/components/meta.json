@@ -93,6 +93,7 @@
     "settings-group",
     "connector-status",
     "printing-settings",
+    "barcode-scanning-settings",
     "---Layout---",
     "app-shell",
     "nav-rail",
