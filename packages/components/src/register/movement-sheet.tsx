@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react';
+import { Pressable, View, type TextInput } from 'react-native';
 import type { MovementType, useRegisterSession } from '@tallyui/pos';
 import { movementFieldError, normalizeAmount, parseMinor } from '@tallyui/pos';
 
 import { useCurrencySymbol, minorUnitDigits } from '@tallyui/core';
+import { cn } from '@tallyui/theme';
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
@@ -14,6 +16,14 @@ const LABELS: Record<MovementType, string> = {
   paid_in: 'Paid in',
   paid_out: 'Paid out',
   no_sale: 'No sale',
+};
+
+// v2's `REASONS` (`movement-sheet.tsx:39`): the store's common reasons per type, v2's keys and order.
+const REASONS: Record<MovementType, readonly { key: string; label: string }[]> = {
+  paid_out: [{ key: 'supplier', label: 'Supplier' }, { key: 'petty_cash', label: 'Petty cash' }, { key: 'bank', label: 'Bank' },
+    { key: 'tips', label: 'Tips' }, { key: 'change', label: 'Change' }],
+  paid_in: [{ key: 'float', label: 'Float' }, { key: 'change', label: 'Change' }, { key: 'bank', label: 'Bank' }],
+  no_sale: [{ key: 'change', label: 'Change' }, { key: 'mistake', label: 'Mistake' }, { key: 'drawer_check', label: 'Drawer check' }],
 };
 
 const AMOUNT_LABEL_ID = 'movement-amount-label';
@@ -30,6 +40,8 @@ export interface MovementSheetProps {
   onOpenChange: (open: boolean) => void;
   /** A no-sale opens the drawer once recorded (LEDGER 66); there is nothing to open otherwise. */
   onOpenDrawer?: () => void;
+  /** Replaces the default reason chips for this type; `[]` shows only "Other…". */
+  reasons?: readonly string[];
 }
 
 /**
@@ -40,7 +52,7 @@ export interface MovementSheetProps {
  * after: a refusal afterwards would mean cash already moved with no record of it. A no-sale
  * hides the amount field, always records zero, and opens the drawer once the row is written.
  */
-export function MovementSheet({ register, type, currency, onDone, onOpenChange, onOpenDrawer }: MovementSheetProps) {
+export function MovementSheet({ register, type, currency, onDone, onOpenChange, onOpenDrawer, reasons }: MovementSheetProps) {
   const currencySymbol = useCurrencySymbol();
   const digits = minorUnitDigits(currency);
   const [amount, setAmount] = useState('');
@@ -50,6 +62,10 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
   // the rendered busy state, claims the submission the instant the first tap runs.
   const busyRef = useRef(false);
   const [error, setError] = useState('');
+  const reasonRef = useRef<TextInput>(null);
+  const chips = reasons
+    ? reasons.map((label) => ({ key: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label }))
+    : REASONS[type];
   const invalid = movementFieldError({ type, amount, reason });
   const confirm = async () => {
     if (invalid || busyRef.current) return;
@@ -95,8 +111,28 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
         <Label testID="movement-reason-label" nativeID={REASON_LABEL_ID}>
           Reason
         </Label>
+        <View testID="movement-reason-chips" className="flex-row flex-wrap gap-2">
+          {[...chips, { key: 'other', label: 'Other…' }].map(({ key, label }) => {
+            const other = key === 'other';
+            const on = !other && reason === label;
+            return (
+              <Pressable key={key} testID={`movement-reason-${key.replace(/_/g, '-')}`} role="button"
+                aria-pressed={other ? undefined : on}
+                onPress={() => {
+                  setReason(on || other ? '' : label);
+                  if (other) reasonRef.current?.focus();
+                }}
+                className={cn('rounded-full px-3 py-1.5', on ? 'bg-primary' : 'bg-accent')}>
+                <Text className={cn('text-xs font-semibold', on ? 'text-primary-foreground' : 'text-muted-foreground')}>
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
         <Input>
           <Input.Field
+            ref={reasonRef}
             testID="movement-reason"
             placeholder="Reason"
             value={reason}

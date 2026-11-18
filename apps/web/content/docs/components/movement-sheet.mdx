@@ -24,6 +24,8 @@ import { MovementSheet } from '@tallyui/components';
 
 Renders an open dialog for the chosen paid-in, paid-out, or no-sale movement with a reason input and Record button. No-sale movements hide the amount input, record zero, and call `onOpenDrawer` after recording when supplied.
 
+The sheet offers v2's common reasons as chips that fill the reason field, and "Other…" clears the field and focuses it.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -34,3 +36,4 @@ Renders an open dialog for the chosen paid-in, paid-out, or no-sale movement wit
 | `onDone` | `(id: string, type: MovementType, amountMinor: number) => void` | --- | Called with the recorded movement's ID, type, and amount |
 | `onOpenChange` | `(open: boolean) => void` | required | Receives dialog visibility changes; called with `false` after recording |
 | `onOpenDrawer` | `() => void` | --- | Called after recording a no-sale movement to open the drawer |
+| `reasons` | `readonly string[]` | v2's reasons for the type | Replaces the default reason chips for this type; `[]` shows only "Other…" |
