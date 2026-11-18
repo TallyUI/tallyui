@@ -20,6 +20,13 @@ const typeQuery = (value: string) => fireEvent.change(field()!, { target: { valu
 const advance = (ms = 250) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const names = () => screen.getAllByRole('option').map((option) => option.getAttribute('aria-label'));
 const key = (target: Element | Document, name: string) => act(() => { fireEvent.keyDown(target, { key: name }); fireEvent.keyUp(target, { key: name }); });
+/** `n` customers with ids (and names) `c<offset + i>`. */
+const many = (n: number, offset = 0): Customer[] => Array.from({ length: n }, (_, i) => ({ id: `c${offset + i}`, name: `c${offset + i}` }));
+const list = () => screen.getByTestId('customer-dropdown-list');
+// jsdom measures everything as 0, so any scroll reads as "at the end". react-native-web's ScrollView calls onScroll once at
+// the start of a scroll and once more at its end (a 100 ms timer); running that timer here, while the page just asked for is
+// still in flight, makes one endReached() one whole scroll gesture, and the next scroll starts afresh (no throttle wait).
+const endReached = () => act(async () => { fireEvent.scroll(list()); vi.advanceTimersByTime(100); });
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -237,5 +244,98 @@ describe('CustomerDropdown', () => {
     key(document.activeElement!, 'Enter');
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(abby);
     expect(field()).toBeNull();
+  });
+
+  it('one page only when the app ignores the page argument', async () => {
+    const fifty = many(50);
+    const browse = vi.fn(async (_page?: number) => fifty);
+    render(ui(props({ browse })));
+    fireEvent.click(chip());
+    await advance();
+    await endReached();
+    await advance();
+    expect(browse.mock.calls).toEqual([[], [2]]);
+    expect(names()).toHaveLength(51);
+    expect(new Set(names()).size).toBe(51);
+    await endReached();
+    await advance();
+    expect(browse).toHaveBeenCalledTimes(2);
+  });
+
+  it('end-reached appends the next page', async () => {
+    const browse = vi.fn(async (page?: number) => (page === 2 ? many(50, 50) : many(50)));
+    const search = vi.fn(async (_query: string, page?: number) => (page === 2 ? many(3, 200) : many(50, 100)));
+    render(ui(props({ search, browse })));
+    fireEvent.click(chip());
+    await advance();
+    await endReached();
+    await advance();
+    expect(browse.mock.calls).toEqual([[], [2]]);
+    expect(names()).toEqual(['Guest', ...many(100).map((customer) => customer.name)]);
+    // Typed searches page too, as v2.
+    typeQuery('c');
+    await advance();
+    await endReached();
+    await advance();
+    expect(search.mock.calls).toEqual([['c'], ['c', 2]]);
+    expect(names()).toHaveLength(54);
+  });
+
+  it('a stale page response is dropped', async () => {
+    const second = deferred<Customer[]>();
+    const browse = vi.fn((page?: number) => (page === 2 ? second.promise : Promise.resolve(many(50))));
+    render(ui(props({ browse })));
+    fireEvent.click(chip());
+    await advance();
+    await endReached();
+    // v2's latch: one later page in flight at a time.
+    await endReached();
+    expect(browse.mock.calls).toEqual([[], [2]]);
+    key(document, 'Escape');
+    fireEvent.click(chip());
+    await advance();
+    expect(browse.mock.calls).toEqual([[], [2], []]);
+    expect(names()).toHaveLength(51);
+    await act(async () => second.resolve(many(50, 50)));
+    expect(names()).toEqual(['Guest', ...many(50).map((customer) => customer.name)]);
+  });
+
+  it('no request offline', async () => {
+    const browse = vi.fn(async (_page?: number) => many(50));
+    const { rerender } = render(ui(props({ browse, online: false })));
+    fireEvent.click(chip());
+    await endReached();
+    await advance();
+    expect(browse).not.toHaveBeenCalled();
+    rerender(ui(props({ browse, online: true })));
+    await advance();
+    expect(names()).toHaveLength(51);
+    rerender(ui(props({ browse, online: false })));
+    await endReached();
+    await advance();
+    expect(browse).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it('no further request once a short page says there is no more', async () => {
+    const browse = vi.fn(async (page?: number) => (page === 2 ? many(10, 50) : many(50)));
+    render(ui(props({ browse })));
+    fireEvent.click(chip());
+    await advance();
+    await endReached();
+    await advance();
+    expect(names()).toHaveLength(61);
+    await endReached();
+    await advance();
+    await endReached();
+    await advance();
+    expect(browse).toHaveBeenCalledTimes(2);
+    cleanup();
+    const few = vi.fn(async (_page?: number) => many(3));
+    render(ui(props({ browse: few })));
+    fireEvent.click(chip());
+    await advance();
+    await endReached();
+    await advance();
+    expect(few).toHaveBeenCalledOnce();
   });
 });

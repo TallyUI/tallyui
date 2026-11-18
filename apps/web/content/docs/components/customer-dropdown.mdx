@@ -15,12 +15,12 @@ import { CustomerDropdown } from '@tallyui/components';
 <CustomerDropdown search={searchCustomers} selected={customer} onSelect={setCustomer} online={online} />
 ```
 
-The chip names the sale's customer, or Guest. While the dropdown is open it reads "Select Customer"; the search is debounced, a stale response is dropped and nothing is sent offline. With `browse`, an empty query lists the browsed customers under Guest, as v2 does; without it an empty query lists Guest alone. Guest is always the first row. On the web the arrow keys move between the field and the rows, Enter or Space picks, Escape closes. `CustomerPicker` stays for the modal and inline picker. As in v2, Guest is drawn with a person glyph, not initials, and the address pin beside the chip appears only when `onEditAddress` is given.
+The chip names the sale's customer, or Guest. While the dropdown is open it reads "Select Customer"; the search is debounced, a stale response is dropped and nothing is sent offline. With `browse`, an empty query lists the browsed customers under Guest, as v2 does; without it an empty query lists Guest alone. At the end of the list the dropdown asks for the next 50 with `page` (1-based) and appends them, as v2; a page with fewer than 50, or one with no new customers, is the last, and rows are kept by customer id. Guest is always the first row. On the web the arrow keys move between the field and the rows, Enter or Space picks, Escape closes. `CustomerPicker` stays for the modal and inline picker. As in v2, Guest is drawn with a person glyph, not initials, and the address pin beside the chip appears only when `onEditAddress` is given.
 
 ## Props
 
-- `search` (`(query: string) => Promise<Customer[]>`, required): the connector's searchCustomers, bound by the app.
-- `browse` (`() => Promise<Customer[]>`): the first customers for an empty query, called each time the dropdown opens or the query is cleared, with the same stale and offline handling as `search`; v2 lists the first 50 by last name.
+- `search` (`(query: string, page?: number) => Promise<Customer[]>`, required): the connector's searchCustomers, bound by the app; `page` (1-based) asks for the next 50 at the end of the list, absent means the first page.
+- `browse` (`(page?: number) => Promise<Customer[]>`): the first customers for an empty query, called each time the dropdown opens or the query is cleared, with the same stale and offline handling as `search`; v2 lists the first 50 by last name. `page` (1-based) asks for the next 50 at the end of the list, absent means the first page.
 - `selected` (`Customer | null`, required): the sale's customer; `null` is Guest.
 - `onSelect` (`(customer: Customer | null) => void`, required): called with the picked customer, or `null` for Guest.
 - `onError` (`(error: unknown) => void`): errors the dropdown can't explain to the cashier, as CustomerPicker's.
