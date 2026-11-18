@@ -36,6 +36,7 @@ const screens = [
   { href: '/pos/register/picker', label: 'RegisterPicker' },
   { href: '/pos/register/open', label: 'OpenRegisterCard' },
   { href: '/pos/register/bar', label: 'RegisterBar' },
+  { href: '/pos/register/cashier', label: 'CashierSheet' },
   { href: '/pos/register/movement', label: 'MovementSheet' },
   { href: '/pos/register/panel', label: 'RegisterPanel' },
   { href: '/pos/register/column', label: 'RegisterColumn' },

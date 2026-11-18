@@ -12,3 +12,4 @@ export { RegisterCount, APPROVAL_REQUIRED_TEXT, tenderLabel, type RegisterCountP
 export { ClosureSheet, type ClosureSheetProps } from './closure-sheet';
 export { SwitchConfirm, type SwitchConfirmProps } from './switch-confirm';
 export { HandoverSlip, type HandoverSlipProps } from './handover-slip';
+export { CashierSheet, type CashierSheetProps } from './cashier-sheet';

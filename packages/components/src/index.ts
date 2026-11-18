@@ -199,6 +199,8 @@ export {
   type SwitchConfirmProps,
   HandoverSlip,
   type HandoverSlipProps,
+  CashierSheet,
+  type CashierSheetProps,
 } from './register';
 
 // Settings components
