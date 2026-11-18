@@ -2,7 +2,7 @@
 '@tallyui/pos': minor
 ---
 
-`register_sessions` moves to schema version 2. Rows gain `count_note`, the cashier's note on the close count, which the migration sets to `null` on every older row. `closeSession` takes `note`, and the closure freezes a non-blank note as `breakdowns.variance_note`.
+`register_sessions` moves to schema version 2. Rows gain `count_note`, the cashier's note on the close count, which the migration sets to `null` on every older row; new sessions start with `count_note: null`. `closeSession` takes `note`, and the closure freezes a non-blank note as `breakdowns.variance_note`.
 
 **Upgrade notes**
 

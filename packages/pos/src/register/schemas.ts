@@ -128,7 +128,7 @@ export const registerSessionSchema: RxJsonSchema<RegisterSession> = {
     approver_token: { ...nullableText, default: null },
     server_expected: { type: ['object', 'null'], additionalProperties: minor, default: null },
     server_sales_count: { type: ['integer', 'null'], default: null },
-    count_note: nullableText,
+    count_note: { ...nullableText, default: null },
   },
   required: ['id', 'register_id', 'status', 'opened_at_gmt', 'counted_float_minor'],
   indexes: [['register_id', 'status']],
@@ -158,7 +158,7 @@ export function registerSessionCreator(): RxCollectionCreator<RegisterSession> {
  * Kept so old callers compile but fail at start instead of migrating on RxDB's own path.
  */
 export function registerSessionCollection(): never {
-  throw new Error('registerSessionCollection() is gone: open register_sessions with await addRegisterSessionCollection(db). Adding it with addCollections would run RxDB\'s own migration of schema version 1, which can lose sessions (ADR-078, #371).');
+  throw new Error('registerSessionCollection() is gone: open register_sessions with await addRegisterSessionCollection(db). Adding it with addCollections would run RxDB\'s own migration of an older schema version, which can lose sessions (ADR-078, #371).');
 }
 
 export const cashMovementSchema: RxJsonSchema<CashMovement> = {
