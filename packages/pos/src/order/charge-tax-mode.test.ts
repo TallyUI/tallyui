@@ -170,6 +170,21 @@ describe('vendurepos gap 2.10: a charge in its own tax mode, generic', () => {
     displayIdentity(order);
   });
 
+  it('G4: two material converted fees each show their own net', () => {
+    const builder = makeGeneric(false);
+    builder.addLine(product(2000));
+    builder.addFee({ name: 'Fee A', amountMinor: 1100, amountIncludesTax: true });
+    builder.addFee({ name: 'Fee B', amountMinor: 1100, amountIncludesTax: true });
+    const order = builder.getSnapshot();
+    expect(order.totalMinor).toBe(4400);
+    expect(order.taxMinor).toBe(400);
+    expect(order.fees!.map((fee) => fee.taxMicros)).toEqual(['100000000', '100000000']);
+    expect(order.display.fees!.map((f) => f.amountMinor)).toEqual([1000, 1000]);
+    expect(order.display.subtotalMinor).toBe(2000);
+    expect(order.display.subtotalMinor + 1000 + 1000 + order.taxMinor).toBe(order.totalMinor);
+    displayIdentity(order);
+  });
+
   it('V1: a mode that is not a boolean is refused', () => {
     expect(() => makeGeneric(false).addFee({ name: 'Fee', amountMinor: 1, amountIncludesTax: 'yes' as never })).toThrow(RangeError);
   });
