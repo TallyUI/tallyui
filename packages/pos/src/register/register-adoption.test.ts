@@ -534,6 +534,81 @@ describe('adoptRegisterResults', () => {
       expect(await read()).toStrictEqual(before);
     });
 
+    /** Rewrites a stored closure as one written before `store_key` existed: absent, or `null` when `key` is null. */
+    const unkey = async (id: string, key?: null) => (await db.closures.findOne(id).exec(true))
+      .incrementalModify(({ store_key: _key, ...rest }) => (key === null ? { ...rest, store_key: null } : rest));
+
+    it('a refused closure with no store_key is renumbered from the store\'s counter', async () => {
+      const id = await closeWith(3000, '2026-11-10T17:00:00.000Z');
+      await reconcile();
+      await unkey(id);
+      expect(await closure(id)).not.toHaveProperty('store_key');
+      await refuse(id, counters(41, 500000, 2000));
+      const { error: _refusal, ...before } = (await submit(id)).toJSON();
+      await renumber();
+      const after = (await submit(id)).toJSON();
+      expect(after).toStrictEqual({ ...before, commandId: after.commandId, syncStatus: 'pending', updatedAt: after.updatedAt,
+        payload: { ...before.payload, number: 42, perpetualSalesTotalMinor: 503000, perpetualRefundsTotalMinor: 2000 } });
+      expect(after.commandId).not.toBe(before.commandId);
+      const row = await closure(id);
+      expect(row).toMatchObject({ number: 42, perpetual_sales_total_minor: 503000, perpetual_refunds_total_minor: 2000, number_retried: true });
+      expect(row).not.toHaveProperty('store_key');
+      expect(await bucket()).toMatchObject({ last_closure_number: 42, perpetual_sales_total_minor: 503000 });
+    });
+
+    it('a later unsent closure with store_key null is renumbered in the same pass, after a keyed one', async () => {
+      const ids = [await closeWith(3000, '2026-11-10T17:00:00.000Z'), await closeWith(2000, '2026-11-11T17:00:00.000Z'),
+        await closeWith(1000, '2026-11-12T17:00:00.000Z')];
+      await reconcile();
+      await unkey(ids[1], null);
+      const sent = await Promise.all(ids.map(async (id) => (await submit(id)).commandId));
+      await refuse(ids[0], counters(41, 500000, 2000));
+      await renumber();
+      const rows = await Promise.all(ids.map(closure));
+      expect(rows.map(({ store_key }) => store_key)).toStrictEqual(['store', null, 'store']);
+      expect(rows.map(({ number }) => number)).toStrictEqual([42, 43, 44]);
+      expect(rows.map((row) => row.perpetual_sales_total_minor)).toStrictEqual([503000, 505000, 506000]);
+      expect(rows.map((row) => row.number_retried === true)).toStrictEqual([true, false, false]);
+      const commands = await Promise.all(ids.map(async (id) => (await submit(id)).toJSON()));
+      expect(commands.map(({ syncStatus, payload }) => [syncStatus, payload.number, payload.perpetualSalesTotalMinor]))
+        .toStrictEqual([['pending', 42, 503000], ['pending', 43, 505000], ['pending', 44, 506000]]);
+      commands.forEach(({ commandId }, index) => expect(commandId).not.toBe(sent[index]));
+      expect(await bucket()).toMatchObject({ last_closure_number: 44, perpetual_sales_total_minor: 506000 });
+    });
+
+    it('a closure of another store is still left alone', async () => {
+      const elsewhere = await closeWith(3000, '2026-11-10T17:00:00.000Z', 'other');
+      const behind = await closeWith(2000, '2026-11-11T17:00:00.000Z');
+      await reconcile();
+      await unkey(behind);
+      await refuse(elsewhere, counters(41, 500000, 2000));
+      const read = async () => [(await submit(elsewhere)).toJSON(), (await submit(behind)).toJSON(), await closure(elsewhere),
+        await closure(behind), await readRegister(db.register_sessions)];
+      const before = await read();
+      expect(before[2]).toMatchObject({ store_key: 'other', number: 1 });
+      await renumber();
+      expect(await read()).toStrictEqual(before);
+    });
+
+    it('a second refusal of a renumbered keyless closure writes nothing', async () => {
+      const id = await closeWith(3000, '2026-11-10T17:00:00.000Z');
+      const behind = await closeWith(2000, '2026-11-11T17:00:00.000Z');
+      await reconcile();
+      await unkey(id);
+      await unkey(behind, null);
+      await refuse(id, counters(41, 500000, 2000));
+      await renumber();
+      await refuse(id, counters(42, 600000, 2000));
+      await refuse(behind, counters(42, 600000, 2000));
+      const rows = await Promise.all([submit(id), submit(behind)].map(async (row) => (await row).toJSON()));
+      const [closures, register] = [await Promise.all([closure(id), closure(behind)]), await readRegister(db.register_sessions)];
+      await renumber();
+      expect(await Promise.all([submit(id), submit(behind)].map(async (row) => (await row).toJSON()))).toStrictEqual(rows);
+      expect(rows[0]).toMatchObject({ syncStatus: 'rejected', error: { code: 'register_closure_number_invalid' }, payload: { number: 42 } });
+      expect(await Promise.all([closure(id), closure(behind)])).toStrictEqual(closures);
+      expect(await readRegister(db.register_sessions)).toStrictEqual(register);
+    });
+
     it('a closure closed before the refused one, still pending ahead of it, keeps its number, command id and payload (#657)', async () => {
       const ahead = await closeWith(3000, '2026-11-10T17:00:00.000Z');
       const id = await closeWith(2000, '2026-11-11T17:00:00.000Z');
