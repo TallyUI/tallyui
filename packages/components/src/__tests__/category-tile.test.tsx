@@ -41,6 +41,16 @@ describe('CategoryTile', () => {
     expect(screen.getByRole('button', { name: 'Clothing' })).toBeTruthy();
   });
 
+  it('T1: back draws the back badge, and accessibilityLabel labels the tile in place of the name', () => {
+    const { rerender } = render(<CategoryTile name="Hats" testID="level" back accessibilityLabel="Back" />);
+    expect(screen.getByTestId('level-back').getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Hats' })).toBeNull();
+    rerender(<CategoryTile name="Hats" testID="level" />);
+    expect(screen.queryByTestId('level-back')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Hats' })).toBeTruthy();
+  });
+
   it('P3: a photo that fails falls back to the initial, and a new URL is tried again', () => {
     // react-native-web's Image fires onError from its loader's own `new window.Image()`, not from the <img> it
     // renders, so the test keeps the loader's images and fires the error there.
