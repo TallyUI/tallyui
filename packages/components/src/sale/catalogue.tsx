@@ -4,7 +4,7 @@ import { cn } from '@tallyui/theme';
 import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory, type VariantSummary } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
   catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE,
-  listCategories, inCategory, productCategories, cartQuantities,
+  listCategories, inCategory, productCategories, cartQuantities, listTermGroups, hasTerm,
   type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction, type CartQuantityLine } from '@tallyui/pos';
 import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle, CategoryNav } from '../product';
 import { ProductVariantPicker } from '../product/product-variant-picker';
@@ -66,7 +66,7 @@ function draws(node: ReactNode): boolean {
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, searchAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
   viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categoryBrowse = 'chips', categories, pickAnyOptions = false,
-  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow, rowsSlot }: {
+  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, termPills = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow, rowsSlot }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -131,6 +131,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   filterChips?: readonly ProductFilterChip[];
   /** With the In Stock pill on, keep 'backorder' products in the grid (only 'out_of_stock' is dropped). Default false: WCPOS v2's pill is stock_status 'instock' and drops backorders too. */
   inStockKeepsBackorder?: boolean;
+  /** With showFilterBar, a term pill per term group (traits.getTerms) after the chips: `true` for every group the listed
+   *  products carry, in listTermGroups order, or the group ids to show, in this order (a group with no terms is not drawn).
+   *  Single select per group; groups AND together; local only, never persisted. Not drawn with `items`. Default off. */
+  termPills?: boolean | readonly string[];
   /** Controlled filters; changes are reported through onFiltersChange. */
   filters?: ProductFilters;
   /** The cashier's next filters (requested filters when controlled). */
@@ -248,14 +252,33 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
   // v2's In Stock pill drops backorders unless inStockKeepsBackorder is set; a stock the backend did not report stays.
   const stockFiltered = showFilterBar && filters.inStock;
+  // The term pills: local picks (group id to term id), never saved or reported. A pick whose term no drawn group still
+  // holds is not applied but kept, and applies again when the term returns, as a stored category does.
+  const [termPicks, setTermPicks] = useState<Readonly<Record<string, string>>>({});
+  const allTermGroups = useMemo(() => (showFilterBar && termPills && items === undefined ? listTermGroups(shown, traits) : []),
+    [showFilterBar, termPills, items, shown, traits]);
+  const termGroups = useMemo(() => (termPills === true ? allTermGroups
+    : termPills ? termPills.flatMap((id) => allTermGroups.filter((group) => group.id === id)) : []), [allTermGroups, termPills]);
+  const activeTerms = useMemo(() => termGroups
+    .filter((group) => group.terms.some((term) => term.id === termPicks[group.id]))
+    .map((group) => [group.id, termPicks[group.id]] as const), [termGroups, termPicks]);
+  function pickTerm(group: string, term: string | undefined) {
+    setTermPicks((current) => {
+      const next = { ...current };
+      if (term === undefined) delete next[group]; else next[group] = term;
+      return next;
+    });
+  }
   const results = useMemo(() => {
     if (items !== undefined) return suppliedItems;
     const matched = searchProducts(activeCategory
       ? shown.filter((doc) => inCategory(doc, activeCategory.id, traits)) : shown, query, traits);
-    const filtered = stockFiltered
+    const stocked = stockFiltered
       ? matched.filter((doc) => !(inStockKeepsBackorder ? ['out_of_stock'] : ['out_of_stock', 'backorder']).includes(traits.getStock(doc).status)) : matched;
+    const filtered = activeTerms.length > 0
+      ? stocked.filter((doc) => activeTerms.every(([group, term]) => hasTerm(doc, group, term, traits))) : stocked;
     return state.sort ? sortProducts(filtered, state.sort, (doc, field) => productSortValue(doc, field, traits, { currency })) : filtered;
-  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered, inStockKeepsBackorder]);
+  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered, inStockKeepsBackorder, activeTerms]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
@@ -348,6 +371,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   }
 
   const emptyText = query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
+    : activeTerms.length > 0 && items === undefined ? 'No products match the picked filters.'
     : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
     : isLoading ? 'Loading products…' : 'No products yet.';
   // Where the text would say "Loading products…", v2 holds the screen in the shape of what is coming; the words stay
@@ -389,7 +413,11 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             {draws(searchAccessory) ? searchAccessory : null}
           </View>
         ) : searchInput}
-        {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips} /> : null}
+        {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips}
+          termGroups={termGroups.length > 0 ? termGroups.map((group) => ({
+            id: group.id, label: group.name, options: group.terms.map((term) => ({ value: term.id, label: term.name })),
+            value: activeTerms.find(([id]) => id === group.id)?.[1], onChange: (term: string | undefined) => pickTerm(group.id, term),
+          })) : undefined} /> : null}
         {cameraScan && cameraScanner && scannerOpen ?<CameraScannerPanel {...cameraScanner} onClose={() => setScannerOpen(false)} /> : null}
         {(statusText || statusAccessory) ? (
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">

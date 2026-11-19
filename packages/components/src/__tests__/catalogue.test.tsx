@@ -1,7 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConnectorProvider } from '@tallyui/core';
+import { ConnectorProvider, type ProductTerm } from '@tallyui/core';
+import { PortalHost } from '@tallyui/primitives';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import { wooProductTraits } from '@tallyui/connector-woocommerce';
 import { Catalogue, formatStockSyncTime } from '../sale/catalogue';
@@ -1026,5 +1027,120 @@ describe('v2 tile details', () => {
     render(<Catalogue products={[...products, backordered, soldOut]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} showFilterBar inStockKeepsBackorder />);
     expect(screen.getByTestId('product-tile-Wool Gloves')).toBeTruthy();
     expect(screen.queryByTestId('product-tile-Grey Scarf')).toBeNull();
+  });
+});
+
+describe('Catalogue term pills', { timeout: 20_000 }, () => {
+  const mug = { id: 'mug', title: 'Plain Mug', status: 'published', variants: [
+    { id: 'mug-one', title: 'One size', sku: 'MUG', barcode: '555', prices: [{ amount: 8, currency_code: 'eur' }], manage_inventory: false },
+  ] };
+  const brand = (id: string, name: string): ProductTerm => ({ group: 'f2', groupName: 'Brand', id, name });
+  const colour = (id: string, name: string): ProductTerm => ({ group: 'f1', groupName: 'Colour', id, name });
+  const TERMS: Record<string, ProductTerm[]> = {
+    hat: [brand('a1', 'Acme'), colour('blue', 'Blue')],
+    shirt: [brand('a1', 'Acme'), colour('red', 'Red')],
+    mug: [brand('z1', 'Zest'), colour('blue', 'Blue')],
+  };
+  const termTraits = { ...traits, getTerms: (doc: { id: string }) => TERMS[doc.id] ?? [] };
+  const all = [...products, mug];
+  const press = (testID: string) => fireEvent.click(screen.getByTestId(testID));
+  const pick = (group: string, term: string) => { press(`filter-chip-group-${group}`); press(`filter-chip-group-${group}-${term}`); };
+  const groupIds = () => screen.queryAllByTestId(/^filter-chip-group-[^-]+$/).map((node) => node.getAttribute('data-testid'));
+  const tiles = () => ['Blue Hat', 'Red Shirt', 'Plain Mug'].filter((name) => screen.queryByTestId(`product-tile-${name}`));
+  function show(props: Partial<ComponentProps<typeof Catalogue<(typeof all)[number]>>> = {}, docs = all) {
+    const element = (list: typeof all) => <><Catalogue products={list} traits={termTraits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null}
+      showFilterBar termPills {...props} /><PortalHost /></>;
+    const view = render(element(docs));
+    return { rerender: (list: typeof all) => view.rerender(element(list)) };
+  }
+
+  it('T1: draws no term pill without termPills, or without showFilterBar', () => {
+    show({ termPills: undefined });
+    expect(groupIds()).toEqual([]);
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt', 'Plain Mug']);
+    cleanup();
+    show({ showFilterBar: undefined });
+    expect(groupIds()).toEqual([]);
+  });
+
+  it("T2: termPills draws every group in listTermGroups' name order", () => {
+    show();
+    expect(groupIds()).toEqual(['filter-chip-group-f2', 'filter-chip-group-f1']);
+    expect(screen.getByTestId('filter-chip-group-f2').textContent).toBe('Brand');
+    expect(screen.getByTestId('filter-chip-group-f1').textContent).toBe('Colour');
+  });
+
+  it('T3: an array of group ids draws those groups in its order and drops unknown ids', () => {
+    show({ termPills: ['f1', 'missing', 'f2'] });
+    expect(groupIds()).toEqual(['filter-chip-group-f1', 'filter-chip-group-f2']);
+  });
+
+  it('T4: a pick narrows the grid and the pill reads the term', () => {
+    show();
+    pick('f2', 'a1');
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt']);
+    expect(screen.getByTestId('filter-chip-group-f2').textContent).toBe('Acme');
+  });
+
+  it('T5: picks in two groups AND together', () => {
+    show();
+    pick('f2', 'a1');
+    pick('f1', 'blue');
+    expect(tiles()).toEqual(['Blue Hat']);
+  });
+
+  it("T6: each pill's x clears its pick", () => {
+    show();
+    pick('f2', 'a1');
+    pick('f1', 'blue');
+    press('filter-chip-group-f1-remove');
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt']);
+    press('filter-chip-group-f2-remove');
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt', 'Plain Mug']);
+  });
+
+  it('T7: picks no product carries say so in the grid', () => {
+    show();
+    pick('f2', 'z1');
+    pick('f1', 'red');
+    expect(screen.getByTestId('grid').textContent).toBe('No products match the picked filters.');
+  });
+
+  it("T8: the pill's search filters its terms by name", () => {
+    show();
+    press('filter-chip-group-f2');
+    fireEvent.change(screen.getByTestId('filter-chip-group-f2-search'), { target: { value: 'ZE' } });
+    expect(screen.queryByTestId('filter-chip-group-f2-z1')).not.toBeNull();
+    expect(screen.queryByTestId('filter-chip-group-f2-a1')).toBeNull();
+  });
+
+  it('T9: a pick whose term vanished is not applied, and applies again when the term returns', () => {
+    const view = show();
+    pick('f2', 'z1');
+    expect(tiles()).toEqual(['Plain Mug']);
+    view.rerender(products);
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt']);
+    expect(screen.getByTestId('filter-chip-group-f2').textContent).toBe('Brand');
+    view.rerender(all);
+    expect(tiles()).toEqual(['Plain Mug']);
+  });
+
+  it('T10: draws no term pill with items', () => {
+    show({ items: all });
+    expect(screen.queryAllByTestId(/^filter-chip-group-/)).toEqual([]);
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt', 'Plain Mug']);
+  });
+
+  it('T11: a pick is never reported or saved', () => {
+    const onFiltersChange = vi.fn();
+    const onStateChange = vi.fn();
+    const saveViewState = vi.fn();
+    show({ onFiltersChange, onStateChange, saveViewState });
+    pick('f2', 'a1');
+    press('filter-chip-group-f2-remove');
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt', 'Plain Mug']);
+    expect(onFiltersChange).not.toHaveBeenCalled();
+    expect(onStateChange).not.toHaveBeenCalled();
+    expect(saveViewState).not.toHaveBeenCalled();
   });
 });
