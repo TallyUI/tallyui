@@ -76,6 +76,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'csvFromCells',
   // the catalogue term pills (vendurepos gap 1.6): the pure term-group list and membership test Catalogue filters with, never a hook or the store.
   'listTermGroups', 'hasTerm',
+  // Settings › Printing's Auto label (9.5b): the pure printer pick a template's Auto choice names, never a hook or the store.
+  'resolvePrinter',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

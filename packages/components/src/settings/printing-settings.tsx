@@ -1,13 +1,15 @@
 /**
- * Settings › Printing, the Printers section: ported from WCPOS v2 `packages/core/src/screens/main/settings/printing/`
- * (`index.tsx`, `printer-row.tsx`). Props only; the app passes the printers and wires every callback, and opens its
- * own add/edit dialog from `onAdd` / `onEdit` and shows the result of `onTest`. Left out (later rows): template
- * routing, "Copy setup report", the "Having trouble?" docs link and the test-print toast.
+ * Settings › Printing, the Printers section and template routing: ported from WCPOS v2
+ * `packages/core/src/screens/main/settings/printing/` (`index.tsx`, `printer-row.tsx`, `template-row.tsx`). Props only;
+ * the app passes the printers and wires every callback, and opens its own add/edit dialog from `onAdd` / `onEdit` and
+ * shows the result of `onTest`. Left out (later rows): "Copy setup report", the "Having trouble?" docs link and the
+ * test-print toast.
  */
 import { useState, type JSX } from 'react';
 import { View } from 'react-native';
 import { Circle } from 'react-native-svg';
-import type { PrinterProfile } from '@tallyui/pos';
+import type { ReceiptTemplate } from '@tallyui/core';
+import { resolvePrinter, type PrinterProfile } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { Button } from '../ui/button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -17,8 +19,11 @@ import {
 import { createSvgIcon } from '../ui/icon/svg-icon';
 import { IconButton } from '../ui/icon-button';
 import { Loader } from '../ui/loader';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Text } from '../ui/text';
 import { SettingsGroup } from './settings-group';
+
+type RoutedTemplate = Pick<ReceiptTemplate, 'id' | 'kind' | 'title' | 'engine' | 'paper'>;
 
 export interface PrintingSettingsProps {
   printers: readonly PrinterProfile[];
@@ -32,6 +37,12 @@ export interface PrintingSettingsProps {
   /** Called after the cashier confirms the delete dialog. */
   onDelete: (id: string) => void;
   onAdd: () => void;
+  /** The store's templates, in its order. When absent, no routing sections are drawn. */
+  templates?: readonly RoutedTemplate[];
+  /** Template id -> printer profile id: this device's overrides. Default `{}`. */
+  routing?: Readonly<Record<string, string>>;
+  /** A template's printer was chosen; `null` means Auto (clear the override). */
+  onRoutingChange?: (templateId: string, printerId: string | null) => void;
   className?: string;
 }
 
@@ -120,8 +131,60 @@ function PrinterRow({ printer, testing, onTest, onEdit, onSetDefault, onDelete }
   );
 }
 
+// v2's AUTO_VALUE: the Select value that means "no override".
+const AUTO = '__auto__';
+const NO_ROUTING: Readonly<Record<string, string>> = {};
+const SECTIONS = [
+  { kind: 'receipt', title: 'Receipt Templates' },
+  { kind: 'report', title: 'Report templates' },
+  { kind: 'closure', title: 'Closure templates' },
+] as const;
+
+interface TemplateRowProps extends Pick<PrintingSettingsProps, 'printers' | 'onRoutingChange'> {
+  template: RoutedTemplate;
+  overrideId: string | undefined;
+}
+
+function TemplateRow({ template, printers, overrideId, onRoutingChange }: TemplateRowProps): JSX.Element {
+  const { id, title, engine, paper } = template;
+  const autoLabel = `Auto — ${resolvePrinter({ template, profiles: printers })?.name ?? 'Print Dialog'}`;
+  const override = overrideId ? printers.find((printer) => printer.id === overrideId) : undefined;
+  const missing = overrideId !== undefined && !override;
+  const selected = override
+    ? { value: override.id, label: override.name }
+    : missing ? { value: overrideId, label: 'Unavailable printer' } : { value: AUTO, label: autoLabel };
+  // v2 shows a bare "Thermal"; an unset paper is 80mm because resolvePrinter/templateColumns and renderReceiptHtml treat it so.
+  const typeLabel = engine === 'thermal' ? `Thermal ${paper ?? '80mm'}` : 'HTML';
+  return (
+    <View testID={`template-row-${id}`} className="gap-3 px-4 py-3 sm:flex-row sm:items-center">
+      <View className="flex-1 flex-row items-center gap-2">
+        <Text className="text-sm font-medium text-foreground">{title}</Text>
+        <Text testID={`template-row-${id}-type`} className="rounded border border-border px-1.5 text-xs text-muted-foreground">
+          {typeLabel}
+        </Text>
+      </View>
+      <Select value={selected}
+        onValueChange={(option) => { if (option) onRoutingChange?.(id, option.value === AUTO ? null : option.value); }}>
+        <SelectTrigger testID={`template-row-${id}-printer-select`} accessibilityLabel={`Printer for ${title}`} className="h-9 w-64">
+          <SelectValue placeholder={autoLabel} className="shrink text-sm text-foreground" numberOfLines={1} />
+        </SelectTrigger>
+        <SelectContent className="w-64">
+          <SelectItem value={AUTO} label={autoLabel}><Text className="text-sm">{autoLabel}</Text></SelectItem>
+          {missing && (
+            <SelectItem value={overrideId} label="Unavailable printer"><Text className="text-sm">Unavailable printer</Text></SelectItem>
+          )}
+          {printers.map((printer) => (
+            <SelectItem key={printer.id} value={printer.id} label={printer.name}><Text className="text-sm">{printer.name}</Text></SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </View>
+  );
+}
+
 export function PrintingSettings({
-  printers, loading = false, testingIds = NO_TESTS, onTest, onEdit, onSetDefault, onDelete, onAdd, className,
+  printers, loading = false, testingIds = NO_TESTS, onTest, onEdit, onSetDefault, onDelete, onAdd,
+  templates, routing = NO_ROUTING, onRoutingChange, className,
 }: PrintingSettingsProps): JSX.Element {
   // The dialog is open while `pending` is set; `target` outlives it so the title keeps the name while it closes.
   const [pending, setPending] = useState<PrinterProfile>();
@@ -159,11 +222,25 @@ export function PrintingSettings({
           </>
         )}
       </SettingsGroup>
-      {/* No description: v2's "Receipts routed to it print with Auto instead." is about template routing, which TallyUI lacks. */}
+      {templates && !loading && SECTIONS.map(({ kind, title }) => {
+        const rows = templates.filter((template) => template.kind === kind);
+        return (
+          <SettingsGroup key={kind} title={title} description="Choose which printer each template prints to.">
+            {rows.length > 0 ? rows.map((template) => (
+              <TemplateRow key={template.id} template={template} printers={printers}
+                overrideId={routing[template.id]} onRoutingChange={onRoutingChange} />
+            )) : (
+              <Text testID={`templates-empty-${kind}`} className="px-4 py-3 text-sm text-muted-foreground">No active templates found.</Text>
+            )}
+          </SettingsGroup>
+        );
+      })}
+      {/* v2's description, shown only with routing: without `templates` no template is routed to a printer. */}
       <ConfirmDialog
         testID={`printer-row-${target?.id}-delete-dialog`}
         cancelTestID={`printer-row-${target?.id}-delete-cancel`} confirmTestID={`printer-row-${target?.id}-delete-confirm`}
         title={`Delete ${target?.name ?? ''}?`} confirmLabel="Delete"
+        description={templates ? 'Receipts routed to it print with Auto instead.' : undefined}
         open={pending !== undefined} onOpenChange={(open) => { if (!open) setPending(undefined); }}
         onConfirm={() => { if (pending) onDelete(pending.id); }}
       />
