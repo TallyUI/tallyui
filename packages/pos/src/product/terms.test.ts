@@ -12,8 +12,9 @@ const term = (group: string, groupName: string, id: string, name: string): Produ
 describe('productTerms and listTermGroups without getTerms', () => {
   it('gives no terms and no groups', () => {
     const docs = [{ id: 1, name: 'Beans', categories: [{ id: 1, name: 'Coffee' }] }];
-    expect(productTerms(docs[0], wooProductTraits)).toEqual([]);
-    expect(listTermGroups(docs, wooProductTraits)).toEqual([]);
+    const noTerms = { ...wooProductTraits, getTerms: undefined } as unknown as ProductTraits<(typeof docs)[number]>;
+    expect(productTerms(docs[0], noTerms)).toEqual([]);
+    expect(listTermGroups(docs, noTerms)).toEqual([]);
   });
 });
 
@@ -47,6 +48,45 @@ describe('listTermGroups', () => {
     expect(listTermGroups(docs, traits)).toEqual([
       { id: 'b', name: 'Brand', terms: [{ id: '1', name: 'Acme' }] },
     ]);
+  });
+
+  it('sorts groups by name', () => {
+    const docs: Doc[] = [
+      { id: 1, name: 'Mug', terms: [term('c', 'Colour', '1', 'Red')] },
+      { id: 2, name: 'Beans', terms: [term('b', 'Brand', '9', 'Acme')] },
+    ];
+    expect(listTermGroups(docs, traits).map((g) => g.id)).toEqual(['b', 'c']);
+  });
+
+  it('ignores case and orders equal names by string id', () => {
+    const docs: Doc[] = [{ id: 1, name: 'Product', terms: [
+      term('g', 'G', '2', 'Red'), term('g', 'G', '10', 'Red'), term('g', 'G', '5', 'red'),
+      term('g', 'G', '3', 'apple'), term('g', 'G', '1', 'Banana'),
+    ] }];
+    // apple < Banana < Red = Red = red (case ignored); the three ties by string id: '10' < '2' < '5'.
+    expect(listTermGroups(docs, traits)[0].terms.map((t) => t.id)).toEqual(['3', '1', '10', '2', '5']);
+  });
+
+  it('keeps the same term id in each group that has it', () => {
+    const docs: Doc[] = [{ id: 1, name: 'Mug', terms: [
+      term('b', 'Brand', '1', 'Acme'), term('c', 'Colour', '1', 'Red'),
+    ] }];
+    expect(listTermGroups(docs, traits)).toEqual([
+      { id: 'b', name: 'Brand', terms: [{ id: '1', name: 'Acme' }] },
+      { id: 'c', name: 'Colour', terms: [{ id: '1', name: 'Red' }] },
+    ]);
+  });
+
+  it('handles a product with no terms beside one with terms', () => {
+    const docs: Doc[] = [
+      { id: 1, name: 'Plain', terms: [] },
+      { id: 2, name: 'Beans', terms: [term('b', 'Brand', '1', 'Acme')] },
+    ];
+    expect(productTerms(docs[0], traits)).toEqual([]);
+    expect(listTermGroups(docs, traits)).toEqual([
+      { id: 'b', name: 'Brand', terms: [{ id: '1', name: 'Acme' }] },
+    ]);
+    expect(hasTerm(docs[0], 'b', '1', traits)).toBe(false);
   });
 });
 
