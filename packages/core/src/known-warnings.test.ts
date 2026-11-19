@@ -142,4 +142,36 @@ describe('knownWarnings', () => {
     const tax = { code: 'tax_rate_mismatch', ratePpm: 200000, expectedMinor: 120, serverMinor: 100 };
     expect(knownWarnings([stock, total, tax])).toEqual([stock, total, tax]);
   });
+
+  describe('line_figures_mismatch', () => {
+    const lineTotal = { lineId: 'l1', field: 'totalMinor', tillMinor: 1000, serverMinor: 990 };
+    const lineTax = { lineId: 'l2', field: 'taxMinor', tillMinor: 100, serverMinor: 99 };
+    const lineFigures = (lines: unknown) => ({ code: 'line_figures_mismatch', lines });
+
+    it('keeps a line_figures_mismatch over two lines (K1)', () => {
+      expect(knownWarnings([lineFigures([lineTotal, lineTax])])).toEqual([lineFigures([lineTotal, lineTax])]);
+    });
+
+    it('keeps an entry whose field name it does not know, from a newer store (K2)', () => {
+      const warning = lineFigures([lineTotal, { ...lineTax, field: 'shippingMinor' }]);
+      expect(knownWarnings([warning])).toEqual([warning]);
+    });
+
+    it('drops the whole warning over an empty lineId and keeps a figures_mismatch beside it (K3)', () => {
+      const figures = { code: 'figures_mismatch', fields: [subtotal] };
+      expect(knownWarnings([lineFigures([lineTotal, { ...lineTax, lineId: '' }]), figures])).toEqual([figures]);
+    });
+
+    it('drops a warning with a repeated lineId and field (K4)', () => {
+      expect(knownWarnings([lineFigures([lineTotal, { ...lineTotal, tillMinor: 1100 }])])).toEqual([]);
+    });
+
+    it('drops a warning whose entry has equal values (K5)', () => {
+      expect(knownWarnings([lineFigures([{ ...lineTotal, serverMinor: 1000 }])])).toEqual([]);
+    });
+
+    it('drops extra keys in an entry (K6)', () => {
+      expect(knownWarnings([lineFigures([{ ...lineTotal, note: 'x' }])])).toEqual([lineFigures([lineTotal])]);
+    });
+  });
 });

@@ -272,3 +272,39 @@ it('drops unknown keys at every level without mutating the input', () => {
   expect(value.serverRefs.extra).toBe(true)
   expect(value.warnings.every(warning => warning.extra)).toBe(true)
 })
+
+const lineTotal = { lineId: 'l1', field: 'totalMinor', tillMinor: 1000, serverMinor: 990 }
+const lineTax = { lineId: 'l2', field: 'taxMinor', tillMinor: 100, serverMinor: 99 }
+const lineFigures = (lines: unknown) => ({ ...applied, warnings: [{ code: 'line_figures_mismatch', lines }] })
+
+it('accepts a line_figures_mismatch over two lines (P1)', () => {
+  const value = lineFigures([lineTotal, lineTax])
+  expect(parseCommandResult(value)).toEqual(value)
+})
+
+it('accepts the same lineId twice with different fields (P2)', () => {
+  const lines = [{ lineId: 'l1', field: 'subtotalMinor', tillMinor: 900, serverMinor: 890 }, { lineId: 'l1', field: 'taxMinor', tillMinor: 100, serverMinor: 99 }]
+  expect(parseCommandResult(lineFigures(lines)).warnings).toEqual([{ code: 'line_figures_mismatch', lines }])
+})
+
+it('drops extra keys in a line_figures_mismatch entry (P3)', () => {
+  expect(parseCommandResult(lineFigures([{ ...lineTotal, note: 'x' }])).warnings).toEqual([{ code: 'line_figures_mismatch', lines: [lineTotal] }])
+})
+
+it.each([
+  ['P4', 'warnings[0].lines[0].lineId', [{ ...lineTotal, lineId: '' }]],
+  ['P5', 'warnings[0].lines[0].lineId', [{ ...lineTotal, lineId: 'l'.repeat(65) }]],
+  ['P6', 'warnings[0].lines[0].field', [{ ...lineTotal, field: 'shippingMinor' }]],
+  ['P7', 'warnings[0].lines[1].field', [lineTotal, { ...lineTotal, tillMinor: 1100 }]],
+  ['P8', 'warnings[0].lines[0].serverMinor', [{ ...lineTotal, serverMinor: 1000 }]],
+  ['P9', 'warnings[0].lines', []],
+])('rejects a line_figures_mismatch (%s) with Invalid %s', (_case, path, lines) => {
+  const error = thrown(lineFigures(lines))
+  expect(error).toBeInstanceOf(CommandResultError)
+  expect((error as Error).message).toBe(`Invalid ${path}`)
+})
+
+it('accepts a figures_mismatch and a line_figures_mismatch in one result (P10)', () => {
+  const value = { ...applied, warnings: [{ code: 'figures_mismatch', fields: [subtotal] }, { code: 'line_figures_mismatch', lines: [lineTotal, lineTax] }] }
+  expect(parseCommandResult(value).warnings).toEqual(value.warnings)
+})

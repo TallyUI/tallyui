@@ -166,6 +166,16 @@ export type CommandWarning =
   | {
       code: 'figures_mismatch';
       fields: Array<{ field: 'subtotalMinor' | 'taxMinor' | 'discountMinor' | (string & {}); tillMinor: number; serverMinor: number }>;
+    }
+  /**
+   * One warning per sale, never a refusal: each line figure that differs from the server's own computation,
+   * once per (line, figure), with both values. `lineId` is the line's order.create `clientLineId`.
+   * `figures_mismatch` stays the order-level one. `parseCommandResult` refuses a `field` it doesn't know;
+   * `knownWarnings` keeps it (a newer store's figure).
+   */
+  | {
+      code: 'line_figures_mismatch';
+      lines: Array<{ lineId: string; field: 'subtotalMinor' | 'taxMinor' | 'discountMinor' | 'totalMinor' | (string & {}); tillMinor: number; serverMinor: number }>;
     };
 
 /** Error reported when a command is rejected. */
