@@ -357,6 +357,14 @@ describe('normalizeMoneyText refuses an ambiguous amount, never guesses it up (#
     ['1,5', DOT, '1.5'],
     ["1'234", APOS, '1234'],
     ['1 234', SPACE, '1234'],
+    // A real grouping never starts with a 0 lead group, so these are refused, never read as 500 or 999.
+    ['0,500', DOT, '0,500'],
+    ['00,500', DOT, '00,500'],
+    ['-0,999', DOT, '-0,999'],
+    ['012,345', DOT, '012,345'],
+    ['0.500', COMMA, '0.500'],
+    ['1.234', COMMA, '1234'],
+    ["0'111", APOS, "0'111"],
   ])('N1: reads %j in %j as %j', (text, format, expected) => {
     expect(normalizeMoneyText(text, format)).toBe(expected);
   });

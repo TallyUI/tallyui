@@ -166,7 +166,7 @@ export function normalizeMoneyText(text: string, format?: MoneyFormat): string {
   let integer = whole;
   if (thousands && whole.includes(thousands)) {
     const groups = whole.split(thousands);
-    if (/^-?\d{1,3}$/.test(groups[0] ?? '') && groups.slice(1).every((g) => /^\d{3}$/.test(g))) integer = groups.join('');
+    if (/^-?[1-9]\d{0,2}$/.test(groups[0] ?? '') && groups.slice(1).every((g) => /^\d{3}$/.test(g))) integer = groups.join('');
     // A lone '.' or ',' separator not followed by exactly 3 digits cannot be grouping, so it is the decimal point ('1,5').
     else if (fraction === undefined && groups.length === 2 && (thousands === '.' || thousands === ',') && !/^\d{3}$/.test(groups[1] ?? '')) integer = groups.join('.');
     else return text;

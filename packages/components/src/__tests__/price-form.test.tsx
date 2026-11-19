@@ -140,6 +140,10 @@ describe('parsePrice with the store separators (#672)', () => {
     expect(parsePrice(text, 'KWD', format)).toBe('Enter a number.');
   });
 
+  it.each([['0,500', DOT]] as const)('C1: refuses the leading-zero group %j in %j in KWD like any non-number', (text, format) => {
+    expect(parsePrice(text, 'KWD', format)).toBe('Enter a number.');
+  });
+
   // KWD is left out on purpose: rule 3(a) reads a DOT store's '1,234' in a 3-decimal currency as 1234.000, where
   // main read 1.234 (#1073). Every other input main accepted must read the same with the default separators.
   it('N4: with the default separators, every input main accepted reads the same in USD, EUR and JPY', () => {
