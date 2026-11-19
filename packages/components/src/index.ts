@@ -115,6 +115,8 @@ export {
   CustomerForm,
   type CustomerFormProps,
   type CustomerFormValues,
+  CustomerEditor,
+  type CustomerEditorProps,
   CustomerOrderHistory,
   type CustomerOrderHistoryProps,
   CustomerDropdown,

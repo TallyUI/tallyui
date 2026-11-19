@@ -41,6 +41,7 @@
     "customer-dropdown",
     "customer-picker",
     "customer-form",
+    "customer-editor",
     "address-fields",
     "shipping-address-fields",
     "address-editor",
