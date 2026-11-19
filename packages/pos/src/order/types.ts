@@ -198,6 +198,8 @@ export interface AddLineInput {
   productId: string;
   /** A kept store line: never merged */
   storeLineId?: string;
+  /** Add as its own line: never merged into an equal line (a draft's lines restore one for one). */
+  separate?: true;
   custom?: true;
   taxStatus?: 'taxable' | 'none';
   variantId?: string;
