@@ -41,3 +41,4 @@ When the store refused a closure's manager approval (`register.approvalNeeded`),
 | `onPrintXReport` | `() => void \| Promise<void>` | --- | `'side'`: builds and prints the X-report; a rejection shows “Printing failed. Try again.”; without it there is no button |
 | `now` | `() => Date` | `new Date()` | `'side'`: the clock for the session's age |
 | `openedBy` | `{ name: string; avatar?: string }` | --- | `'side'`: the session's opener. Its name ends the header line in place of “Cashier”, and an “opened HH:MM by” line with its avatar (or initials) sits under the drawer figure |
+| `movementReasons` | `Partial<Record<MovementType, readonly string[]>>` | --- | Replaces MovementSheet's reason chips per movement type; a type left out keeps v2's defaults |
