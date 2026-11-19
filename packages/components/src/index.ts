@@ -77,6 +77,8 @@ export {
   type CartAction,
   CartColumnHeads,
   type CartColumnHeadsProps,
+  CartColumnsForm,
+  type CartColumnsFormProps,
   cartColumnIds,
   type CartColumnId,
   type CartColumnSettings,
