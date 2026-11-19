@@ -56,6 +56,12 @@ export interface AppSettings {
    * Desk 19 Nov (Q6): per device, camelCase keys, and the default is today's tile.
    */
   'catalogue.tileFields': TileFields;
+  /** Print the receipt after checkout without asking (v2 `pos-cart.autoPrintReceipt`, default false).
+   * The app runs the print; this store only records it. Per device (desk, 19 Nov). */
+  'print.autoPrintReceipt': boolean;
+  /** Template id to printer profile id: the device's routing overrides, for `PrintingSettings`'s `routing`
+   * and `resolvePrinter`. A template with no entry uses Auto. Per device. */
+  'print.templatePrinters': Readonly<Record<string, string>>;
 }
 export type AppSettingKey = keyof AppSettings;
 
@@ -88,6 +94,14 @@ function parseCartColumns(value: unknown): CartColumnsSetting | undefined {
   }
   return parsed as CartColumnsSetting;
 }
+const isIdString = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 128;
+/** Non-empty string keys and values of at most 128 characters only; a fresh object. */
+function parseTemplatePrinters(value: unknown): Record<string, string> | undefined {
+  if (!isPlainObject(value)) return undefined;
+  return Object.fromEntries(Object.entries(value)
+    .filter((entry): entry is [string, string] => isIdString(entry[0]) && isIdString(entry[1])));
+}
 export const APP_SETTING_DEFINITIONS: { [K in AppSettingKey]: AppSettingDefinition<AppSettings[K]> } = {
   'ui.theme': { default: 'system', parse: (value) => UI_THEMES.find((theme) => theme === value) },
   'ui.scale': { default: 'auto', parse: (value) => UI_SCALES.find((scale) => scale === value) },
@@ -105,6 +119,8 @@ export const APP_SETTING_DEFINITIONS: { [K in AppSettingKey]: AppSettingDefiniti
   'cart.columns': { default: {}, parse: parseCartColumns },
   'cart.openOrdersPosition': { default: 'bottom', parse: (value) => OPEN_ORDERS_POSITIONS.find((p) => p === value) },
   'catalogue.tileFields': { default: DEFAULT_TILE_FIELDS, parse: normalizeTileFields },
+  'print.autoPrintReceipt': { default: false, parse: (value) => typeof value === 'boolean' ? value : undefined },
+  'print.templatePrinters': { default: {}, parse: parseTemplatePrinters },
 };
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   'ui.theme': APP_SETTING_DEFINITIONS['ui.theme'].default,
@@ -114,6 +130,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   'cart.columns': APP_SETTING_DEFINITIONS['cart.columns'].default,
   'cart.openOrdersPosition': APP_SETTING_DEFINITIONS['cart.openOrdersPosition'].default,
   'catalogue.tileFields': APP_SETTING_DEFINITIONS['catalogue.tileFields'].default,
+  'print.autoPrintReceipt': APP_SETTING_DEFINITIONS['print.autoPrintReceipt'].default,
+  'print.templatePrinters': APP_SETTING_DEFINITIONS['print.templatePrinters'].default,
 };
 
 /** One stored setting. `value` is the JSON encoding of the setting's value, so the schema never changes when a key is added. */
