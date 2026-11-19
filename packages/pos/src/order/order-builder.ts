@@ -506,7 +506,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const taxInclusive = unitPrice.taxInclusive ?? taxContext.pricesIncludeTax;
 
     const existing = lineItems.find(
-      (li) => input.storeLineId === undefined && !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
+      (li) => input.storeLineId === undefined && !input.separate && !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
         && (!woo || li.taxClass === input.taxClass && (li.taxStatus === 'none') === (input.taxStatus === 'none'))
         && li.regularUnitPriceMinor === input.regularUnitPriceMinor && samePicks(li, input)
         && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length

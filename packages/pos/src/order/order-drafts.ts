@@ -80,6 +80,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   for (const line of saved.lineItems) {
     const lineId = builder.addLine({
       productId: line.productId,
+      separate: true,
       ...(line.storeLineId !== undefined ? { storeLineId: line.storeLineId } : {}),
       custom: line.custom,
       taxStatus: line.taxStatus,
