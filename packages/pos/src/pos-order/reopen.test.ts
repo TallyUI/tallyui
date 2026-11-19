@@ -355,6 +355,14 @@ it('keeps the stored customer addresses on the reopened draft (vendurepos gap 5.
     email: 'buyer@example.com', billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } });
 });
 
+it("R1: keeps the stored customer's tax ids on the reopened draft (#1064)", async () => {
+  const stored = storedOrder();
+  const taxIds = [{ type: 'eu_vat', value: 'DE123', country: 'DE', label: 'VAT' }, { type: 'us_ein', value: '12-3' }];
+  await db.pos_orders.insert({ ...stored, customer: { ...stored.customer!, taxIds } });
+  expect((await draft(await reopenRefusedOrder(stored.id, deps()))).customer).toEqual({ id: '42', name: 'Buyer',
+    email: 'buyer@example.com', taxIds });
+});
+
 it("reopens an untaxed refused sale with the customer's addresses (order.create 11 stores them)", async () => {
   const order = storedOrder(false, { billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } });
   expect(order.taxAddress).toBeUndefined();

@@ -1,4 +1,4 @@
-import type { CustomerAddress, Money, OrderCreateMeta, TaxRounding } from '@tallyui/core';
+import type { CustomerAddress, CustomerTaxId, Money, OrderCreateMeta, TaxRounding } from '@tallyui/core';
 import type { PaymentLegStatus } from '../tender/payment-legs';
 
 /** A store-priced coupon's share of one line (#790, docs/contract/order-create-v9.md), tax-exclusive, in integer minor units. */
@@ -190,6 +190,9 @@ export interface CustomerSummary {
    *  order.create 8 when the sale was taxed on one of them (#722). */
   billing?: CustomerAddress;
   shipping?: CustomerAddress;
+  /** The sale's tax ids (ADR-092 6a): set with `useSale().setTaxIds`, parked with the draft, stored on the order and sent
+   *  at order.create 12 without `label`. A picked customer's own (`Customer.taxIds`) may be passed in `setCustomer`, which refuses a list `setTaxIds` would refuse. */
+  taxIds?: CustomerTaxId[];
 }
 
 export interface PaymentMethod {

@@ -152,7 +152,7 @@ export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type Reo
 export { noteDelivery, type NoteDelivery } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
-export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED, META_CHANGE_REFUSED, META_INVALID } from './sale/use-sale';
+export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED, META_CHANGE_REFUSED, META_INVALID, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID } from './sale/use-sale';
 export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions, MoneyDivergence } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
