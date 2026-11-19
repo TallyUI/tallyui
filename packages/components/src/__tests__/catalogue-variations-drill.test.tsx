@@ -25,11 +25,12 @@ const tee = { id: 80, name: 'Tee', type: 'variable', status: 'publish', attribut
 ] };
 
 type Style = 'list' | 'popover' | 'drill';
-function mount(props: { variationsStyle?: Style; pickAnyOptions?: boolean; products?: object[] } = {}) {
+type CartLine = { productId: string; variantId?: string; quantity: number; custom?: true };
+function mount(props: { variationsStyle?: Style; pickAnyOptions?: boolean; products?: object[]; cartLines?: CartLine[] } = {}) {
   const onSelect = vi.fn();
   const products = props.products ?? [tee];
   const view = render(<Catalogue products={products} traits={wooProductTraits} currency="EUR" onSelect={onSelect}
-    lastSyncedAt={null} variationsStyle={props.variationsStyle} pickAnyOptions={props.pickAnyOptions} />, { wrapper });
+    lastSyncedAt={null} variationsStyle={props.variationsStyle} pickAnyOptions={props.pickAnyOptions} cartLines={props.cartLines} />, { wrapper });
   return { onSelect, view };
 }
 const variants = (product: object) => wooProductTraits.getVariants!(product, { currency: 'EUR' });
@@ -178,3 +179,52 @@ it("C5: the default 'list' style draws no Products crumb", () => {
   press('product-tile-Tee');
   expect(screen.queryByTestId('products-breadcrumb')).toBeNull();
 });
+
+// 4.1c: the drill's stacked tile (v2 product-tile.tsx:54,76) and each variant's in-cart count (v2 variation-tile.tsx:176-177).
+const solo = { ...tee, id: 100, name: 'Solo', variation_docs: [{ ...tee.variation_docs[0], id: 101 }] };
+const stackIds = (name: string) => [`product-tile-${name}-stack`, `product-tile-${name}-stack-far`, `product-tile-${name}-stack-near`];
+const teeLines: CartLine[] = [{ productId: '80', variantId: '81', quantity: 2 }, { productId: '80', variantId: '82', quantity: 1 },
+  { productId: '80', quantity: 5, custom: true }];
+
+it('S1: in drill style a variable tile is stacked and a single-variant tile is not', () => {
+  mount({ variationsStyle: 'drill', products: [tee, solo] });
+  for (const id of stackIds('Tee')) expect(screen.getByTestId(id)).toBeTruthy();
+  for (const id of stackIds('Solo')) expect(screen.queryByTestId(id)).toBeNull();
+}, 20_000);
+
+it.each(['list', 'popover'] as const)("S2: in '%s' style the variable tile has no stack", (style) => {
+  mount({ variationsStyle: style });
+  expect(screen.getByTestId('product-tile-Tee')).toBeTruthy();
+  expect(screen.queryByTestId('product-tile-Tee-stack')).toBeNull();
+}, 20_000);
+
+it("S3: each variant tile counts that variant's non-custom lines; the parent tile shows no count", () => {
+  mount({ variationsStyle: 'drill', cartLines: teeLines });
+  press('product-tile-Tee');
+  expect(screen.getByTestId('variation-tile-81-in-cart').textContent).toBe('2');
+  expect(screen.getByTestId('variation-tile-82-in-cart').textContent).toBe('1');
+  expect(screen.queryByTestId('variation-tile-83-in-cart')).toBeNull();
+  const parent = within(screen.getByTestId('variations-parent-tile'));
+  expect(parent.queryByLabelText(/in cart/)).toBeNull();
+  expect(parent.queryByText(/^\d+$/)).toBeNull();
+}, 20_000);
+
+it('S3b: a custom line counts for no variant, even with a variantId', () => {
+  mount({ variationsStyle: 'drill', cartLines: [{ productId: '80', variantId: '83', quantity: 5, custom: true }] });
+  press('product-tile-Tee');
+  expect(screen.queryByTestId('variation-tile-83-in-cart')).toBeNull();
+}, 20_000);
+
+it('S4: a line without variantId counts on the product tile and on no variant tile', () => {
+  mount({ variationsStyle: 'drill', cartLines: [{ productId: '80', quantity: 4 }] });
+  expect(screen.getByTestId('in-cart-80').textContent).toBe('4');
+  press('product-tile-Tee');
+  expect(screen.queryAllByTestId(/^variation-tile-.*-in-cart$/)).toHaveLength(0);
+}, 20_000);
+
+it("S5: back in the grid, the product tile still shows the product's total", () => {
+  mount({ variationsStyle: 'drill', cartLines: teeLines });
+  press('product-tile-Tee');
+  press('variations-parent-tile');
+  expect(screen.getByTestId('in-cart-80').textContent).toBe('3');
+}, 20_000);
