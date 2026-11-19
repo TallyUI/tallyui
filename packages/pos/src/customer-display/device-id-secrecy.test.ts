@@ -28,6 +28,14 @@ const base: DisplayConfig = {
 const configFor = (r: { displayId: string; name: string }): DisplayConfig => ({ ...base, display: { id: r.displayId, name: r.name } });
 const receipt = receiptWith([line('Tea')]);
 const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+/**
+ * Advances the fake clock in `stepMs` steps, at most 10, until `holds()`. D4's memory server hashes with
+ * crypto.subtle.digest, which settles off the fake clock, so one fixed advance can end before a poll's answer lands.
+ */
+async function waitUntil(what: string, stepMs: number, holds: () => boolean) {
+  for (let step = 0; step < 10 && !holds(); step += 1) await wait(stepMs);
+  if (!holds()) throw new Error(`waitUntil: ${what} still false after 10 steps of ${stepMs} ms`);
+}
 
 const TILL_METHODS = ['mint', 'pending', 'confirm', 'decline', 'list', 'forget', 'sendSignal', 'receiveSignals', 'postSnapshot'] as const;
 const DISPLAY_METHODS = ['claim', 'collect', 'displaySendSignal', 'displayReceiveSignals', 'readSnapshot'] as const;
@@ -260,7 +268,7 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     const claims = pairing.phase.phase === 'code' ? pairing.phase.claims : [];
     expect(claims).toHaveLength(1);
     await pairing.confirm(claims[0].claimId);
-    await wait(COLLECT_POLL_MS + DISPLAY_SIGNAL_POLL_MS);
+    await waitUntil('display paired', COLLECT_POLL_MS, () => client.phase.phase === 'paired');
     expect(client.phase.phase).toBe('paired');
 
     const service = createTillDisplayService({
@@ -270,11 +278,14 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     closers.unshift(() => service.close());
     service.showCart(receipt);
     await wait(SNAPSHOT_MIN_INTERVAL_MS + DISPLAY_SIGNAL_POLL_MS * 4 + SIGNAL_POLL_MS * 4);
+    const displayCalls = () => new Set(w.calls.filter((method) => (DISPLAY_METHODS as readonly string[]).includes(method)));
+    const heardOffer = () => captured.some((entry) => entry.startsWith('displayReceiveSignals result') && entry.includes('offer'));
+    await waitUntil('display linked and showing the cart', DISPLAY_SIGNAL_POLL_MS, () => displayCalls().size === DISPLAY_METHODS.length
+      && heardOffer() && client.state.config?.display.name === 'Counter' && client.state.view.screen === 'cart');
     lookClient();
 
-    const displayCalls = new Set(w.calls.filter((method) => (DISPLAY_METHODS as readonly string[]).includes(method)));
-    expect(displayCalls).toEqual(new Set(DISPLAY_METHODS));
-    expect(captured.some((entry) => entry.startsWith('displayReceiveSignals result') && entry.includes('offer'))).toBe(true);
+    expect(displayCalls()).toEqual(new Set(DISPLAY_METHODS));
+    expect(heardOffer()).toBe(true);
     expect(client.state.config?.display.name).toBe('Counter');
     expect(client.state.view.screen).toBe('cart');
     expectSecretOnlyAsDeviceId(w);
