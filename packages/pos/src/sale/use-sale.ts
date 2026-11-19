@@ -389,6 +389,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
 
   function setTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string } | null) {
+    if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // a finished sale's tender stays
     if (locked()) return;
     const taxIdsRefused = tender && taxIdsRefusal();
     if (taxIdsRefused) return setError(taxIdsRefused);
@@ -660,9 +661,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       return reprice();
     },
     /** The sale's note, kept on the open sale (parked and resumed with it, cleared by newSale) and sent as order.create v7's note (ADR-083). */
-    setNote(note: string) { if (!locked()) builderNow.current.setNote(note); },
+    setNote(note: string) {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
+      if (!locked()) builderNow.current.setNote(note);
+    },
     /** the picked customer reaches the server as order.create v3's customer.customerId */
     setCustomer(picked: CustomerSummary | null) {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       if (locked()) return;
       // A searched customer's email or id the server would refuse never reaches the sale; the customer stays as it was.
       const refused = picked && customerRefusal(picked);
@@ -772,6 +777,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     setTender,
     /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. */
     addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string | null {
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
       const taxIdsRefused = taxIdsRefusal();
       if (taxIdsRefused) { setError(taxIdsRefused); return null; }
@@ -787,6 +793,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       return addOne(tender);
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
       if (locked()) return false;
       const changed = builderNow.current.setPaymentStatus(paymentId, status);
       // With no live leg left, the sale can change again: SALE_HAS_PAYMENT goes, any other error stays.

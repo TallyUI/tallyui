@@ -141,6 +141,57 @@ describe('order.create v12: tax ids, a catalogue line\'s edited SKU and order me
     }
   });
 
+  /** Sale without extras at cap 12 carrying the given tax ids and meta; asserts the store's shape and bound checks pass. */
+  const sendExtras = (ids?: NonNullable<PosOrder['customer']>['taxIds'],entries?: PosOrder['meta']) => {
+    const plain = sale({ extras: false });
+    const sent = envelope({ ...plain, customer: { ...plain.customer!, ...(ids ? { taxIds: ids } : {}) }, ...(entries ? { meta: entries } : {}) }, 12);
+    expect(payloadShapeErrors(sent.payload)).toEqual([]);
+    expect(payloadBoundErrors(sent.payload)).toEqual([]);
+    return sent;
+  };
+
+  it('X1 drops a tax id with an empty type or a NUL-only value and upper-cases a country', () => {
+    const sent = sendExtras([{ type: '', value: '1' }, { type: 'vat', value: '\u0000' }, { type: 'vat', value: 'GB1', country: 'gb' }]);
+    expect(sent.version).toBe(12);
+    expect(sent.payload.customer!.taxIds).toStrictEqual([{ type: 'vat', value: 'GB1', country: 'GB' }]);
+  });
+
+  it('X2 an order whose only extra is an unsendable tax id goes at 11 without taxIds', () => {
+    const sent = sendExtras([{ type: '', value: '' }]);
+    expect(sent.version).toBe(envelope(sale({ extras: false }), 12).version);
+    expect(sent.version).toBe(11);
+    expect(sent.payload.customer).not.toHaveProperty('taxIds');
+  });
+
+  it('X3 leaves off a country that is not two letters and still sends the id', () => {
+    const sent = sendExtras(['GBR', '1A', ''].map((country, i) => ({ type: 'vat', value: `V${i}`, country })));
+    expect(sent.payload.customer!.taxIds).toStrictEqual([{ type: 'vat', value: 'V0' }, { type: 'vat', value: 'V1' }, { type: 'vat', value: 'V2' }]);
+  });
+
+  it('X4 sends only the first 10 of 12 tax ids', () => {
+    const ids = Array.from({ length: 12 }, (_, i) => ({ type: 'vat', value: `V${i}` }));
+    expect(sendExtras(ids).payload.customer!.taxIds).toStrictEqual(ids.slice(0, 10));
+  });
+
+  it('X5 drops an empty key, a _ key and a later duplicate key', () => {
+    const sent = sendExtras(undefined, [{ key: '', value: 'a' }, { key: '_hidden', value: 'b' }, { key: 'note', value: 'c' }, { key: 'note', value: 'd' }]);
+    expect(sent.payload.meta).toStrictEqual([{ key: 'note', value: 'c' }]);
+  });
+
+  it('X6 keys equal after the cut send once, and 51 entries send the first 50', () => {
+    const long = 'k'.repeat(299);
+    expect(sendExtras(undefined, [{ key: `${long}a`, value: '1' }, { key: `${long}b`, value: '2' }]).payload.meta)
+      .toStrictEqual([{ key: `${'k'.repeat(254)}…`, value: '1' }]);
+    const entries = Array.from({ length: 51 }, (_, i) => ({ key: `k${i}`, value: `v${i}` }));
+    expect(sendExtras(undefined, entries).payload.meta).toStrictEqual(entries.slice(0, 50));
+  });
+
+  it('X7 an order whose only extra is a _ meta key goes at 11 without meta', () => {
+    const sent = sendExtras(undefined, [{ key: '_x', value: 'y' }]);
+    expect(sent.version).toBe(11);
+    expect(sent.payload).not.toHaveProperty('meta');
+  });
+
   it('W8 freezeSentForm cuts a long catalogue SKU as it cuts the sku, so an unedited one sends as at cap 11', () => {
     const plain = sale({ extras: false }), long = 'c'.repeat(150), cut = `${'c'.repeat(99)}…`;
     const order: PosOrder = { ...plain, lines: plain.lines.map((line) => ({ ...line, sku: long, catalogueSku: long })) };

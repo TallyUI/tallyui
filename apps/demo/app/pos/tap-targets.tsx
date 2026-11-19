@@ -24,7 +24,7 @@ const CATEGORIES = [
 async function seed(db: DemoRegisterDb) {
   await openSession(db.register_sessions, {
     registerId: 'demo-register', expectedFloatMinor: 20000, countedFloatMinor: 20000,
-    openedBy: 'demo-cashier', businessDay: { year: 2026, month: 9, day: 20 },
+    openedBy: 'demo-cashier', businessDay: { year: 2026, month: 9, day: 20 }, storeKey: 'store',
   });
 }
 
