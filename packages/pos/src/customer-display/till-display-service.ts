@@ -24,7 +24,7 @@ export interface TillDisplayServiceOptions {
   signalling: DisplaySignalling;
   /** The cashier session; null while nobody is logged in, which stops every server call (d5). */
   context: () => SyncContext | null;
-  /** The till's own device id (d5); U8 stores it. */
+  /** The till's own device id (d5); U8 stores it. A secret, see `DisplaySignalling`; never logged or reported. */
   deviceId: string;
   advertisement: DisplayAdvertisement;
   /** One display's config: the store, i18n and idle settings, with `display` from its record. */
