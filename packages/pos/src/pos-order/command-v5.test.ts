@@ -174,7 +174,10 @@ describe('order.create v5 through builder and finalize (ADR-075)', () => {
     const snapshot = builder.getSnapshot();
     expect(snapshot.lineItems[0].taxClass).toBe('standard');
     expect(snapshot.lineItems[1]).not.toHaveProperty('taxClass');
-    if (roundAtSubtotal === undefined) expect(snapshot.lineItems[2]).not.toHaveProperty('taxClass');
+    if (roundAtSubtotal === undefined) {
+      expect(snapshot.lineItems[2]).toHaveProperty('taxClass', 'standard');
+      expect(snapshot.lineItems[2]).toHaveProperty('taxFromClass', true);
+    } else expect(snapshot.lineItems[2]).not.toHaveProperty('taxFromClass');
     builder.addPayment({ method: 'cash', amountMinor: snapshot.totalMinor });
     const envelope = toOrderCreateEnvelope(finalizeOrder(builder.getSnapshot(), options), 'till');
     expect(envelope.payload.lines[0].custom).toEqual({ name: 'Custom item', taxClass: 'standard', taxStatus: 'taxable' });
