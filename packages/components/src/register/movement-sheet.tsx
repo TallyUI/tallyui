@@ -69,12 +69,20 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
   const chips = reasons
     ? reasons.map((label) => ({ key: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label }))
     : REASONS[type];
-  const invalid = movementFieldError({ type, amount, reason });
-  // v2's confirm label (`movement-sheet.tsx:126`): it names the minor amount `confirm` records, in the store's format;
-  // an amount `movementFieldError` refuses (blank, zero, invalid) reads the bare verb. A no sale keeps "Record".
+  const fieldError = movementFieldError({ type, amount, reason });
   const typed = normalizeAmount(amount);
-  const minor = type !== 'no_sale' && invalid !== 'amount' ? parseMinor(typed, digits) : NaN;
-  const figure = Number.isSafeInteger(minor) ? formatMoney({ amount: minor, currency }) : undefined;
+  const amountMinor = type === 'no_sale' ? 0 : fieldError === 'amount' ? NaN : parseMinor(typed, digits);
+  // The server's grammar allows any decimal places and 15 integer digits; the currency and a safe integer allow fewer.
+  // recordMovement refuses anything but a safe integer (ADR-068 6a) after the cash has moved, so the same test gates
+  // the tap. The amount is checked before the reason.
+  const invalid = type === 'no_sale' || fieldError === 'amount' ? fieldError
+    : Number.isNaN(amountMinor) ? 'places'
+    : !Number.isSafeInteger(amountMinor) ? 'amount'
+    : fieldError;
+  // v2's confirm label (`movement-sheet.tsx:126`): it names the minor amount `confirm` records, in the store's format;
+  // an amount the gate refuses (blank, zero, invalid, too many places, too large) reads the bare verb. A no sale keeps "Record".
+  const figure = type !== 'no_sale' && fieldError !== 'amount' && Number.isSafeInteger(amountMinor)
+    ? formatMoney({ amount: amountMinor, currency }) : undefined;
   const verb = type === 'paid_in' ? (figure ? t('register.put_in', { amount: figure }) : t('register.put_cash_in'))
     : type === 'paid_out' ? (figure ? t('register.take_out', { amount: figure }) : t('register.take_cash_out'))
     : 'Record';
@@ -83,10 +91,8 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
     busyRef.current = true;
     setBusy(true);
     setError('');
-    const normalized = type === 'no_sale' ? '0' : normalizeAmount(amount);
     const trimmedReason = reason.trim();
     try {
-      const amountMinor = parseMinor(normalized, digits);
       const row = await register.actions.recordMovement({ type, amountMinor, reason: trimmedReason });
       onDone?.(row.id, type, amountMinor);
       if (type === 'no_sale') onOpenDrawer?.();
@@ -155,7 +161,8 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
         {!!error && <Text className="text-destructive">{error}</Text>}
         {!!invalid && (
           <Text testID="movement-invalid" className="text-muted-foreground">
-            {invalid === 'amount' ? 'Enter a valid amount.' : 'Enter a reason.'}
+            {invalid === 'amount' ? 'Enter a valid amount.' : invalid !== 'places' ? 'Enter a reason.'
+              : digits === 0 ? 'Enter a whole amount.' : `Enter an amount with at most ${digits} decimal places.`}
           </Text>
         )}
         <Button testID="movement-confirm" disabled={!!invalid || busy} onPress={confirm}>
