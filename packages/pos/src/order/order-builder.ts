@@ -3,12 +3,13 @@ import { resolvePrice, woocommerceTax, type woocommerceCoupons, type OrderCreate
 import type { TaxContext } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate, MICROS_PER_MINOR } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
-import { capturedMinor, canMoveLeg, legStatus, type PaymentLegStatus } from '../tender/payment-legs';
+import { capturedMinor, canMoveLeg, countsTowardPaid, isInMotion, legStatus, type PaymentLegStatus } from '../tender/payment-legs';
 import { allocateOrderDiscount } from './allocate-order-discount';
 import { apportionLargestRemainders } from './apportion';
 import { woocommerceLine, woocommerceTotals, woocommerceCouponReplay } from './woocommerce-tax';
 import type {
   Order,
+  OrderCoupon,
   StoreOrderRef,
   LineItem,
   Discount,
@@ -115,8 +116,24 @@ export interface StorePricedCouponContext {
   basis: string;
 }
 
+/** A parked order's coupons, display coupon rows and post-coupon line figures, kept on a paid resume (ADR-077 d3, amended
+ * 2026-11-19). They apply only while an unlocked leg is live on the parked lines; otherwise no figures, and the order is stale. */
+export interface KeptCouponContext {
+  kind: 'kept';
+  coupons: readonly OrderCoupon[];
+  displayRows: readonly number[];
+  lines: ReadonlyMap<string, Pick<LineItem, 'netMinor' | 'netMicros' | 'totalMinor' | 'taxLines' | 'taxMicros'>>;
+  basis: string; // couponPricingBasis of the order as restored
+  linesBasis: string; // the same with no customer: a customer change goes stale but keeps the figures (#1059 R1)
+}
+
+/** An unlocked leg that is captured or in motion: the sale's total must not move (useSale's liveLeg). */
+export function isLiveLeg(payment: Payment): boolean {
+  return !payment.locked && (countsTowardPaid(payment) || isInMotion(payment));
+}
+
 /** What a store-priced coupon's amounts depend on (TallyUI#709). A price is good only while this is unchanged. */
-export function couponPricingBasis(order: Order): string {
+export function couponPricingBasis(order: Pick<Order, 'currency' | 'customer' | 'lineItems' | 'discounts'>): string {
   // Inputs only, never a computed figure, so applying or removing coupons can't change it; tax rates are inputs, so a re-tax moves it (#742).
   return JSON.stringify([order.currency, order.customer?.id ?? null,
     order.lineItems.map((li) => [li.id, li.productId, li.variantId ?? null, li.quantity, li.unitPriceMinor, li.taxInclusive,
@@ -164,7 +181,7 @@ export interface OrderBuilder {
   /** Replaces the order meta as given (`[]` removes it); `useSale().setMeta` checks keys before it calls this. */
   setMeta(meta: OrderCreateMeta[]): void;
   /** Replaces the coupon codes with their trimmed, lower-case, deduplicated list; a given context replaces the builder's coupon context. */
-  setCoupons(codes: readonly string[], context?: OrderCouponContext | StorePricedCouponContext): void;
+  setCoupons(codes: readonly string[], context?: OrderCouponContext | StorePricedCouponContext | KeptCouponContext): void;
   clear(): void;
   getSnapshot(): Order;
 }
@@ -172,7 +189,7 @@ export interface OrderBuilder {
 export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const { taxContext } = options;
   let storeOrder = options.storeOrder;
-  let couponContext: OrderCouponContext | StorePricedCouponContext | undefined = options.couponContext;
+  let couponContext: OrderCouponContext | StorePricedCouponContext | KeptCouponContext | undefined = options.couponContext;
   const currency = options.currency.toUpperCase();
   const orderId = options.id ?? uid();
   const woo = taxContext.rounding?.granularity === 'woocommerce' && taxContext.getTaxRates ? taxContext.rounding : undefined;
@@ -277,10 +294,18 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const recalcedOrderDiscounts = capSequentially(orderDiscounts, base);
     const shares = allocateOrderDiscount(lineAmounts, recalcedOrderDiscounts.reduce((sum, d) => sum + d.amountMinor, 0));
     const displaySourceLines = lineItems.map((li, index) => recalculateLine(li, shares[index]));
-    const store = couponContext && 'kind' in couponContext ? couponContext : undefined;
-    const replay = woo && couponCodes.length && !store ? woocommerceCouponReplay(displaySourceLines, couponCodes,
+    const tagged = couponContext && 'kind' in couponContext ? couponContext : undefined;
+    const store = tagged?.kind === 'store-priced' ? tagged : undefined, kept = tagged?.kind === 'kept' ? tagged : undefined;
+    const replay = woo && couponCodes.length && !tagged ? woocommerceCouponReplay(displaySourceLines, couponCodes,
       couponContext as OrderCouponContext, taxContext.getTaxRates!, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
-    let lines = replay?.lines ?? displaySourceLines;
+    // Kept figures go only on the lines they were parked for, so a line edit never meets them (it goes stale instead).
+    const keptOn = kept && couponCodes.length > 0 && payments.some(isLiveLeg)
+      && couponPricingBasis({ currency, customer: null, lineItems, discounts: orderDiscounts }) === kept.linesBasis ? kept : undefined;
+    let lines = replay?.lines ?? (keptOn ? displaySourceLines.map((li) => {
+      const k = keptOn.lines.get(li.id);
+      return k ? { ...li, netMinor: k.netMinor, taxLines: k.taxLines, taxMicros: k.taxMicros,
+        ...(k.netMicros !== undefined ? { netMicros: k.netMicros } : {}), ...(k.totalMinor !== undefined ? { totalMinor: k.totalMinor } : {}) } : li;
+    }) : displaySourceLines);
     if (fees.some((fee) => fee.percent !== undefined)) {
       // A percent fee (v2 Add Fee "%", order-math cart-line.ts calculatePercentAmount) is basis × percent / 100 of the
       // lines after coupons, in the store's mode. Unlike v2, which keeps and taxes the unrounded value, TallyUI rounds it
@@ -303,7 +328,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const settle = (items: LineItem[]) => woo ? woocommerceTotals(items, fees, shipping, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax)
       : { ...sumLines([...items, ...taxedCharges], taxContext.rounding), subtotalMinor: sumLines(items, taxContext.rounding).subtotalMinor };
     let totals = settle(lines);
-    let coupons = replay?.coupons;
+    let coupons = replay?.coupons ?? keptOn?.coupons.map((coupon) => ({ ...coupon }));
     const displayBasis = (t: typeof totals) => taxContext.pricesIncludeTax ? t.totalMinor : t.totalMinor - t.taxMinor;
     const storeDisplayRows: number[] = [];
     if (store && couponCodes.length) {
@@ -367,7 +392,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // A store-priced row (#709) is the drop it caused in the figure the display subtotal is derived from: the
     // order-rounded tax over lines and charges can put discountMinor + discountTaxMinor a cent off it, and the display must add up.
     const displayCoupons = coupons?.map(({ code, discountMinor, discountTaxMinor }, k) =>
-      ({ code, amountMinor: store ? storeDisplayRows[k] : discountMinor + (taxInclusive ? discountTaxMinor : 0) }));
+      ({ code, amountMinor: store ? storeDisplayRows[k] : keptOn ? keptOn.displayRows[k] : discountMinor + (taxInclusive ? discountTaxMinor : 0) }));
     const displayDiscount = displayLines.reduce(
       (sum, line) => line.discounts.reduce((lineSum, d) => lineSum + d.amountMinor, sum), orderDiscountDisplay)
       + (displayCoupons?.reduce((sum, row) => sum + row.amountMinor, 0) ?? 0);
@@ -474,6 +499,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     };
     // #709: the store's amounts still apply while stale, so the cart shows the last known prices; finalize refuses it.
     if (store && couponCodes.length && couponPricingBasis(order) !== store.basis) order.couponPricesStale = true;
+    if (kept && couponCodes.length && (!keptOn || couponPricingBasis(order) !== kept.basis)) order.couponPricesStale = true;
     return order;
   }
 
@@ -772,7 +798,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       const nextContext = context ?? couponContext;
       const normalized = [...new Set(codes.map((code) => code.trim().toLowerCase()))];
       if (normalized.length && !nextContext) throw new Error('Coupon context is required');
-      for (const code of normalized) {
+      if (nextContext && 'kind' in nextContext && nextContext.kind === 'kept') {
+        if (normalized.join('\n') !== nextContext.coupons.map((coupon) => coupon.code).join('\n')) throw new RangeError('Kept coupons keep their parked codes');
+        const ids = [...nextContext.lines.keys(), ...nextContext.coupons.flatMap((coupon) => coupon.lines?.map((line) => line.lineId) ?? [])];
+        if (ids.some((id) => !lineItems.some((li) => li.id === id))) throw new RangeError('Kept coupons name a line not on the sale');
+      } else for (const code of normalized) {
         if (nextContext && 'kind' in nextContext) {
           const priced = nextContext.priced.get(code);
           if (!priced) throw new RangeError(`Unknown coupon ${code}`);

@@ -6,12 +6,14 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { wooProductTraits as traits } from '@tallyui/connector-woocommerce';
 import type { TaxRounding } from '@tallyui/core';
-import { orderDraftSchema } from '../order';
+import { orderDraftSchema, writeOrderDraft, type Order } from '../order';
 import { PAYLOAD_STRING_MAX } from '../pos-order/command';
+import { posOrderCollection } from '../pos-order';
+import { COUPONS_UNSUPPORTED } from './discount-codes';
 import { TaxProvider } from '../tax';
 import { catalogueEntries } from './catalogue';
 import { createStorePricedDiscountCodes, type StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
-import { SALE_FINISHED, SALE_HAS_PAYMENT, useSale } from './use-sale';
+import { COUPONS_REPRICING, SALE_FINISHED, SALE_HAS_PAYMENT, useSale } from './use-sale';
 
 const entries = catalogueEntries([
   { id: 10, name: 'Shirt', price: '10.00', categories: [{ id: 7, name: 'Clothes' }] },
@@ -41,7 +43,7 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
   beforeEach(async () => {
     db = await createRxDatabase({ name: `saleliveleg${Math.random().toString(36).slice(2)}`,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
-    await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection() });
   });
   afterEach(async () => { cleanup(); await db.remove(); });
 
@@ -59,13 +61,14 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
   async function apply(result: Sale, code: string) {
     await act(async () => { expect(await result.current.applyCoupon(code)).toBeNull(); });
   }
-  /** Parks the sale (coupon 'a', and a captured 500 cash leg when `paid`), then resumes it: the coupon is priced again at resume. */
-  async function resumed(shop: ReturnType<typeof store>, paid: boolean) {
+  /** Parks the sale (coupon 'a', and a captured 500 cash leg when `paid`), runs `parked`, then resumes it: an unpaid draft's coupon is priced again at resume. */
+  async function resumed(shop: ReturnType<typeof store>, paid: boolean, parked?: () => void) {
     const hook = renderSale({ discountCodes: shop.codes });
     await apply(hook.result, 'a');
     if (paid) act(() => { expect(hook.result.current.addTender({ method: 'cash', amountMinor: 500 })).toEqual(expect.any(String)); });
     const draftId = hook.result.current.order.id;
     await act(async () => { expect(await hook.result.current.park()).toBeNull(); });
+    parked?.();
     await act(async () => { expect(await hook.result.current.resume(draftId)).toBeNull(); });
     await settle();
     expect(hook.result.current.order.id).toBe(draftId);
@@ -119,6 +122,122 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     expect(result.current.order.totalMinor).toBeLessThan(total);
     await act(async () => { expect(await result.current.repriceCoupons()).toBeNull(); });
     expect(shop.price).toHaveBeenCalledTimes(calls + 2);
+  });
+
+  // The parked draft: 1000 less coupon 'a' at 100, plus 20% VAT. At the store's new 300 it would be (1000 - 300) * 1.2 = 840.
+  const PARKED_TOTAL = 1080, REPRICED_TOTAL = 840;
+
+  it('T1 (RC1): a draft with a captured leg resumes with its parked coupon amounts, though the store price moved', async () => {
+    const shop = store();
+    let priced = 0, find: ReturnType<typeof vi.spyOn> | undefined;
+    const { result } = await resumed(shop, true, () => { shop.perUnit.a = 300; priced = shop.price.mock.calls.length; find = vi.spyOn(shop.codes, 'find'); });
+    expect(amounts(result)).toEqual([['a', 100]]);
+    expect(result.current.order.totalMinor).toBe(PARKED_TOTAL);
+    expect(result.current.order.paidMinor).toBe(500);
+    expect(result.current.error).toBeNull();
+    expect(result.current.order.couponPricesStale ?? false).toBe(false);
+    expect(shop.price).toHaveBeenCalledTimes(priced);
+    expect(find).toHaveBeenCalledTimes(0);
+  });
+
+  it('T2 (RC2): the same draft with no leg is priced again at resume', async () => {
+    const shop = store();
+    const { result } = await resumed(shop, false, () => { shop.perUnit.a = 300; });
+    expect(amounts(result)).toEqual([['a', 300]]);
+    expect(result.current.order.totalMinor).toBe(REPRICED_TOTAL);
+  });
+
+  it('T3 (RC3): once the captured leg is voided, the kept coupon is priced again once', async () => {
+    const shop = store();
+    const { result } = await resumed(shop, true, () => { shop.perUnit.a = 300; });
+    const calls = shop.price.mock.calls.length, leg = result.current.order.payments[0].id;
+    act(() => { expect(result.current.voidTender(leg)).toBe(true); });
+    await settle();
+    expect(amounts(result)).toEqual([['a', 300]]);
+    expect(result.current.order.totalMinor).toBe(REPRICED_TOTAL);
+    expect(shop.price).toHaveBeenCalledTimes(calls + 1);
+    expect(result.current.couponsRepricing).toBe(false);
+  });
+
+  /** Voids the resumed draft's only leg and lets the effects run. */
+  async function voidLeg(result: Sale) {
+    const leg = result.current.order.payments[0].id;
+    act(() => { expect(result.current.voidTender(leg)).toBe(true); });
+    await settle();
+  }
+
+  it('T8: with the kept coupons and the live leg, startTender and complete are allowed; the stored coupons are the parked ones', async () => {
+    const shop = store();
+    const tender = await resumed(shop, true, () => { shop.perUnit.a = 300; });
+    act(() => { tender.result.current.startTender('cash'); });
+    expect(tender.result.current.stage.kind).toBe('tender');
+    expect(tender.result.current.error).toBeNull();
+    cleanup();
+
+    const onSaleCompleted = async (order: unknown) => { await db.pos_orders.insert(order); };
+    const hook = renderSale({ discountCodes: shop.codes, onSaleCompleted });
+    shop.perUnit.a = 100;
+    await apply(hook.result, 'a');
+    act(() => { hook.result.current.addTender({ method: 'cash', amountMinor: 500 }); });
+    const parked = hook.result.current.order;
+    await act(async () => { expect(await hook.result.current.park()).toBeNull(); });
+    shop.perUnit.a = 300;
+    await act(async () => { expect(await hook.result.current.resume(parked.id)).toBeNull(); });
+    await settle();
+    const { result } = hook;
+    act(() => { result.current.addTender({ method: 'cash', amountMinor: result.current.order.balanceDueMinor }); });
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.stage.kind).toBe('receipt');
+    const [row] = (await db.pos_orders.find().exec()).map((doc: { toJSON(): any }) => doc.toJSON());
+    // finalize gives stored lines new ids; map each back to the parked line at its index.
+    const lineIds = new Map<string, string>(row.lines.map((line: { id: string }, i: number) => [line.id, parked.lineItems[i].id]));
+    const stored = row.coupons.map((coupon: any) => ({ ...coupon, lines: coupon.lines.map((line: any) => ({ ...line, lineId: lineIds.get(line.lineId) })) }));
+    expect(stored).toEqual(parked.coupons);
+  });
+
+  it('T9: a reopened draft with only locked legs re-prices its coupons at resume (desk 2026-11-19)', async () => {
+    const shop = store();
+    const { result } = renderSale({ discountCodes: shop.codes });
+    await apply(result, 'a');
+    const sale = result.current.order;
+    act(() => { result.current.newSale(); });
+    await writeOrderDraft(db.pos_drafts, { ...sale, storeOrder: { id: '41', revision: 'r1' },
+      payments: [{ id: 'p1', method: 'external', amountMinor: 500, reference: 'Cash', storePaymentId: 'p1', locked: true }] });
+    shop.perUnit.a = 300;
+    const calls = shop.price.mock.calls.length;
+    await act(async () => { expect(await result.current.resume(sale.id)).toBeNull(); });
+    await settle();
+    expect(shop.price).toHaveBeenCalledTimes(calls + 1);
+    expect(amounts(result)).toEqual([['a', 300]]);
+  });
+
+  it('T10: with no discount codes at resume the kept coupons stay; after the void they are removed as unsupported', async () => {
+    const shop = store();
+    const { result } = await resumed(shop, true, () => { shop.codes.supports = () => false; });
+    expect(amounts(result)).toEqual([['a', 100]]);
+    expect(result.current.order.totalMinor).toBe(PARKED_TOTAL);
+    await voidLeg(result);
+    expect(result.current.order.coupons).toBeUndefined();
+    expect(result.current.error).toBe(COUPONS_UNSUPPORTED);
+  });
+
+  it('T11: after the void, a re-price stopped by a transient refusal holds removeCoupon and applyCoupon; Retry re-prices', async () => {
+    const shop = store({ a: 100, b: 50 });
+    const { result } = await resumed(shop, true, () => { shop.perUnit.a = 300; });
+    const answer = shop.price.getMockImplementation()!;
+    shop.price.mockRejectedValue(new Error('offline'));
+    await voidLeg(result);
+    expect(result.current.couponsRepricing).toBe(false);
+    let removed: unknown, applied: unknown;
+    act(() => { removed = result.current.removeCoupon('a'); });
+    await act(async () => { applied = await result.current.applyCoupon('b'); });
+    expect(removed).toBe(COUPONS_REPRICING);
+    expect(applied).toBe(COUPONS_REPRICING);
+    shop.price.mockImplementation(answer);
+    await act(async () => { expect(await result.current.repriceCoupons()).toBeNull(); });
+    expect(amounts(result)).toEqual([['a', 300]]);
+    expect(result.current.order.totalMinor).toBe(REPRICED_TOTAL);
   });
 
   /** A one-line sale paid by a captured cash leg and completed: the receipt stage, with the finished builder still live. */
