@@ -7,7 +7,7 @@ import { toWooOrderPayload } from '@tallyui/connector-woocommerce';
 import { createOrderBuilder, finalizeOrder, posOrderCollection, toOrderCreateEnvelope } from '@tallyui/pos';
 import type { PosOrder } from '@tallyui/pos';
 
-// 2.10 PR4 (vets/2026-11-19-2.10-pr4-includes-tax.md): an exclusive store, one standard 10% rate, one 30.00 line and a
+// 2.10 PR4: an exclusive store, one standard 10% rate, one 30.00 line and a
 // charge entered including tax. The store taxes the net it receives, so the sent net must re-tax to the till's figures.
 const rates = [{ id: 1, code: 'STD', label: 'Standard', rate: '10.0000', compound: false, priority: 1, order: 1, shipping: true, class: 'standard' }];
 const PERCENT = 10n;
