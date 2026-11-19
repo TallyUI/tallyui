@@ -35,6 +35,8 @@ export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the 
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
 /** Line and total changes refuse with this while a till leg is live, as v2's resolveStage stills the cart (tally-woo 11c). */
 export const SALE_HAS_PAYMENT = 'A payment was taken on this sale. Void it before changing the sale.';
+/** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
+export const SALE_FINISHED = 'This sale is finished. Start a new sale to change it.';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
 export const COUPONS_REPRICING = 'Coupon prices are being checked; try again in a moment';
 /** startTender refuses with this when the app's tenderGate rejects instead of answering. */
@@ -199,10 +201,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
   /** locked() without its error. */
   function busy() { return !!(inFlight.current || pending.current); }
-  /** Line and total changes' guard: SALE_SAVING while busy, SALE_HAS_PAYMENT while an unlocked leg is captured or in motion; sets it as the error. */
+  /** Line and total changes' guard: SALE_SAVING while busy, SALE_FINISHED on the receipt, SALE_HAS_PAYMENT while an unlocked leg is captured or in motion; sets it as the error. */
   function editRefusal(): string | null {
     const live = builderNow.current.getSnapshot().payments.some((payment) => !payment.locked && (countsTowardPaid(payment) || isInMotion(payment)));
-    const refusal = busy() ? SALE_SAVING : live ? SALE_HAS_PAYMENT : null;
+    const refusal = busy() ? SALE_SAVING : stageNow.current.kind === 'receipt' ? SALE_FINISHED : live ? SALE_HAS_PAYMENT : null;
     if (refusal) setError(refusal);
     return refusal;
   }
@@ -441,6 +443,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
 
   function begin(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
+    if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // a tender gate that answers after complete()
     if (locked()) return;
     const current = builderNow.current.getSnapshot();
     if (!current.lineItems.length) return;
@@ -464,8 +467,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     saving,
     /** The failed save's order is confirmed stored (see `isStored`): the UI also offers Continue (`continueSale()`). */
     canContinue,
-    /** Adds the entry, as a new line or one more on its line; returns that line's id, or the refusal `error` now shows. */
+    /** Adds the entry, as a new line or one more on its line; returns that line's id, or the refusal `error` now shows. On the receipt it starts the next sale first (v2 #2861). */
     add(entry: CatalogueEntry<any>, traits: ProductTraits<any>): { lineId: string } | string {
+      if (stageNow.current.kind === 'receipt') {
+        resetSale();
+        if (stageNow.current.kind === 'receipt') return SALE_SAVING; // resetSale refused, with this as its error
+      }
       const held = editRefusal(); if (held) return held;
       const builder = builderNow.current;
       try {
@@ -658,6 +665,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * opened just before (#170 race). A repeat call mid-tender keeps the first pin.
      */
     startTender(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // never re-tender a finished sale
       if (!opts.tenderGate) return begin(method, options);
       if (locked()) return;
       const current = builderNow.current.getSnapshot();
@@ -715,6 +723,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       clearStaleError();
     },
     cancelTender() {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       if (locked()) return;
       setTender(null);
       tenderSession.current = null;
