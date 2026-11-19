@@ -57,6 +57,14 @@ function sumLines(lines: Pick<LineItem, 'netMinor' | 'taxMicros' | 'taxInclusive
   return { subtotalMinor: linesTotal - taxMinor, taxMinor, totalMinor: Math.max(0, linesTotal) };
 }
 
+/** A charge's amount in the order's tax mode, from its exact figures (vendurepos gap 2.10). */
+export function chargeOrderModeMinor(charge: ChargeLine, pricesIncludeTax: boolean): number {
+  if ((charge.amountIncludesTax ?? pricesIncludeTax) === pricesIncludeTax) return charge.amountMinor;
+  if (charge.totalMinor !== undefined) return pricesIncludeTax ? charge.totalMinor : charge.netMinor; // WooCommerce
+  const taxMinor = roundMicrosToMinor(BigInt(charge.taxMicros)); // generic: netMinor is the amount as entered
+  return pricesIncludeTax ? charge.netMinor + taxMinor : charge.netMinor - taxMinor;
+}
+
 /** An own-mode amount on a line, in the display mode, converted on its own at the line's rates (ADR-063). */
 function toDisplayMode(line: LineItem, amountMinor: number, displayInclusive: boolean): number {
   if (line.taxInclusive === displayInclusive) return amountMinor;
@@ -264,7 +272,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     if (woo) shipping = shipping.map((charge) => ({ ...charge, ...recalculateCharge(charge.id, charge, true) }));
     const charges = [...fees, ...shipping];
-    const taxedCharges = charges.map((charge) => ({ ...charge, taxInclusive: taxContext.pricesIncludeTax,
+    const taxedCharges = charges.map((charge) => ({ ...charge, taxInclusive: charge.amountIncludesTax ?? taxContext.pricesIncludeTax,
       taxMicros: charge.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n).toString() }));
     const settle = (items: LineItem[]) => woo ? woocommerceTotals(items, fees, shipping, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax)
       : { ...sumLines([...items, ...taxedCharges], taxContext.rounding), subtotalMinor: sumLines(items, taxContext.rounding).subtotalMinor };
@@ -337,13 +345,14 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const displayDiscount = displayLines.reduce(
       (sum, line) => line.discounts.reduce((lineSum, d) => lineSum + d.amountMinor, sum), orderDiscountDisplay)
       + (displayCoupons?.reduce((sum, row) => sum + row.amountMinor, 0) ?? 0);
-    const chargeRows = (items: ChargeLine[]) => items.map(({ id, name, amountMinor, netMinor, totalMinor }) =>
-      ({ id, name, amountMinor: woo ? taxInclusive ? totalMinor! : netMinor : amountMinor }));
+    const chargeRows = (items: ChargeLine[]) => items.map((charge) => ({ id: charge.id, name: charge.name,
+      amountMinor: woo ? taxInclusive ? charge.totalMinor! : charge.netMinor : chargeOrderModeMinor(charge, taxInclusive) }));
     const displayFees = chargeRows(fees), displayShipping = chargeRows(shipping);
     let displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount
       - [...displayFees, ...displayShipping].reduce((sum, charge) => sum + charge.amountMinor, 0);
     let residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
-    if (woo) {
+    // A generic charge in the other mode is converted too, so it can take the residue like a woo charge.
+    if (woo || [...fees, ...shipping].some((charge) => (charge.amountIncludesTax ?? taxInclusive) !== taxInclusive)) {
       // ADR-076: the last shipping row, else fee, else product takes either sign of residue.
       const charge = displayShipping.at(-1) ?? displayFees.at(-1);
       const last = charge ?? displayLines.at(-1);
@@ -431,7 +440,10 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (!Number.isInteger(input.amountMinor)) throw new RangeError('Amount must be integer minor units');
     if (input.amountMinor < 0) throw new RangeError('Amount must be >= 0');
     if (!input.name.trim()) throw new RangeError('Name must not be empty');
+    if (input.amountIncludesTax !== undefined && typeof input.amountIncludesTax !== 'boolean') throw new RangeError('amountIncludesTax must be a boolean');
     const taxStatus = input.taxStatus ?? 'taxable';
+    const inclusive = input.amountIncludesTax ?? taxContext.pricesIncludeTax;
+    const mode = input.amountIncludesTax !== undefined ? { amountIncludesTax: input.amountIncludesTax } : {};
     if (woo) {
       const taxClass = shipping
         ? taxContext.shippingTaxClass === undefined || taxContext.shippingTaxClass === 'inherit'
@@ -442,8 +454,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         : input.taxClass;
       const untaxed = shipping ? taxClass === woocommerceTax.NO_SHIPPING_TAX : taxStatus === 'none';
       const line = wooLine(input.amountMinor, taxClass === woocommerceTax.NO_SHIPPING_TAX ? undefined : taxClass,
-        taxContext.pricesIncludeTax, untaxed, shipping);
-      return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus,
+        inclusive, untaxed, shipping);
+      return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus, ...mode,
         ...(input.storeLineId !== undefined ? { storeLineId: input.storeLineId } : {}),
         ...line };
     }
@@ -453,9 +465,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       taxLines: [{ ...(code !== undefined ? { code } : {}),
         ratePpm: taxStatus === 'none' ? 0 : taxContext.getTaxRatePpm(input.taxClass), taxMicros: '0' }],
       discounts: [], discountMinor: 0, orderDiscountMinor: 0, netMinor: 0, taxMicros: '0',
-      taxInclusive: taxContext.pricesIncludeTax,
+      taxInclusive: inclusive,
     });
-    return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus,
+    return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus, ...mode,
       ...(input.storeLineId !== undefined ? { storeLineId: input.storeLineId } : {}),
       taxLines: line.taxLines, netMinor: line.netMinor, taxMicros: line.taxMicros };
   }

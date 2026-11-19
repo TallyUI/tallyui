@@ -33,6 +33,13 @@ describe('taxedLinesFor', () => {
     ]);
   });
 
+  it.each([false, true])('T1: keeps a charge\'s own amountIncludesTax outside WooCommerce, store mode %s', (pricesIncludeTax) => {
+    const fee = { name: 'Fee', amountIncludesTax: !pricesIncludeTax };
+    expect(taxedLinesFor([], [fee], pricesIncludeTax)).toEqual([{ ...fee, taxInclusive: !pricesIncludeTax }]);
+    expect(taxedLinesFor([], [fee], pricesIncludeTax, { granularity: 'woocommerce', roundAtSubtotal: false }))
+      .toEqual([{ ...fee, taxInclusive: pricesIncludeTax }]);
+  });
+
   it('keeps lines then charges in order and preserves extra fields', () => {
     expect(taxedLinesFor([
       { name: 'First line', taxInclusive: true, quantity: 2 },

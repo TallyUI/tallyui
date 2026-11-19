@@ -46,6 +46,47 @@ describe('order.create v5 through builder and finalize (ADR-075)', () => {
       } finally { await db.remove(); }
     });
 
+  it('P1 (g): a WooCommerce fee entered with tax is stored and sent in the order\'s mode (vendurepos gap 2.10)', async () => {
+    const wooFee = (fee: { name: string; amountMinor: number; amountIncludesTax?: boolean }) => {
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 100000,
+        rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+        getTaxRates: () => [{ id: 1, code: 'standard', label: 'Standard', rate: '10.0000', priority: 1, compound: false, shipping: true }] } });
+      builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } }); // finalize needs a line
+      builder.addFee(fee);
+      builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+      return finalizeOrder(builder.getSnapshot(), options);
+    };
+    const order = wooFee({ name: 'Fee', amountMinor: 1100, amountIncludesTax: true });
+    const plain = wooFee({ name: 'Fee', amountMinor: 1000 });
+    expect(order.fees![0]).not.toHaveProperty('amountIncludesTax');
+    expect(order.fees![0]).toMatchObject({ amountMinor: 1000, netMinor: 1000 });
+    const { clientFeeId: _a, ...fee } = toOrderCreateEnvelope(order, 'till').payload.fees![0];
+    const { clientFeeId: _b, ...plainFee } = toOrderCreateEnvelope(plain, 'till').payload.fees![0];
+    expect(fee).toStrictEqual(plainFee);
+    expect(fee).toMatchObject({ amountMinor: 1000, taxMinor: 100 });
+    const db = await createRxDatabase({ name: `ctm${uuidv7().replaceAll('-', '')}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    try {
+      const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+      expect(pos_orders.schema.version).toBe(16);
+      expect((await pos_orders.insert(order)).toJSON()).toStrictEqual(order);
+    } finally { await db.remove(); }
+  });
+
+  it('P2 (g\'): a generic fee entered with tax is stored as the plain exclusive fee (vendurepos gap 2.10)', () => {
+    const finalizeFee = (fee: { name: string; amountMinor: number; amountIncludesTax?: boolean }) => {
+      const builder = make();
+      builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } }); // finalize needs a line
+      builder.addFee(fee);
+      builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+      return finalizeOrder(builder.getSnapshot(), options);
+    };
+    const { id: _a, ...fee } = finalizeFee({ name: 'Fee', amountMinor: 1200, amountIncludesTax: true }).fees![0];
+    const { id: _b, ...plain } = finalizeFee({ name: 'Fee', amountMinor: 1000 }).fees![0];
+    expect(fee).toMatchObject({ amountMinor: 1000, netMinor: 1000, taxMicros: '200000000' });
+    expect(fee).toStrictEqual(plain);
+  });
+
   it('keeps the per_order finalized form without netMicros', () => {
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 200000,
       rounding: { granularity: 'per_order', mode: 'half_away_from_zero' } } });
