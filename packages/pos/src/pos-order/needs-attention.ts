@@ -14,6 +14,8 @@ export const UPDATE_UNSENDABLE_MESSAGE = "The store can't accept this change yet
  * `register_session_unknown` is not shown, because the store counts the order once its session arrives (ADR-078).
  * A refused order is left out once its finalized successor is in `orders`.
  * Pending updates marked `UPDATE_UNSENDABLE` are shown until a person acts.
+ * An order a cashier marked handled (`markAttentionHandled`) is left out while its `commandId` is the one it was marked
+ * for; a requeue mints a new `commandId`, so a fresh refusal shows again (ADR-092 6f).
  */
 export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: readonly string[] } = {}): PosOrder[] {
   const replaced = replacedOrderIds(orders);
@@ -22,6 +24,6 @@ export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: 
     || (order.localWarnings?.length ?? 0) > 0
     || (order.syncStatus === 'applied' && knownWarnings(order.warnings).some((warning) => warning.code !== 'register_session_unknown')) || order.lateSessionId !== undefined
     || (order.syncStatus === 'pending' && options.stuckCommandIds?.includes(order.commandId) === true))
-    .filter((order) => !replaced.has(order.id))
+    .filter((order) => !replaced.has(order.id) && !(order.attentionHandledFor !== undefined && order.attentionHandledFor === order.commandId))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

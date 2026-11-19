@@ -1,4 +1,4 @@
-import { minorUnitDigits, ORDER_NOTE_MAX, type CustomerAddress, type OrderAddress, type ServerCapabilities, type TaxRounding,
+import { minorUnitDigits, ORDER_LINE_SKU_MAX, ORDER_META_KEY_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, type CustomerAddress, type OrderAddress, type ServerCapabilities, type TaxRounding,
   type woocommerceTax } from '@tallyui/core';
 import { chargeOrderModeMinor } from '../order/order-builder';
 import type { ChargeLine, Order, SentOrder } from '../order/types';
@@ -75,10 +75,11 @@ export function freezeSentForm(order: PosOrder): PosOrder {
   changed ||= note !== order.note;
   const lines = order.lines.map((line) => {
     const name = cutText(line.name, PAYLOAD_STRING_MAX);
-    changed ||= name !== line.name;
+    const sku = cutText(line.sku, ORDER_LINE_SKU_MAX);
+    changed ||= name !== line.name || sku !== line.sku;
     const custom = line.custom && { ...line.custom, name: cutText(line.custom.name, PAYLOAD_STRING_MAX) };
     changed ||= custom !== undefined && custom.name !== line.custom!.name;
-    return { ...line, name, ...(custom ? { custom } : {}) };
+    return { ...line, name, sku, ...(custom ? { custom } : {}) };
   });
   const charges = { fees: order.fees, shipping: order.shipping };
   for (const field of ['fees', 'shipping'] as const) if (charges[field]) charges[field] = charges[field]!.map((charge) => {
@@ -111,6 +112,18 @@ export function freezeSentForm(order: PosOrder): PosOrder {
     changed ||= Object.entries(address).some(([key, value]) => value !== customer[kind]![key as keyof OrderAddress]);
     customer[kind] = address;
   }
+  // Version 12 (ADR-092): tax ids and meta are cut to their bounds like the other text.
+  if (customer?.taxIds) customer.taxIds = customer.taxIds.map((taxId) => {
+    const cut = { ...taxId, type: cutText(taxId.type, ORDER_TAX_ID_TYPE_MAX), value: cutText(taxId.value, ORDER_TAX_ID_VALUE_MAX),
+      ...(taxId.label !== undefined ? { label: cutText(taxId.label, PAYLOAD_STRING_MAX) } : {}) };
+    changed ||= cut.type !== taxId.type || cut.value !== taxId.value || cut.label !== taxId.label;
+    return cut;
+  });
+  const meta = order.meta?.map((entry) => {
+    const cut = { key: cutText(entry.key, ORDER_META_KEY_MAX), value: cutText(entry.value, ORDER_NOTE_MAX) };
+    changed ||= cut.key !== entry.key || cut.value !== entry.value;
+    return cut;
+  });
   const localWarnings = [...(order.localWarnings ?? [])];
   for (const [field, max] of [['email', 254], ['id', 64]] as const) {
     if (customer && field in customer && !sendable(customer[field], max)) {
@@ -119,7 +132,7 @@ export function freezeSentForm(order: PosOrder): PosOrder {
     }
   }
   return changed ? { ...order, lines, payments, customer, ...(note !== undefined ? { note } : {}), ...(charges.fees ? { fees: charges.fees } : {}),
-    ...(charges.shipping ? { shipping: charges.shipping } : {}), ...(display ? { display } : {}), ...(localWarnings.length ? { localWarnings } : {}) } : order;
+    ...(charges.shipping ? { shipping: charges.shipping } : {}), ...(display ? { display } : {}), ...(meta ? { meta } : {}), ...(localWarnings.length ? { localWarnings } : {}) } : order;
 }
 
 /**

@@ -7,6 +7,7 @@ import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder } from './finalize';
 import { addPosOrderCollection } from './open';
 import { posOrderCollection, posOrderSchema } from './schema';
+import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
 it.each(['lines', 'fees', 'shipping'] as const)('refuses invalid netMicros on %s in v8', async (field) => {
@@ -163,7 +164,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(17);
+  expect(posOrderSchema.version).toBe(18);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -181,7 +182,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   }
 });
 
-it('stores sentVersion and downgradedFrom, and refuses values outside 1–11', async () => {
+it('stores sentVersion and downgradedFrom, and refuses values outside 1–12', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -210,9 +211,36 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–11', a
     const v11 = { ...order, id: uuidv7(), sentVersion: 11 as const, downgradedFrom: 11 as const };
     await pos_orders.insert(v11);
     expect((await pos_orders.findOne(v11.id).exec())?.toJSON()).toStrictEqual(v11);
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 12 as 11 })).rejects.toThrow();
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 12 as 11 })).rejects.toThrow();
+    const v12 = { ...order, id: uuidv7(), sentVersion: 12 as const, downgradedFrom: 12 as const };
+    await pos_orders.insert(v12);
+    expect((await pos_orders.findOne(v12.id).exec())?.toJSON()).toStrictEqual(v12);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 13 as 12 })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 13 as 12 })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 0 as 1 })).rejects.toThrow();
+  } finally {
+    await db.remove();
+  }
+});
+
+it("M2 stores schema-18 tax ids, meta, a line's catalogueSku and attentionHandledFor, closed (ADR-092)", async () => {
+  expect(posOrderSchema.version).toBe(18);
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p1', name: 'Item', sku: 'SKU-1', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const plain = finalizeOrder(builder.getSnapshot());
+    const order: PosOrder = { ...plain, attentionHandledFor: plain.commandId,
+      customer: { id: '7', taxIds: [{ type: 'eu_vat', value: 'DE123456789', country: 'DE', label: 'VAT number' }, { type: 'us_ein', value: '12-3456789' }] },
+      meta: [{ key: 'po_number', value: 'PO-1' }], lines: plain.lines.map((line) => ({ ...line, sku: 'SKU-1-EDIT', catalogueSku: 'SKU-1' })) };
+    await pos_orders.insert(order);
+    expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+    for (const bad of [{ customer: { taxIds: [{ type: 'eu_vat', value: 'x', extra: 1 }] } }, { customer: { taxIds: [{ type: 'eu_vat' }] } },
+      { meta: [{ key: 'k', value: 'v', extra: 1 }] }, { meta: [{ key: 'k' }] }, { attentionHandledFor: 'x'.repeat(37) }]) {
+      await expect(pos_orders.insert({ ...order, id: uuidv7(), ...bad } as PosOrder)).rejects.toThrow();
+    }
   } finally {
     await db.remove();
   }
